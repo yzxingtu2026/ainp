@@ -76,7 +76,7 @@ func (a *App) Run() error {
 	// 2. 启动 HTTP server
 	engine := httpserver.New(httpserver.Options{
 		Mode:            a.Config.Server.Mode,
-		Installed:       a.Installed,
+		Installed:       &a.Installed,
 		DevTokenEnabled: a.Config.Auth.DevTokenEnabled,
 		Tokens:          a.Tokens,
 		Actions:         a.Actions,

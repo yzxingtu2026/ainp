@@ -22,13 +22,14 @@ import (
 
 // SetupService 安装向导核心服务。
 type SetupService struct {
-	cfgDSN    string       // 配置/环境变量提供的 DSN
-	statePath string       // state.yaml 路径
-	st        *state.State // 当前状态
+	cfgDSN      string       // 配置/环境变量提供的 DSN
+	statePath   string       // state.yaml 路径
+	st          *state.State // 当前状态
+	onInstalled func()       // 安装完成后的回调（用于更新内存状态）
 }
 
-func NewSetupService(cfgDSN, statePath string, st *state.State) *SetupService {
-	return &SetupService{cfgDSN: cfgDSN, statePath: statePath, st: st}
+func NewSetupService(cfgDSN, statePath string, st *state.State, onInstalled func()) *SetupService {
+	return &SetupService{cfgDSN: cfgDSN, statePath: statePath, st: st, onInstalled: onInstalled}
 }
 
 type setupStatusResp struct {
@@ -188,6 +189,11 @@ func (s *SetupService) Initialize(ctx context.Context, input json.RawMessage) (a
 	}
 	if err := state.Save(s.statePath, s.st); err != nil {
 		return nil, errs.Wrap(errs.CodeInternal, "save state failed", err)
+	}
+
+	// 通知内存状态更新，让 SetupGate 中间件立即放行
+	if s.onInstalled != nil {
+		s.onInstalled()
 	}
 
 	logging.Info(ctx, "setup completed",

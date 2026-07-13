@@ -64,7 +64,9 @@ func runSetupMode(ctx context.Context, cfg *config.Config, st *state.State) {
 	application := app.New(cfg, nil, nil, tokens)
 	application.Installed = false
 
-	setupSvc := system.NewSetupService(cfg.Database.DSN, cfg.StateFile, st)
+	setupSvc := system.NewSetupService(cfg.Database.DSN, cfg.StateFile, st, func() {
+		application.Installed = true
+	})
 	if err := system.RegisterSetupActions(application, setupSvc); err != nil {
 		logging.Error(ctx, "register setup failed", err)
 		os.Exit(1)
@@ -128,7 +130,7 @@ func runNormalMode(ctx context.Context, cfg *config.Config, cfgPath *string) {
 	if st == nil {
 		st = &state.State{Installed: true}
 	}
-	setupSvc := system.NewSetupService(cfg.Database.DSN, cfg.StateFile, st)
+	setupSvc := system.NewSetupService(cfg.Database.DSN, cfg.StateFile, st, nil)
 	if err := system.RegisterSetupActions(application, setupSvc); err != nil {
 		logging.Error(ctx, "register setup failed", err)
 		os.Exit(1)

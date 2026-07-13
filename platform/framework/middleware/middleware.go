@@ -80,10 +80,10 @@ func negotiateLang(header string) string {
 }
 
 // SetupGate 未安装时仅放行 setup / healthz 路径，其他请求返回 503。
-// 已安装后透传所有请求。
-func SetupGate(installed bool) gin.HandlerFunc {
+// 已安装后透传所有请求。传入 *bool 指针以便安装完成后动态感知状态变化。
+func SetupGate(installed *bool) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if installed {
+		if installed != nil && *installed {
 			c.Next()
 			return
 		}

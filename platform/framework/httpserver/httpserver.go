@@ -19,7 +19,7 @@ import (
 
 type Options struct {
 	Mode            string
-	Installed       bool
+	Installed       *bool
 	DevTokenEnabled bool
 	Tokens          *auth.TokenService
 	Actions         *action.Registry
