@@ -22,6 +22,7 @@ CLAUDE.md
 
 # local runtime config (keep example tracked)
 platform/configs/config.yaml
+platform/configs/state.yaml
 platform/configs/*.local.yaml
 
 # frontend
