@@ -15,41 +15,77 @@ CREATE DATABASE ainp OWNER ainp;
 
 ```bash
 cp configs/config.example.yaml configs/config.yaml
-# 按需修改 database.dsn
+# 按需修改 database.dsn、auth.jwt.secret
 ```
 
-3. 启动：
+3. 启动（首次会 AutoMigrate 系统表并写入种子数据）：
 
 ```bash
 cd platform
 go run ./cmd/ainp -config configs/config.yaml
 ```
 
-## 开发态鉴权桩
+## 种子账号
 
-当 `auth.dev_token_enabled: true`：
+| 项 | 值 |
+|----|-----|
+| 租户 | `tenant_demo`（演示租户） |
+| 用户名 | `admin` |
+| 密码 | `Admin@123` |
+| 角色 | `admin`（含 `demo.*` 与 `system.auth_*` 权限） |
 
-```text
-Authorization: Bearer dev:<tenant_id>:<user_id>:<perm1,perm2,...>
-```
+种子幂等：已存在 `tenant_demo` 时跳过。
 
-示例：
+## 登录与鉴权示例
 
 ```bash
-curl -s localhost:8080/healthz
+# 登录（成功 code=0，含 access_token；错误密码为 HTTP 200 + code=20002）
+curl -s -X POST localhost:8080/api/v1/system/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"admin","password":"Admin@123"}'
 
-curl -s localhost:8080/api/v1/system/ping
+# 当前用户
+curl -s localhost:8080/api/v1/system/auth/me \
+  -H "Authorization: Bearer <access_token>"
 
+# 权限列表
+curl -s localhost:8080/api/v1/system/auth/permissions \
+  -H "Authorization: Bearer <access_token>"
+
+# 菜单（按权限过滤 directory/menu/button）
+curl -s localhost:8080/api/v1/menus \
+  -H "Authorization: Bearer <access_token>"
+
+# 受保护 Action
 curl -s -X POST localhost:8080/api/v1/demo/hello \
-  -H 'Authorization: Bearer dev:t1:u1:demo.hello' \
+  -H "Authorization: Bearer <access_token>" \
   -H 'Content-Type: application/json' \
   -d '{"name":"AINP"}'
-
-curl -s localhost:8080/api/v1/menus \
-  -H 'Authorization: Bearer dev:t1:u1:demo.hello'
 ```
 
-生产必须关闭 `dev_token_enabled`。
+约定：
+
+- `tenant_id` 只来自 Token，不信任 Body/Query。
+- 无 Token → HTTP 401 / `code=10002`；无权限 → HTTP 403 / `code=10003`。
+- 登录成功/失败均写审计（`system.auth_login`，`meta.audit=true`）；失败另打运行日志。
+
+## 关闭开发态 Token 桩
+
+配置项 `auth.dev_token_enabled`：
+
+- 示例配置默认 `false`。
+- **生产必须关闭**。
+- 开启时可用：`Authorization: Bearer dev:<tenant_id>:<user_id>:<perm1,perm2,...>`
+- 正式 JWT 与 `dev:` 格式互斥；非 `dev:` 前缀一律按 JWT 校验。
+
+```yaml
+auth:
+  dev_token_enabled: false
+  jwt:
+    secret: "<生产随机密钥>"
+    issuer: ainp
+    ttl: 24h
+```
 
 ## 目录
 

@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -29,7 +30,26 @@ type LoggingConfig struct {
 }
 
 type AuthConfig struct {
-	DevTokenEnabled bool `yaml:"dev_token_enabled"`
+	// DevTokenEnabled 开发桩；生产必须为 false。正式 JWT 优先。
+	DevTokenEnabled bool      `yaml:"dev_token_enabled"`
+	JWT             JWTConfig `yaml:"jwt"`
+}
+
+type JWTConfig struct {
+	Secret string `yaml:"secret"`
+	Issuer string `yaml:"issuer"`
+	TTL    string `yaml:"ttl"` // e.g. 24h
+}
+
+func (j JWTConfig) Duration() time.Duration {
+	if j.TTL == "" {
+		return 24 * time.Hour
+	}
+	d, err := time.ParseDuration(j.TTL)
+	if err != nil || d <= 0 {
+		return 24 * time.Hour
+	}
+	return d
 }
 
 func Load(path string) (*Config, error) {
@@ -61,11 +81,23 @@ func (c *Config) applyDefaults() {
 	if c.Logging.Format == "" {
 		c.Logging.Format = "text"
 	}
+	if c.Auth.JWT.Issuer == "" {
+		c.Auth.JWT.Issuer = "ainp"
+	}
+	if c.Auth.JWT.TTL == "" {
+		c.Auth.JWT.TTL = "24h"
+	}
 }
 
 func (c *Config) validate() error {
 	if c.Database.DSN == "" {
 		return fmt.Errorf("database.dsn is required")
+	}
+	if c.Auth.JWT.Secret == "" {
+		return fmt.Errorf("auth.jwt.secret is required")
+	}
+	if _, err := time.ParseDuration(c.Auth.JWT.TTL); err != nil {
+		return fmt.Errorf("auth.jwt.ttl is invalid: %w", err)
 	}
 	return nil
 }

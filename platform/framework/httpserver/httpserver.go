@@ -19,6 +19,7 @@ import (
 type Options struct {
 	Mode            string
 	DevTokenEnabled bool
+	Tokens          *auth.TokenService
 	Actions         *action.Registry
 	Menus           *menu.Registry
 	DB              *gorm.DB
@@ -29,7 +30,14 @@ func New(opts Options) *gin.Engine {
 		gin.SetMode(gin.ReleaseMode)
 	}
 	r := gin.New()
-	r.Use(middleware.Recover(), middleware.RequestID(), middleware.DevToken(opts.DevTokenEnabled))
+	r.Use(
+		middleware.Recover(),
+		middleware.RequestID(),
+		middleware.Auth(middleware.AuthOptions{
+			Tokens:          opts.Tokens,
+			DevTokenEnabled: opts.DevTokenEnabled,
+		}),
+	)
 
 	r.GET("/healthz", func(c *gin.Context) {
 		status := "ok"

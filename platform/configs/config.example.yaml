@@ -12,5 +12,10 @@ logging:
 
 auth:
   # 开发桩：Authorization: Bearer dev:<tenant_id>:<user_id>:<perm1,perm2,...>
-  # 生产必须关闭
-  dev_token_enabled: true
+  # 生产必须关闭；正式 JWT 优先
+  dev_token_enabled: false
+  jwt:
+    # 生产务必更换为足够长的随机密钥；勿提交真实密钥
+    secret: "change-me-dev-only-not-for-production"
+    issuer: ainp
+    ttl: 24h

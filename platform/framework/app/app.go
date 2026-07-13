@@ -5,6 +5,7 @@ import (
 
 	"github.com/yzxingtu2026/ainp/platform/framework/action"
 	"github.com/yzxingtu2026/ainp/platform/framework/audit"
+	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/capability"
 	"github.com/yzxingtu2026/ainp/platform/framework/config"
 	"github.com/yzxingtu2026/ainp/platform/framework/httpserver"
@@ -16,17 +17,19 @@ import (
 type App struct {
 	Config       *config.Config
 	DB           *gorm.DB
+	Tokens       *auth.TokenService
 	Capabilities *capability.Registry
 	Actions      *action.Registry
 	Menus        *menu.Registry
 	Auditor      audit.Recorder
 }
 
-func New(cfg *config.Config, db *gorm.DB, auditor audit.Recorder) *App {
+func New(cfg *config.Config, db *gorm.DB, auditor audit.Recorder, tokens *auth.TokenService) *App {
 	checker := permission.NewChecker()
 	return &App{
 		Config:       cfg,
 		DB:           db,
+		Tokens:       tokens,
 		Capabilities: capability.NewRegistry(),
 		Actions:      action.NewRegistry(checker, auditor),
 		Menus:        menu.NewRegistry(),
@@ -51,9 +54,6 @@ func (a *App) RegisterMenu(m menu.Menu) error {
 			return fmt.Errorf("bind_action not registered: %s", m.BindAction)
 		}
 	}
-	if m.Permission != "" {
-		// permission 通常等于某 action.id；若 action 已注册则更稳，但不强制（可先注册菜单）
-	}
 	return a.Menus.Register(m)
 }
 
@@ -61,6 +61,7 @@ func (a *App) Run() error {
 	engine := httpserver.New(httpserver.Options{
 		Mode:            a.Config.Server.Mode,
 		DevTokenEnabled: a.Config.Auth.DevTokenEnabled,
+		Tokens:          a.Tokens,
 		Actions:         a.Actions,
 		Menus:           a.Menus,
 		DB:              a.DB,

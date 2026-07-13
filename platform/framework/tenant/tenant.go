@@ -2,20 +2,30 @@ package tenant
 
 import (
 	"context"
+	"time"
 
-	"gorm.io/gorm"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
+	"gorm.io/gorm"
 )
 
-// Tenant 模型预留（含自定义域名扩展字段），Phase 1 可不落业务表读写。
+const (
+	StatusEnabled  = "enabled"
+	StatusDisabled = "disabled"
+)
+
+// Tenant 模型预留自定义域名扩展字段；Host 解析本阶段不实现。
 type Tenant struct {
-	ID                 string `gorm:"primaryKey;size:64"`
-	Name               string `gorm:"size:128"`
-	Status             string `gorm:"size:32"` // enabled | disabled
-	PrimaryDomain      string `gorm:"size:255"`
-	CustomDomainsJSON  string `gorm:"type:text"` // JSON 数组预留
-	DomainVerifyStatus string `gorm:"size:32"`
+	ID                 string    `gorm:"primaryKey;size:64"`
+	Name               string    `gorm:"size:128;not null"`
+	Status             string    `gorm:"size:32;not null;default:enabled"` // enabled | disabled
+	PrimaryDomain      string    `gorm:"size:255"`
+	CustomDomainsJSON  string    `gorm:"type:text"` // JSON 数组预留
+	DomainVerifyStatus string    `gorm:"size:32"`
+	CreatedAt          time.Time `gorm:"autoCreateTime"`
+	UpdatedAt          time.Time `gorm:"autoUpdateTime"`
 }
+
+func (Tenant) TableName() string { return "tenants" }
 
 func ScopeByTenant(ctx context.Context) func(db *gorm.DB) *gorm.DB {
 	return func(db *gorm.DB) *gorm.DB {

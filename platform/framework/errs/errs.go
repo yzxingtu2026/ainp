@@ -10,7 +10,9 @@ const (
 	CodeForbidden    = 10003
 	CodeNotFound     = 10004
 
-	CodeTenantDisabled = 20001
+	CodeTenantDisabled     = 20001
+	CodeInvalidCredentials = 20002
+	CodeUserDisabled       = 20003
 
 	CodeActionNotFound = 30001
 
