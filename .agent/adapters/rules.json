@@ -207,6 +207,23 @@
           "alwaysApply": true
         }
       }
+    },
+    {
+      "id": "backend-layout",
+      "source": ".agent/rules/backend-layout.md",
+      "qoder": {
+        "path": ".qoder/rules/backend-layout.md",
+        "frontmatter": {
+          "trigger": "always_on"
+        }
+      },
+      "cursor": {
+        "path": ".cursor/rules/backend-layout.mdc",
+        "frontmatter": {
+          "description": "Go 后端 platform 目录、模块边界与 Phase 1 范围",
+          "alwaysApply": true
+        }
+      }
     }
   ]
 }

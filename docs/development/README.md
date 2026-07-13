@@ -15,5 +15,6 @@
 - [Action / Metadata / 菜单注册](./action-metadata.md)
 - [多租户与鉴权上下文](./auth-context.md)
 - [审计日志（最小集）](./audit.md)
+- [后端目录与模块边界](./backend-layout.md)
 
 新增或调整公共能力时，请同步更新本目录或 `.agent/rules/`、`.agent/skills/`、`.agent/team/`，运行 `agent-rules sync`，并在 Issue/PR 中说明规范位置。

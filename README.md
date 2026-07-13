@@ -235,6 +235,7 @@ User（一用户一租户）
 - **Action / 菜单**：Capability + Action + 独立 Menu 注册（含按钮权限），见 `docs/development/action-metadata.md`
 - **多租户 / 鉴权**：Token 定租户、一用户一租户、Role↔permission，见 `docs/development/auth-context.md`
 - **审计**：与运行日志分离；Action 链按最小集写入，见 `docs/development/audit.md`
+- **后端布局**：`platform/` + 平级 `frontend/`，见 `docs/development/backend-layout.md`
 
 ### 前端
 
@@ -292,60 +293,21 @@ AI Workspace 是产品的核心交互区域，而不是临时弹窗或独立聊�
 ## 规划目录
 
 ```text
-platform/
-├── cmd/
-├── framework/
-│   ├── action/
-│   ├── capability/
-│   ├── metadata/
-│   ├── router/
-│   ├── middleware/
-│   ├── auth/
-│   ├── tenant/
-│   ├── menu/
-│   ├── permission/
-│   ├── workflow/
-│   ├── scheduler/
-│   ├── queue/
-│   ├── audit/
-│   ├── ai/
-│   │   ├── runtime/
-│   │   ├── registry/
-│   │   ├── mcp/
-│   │   ├── prompt/
-│   │   ├── memory/
-│   │   ├── embedding/
-│   │   ├── tool/
-│   │   ├── workflow/
-│   │   └── llm/
-│   ├── plugin/
-│   ├── event/
-│   ├── storage/
-│   ├── config/
-│   ├── notification/
-│   └── search/
-├── modules/
-│   ├── system/
-│   ├── organization/
-│   ├── user/
-│   ├── tenant/
-│   ├── role/
-│   ├── menu/
-│   ├── permission/
-│   ├── approval/
-│   ├── workflow/
-│   ├── inventory/
-│   ├── purchase/
-│   ├── sales/
-│   ├── finance/
-│   ├── crm/
-│   └── oa/
-└── frontend/
-    ├── apps/
-    └── packages/
+ainp/
+├── platform/                 # Go module: github.com/yzxingtu2026/ainp/platform
+│   ├── cmd/ainp/
+│   ├── framework/            # app, logging, response, auth, action, menu, audit, database...
+│   ├── modules/              # Phase 1: system（可选）, demo
+│   ├── configs/
+│   └── migrations/
+├── frontend/                 # Soybean Admin + Naive UI（后续）
+│   ├── apps/
+│   └── packages/
+├── docs/
+└── .agent/
 ```
 
-该结构是项目启动阶段的设计草案，将随核心抽象验证逐步收敛。
+Phase 1 目录与依赖边界见 `docs/development/backend-layout.md`。完整能力包（workflow、ai、plugin 等）与业务 module（purchase 等）随阶段展开，不在骨架一次性建空目录。
 
 ## 路线图
 

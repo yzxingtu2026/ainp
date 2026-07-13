@@ -11,6 +11,7 @@
 - [ ] 确认 Action/菜单约束：`.agent/rules/action-metadata.md` 与 `docs/development/action-metadata.md`，再运行 `sync`。
 - [ ] 确认鉴权/租户约束：`.agent/rules/auth-context.md` 与 `docs/development/auth-context.md`，再运行 `sync`。
 - [ ] 确认审计约束：`.agent/rules/audit.md` 与 `docs/development/audit.md`，再运行 `sync`。
+- [ ] 确认后端布局：`.agent/rules/backend-layout.md` 与 `docs/development/backend-layout.md`，再运行 `sync`。
 - [ ] 更新 `.agent/rules/team-escalation.md` 中的沟通渠道和负责人，再运行 `sync`。
 - [ ] 更新 `.agent/team/members.yml` 中的团队成员、GitHub 邮箱和钉钉 ID。
 - [ ] 更新 `.agent/team/roles.yml` 中的团队角色说明和通用角色约束。
