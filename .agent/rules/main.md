@@ -20,6 +20,7 @@
 - API 信封与错误码见 `api-response`。
 - Action / 菜单注册见 `action-metadata`。
 - 多租户与鉴权上下文见 `auth-context`。
+- 审计最小集见 `audit`。
 - 前端栈、图标协议见关联规则。
 
 ## 关联规则
@@ -31,4 +32,5 @@
 - `api-response` → `docs/development/api-response.md`
 - `action-metadata` → `docs/development/action-metadata.md`
 - `auth-context` → `docs/development/auth-context.md`
+- `audit` → `docs/development/audit.md`
 - `team-escalation`

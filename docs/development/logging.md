@@ -95,9 +95,9 @@ logging.Error(ctx, "purchase create failed", err, "purchase_id", id)
 
 包名以仓库落地为准；实现合并后更新本节路径。
 
-## 审计最小预期（与 Logger 对齐、实现可稍后）
+## 审计最小预期（与 Logger 对齐）
 
-审计事件至少能回答：何时、何租户、何用户、何 `action_id`、结果（成功/失败）、可选资源 ID。存储与查询 API 在审计专题文档中展开；本规范仅要求**不得用运行日志冒充审计**。
+审计事件字段与写入时机见 `docs/development/audit.md`。本规范仅要求：**不得用运行日志冒充审计**。
 
 ## 检查清单
 

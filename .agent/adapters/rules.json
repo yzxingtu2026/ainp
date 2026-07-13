@@ -190,6 +190,23 @@
           "alwaysApply": true
         }
       }
+    },
+    {
+      "id": "audit",
+      "source": ".agent/rules/audit.md",
+      "qoder": {
+        "path": ".qoder/rules/audit.md",
+        "frontmatter": {
+          "trigger": "always_on"
+        }
+      },
+      "cursor": {
+        "path": ".cursor/rules/audit.mdc",
+        "frontmatter": {
+          "description": "审计最小集与运行日志分离，Action 链统一写入",
+          "alwaysApply": true
+        }
+      }
     }
   ]
 }

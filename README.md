@@ -234,6 +234,7 @@ User（一用户一租户）
 - **API 响应**：统一信封 `code` / `message` / `data` / `request_id`，见 `docs/development/api-response.md`
 - **Action / 菜单**：Capability + Action + 独立 Menu 注册（含按钮权限），见 `docs/development/action-metadata.md`
 - **多租户 / 鉴权**：Token 定租户、一用户一租户、Role↔permission，见 `docs/development/auth-context.md`
+- **审计**：与运行日志分离；Action 链按最小集写入，见 `docs/development/audit.md`
 
 ### 前端
 

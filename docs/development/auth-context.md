@@ -111,7 +111,7 @@ Phase 1 可不实现解析与证书，但 Tenant 模型预留例如：
 ## 与日志 / 审计
 
 运行日志自动带 `tenant_id`、`user_id`、`request_id`、`action_id` 等（见 `logging.md`）。  
-审计事件须含租户与操作者（见后续 Audit 文档）。
+审计事件须含租户与操作者等最小集（见 `audit.md`）。
 
 ## 前端
 
