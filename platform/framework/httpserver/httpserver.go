@@ -33,6 +33,7 @@ func New(opts Options) *gin.Engine {
 	r.Use(
 		middleware.Recover(),
 		middleware.RequestID(),
+		middleware.AcceptLanguage(),
 		middleware.Auth(middleware.AuthOptions{
 			Tokens:          opts.Tokens,
 			DevTokenEnabled: opts.DevTokenEnabled,
@@ -53,7 +54,7 @@ func New(opts Options) *gin.Engine {
 	r.GET("/api/v1/menus", func(c *gin.Context) {
 		ac, ok := auth.FromContext(c.Request.Context())
 		if !ok || ac == nil || !ac.Authenticated {
-			response.Fail(c, errs.New(errs.CodeUnauthorized, "unauthorized"))
+			response.Fail(c, errs.NewKey(errs.CodeUnauthorized, "common.unauthorized", "unauthorized"))
 			return
 		}
 		hasPerm := func(code string) bool {

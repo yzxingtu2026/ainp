@@ -9,6 +9,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/capability"
 	"github.com/yzxingtu2026/ainp/platform/framework/config"
 	"github.com/yzxingtu2026/ainp/platform/framework/httpserver"
+	"github.com/yzxingtu2026/ainp/platform/framework/i18n"
 	"github.com/yzxingtu2026/ainp/platform/framework/menu"
 	"github.com/yzxingtu2026/ainp/platform/framework/permission"
 	"gorm.io/gorm"
@@ -58,6 +59,11 @@ func (a *App) RegisterMenu(m menu.Menu) error {
 }
 
 func (a *App) Run() error {
+	// 初始化默认语言
+	if a.Config.I18n.DefaultLanguage != "" {
+		i18n.SetDefaultLang(a.Config.I18n.DefaultLanguage)
+	}
+
 	engine := httpserver.New(httpserver.Options{
 		Mode:            a.Config.Server.Mode,
 		DevTokenEnabled: a.Config.Auth.DevTokenEnabled,

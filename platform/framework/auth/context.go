@@ -5,18 +5,19 @@ import "context"
 type contextKey struct{}
 
 type Context struct {
-	RequestID         string
-	TraceID           string
-	TenantID          string
-	UserID            string
-	OrgID             string
-	DeptID            string
-	Roles             []string
-	Permissions       []string
-	SessionID         string
-	Client            string
-	IsSystemOperator  bool
-	Authenticated     bool
+	RequestID        string
+	TraceID          string
+	TenantID         string
+	UserID           string
+	OrgID            string
+	DeptID           string
+	Roles            []string
+	Permissions      []string
+	SessionID        string
+	Client           string
+	Language         string // 由 Accept-Language 中间件协商；空表示未设置
+	IsSystemOperator bool
+	Authenticated    bool
 }
 
 func WithContext(ctx context.Context, ac *Context) context.Context {

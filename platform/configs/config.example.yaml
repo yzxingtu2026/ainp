@@ -19,3 +19,7 @@ auth:
     secret: "change-me-dev-only-not-for-production"
     issuer: ainp
     ttl: 24h
+
+i18n:
+  # 未传 Accept-Language 时的默认语言；支持 zh-CN、en
+  default_language: zh-CN

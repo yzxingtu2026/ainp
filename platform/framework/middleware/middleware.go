@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
+	"github.com/yzxingtu2026/ainp/platform/framework/i18n"
 	"github.com/yzxingtu2026/ainp/platform/framework/response"
 )
 
@@ -42,6 +43,39 @@ func Recover() gin.HandlerFunc {
 		response.Fail(c, errs.Wrap(errs.CodeInternal, "panic", nil))
 		c.Abort()
 	})
+}
+
+// AcceptLanguage 解析 Accept-Language 请求头，将协商后的语言写入 AuthContext.Language。
+// 支持值：zh-CN、zh、en；其他值回退到 i18n.DefaultLang()。
+func AcceptLanguage() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		lang := negotiateLang(c.GetHeader("Accept-Language"))
+		ac := auth.MustFromContext(c.Request.Context())
+		ac.Language = lang
+		ctx := auth.WithContext(c.Request.Context(), ac)
+		c.Request = c.Request.WithContext(ctx)
+		c.Next()
+	}
+}
+
+// negotiateLang 从 Accept-Language 头中协商出支持的语言。
+// 目前仅支持 zh-CN / zh → zh-CN，其他均回退为默认语言。
+func negotiateLang(header string) string {
+	if header == "" {
+		return i18n.DefaultLang()
+	}
+	// 解析形如 "zh-CN,zh;q=0.9,en;q=0.8"
+	for _, part := range strings.Split(header, ",") {
+		tag := strings.TrimSpace(strings.SplitN(part, ";", 2)[0])
+		tag = strings.ToLower(tag)
+		switch tag {
+		case "zh-cn", "zh":
+			return i18n.LangZhCN
+		case "en", "en-us", "en-gb":
+			return i18n.LangEn
+		}
+	}
+	return i18n.DefaultLang()
 }
 
 type AuthOptions struct {

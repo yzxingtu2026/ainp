@@ -15,7 +15,8 @@ Agent 只读要点：`.agent/rules/api-response.md`。本文档定义 HTTP 信�
 ```json
 {
   "code": 0,
-  "message": "ok",
+  "message": "成功",
+  "message_key": "common.ok",
   "data": {},
   "request_id": "req_xxx"
 }
@@ -24,11 +25,26 @@ Agent 只读要点：`.agent/rules/api-response.md`。本文档定义 HTTP 信�
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | `code` | int | `0` 成功；非 `0` 为平台/业务错误码 |
-| `message` | string | 短文案；成功可用 `"ok"`；失败为稳定说明（后续可加 `message_key` 做 i18n） |
-| `data` | any / null | 成功载荷；失败时为 `null`，或带结构化细节（如校验字段） |
+| `message` | string | 已按请求语言本地化的短文案；失败时由 `message_key` 解析填充 |
+| `message_key` | string | 稳定机器键（omitempty）；如 `auth.invalid_credentials`；客户端可用于精确分支 |
+| `data` | any / null | 成功载荷；失败时为 `null`，或带结构化细节 |
 | `request_id` | string | 与运行日志一致，中间件注入 |
 
 字段名固定 **snake_case**，不得改为驼峰。
+
+### message_key 约定
+
+- 格式：`domain.reason`，小写点分，如 `auth.invalid_credentials`、`common.validation_failed`。
+- 与 `code` 是多对一关系：同一错误码可对应多个 key。
+- 未显式传 key 时，框架按 `code` 自动映射默认 key（见 `framework/errs/codeDefaultKey`）。
+- `message_key` 为 omitempty：成功响应也携带；旧客户端仅读 `message` 仍可用。
+
+## 语言协商
+
+- 中间件 `middleware.AcceptLanguage()` 解析 `Accept-Language` 请求头，将协商结果写入 `AuthContext.Language`。
+- 支持：`zh-CN` / `zh` → `zh-CN`；`en` / `en-US` / `en-GB` → `en`；其他回退到默认语言。
+- 默认语言：`config.I18n.DefaultLanguage`，未配置时使用 `zh-CN`。
+- 响应时 `message` 由 `i18n.T(lang, message_key)` 解析；缺翻译时回退 `zh-CN` → key 本身。
 
 ## HTTP 状态与 `code` 分工
 
@@ -100,10 +116,11 @@ Agent 只读要点：`.agent/rules/api-response.md`。本文档定义 HTTP 信�
 ```json
 {
   "code": 10001,
-  "message": "validation failed",
+  "message": "参数校验失败",
+  "message_key": "common.validation_failed",
   "data": {
     "fields": [
-      { "field": "qty", "message": "must be > 0" }
+      { "field": "qty", "message": "必填", "message_key": "common.field_required" }
     ]
   },
   "request_id": "req_xxx"
@@ -115,7 +132,7 @@ Agent 只读要点：`.agent/rules/api-response.md`。本文档定义 HTTP 信�
 - Action Handler 返回 `(data, error)`；可预期失败返回框架错误类型，例如：
 
 ```text
-AppError { Code, Message, Fields, Cause }
+AppError { Code, MessageKey, Message, Fields, Cause }
 ```
 
 - Gin / 未来 MCP、Agent 适配器将 `AppError` **统一映射**为上述信封（或 Tool 错误），不各自翻译。
@@ -134,7 +151,8 @@ AppError { Code, Message, Fields, Cause }
 
 ## 检查清单
 
-- [ ] 响应含 `code` / `message` / `data` / `request_id`
+- [ ] 响应含 `code` / `message` / `message_key` / `data` / `request_id`
+- [ ] `message` 已按请求语言本地化；`message_key` 为稳定机器键
 - [ ] 业务失败为 200 + 非 0；未混用随意 HTTP 4xx
 - [ ] 资源不存在为 `10004` + 200
 - [ ] 错误来自 `AppError` 常量码，无魔法数
