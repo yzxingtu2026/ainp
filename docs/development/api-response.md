@@ -39,12 +39,61 @@ Agent 只读要点：`.agent/rules/api-response.md`。本文档定义 HTTP 信�
 - 未显式传 key 时，框架按 `code` 自动映射默认 key（见 `framework/errs/codeDefaultKey`）。
 - `message_key` 为 omitempty：成功响应也携带；旧客户端仅读 `message` 仍可用。
 
-## 语言协商
+## 语言协商与多语言体系
+
+### 翻译文件
+
+- 翻译文件为独立 YAML，存放在 `platform/i18n/` 目录（可通过 `config.i18n.dir` 配置）。
+- 文件名即语言标识：`zh-CN.yaml` → `zh-CN`，`en.yaml` → `en`。
+- 扁平 key 结构：`domain.reason` 小写点分，便于 Agent 逐行增删。
+- 启动时 `i18n.LoadDir()` 扫描目录加载所有 `.yaml` 文件。
+
+### 语言协商
 
 - 中间件 `middleware.AcceptLanguage()` 解析 `Accept-Language` 请求头，将协商结果写入 `AuthContext.Language`。
 - 支持：`zh-CN` / `zh` → `zh-CN`；`en` / `en-US` / `en-GB` → `en`；其他回退到默认语言。
 - 默认语言：`config.I18n.DefaultLanguage`，未配置时使用 `zh-CN`。
 - 响应时 `message` 由 `i18n.T(lang, message_key)` 解析；缺翻译时回退 `zh-CN` → key 本身。
+
+### 覆盖范围
+
+所有后端用户可见字符串均通过 i18n key 本地化：
+
+| 场景 | 字段 | key 格式 |
+|------|------|----------|
+| API 错误文案 | `message` | `auth.invalid_credentials` |
+| Capability 名称 | `NameKey` | `capability.system.name` |
+| Capability 描述 | `DescriptionKey` | `capability.system.description` |
+| Action 名称 | `NameKey` | `action.system.auth_login.name` |
+| Action 描述 | `DescriptionKey` | `action.system.auth_login.description` |
+| 菜单标题 | `TitleKey` | `menu.system.root.title` |
+| 业务响应文案 | 自定义 | `demo.hello_greeting` |
+
+### Reload API
+
+AI Agent 新增语言文件后，调用重载端点即可生效，无需重新编译或重启：
+
+```
+POST /api/v1/system/i18n/reload
+```
+
+返回：
+
+```json
+{
+  "code": 0,
+  "message": "成功",
+  "data": { "langs": ["en", "zh-CN"], "key_count": 38 },
+  "request_id": "req_xxx"
+}
+```
+
+### 业务 handler 中使用
+
+```go
+lang := i18n.FromCtx(ctx)
+greeting := i18n.T(lang, "demo.hello_greeting")
+```
 
 ## HTTP 状态与 `code` 分工
 

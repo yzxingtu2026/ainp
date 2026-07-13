@@ -9,16 +9,19 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/capability"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
+	"github.com/yzxingtu2026/ainp/platform/framework/i18n"
 	"github.com/yzxingtu2026/ainp/platform/framework/menu"
 )
 
 func Register(a *app.App) error {
 	if err := a.RegisterCapability(capability.Capability{
-		ID:          "demo",
-		Name:        "演示",
-		Description: "Phase 1 骨架演示能力",
-		Module:      "demo",
-		Order:       100,
+		ID:             "demo",
+		Name:           "演示",
+		NameKey:        "capability.demo.name",
+		Description:    "Phase 1 骨架演示能力",
+		DescriptionKey: "capability.demo.description",
+		Module:         "demo",
+		Order:          100,
 	}); err != nil {
 		return err
 	}
@@ -36,16 +39,20 @@ func Register(a *app.App) error {
 			if req.Name == "" {
 				req.Name = "AINP"
 			}
+			lang := i18n.FromCtx(ctx)
+			greeting := i18n.T(lang, "demo.hello_greeting")
 			return map[string]any{
-				"message":   "hello " + req.Name,
+				"message":   greeting + " " + req.Name,
 				"tenant_id": ac.TenantID,
 				"user_id":   ac.UserID,
 			}, nil
 		},
 		Meta: action.Metadata{
-			Capability:  "demo",
-			Name:        "Hello",
-			Description: "演示需鉴权的 Action",
+			Capability:     "demo",
+			Name:           "Hello",
+			NameKey:        "action.demo.hello.name",
+			Description:    "演示需鉴权的 Action",
+			DescriptionKey: "action.demo.hello.description",
 			HTTP: &action.HTTPMeta{
 				Method: "POST",
 				Path:   "/api/v1/demo/hello",

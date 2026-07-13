@@ -59,11 +59,19 @@ func (a *App) RegisterMenu(m menu.Menu) error {
 }
 
 func (a *App) Run() error {
-	// 初始化默认语言
+	// 1. 加载翻译文件
+	dir := a.Config.I18n.Dir
+	if dir == "" {
+		dir = "i18n"
+	}
+	if err := i18n.LoadDir(dir); err != nil {
+		return fmt.Errorf("i18n load: %w", err)
+	}
 	if a.Config.I18n.DefaultLanguage != "" {
 		i18n.SetDefaultLang(a.Config.I18n.DefaultLanguage)
 	}
 
+	// 2. 启动 HTTP server
 	engine := httpserver.New(httpserver.Options{
 		Mode:            a.Config.Server.Mode,
 		DevTokenEnabled: a.Config.Auth.DevTokenEnabled,

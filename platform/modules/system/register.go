@@ -7,16 +7,19 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/action"
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
 	"github.com/yzxingtu2026/ainp/platform/framework/capability"
+	"github.com/yzxingtu2026/ainp/platform/framework/i18n"
 	"github.com/yzxingtu2026/ainp/platform/framework/menu"
 )
 
 func Register(a *app.App) error {
 	if err := a.RegisterCapability(capability.Capability{
-		ID:          "system",
-		Name:        "系统",
-		Description: "系统域：鉴权与基础能力",
-		Module:      "system",
-		Order:       0,
+		ID:             "system",
+		Name:           "系统",
+		NameKey:        "capability.system.name",
+		Description:    "系统域：鉴权与基础能力",
+		DescriptionKey: "capability.system.description",
+		Module:         "system",
+		Order:          0,
 	}); err != nil {
 		return err
 	}
@@ -33,6 +36,7 @@ func Register(a *app.App) error {
 		Meta: action.Metadata{
 			Capability: "system",
 			Name:       "Ping",
+			NameKey:    "action.system.ping.name",
 			Audit:      &auditOff,
 			HTTP: &action.HTTPMeta{
 				Method: "GET",
@@ -50,10 +54,12 @@ func Register(a *app.App) error {
 			return svc.Login(ctx, a.Tokens, input)
 		},
 		Meta: action.Metadata{
-			Capability:  "system",
-			Name:        "登录",
-			Description: "校验账号密码并签发 JWT",
-			Audit:       &auditOn,
+			Capability:     "system",
+			Name:           "登录",
+			NameKey:        "action.system.auth_login.name",
+			Description:    "校验账号密码并签发 JWT",
+			DescriptionKey: "action.system.auth_login.description",
+			Audit:          &auditOn,
 			HTTP: &action.HTTPMeta{
 				Method: "POST",
 				Path:   "/api/v1/system/auth/login",
@@ -70,10 +76,12 @@ func Register(a *app.App) error {
 			return svc.Me(ctx)
 		},
 		Meta: action.Metadata{
-			Capability:  "system",
-			Name:        "当前用户",
-			Description: "返回当前登录用户摘要与权限",
-			Audit:       &auditOff,
+			Capability:     "system",
+			Name:           "当前用户",
+			NameKey:        "action.system.auth_me.name",
+			Description:    "返回当前登录用户摘要与权限",
+			DescriptionKey: "action.system.auth_me.description",
+			Audit:          &auditOff,
 			HTTP: &action.HTTPMeta{
 				Method: "GET",
 				Path:   "/api/v1/system/auth/me",
@@ -89,10 +97,12 @@ func Register(a *app.App) error {
 			return svc.Permissions(ctx)
 		},
 		Meta: action.Metadata{
-			Capability:  "system",
-			Name:        "权限列表",
-			Description: "返回当前用户角色与 permission 列表",
-			Audit:       &auditOff,
+			Capability:     "system",
+			Name:           "权限列表",
+			NameKey:        "action.system.auth_permissions.name",
+			Description:    "返回当前用户角色与 permission 列表",
+			DescriptionKey: "action.system.auth_permissions.description",
+			Audit:          &auditOff,
 			HTTP: &action.HTTPMeta{
 				Method: "GET",
 				Path:   "/api/v1/system/auth/permissions",
@@ -102,13 +112,42 @@ func Register(a *app.App) error {
 		return err
 	}
 
+	// i18n reload：AI Agent 新增语言后触发重载
+	if err := a.RegisterAction(action.Action{
+		ID: "system.i18n_reload",
+		Handler: func(ctx context.Context, input json.RawMessage) (any, error) {
+			if err := i18n.Reload(); err != nil {
+				return nil, err
+			}
+			return map[string]any{
+				"langs":     i18n.AvailableLangs(),
+				"key_count": i18n.KeyCount(),
+			}, nil
+		},
+		Meta: action.Metadata{
+			Capability:     "system",
+			Name:           "重载翻译",
+			NameKey:        "action.system.i18n_reload.name",
+			Description:    "重新加载 i18n 翻译文件",
+			DescriptionKey: "action.system.i18n_reload.description",
+			Audit:          &auditOn,
+			HTTP: &action.HTTPMeta{
+				Method: "POST",
+				Path:   "/api/v1/system/i18n/reload",
+			},
+		},
+	}); err != nil {
+		return err
+	}
+
 	if err := a.RegisterMenu(menu.Menu{
-		ID:     "system.root",
-		Title:  "系统",
-		Icon:   "mdi:cog-outline",
-		Type:   menu.TypeDirectory,
-		Module: "system",
-		Order:  10,
+		ID:       "system.root",
+		Title:    "系统",
+		TitleKey: "menu.system.root.title",
+		Icon:     "mdi:cog-outline",
+		Type:     menu.TypeDirectory,
+		Module:   "system",
+		Order:    10,
 	}); err != nil {
 		return err
 	}
@@ -117,6 +156,7 @@ func Register(a *app.App) error {
 		ID:         "system.profile",
 		ParentID:   "system.root",
 		Title:      "个人中心",
+		TitleKey:   "menu.system.profile.title",
 		Icon:       "mdi:account-circle-outline",
 		Type:       menu.TypeMenu,
 		Path:       "/system/profile",
@@ -133,6 +173,7 @@ func Register(a *app.App) error {
 		ID:         "system.profile_refresh",
 		ParentID:   "system.profile",
 		Title:      "刷新资料",
+		TitleKey:   "menu.system.profile_refresh.title",
 		Type:       menu.TypeButton,
 		Permission: "system.auth_me",
 		BindAction: "system.auth_me",

@@ -39,13 +39,15 @@ type AIMeta struct {
 }
 
 type Metadata struct {
-	Capability  string
-	Permission  string
-	Name        string
-	Description string
-	Audit       *bool
-	HTTP        *HTTPMeta
-	AI          *AIMeta
+	Capability     string
+	Permission     string
+	Name           string // 兜底文案
+	NameKey        string // i18n key，如 action.system.auth_login.name
+	Description    string
+	DescriptionKey string // i18n key，如 action.system.auth_login.description
+	Audit          *bool
+	HTTP           *HTTPMeta
+	AI             *AIMeta
 }
 
 func (m Metadata) PermissionCode(actionID string) string {

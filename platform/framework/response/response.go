@@ -7,7 +7,6 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 	"github.com/yzxingtu2026/ainp/platform/framework/i18n"
-	_ "github.com/yzxingtu2026/ainp/platform/framework/i18n/langs" // 注册内置语言包
 )
 
 type Envelope struct {

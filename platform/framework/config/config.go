@@ -44,6 +44,7 @@ type JWTConfig struct {
 
 type I18nConfig struct {
 	DefaultLanguage string `yaml:"default_language"` // 缺省语言；空则使用 zh-CN
+	Dir             string `yaml:"dir"`              // 翻译文件目录，默认 "i18n"
 }
 
 func (j JWTConfig) Duration() time.Duration {
