@@ -1,30 +1,27 @@
 # 团队协作主规则
 
+规则文件只写硬约束要点；细节以 `docs/` 为准，避免在此重复展开。
+
 ## 必守原则
 
-1. **先 Issue 后代码**：所有可交付工作必须关联 GitHub Issue；范围、AC、结论以 Issue/PR 为准。
-2. **禁止直改 main**：从最新 `main` 按 Issue 开短分支，PR 合入，禁止直接提交或推送 `main`。
-3. **小范围交付**：一条分支只解决一个聚焦任务；超出范围时拆 Issue，不静默扩展。
-4. **文档归位**：文档放 `docs/`；规则/规范变化要随代码或 PR 同步沉淀。
-5. **远端操作用 gh**：Issue、PR、CI、Release 优先用 GitHub CLI；不得把 token 写入仓库。
-6. **中文提交**：提交信息使用中文，说明关联 Issue 和变更目的。
-7. **团队信息源**：需要成员、角色、GitHub 邮箱或钉钉 ID 时，查询 `.agent/team/members.yml`。
+1. **先 Issue 后代码**：可交付工作必须关联 Issue；范围/AC 以 Issue/PR 为准。
+2. **禁止直改 main**：短分支 + PR 合入。
+3. **小范围交付**：一分支一任务；超范围先拆 Issue。
+4. **文档归位**：详规进 `docs/`；规则只留要点，变更同步沉淀。
+5. **远端用 gh**：不得把 token 写入仓库。
+6. **中文提交**：说明关联 Issue 与目的。
+7. **团队信息**：查 `.agent/team/members.yml` / `roles.yml`。
 
 ## 开发硬约束
 
-- **公共封装优先**：涉及通用封装、统一组件、公共工具或跨模块约定时，优先扩展公共能力，再接入业务入口。
-- **禁止重复实现**：已有统一组件、工具函数、服务封装或样式规范时，禁止在业务模块内另写一套。
-- **公共规范沉淀**：新增或调整公共能力时，必须主动把新规范记录到规则文件或 `docs/development/`，并在 Issue/PR 中说明。
-- **模块边界**：复杂业务逻辑不得堆在路由、控制层或 UI 事件中，应下沉到服务层、领域模块、公共组件或独立函数。
-- **日志与可观测性**：服务端、任务流、外部依赖调用、异常降级等关键流程应使用统一日志体系，禁止用零散 `print` 替代 logger。
-- **前端统一栈**：管理端与 AI Workspace 统一使用 **Soybean Admin + Naive UI**（Vue 3 / TypeScript / Vite / Pinia）；禁止另起后台脚手架或更换主 UI 组件库。详见 `frontend-stack` 与 `docs/development/frontend-stack.md`。
-- **图标统一协议**：菜单与界面图标统一 **Iconify**，默认集合 **`mdi`**，字符串格式 `collection:name`；由后端 Metadata 下发，禁止另起图标主方案。详见 `icon-library` 与 `docs/development/icon-library.md`。
+- 公共能力优先扩展，禁止业务内重复实现；新约定写入 `docs/development/`，Agent 要点写入 `.agent/rules/`。
+- 业务逻辑下沉到服务/领域/公共模块，不堆在路由或 UI 事件里。
+- 关键流程用统一日志，禁止零散 `print`。
+- 前端栈、图标协议见关联规则。
 
 ## 关联规则
 
-- Issue/PR/测试标签：`github-issues-workflow`
-- 分支策略：`branching-strategy`
-- 文档与规范沉淀：`project-context-and-docs`
-- 前端技术栈：`frontend-stack`
-- 图标库：`icon-library`
-- 无法决策求助：`team-escalation`
+- `github-issues-workflow` / `branching-strategy` / `project-context-and-docs`
+- `frontend-stack` → `docs/development/frontend-stack.md`
+- `icon-library` → `docs/development/icon-library.md`
+- `team-escalation`

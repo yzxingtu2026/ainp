@@ -1,20 +1,6 @@
 # 项目背景与文档规范
 
-## 开发前
-
-- 先读 `README.md`，必要时查 `docs/`，避免与既有架构和业务目标冲突。
-- 涉及前端管理端或 AI Workspace 时，先读 `docs/development/frontend-stack.md` 与 `.agent/rules/frontend-stack.md`（Soybean Admin + Naive UI）。
-- 涉及菜单、侧栏或图标字段时，先读 `docs/development/icon-library.md` 与 `.agent/rules/icon-library.md`（Iconify + `mdi`）。
-- README/docs 与代码不一致时，先澄清或同步文档，再扩大实现。
-
-## 文档位置
-
-- 人工维护文档放 `docs/`，根目录只保留 `README.md`。
-- 常用目录：`docs/architecture/`、`docs/api/`、`docs/development/`、`docs/guides/`、`docs/decisions/`、`docs/research/`。
-- AI 生成的代码知识索引可放 `.qoder/repowiki/`，用于辅助理解代码，不替代 `docs/`。
-
-## 公共规范沉淀
-
-- 新增或调整通用封装、统一组件、公共工具、跨模块约定时，必须同步记录。
-- 面向开发者的规范优先写入 `docs/development/`；会影响 Agent 行为的硬约束同步写入生成规则。
-- PR/Issue 中要说明新增规范的位置和适用范围。
+- 开发前读 `README.md`；专题规范读 `docs/`（前端：`docs/development/frontend-stack.md`；图标：`docs/development/icon-library.md`）。文档与代码冲突时先澄清再扩大实现。
+- 人工文档在 `docs/`（如 `architecture/`、`api/`、`development/`、`guides/`、`decisions/`）；根目录只留 `README.md`。
+- `.agent/rules/` 只写 Agent 硬约束要点，详细说明引用 `docs/`，禁止规则与文档双份堆砌。
+- 新增公共约定：详规进 `docs/development/`，要点进对应 rule，并 `agent-rules sync`。

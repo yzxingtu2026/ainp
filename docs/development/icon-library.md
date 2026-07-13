@@ -1,6 +1,6 @@
 # 图标库规范（Iconify + mdi）
 
-菜单由图标字符串驱动：后端 Metadata / 代码定义 `icon`，前端 Soybean Admin 按 Iconify 渲染。Agent 硬约束见 `.agent/rules/icon-library.md`。
+菜单由图标字符串驱动：后端 Metadata / 代码定义 `icon`，前端 Soybean Admin 按 Iconify 渲染。Agent 只读要点：`.agent/rules/icon-library.md`。
 
 ## 为什么先定图标库
 

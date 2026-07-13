@@ -1,6 +1,6 @@
 # 前端技术栈（Soybean Admin + Naive UI）
 
-本文档是 AINP 管理端与 AI Workspace 的前端选型说明。Agent 行为硬约束见 `.agent/rules/frontend-stack.md`。
+本文档是 AINP 管理端与 AI Workspace 的前端选型详规。Agent 只读要点：`.agent/rules/frontend-stack.md`。
 
 ## 选型结论
 
