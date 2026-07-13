@@ -23,6 +23,7 @@ type App struct {
 	Actions      *action.Registry
 	Menus        *menu.Registry
 	Auditor      audit.Recorder
+	Installed    bool // 是否已完成安装向导
 }
 
 func New(cfg *config.Config, db *gorm.DB, auditor audit.Recorder, tokens *auth.TokenService) *App {
@@ -35,6 +36,7 @@ func New(cfg *config.Config, db *gorm.DB, auditor audit.Recorder, tokens *auth.T
 		Actions:      action.NewRegistry(checker, auditor),
 		Menus:        menu.NewRegistry(),
 		Auditor:      auditor,
+		Installed:    true, // 默认已安装；setup 模式由 main 覆写
 	}
 }
 
@@ -74,6 +76,7 @@ func (a *App) Run() error {
 	// 2. 启动 HTTP server
 	engine := httpserver.New(httpserver.Options{
 		Mode:            a.Config.Server.Mode,
+		Installed:       &a.Installed,
 		DevTokenEnabled: a.Config.Auth.DevTokenEnabled,
 		Tokens:          a.Tokens,
 		Actions:         a.Actions,

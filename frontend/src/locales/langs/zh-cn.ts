@@ -34,6 +34,7 @@ const local: App.I18n.Schema = {
     modify: '修改',
     modifySuccess: '修改成功',
     noData: '无数据',
+    next: '下一步',
     operate: '操作',
     pleaseCheckValue: '请检查输入的值是否合法',
     refresh: '刷新',
@@ -229,7 +230,8 @@ const local: App.I18n.Schema = {
     demo: '演示',
     demo_hello: 'Hello',
     system: '系统',
-    system_profile: '个人中心'
+    system_profile: '个人中心',
+    setup: '安装向导'
   },
   page: {
     login: {
@@ -306,6 +308,47 @@ const local: App.I18n.Schema = {
         desc5: 'Soybean 刚才把工作台页面随便写了一些，凑合能看了！'
       },
       creativity: '创意'
+    },
+    setup: {
+      title: '系统安装向导',
+      stepEnv: '环境检查',
+      stepDatabase: '数据库配置',
+      stepAdmin: '管理员创建',
+      stepComplete: '安装完成',
+      goVersion: 'Go 版本',
+      os: '操作系统',
+      dsnSource: 'DSN 来源',
+      i18nLangs: 'i18n 语言',
+      i18nKeys: 'i18n 词条数',
+      dsnFromEnv: 'DSN 已通过环境变量注入，无需手动填写',
+      dbHost: '数据库主机',
+      dbHostPlaceholder: '127.0.0.1',
+      dbPort: '端口',
+      dbPortPlaceholder: '5432',
+      dbName: '数据库名',
+      dbNamePlaceholder: 'ainp',
+      dbUser: '数据库用户',
+      dbUserPlaceholder: 'ainp',
+      dbPassword: '数据库密码',
+      dbPasswordPlaceholder: '请输入数据库密码',
+      dbConnectFail: '数据库连接失败',
+      dbConnectOk: '数据库连接成功',
+      testConnection: '测试连接',
+      tenantName: '租户名称',
+      tenantNamePlaceholder: '请输入租户名称',
+      adminUsername: '管理员用户名',
+      adminUsernamePlaceholder: '请输入管理员用户名',
+      adminPassword: '管理员密码',
+      adminPasswordPlaceholder: '请输入管理员密码',
+      confirmPassword: '确认密码',
+      confirmPasswordPlaceholder: '请再次输入密码',
+      passwordMismatch: '两次输入密码不一致',
+      passwordTooShort: '密码长度至少 6 位',
+      initialize: '开始初始化',
+      completeTitle: '安装完成',
+      completeDesc: '系统已成功初始化，请重启后端服务后前往登录页面使用',
+      restartRequired: '需要重启后端服务以加载新配置，请重启后点击下方按钮前往登录',
+      goLogin: '前往登录'
     }
   },
   form: {

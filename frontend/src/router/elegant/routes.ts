@@ -98,6 +98,17 @@ export const generatedRoutes: GeneratedRoute[] = [
     }
   },
   {
+    name: 'setup',
+    path: '/setup',
+    component: 'layout.blank$view.setup',
+    meta: {
+      title: 'setup',
+      i18nKey: 'route.setup',
+      constant: true,
+      hideInMenu: true
+    }
+  },
+  {
     name: 'system',
     path: '/system',
     component: 'layout.base',

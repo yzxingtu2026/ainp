@@ -31,9 +31,10 @@ func AutoMigrate(db *gorm.DB) error {
 }
 
 // SeedDemo 幂等写入演示租户 / 管理员 / 角色权限。
+// 如果数据库中已存在任何租户（如安装向导创建），则跳过种子数据。
 func SeedDemo(ctx context.Context, db *gorm.DB) error {
 	var count int64
-	if err := db.WithContext(ctx).Model(&tenant.Tenant{}).Where("id = ?", SeedTenantID).Count(&count).Error; err != nil {
+	if err := db.WithContext(ctx).Model(&tenant.Tenant{}).Count(&count).Error; err != nil {
 		return err
 	}
 	if count > 0 {

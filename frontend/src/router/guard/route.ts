@@ -4,6 +4,48 @@ import { useAuthStore } from '@/store/modules/auth';
 import { useRouteStore } from '@/store/modules/route';
 import { localStg } from '@/utils/storage';
 import { getRouteName } from '@/router/elegant/transform';
+import { fetchSetupStatus } from '@/service/api';
+
+/** Cache setup status to avoid repeated API calls */
+let setupInstalled: boolean | null = null;
+
+/** Reset setup cache (call after initialize completes) */
+export function resetSetupCache() {
+  setupInstalled = null;
+}
+
+/**
+ * check setup status and redirect accordingly
+ *
+ * @param to target route
+ */
+async function checkSetupGuard(to: RouteLocationNormalized): Promise<RouteLocationRaw | null> {
+  if (setupInstalled === null) {
+    try {
+      const res = await fetchSetupStatus();
+      if (res.data) {
+        setupInstalled = res.data.installed;
+      } else {
+        // If API fails, assume installed to avoid redirect loop
+        setupInstalled = true;
+      }
+    } catch {
+      setupInstalled = true;
+    }
+  }
+
+  const isSetupPage = to.path === '/setup' || to.name === 'setup';
+
+  if (!setupInstalled && !isSetupPage) {
+    return { path: '/setup' };
+  }
+
+  if (setupInstalled && isSetupPage) {
+    return { path: '/login' };
+  }
+
+  return null;
+}
 
 /**
  * create route guard
@@ -12,6 +54,12 @@ import { getRouteName } from '@/router/elegant/transform';
  */
 export function createRouteGuard(router: Router) {
   router.beforeEach(async (to, from) => {
+    // Check setup status before any route initialization
+    const setupRedirect = await checkSetupGuard(to);
+    if (setupRedirect) {
+      return setupRedirect;
+    }
+
     const location = await initRoute(to);
 
     if (location) {

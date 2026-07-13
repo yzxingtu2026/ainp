@@ -34,6 +34,7 @@ const local: App.I18n.Schema = {
     modify: 'Modify',
     modifySuccess: 'Modify Success',
     noData: 'No Data',
+    next: 'Next',
     operate: 'Operate',
     pleaseCheckValue: 'Please check whether the value is valid',
     refresh: 'Refresh',
@@ -233,7 +234,8 @@ const local: App.I18n.Schema = {
     demo: 'Demo',
     demo_hello: 'Hello',
     system: 'System',
-    system_profile: 'Profile'
+    system_profile: 'Profile',
+    setup: 'Setup'
   },
   page: {
     login: {
@@ -310,6 +312,47 @@ const local: App.I18n.Schema = {
         desc5: 'Soybean just wrote some of the workbench pages casually, and it was enough to see!'
       },
       creativity: 'Creativity'
+    },
+    setup: {
+      title: 'Setup Wizard',
+      stepEnv: 'Environment Check',
+      stepDatabase: 'Database Config',
+      stepAdmin: 'Admin Account',
+      stepComplete: 'Complete',
+      goVersion: 'Go Version',
+      os: 'Operating System',
+      dsnSource: 'DSN Source',
+      i18nLangs: 'i18n Languages',
+      i18nKeys: 'i18n Keys',
+      dsnFromEnv: 'DSN has been injected via environment variable, no manual input needed',
+      dbHost: 'DB Host',
+      dbHostPlaceholder: '127.0.0.1',
+      dbPort: 'Port',
+      dbPortPlaceholder: '5432',
+      dbName: 'Database Name',
+      dbNamePlaceholder: 'ainp',
+      dbUser: 'DB User',
+      dbUserPlaceholder: 'ainp',
+      dbPassword: 'DB Password',
+      dbPasswordPlaceholder: 'Enter database password',
+      dbConnectFail: 'Database connection failed',
+      dbConnectOk: 'Database connection successful',
+      testConnection: 'Test Connection',
+      tenantName: 'Tenant Name',
+      tenantNamePlaceholder: 'Please enter tenant name',
+      adminUsername: 'Admin Username',
+      adminUsernamePlaceholder: 'Please enter admin username',
+      adminPassword: 'Admin Password',
+      adminPasswordPlaceholder: 'Please enter admin password',
+      confirmPassword: 'Confirm Password',
+      confirmPasswordPlaceholder: 'Please enter password again',
+      passwordMismatch: 'The two passwords are inconsistent',
+      passwordTooShort: 'Password must be at least 6 characters',
+      initialize: 'Initialize',
+      completeTitle: 'Setup Complete',
+      completeDesc: 'System has been successfully initialized. Please restart the backend server before logging in.',
+      restartRequired: 'The backend server needs to be restarted to load the new configuration. Please restart and then click the button below to proceed to login.',
+      goLogin: 'Go to Login'
     }
   },
   form: {
