@@ -173,6 +173,23 @@
           "alwaysApply": true
         }
       }
+    },
+    {
+      "id": "auth-context",
+      "source": ".agent/rules/auth-context.md",
+      "qoder": {
+        "path": ".qoder/rules/auth-context.md",
+        "frontmatter": {
+          "trigger": "always_on"
+        }
+      },
+      "cursor": {
+        "path": ".cursor/rules/auth-context.mdc",
+        "frontmatter": {
+          "description": "多租户与鉴权：Token 定租户、一用户一租户、Role-permission",
+          "alwaysApply": true
+        }
+      }
     }
   ]
 }

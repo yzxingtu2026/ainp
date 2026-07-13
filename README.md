@@ -204,12 +204,16 @@ System
   ↓
 Tenant
   ↓
-Organization
+Organization（预留）
   ↓
-Department
+Department（预留）
   ↓
-User
+User（一用户一租户）
 ```
+
+- 租户身份只来自 Token/会话；Role ↔ permission（默认 `action.id`）。
+- 预留租户绑定自定义域名；Phase 1 可不实现解析。
+- 约定详见 `docs/development/auth-context.md`。
 
 所有业务数据、Action 执行、权限校验、审计记录和 AI 上下文都必须遵循租户边界。
 
@@ -229,6 +233,7 @@ User
 - **统一日志**：`log/slog` 门面（运行日志）；与审计日志分离，见 `docs/development/logging.md`
 - **API 响应**：统一信封 `code` / `message` / `data` / `request_id`，见 `docs/development/api-response.md`
 - **Action / 菜单**：Capability + Action + 独立 Menu 注册（含按钮权限），见 `docs/development/action-metadata.md`
+- **多租户 / 鉴权**：Token 定租户、一用户一租户、Role↔permission，见 `docs/development/auth-context.md`
 
 ### 前端
 

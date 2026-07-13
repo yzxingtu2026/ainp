@@ -19,6 +19,7 @@
 - 关键流程用统一日志，禁止零散 `print`（见 `logging`）。
 - API 信封与错误码见 `api-response`。
 - Action / 菜单注册见 `action-metadata`。
+- 多租户与鉴权上下文见 `auth-context`。
 - 前端栈、图标协议见关联规则。
 
 ## 关联规则
@@ -29,4 +30,5 @@
 - `logging` → `docs/development/logging.md`
 - `api-response` → `docs/development/api-response.md`
 - `action-metadata` → `docs/development/action-metadata.md`
+- `auth-context` → `docs/development/auth-context.md`
 - `team-escalation`

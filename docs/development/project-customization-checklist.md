@@ -9,6 +9,7 @@
 - [ ] 确认日志约束：`.agent/rules/logging.md` 与 `docs/development/logging.md`（slog 门面，运行日志与审计分离），再运行 `sync`。
 - [ ] 确认 API 响应约束：`.agent/rules/api-response.md` 与 `docs/development/api-response.md`，再运行 `sync`。
 - [ ] 确认 Action/菜单约束：`.agent/rules/action-metadata.md` 与 `docs/development/action-metadata.md`，再运行 `sync`。
+- [ ] 确认鉴权/租户约束：`.agent/rules/auth-context.md` 与 `docs/development/auth-context.md`，再运行 `sync`。
 - [ ] 更新 `.agent/rules/team-escalation.md` 中的沟通渠道和负责人，再运行 `sync`。
 - [ ] 更新 `.agent/team/members.yml` 中的团队成员、GitHub 邮箱和钉钉 ID。
 - [ ] 更新 `.agent/team/roles.yml` 中的团队角色说明和通用角色约束。
