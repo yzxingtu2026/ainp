@@ -45,7 +45,8 @@ export const generatedRoutes: GeneratedRoute[] = [
     component: 'layout.base',
     meta: {
       title: 'demo',
-      i18nKey: 'route.demo'
+      i18nKey: 'route.demo',
+      hideInMenu: true
     },
     children: [
       {
@@ -54,7 +55,8 @@ export const generatedRoutes: GeneratedRoute[] = [
         component: 'view.demo_hello',
         meta: {
           title: 'demo_hello',
-          i18nKey: 'route.demo_hello'
+          i18nKey: 'route.demo_hello',
+          hideInMenu: true
         }
       }
     ]
@@ -101,7 +103,8 @@ export const generatedRoutes: GeneratedRoute[] = [
     component: 'layout.base',
     meta: {
       title: 'system',
-      i18nKey: 'route.system'
+      i18nKey: 'route.system',
+      hideInMenu: true
     },
     children: [
       {
@@ -110,7 +113,8 @@ export const generatedRoutes: GeneratedRoute[] = [
         component: 'view.system_profile',
         meta: {
           title: 'system_profile',
-          i18nKey: 'route.system_profile'
+          i18nKey: 'route.system_profile',
+          hideInMenu: true
         }
       }
     ]

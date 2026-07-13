@@ -2,6 +2,9 @@ import { request } from '../request';
 import { transformAinPMenusToRoutes } from '@/utils/ainp-menu';
 import { createStaticRoutes } from '@/router/routes';
 
+/** 仅保留本地欢迎页；demo/system 等业务页由后端菜单动态注入，避免与 Elegant 扫目录静态路由重复 */
+const LOCAL_AUTH_ROUTE_NAMES = new Set(['home']);
+
 /** get constant routes — 使用本地内置常量路由 */
 export function fetchGetConstantRoutes() {
   const { constantRoutes } = createStaticRoutes();
@@ -25,9 +28,9 @@ export function fetchGetUserRoutes() {
 
     const dynamicRoutes = transformAinPMenusToRoutes(res.data.items || []);
     const { authRoutes } = createStaticRoutes();
+    const localRoutes = authRoutes.filter(r => LOCAL_AUTH_ROUTE_NAMES.has(String(r.name)));
 
-    // 保留本地 home 欢迎页，并以后端菜单为主
-    const routes = [...authRoutes, ...dynamicRoutes] as Api.Route.MenuRoute[];
+    const routes = [...localRoutes, ...dynamicRoutes] as Api.Route.MenuRoute[];
 
     const data: Api.Route.UserRoute = {
       routes,

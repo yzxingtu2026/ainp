@@ -6,14 +6,25 @@ export function toViewKey(component?: string, id?: string): string {
   return raw;
 }
 
-/** 将菜单 id 转为路由 name */
-export function toRouteName(id: string): string {
-  return id.replace(/\./g, '_');
+/**
+ * Soybean 约定：一级路由 name 不能含 `_`，否则 children 会被拆成顶层路由。
+ * directory 用能力域/路径首段，如 demo.root → demo，/system/profile → system
+ */
+export function toFirstLevelName(id: string, path?: string): string {
+  if (path) {
+    const seg = path.split('/').filter(Boolean)[0];
+    if (seg && !seg.includes('_')) {
+      return seg;
+    }
+  }
+  const head = id.split('.')[0] || id;
+  return head.replace(/_/g, '');
 }
 
 /**
  * 将 AINP 扁平菜单（directory/menu）转为 Soybean ElegantConstRoute 树。
  * button 不进路由，仅用于权限码。
+ * 不设置 i18nKey，侧栏直接使用后端 title，避免出现 route.xxx 键名。
  */
 export function transformAinPMenusToRoutes(items: Api.Route.AinPMenu[]): ElegantConstRoute[] {
   const nodes = items.filter(m => m.type === 'directory' || m.type === 'menu');
@@ -28,11 +39,10 @@ export function transformAinPMenusToRoutes(items: Api.Route.AinPMenu[]): Elegant
 
   byParent.forEach(list => list.sort((a, b) => a.order - b.order || a.id.localeCompare(b.id)));
 
-  function build(parentId: string): ElegantConstRoute[] {
+  function build(parentId: string, parentFirstLevel?: string): ElegantConstRoute[] {
     const children = byParent.get(parentId) || [];
     return children.map(item => {
-      const name = toRouteName(item.id);
-      const childRoutes = build(item.id);
+      const childRoutes = build(item.id, parentFirstLevel || toFirstLevelName(item.id, item.path));
 
       if (item.type === 'directory') {
         const firstChildPath = childRoutes[0]?.path;
@@ -40,7 +50,8 @@ export function transformAinPMenusToRoutes(items: Api.Route.AinPMenu[]): Elegant
           item.path ||
           (typeof firstChildPath === 'string' && firstChildPath.includes('/')
             ? `/${firstChildPath.split('/').filter(Boolean)[0]}`
-            : `/${name}`);
+            : `/${toFirstLevelName(item.id)}`);
+        const name = toFirstLevelName(item.id, path);
 
         return {
           name,
@@ -48,6 +59,7 @@ export function transformAinPMenusToRoutes(items: Api.Route.AinPMenu[]): Elegant
           component: 'layout.base',
           meta: {
             title: item.title,
+            i18nKey: null,
             icon: item.icon || import.meta.env.VITE_MENU_ICON,
             order: item.order,
             hideInMenu: Boolean(item.hide_in_menu)
@@ -59,19 +71,54 @@ export function transformAinPMenusToRoutes(items: Api.Route.AinPMenu[]): Elegant
       // menu leaf
       const viewKey = toViewKey(item.component, item.id);
       const path = item.path || `/${viewKey.replace(/_/g, '/')}`;
+      const firstLevel = parentFirstLevel || toFirstLevelName(item.id, path);
+      const name = viewKey.includes('_') ? viewKey : `${firstLevel}_${viewKey}`;
 
       if (childRoutes.length === 0 && !item.parent_id) {
+        // 无父级的单级菜单：layout.base$view.xxx，name 仍须无 `_` 才是 single-level
+        // 有下划线时改为一级 layout + 子 view
+        if (!name.includes('_')) {
+          return {
+            name,
+            path,
+            component: `layout.base$view.${viewKey}`,
+            meta: {
+              title: item.title,
+              i18nKey: null,
+              icon: item.icon || import.meta.env.VITE_MENU_ICON,
+              order: item.order,
+              hideInMenu: Boolean(item.hide_in_menu),
+              keepAlive: Boolean(item.keep_alive)
+            }
+          } as ElegantConstRoute;
+        }
+
         return {
-          name,
-          path,
-          component: `layout.base$view.${viewKey}`,
+          name: firstLevel,
+          path: `/${firstLevel}`,
+          component: 'layout.base',
           meta: {
             title: item.title,
+            i18nKey: null,
             icon: item.icon || import.meta.env.VITE_MENU_ICON,
             order: item.order,
-            hideInMenu: Boolean(item.hide_in_menu),
-            keepAlive: Boolean(item.keep_alive)
-          }
+            hideInMenu: Boolean(item.hide_in_menu)
+          },
+          children: [
+            {
+              name,
+              path,
+              component: `view.${viewKey}`,
+              meta: {
+                title: item.title,
+                i18nKey: null,
+                icon: item.icon || import.meta.env.VITE_MENU_ICON,
+                order: item.order,
+                hideInMenu: Boolean(item.hide_in_menu),
+                keepAlive: Boolean(item.keep_alive)
+              }
+            } as ElegantConstRoute
+          ]
         } as ElegantConstRoute;
       }
 
@@ -81,6 +128,7 @@ export function transformAinPMenusToRoutes(items: Api.Route.AinPMenu[]): Elegant
         component: `view.${viewKey}`,
         meta: {
           title: item.title,
+          i18nKey: null,
           icon: item.icon || import.meta.env.VITE_MENU_ICON,
           order: item.order,
           hideInMenu: Boolean(item.hide_in_menu),
