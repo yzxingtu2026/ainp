@@ -88,6 +88,23 @@
           "alwaysApply": false
         }
       }
+    },
+    {
+      "id": "frontend-stack",
+      "source": ".agent/rules/frontend-stack.md",
+      "qoder": {
+        "path": ".qoder/rules/frontend-stack.md",
+        "frontmatter": {
+          "trigger": "always_on"
+        }
+      },
+      "cursor": {
+        "path": ".cursor/rules/frontend-stack.mdc",
+        "frontmatter": {
+          "description": "前端统一使用 Soybean Admin + Naive UI，禁止另起脚手架或主 UI 库",
+          "alwaysApply": true
+        }
+      }
     }
   ]
 }

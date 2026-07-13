@@ -3,6 +3,7 @@
 ## 开发前
 
 - 先读 `README.md`，必要时查 `docs/`，避免与既有架构和业务目标冲突。
+- 涉及前端管理端或 AI Workspace 时，先读 `docs/development/frontend-stack.md` 与 `.agent/rules/frontend-stack.md`（Soybean Admin + Naive UI）。
 - README/docs 与代码不一致时，先澄清或同步文档，再扩大实现。
 
 ## 文档位置

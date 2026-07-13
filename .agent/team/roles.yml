@@ -18,11 +18,11 @@ roles:
   前端开发:
     title: "前端 / 客户端开发"
     responsibilities:
-      - "页面、组件、状态管理、交互与客户端服务调用。"
+      - "基于 Soybean Admin + Naive UI 交付页面、组件、状态管理、交互与客户端服务调用。"
     permissions:
       - "可修改客户端代码和对应测试。"
     preferences:
-      - "复用统一组件与设计规范，避免业务页面重复实现公共能力。"
+      - "统一使用 Soybean Admin 壳层与 Naive UI；复用公共组件与设计规范，禁止另起脚手架或主 UI 库。"
   后端开发:
     title: "后端开发"
     responsibilities:

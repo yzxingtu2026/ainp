@@ -224,16 +224,19 @@ User
 
 ### 前端
 
+- **脚手架**：Soybean Admin（管理端壳层；禁止改用 Vben 等其他后台脚手架）
+- **UI**：Naive UI（主组件库；禁止改用 Element Plus / Ant Design Vue 等作为主库）
 - Vue 3
 - TypeScript
 - Vite
 - Pinia
 - Vue Router
-- Naive UI
 - TanStack Table
 - Monaco Editor
 - Tiptap
 - ECharts
+
+约束与裁剪说明见 `docs/development/frontend-stack.md`；Agent 硬约束见 `.agent/rules/frontend-stack.md`。
 
 ## AI 数据模型
 
@@ -343,7 +346,7 @@ platform/
 - PostgreSQL、pgvector、Redis、Asynq 与 gocron 集成
 - RBAC、菜单自动生成与审计日志
 - 多租户基础能力
-- Vue 3 管理端与常驻 AI Workspace
+- 基于 Soybean Admin + Naive UI 的 Vue 3 管理端与常驻 AI Workspace
 - ERP 首批模块：库存、采购、销售
 
 阶段成果：开发者可以通过注册 Capability、Action 与 Metadata 完成业务模块开发，并由平台统一暴露 HTTP、权限、菜单、审计及 AI 工具能力。

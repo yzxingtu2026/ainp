@@ -4,6 +4,7 @@
 - [ ] 运行 `npx -y @yz-xingtu/agent-rules@latest init`，填写当前使用者姓名、GitHub 用户名和提交邮箱。
 - [ ] 运行 `npx -y @yz-xingtu/agent-rules@latest sync` 生成规则和技能文件。
 - [ ] 更新 `.agent/rules/main.md` 的开发硬约束，再运行 `sync`。
+- [ ] 确认前端栈约束：`.agent/rules/frontend-stack.md` 与 `docs/development/frontend-stack.md`（Soybean Admin + Naive UI），再运行 `sync`。
 - [ ] 更新 `.agent/rules/team-escalation.md` 中的沟通渠道和负责人，再运行 `sync`。
 - [ ] 更新 `.agent/team/members.yml` 中的团队成员、GitHub 邮箱和钉钉 ID。
 - [ ] 更新 `.agent/team/roles.yml` 中的团队角色说明和通用角色约束。

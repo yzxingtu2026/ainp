@@ -17,10 +17,12 @@
 - **公共规范沉淀**：新增或调整公共能力时，必须主动把新规范记录到规则文件或 `docs/development/`，并在 Issue/PR 中说明。
 - **模块边界**：复杂业务逻辑不得堆在路由、控制层或 UI 事件中，应下沉到服务层、领域模块、公共组件或独立函数。
 - **日志与可观测性**：服务端、任务流、外部依赖调用、异常降级等关键流程应使用统一日志体系，禁止用零散 `print` 替代 logger。
+- **前端统一栈**：管理端与 AI Workspace 统一使用 **Soybean Admin + Naive UI**（Vue 3 / TypeScript / Vite / Pinia）；禁止另起后台脚手架或更换主 UI 组件库。详见 `frontend-stack` 与 `docs/development/frontend-stack.md`。
 
 ## 关联规则
 
 - Issue/PR/测试标签：`github-issues-workflow`
 - 分支策略：`branching-strategy`
 - 文档与规范沉淀：`project-context-and-docs`
+- 前端技术栈：`frontend-stack`
 - 无法决策求助：`team-escalation`
