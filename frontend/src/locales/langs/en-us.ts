@@ -325,7 +325,7 @@ const local: App.I18n.Schema = {
       i18nLangs: 'i18n Languages',
       i18nKeys: 'i18n Keys',
       dsn: 'Database DSN',
-      dsnPlaceholder: 'postgres://user:pass@host:5432/dbname?sslmode=disable',
+      dsnPlaceholder: 'postgres://user:pass[at]host:5432/dbname?sslmode=disable',
       dsnFromEnv: 'DSN has been injected via environment variable, no manual input needed',
       dbConnectFail: 'Database connection failed',
       dbConnectOk: 'Database connection successful',

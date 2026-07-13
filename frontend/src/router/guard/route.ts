@@ -37,11 +37,11 @@ async function checkSetupGuard(to: RouteLocationNormalized): Promise<RouteLocati
   const isSetupPage = to.path === '/setup' || to.name === 'setup';
 
   if (!setupInstalled && !isSetupPage) {
-    return { name: 'setup' as RouteKey };
+    return { path: '/setup' };
   }
 
   if (setupInstalled && isSetupPage) {
-    return { name: 'login' as RouteKey };
+    return { path: '/login' };
   }
 
   return null;

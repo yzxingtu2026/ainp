@@ -321,7 +321,7 @@ const local: App.I18n.Schema = {
       i18nLangs: 'i18n 语言',
       i18nKeys: 'i18n 词条数',
       dsn: '数据库 DSN',
-      dsnPlaceholder: 'postgres://user:pass@host:5432/dbname?sslmode=disable',
+      dsnPlaceholder: 'postgres://user:pass[at]host:5432/dbname?sslmode=disable',
       dsnFromEnv: 'DSN 已通过环境变量注入，无需手动填写',
       dbConnectFail: '数据库连接失败',
       dbConnectOk: '数据库连接成功',

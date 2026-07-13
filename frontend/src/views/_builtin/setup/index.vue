@@ -54,7 +54,13 @@ function onInitialized(result: Api.Setup.InitResult) {
 
 <template>
   <div class="flex-center min-h-screen wh-full" :style="{ backgroundColor: bgColor }">
-    <div class="w-640px rounded-16px bg-layout p-40px shadow-lg">
+    <div class="relative w-640px rounded-16px bg-layout p-40px shadow-lg">
+      <LangSwitch
+        class="absolute right-24px top-24px"
+        :lang="appStore.locale"
+        :lang-options="appStore.localeOptions"
+        @change-lang="appStore.changeLocale"
+      />
       <h2 class="mb-24px text-center text-24px font-bold">{{ $t('page.setup.title') }}</h2>
       <NSteps :current="currentStep + 1" size="small" class="mb-32px">
         <NStep v-for="(step, idx) in steps" :key="idx" :title="step.title" />
@@ -85,12 +91,6 @@ function onInitialized(result: Api.Setup.InitResult) {
         :bg-theme-color="bgThemeColor"
       />
     </div>
-    <LangSwitch
-      class="fixed right-24px top-24px"
-      :lang="appStore.locale"
-      :lang-options="appStore.localeOptions"
-      @change-lang="appStore.changeLocale"
-    />
   </div>
 </template>
 
