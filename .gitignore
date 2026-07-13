@@ -14,3 +14,7 @@ CLAUDE.md
 .env
 .env.*
 !.env.example
+
+# local runtime config (keep example tracked)
+platform/configs/config.yaml
+platform/configs/*.local.yaml

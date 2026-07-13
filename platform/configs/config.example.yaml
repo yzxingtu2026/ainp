@@ -1,0 +1,16 @@
+server:
+  addr: ":8080"
+  mode: debug
+
+database:
+  # 按本地 Postgres 修改；勿将真实密钥提交到仓库
+  dsn: "host=127.0.0.1 user=ainp password=ainp dbname=ainp port=5432 sslmode=disable TimeZone=UTC"
+
+logging:
+  level: info
+  format: text # text | json
+
+auth:
+  # 开发桩：Authorization: Bearer dev:<tenant_id>:<user_id>:<perm1,perm2,...>
+  # 生产必须关闭
+  dev_token_enabled: true
