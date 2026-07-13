@@ -156,6 +156,23 @@
           "alwaysApply": true
         }
       }
+    },
+    {
+      "id": "action-metadata",
+      "source": ".agent/rules/action-metadata.md",
+      "qoder": {
+        "path": ".qoder/rules/action-metadata.md",
+        "frontmatter": {
+          "trigger": "always_on"
+        }
+      },
+      "cursor": {
+        "path": ".cursor/rules/action-metadata.mdc",
+        "frontmatter": {
+          "description": "Capability/Action/Menu 注册约定，含按钮级权限",
+          "alwaysApply": true
+        }
+      }
     }
   ]
 }

@@ -77,21 +77,26 @@ Metadata 描述 Action 及 Capability 的治理和展示信息，包括：
 
 ## 开发范式
 
-业务开发者只需注册 Action 及其元数据：
+业务开发者注册 Capability、Action 与独立 Menu（含按钮权限）：
 
 ```go
-app.Register(Action{
-    ID:      "purchase.create",
-    Handler: CreatePurchase,
+app.RegisterCapability(Capability{ID: "purchase", Name: "采购", Module: "erp"})
+
+app.RegisterAction(Action{
+    ID:      "purchase.order_create",
+    Handler: CreatePurchaseOrder,
     Meta: Metadata{
         Capability: "purchase",
-        Permission: "purchase.create",
         Audit:      true,
-        Menu:       MenuMetadata{},
-        AI:         AIMetadata{},
+        HTTP:       &HTTPMeta{Method: "POST", Path: "/api/v1/purchase/orders"},
+        AI:         &AIMeta{ExposeTool: true, Risk: "medium"},
     },
 })
+
+app.RegisterMenu(Menu{ /* directory | menu | button，见 docs */ })
 ```
+
+字段约定见 `docs/development/action-metadata.md`。
 
 平台根据注册信息统一提供：
 
@@ -223,6 +228,7 @@ User
 - gocron
 - **统一日志**：`log/slog` 门面（运行日志）；与审计日志分离，见 `docs/development/logging.md`
 - **API 响应**：统一信封 `code` / `message` / `data` / `request_id`，见 `docs/development/api-response.md`
+- **Action / 菜单**：Capability + Action + 独立 Menu 注册（含按钮权限），见 `docs/development/action-metadata.md`
 
 ### 前端
 

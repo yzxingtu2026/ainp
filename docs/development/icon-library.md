@@ -21,14 +21,16 @@ AINP 菜单与路由由后端注册，前端不再手写菜单树。若图标方
 | `icon` | string | Iconify 名，格式 `collection:name` |
 | `local_icon` | string，可选 | 本地 SVG 文件名（无后缀）；有值时优先生效 |
 
-Go 侧示意（具体结构以框架 Metadata 为准）：
+Go 侧示意：
 
 ```go
-Menu: MenuMetadata{
+Menu: Menu{
     Title: "采购",
     Icon:  "mdi:cart-outline",
 },
 ```
+
+完整菜单字段与 `RegisterMenu` 见 `docs/development/action-metadata.md`。
 
 ### 合法示例
 
