@@ -19,9 +19,10 @@ Soybean Admin（壳）
 ├── Vue 3 + TypeScript + Vite
 ├── Pinia + Vue Router
 ├── Naive UI
+├── Iconify（菜单图标，默认 mdi）
 ├── TanStack Table（复杂表格）
 ├── Monaco Editor / Tiptap / ECharts（按模块接入）
-└── 业务菜单 ← 平台 Metadata / 后端动态路由
+└── 业务菜单 ← 平台 Metadata / 后端动态路由（icon 为 Iconify 字符串）
 ```
 
 ## 起壳与裁剪建议
@@ -38,6 +39,7 @@ Soybean Admin（壳）
 
 - [ ] 未引入其他后台脚手架作为主壳
 - [ ] 页面组件基于 Naive UI，而非其他主 UI 库
+- [ ] 菜单图标为 Iconify `collection:name`（默认 `mdi`），见 [图标库规范](./icon-library.md)
 - [ ] 未在业务页复制 Layout / 请求 / 权限逻辑
 - [ ] 复杂表格优先 TanStack Table
 - [ ] 新增公共 UI 约定已写入本文档或 `.agent/rules/frontend-stack.md`

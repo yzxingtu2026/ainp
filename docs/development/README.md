@@ -9,5 +9,6 @@
 ## 已沉淀规范
 
 - [前端技术栈（Soybean Admin + Naive UI）](./frontend-stack.md)
+- [图标库（Iconify + mdi）](./icon-library.md)
 
 新增或调整公共能力时，请同步更新本目录或 `.agent/rules/`、`.agent/skills/`、`.agent/team/`，运行 `agent-rules sync`，并在 Issue/PR 中说明规范位置。

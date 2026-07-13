@@ -105,6 +105,23 @@
           "alwaysApply": true
         }
       }
+    },
+    {
+      "id": "icon-library",
+      "source": ".agent/rules/icon-library.md",
+      "qoder": {
+        "path": ".qoder/rules/icon-library.md",
+        "frontmatter": {
+          "trigger": "always_on"
+        }
+      },
+      "cursor": {
+        "path": ".cursor/rules/icon-library.mdc",
+        "frontmatter": {
+          "description": "菜单与 UI 图标统一 Iconify，默认 mdi 集合，格式 collection:name",
+          "alwaysApply": true
+        }
+      }
     }
   ]
 }

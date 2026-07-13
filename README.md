@@ -235,8 +235,9 @@ User
 - Monaco Editor
 - Tiptap
 - ECharts
+- **Iconify**（菜单/UI 图标协议；默认集合 `mdi`，格式 `collection:name`）
 
-约束与裁剪说明见 `docs/development/frontend-stack.md`；Agent 硬约束见 `.agent/rules/frontend-stack.md`。
+约束与裁剪说明见 `docs/development/frontend-stack.md`、`docs/development/icon-library.md`；Agent 硬约束见 `.agent/rules/frontend-stack.md`、`.agent/rules/icon-library.md`。
 
 ## AI 数据模型
 

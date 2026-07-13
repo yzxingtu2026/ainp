@@ -18,6 +18,7 @@
 - **模块边界**：复杂业务逻辑不得堆在路由、控制层或 UI 事件中，应下沉到服务层、领域模块、公共组件或独立函数。
 - **日志与可观测性**：服务端、任务流、外部依赖调用、异常降级等关键流程应使用统一日志体系，禁止用零散 `print` 替代 logger。
 - **前端统一栈**：管理端与 AI Workspace 统一使用 **Soybean Admin + Naive UI**（Vue 3 / TypeScript / Vite / Pinia）；禁止另起后台脚手架或更换主 UI 组件库。详见 `frontend-stack` 与 `docs/development/frontend-stack.md`。
+- **图标统一协议**：菜单与界面图标统一 **Iconify**，默认集合 **`mdi`**，字符串格式 `collection:name`；由后端 Metadata 下发，禁止另起图标主方案。详见 `icon-library` 与 `docs/development/icon-library.md`。
 
 ## 关联规则
 
@@ -25,4 +26,5 @@
 - 分支策略：`branching-strategy`
 - 文档与规范沉淀：`project-context-and-docs`
 - 前端技术栈：`frontend-stack`
+- 图标库：`icon-library`
 - 无法决策求助：`team-escalation`
