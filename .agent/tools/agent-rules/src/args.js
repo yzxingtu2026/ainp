@@ -1,0 +1,69 @@
+const { COMMANDS } = require("./constants");
+
+function parseOptions(args) {
+  const options = {};
+  for (const arg of args) {
+    if (!arg.startsWith("--")) continue;
+    const index = arg.indexOf("=");
+    if (index === -1) {
+      options[toCamelCase(arg.slice(2))] = true;
+      continue;
+    }
+    options[toCamelCase(arg.slice(2, index))] = arg.slice(index + 1);
+  }
+  return options;
+}
+
+function getTargets(args, repo) {
+  const targetArg = args.find((arg) => arg.startsWith("--target="));
+  if (!targetArg) return inferExistingTargets(repo);
+
+  const raw = targetArg.slice("--target=".length);
+  const supported = ["qoder", "cursor"];
+  if (raw === "all" || raw === "auto") return new Set(["qoder", "cursor"]);
+  const selected = raw.split(",").map((item) => item.trim()).filter(Boolean);
+  const normalized = [];
+  for (const target of selected) {
+    if (!supported.includes(target)) throw new Error(`当前命令暂不支持目标：${target}。AGENTS.md/CLAUDE.md 请使用 init 生成。`);
+    normalized.push(target);
+  }
+  return new Set(normalized);
+}
+
+function inferExistingTargets(repo) {
+  const targets = new Set();
+  if (repo.exists(".qoder")) targets.add("qoder");
+  if (repo.exists(".cursor")) targets.add("cursor");
+  if (targets.size) return targets;
+  throw new Error("未发现已初始化的厂商目录。请先运行 init 选择厂商，或显式指定参数：agent-rules sync --target=qoder,cursor");
+}
+
+function isHelpCommand(command) {
+  return command === "help" || command === "--help" || command === "-h";
+}
+
+function isKnownCommand(command) {
+  return COMMANDS.has(command);
+}
+
+function printHelp() {
+  console.log(`用法：
+  agent-rules init [--agents=codex,claude,cursor,qoder --name=张三 --github-user=zhangsan --github-email=zhangsan@users.noreply.github.com]
+  agent-rules sync [--target=qoder,cursor|all]
+  agent-rules doctor [--target=qoder,cursor|all]
+
+本地开发可用：node .agent/tools/agent-rules/cli.js <命令>`);
+}
+
+function toCamelCase(value) {
+  return value.replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
+}
+
+module.exports = {
+  getTargets,
+  inferExistingTargets,
+  isHelpCommand,
+  isKnownCommand,
+  parseOptions,
+  printHelp,
+};
