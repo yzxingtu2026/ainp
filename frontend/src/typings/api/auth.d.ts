@@ -1,0 +1,36 @@
+declare namespace Api {
+  namespace Auth {
+    interface LoginToken {
+      token: string;
+      refreshToken: string;
+    }
+
+    interface UserInfo {
+      userId: string;
+      userName: string;
+      roles: string[];
+      buttons: string[];
+    }
+
+    /** AINP /api/v1/system/auth/login data */
+    interface AinPLoginData {
+      access_token: string;
+      token_type: string;
+      expires_in: number;
+      expires_at: string;
+      user: AinPUserProfile;
+    }
+
+    interface AinPUserProfile {
+      id: string;
+      username: string;
+      display_name: string;
+      tenant_id: string;
+      tenant_name?: string;
+      org_id?: string;
+      dept_id?: string;
+      roles: string[];
+      permissions: string[];
+    }
+  }
+}

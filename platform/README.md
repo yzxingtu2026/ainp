@@ -90,3 +90,16 @@ auth:
 ## 目录
 
 见仓库 `docs/development/backend-layout.md`。
+
+## VS Code / Cursor 一键开发
+
+仓库已提供 `.vscode/tasks.json`：
+
+1. 命令面板（`Cmd+Shift+P`）→ **Tasks: Run Task**
+2. 选择：
+   - `dev: all` — 后端 + 前端（均热重载）
+   - `dev: backend` — 仅后端（Air 监听 `.go` 变更自动重启）
+   - `dev: frontend` — 仅前端（Vite HMR）
+3. 或打开 **运行和调试**，选择 `Dev: Backend + Frontend（热重载）`
+
+前端默认：`http://127.0.0.1:9527`；后端：`http://127.0.0.1:8080`。
