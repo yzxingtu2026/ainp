@@ -11,5 +11,6 @@
 - [前端技术栈（Soybean Admin + Naive UI）](./frontend-stack.md)
 - [图标库（Iconify + mdi）](./icon-library.md)
 - [后端统一日志](./logging.md)
+- [API 响应与错误](./api-response.md)
 
 新增或调整公共能力时，请同步更新本目录或 `.agent/rules/`、`.agent/skills/`、`.agent/team/`，运行 `agent-rules sync`，并在 Issue/PR 中说明规范位置。

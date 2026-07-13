@@ -1,0 +1,142 @@
+# API 响应与错误规范
+
+Agent 只读要点：`.agent/rules/api-response.md`。本文档定义 HTTP 信封、错误码分段与 Action 错误映射。
+
+## 目标
+
+- SPA、OpenAPI、后续 MCP/Agent 适配器共用同一套成功/失败语义。
+- 业务禁止在 Gin Handler 里手写互不一致的 JSON。
+- 错误可映射到日志 `request_id` 与后续审计。
+
+## 响应信封
+
+所有 JSON API（除文件下载、SSE 等另有约定的端点）使用：
+
+```json
+{
+  "code": 0,
+  "message": "ok",
+  "data": {},
+  "request_id": "req_xxx"
+}
+```
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `code` | int | `0` 成功；非 `0` 为平台/业务错误码 |
+| `message` | string | 短文案；成功可用 `"ok"`；失败为稳定说明（后续可加 `message_key` 做 i18n） |
+| `data` | any / null | 成功载荷；失败时为 `null`，或带结构化细节（如校验字段） |
+| `request_id` | string | 与运行日志一致，中间件注入 |
+
+字段名固定 **snake_case**，不得改为驼峰。
+
+## HTTP 状态与 `code` 分工
+
+| 场景 | HTTP | `code` |
+|------|------|--------|
+| 成功 | 200 | `0` |
+| 业务可预期失败（含领域资源不存在、业务规则拒绝） | 200 | 非 `0` |
+| 未认证 | 401 | `10002`（或等同通用码） |
+| 无权限 / 租户不允许 | 403 | `10003` |
+| 限流 | 429 | 通用限流码 |
+| 路由不存在（非领域资源） | 404 | 可选固定码 |
+| 未归类系统错误 | 500 | `50000` 段 |
+
+**写死约定：**
+
+- 领域资源不存在 → **HTTP 200 + `code = 10004`**（不要用 HTTP 404 表示业务实体缺失）。
+- 前端：先看 HTTP 处理登录过期/网络；再看 `code` 处理业务分支。
+- 禁止「同一类业务错误有时 200 有时 4xx」的混用。
+
+## 分页（在 `data` 内）
+
+```json
+{
+  "code": 0,
+  "message": "ok",
+  "data": {
+    "items": [],
+    "total": 100,
+    "page": 1,
+    "page_size": 20
+  },
+  "request_id": "req_xxx"
+}
+```
+
+列表接口统一使用 `items` / `total` / `page` / `page_size`，禁止再发明 `list`/`rows`/`records` 等多种键名（历史兼容除外并限期收敛）。
+
+## 错误码分段
+
+整数常量，集中定义（如 `platform/framework/errs` 或等价包）：
+
+| 区间 | 含义 |
+|------|------|
+| `0` | 成功 |
+| `1xxxx` | 通用：参数、认证、权限、不存在、限流等 |
+| `2xxxx` | 租户 / 组织 / 账号 |
+| `3xxxx` | Action / Metadata / 权限引擎 |
+| `4xxxx` | 业务域（按 capability 再细分） |
+| `5xxxx` | 系统 / 依赖 / 内部错误 |
+
+通用码示例（落地时可微调编号，但须进常量文件）：
+
+| code | 含义 |
+|------|------|
+| `10001` | 参数校验失败 |
+| `10002` | 未认证 |
+| `10003` | 无权限 |
+| `10004` | 资源不存在 |
+| `30001` | Action 未注册 |
+| `50000` | 内部错误 |
+
+新增业务码：在对应分段内追加，并在模块文档或错误码表中登记，禁止魔法数。
+
+## 校验失败 `data` 形态
+
+```json
+{
+  "code": 10001,
+  "message": "validation failed",
+  "data": {
+    "fields": [
+      { "field": "qty", "message": "must be > 0" }
+    ]
+  },
+  "request_id": "req_xxx"
+}
+```
+
+## Action 与 `AppError`
+
+- Action Handler 返回 `(data, error)`；可预期失败返回框架错误类型，例如：
+
+```text
+AppError { Code, Message, Fields, Cause }
+```
+
+- Gin / 未来 MCP、Agent 适配器将 `AppError` **统一映射**为上述信封（或 Tool 错误），不各自翻译。
+- Handler **禁止**直接 `c.JSON` 拼信封；统一 `response.OK(ctx, data)` / `response.Fail(ctx, err)`（包名以落地为准）。
+- `Cause` 只写运行日志，不进入对外 `message`（5xx / 内部错误对外固定短句）。
+
+## 安全与日志
+
+- 5xx 对外不暴露内部堆栈或 SQL 细节。
+- 失败响应带同一 `request_id`，并打运行日志（业务失败多为 Warn，系统错误为 Error）。
+- 需合规追溯的失败另走 Audit，不靠响应体充当审计。
+
+## 非 JSON 端点
+
+文件下载、SSE、WebSocket 等可不使用本信封，但须在接口文档标明；若失败可转为 JSON 信封，须仍带 `request_id`。
+
+## 检查清单
+
+- [ ] 响应含 `code` / `message` / `data` / `request_id`
+- [ ] 业务失败为 200 + 非 0；未混用随意 HTTP 4xx
+- [ ] 资源不存在为 `10004` + 200
+- [ ] 错误来自 `AppError` 常量码，无魔法数
+- [ ] 无手写不一致 JSON；内部错误未泄露 Cause
+
+## 变更
+
+调整信封字段、HTTP 分工或码段时，同步更新本文档与 `.agent/rules/api-response.md`，并 `agent-rules sync`。

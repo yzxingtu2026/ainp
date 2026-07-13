@@ -139,6 +139,23 @@
           "alwaysApply": true
         }
       }
+    },
+    {
+      "id": "api-response",
+      "source": ".agent/rules/api-response.md",
+      "qoder": {
+        "path": ".qoder/rules/api-response.md",
+        "frontmatter": {
+          "trigger": "always_on"
+        }
+      },
+      "cursor": {
+        "path": ".cursor/rules/api-response.mdc",
+        "frontmatter": {
+          "description": "统一 API 信封与错误码，业务失败 200+code，禁止手写 JSON",
+          "alwaysApply": true
+        }
+      }
     }
   ]
 }

@@ -17,6 +17,7 @@
 - 公共能力优先扩展，禁止业务内重复实现；新约定写入 `docs/development/`，Agent 要点写入 `.agent/rules/`。
 - 业务逻辑下沉到服务/领域/公共模块，不堆在路由或 UI 事件里。
 - 关键流程用统一日志，禁止零散 `print`（见 `logging`）。
+- API 信封与错误码见 `api-response`。
 - 前端栈、图标协议见关联规则。
 
 ## 关联规则
@@ -25,4 +26,5 @@
 - `frontend-stack` → `docs/development/frontend-stack.md`
 - `icon-library` → `docs/development/icon-library.md`
 - `logging` → `docs/development/logging.md`
+- `api-response` → `docs/development/api-response.md`
 - `team-escalation`

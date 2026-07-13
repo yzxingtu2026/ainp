@@ -222,6 +222,7 @@ User
 - Asynq
 - gocron
 - **统一日志**：`log/slog` 门面（运行日志）；与审计日志分离，见 `docs/development/logging.md`
+- **API 响应**：统一信封 `code` / `message` / `data` / `request_id`，见 `docs/development/api-response.md`
 
 ### 前端
 
