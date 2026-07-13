@@ -44,6 +44,11 @@ func main() {
 		return
 	}
 
+	// 安装完成后，从 state.yaml 继承 DSN（优先级：环境变量 > config.yaml > state.yaml）
+	if cfg.Database.DSN == "" && st.DSN != "" {
+		cfg.Database.DSN = st.DSN
+	}
+
 	runNormalMode(ctx, cfg, cfgPath)
 }
 
