@@ -76,36 +76,36 @@ const canProceed = computed(() => testResult.value?.ok === true);
       {{ $t('page.setup.dsnFromEnv') }}
     </NAlert>
 
-    <NForm label-placement="left" label-width="100px" class="mb-16px">
-      <NFormItem :label="$t('page.setup.dbHost')" :show-feedback="false">
+    <NForm label-placement="left" label-width="100px" class="mb-16px" :style="{ '--n-feedback-padding-bottom': '18px' }">
+      <NFormItem :label="$t('page.setup.dbHost')" :show-feedback="false" class="!mb-16px">
         <NInput
           v-model:value="form.host"
           :placeholder="$t('page.setup.dbHostPlaceholder')"
           :disabled="dsnFromEnv"
         />
       </NFormItem>
-      <NFormItem :label="$t('page.setup.dbPort')" :show-feedback="false">
+      <NFormItem :label="$t('page.setup.dbPort')" :show-feedback="false" class="!mb-16px">
         <NInput
           v-model:value="form.port"
           :placeholder="$t('page.setup.dbPortPlaceholder')"
           :disabled="dsnFromEnv"
         />
       </NFormItem>
-      <NFormItem :label="$t('page.setup.dbName')" :show-feedback="false">
+      <NFormItem :label="$t('page.setup.dbName')" :show-feedback="false" class="!mb-16px">
         <NInput
           v-model:value="form.dbname"
           :placeholder="$t('page.setup.dbNamePlaceholder')"
           :disabled="dsnFromEnv"
         />
       </NFormItem>
-      <NFormItem :label="$t('page.setup.dbUser')" :show-feedback="false">
+      <NFormItem :label="$t('page.setup.dbUser')" :show-feedback="false" class="!mb-16px">
         <NInput
           v-model:value="form.user"
           :placeholder="$t('page.setup.dbUserPlaceholder')"
           :disabled="dsnFromEnv"
         />
       </NFormItem>
-      <NFormItem :label="$t('page.setup.dbPassword')" :show-feedback="false">
+      <NFormItem :label="$t('page.setup.dbPassword')" :show-feedback="false" class="!mb-16px">
         <NInput
           v-model:value="form.password"
           type="password"
