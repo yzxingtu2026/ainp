@@ -16,7 +16,7 @@ const themeStore = useThemeStore();
 
 const currentStep = ref(0);
 const envData = ref<Api.Setup.CheckEnv | null>(null);
-const dsnFromEnv = ref('');
+const dbDSN = ref('');
 const initResult = ref<Api.Setup.InitResult | null>(null);
 
 const bgThemeColor = computed(() =>
@@ -38,9 +38,10 @@ const steps = computed(() => [
 
 function onEnvChecked(data: Api.Setup.CheckEnv) {
   envData.value = data;
-  if (data.dsn_present) {
-    dsnFromEnv.value = 'env-injected';
-  }
+}
+
+function onDSNReady(dsn: string) {
+  dbDSN.value = dsn;
 }
 
 function nextStep() {
@@ -77,11 +78,12 @@ function onInitialized(result: Api.Setup.InitResult) {
         v-if="currentStep === 1"
         :env-data="envData"
         :bg-theme-color="bgThemeColor"
+        @dsn-ready="onDSNReady"
         @next="nextStep"
       />
       <Admin
         v-if="currentStep === 2"
-        :dsn-from-env="dsnFromEnv"
+        :dsn="dbDSN"
         :bg-theme-color="bgThemeColor"
         @next="nextStep"
         @initialized="onInitialized"

@@ -5,11 +5,11 @@ import { fetchSetupInitialize } from '@/service/api';
 import { resetSetupCache } from '@/router/guard/route';
 
 interface Props {
-  dsnFromEnv: string;
+  dsn: string;
   bgThemeColor: string;
 }
 
-defineProps<Props>();
+const props = defineProps<Props>();
 
 const emit = defineEmits<{
   (e: 'next'): void;
@@ -22,7 +22,6 @@ const form = ref({
   password: '',
   confirmPassword: ''
 });
-const dsn = ref('');
 const submitting = ref(false);
 const error = ref('');
 
@@ -40,7 +39,7 @@ async function handleSubmit() {
   error.value = '';
   try {
     const res = await fetchSetupInitialize({
-      dsn: dsn.value || undefined,
+      dsn: props.dsn || undefined,
       tenant_name: form.value.tenantName,
       username: form.value.username,
       password: form.value.password
