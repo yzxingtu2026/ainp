@@ -14,12 +14,19 @@ type AinPEnvelope<T = unknown> = {
   code: number | string;
   message?: string;
   msg?: string;
+  message_key?: string;
   data: T;
   request_id?: string;
 };
 
 function backendMessage(payload?: AinPEnvelope | null): string {
   return payload?.message || payload?.msg || '';
+}
+
+/** 读取当前前端语言，返回后端可识别的 Accept-Language 值 */
+function getAcceptLanguage(): string {
+  const lang = localStg.get('lang') || 'zh-CN';
+  return lang;
 }
 
 export const request = createFlatRequest(
@@ -37,7 +44,7 @@ export const request = createFlatRequest(
     },
     async onRequest(config) {
       const Authorization = getAuthorization();
-      Object.assign(config.headers, { Authorization });
+      Object.assign(config.headers, { Authorization, 'Accept-Language': getAcceptLanguage() });
 
       return config;
     },
@@ -90,7 +97,7 @@ export const request = createFlatRequest(
         const success = await handleExpiredRequest(request.state);
         if (success) {
           const Authorization = getAuthorization();
-          Object.assign(response.config.headers, { Authorization });
+          Object.assign(response.config.headers, { Authorization, 'Accept-Language': getAcceptLanguage() });
           return instance.request(response.config) as Promise<AxiosResponse>;
         }
       }
@@ -147,7 +154,7 @@ export const demoRequest = createRequest(
       const { headers } = config;
       const token = localStg.get('token');
       const Authorization = token ? `Bearer ${token}` : null;
-      Object.assign(headers, { Authorization });
+      Object.assign(headers, { Authorization, 'Accept-Language': getAcceptLanguage() });
       return config;
     },
     isBackendSuccess(response) {
