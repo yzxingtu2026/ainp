@@ -13,21 +13,21 @@ const (
 )
 
 type Menu struct {
-	ID          string
-	ParentID    string
-	Title       string
-	TitleKey    string
-	Icon        string
-	LocalIcon   string
-	Order       int
-	Type        string
-	Path        string
-	Component   string
-	Permission  string
-	BindAction  string
-	HideInMenu  bool
-	KeepAlive   bool
-	Module      string
+	ID         string `json:"id"`
+	ParentID   string `json:"parent_id,omitempty"`
+	Title      string `json:"title"`
+	TitleKey   string `json:"title_key,omitempty"`
+	Icon       string `json:"icon,omitempty"`
+	LocalIcon  string `json:"local_icon,omitempty"`
+	Order      int    `json:"order"`
+	Type       string `json:"type"`
+	Path       string `json:"path,omitempty"`
+	Component  string `json:"component,omitempty"`
+	Permission string `json:"permission,omitempty"`
+	BindAction string `json:"bind_action,omitempty"`
+	HideInMenu bool   `json:"hide_in_menu,omitempty"`
+	KeepAlive  bool   `json:"keep_alive,omitempty"`
+	Module     string `json:"module,omitempty"`
 }
 
 type Registry struct {

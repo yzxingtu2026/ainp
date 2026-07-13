@@ -1,2 +1,3 @@
--- Phase 1：审计表可由 GORM AutoMigrate 创建。
+-- Phase 1：审计表与系统域表（tenants / users / roles / role_permissions / user_roles）
+-- 可由 GORM AutoMigrate 创建（见 modules/system.AutoMigrate）。
 -- 正式环境建议改为版本化迁移；本文件作说明占位。

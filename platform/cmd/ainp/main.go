@@ -8,6 +8,7 @@ import (
 
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
 	"github.com/yzxingtu2026/ainp/platform/framework/audit"
+	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/config"
 	"github.com/yzxingtu2026/ainp/platform/framework/database"
 	"github.com/yzxingtu2026/ainp/platform/framework/logging"
@@ -45,8 +46,22 @@ func main() {
 		logging.Error(ctx, "audit migrate failed", err)
 		os.Exit(1)
 	}
+	if err := system.AutoMigrate(db); err != nil {
+		logging.Error(ctx, "system migrate failed", err)
+		os.Exit(1)
+	}
+	if err := system.SeedDemo(ctx, db); err != nil {
+		logging.Error(ctx, "system seed failed", err)
+		os.Exit(1)
+	}
 
-	application := app.New(cfg, db, auditor)
+	tokens, err := auth.NewTokenService(cfg.Auth.JWT.Secret, cfg.Auth.JWT.Issuer, cfg.Auth.JWT.Duration())
+	if err != nil {
+		logging.Error(ctx, "init token service failed", err)
+		os.Exit(1)
+	}
+
+	application := app.New(cfg, db, auditor, tokens)
 	if err := system.Register(application); err != nil {
 		logging.Error(ctx, "register system failed", err)
 		os.Exit(1)
@@ -59,6 +74,7 @@ func main() {
 	logging.Info(ctx, "ainp is ready",
 		"actions", len(application.Actions.List()),
 		"menus", len(application.Menus.List()),
+		"dev_token", cfg.Auth.DevTokenEnabled,
 	)
 	if err := application.Run(); err != nil {
 		logging.Error(ctx, "server stopped", err)
