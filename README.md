@@ -221,6 +221,7 @@ User
 - MinIO
 - Asynq
 - gocron
+- **统一日志**：`log/slog` 门面（运行日志）；与审计日志分离，见 `docs/development/logging.md`
 
 ### 前端
 

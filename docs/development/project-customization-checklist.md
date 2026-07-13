@@ -6,6 +6,7 @@
 - [ ] 更新 `.agent/rules/main.md` 的开发硬约束，再运行 `sync`。
 - [ ] 确认前端栈约束：`.agent/rules/frontend-stack.md` 与 `docs/development/frontend-stack.md`（Soybean Admin + Naive UI），再运行 `sync`。
 - [ ] 确认图标约束：`.agent/rules/icon-library.md` 与 `docs/development/icon-library.md`（Iconify + `mdi`），再运行 `sync`。
+- [ ] 确认日志约束：`.agent/rules/logging.md` 与 `docs/development/logging.md`（slog 门面，运行日志与审计分离），再运行 `sync`。
 - [ ] 更新 `.agent/rules/team-escalation.md` 中的沟通渠道和负责人，再运行 `sync`。
 - [ ] 更新 `.agent/team/members.yml` 中的团队成员、GitHub 邮箱和钉钉 ID。
 - [ ] 更新 `.agent/team/roles.yml` 中的团队角色说明和通用角色约束。

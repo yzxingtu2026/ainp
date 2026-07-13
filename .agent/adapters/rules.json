@@ -122,6 +122,23 @@
           "alwaysApply": true
         }
       }
+    },
+    {
+      "id": "logging",
+      "source": ".agent/rules/logging.md",
+      "qoder": {
+        "path": ".qoder/rules/logging.md",
+        "frontmatter": {
+          "trigger": "always_on"
+        }
+      },
+      "cursor": {
+        "path": ".cursor/rules/logging.mdc",
+        "frontmatter": {
+          "description": "后端统一 slog Logger，运行日志与审计分离，禁止 print",
+          "alwaysApply": true
+        }
+      }
     }
   ]
 }
