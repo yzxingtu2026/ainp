@@ -16,6 +16,9 @@ const (
 
 	CodeActionNotFound = 30001
 
+	CodeSetupRequired  = 50003
+	CodeSetupInstalled = 50004
+
 	CodeInternal = 50000
 )
 
@@ -29,6 +32,8 @@ var codeDefaultKey = map[int]string{
 	CodeInvalidCredentials: "auth.invalid_credentials",
 	CodeUserDisabled:       "auth.user_disabled",
 	CodeActionNotFound:     "action.not_found",
+	CodeSetupRequired:      "setup.required",
+	CodeSetupInstalled:     "setup.already_installed",
 	CodeInternal:           "common.internal_error",
 }
 

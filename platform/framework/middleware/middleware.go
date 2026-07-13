@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -76,6 +77,27 @@ func negotiateLang(header string) string {
 		}
 	}
 	return i18n.DefaultLang()
+}
+
+// SetupGate 未安装时仅放行 setup / healthz 路径，其他请求返回 503。
+// 已安装后透传所有请求。
+func SetupGate(installed bool) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if installed {
+			c.Next()
+			return
+		}
+		path := c.Request.URL.Path
+		// 白名单：healthz 和 setup 系列接口
+		if path == "/healthz" || strings.HasPrefix(path, "/api/v1/setup/") {
+			c.Next()
+			return
+		}
+		c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{
+			"code":    errs.CodeSetupRequired,
+			"message": "system not installed, please complete setup wizard",
+		})
+	}
 }
 
 type AuthOptions struct {

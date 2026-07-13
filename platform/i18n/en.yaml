@@ -35,6 +35,24 @@ menu.system.root.title: "System"
 menu.system.profile.title: "Profile"
 menu.system.profile_refresh.title: "Refresh Profile"
 
+# ── Setup Capability ──
+capability.setup.name: "Setup Wizard"
+capability.setup.description: "System initialization setup wizard"
+
+# ── Setup Actions ──
+action.setup.status.name: "Setup Status"
+action.setup.status.description: "Return current installation status"
+action.setup.check_env.name: "Environment Check"
+action.setup.check_env.description: "Check if runtime environment is ready"
+action.setup.test_db.name: "Test Database"
+action.setup.test_db.description: "Test database connectivity"
+action.setup.initialize.name: "Initialize System"
+action.setup.initialize.description: "Create initial tenant and admin account"
+
+# ── Setup Errors ──
+setup.required: "system not installed, please complete setup wizard"
+setup.already_installed: "system already installed, cannot re-initialize"
+
 # ── Demo Capability ──
 capability.demo.name: "Demo"
 capability.demo.description: "Phase 1 skeleton demo capability"

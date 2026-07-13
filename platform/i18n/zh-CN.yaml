@@ -35,6 +35,24 @@ menu.system.root.title: "系统"
 menu.system.profile.title: "个人中心"
 menu.system.profile_refresh.title: "刷新资料"
 
+# ── 安装向导 Capability ──
+capability.setup.name: "安装向导"
+capability.setup.description: "系统初始化安装向导"
+
+# ── 安装向导 Action ──
+action.setup.status.name: "安装状态"
+action.setup.status.description: "返回当前安装状态"
+action.setup.check_env.name: "环境检查"
+action.setup.check_env.description: "检查运行环境是否就绪"
+action.setup.test_db.name: "测试数据库"
+action.setup.test_db.description: "测试数据库连通性"
+action.setup.initialize.name: "初始化系统"
+action.setup.initialize.description: "创建初始租户与管理员账号"
+
+# ── 安装向导错误 ──
+setup.required: "系统未安装，请先完成安装向导"
+setup.already_installed: "系统已安装，无法重复初始化"
+
 # ── 演示域 Capability ──
 capability.demo.name: "演示"
 capability.demo.description: "Phase 1 骨架演示能力"

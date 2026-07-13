@@ -34,6 +34,7 @@ const local: App.I18n.Schema = {
     modify: 'Modify',
     modifySuccess: 'Modify Success',
     noData: 'No Data',
+    next: 'Next',
     operate: 'Operate',
     pleaseCheckValue: 'Please check whether the value is valid',
     refresh: 'Refresh',
@@ -233,7 +234,8 @@ const local: App.I18n.Schema = {
     demo: 'Demo',
     demo_hello: 'Hello',
     system: 'System',
-    system_profile: 'Profile'
+    system_profile: 'Profile',
+    setup: 'Setup'
   },
   page: {
     login: {
@@ -310,6 +312,38 @@ const local: App.I18n.Schema = {
         desc5: 'Soybean just wrote some of the workbench pages casually, and it was enough to see!'
       },
       creativity: 'Creativity'
+    },
+    setup: {
+      title: 'Setup Wizard',
+      stepEnv: 'Environment Check',
+      stepDatabase: 'Database Config',
+      stepAdmin: 'Admin Account',
+      stepComplete: 'Complete',
+      goVersion: 'Go Version',
+      os: 'Operating System',
+      dsnSource: 'DSN Source',
+      i18nLangs: 'i18n Languages',
+      i18nKeys: 'i18n Keys',
+      dsn: 'Database DSN',
+      dsnPlaceholder: 'postgres://user:pass@host:5432/dbname?sslmode=disable',
+      dsnFromEnv: 'DSN has been injected via environment variable, no manual input needed',
+      dbConnectFail: 'Database connection failed',
+      dbConnectOk: 'Database connection successful',
+      testConnection: 'Test Connection',
+      tenantName: 'Tenant Name',
+      tenantNamePlaceholder: 'Please enter tenant name',
+      adminUsername: 'Admin Username',
+      adminUsernamePlaceholder: 'Please enter admin username',
+      adminPassword: 'Admin Password',
+      adminPasswordPlaceholder: 'Please enter admin password',
+      confirmPassword: 'Confirm Password',
+      confirmPasswordPlaceholder: 'Please enter password again',
+      passwordMismatch: 'The two passwords are inconsistent',
+      passwordTooShort: 'Password must be at least 6 characters',
+      initialize: 'Initialize',
+      completeTitle: 'Setup Complete',
+      completeDesc: 'System has been successfully initialized. Please proceed to login.',
+      goLogin: 'Go to Login'
     }
   },
   form: {

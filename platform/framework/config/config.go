@@ -9,11 +9,12 @@ import (
 )
 
 type Config struct {
-	Server   ServerConfig   `yaml:"server"`
-	Database DatabaseConfig `yaml:"database"`
-	Logging  LoggingConfig  `yaml:"logging"`
-	Auth     AuthConfig     `yaml:"auth"`
-	I18n     I18nConfig     `yaml:"i18n"`
+	Server    ServerConfig   `yaml:"server"`
+	Database  DatabaseConfig `yaml:"database"`
+	Logging   LoggingConfig  `yaml:"logging"`
+	Auth      AuthConfig     `yaml:"auth"`
+	I18n      I18nConfig     `yaml:"i18n"`
+	StateFile string         `yaml:"state_file"` // 安装状态文件路径，默认 configs/state.yaml
 }
 
 type ServerConfig struct {
@@ -68,9 +69,7 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("parse config: %w", err)
 	}
 	cfg.applyDefaults()
-	if err := cfg.validate(); err != nil {
-		return nil, err
-	}
+	cfg.applyEnvOverrides()
 	return &cfg, nil
 }
 
@@ -93,10 +92,24 @@ func (c *Config) applyDefaults() {
 	if c.Auth.JWT.TTL == "" {
 		c.Auth.JWT.TTL = "24h"
 	}
+	if c.StateFile == "" {
+		c.StateFile = "configs/state.yaml"
+	}
 }
 
-func (c *Config) validate() error {
-	if c.Database.DSN == "" {
+// applyEnvOverrides 环境变量优先级高于配置文件。
+func (c *Config) applyEnvOverrides() {
+	if dsn := os.Getenv("DATABASE_DSN"); dsn != "" {
+		c.Database.DSN = dsn
+	}
+	if secret := os.Getenv("JWT_SECRET"); secret != "" {
+		c.Auth.JWT.Secret = secret
+	}
+}
+
+// Validate 校验必填项；setup 模式（DSN 可为空）由调用方在 Load 后自行判断。
+func (c *Config) Validate(requireDSN bool) error {
+	if requireDSN && c.Database.DSN == "" {
 		return fmt.Errorf("database.dsn is required")
 	}
 	if c.Auth.JWT.Secret == "" {

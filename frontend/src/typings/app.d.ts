@@ -346,6 +346,7 @@ declare namespace App {
         modify: string;
         modifySuccess: string;
         noData: string;
+        next: string;
         operate: string;
         pleaseCheckValue: string;
         refresh: string;
@@ -554,6 +555,38 @@ declare namespace App {
             desc5: string;
           };
           creativity: string;
+        };
+        setup: {
+          title: string;
+          stepEnv: string;
+          stepDatabase: string;
+          stepAdmin: string;
+          stepComplete: string;
+          goVersion: string;
+          os: string;
+          dsnSource: string;
+          i18nLangs: string;
+          i18nKeys: string;
+          dsn: string;
+          dsnPlaceholder: string;
+          dsnFromEnv: string;
+          dbConnectFail: string;
+          dbConnectOk: string;
+          testConnection: string;
+          tenantName: string;
+          tenantNamePlaceholder: string;
+          adminUsername: string;
+          adminUsernamePlaceholder: string;
+          adminPassword: string;
+          adminPasswordPlaceholder: string;
+          confirmPassword: string;
+          confirmPasswordPlaceholder: string;
+          passwordMismatch: string;
+          passwordTooShort: string;
+          initialize: string;
+          completeTitle: string;
+          completeDesc: string;
+          goLogin: string;
         };
       };
       form: {

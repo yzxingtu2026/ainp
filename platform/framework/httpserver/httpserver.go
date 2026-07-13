@@ -19,6 +19,7 @@ import (
 
 type Options struct {
 	Mode            string
+	Installed       bool
 	DevTokenEnabled bool
 	Tokens          *auth.TokenService
 	Actions         *action.Registry
@@ -34,6 +35,7 @@ func New(opts Options) *gin.Engine {
 	r.Use(
 		middleware.Recover(),
 		middleware.RequestID(),
+		middleware.SetupGate(opts.Installed),
 		middleware.AcceptLanguage(),
 		middleware.Auth(middleware.AuthOptions{
 			Tokens:          opts.Tokens,
