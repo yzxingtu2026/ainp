@@ -1,0 +1,45 @@
+# ── Common ──
+common.ok: "ok"
+common.validation_failed: "validation failed"
+common.unauthorized: "unauthorized"
+common.forbidden: "forbidden"
+common.not_found: "resource not found"
+common.internal_error: "internal error"
+common.field_required: "required"
+
+# ── Auth ──
+auth.invalid_credentials: "invalid username or password"
+auth.tenant_disabled: "tenant is disabled"
+auth.user_disabled: "user is disabled"
+
+# ── Action Framework ──
+action.not_found: "action not registered"
+
+# ── System Capability ──
+capability.system.name: "System"
+capability.system.description: "System domain: authentication and core capabilities"
+
+# ── System Actions ──
+action.system.ping.name: "Ping"
+action.system.auth_login.name: "Login"
+action.system.auth_login.description: "Validate credentials and issue JWT"
+action.system.auth_me.name: "Current User"
+action.system.auth_me.description: "Return current user profile and roles"
+action.system.auth_permissions.name: "Permissions"
+action.system.auth_permissions.description: "Return current user roles and permissions"
+action.system.i18n_reload.name: "Reload i18n"
+action.system.i18n_reload.description: "Reload i18n translation files"
+
+# ── System Menus ──
+menu.system.root.title: "System"
+menu.system.profile.title: "Profile"
+menu.system.profile_refresh.title: "Refresh Profile"
+
+# ── Demo Capability ──
+capability.demo.name: "Demo"
+capability.demo.description: "Phase 1 skeleton demo capability"
+
+# ── Demo Actions ──
+action.demo.hello.name: "Hello"
+action.demo.hello.description: "Demo action requiring authentication"
+demo.hello_greeting: "hello"

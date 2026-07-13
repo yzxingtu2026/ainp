@@ -23,12 +23,12 @@ type loginRequest struct {
 func (s *AuthService) Login(ctx context.Context, tokens *auth.TokenService, input json.RawMessage) (any, error) {
 	var req loginRequest
 	if err := json.Unmarshal(input, &req); err != nil {
-		return nil, errs.Validation("invalid json")
+		return nil, errs.ValidationKey("common.validation_failed", "invalid json")
 	}
 	if req.Username == "" || req.Password == "" {
-		return nil, errs.Validation("username and password required",
-			errs.FieldError{Field: "username", Message: "required"},
-			errs.FieldError{Field: "password", Message: "required"},
+		return nil, errs.ValidationKey("common.validation_failed", "username and password required",
+			errs.FieldError{Field: "username", Message: "required", MessageKey: "common.field_required"},
+			errs.FieldError{Field: "password", Message: "required", MessageKey: "common.field_required"},
 		)
 	}
 
@@ -36,31 +36,31 @@ func (s *AuthService) Login(ctx context.Context, tokens *auth.TokenService, inpu
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			logging.Warn(ctx, "login failed: user not found", "username", req.Username)
-			return nil, errs.New(errs.CodeInvalidCredentials, "invalid username or password")
+			return nil, errs.NewKey(errs.CodeInvalidCredentials, "auth.invalid_credentials", "invalid username or password")
 		}
 		return nil, errs.Wrap(errs.CodeInternal, "lookup user failed", err)
 	}
 
 	if u.Status != model.StatusEnabled {
 		logging.Warn(ctx, "login failed: user disabled", "user_id", u.ID)
-		return nil, errs.New(errs.CodeUserDisabled, "user disabled")
+		return nil, errs.NewKey(errs.CodeUserDisabled, "auth.user_disabled", "user disabled")
 	}
 
 	t, err := s.FindTenant(ctx, u.TenantID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errs.New(errs.CodeInvalidCredentials, "invalid username or password")
+			return nil, errs.NewKey(errs.CodeInvalidCredentials, "auth.invalid_credentials", "invalid username or password")
 		}
 		return nil, errs.Wrap(errs.CodeInternal, "lookup tenant failed", err)
 	}
 	if t.Status != tenant.StatusEnabled {
 		logging.Warn(ctx, "login failed: tenant disabled", "tenant_id", t.ID)
-		return nil, errs.New(errs.CodeTenantDisabled, "tenant disabled")
+		return nil, errs.NewKey(errs.CodeTenantDisabled, "auth.tenant_disabled", "tenant disabled")
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(req.Password)); err != nil {
 		logging.Warn(ctx, "login failed: bad password", "user_id", u.ID, "tenant_id", u.TenantID)
-		return nil, errs.New(errs.CodeInvalidCredentials, "invalid username or password")
+		return nil, errs.NewKey(errs.CodeInvalidCredentials, "auth.invalid_credentials", "invalid username or password")
 	}
 
 	profile, err := s.BuildProfile(ctx, u)
@@ -95,18 +95,18 @@ func (s *AuthService) Login(ctx context.Context, tokens *auth.TokenService, inpu
 func (s *AuthService) Me(ctx context.Context) (any, error) {
 	ac := auth.MustFromContext(ctx)
 	if ac == nil || !ac.Authenticated || ac.UserID == "" {
-		return nil, errs.New(errs.CodeUnauthorized, "unauthorized")
+		return nil, errs.NewKey(errs.CodeUnauthorized, "common.unauthorized", "unauthorized")
 	}
 
 	var u model.User
 	if err := s.db.WithContext(ctx).Where("id = ? AND tenant_id = ?", ac.UserID, ac.TenantID).First(&u).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errs.New(errs.CodeNotFound, "user not found")
+			return nil, errs.NewKey(errs.CodeNotFound, "common.not_found", "user not found")
 		}
 		return nil, errs.Wrap(errs.CodeInternal, "lookup user failed", err)
 	}
 	if u.Status != model.StatusEnabled {
-		return nil, errs.New(errs.CodeUserDisabled, "user disabled")
+		return nil, errs.NewKey(errs.CodeUserDisabled, "auth.user_disabled", "user disabled")
 	}
 
 	profile, err := s.BuildProfile(ctx, &u)
@@ -119,7 +119,7 @@ func (s *AuthService) Me(ctx context.Context) (any, error) {
 func (s *AuthService) Permissions(ctx context.Context) (any, error) {
 	ac := auth.MustFromContext(ctx)
 	if ac == nil || !ac.Authenticated || ac.UserID == "" {
-		return nil, errs.New(errs.CodeUnauthorized, "unauthorized")
+		return nil, errs.NewKey(errs.CodeUnauthorized, "common.unauthorized", "unauthorized")
 	}
 	roles, perms, err := s.LoadRolesAndPermissions(ctx, ac.UserID, ac.TenantID)
 	if err != nil {

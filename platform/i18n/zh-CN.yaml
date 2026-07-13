@@ -1,0 +1,45 @@
+# ── 通用 ──
+common.ok: "成功"
+common.validation_failed: "参数校验失败"
+common.unauthorized: "未认证"
+common.forbidden: "无权限"
+common.not_found: "资源不存在"
+common.internal_error: "系统内部错误"
+common.field_required: "必填"
+
+# ── 鉴权 ──
+auth.invalid_credentials: "账号或密码错误"
+auth.tenant_disabled: "租户已停用"
+auth.user_disabled: "用户已停用"
+
+# ── Action 框架 ──
+action.not_found: "Action 未注册"
+
+# ── 系统域 Capability ──
+capability.system.name: "系统"
+capability.system.description: "系统域：鉴权与基础能力"
+
+# ── 系统域 Action ──
+action.system.ping.name: "Ping"
+action.system.auth_login.name: "登录"
+action.system.auth_login.description: "校验账号密码并签发 JWT"
+action.system.auth_me.name: "当前用户"
+action.system.auth_me.description: "返回当前登录用户摘要与权限"
+action.system.auth_permissions.name: "权限列表"
+action.system.auth_permissions.description: "返回当前用户角色与 permission 列表"
+action.system.i18n_reload.name: "重载翻译"
+action.system.i18n_reload.description: "重新加载 i18n 翻译文件"
+
+# ── 系统域 Menu ──
+menu.system.root.title: "系统"
+menu.system.profile.title: "个人中心"
+menu.system.profile_refresh.title: "刷新资料"
+
+# ── 演示域 Capability ──
+capability.demo.name: "演示"
+capability.demo.description: "Phase 1 骨架演示能力"
+
+# ── 演示域 Action ──
+action.demo.hello.name: "Hello"
+action.demo.hello.description: "演示需鉴权的 Action"
+demo.hello_greeting: "你好"

@@ -3,11 +3,13 @@ package capability
 import "fmt"
 
 type Capability struct {
-	ID          string
-	Name        string
-	Description string
-	Module      string
-	Order       int
+	ID             string
+	Name           string // 兜底文案
+	NameKey        string // i18n key，如 capability.system.name
+	Description    string
+	DescriptionKey string // i18n key，如 capability.system.description
+	Module         string
+	Order          int
 }
 
 type Registry struct {

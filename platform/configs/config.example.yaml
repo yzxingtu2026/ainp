@@ -19,3 +19,9 @@ auth:
     secret: "change-me-dev-only-not-for-production"
     issuer: ainp
     ttl: 24h
+
+i18n:
+  # 未传 Accept-Language 时的默认语言；支持 zh-CN、en
+  default_language: zh-CN
+  # 翻译文件目录（相对于运行目录）；Agent 新增语言文件放此目录即可
+  dir: i18n

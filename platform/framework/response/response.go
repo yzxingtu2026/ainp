@@ -6,13 +6,15 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
+	"github.com/yzxingtu2026/ainp/platform/framework/i18n"
 )
 
 type Envelope struct {
-	Code      int    `json:"code"`
-	Message   string `json:"message"`
-	Data      any    `json:"data"`
-	RequestID string `json:"request_id"`
+	Code       int    `json:"code"`
+	Message    string `json:"message"`
+	MessageKey string `json:"message_key,omitempty"`
+	Data       any    `json:"data"`
+	RequestID  string `json:"request_id"`
 }
 
 func requestID(c *gin.Context) string {
@@ -27,12 +29,21 @@ func requestID(c *gin.Context) string {
 	return ""
 }
 
+func lang(c *gin.Context) string {
+	if ac, ok := auth.FromContext(c.Request.Context()); ok && ac.Language != "" {
+		return ac.Language
+	}
+	return i18n.DefaultLang()
+}
+
 func OK(c *gin.Context, data any) {
+	l := lang(c)
 	c.JSON(http.StatusOK, Envelope{
-		Code:      errs.CodeOK,
-		Message:   "ok",
-		Data:      data,
-		RequestID: requestID(c),
+		Code:       errs.CodeOK,
+		Message:    i18n.T(l, "common.ok"),
+		MessageKey: "common.ok",
+		Data:       data,
+		RequestID:  requestID(c),
 	})
 }
 
@@ -52,20 +63,40 @@ func Fail(c *gin.Context, err error) {
 		httpStatus = http.StatusInternalServerError
 	}
 
-	var data any
-	if len(ae.Fields) > 0 {
-		data = gin.H{"fields": ae.Fields}
+	l := lang(c)
+	key := ae.Key()
+
+	var msg string
+	if ae.Code == errs.CodeInternal {
+		// 内部错误始终使用通用文案，不泄露细节
+		msg = i18n.T(l, "common.internal_error")
+		key = "common.internal_error"
+	} else if key != "" {
+		// 优先用 i18n 解析 message_key
+		msg = i18n.T(l, key)
+	} else {
+		// 兑底：使用 AppError.Message
+		msg = ae.Message
 	}
 
-	msg := ae.Message
-	if ae.Code == errs.CodeInternal {
-		msg = "internal error"
+	// 校验字段 message 同步走 i18n
+	var data any
+	if len(ae.Fields) > 0 {
+		fields := make([]errs.FieldError, len(ae.Fields))
+		for i, f := range ae.Fields {
+			fields[i] = f
+			if f.MessageKey != "" {
+				fields[i].Message = i18n.T(l, f.MessageKey)
+			}
+		}
+		data = gin.H{"fields": fields}
 	}
 
 	c.JSON(httpStatus, Envelope{
-		Code:      ae.Code,
-		Message:   msg,
-		Data:      data,
-		RequestID: requestID(c),
+		Code:       ae.Code,
+		Message:    msg,
+		MessageKey: key,
+		Data:       data,
+		RequestID:  requestID(c),
 	})
 }

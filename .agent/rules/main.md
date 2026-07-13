@@ -22,6 +22,7 @@
 - 多租户与鉴权上下文见 `auth-context`。
 - 审计最小集见 `audit`。
 - 后端目录与模块边界见 `backend-layout`。
+- 后端多语言 i18n 见 `i18n`；前端多语言见 `frontend-i18n`。
 - 前端栈、图标协议见关联规则。
 
 ## 关联规则
@@ -34,5 +35,7 @@
 - `action-metadata` → `docs/development/action-metadata.md`
 - `auth-context` → `docs/development/auth-context.md`
 - `audit` → `docs/development/audit.md`
+- `i18n` → `docs/development/api-response.md`
+- `frontend-i18n` → `docs/development/frontend-stack.md`
 - `backend-layout` → `docs/development/backend-layout.md`
 - `team-escalation`

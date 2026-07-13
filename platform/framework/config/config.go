@@ -13,6 +13,7 @@ type Config struct {
 	Database DatabaseConfig `yaml:"database"`
 	Logging  LoggingConfig  `yaml:"logging"`
 	Auth     AuthConfig     `yaml:"auth"`
+	I18n     I18nConfig     `yaml:"i18n"`
 }
 
 type ServerConfig struct {
@@ -39,6 +40,11 @@ type JWTConfig struct {
 	Secret string `yaml:"secret"`
 	Issuer string `yaml:"issuer"`
 	TTL    string `yaml:"ttl"` // e.g. 24h
+}
+
+type I18nConfig struct {
+	DefaultLanguage string `yaml:"default_language"` // 缺省语言；空则使用 zh-CN
+	Dir             string `yaml:"dir"`              // 翻译文件目录，默认 "i18n"
 }
 
 func (j JWTConfig) Duration() time.Duration {
