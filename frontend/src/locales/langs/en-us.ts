@@ -350,7 +350,8 @@ const local: App.I18n.Schema = {
       passwordTooShort: 'Password must be at least 6 characters',
       initialize: 'Initialize',
       completeTitle: 'Setup Complete',
-      completeDesc: 'System has been successfully initialized. Please proceed to login.',
+      completeDesc: 'System has been successfully initialized. Please restart the backend server before logging in.',
+      restartRequired: 'The backend server needs to be restarted to load the new configuration. Please restart and then click the button below to proceed to login.',
       goLogin: 'Go to Login'
     }
   },

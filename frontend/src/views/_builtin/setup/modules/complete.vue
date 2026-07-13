@@ -17,9 +17,14 @@ function goLogin() {
   <div class="text-center">
     <NResult status="success" :title="$t('page.setup.completeTitle')" :description="$t('page.setup.completeDesc')">
       <template #footer>
-        <NButton type="primary" size="large" @click="goLogin">
-          {{ $t('page.setup.goLogin') }}
-        </NButton>
+        <div class="flex flex-col items-center gap-12px">
+          <NAlert type="warning" :bordered="false" class="max-w-360px">
+            {{ $t('page.setup.restartRequired') }}
+          </NAlert>
+          <NButton type="primary" size="large" @click="goLogin">
+            {{ $t('page.setup.goLogin') }}
+          </NButton>
+        </div>
       </template>
     </NResult>
   </div>

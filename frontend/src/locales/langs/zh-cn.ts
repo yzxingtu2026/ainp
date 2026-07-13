@@ -346,7 +346,8 @@ const local: App.I18n.Schema = {
       passwordTooShort: '密码长度至少 6 位',
       initialize: '开始初始化',
       completeTitle: '安装完成',
-      completeDesc: '系统已成功初始化，请前往登录页面使用',
+      completeDesc: '系统已成功初始化，请重启后端服务后前往登录页面使用',
+      restartRequired: '需要重启后端服务以加载新配置，请重启后点击下方按钮前往登录',
       goLogin: '前往登录'
     }
   },

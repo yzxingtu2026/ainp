@@ -594,6 +594,7 @@ declare namespace App {
           initialize: string;
           completeTitle: string;
           completeDesc: string;
+          restartRequired: string;
           goLogin: string;
         };
       };
