@@ -2,6 +2,7 @@ package system
 
 import (
 	"context"
+	"errors"
 	"sort"
 
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
@@ -110,8 +111,78 @@ func (s *AuthService) LoadRolesAndPermissions(ctx context.Context, userID, tenan
 	return roles, perms, nil
 }
 
+// LoadAuthorization validates the current tenant/user state and returns a fresh
+// authorization snapshot. Token claims are identity inputs, never permission inputs.
+func (s *AuthService) LoadAuthorization(ctx context.Context, req auth.AuthorizationRequest) (*auth.AuthorizationSnapshot, error) {
+	if req.TenantID == "" || req.UserID == "" || req.Realm != auth.RealmTenant || req.AuthVersion == 0 {
+		return nil, auth.ErrAuthorizationInvalid
+	}
+
+	var t tenant.Tenant
+	if err := s.db.WithContext(ctx).Where("id = ? AND status = ?", req.TenantID, status.ActivationEnabled).First(&t).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, auth.ErrAuthorizationInvalid
+		}
+		return nil, err
+	}
+
+	var u model.User
+	if err := s.db.WithContext(ctx).
+		Where("id = ? AND tenant_id = ? AND status = ?", req.UserID, req.TenantID, status.ActivationEnabled).
+		First(&u).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, auth.ErrAuthorizationInvalid
+		}
+		return nil, err
+	}
+	if u.AuthVersion != req.AuthVersion {
+		return nil, auth.ErrAuthorizationStale
+	}
+
+	roles, permissions, err := s.LoadRolesAndPermissions(ctx, u.ID, u.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	return &auth.AuthorizationSnapshot{
+		TenantID: u.TenantID, UserID: u.ID, OrgID: u.OrgID, DeptID: u.DeptID,
+		Roles: roles, Permissions: permissions, AuthVersion: u.AuthVersion,
+	}, nil
+}
+
+// BumpAuthVersion invalidates all previously issued tokens for one tenant user.
+// Callers must pass the same transaction used for the protected business change.
+func (s *AuthService) BumpAuthVersion(ctx context.Context, tx *gorm.DB, tenantID, userID string) error {
+	if tx == nil || tenantID == "" || userID == "" {
+		return auth.ErrAuthorizationInvalid
+	}
+	result := tx.WithContext(ctx).Model(&model.User{}).
+		Where("id = ? AND tenant_id = ?", userID, tenantID).
+		UpdateColumn("auth_version", gorm.Expr("auth_version + 1"))
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return auth.ErrAuthorizationInvalid
+	}
+	return nil
+}
+
+// BumpAuthVersionForRole invalidates tokens for every user assigned to a tenant role.
+func (s *AuthService) BumpAuthVersionForRole(ctx context.Context, tx *gorm.DB, tenantID, roleID string) error {
+	if tx == nil || tenantID == "" || roleID == "" {
+		return auth.ErrAuthorizationInvalid
+	}
+	userIDs := tx.Model(&model.UserRole{}).Select("user_id").
+		Where("tenant_id = ? AND role_id = ?", tenantID, roleID)
+	return tx.WithContext(ctx).Model(&model.User{}).
+		Where("tenant_id = ? AND id IN (?)", tenantID, userIDs).
+		UpdateColumn("auth_version", gorm.Expr("auth_version + 1")).Error
+}
+
 func (s *AuthService) BuildProfile(ctx context.Context, u *model.User) (*UserProfile, error) {
-	roles, perms, err := s.LoadRolesAndPermissions(ctx, u.ID, u.TenantID)
+	snapshot, err := s.LoadAuthorization(ctx, auth.AuthorizationRequest{
+		TenantID: u.TenantID, UserID: u.ID, Realm: auth.RealmTenant, AuthVersion: u.AuthVersion,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -122,8 +193,8 @@ func (s *AuthService) BuildProfile(ctx context.Context, u *model.User) (*UserPro
 		TenantID:    u.TenantID,
 		OrgID:       u.OrgID,
 		DeptID:      u.DeptID,
-		Roles:       roles,
-		Permissions: perms,
+		Roles:       snapshot.Roles,
+		Permissions: snapshot.Permissions,
 		Realm:       auth.RealmTenant,
 	}
 	if t, err := s.FindTenant(ctx, u.TenantID); err == nil && t != nil {

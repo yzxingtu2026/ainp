@@ -103,6 +103,7 @@ func SetupGate(installed *bool) gin.HandlerFunc {
 
 type AuthOptions struct {
 	Tokens          *auth.TokenService
+	Authorization   auth.AuthorizationProvider
 	DevTokenEnabled bool
 }
 
@@ -124,7 +125,7 @@ func Auth(opts AuthOptions) gin.HandlerFunc {
 
 		// 正式 JWT（非 dev: 前缀）
 		if !strings.HasPrefix(token, "dev:") {
-			if opts.Tokens == nil {
+			if opts.Tokens == nil || opts.Authorization == nil {
 				c.Next()
 				return
 			}
@@ -133,11 +134,21 @@ func Auth(opts AuthOptions) gin.HandlerFunc {
 				c.Next()
 				return
 			}
-			ac.TenantID = claims.TenantID
+			snapshot, err := opts.Authorization.LoadAuthorization(c.Request.Context(), auth.AuthorizationRequest{
+				TenantID: claims.TenantID, UserID: claims.UserID, Realm: claims.Realm, AuthVersion: claims.AuthVersion,
+			})
+			if err != nil || snapshot == nil ||
+				snapshot.TenantID != claims.TenantID || snapshot.UserID != claims.UserID || snapshot.AuthVersion != claims.AuthVersion {
+				c.Next()
+				return
+			}
+			ac.TenantID = snapshot.TenantID
 			ac.Realm = claims.Realm
-			ac.UserID = claims.UserID
-			ac.Roles = append([]string(nil), claims.Roles...)
-			ac.Permissions = append([]string(nil), claims.Permissions...)
+			ac.UserID = snapshot.UserID
+			ac.OrgID = snapshot.OrgID
+			ac.DeptID = snapshot.DeptID
+			ac.Roles = append([]string(nil), snapshot.Roles...)
+			ac.Permissions = append([]string(nil), snapshot.Permissions...)
 			ac.Authenticated = true
 			ac.Client = "web"
 			ctx := auth.WithContext(c.Request.Context(), ac)

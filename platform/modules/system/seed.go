@@ -38,7 +38,21 @@ func AutoMigrate(db *gorm.DB) error {
 	); err != nil {
 		return err
 	}
-	return ensureActivationStatusConstraints(db)
+	if err := ensureActivationStatusConstraints(db); err != nil {
+		return err
+	}
+	return ensureAuthVersionConstraint(db)
+}
+
+func ensureAuthVersionConstraint(db *gorm.DB) error {
+	var invalid int64
+	if err := db.Model(&model.User{}).Where("auth_version < 1").Count(&invalid).Error; err != nil {
+		return err
+	}
+	if invalid > 0 {
+		return fmt.Errorf("users contains %d invalid auth_version values", invalid)
+	}
+	return db.Exec("ALTER TABLE users DROP CONSTRAINT IF EXISTS ck_users_auth_version; ALTER TABLE users ADD CONSTRAINT ck_users_auth_version CHECK (auth_version > 0)").Error
 }
 
 func ensureActivationStatusConstraints(db *gorm.DB) error {

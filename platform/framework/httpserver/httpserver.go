@@ -23,6 +23,7 @@ type Options struct {
 	Installed       *bool
 	DevTokenEnabled bool
 	Tokens          *auth.TokenService
+	Authorization   auth.AuthorizationProvider
 	Actions         *action.Registry
 	Menus           *menu.Registry
 	CodeSets        *codeset.Registry
@@ -41,6 +42,7 @@ func New(opts Options) *gin.Engine {
 		middleware.AcceptLanguage(),
 		middleware.Auth(middleware.AuthOptions{
 			Tokens:          opts.Tokens,
+			Authorization:   opts.Authorization,
 			DevTokenEnabled: opts.DevTokenEnabled,
 		}),
 	)
