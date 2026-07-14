@@ -75,7 +75,7 @@ func (s *AuthService) Login(ctx context.Context, tokens *auth.TokenService, inpu
 		return nil, errs.Wrap(errs.CodeInternal, "load permissions failed", err)
 	}
 
-	token, exp, err := tokens.Issue(u.TenantID, u.ID, profile.Roles, profile.Permissions)
+	token, exp, err := tokens.Issue(u.TenantID, u.ID, u.AuthVersion)
 	if err != nil {
 		return nil, errs.Wrap(errs.CodeInternal, "issue token failed", err)
 	}
@@ -129,12 +129,8 @@ func (s *AuthService) Permissions(ctx context.Context) (any, error) {
 	if ac == nil || !ac.Authenticated || ac.UserID == "" {
 		return nil, errs.NewKey(errs.CodeUnauthorized, "common.unauthorized", "unauthorized")
 	}
-	roles, perms, err := s.LoadRolesAndPermissions(ctx, ac.UserID, ac.TenantID)
-	if err != nil {
-		return nil, errs.Wrap(errs.CodeInternal, "load permissions failed", err)
-	}
 	return map[string]any{
-		"roles":       roles,
-		"permissions": perms,
+		"roles":       append([]string(nil), ac.Roles...),
+		"permissions": append([]string(nil), ac.Permissions...),
 	}, nil
 }

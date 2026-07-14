@@ -1,3 +1,5 @@
--- Phase 1：审计表与系统域表（tenants / users / roles / role_permissions / user_roles）
--- 可由 GORM AutoMigrate 创建（见 modules/system.AutoMigrate）。
--- 正式环境建议改为版本化迁移；本文件作说明占位。
+# 数据库迁移
+
+- 开发启动仍由 `modules/system.AutoMigrate` 创建基础表。
+- 已发布环境按编号执行本目录 SQL，不得只依赖 GORM Tag 改变存量结构。
+- `0002_users_auth_version.sql` 为存量用户补齐授权版本；执行后旧 JWT 需要重新登录。

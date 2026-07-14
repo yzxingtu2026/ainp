@@ -38,7 +38,7 @@ System
 
 ## AuthContext
 
-经框架写入 `context.Context`，业务只读：`auth.FromContext(ctx)`。普通登录 Token 使用 audience `ainp:tenant-console`；Token 同时校验 issuer、audience 与 realm。该协议启用后旧 Token 需要重新登录。
+经框架写入 `context.Context`，业务只读：`auth.FromContext(ctx)`。普通登录 Token 使用 audience `ainp:tenant-console`；Token 同时校验 issuer、audience、realm 与正整数 `auth_version`。JWT 只表达已签名的 `tenant_id + user_id + realm + auth_version`，不携带或信任角色/权限快照。该协议启用后旧 Token 需要重新登录。
 
 | 字段 | 必填 | 说明 |
 |------|------|------|
@@ -74,8 +74,9 @@ System
 ## 鉴权流程
 
 ```text
-验 Token/会话 → AuthContext
-  → 租户状态（启用等）
+验 Token/会话 → AuthorizationProvider（tenant + user + realm + auth_version）
+  → 实时校验租户/用户状态与版本
+  → 加载当前 roles / permissions → AuthContext
   → permission（默认 action.id）
   → Handler(ctx, input)
   → 审计（meta.audit）
@@ -87,7 +88,19 @@ System
 | 无权限 | 403 / `10003` |
 | 租户停用等 | 403 或 `2xxxx`（如 `20001`） |
 
+正式 JWT 的 Token 无效、缺少授权版本、版本过期、用户停用或租户停用均按未认证处理，避免继续使用旧会话；已经通过身份校验但缺少 Action permission 才返回 forbidden。
+
 前端按钮按 permission 显隐；**后端 Action 必须再鉴权**。
+
+## 授权版本与失效
+
+- `users.auth_version` 从 `1` 开始，只能递增；登录签发 JWT 时写入当前版本。
+- 每个正式请求验签后，`AuthorizationProvider` 必须按 `tenant_id + user_id` 实时读取用户、租户、有效角色和权限，并比较版本。
+- 用户启停、密码重置、用户角色变化使用单用户版本递增入口。
+- 角色权限或状态变化使用按租户角色批量递增入口。
+- 版本递增必须与对应业务变更共用一个数据库事务，禁止 Handler 散落 SQL 或提交后再补失效。
+- Phase 1 以数据库实时读取保证正确性；未来缓存必须具备精准失效，并保持 Provider 契约不变。
+- `dev:` Token 仅在 `dev_token_enabled=true` 时使用，不经过正式 JWT Provider 流程，不得据此推断生产安全语义。
 
 ## 系统级操作
 
@@ -127,6 +140,8 @@ Phase 1 可不实现解析与证书，但 Tenant 模型预留例如：
 - [ ] 一用户一租户；未实现违规的跨租户切换
 - [ ] Action 鉴权使用 permission 字符串
 - [ ] DB 查询带租户 Scope
+- [ ] 正式 JWT 不携带/信任 roles 与 permissions，授权来自当前 Provider 快照
+- [ ] 权限相关写操作与 `auth_version` 递增处于同一事务
 - [ ] Tenant 模型已预留域名字段（即使暂未使用）
 
 ## 变更

@@ -21,6 +21,7 @@ type App struct {
 	Config        *config.Config
 	DB            *gorm.DB
 	Tokens        *auth.TokenService
+	Authorization auth.AuthorizationProvider
 	Capabilities  *capability.Registry
 	Actions       *action.Registry
 	Menus         *menu.Registry
@@ -93,6 +94,7 @@ func (a *App) Run() error {
 		Installed:       &a.Installed,
 		DevTokenEnabled: a.Config.Auth.DevTokenEnabled,
 		Tokens:          a.Tokens,
+		Authorization:   a.Authorization,
 		Actions:         a.Actions,
 		Menus:           a.Menus,
 		CodeSets:        a.CodeSets,

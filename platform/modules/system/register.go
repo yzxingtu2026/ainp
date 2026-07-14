@@ -25,6 +25,7 @@ func Register(a *app.App) error {
 	}
 
 	svc := NewAuthService(a.DB)
+	a.Authorization = svc
 	auditOn := true
 	auditOff := false
 

@@ -8,11 +8,10 @@ import (
 )
 
 type TokenClaims struct {
-	TenantID    string   `json:"tid"`
-	UserID      string   `json:"uid"`
-	Realm       Realm    `json:"realm"`
-	Roles       []string `json:"roles,omitempty"`
-	Permissions []string `json:"perms,omitempty"`
+	TenantID    string `json:"tid"`
+	UserID      string `json:"uid"`
+	Realm       Realm  `json:"realm"`
+	AuthVersion uint64 `json:"auth_version"`
 	jwt.RegisteredClaims
 }
 
@@ -43,14 +42,16 @@ func NewTokenService(secret, issuer string, ttl time.Duration) (*TokenService, e
 
 func (s *TokenService) TTL() time.Duration { return s.ttl }
 
-func (s *TokenService) Issue(tenantID, userID string, roles, permissions []string) (string, time.Time, error) {
+func (s *TokenService) Issue(tenantID, userID string, authVersion uint64) (string, time.Time, error) {
+	if authVersion == 0 {
+		return "", time.Time{}, fmt.Errorf("auth version is required")
+	}
 	now := time.Now().UTC()
 	exp := now.Add(s.ttl)
 	claims := TokenClaims{
 		TenantID:    tenantID,
 		UserID:      userID,
-		Roles:       roles,
-		Permissions: permissions,
+		AuthVersion: authVersion,
 		Realm:       RealmTenant,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    s.issuer,
@@ -82,7 +83,7 @@ func (s *TokenService) Parse(tokenString string) (*TokenClaims, error) {
 	if !ok || !token.Valid {
 		return nil, fmt.Errorf("invalid token")
 	}
-	if claims.TenantID == "" || claims.UserID == "" || claims.Realm != RealmTenant {
+	if claims.TenantID == "" || claims.UserID == "" || claims.Realm != RealmTenant || claims.AuthVersion == 0 {
 		return nil, fmt.Errorf("token missing tenant or user")
 	}
 	return claims, nil

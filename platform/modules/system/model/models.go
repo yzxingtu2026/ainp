@@ -13,6 +13,7 @@ type User struct {
 	PasswordHash string                  `gorm:"size:255;not null"`
 	DisplayName  string                  `gorm:"size:128"`
 	Status       status.ActivationStatus `gorm:"size:32;not null;default:enabled"`
+	AuthVersion  uint64                  `gorm:"not null;default:1"`
 	OrgID        string                  `gorm:"size:64"`
 	DeptID       string                  `gorm:"size:64"`
 	CreatedAt    time.Time               `gorm:"autoCreateTime"`
