@@ -85,6 +85,8 @@ purchase_order_create    # 禁止缺少 capability 点分前缀（除非 capabil
 | `capability` | string | 是 | 所属 Capability.id |
 | `surface` | string | 否 | `tenant` / `platform`；省略兼容为 `tenant` |
 | `permission` | string | 否 | 默认等于 `action.id` |
+| `permission_group` | string | 否 | 权限树功能组稳定 key，如 `system.role_management` |
+| `permission_group_name` / `permission_group_name_key` | string | 否 | 功能组 fallback 名称与 i18n key |
 | `name` | string | 否 | 展示名 |
 | `description` | string | 否 | OpenAPI / AI 说明 |
 | `audit` | bool | 否 | 建议写操作 `true`；只读 list/get 可 `false`；默认建议 `true` |
@@ -92,6 +94,8 @@ purchase_order_create    # 禁止缺少 capability 点分前缀（除非 capabil
 | `ai` | AIMeta | 否 | 暴露 Agent/MCP 时填 |
 
 **不在** Metadata 内嵌菜单树；菜单一律 `RegisterMenu`。
+
+权限目录的展示层级固定为 `Capability → PermissionGroup → Permission/Action`。同一功能的一组 Action 应声明相同的 `permission_group`；未声明时进入 Capability 的 `other` 组，禁止前端根据 action.id 文本临时猜分组。
 
 ### HTTPMeta
 

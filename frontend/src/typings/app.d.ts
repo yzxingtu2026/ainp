@@ -482,6 +482,25 @@ declare namespace App {
       };
       route: Record<I18nRouteKey, string>;
       page: {
+        role: {
+          title: string;
+          createTitle: string;
+          editTitle: string;
+          permissionTitle: string;
+          permissionSearch: string;
+          selectedCount: string;
+          code: string;
+          name: string;
+          description: string;
+          status: string;
+          type: string;
+          builtin: string;
+          custom: string;
+          enabled: string;
+          disabled: string;
+          userCount: string;
+          permissions: string;
+        };
         login: {
           common: {
             loginOrRegister: string;

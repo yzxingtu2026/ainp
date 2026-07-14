@@ -235,9 +235,29 @@ const local: App.I18n.Schema = {
     demo_hello: 'Hello',
     system: 'System',
     system_profile: 'Profile',
+    system_roles: 'Roles',
     setup: 'Setup'
   },
   page: {
+    role: {
+      title: 'Role Management',
+      createTitle: 'Create Role',
+      editTitle: 'Edit Role',
+      permissionTitle: 'Permissions for {name}',
+      permissionSearch: 'Search permissions, actions or descriptions',
+      selectedCount: '{count} permissions selected',
+      code: 'Role Code',
+      name: 'Role Name',
+      description: 'Description',
+      status: 'Status',
+      type: 'Type',
+      builtin: 'Built-in',
+      custom: 'Custom',
+      enabled: 'Enabled',
+      disabled: 'Disabled',
+      userCount: 'Users',
+      permissions: 'Permissions'
+    },
     login: {
       common: {
         loginOrRegister: 'Login / Register',

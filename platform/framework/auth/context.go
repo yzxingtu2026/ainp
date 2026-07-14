@@ -21,20 +21,23 @@ func NormalizeRealm(r Realm) Realm {
 type contextKey struct{}
 
 type Context struct {
-	RequestID        string
-	TraceID          string
-	TenantID         string
-	Realm            Realm
-	UserID           string
-	OrgID            string
-	DeptID           string
-	Roles            []string
-	Permissions      []string
-	SessionID        string
-	Client           string
-	Language         string // 由 Accept-Language 中间件协商；空表示未设置
-	IsSystemOperator bool
-	Authenticated    bool
+	RequestID         string
+	TraceID           string
+	TenantID          string
+	Realm             Realm
+	UserID            string
+	OrgID             string
+	DeptID            string
+	Roles             []string
+	Permissions       []string
+	SessionID         string
+	Client            string
+	Language          string // 由 Accept-Language 中间件协商；空表示未设置
+	IsSystemOperator  bool
+	Authenticated     bool
+	AuditResourceType string
+	AuditResourceID   string
+	AuditSummary      string
 }
 
 func WithContext(ctx context.Context, ac *Context) context.Context {

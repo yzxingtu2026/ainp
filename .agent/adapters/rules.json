@@ -241,6 +241,23 @@
           "alwaysApply": true
         }
       }
+    },
+    {
+      "id": "role-management",
+      "source": ".agent/rules/role-management.md",
+      "qoder": {
+        "path": ".qoder/rules/role-management.md",
+        "frontmatter": {
+          "trigger": "always_on"
+        }
+      },
+      "cursor": {
+        "path": ".cursor/rules/role-management.mdc",
+        "frontmatter": {
+          "description": "租户角色、Action 权限目录、授权失效与内置管理员保护",
+          "alwaysApply": true
+        }
+      }
     }
   ]
 }

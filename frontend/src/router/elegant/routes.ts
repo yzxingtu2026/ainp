@@ -127,6 +127,16 @@ export const generatedRoutes: GeneratedRoute[] = [
           i18nKey: 'route.system_profile',
           hideInMenu: true
         }
+      },
+      {
+        name: 'system_roles',
+        path: '/system/roles',
+        component: 'view.system_roles',
+        meta: {
+          title: 'system_roles',
+          i18nKey: 'route.system_roles',
+          hideInMenu: true
+        }
       }
     ]
   }

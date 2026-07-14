@@ -9,6 +9,7 @@ const (
 	CodeUnauthorized = 10002
 	CodeForbidden    = 10003
 	CodeNotFound     = 10004
+	CodeConflict     = 10005
 
 	CodeTenantDisabled     = 20001
 	CodeInvalidCredentials = 20002
@@ -29,6 +30,7 @@ var codeDefaultKey = map[int]string{
 	CodeUnauthorized:       "common.unauthorized",
 	CodeForbidden:          "common.forbidden",
 	CodeNotFound:           "common.not_found",
+	CodeConflict:           "common.conflict",
 	CodeTenantDisabled:     "auth.tenant_disabled",
 	CodeInvalidCredentials: "auth.invalid_credentials",
 	CodeUserDisabled:       "auth.user_disabled",

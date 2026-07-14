@@ -41,7 +41,10 @@ func AutoMigrate(db *gorm.DB) error {
 	if err := ensureActivationStatusConstraints(db); err != nil {
 		return err
 	}
-	return ensureAuthVersionConstraint(db)
+	if err := ensureAuthVersionConstraint(db); err != nil {
+		return err
+	}
+	return nil
 }
 
 func ensureAuthVersionConstraint(db *gorm.DB) error {
@@ -114,11 +117,12 @@ func SeedDemo(ctx context.Context, db *gorm.DB) error {
 		}
 
 		if err := tx.Create(&model.Role{
-			ID:       SeedRoleID,
-			TenantID: SeedTenantID,
-			Code:     "admin",
-			Name:     "管理员",
-			Status:   status.ActivationEnabled,
+			ID:        SeedRoleID,
+			TenantID:  SeedTenantID,
+			Code:      "admin",
+			Name:      "管理员",
+			Status:    status.ActivationEnabled,
+			IsBuiltin: true,
 		}).Error; err != nil {
 			return err
 		}
@@ -132,13 +136,11 @@ func SeedDemo(ctx context.Context, db *gorm.DB) error {
 			return err
 		}
 
-		perms := []string{
+		perms := append([]string{
 			"demo.complete",
 			"demo.hello",
 			"demo.echo",
-			"system.auth_me",
-			"system.auth_permissions",
-		}
+		}, adminMinimumPermissions...)
 		for _, p := range perms {
 			if err := tx.Create(&model.RolePermission{
 				ID:         uuid.NewString(),
