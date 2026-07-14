@@ -40,6 +40,7 @@ type AIMeta struct {
 
 type Metadata struct {
 	Capability     string
+	Surface        auth.Realm
 	Permission     string
 	Name           string // 兜底文案
 	NameKey        string // i18n key，如 action.system.auth_login.name
@@ -94,6 +95,10 @@ func (r *Registry) Register(a Action) error {
 	if a.Meta.Capability == "" {
 		return fmt.Errorf("action capability is required: %s", a.ID)
 	}
+	a.Meta.Surface = auth.NormalizeRealm(a.Meta.Surface)
+	if !a.Meta.Surface.Valid() {
+		return fmt.Errorf("invalid action surface: %s", a.Meta.Surface)
+	}
 	if _, exists := r.items[a.ID]; exists {
 		return fmt.Errorf("action already registered: %s", a.ID)
 	}
@@ -121,6 +126,11 @@ func (r *Registry) Invoke(ctx context.Context, actionID string, input json.RawMe
 	}
 
 	ac := auth.MustFromContext(ctx)
+	if auth.NormalizeRealm(ac.Realm) != a.Meta.Surface {
+		err := errs.New(errs.CodeForbidden, "action is not available in current realm")
+		r.writeAudit(ctx, a, a.Meta.PermissionCode(a.ID), "failure", err)
+		return nil, err
+	}
 	perm := a.Meta.PermissionCode(a.ID)
 	public := a.Meta.HTTP != nil && a.Meta.HTTP.Public
 
@@ -160,6 +170,7 @@ func (r *Registry) writeAudit(ctx context.Context, a Action, perm, result string
 	rec := audit.Record{
 		OccurredAt: time.Now().UTC(),
 		TenantID:   ac.TenantID,
+		Realm:      string(auth.NormalizeRealm(ac.Realm)),
 		UserID:     ac.UserID,
 		ActorType:  actorType(ac),
 		ActionID:   a.ID,

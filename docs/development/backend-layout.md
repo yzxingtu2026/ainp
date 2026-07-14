@@ -9,6 +9,7 @@ Agent 只读要点：`.agent/rules/backend-layout.md`。本文档为已拍板的
 3. **Phase 1 modules**：仅 `system`（可选）+ `demo`；采购等业务域稍后。
 4. **骨架第一步即接 GORM + PostgreSQL**。
 5. **配置格式**：YAML（提供 `configs/config.example.yaml`）。
+6. **后端测试统一归档**：所有 `_test.go` 放入 `platform/tests/`，使用外部测试包通过公开 API 验证行为。
 
 ## 仓库顶层
 
@@ -19,6 +20,7 @@ ainp/
 │   ├── cmd/
 │   ├── framework/
 │   ├── modules/
+│   ├── tests/                # 统一后端单元/集成测试
 │   ├── configs/
 │   └── migrations/           # 迁移文件（随库表演进）
 ├── frontend/                 # Soybean（后续）
@@ -53,10 +55,11 @@ platform/
 │   ├── httpserver/           # Gin、健康检查
 │   ├── middleware/           # request_id、recover、auth
 │   └── database/             # GORM + Postgres
-└── modules/
-    ├── system/               # 可选：健康/版本类 Action
-    └── demo/                 # 示例 Capability/Action/Menu/Button
-        └── register.go
+├── modules/
+│   ├── system/               # 可选：健康/版本类 Action
+│   └── demo/                 # 示例 Capability/Action/Menu/Button
+│       └── register.go
+└── tests/                    # 外部测试包；单元/集成测试统一入口
 ```
 
 ### 延后再建（Phase 1 不建空包）
@@ -77,11 +80,13 @@ cmd/ainp     → framework + modules
 modules/*    → framework
 framework    ❌ modules
 modules/A    ❌ modules/B（默认；共享进 framework）
+tests        → framework + modules（仅测试依赖）
 ```
 
 - 业务执行入口只有 **Action**；Gin 只做 HTTP 适配。
 - 禁止 module 内手写响应 JSON；走 `response` + `errs`。
 - 禁止业务 `print`；走 `logging`。
+- `_test.go` 不放在 `framework/*` 或 `modules/*`；统一放入 `platform/tests/`。
 
 ## 启动与执行链
 

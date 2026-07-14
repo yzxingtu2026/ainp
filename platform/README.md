@@ -91,6 +91,8 @@ auth:
 
 见仓库 `docs/development/backend-layout.md`。
 
+后端单元测试与集成测试统一位于 `tests/`，执行方式见 `tests/README.md`。
+
 ## VS Code / Cursor 一键开发
 
 仓库已提供 `.vscode/tasks.json`：

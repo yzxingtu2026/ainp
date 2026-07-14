@@ -48,6 +48,9 @@ func withContext(ctx context.Context) *slog.Logger {
 		if ac.TenantID != "" {
 			attrs = append(attrs, "tenant_id", ac.TenantID)
 		}
+		if ac.Realm != "" {
+			attrs = append(attrs, "realm", ac.Realm)
+		}
 		if ac.UserID != "" {
 			attrs = append(attrs, "user_id", ac.UserID)
 		}

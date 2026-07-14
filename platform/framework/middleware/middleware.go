@@ -25,6 +25,7 @@ func RequestID() gin.HandlerFunc {
 			RequestID: rid,
 			TraceID:   rid,
 			Client:    "web",
+			Realm:     auth.RealmTenant,
 		}
 		if existing, ok := auth.FromContext(c.Request.Context()); ok && existing != nil {
 			*ac = *existing
@@ -133,6 +134,7 @@ func Auth(opts AuthOptions) gin.HandlerFunc {
 				return
 			}
 			ac.TenantID = claims.TenantID
+			ac.Realm = claims.Realm
 			ac.UserID = claims.UserID
 			ac.Roles = append([]string(nil), claims.Roles...)
 			ac.Permissions = append([]string(nil), claims.Permissions...)
@@ -161,6 +163,7 @@ func Auth(opts AuthOptions) gin.HandlerFunc {
 			perms = strings.Split(parts[3], ",")
 		}
 		ac.TenantID = tenantID
+		ac.Realm = auth.RealmTenant
 		ac.UserID = userID
 		ac.Permissions = perms
 		ac.Authenticated = true

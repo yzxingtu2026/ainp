@@ -10,10 +10,13 @@ import (
 type TokenClaims struct {
 	TenantID    string   `json:"tid"`
 	UserID      string   `json:"uid"`
+	Realm       Realm    `json:"realm"`
 	Roles       []string `json:"roles,omitempty"`
 	Permissions []string `json:"perms,omitempty"`
 	jwt.RegisteredClaims
 }
+
+const TenantAudience = "ainp:tenant-console"
 
 type TokenService struct {
 	secret []byte
@@ -48,11 +51,13 @@ func (s *TokenService) Issue(tenantID, userID string, roles, permissions []strin
 		UserID:      userID,
 		Roles:       roles,
 		Permissions: permissions,
+		Realm:       RealmTenant,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    s.issuer,
 			Subject:   userID,
 			IssuedAt:  jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(exp),
+			Audience:  jwt.ClaimStrings{TenantAudience},
 		},
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
@@ -69,7 +74,7 @@ func (s *TokenService) Parse(tokenString string) (*TokenClaims, error) {
 			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
 		}
 		return s.secret, nil
-	}, jwt.WithIssuer(s.issuer))
+	}, jwt.WithIssuer(s.issuer), jwt.WithAudience(TenantAudience))
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +82,7 @@ func (s *TokenService) Parse(tokenString string) (*TokenClaims, error) {
 	if !ok || !token.Valid {
 		return nil, fmt.Errorf("invalid token")
 	}
-	if claims.TenantID == "" || claims.UserID == "" {
+	if claims.TenantID == "" || claims.UserID == "" || claims.Realm != RealmTenant {
 		return nil, fmt.Errorf("token missing tenant or user")
 	}
 	return claims, nil

@@ -21,6 +21,12 @@ const (
 
 // AutoMigrate 系统域表（开发期 AutoMigrate；正式环境建议版本化迁移）。
 func AutoMigrate(db *gorm.DB) error {
+	// GORM does not remove the former global users.username unique index.
+	if db.Migrator().HasIndex(&model.User{}, "idx_users_username") {
+		if err := db.Migrator().DropIndex(&model.User{}, "idx_users_username"); err != nil {
+			return err
+		}
+	}
 	return db.AutoMigrate(
 		&tenant.Tenant{},
 		&model.User{},

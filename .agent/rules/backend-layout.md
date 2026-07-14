@@ -4,5 +4,6 @@
 - Phase 1 modules 仅 `system`（可选）+ `demo`；业务域稍后。
 - 依赖：`modules → framework`；`framework` 不得 import `modules`；module 间默认不互引。
 - 骨架即接 GORM + Postgres；配置用 YAML。
+- 后端 `_test.go` 统一放在 `platform/tests/`，使用外部测试包通过公开 API 测试；禁止散落到 `framework/*`、`modules/*`。
 
 详规：`docs/development/backend-layout.md`
