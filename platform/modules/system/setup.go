@@ -14,6 +14,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/i18n"
 	"github.com/yzxingtu2026/ainp/platform/framework/logging"
 	"github.com/yzxingtu2026/ainp/platform/framework/state"
+	"github.com/yzxingtu2026/ainp/platform/framework/status"
 	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"github.com/yzxingtu2026/ainp/platform/modules/system/model"
 	"golang.org/x/crypto/bcrypt"
@@ -222,7 +223,7 @@ func (s *SetupService) createInitialData(ctx context.Context, db *gorm.DB, tenan
 		if err := tx.Create(&tenant.Tenant{
 			ID:     tenantID,
 			Name:   tenantName,
-			Status: tenant.StatusEnabled,
+			Status: status.ActivationEnabled,
 		}).Error; err != nil {
 			return fmt.Errorf("create tenant: %w", err)
 		}
@@ -234,7 +235,7 @@ func (s *SetupService) createInitialData(ctx context.Context, db *gorm.DB, tenan
 			Username:     username,
 			PasswordHash: string(hash),
 			DisplayName:  username,
-			Status:       model.StatusEnabled,
+			Status:       status.ActivationEnabled,
 		}).Error; err != nil {
 			return fmt.Errorf("create user: %w", err)
 		}
@@ -245,7 +246,7 @@ func (s *SetupService) createInitialData(ctx context.Context, db *gorm.DB, tenan
 			TenantID: tenantID,
 			Code:     "admin",
 			Name:     "管理员",
-			Status:   model.StatusEnabled,
+			Status:   status.ActivationEnabled,
 		}).Error; err != nil {
 			return fmt.Errorf("create role: %w", err)
 		}

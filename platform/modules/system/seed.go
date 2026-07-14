@@ -2,9 +2,11 @@ package system
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/google/uuid"
 	"github.com/yzxingtu2026/ainp/platform/framework/logging"
+	"github.com/yzxingtu2026/ainp/platform/framework/status"
 	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"github.com/yzxingtu2026/ainp/platform/modules/system/model"
 	"golang.org/x/crypto/bcrypt"
@@ -27,13 +29,37 @@ func AutoMigrate(db *gorm.DB) error {
 			return err
 		}
 	}
-	return db.AutoMigrate(
+	if err := db.AutoMigrate(
 		&tenant.Tenant{},
 		&model.User{},
 		&model.Role{},
 		&model.RolePermission{},
 		&model.UserRole{},
-	)
+	); err != nil {
+		return err
+	}
+	return ensureActivationStatusConstraints(db)
+}
+
+func ensureActivationStatusConstraints(db *gorm.DB) error {
+	for _, spec := range []struct{ table, name string }{
+		{"tenants", "ck_tenants_activation_status"},
+		{"users", "ck_users_activation_status"},
+		{"roles", "ck_roles_activation_status"},
+	} {
+		var invalid int64
+		if err := db.Table(spec.table).Where("status NOT IN ?", []status.ActivationStatus{status.ActivationEnabled, status.ActivationDisabled}).Count(&invalid).Error; err != nil {
+			return err
+		}
+		if invalid > 0 {
+			return fmt.Errorf("%s contains %d invalid activation status values", spec.table, invalid)
+		}
+		statement := fmt.Sprintf("ALTER TABLE %s DROP CONSTRAINT IF EXISTS %s; ALTER TABLE %s ADD CONSTRAINT %s CHECK (status IN ('enabled', 'disabled'))", spec.table, spec.name, spec.table, spec.name)
+		if err := db.Exec(statement).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // SeedDemo 幂等写入演示租户 / 管理员 / 角色权限。
@@ -57,7 +83,7 @@ func SeedDemo(ctx context.Context, db *gorm.DB) error {
 		if err := tx.Create(&tenant.Tenant{
 			ID:     SeedTenantID,
 			Name:   "演示租户",
-			Status: tenant.StatusEnabled,
+			Status: status.ActivationEnabled,
 		}).Error; err != nil {
 			return err
 		}
@@ -68,7 +94,7 @@ func SeedDemo(ctx context.Context, db *gorm.DB) error {
 			Username:     SeedUsername,
 			PasswordHash: string(hash),
 			DisplayName:  "系统管理员",
-			Status:       model.StatusEnabled,
+			Status:       status.ActivationEnabled,
 		}).Error; err != nil {
 			return err
 		}
@@ -78,7 +104,7 @@ func SeedDemo(ctx context.Context, db *gorm.DB) error {
 			TenantID: SeedTenantID,
 			Code:     "admin",
 			Name:     "管理员",
-			Status:   model.StatusEnabled,
+			Status:   status.ActivationEnabled,
 		}).Error; err != nil {
 			return err
 		}
@@ -93,6 +119,7 @@ func SeedDemo(ctx context.Context, db *gorm.DB) error {
 		}
 
 		perms := []string{
+			"demo.complete",
 			"demo.hello",
 			"demo.echo",
 			"system.auth_me",

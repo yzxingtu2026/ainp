@@ -7,36 +7,44 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/audit"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/capability"
+	"github.com/yzxingtu2026/ainp/platform/framework/codeset"
 	"github.com/yzxingtu2026/ainp/platform/framework/config"
 	"github.com/yzxingtu2026/ainp/platform/framework/httpserver"
 	"github.com/yzxingtu2026/ainp/platform/framework/i18n"
 	"github.com/yzxingtu2026/ainp/platform/framework/menu"
 	"github.com/yzxingtu2026/ainp/platform/framework/permission"
+	"github.com/yzxingtu2026/ainp/platform/framework/statemachine"
 	"gorm.io/gorm"
 )
 
 type App struct {
-	Config       *config.Config
-	DB           *gorm.DB
-	Tokens       *auth.TokenService
-	Capabilities *capability.Registry
-	Actions      *action.Registry
-	Menus        *menu.Registry
-	Auditor      audit.Recorder
-	Installed    bool // 是否已完成安装向导
+	Config        *config.Config
+	DB            *gorm.DB
+	Tokens        *auth.TokenService
+	Capabilities  *capability.Registry
+	Actions       *action.Registry
+	Menus         *menu.Registry
+	CodeSets      *codeset.Registry
+	StateMachines *statemachine.Registry
+	Auditor       audit.Recorder
+	Installed     bool // 是否已完成安装向导
 }
 
 func New(cfg *config.Config, db *gorm.DB, auditor audit.Recorder, tokens *auth.TokenService) *App {
 	checker := permission.NewChecker()
+	codeSets := codeset.NewRegistry()
+	_ = codeSets.Register(codeset.ActivationStatus())
 	return &App{
-		Config:       cfg,
-		DB:           db,
-		Tokens:       tokens,
-		Capabilities: capability.NewRegistry(),
-		Actions:      action.NewRegistry(checker, auditor),
-		Menus:        menu.NewRegistry(),
-		Auditor:      auditor,
-		Installed:    true, // 默认已安装；setup 模式由 main 覆写
+		Config:        cfg,
+		DB:            db,
+		Tokens:        tokens,
+		Capabilities:  capability.NewRegistry(),
+		Actions:       action.NewRegistry(checker, auditor),
+		Menus:         menu.NewRegistry(),
+		CodeSets:      codeSets,
+		StateMachines: statemachine.NewRegistry(),
+		Auditor:       auditor,
+		Installed:     true, // 默认已安装；setup 模式由 main 覆写
 	}
 }
 
@@ -60,6 +68,12 @@ func (a *App) RegisterMenu(m menu.Menu) error {
 	return a.Menus.Register(m)
 }
 
+func (a *App) RegisterCodeSet(set codeset.CodeSet) error { return a.CodeSets.Register(set) }
+
+func (a *App) RegisterStateMachine(machine statemachine.StateMachine) error {
+	return a.StateMachines.Register(machine, a.CodeSets, a.Actions)
+}
+
 func (a *App) Run() error {
 	// 1. 加载翻译文件
 	dir := a.Config.I18n.Dir
@@ -81,6 +95,7 @@ func (a *App) Run() error {
 		Tokens:          a.Tokens,
 		Actions:         a.Actions,
 		Menus:           a.Menus,
+		CodeSets:        a.CodeSets,
 		DB:              a.DB,
 	})
 	return engine.Run(a.Config.Server.Addr)

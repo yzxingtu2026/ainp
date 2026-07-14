@@ -14,6 +14,10 @@ auth.user_disabled: "user is disabled"
 
 # ── Action Framework ──
 action.not_found: "action not registered"
+codeset.not_found: "code set not found"
+codeset.common.activation_status: "Activation status"
+codeset.common.activation_status.enabled: "Enabled"
+codeset.common.activation_status.disabled: "Disabled"
 
 # ── System Capability ──
 capability.system.name: "System"
@@ -61,3 +65,8 @@ capability.demo.description: "Phase 1 skeleton demo capability"
 action.demo.hello.name: "Hello"
 action.demo.hello.description: "Demo action requiring authentication"
 demo.hello_greeting: "hello"
+action.demo.complete.name: "Complete demo task"
+action.demo.complete.description: "Complete the demo task through an explicit Action"
+codeset.demo.task_status: "Demo task status"
+codeset.demo.task_status.pending: "Pending"
+codeset.demo.task_status.completed: "Completed"

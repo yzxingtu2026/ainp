@@ -5,6 +5,7 @@ import (
 	"sort"
 
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
+	"github.com/yzxingtu2026/ainp/platform/framework/status"
 	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"github.com/yzxingtu2026/ainp/platform/modules/system/model"
 	"gorm.io/gorm"
@@ -42,7 +43,7 @@ func (s *AuthService) FindUserByUsername(ctx context.Context, tenantID, username
 
 func (s *AuthService) FindDefaultTenant(ctx context.Context) (*tenant.Tenant, error) {
 	var t tenant.Tenant
-	err := s.db.WithContext(ctx).Where("status = ?", tenant.StatusEnabled).Order("created_at ASC, id ASC").First(&t).Error
+	err := s.db.WithContext(ctx).Where("status = ?", status.ActivationEnabled).Order("created_at ASC, id ASC").First(&t).Error
 	return &t, err
 }
 
@@ -73,7 +74,7 @@ func (s *AuthService) LoadRolesAndPermissions(ctx context.Context, userID, tenan
 
 	var roleRows []model.Role
 	if err = s.db.WithContext(ctx).
-		Where("id IN ? AND tenant_id = ? AND status = ?", roleIDs, tenantID, model.StatusEnabled).
+		Where("id IN ? AND tenant_id = ? AND status = ?", roleIDs, tenantID, status.ActivationEnabled).
 		Find(&roleRows).Error; err != nil {
 		return nil, nil, err
 	}

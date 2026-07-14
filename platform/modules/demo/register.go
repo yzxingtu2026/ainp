@@ -11,6 +11,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 	"github.com/yzxingtu2026/ainp/platform/framework/i18n"
 	"github.com/yzxingtu2026/ainp/platform/framework/menu"
+	"github.com/yzxingtu2026/ainp/platform/framework/statemachine"
 )
 
 func Register(a *app.App) error {
@@ -82,6 +83,36 @@ func Register(a *app.App) error {
 				Path:   "/api/v1/demo/echo",
 			},
 		},
+	}); err != nil {
+		return err
+	}
+
+	if err := a.RegisterAction(action.Action{
+		ID: ActionComplete,
+		Handler: func(_ context.Context, input json.RawMessage) (any, error) {
+			var req struct {
+				From TaskStatus `json:"from"`
+			}
+			if err := json.Unmarshal(input, &req); err != nil || req.From != TaskPending {
+				return nil, errs.ValidationKey("common.validation_failed", "task must be pending")
+			}
+			return map[string]TaskStatus{"from": req.From, "status": TaskCompleted}, nil
+		},
+		Meta: action.Metadata{
+			Capability: "demo", Name: "完成演示任务", NameKey: "action.demo.complete.name",
+			Description: "通过明确 Action 完成演示任务", DescriptionKey: "action.demo.complete.description",
+			HTTP: &action.HTTPMeta{Method: "POST", Path: "/api/v1/demo/tasks/complete"},
+		},
+	}); err != nil {
+		return err
+	}
+
+	if err := a.RegisterCodeSet(taskStatusCodeSet()); err != nil {
+		return err
+	}
+	if err := a.RegisterStateMachine(statemachine.StateMachine{
+		Key: StateMachineTask, CodeSetKey: CodeSetTaskStatus, Terminal: []string{string(TaskCompleted)},
+		Transitions: []statemachine.Transition{{From: string(TaskPending), To: string(TaskCompleted), Action: ActionComplete}},
 	}); err != nil {
 		return err
 	}
