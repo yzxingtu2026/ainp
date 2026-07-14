@@ -15,6 +15,8 @@ Agent 只读要点：`.agent/rules/auth-context.md`。本文档定义租户隔�
 4. **权限模型**：Role ↔ permission 字符串（默认等于 `action.id`）；先不做 ABAC/策略引擎。
 5. **一用户一租户**（一个登录身份只隶属一个 `tenant_id`）。
 6. **预留**租户绑定**自定义域名**（Phase 1 可不实现解析，模型留字段）。
+7. **Realm 只有 `tenant` / `platform`**；当前登录固定为 `tenant`，平台入口后续独立建设。
+8. 普通租户 Scope 缺失 `tenant_id` 必须报错；跨租户访问只允许显式 System Scope，且要求 platform realm。
 
 ## 主体模型
 
@@ -36,13 +38,14 @@ System
 
 ## AuthContext
 
-经框架写入 `context.Context`，业务只读：`auth.FromContext(ctx)`。
+经框架写入 `context.Context`，业务只读：`auth.FromContext(ctx)`。普通登录 Token 使用 audience `ainp:tenant-console`；Token 同时校验 issuer、audience 与 realm。该协议启用后旧 Token 需要重新登录。
 
 | 字段 | 必填 | 说明 |
 |------|------|------|
 | `request_id` | 是 | 入口生成 |
 | `trace_id` | 是 | 可与 request 相同 |
 | `tenant_id` | 是 | 当前租户（System 入口另规） |
+| `realm` | 是 | 当前执行域：`tenant` 或 `platform` |
 | `user_id` | 条件 | 用户请求必填；job 可空 |
 | `org_id` | 否 | 预留 |
 | `dept_id` | 否 | 预留 |
@@ -65,7 +68,7 @@ System
 
 - 不存在「请求里带 tenant_id 就切换租户」。
 - 因一用户一租户，**Phase 1 不做租户切换 API**。
-- 仓储/GORM：默认按 `tenant_id` Scope；无租户条件的业务查询视为违规。
+- 仓储/GORM：默认按 `tenant_id` Scope；缺失租户上下文直接报错，不得退化为无条件查询。
 - Action 内取租户：只从 AuthContext。
 
 ## 鉴权流程
@@ -89,7 +92,7 @@ System
 ## 系统级操作
 
 - 普通 Action：`is_system_operator=false`，强制单租户。
-- 平台超管 / 运维入口：显式 System Capability，设 `is_system_operator`，**强制审计**，禁止复用普通业务 Action 做全租户扫描。
+- 平台超管 / 运维入口：必须是已认证 platform realm，并通过显式 System Scope/Repository，设 `is_system_operator`，**强制审计**，禁止复用普通业务 Action 做全租户扫描。
 - 多租户批处理：按租户循环 `WithTenant`，禁止无租户上下文写库。
 
 ## 租户自定义域名（预留）

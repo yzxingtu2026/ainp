@@ -4,6 +4,7 @@ import (
 	"context"
 	"sort"
 
+	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"github.com/yzxingtu2026/ainp/platform/modules/system/model"
 	"gorm.io/gorm"
@@ -18,24 +19,31 @@ func NewAuthService(db *gorm.DB) *AuthService {
 }
 
 type UserProfile struct {
-	ID          string   `json:"id"`
-	Username    string   `json:"username"`
-	DisplayName string   `json:"display_name"`
-	TenantID    string   `json:"tenant_id"`
-	TenantName  string   `json:"tenant_name,omitempty"`
-	OrgID       string   `json:"org_id,omitempty"`
-	DeptID      string   `json:"dept_id,omitempty"`
-	Roles       []string `json:"roles"`
-	Permissions []string `json:"permissions"`
+	ID          string     `json:"id"`
+	Username    string     `json:"username"`
+	DisplayName string     `json:"display_name"`
+	TenantID    string     `json:"tenant_id"`
+	TenantName  string     `json:"tenant_name,omitempty"`
+	OrgID       string     `json:"org_id,omitempty"`
+	DeptID      string     `json:"dept_id,omitempty"`
+	Roles       []string   `json:"roles"`
+	Permissions []string   `json:"permissions"`
+	Realm       auth.Realm `json:"realm"`
 }
 
-func (s *AuthService) FindUserByUsername(ctx context.Context, username string) (*model.User, error) {
+func (s *AuthService) FindUserByUsername(ctx context.Context, tenantID, username string) (*model.User, error) {
 	var u model.User
-	err := s.db.WithContext(ctx).Where("username = ?", username).First(&u).Error
+	err := s.db.WithContext(ctx).Where("tenant_id = ? AND username = ?", tenantID, username).First(&u).Error
 	if err != nil {
 		return nil, err
 	}
 	return &u, nil
+}
+
+func (s *AuthService) FindDefaultTenant(ctx context.Context) (*tenant.Tenant, error) {
+	var t tenant.Tenant
+	err := s.db.WithContext(ctx).Where("status = ?", tenant.StatusEnabled).Order("created_at ASC, id ASC").First(&t).Error
+	return &t, err
 }
 
 func (s *AuthService) FindTenant(ctx context.Context, tenantID string) (*tenant.Tenant, error) {
@@ -115,6 +123,7 @@ func (s *AuthService) BuildProfile(ctx context.Context, u *model.User) (*UserPro
 		DeptID:      u.DeptID,
 		Roles:       roles,
 		Permissions: perms,
+		Realm:       auth.RealmTenant,
 	}
 	if t, err := s.FindTenant(ctx, u.TenantID); err == nil && t != nil {
 		profile.TenantName = t.Name

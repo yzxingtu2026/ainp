@@ -2,12 +2,29 @@ package auth
 
 import "context"
 
+type Realm string
+
+const (
+	RealmTenant   Realm = "tenant"
+	RealmPlatform Realm = "platform"
+)
+
+func (r Realm) Valid() bool { return r == RealmTenant || r == RealmPlatform }
+
+func NormalizeRealm(r Realm) Realm {
+	if r == "" {
+		return RealmTenant
+	}
+	return r
+}
+
 type contextKey struct{}
 
 type Context struct {
 	RequestID        string
 	TraceID          string
 	TenantID         string
+	Realm            Realm
 	UserID           string
 	OrgID            string
 	DeptID           string

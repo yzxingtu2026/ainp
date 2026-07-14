@@ -22,6 +22,7 @@ export const useAuthStore = defineStore(SetupStoreId.Auth, () => {
   const token = ref('');
 
   const userInfo: Api.Auth.UserInfo = reactive({
+    realm: 'tenant',
     userId: '',
     userName: '',
     roles: [],

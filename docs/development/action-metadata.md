@@ -83,6 +83,7 @@ purchase_order_create    # 禁止缺少 capability 点分前缀（除非 capabil
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | `capability` | string | 是 | 所属 Capability.id |
+| `surface` | string | 否 | `tenant` / `platform`；省略兼容为 `tenant` |
 | `permission` | string | 否 | 默认等于 `action.id` |
 | `name` | string | 否 | 展示名 |
 | `description` | string | 否 | OpenAPI / AI 说明 |
@@ -133,6 +134,9 @@ purchase_order_create    # 禁止缺少 capability 点分前缀（除非 capabil
 | `hide_in_menu` | bool | 否 | 默认 false；按钮通常不出现在侧栏 |
 | `keepalive` | bool | 否 | 仅 `menu` 有意义 |
 | `module` | string | 否 | 如 `erp` |
+| `surface` | string | 否 | `tenant` / `platform`；省略兼容为 `tenant` |
+
+Action 执行时先校验 AuthContext realm 与 surface，再校验 permission。菜单接口先按 surface 过滤，再按 permission 过滤。`Module` 不得用于推断 realm。
 
 ### 类型约定
 

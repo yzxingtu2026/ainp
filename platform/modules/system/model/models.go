@@ -10,8 +10,8 @@ const (
 // User 一用户一租户；OrgID/DeptID 仅预留。
 type User struct {
 	ID           string    `gorm:"primaryKey;size:64"`
-	TenantID     string    `gorm:"size:64;index;not null"`
-	Username     string    `gorm:"size:64;uniqueIndex;not null"`
+	TenantID     string    `gorm:"size:64;uniqueIndex:ux_users_tenant_username;not null"`
+	Username     string    `gorm:"size:64;uniqueIndex:ux_users_tenant_username;not null"`
 	PasswordHash string    `gorm:"size:255;not null"`
 	DisplayName  string    `gorm:"size:128"`
 	Status       string    `gorm:"size:32;not null;default:enabled"`

@@ -32,7 +32,14 @@ func (s *AuthService) Login(ctx context.Context, tokens *auth.TokenService, inpu
 		)
 	}
 
-	u, err := s.FindUserByUsername(ctx, req.Username)
+	t, err := s.FindDefaultTenant(ctx)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errs.NewKey(errs.CodeInvalidCredentials, "auth.invalid_credentials", "invalid username or password")
+		}
+		return nil, errs.Wrap(errs.CodeInternal, "resolve default tenant failed", err)
+	}
+	u, err := s.FindUserByUsername(ctx, t.ID, req.Username)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			logging.Warn(ctx, "login failed: user not found", "username", req.Username)
@@ -46,7 +53,7 @@ func (s *AuthService) Login(ctx context.Context, tokens *auth.TokenService, inpu
 		return nil, errs.NewKey(errs.CodeUserDisabled, "auth.user_disabled", "user disabled")
 	}
 
-	t, err := s.FindTenant(ctx, u.TenantID)
+	t, err = s.FindTenant(ctx, u.TenantID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errs.NewKey(errs.CodeInvalidCredentials, "auth.invalid_credentials", "invalid username or password")
@@ -76,6 +83,7 @@ func (s *AuthService) Login(ctx context.Context, tokens *auth.TokenService, inpu
 	// 写入上下文，供执行链审计落 tenant_id / user_id（登录为 Public Action）
 	if ac := auth.MustFromContext(ctx); ac != nil {
 		ac.TenantID = u.TenantID
+		ac.Realm = auth.RealmTenant
 		ac.UserID = u.ID
 		ac.Roles = append([]string(nil), profile.Roles...)
 		ac.Permissions = append([]string(nil), profile.Permissions...)

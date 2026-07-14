@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 )
 
 const (
@@ -13,21 +15,22 @@ const (
 )
 
 type Menu struct {
-	ID         string `json:"id"`
-	ParentID   string `json:"parent_id,omitempty"`
-	Title      string `json:"title"`
-	TitleKey   string `json:"title_key,omitempty"`
-	Icon       string `json:"icon,omitempty"`
-	LocalIcon  string `json:"local_icon,omitempty"`
-	Order      int    `json:"order"`
-	Type       string `json:"type"`
-	Path       string `json:"path,omitempty"`
-	Component  string `json:"component,omitempty"`
-	Permission string `json:"permission,omitempty"`
-	BindAction string `json:"bind_action,omitempty"`
-	HideInMenu bool   `json:"hide_in_menu,omitempty"`
-	KeepAlive  bool   `json:"keep_alive,omitempty"`
-	Module     string `json:"module,omitempty"`
+	ID         string     `json:"id"`
+	ParentID   string     `json:"parent_id,omitempty"`
+	Title      string     `json:"title"`
+	TitleKey   string     `json:"title_key,omitempty"`
+	Icon       string     `json:"icon,omitempty"`
+	LocalIcon  string     `json:"local_icon,omitempty"`
+	Order      int        `json:"order"`
+	Type       string     `json:"type"`
+	Path       string     `json:"path,omitempty"`
+	Component  string     `json:"component,omitempty"`
+	Permission string     `json:"permission,omitempty"`
+	BindAction string     `json:"bind_action,omitempty"`
+	HideInMenu bool       `json:"hide_in_menu,omitempty"`
+	KeepAlive  bool       `json:"keep_alive,omitempty"`
+	Module     string     `json:"module,omitempty"`
+	Surface    auth.Realm `json:"surface"`
 }
 
 type Registry struct {
@@ -44,6 +47,10 @@ func (r *Registry) Register(m Menu) error {
 	}
 	if m.Type == "" {
 		return fmt.Errorf("menu type is required")
+	}
+	m.Surface = auth.NormalizeRealm(m.Surface)
+	if !m.Surface.Valid() {
+		return fmt.Errorf("invalid menu surface: %s", m.Surface)
 	}
 	switch m.Type {
 	case TypeDirectory, TypeMenu, TypeButton:
@@ -78,10 +85,13 @@ func (r *Registry) List() []Menu {
 }
 
 // TreeForUser 返回侧栏可见节点（过滤 button）；按 permission 过滤。
-func (r *Registry) TreeForUser(hasPerm func(string) bool) []Menu {
+func (r *Registry) TreeForUser(realm auth.Realm, hasPerm func(string) bool) []Menu {
 	all := r.List()
 	out := make([]Menu, 0, len(all))
 	for _, m := range all {
+		if m.Surface != auth.NormalizeRealm(realm) {
+			continue
+		}
 		if m.Type == TypeButton || m.HideInMenu {
 			continue
 		}
@@ -93,10 +103,13 @@ func (r *Registry) TreeForUser(hasPerm func(string) bool) []Menu {
 	return out
 }
 
-func (r *Registry) ButtonsForUser(hasPerm func(string) bool) []Menu {
+func (r *Registry) ButtonsForUser(realm auth.Realm, hasPerm func(string) bool) []Menu {
 	all := r.List()
 	out := make([]Menu, 0)
 	for _, m := range all {
+		if m.Surface != auth.NormalizeRealm(realm) {
+			continue
+		}
 		if m.Type != TypeButton {
 			continue
 		}

@@ -50,6 +50,7 @@ export function fetchGetUserInfo() {
     );
 
     const mapped: Api.Auth.UserInfo = {
+      realm: profile.realm,
       userId: profile.userId || profile.id,
       userName: profile.userName || profile.display_name || profile.username,
       roles: profile.roles || [],

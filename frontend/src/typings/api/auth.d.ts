@@ -6,6 +6,7 @@ declare namespace Api {
     }
 
     interface UserInfo {
+      realm: 'tenant' | 'platform';
       userId: string;
       userName: string;
       roles: string[];
@@ -22,6 +23,7 @@ declare namespace Api {
     }
 
     interface AinPUserProfile {
+      realm: 'tenant' | 'platform';
       id: string;
       username: string;
       display_name: string;

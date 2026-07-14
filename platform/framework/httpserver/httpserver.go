@@ -66,13 +66,13 @@ func New(opts Options) *gin.Engine {
 		lang := ac.Language
 
 		// 菜单标题按语言本地化
-		items := opts.Menus.TreeForUser(hasPerm)
+		items := opts.Menus.TreeForUser(ac.Realm, hasPerm)
 		for i := range items {
 			if items[i].TitleKey != "" {
 				items[i].Title = i18n.T(lang, items[i].TitleKey)
 			}
 		}
-		buttons := opts.Menus.ButtonsForUser(hasPerm)
+		buttons := opts.Menus.ButtonsForUser(ac.Realm, hasPerm)
 		for i := range buttons {
 			if buttons[i].TitleKey != "" {
 				buttons[i].Title = i18n.T(lang, buttons[i].TitleKey)

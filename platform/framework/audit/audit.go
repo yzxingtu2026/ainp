@@ -12,6 +12,7 @@ type Record struct {
 	ID           string    `gorm:"primaryKey;size:64" json:"id"`
 	OccurredAt   time.Time `gorm:"index" json:"occurred_at"`
 	TenantID     string    `gorm:"size:64;index" json:"tenant_id"`
+	Realm        string    `gorm:"size:32;index" json:"realm"`
 	UserID       string    `gorm:"size:64;index" json:"user_id"`
 	ActorType    string    `gorm:"size:32" json:"actor_type"`
 	ActionID     string    `gorm:"size:128;index" json:"action_id"`
