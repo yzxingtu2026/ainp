@@ -9,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/yzxingtu2026/ainp/platform/framework/action"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
+	"github.com/yzxingtu2026/ainp/platform/framework/codeset"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 	"github.com/yzxingtu2026/ainp/platform/framework/i18n"
 	"github.com/yzxingtu2026/ainp/platform/framework/menu"
@@ -24,6 +25,7 @@ type Options struct {
 	Tokens          *auth.TokenService
 	Actions         *action.Registry
 	Menus           *menu.Registry
+	CodeSets        *codeset.Registry
 	DB              *gorm.DB
 }
 
@@ -84,6 +86,54 @@ func New(opts Options) *gin.Engine {
 			"buttons": buttons,
 		})
 	})
+
+	if opts.CodeSets != nil {
+		codesetHandler := func(c *gin.Context) {
+			ac, ok := auth.FromContext(c.Request.Context())
+			if !ok || ac == nil || !ac.Authenticated {
+				response.Fail(c, errs.NewKey(errs.CodeUnauthorized, "common.unauthorized", "unauthorized"))
+				return
+			}
+			version := opts.CodeSets.Version()
+			etag := `"` + version + `"`
+			if c.GetHeader("If-None-Match") == etag {
+				c.Status(http.StatusNotModified)
+				return
+			}
+			c.Header("ETag", etag)
+			sets := opts.CodeSets.List(ac.Realm, ac.HasPermission)
+			requested := c.QueryArray("key")
+			if len(requested) == 0 {
+				requested = c.QueryArray("key[]")
+			}
+			if key := c.Param("key"); key != "" {
+				requested = []string{key}
+			}
+			if len(requested) > 0 {
+				allowed := make(map[string]struct{}, len(requested))
+				for _, key := range requested {
+					allowed[key] = struct{}{}
+				}
+				filtered := sets[:0]
+				for _, set := range sets {
+					if _, ok := allowed[set.Key]; ok {
+						filtered = append(filtered, set)
+					}
+				}
+				sets = filtered
+				if len(sets) == 0 && c.Param("key") != "" {
+					response.Fail(c, errs.NewKey(errs.CodeCodeSetNotFound, "codeset.not_found", "codeset not found"))
+					return
+				}
+			}
+			for i := range sets {
+				sets[i] = codeset.Localize(sets[i], ac.Language)
+			}
+			response.OK(c, gin.H{"version": version, "items": sets})
+		}
+		r.GET("/api/v1/codesets", codesetHandler)
+		r.GET("/api/v1/codesets/:key", codesetHandler)
+	}
 
 	if opts.Actions != nil {
 		for _, a := range opts.Actions.List() {

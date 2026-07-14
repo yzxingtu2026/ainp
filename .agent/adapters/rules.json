@@ -224,6 +224,23 @@
           "alwaysApply": true
         }
       }
+    },
+    {
+      "id": "code-sets-and-status",
+      "source": ".agent/rules/code-sets-and-status.md",
+      "qoder": {
+        "path": ".qoder/rules/code-sets-and-status.md",
+        "frontmatter": {
+          "trigger": "always_on"
+        }
+      },
+      "cursor": {
+        "path": ".cursor/rules/code-sets-and-status.mdc",
+        "frontmatter": {
+          "description": "CodeSet、状态机、字符串常量与租户字典边界",
+          "alwaysApply": true
+        }
+      }
     }
   ]
 }

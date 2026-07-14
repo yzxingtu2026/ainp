@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/yzxingtu2026/ainp/platform/framework/database"
+	"github.com/yzxingtu2026/ainp/platform/framework/status"
 	"github.com/yzxingtu2026/ainp/platform/modules/system"
 	"github.com/yzxingtu2026/ainp/platform/modules/system/model"
 )
@@ -45,16 +46,20 @@ func TestUserTenantUsernameMigration(t *testing.T) {
 	}
 
 	users := []model.User{
-		{ID: "u1", TenantID: "t1", Username: "same", PasswordHash: "x", Status: model.StatusEnabled},
-		{ID: "u2", TenantID: "t2", Username: "same", PasswordHash: "x", Status: model.StatusEnabled},
+		{ID: "u1", TenantID: "t1", Username: "same", PasswordHash: "x", Status: status.ActivationEnabled},
+		{ID: "u2", TenantID: "t2", Username: "same", PasswordHash: "x", Status: status.ActivationEnabled},
 	}
 	for i := range users {
 		if err := testDB.Create(&users[i]).Error; err != nil {
 			t.Fatalf("cross-tenant duplicate username must be allowed: %v", err)
 		}
 	}
-	duplicate := model.User{ID: "u3", TenantID: "t1", Username: "same", PasswordHash: "x", Status: model.StatusEnabled}
+	duplicate := model.User{ID: "u3", TenantID: "t1", Username: "same", PasswordHash: "x", Status: status.ActivationEnabled}
 	if err := testDB.Create(&duplicate).Error; err == nil {
 		t.Fatal("same-tenant duplicate username must be rejected")
+	}
+	invalid := model.User{ID: "u4", TenantID: "t3", Username: "invalid", PasswordHash: "x", Status: status.ActivationStatus("pending")}
+	if err := testDB.Create(&invalid).Error; err == nil {
+		t.Fatal("database CHECK must reject invalid activation status")
 	}
 }

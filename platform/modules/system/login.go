@@ -9,7 +9,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 	"github.com/yzxingtu2026/ainp/platform/framework/logging"
-	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
+	"github.com/yzxingtu2026/ainp/platform/framework/status"
 	"github.com/yzxingtu2026/ainp/platform/modules/system/model"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
@@ -48,7 +48,7 @@ func (s *AuthService) Login(ctx context.Context, tokens *auth.TokenService, inpu
 		return nil, errs.Wrap(errs.CodeInternal, "lookup user failed", err)
 	}
 
-	if u.Status != model.StatusEnabled {
+	if u.Status != status.ActivationEnabled {
 		logging.Warn(ctx, "login failed: user disabled", "user_id", u.ID)
 		return nil, errs.NewKey(errs.CodeUserDisabled, "auth.user_disabled", "user disabled")
 	}
@@ -60,7 +60,7 @@ func (s *AuthService) Login(ctx context.Context, tokens *auth.TokenService, inpu
 		}
 		return nil, errs.Wrap(errs.CodeInternal, "lookup tenant failed", err)
 	}
-	if t.Status != tenant.StatusEnabled {
+	if t.Status != status.ActivationEnabled {
 		logging.Warn(ctx, "login failed: tenant disabled", "tenant_id", t.ID)
 		return nil, errs.NewKey(errs.CodeTenantDisabled, "auth.tenant_disabled", "tenant disabled")
 	}
@@ -113,7 +113,7 @@ func (s *AuthService) Me(ctx context.Context) (any, error) {
 		}
 		return nil, errs.Wrap(errs.CodeInternal, "lookup user failed", err)
 	}
-	if u.Status != model.StatusEnabled {
+	if u.Status != status.ActivationEnabled {
 		return nil, errs.NewKey(errs.CodeUserDisabled, "auth.user_disabled", "user disabled")
 	}
 
