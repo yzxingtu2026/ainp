@@ -1,21 +1,55 @@
-import { computed, onBeforeUnmount, ref } from 'vue';
+import { computed, onBeforeUnmount, reactive, ref, watch, type Ref } from 'vue';
 import { prepareAttachmentDownload } from '@/service/api';
 import { getAttachmentTransferBlob } from '@/service/attachment/transfer';
 
+export type AttachmentDownloadVariant = Api.Attachment.DownloadVariant;
+
 /** 下载准备 → 短时 URL 拉流；不缓存 token。 */
-export async function downloadAttachmentById(id: string, signal?: AbortSignal): Promise<{ blob: Blob; name: string; contentType: string }> {
-  const { data, error } = await prepareAttachmentDownload(id);
+export async function downloadAttachmentById(
+  id: string,
+  options?: { variant?: AttachmentDownloadVariant; signal?: AbortSignal }
+): Promise<{ blob: Blob; name: string; contentType: string; variant: AttachmentDownloadVariant }> {
+  const variant = options?.variant || 'original';
+  const { data, error } = await prepareAttachmentDownload(id, { variant });
   if (error || !data) {
     throw new Error(error?.message || 'download_prepare_failed');
   }
   const transferToken = data.token;
   const downloadUrl = data.download_url || `/api/v1/attachments/transfer/${data.attachment.id}`;
-  const blob = await getAttachmentTransferBlob({ downloadUrl, transferToken, signal });
+  const blob = await getAttachmentTransferBlob({ downloadUrl, transferToken, signal: options?.signal });
   return {
     blob,
     name: data.attachment.original_name,
-    contentType: data.attachment.content_type
+    contentType: data.attachment.content_type,
+    variant
   };
+}
+
+/**
+ * 宫格/预览加载：优先 thumb，不可用则降级原图。
+ * - thumb_status === 'ready'：先请求 thumb，失败再原图
+ * - 其他/缺省：直接原图（避免派生未落地前无意义的失败请求）
+ */
+export async function loadAttachmentPreviewBlob(
+  id: string,
+  options?: {
+    preferThumb?: boolean;
+    thumbStatus?: Api.Attachment.Item['thumb_status'];
+    signal?: AbortSignal;
+  }
+): Promise<{ blob: Blob; name: string; contentType: string; variant: AttachmentDownloadVariant }> {
+  const preferThumb = options?.preferThumb !== false;
+  const canTryThumb = preferThumb && options?.thumbStatus === 'ready';
+
+  if (canTryThumb) {
+    try {
+      return await downloadAttachmentById(id, { variant: 'thumb', signal: options?.signal });
+    } catch {
+      return downloadAttachmentById(id, { variant: 'original', signal: options?.signal });
+    }
+  }
+
+  return downloadAttachmentById(id, { variant: 'original', signal: options?.signal });
 }
 
 export function triggerBrowserDownload(blob: Blob, filename: string) {
@@ -43,7 +77,10 @@ export function useAttachmentPreview() {
     error.value = '';
     abort = new AbortController();
     try {
-      const result = await downloadAttachmentById(attachmentId, abort.signal);
+      const result = await loadAttachmentPreviewBlob(attachmentId, {
+        preferThumb: true,
+        signal: abort.signal
+      });
       objectUrl.value = URL.createObjectURL(result.blob);
       previewName.value = result.name;
       previewType.value = result.contentType;
@@ -72,8 +109,128 @@ export function useAttachmentPreview() {
   return { objectUrl, previewName, previewType, loading, error, visible, open, close };
 }
 
+/** 宫格缩略图缓存：并发限制 + Object URL 回收。 */
+export function useAttachmentGridThumbs(
+  items: Ref<Api.Attachment.Item[]>,
+  options?: { concurrency?: number; enabled?: Ref<boolean> }
+) {
+  const concurrency = options?.concurrency ?? 3;
+  const urls = reactive<Record<string, string>>({});
+  const loadingIds = reactive<Record<string, boolean>>({});
+  const failedIds = reactive<Record<string, boolean>>({});
+  const aborts = new Map<string, AbortController>();
+  let queue: string[] = [];
+  let active = 0;
+  let disposed = false;
+
+  function revokeAll() {
+    for (const [, ctrl] of aborts) ctrl.abort();
+    aborts.clear();
+    queue = [];
+    active = 0;
+    Object.keys(urls).forEach(id => {
+      URL.revokeObjectURL(urls[id]);
+      delete urls[id];
+    });
+    Object.keys(loadingIds).forEach(id => delete loadingIds[id]);
+    Object.keys(failedIds).forEach(id => delete failedIds[id]);
+  }
+
+  function pump() {
+    if (disposed) return;
+    while (active < concurrency && queue.length) {
+      const id = queue.shift()!;
+      const item = items.value.find(row => row.id === id);
+      if (!item || urls[id] || failedIds[id]) continue;
+      if (!isImageContentType(item.content_type)) continue;
+
+      active += 1;
+      loadingIds[id] = true;
+      const ctrl = new AbortController();
+      aborts.set(id, ctrl);
+
+      loadAttachmentPreviewBlob(id, {
+        preferThumb: true,
+        thumbStatus: item.thumb_status,
+        signal: ctrl.signal
+      })
+        .then(result => {
+          if (disposed || ctrl.signal.aborted) {
+            return;
+          }
+          if (urls[id]) URL.revokeObjectURL(urls[id]);
+          urls[id] = URL.createObjectURL(result.blob);
+          delete failedIds[id];
+        })
+        .catch(() => {
+          if (!ctrl.signal.aborted) failedIds[id] = true;
+        })
+        .finally(() => {
+          aborts.delete(id);
+          delete loadingIds[id];
+          active -= 1;
+          pump();
+        });
+    }
+  }
+
+  function enqueueVisible() {
+    if (disposed) return;
+    if (options?.enabled && !options.enabled.value) return;
+    const wanted = new Set(
+      items.value.filter(item => isImageContentType(item.content_type)).map(item => item.id)
+    );
+    // 回收已不在列表中的 URL
+    Object.keys(urls).forEach(id => {
+      if (!wanted.has(id)) {
+        URL.revokeObjectURL(urls[id]);
+        delete urls[id];
+      }
+    });
+    for (const id of wanted) {
+      if (urls[id] || loadingIds[id] || failedIds[id] || queue.includes(id) || aborts.has(id)) continue;
+      queue.push(id);
+    }
+    pump();
+  }
+
+  function retry(id: string) {
+    delete failedIds[id];
+    if (urls[id]) {
+      URL.revokeObjectURL(urls[id]);
+      delete urls[id];
+    }
+    enqueueVisible();
+  }
+
+  watch(
+    [items, () => options?.enabled?.value],
+    () => enqueueVisible(),
+    { immediate: true, deep: true }
+  );
+
+  onBeforeUnmount(() => {
+    disposed = true;
+    revokeAll();
+  });
+
+  return { urls, loadingIds, failedIds, retry, clear: revokeAll, refresh: enqueueVisible };
+}
+
 export function isImageContentType(contentType: string): boolean {
   return contentType.toLowerCase().startsWith('image/');
+}
+
+export function isVideoContentType(contentType: string): boolean {
+  return contentType.toLowerCase().startsWith('video/');
+}
+
+export function attachmentTypeIcon(contentType: string): string {
+  if (isImageContentType(contentType)) return 'mdi:image-outline';
+  if (isVideoContentType(contentType)) return 'mdi:video-outline';
+  if (contentType.toLowerCase().includes('pdf')) return 'mdi:file-pdf-box';
+  if (contentType.toLowerCase().includes('zip')) return 'mdi:folder-zip-outline';
+  return 'mdi:file-outline';
 }
 
 export function formatFileSize(size: number): string {

@@ -1,7 +1,13 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
+import { Icon } from '@iconify/vue';
 import { fetchAttachmentList, fetchAttachmentPolicy } from '@/service/api';
-import { formatFileSize } from '@/hooks/business/attachment';
+import {
+  attachmentTypeIcon,
+  formatFileSize,
+  isImageContentType,
+  useAttachmentGridThumbs
+} from '@/hooks/business/attachment';
 import { DEFAULT_ATTACHMENT_UPLOAD_POLICY } from '@/constants/attachment';
 import { $t } from '@/locales';
 
@@ -32,13 +38,19 @@ const keyword = ref('');
 const records = ref<Api.Attachment.Item[]>([]);
 const checked = ref<string[]>([]);
 const policy = ref<Api.Attachment.UploadPolicy | null>(null);
+const gridEnabled = computed(() => props.show && tab.value === 'mine');
 
 const limit = computed(() => props.maxCount || policy.value?.max_uploads_once || DEFAULT_ATTACHMENT_UPLOAD_POLICY.maxUploadsOnce);
+
+const thumbs = useAttachmentGridThumbs(records, { concurrency: 3, enabled: gridEnabled });
 
 watch(
   () => props.show,
   async visible => {
-    if (!visible) return;
+    if (!visible) {
+      thumbs.clear();
+      return;
+    }
     checked.value = [...props.selectedIds];
     tab.value = 'mine';
     await Promise.all([loadPolicy(), loadMine()]);
@@ -100,7 +112,6 @@ function close() {
 
 function confirm() {
   const selected = records.value.filter(item => checked.value.includes(item.id));
-  // 刚上传但列表尚未含 ready 的，用 checked 对应 records；不足时仅返回已匹配项
   emit('confirm', selected);
   close();
 }
@@ -111,7 +122,7 @@ function confirm() {
     :show="show"
     preset="card"
     :title="$t('page.attachment.pickerTitle')"
-    class="w-720px"
+    class="w-760px"
     :mask-closable="false"
     @update:show="(v: boolean) => emit('update:show', v)"
   >
@@ -130,20 +141,55 @@ function confirm() {
           </NInput>
           <NSpin :show="loading">
             <NEmpty v-if="!records.length" :description="$t('page.attachment.empty')" />
-            <div v-else class="max-h-360px overflow-auto flex-col gap-8px">
-              <div
+            <div v-else class="max-h-420px overflow-auto grid grid-cols-3 gap-12px lt-sm:grid-cols-2">
+              <button
                 v-for="item in records"
                 :key="item.id"
-                class="flex items-center gap-12px rounded-8px border px-12px py-10px cursor-pointer"
-                :class="checked.includes(item.id) ? 'border-primary bg-primary/5' : 'border-gray-200 dark:border-gray-700'"
+                type="button"
+                class="relative flex-col items-stretch overflow-hidden rounded-10px border text-left transition-colors"
+                :class="
+                  checked.includes(item.id)
+                    ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                    : 'border-gray-200 hover:border-primary/40 dark:border-gray-700'
+                "
                 @click="toggle(item.id)"
               >
-                <NCheckbox :checked="checked.includes(item.id)" @update:checked="() => toggle(item.id)" @click.stop />
-                <div class="min-w-0 flex-1">
-                  <div class="truncate text-13px font-medium">{{ item.original_name }}</div>
-                  <div class="text-12px text-gray-500">{{ formatFileSize(item.size) }} · {{ item.content_type }}</div>
+                <div class="relative h-112px w-full bg-gray-50 dark:bg-gray-800">
+                  <img
+                    v-if="thumbs.urls[item.id]"
+                    :src="thumbs.urls[item.id]"
+                    :alt="item.original_name"
+                    class="h-full w-full object-cover"
+                  />
+                  <div
+                    v-else
+                    class="h-full w-full flex-col-center gap-6px text-gray-400"
+                  >
+                    <NSpin v-if="thumbs.loadingIds[item.id]" :size="18" />
+                    <template v-else>
+                      <Icon :icon="attachmentTypeIcon(item.content_type)" class="text-28px" />
+                      <NButton
+                        v-if="thumbs.failedIds[item.id] && isImageContentType(item.content_type)"
+                        size="tiny"
+                        quaternary
+                        @click.stop="thumbs.retry(item.id)"
+                      >
+                        {{ $t('page.attachment.retry') }}
+                      </NButton>
+                    </template>
+                  </div>
+                  <div
+                    class="absolute left-8px top-8px rounded-4px bg-white/90 px-4px py-2px dark:bg-gray-900/80"
+                    @click.stop
+                  >
+                    <NCheckbox :checked="checked.includes(item.id)" @update:checked="() => toggle(item.id)" />
+                  </div>
                 </div>
-              </div>
+                <div class="min-w-0 px-10px py-8px">
+                  <div class="truncate text-12px font-medium" :title="item.original_name">{{ item.original_name }}</div>
+                  <div class="mt-2px text-11px text-gray-500">{{ formatFileSize(item.size) }}</div>
+                </div>
+              </button>
             </div>
           </NSpin>
         </NSpace>

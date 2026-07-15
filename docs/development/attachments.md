@@ -34,6 +34,7 @@ Local Provider 返回本服务流式 URL；未来 S3/OSS 可换预签名 URL，�
 1. Action `system.attachment_download_prepare`：校验租户、状态、上传者/业务访问策略后签发 **download** token。
 2. `GET` / `HEAD` `/api/v1/attachments/transfer/:id`：支持 Range、Content-Length、Content-Type、ETag、安全 `Content-Disposition`（拒绝 CRLF）。
 3. 写流前失败返回统一 JSON 信封；开始写流后不再改 JSON。
+4. `download_prepare` 预留 `variant`（`original` / `thumb` / `preview`）；当前仅 `original` 可用，`thumb`/`preview` 返回 `attachment.variant_unavailable`（派生对象见后续 Issue）。
 
 ## 业务绑定与访问策略
 

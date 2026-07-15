@@ -12,9 +12,13 @@ declare namespace Api {
       uploader_id: string;
       /** 展示用昵称；缺失时前端回退 uploader_id */
       uploader_name?: string;
+      /** 缩略图派生状态（#36）；缺省表示尚未支持派生 */
+      thumb_status?: 'pending' | 'ready' | 'failed' | 'skipped';
       created_at: string;
       updated_at: string;
     }
+
+    type DownloadVariant = 'original' | 'thumb' | 'preview';
 
     interface TransferPrepare {
       attachment: Item;

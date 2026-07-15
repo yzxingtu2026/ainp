@@ -24,11 +24,14 @@ export function prepareAttachmentUpload(payload: {
   });
 }
 
-export function prepareAttachmentDownload(id: string) {
+export function prepareAttachmentDownload(id: string, options?: { variant?: Api.Attachment.DownloadVariant }) {
   return request<Api.Attachment.TransferPrepare>({
     url: ATTACHMENT_API.downloadPrepare,
     method: 'post',
-    data: { id }
+    data: {
+      id,
+      variant: options?.variant || 'original'
+    }
   });
 }
 
