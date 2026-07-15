@@ -283,7 +283,8 @@ const local: App.I18n.Schema = {
       enabled: 'Enabled',
       disabled: 'Disabled',
       userCount: 'Users',
-      permissions: 'Permissions'
+      permissions: 'Permissions',
+      updatedAt: 'Updated At'
     },
     login: {
       common: {

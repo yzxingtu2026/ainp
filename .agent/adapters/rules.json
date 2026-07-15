@@ -258,6 +258,23 @@
           "alwaysApply": true
         }
       }
+    },
+    {
+      "id": "datetime-display",
+      "source": ".agent/rules/datetime-display.md",
+      "qoder": {
+        "path": ".qoder/rules/datetime-display.md",
+        "frontmatter": {
+          "trigger": "always_on"
+        }
+      },
+      "cursor": {
+        "path": ".cursor/rules/datetime-display.mdc",
+        "frontmatter": {
+          "description": "用户可见时间前端统一格式化，禁止直接展示后端原始时间串",
+          "alwaysApply": true
+        }
+      }
     }
   ]
 }
