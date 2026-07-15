@@ -52,6 +52,7 @@ platform/
 │   ├── menu/                 # Menu 注册表（独立）
 │   ├── setting/              # 设置 Category/Definition/Field 注册与 Provider
 │   ├── storage/              # ObjectStore 接口、Local Provider、Key 生成
+│   ├── outbox/               # Transactional Outbox（Writer/Transport/Dispatcher）
 │   ├── permission/           # Role ↔ permission
 │   ├── audit/                # 审计写入
 │   ├── httpserver/           # Gin、健康检查
@@ -66,7 +67,9 @@ platform/
 
 ### 延后再建（Phase 1 不建空包）
 
-`workflow`、`scheduler`、`queue`、`ai/**`、`plugin`、`event`、`search`、`notification`，以及 `purchase` 等业务 module。
+`workflow`、`scheduler`、`queue`、`ai/**`、`plugin`、`search`、`notification`，以及 `purchase` 等业务 module。
+
+> 说明：`framework/outbox` 已落地（Issue #20）；通用 `queue`（Asynq）见 Issue #21。原「延后 `event`」由 outbox 包承接。
 
 ### 注册表 vs 业务管理
 

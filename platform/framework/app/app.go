@@ -1,7 +1,14 @@
 package app
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/yzxingtu2026/ainp/platform/framework/action"
@@ -13,7 +20,9 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/config"
 	"github.com/yzxingtu2026/ainp/platform/framework/httpserver"
 	"github.com/yzxingtu2026/ainp/platform/framework/i18n"
+	"github.com/yzxingtu2026/ainp/platform/framework/logging"
 	"github.com/yzxingtu2026/ainp/platform/framework/menu"
+	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
 	"github.com/yzxingtu2026/ainp/platform/framework/permission"
 	"github.com/yzxingtu2026/ainp/platform/framework/setting"
 	"github.com/yzxingtu2026/ainp/platform/framework/statemachine"
@@ -35,6 +44,7 @@ type App struct {
 	Storage            storage.ObjectStore
 	AttachmentPolicies *attachment.PolicyRegistry
 	TransferTokens     *attachment.TransferTokenService
+	Outbox             *outbox.Runtime
 	OnHTTP             func(engine *gin.Engine)
 	Auditor            audit.Recorder
 	Installed          bool
@@ -45,6 +55,8 @@ func New(cfg *config.Config, db *gorm.DB, auditor audit.Recorder, tokens *auth.T
 	codeSets := codeset.NewRegistry()
 	_ = codeSets.Register(codeset.ActivationStatus())
 	_ = codeSets.Register(codeset.AttachmentStatus())
+	_ = codeSets.Register(codeset.OutboxStatus())
+	_ = codeSets.Register(codeset.DeliveryStatus())
 	return &App{
 		Config:             cfg,
 		DB:                 db,
@@ -96,7 +108,6 @@ func (a *App) RegisterStateMachine(machine statemachine.StateMachine) error {
 }
 
 func (a *App) Run() error {
-	// 1. 加载翻译文件
 	dir := a.Config.I18n.Dir
 	if dir == "" {
 		dir = "i18n"
@@ -108,7 +119,6 @@ func (a *App) Run() error {
 		i18n.SetDefaultLang(a.Config.I18n.DefaultLanguage)
 	}
 
-	// 2. 启动 HTTP server
 	engine := httpserver.New(httpserver.Options{
 		Mode:            a.Config.Server.Mode,
 		Installed:       &a.Installed,
@@ -121,5 +131,33 @@ func (a *App) Run() error {
 		DB:              a.DB,
 		OnHTTP:          a.OnHTTP,
 	})
-	return engine.Run(a.Config.Server.Addr)
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	if a.Outbox != nil {
+		a.Outbox.Start(ctx)
+		defer a.Outbox.Stop()
+	}
+
+	srv := &http.Server{Addr: a.Config.Server.Addr, Handler: engine}
+	errCh := make(chan error, 1)
+	go func() {
+		logging.Info(ctx, "http server listening", "addr", a.Config.Server.Addr)
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			errCh <- err
+			return
+		}
+		errCh <- nil
+	}()
+
+	select {
+	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(shutdownCtx)
+		return <-errCh
+	case err := <-errCh:
+		return err
+	}
 }

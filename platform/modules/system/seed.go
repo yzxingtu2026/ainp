@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/yzxingtu2026/ainp/platform/framework/logging"
+	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
 	"github.com/yzxingtu2026/ainp/platform/framework/status"
 	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"github.com/yzxingtu2026/ainp/platform/modules/system/model"
@@ -39,6 +40,9 @@ func AutoMigrate(db *gorm.DB) error {
 		&model.Attachment{},
 		&model.AttachmentLink{},
 	); err != nil {
+		return err
+	}
+	if err := outbox.AutoMigrate(db); err != nil {
 		return err
 	}
 	if err := ensureActivationStatusConstraints(db); err != nil {
