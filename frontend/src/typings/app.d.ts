@@ -486,8 +486,6 @@ declare namespace App {
           title: string;
           empty: string;
           required: string;
-          sourceDefault: string;
-          sourceTenant: string;
           reset: string;
           resetConfirm: string;
           resetSuccess: string;

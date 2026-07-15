@@ -226,10 +226,6 @@ onMounted(loadSettings);
           </NSpace>
 
           <template v-if="current">
-            <NAlert class="mb-16px" type="info" :bordered="false">
-              {{ current.source === 'tenant' ? $t('page.setting.sourceTenant') : $t('page.setting.sourceDefault') }}
-              · revision {{ current.revision }}
-            </NAlert>
             <NForm ref="formRef" :model="formModel" :rules="formRules" label-placement="left" label-width="140">
               <NFormItem v-for="field in current.fields" :key="field.key" :label="field.label" :path="field.key">
                 <div class="w-full">

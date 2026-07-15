@@ -241,8 +241,6 @@ const local: App.I18n.Schema = {
       title: '系统设置',
       empty: '暂无可用设置',
       required: '必填',
-      sourceDefault: '当前值为代码默认值',
-      sourceTenant: '当前值为租户覆盖值',
       reset: '重置为默认',
       resetConfirm: '确认删除租户覆盖并恢复代码默认值？',
       resetSuccess: '已重置为默认值'

@@ -245,8 +245,6 @@ const local: App.I18n.Schema = {
       title: 'Settings',
       empty: 'No settings available',
       required: 'Required',
-      sourceDefault: 'Current values are code defaults',
-      sourceTenant: 'Current values are tenant overrides',
       reset: 'Reset to defaults',
       resetConfirm: 'Delete tenant overrides and restore code defaults?',
       resetSuccess: 'Settings reset to defaults'
