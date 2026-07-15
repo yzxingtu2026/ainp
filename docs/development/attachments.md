@@ -51,7 +51,22 @@ Local Provider 返回本服务流式 URL；未来 S3/OSS 可换预签名 URL，�
 | 补偿 | `jobs.RequeuePendingThumbs`：扫 `ready` + `thumb_status in (pending,failed)` 再入队（进程重启 / jobs 曾关闭时） |
 | 删除 | Delete / CleanupExpired 同步删 `thumb_object_key` 与原图 |
 
-部署：生产 Worker 主机若需视频封面，须安装 `ffmpeg` 并在 PATH 中；CI 可无 fixture 测图片，视频依赖缺失时期望 `skipped`。
+部署：生产 Worker 主机若需视频封面，须安装 `ffmpeg` 并在 PATH 中；CI 可用 fixture 测图片，视频依赖缺失时期望 `skipped`。
+
+## 后处理扩展约定（基建，非本阶段实现）
+
+转码 / OCR / 向量化 / 特征提取等**不在本阶段落地**，但新增管道须遵守同一基建边界，避免另起一套：
+
+| 层 | 约定 |
+|----|------|
+| 触发 | 原图 `ready` 同事务 Outbox（可复用 `attachment.ready.v1` 多 Handler，或新事件类型）；**禁止**业务事务直连 Redis/Asynq |
+| 执行 | 新 Job Type（`modules/*/jobs/`，一 Type 一文件）；按耗时选 `file` / `ai` 等队列；Handler 幂等、可重试，失败不回滚原图 `ready` |
+| 产物 | ObjectStore 独立 `object_key`；对外仍是 `attachment_id + variant + 短时 token`；**禁止**把厂商处理 URL 做成产品协议 |
+| 状态 | 独立状态机/CodeSet（或将来 `attachment_derivatives`：`attachment_id + kind/variant`）；**禁止**复用 `AttachmentStatus` 冒充派生状态 |
+| 删除 | 删除原图时级联清理该附件全部派生对象（含补偿路径） |
+| 多产物 | Phase 1 仅 `thumb_*` 列；种类 ≥2 或需并行管道时再拆独立 derivatives 表，而不是继续往 `attachments` 堆列 |
+
+本阶段只保证：**Outbox → Job → 派生对象 → variant 下载** 这条链可复用；具体转码/OCR/向量化另开 Issue。
 
 ## 业务绑定与访问策略
 
