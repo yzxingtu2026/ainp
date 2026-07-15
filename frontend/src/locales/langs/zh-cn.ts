@@ -60,6 +60,13 @@ const local: App.I18n.Schema = {
     refreshToken: '请求的token已过期，刷新token',
     tokenExpired: 'token已过期'
   },
+  concurrency: {
+    keyRequired: '该操作需要提供幂等键',
+    conflict: '相同幂等键已用于不同的请求',
+    inProgress: '操作正在处理中，请勿重复提交',
+    revisionConflict: '数据已被他人更新，请刷新后重试',
+    resourceLocked: '资源正在被其他操作占用，请稍后重试'
+  },
   theme: {
     themeDrawerTitle: '主题配置',
     tabs: {

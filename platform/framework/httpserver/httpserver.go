@@ -46,6 +46,7 @@ func New(opts Options) *gin.Engine {
 			Authorization:   opts.Authorization,
 			DevTokenEnabled: opts.DevTokenEnabled,
 		}),
+		middleware.IdempotencyKey(),
 	)
 
 	r.GET("/healthz", func(c *gin.Context) {

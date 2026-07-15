@@ -46,6 +46,12 @@ export const request = createFlatRequest(
       const Authorization = getAuthorization();
       Object.assign(config.headers, { Authorization, 'Accept-Language': getAcceptLanguage() });
 
+      // Inject Idempotency-Key if set in config metadata
+      const idempotencyKey = (config as any)._idempotencyKey as string | undefined;
+      if (idempotencyKey) {
+        Object.assign(config.headers, { 'Idempotency-Key': idempotencyKey });
+      }
+
       return config;
     },
     isBackendSuccess(response) {
@@ -131,6 +137,13 @@ export const request = createFlatRequest(
         backendErrorCode = String(payload?.code || '');
       } else if (payload && payload.code !== undefined && payload.code !== null) {
         backendErrorCode = String(payload.code);
+      }
+
+      // Handle idempotency / concurrency specific errors with user-friendly messages
+      const concurrencyCodes = ['40001', '40002', '40003', '40004', '40005'];
+      if (concurrencyCodes.includes(backendErrorCode) && payload?.message) {
+        showErrorMsg(request.state, payload.message);
+        return;
       }
 
       const modalLogoutCodes = import.meta.env.VITE_SERVICE_MODAL_LOGOUT_CODES?.split(',').filter(Boolean) || [];

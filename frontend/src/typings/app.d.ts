@@ -372,6 +372,13 @@ declare namespace App {
         refreshToken: string;
         tokenExpired: string;
       };
+      concurrency: {
+        keyRequired: string;
+        conflict: string;
+        inProgress: string;
+        revisionConflict: string;
+        resourceLocked: string;
+      };
       theme: {
         themeDrawerTitle: string;
         tabs: {

@@ -32,6 +32,7 @@
 - 前端统一附件组件见 `frontend-attachments`（Client/队列/Field；禁止拼 key、禁止附件中心）。
 - Transactional Outbox 见 `transactional-outbox`（同事务写事件；禁止直写 outbox 表 / 同步双写 Redis）。
 - 后台任务 Job 见 `background-jobs`（经 Outbox 入队；禁止业务直连 Asynq）。
+- 幂等、乐观锁、数据库不变量锁见 `idempotency-concurrency`（Mutation Action 必须评估幂等；并发更新资源必须用 revision；行锁必须经 dblock）。
 - 前端栈、图标协议见关联规则。
 
 ## 关联规则
@@ -45,6 +46,7 @@
 - `frontend-attachments` → `docs/development/frontend-attachments.md`
 - `transactional-outbox` → `docs/development/transactional-outbox.md`
 - `background-jobs` → `docs/development/background-jobs.md`
+- `idempotency-concurrency` → `docs/development/idempotency-concurrency.md`
 - `icon-library` → `docs/development/icon-library.md`
 - `logging` → `docs/development/logging.md`
 - `api-response` → `docs/development/api-response.md`

@@ -7,6 +7,8 @@ common.not_found: "resource not found"
 common.conflict: "the operation conflicts with the current resource state"
 common.internal_error: "internal error"
 common.field_required: "required"
+common.revision_conflict: "data was updated by someone else, refresh and retry"
+common.resource_locked: "resource is locked by another operation, please retry later"
 
 # ── Auth ──
 auth.invalid_credentials: "invalid username or password"
@@ -273,3 +275,19 @@ action.demo.complete.description: "Complete the demo task through an explicit Ac
 codeset.demo.task_status: "Demo task status"
 codeset.demo.task_status.pending: "Pending"
 codeset.demo.task_status.completed: "Completed"
+
+# ── Idempotency & Concurrency ──
+idempotency.key_required: "idempotency key is required for this operation"
+idempotency.conflict: "the same idempotency key was used for a different request"
+idempotency.in_progress: "operation is in progress, please do not resubmit"
+
+# ── Demo Doc Actions ──
+action.demo.doc_list.name: "Document list"
+action.demo.doc_list.description: "List demo documents"
+action.demo.doc_get.name: "Document details"
+action.demo.doc_get.description: "Get a single demo document"
+action.demo.doc_create.name: "Create document"
+action.demo.doc_create.description: "Create a demo document (idempotency optional)"
+action.demo.doc_update.name: "Update document"
+action.demo.doc_update.description: "Update a demo document (optimistic lock)"
+demo.doc_not_found: "document not found"

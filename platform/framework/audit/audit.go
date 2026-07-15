@@ -24,6 +24,7 @@ type Record struct {
 	ResourceID   string    `gorm:"size:64" json:"resource_id"`
 	Client       string    `gorm:"size:32" json:"client"`
 	Summary      string    `gorm:"size:512" json:"summary"`
+	Replay       bool      `gorm:"default:false" json:"replay"`
 }
 
 func (Record) TableName() string { return "audit_logs" }

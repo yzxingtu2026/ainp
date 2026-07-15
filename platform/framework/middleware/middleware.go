@@ -101,6 +101,20 @@ func SetupGate(installed *bool) gin.HandlerFunc {
 	}
 }
 
+// IdempotencyKey 从 Idempotency-Key 请求头提取幂等键并写入 AuthContext。
+func IdempotencyKey() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		key := c.GetHeader("Idempotency-Key")
+		if key != "" {
+			ac := auth.MustFromContext(c.Request.Context())
+			ac.IdempotencyKey = key
+			ctx := auth.WithContext(c.Request.Context(), ac)
+			c.Request = c.Request.WithContext(ctx)
+		}
+		c.Next()
+	}
+}
+
 type AuthOptions struct {
 	Tokens          *auth.TokenService
 	Authorization   auth.AuthorizationProvider

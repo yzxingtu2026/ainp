@@ -12,15 +12,16 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/yzxingtu2026/ainp/platform/framework/action"
+	"github.com/yzxingtu2026/ainp/platform/framework/asynqadapter"
 	"github.com/yzxingtu2026/ainp/platform/framework/attachment"
 	"github.com/yzxingtu2026/ainp/platform/framework/audit"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
-	"github.com/yzxingtu2026/ainp/platform/framework/asynqadapter"
 	"github.com/yzxingtu2026/ainp/platform/framework/capability"
 	"github.com/yzxingtu2026/ainp/platform/framework/codeset"
 	"github.com/yzxingtu2026/ainp/platform/framework/config"
 	"github.com/yzxingtu2026/ainp/platform/framework/httpserver"
 	"github.com/yzxingtu2026/ainp/platform/framework/i18n"
+	"github.com/yzxingtu2026/ainp/platform/framework/idempotency"
 	"github.com/yzxingtu2026/ainp/platform/framework/job"
 	"github.com/yzxingtu2026/ainp/platform/framework/logging"
 	"github.com/yzxingtu2026/ainp/platform/framework/menu"
@@ -62,12 +63,20 @@ func New(cfg *config.Config, db *gorm.DB, auditor audit.Recorder, tokens *auth.T
 	_ = codeSets.Register(codeset.OutboxStatus())
 	_ = codeSets.Register(codeset.DeliveryStatus())
 	_ = codeSets.Register(codeset.JobRunStatus())
+
+	actions := action.NewRegistry(checker, auditor)
+
+	// Wire idempotency executor
+	idemRepo := idempotency.NewRepository(db)
+	idemExec := idempotency.NewExecutor(idemRepo)
+	actions.SetIdempotencyExecutor(idempotency.NewActionAdapter(idemExec))
+
 	return &App{
 		Config:             cfg,
 		DB:                 db,
 		Tokens:             tokens,
 		Capabilities:       capability.NewRegistry(),
-		Actions:            action.NewRegistry(checker, auditor),
+		Actions:            actions,
 		Menus:              menu.NewRegistry(),
 		CodeSets:           codeSets,
 		Settings:           setting.NewRegistry(),
