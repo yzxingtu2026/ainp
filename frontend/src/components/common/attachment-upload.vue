@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useAttachmentUploadQueue } from '@/hooks/business/attachment-upload-queue';
 import { formatFileSize } from '@/hooks/business/attachment';
 import { $t } from '@/locales';
@@ -24,6 +24,8 @@ const props = withDefaults(
 const emit = defineEmits<{
   success: [attachment: Api.Attachment.Item];
   failed: [message: string];
+  /** 队列从忙碌变为空闲（本批上传全部结束） */
+  idle: [];
 }>();
 
 const inputRef = ref<HTMLInputElement | null>(null);
@@ -31,6 +33,7 @@ const dragging = ref(false);
 
 const {
   items: queueItems,
+  busy,
   enqueue,
   cancel,
   remove,
@@ -46,6 +49,12 @@ const {
     if (item.attachment) {
       emit('success', item.attachment);
     }
+  }
+});
+
+watch(busy, (isBusy, wasBusy) => {
+  if (wasBusy && !isBusy) {
+    emit('idle');
   }
 });
 
