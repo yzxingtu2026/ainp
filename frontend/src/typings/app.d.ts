@@ -520,6 +520,9 @@ declare namespace App {
           pickerConfirm: string;
           searchName: string;
           maxCountReached: string;
+          loadingMore: string;
+          noMore: string;
+          loadMoreCap: string;
           centerTitle: string;
           detailTitle: string;
           fileName: string;

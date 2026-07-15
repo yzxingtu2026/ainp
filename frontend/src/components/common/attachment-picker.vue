@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import { Icon } from '@iconify/vue';
 import { fetchAttachmentList, fetchAttachmentPolicy } from '@/service/api';
 import {
@@ -12,6 +12,12 @@ import { DEFAULT_ATTACHMENT_UPLOAD_POLICY } from '@/constants/attachment';
 import { $t } from '@/locales';
 
 defineOptions({ name: 'AttachmentPicker' });
+
+/** 首屏约 6 行 × 4 列；触底追加 */
+const PAGE_SIZE = 24;
+/** Picker 软顶：再多请去附件中心或加强搜索 */
+const MAX_LOADED = 200;
+const SCROLL_THRESHOLD_PX = 80;
 
 const props = withDefaults(
   defineProps<{
@@ -34,13 +40,19 @@ const emit = defineEmits<{
 
 const tab = ref<'mine' | 'upload'>('mine');
 const loading = ref(false);
+const loadingMore = ref(false);
 const keyword = ref('');
 const records = ref<Api.Attachment.Item[]>([]);
 const checked = ref<string[]>([]);
 const policy = ref<Api.Attachment.UploadPolicy | null>(null);
-const gridEnabled = computed(() => props.show && tab.value === 'mine');
+const page = ref(1);
+const total = ref(0);
+const scrollEl = ref<HTMLElement | null>(null);
 
+const gridEnabled = computed(() => props.show && tab.value === 'mine');
 const limit = computed(() => props.maxCount || policy.value?.max_uploads_once || DEFAULT_ATTACHMENT_UPLOAD_POLICY.maxUploadsOnce);
+const hasMore = computed(() => records.value.length < total.value && records.value.length < MAX_LOADED);
+const reachedCap = computed(() => records.value.length >= MAX_LOADED && total.value > MAX_LOADED);
 
 const thumbs = useAttachmentGridThumbs(records, { concurrency: 3, enabled: gridEnabled });
 
@@ -53,7 +65,8 @@ watch(
     }
     checked.value = [...props.selectedIds];
     tab.value = 'mine';
-    await Promise.all([loadPolicy(), loadMine()]);
+    keyword.value = '';
+    await Promise.all([loadPolicy(), resetAndLoadMine()]);
   }
 );
 
@@ -62,12 +75,31 @@ async function loadPolicy() {
   if (data) policy.value = data;
 }
 
-async function loadMine() {
-  loading.value = true;
+async function resetAndLoadMine() {
+  page.value = 1;
+  total.value = 0;
+  records.value = [];
+  await loadMine({ reset: true });
+  await nextTick();
+  if (scrollEl.value) scrollEl.value.scrollTop = 0;
+}
+
+async function loadMine(options?: { reset?: boolean }) {
+  const reset = Boolean(options?.reset);
+  if (reset) {
+    if (loading.value) return;
+    loading.value = true;
+  } else {
+    if (loadingMore.value || loading.value || !hasMore.value) return;
+    loadingMore.value = true;
+  }
+
+  const requestPage = reset ? 1 : page.value + 1;
+
   try {
     const { data, error } = await fetchAttachmentList({
-      current: 1,
-      size: 50,
+      current: requestPage,
+      size: PAGE_SIZE,
       scope: 'mine',
       keyword: keyword.value.trim() || undefined,
       status: 'ready'
@@ -76,9 +108,26 @@ async function loadMine() {
       window.$message?.error(error.message || $t('page.attachment.loadFailed'));
       return;
     }
-    records.value = data?.records || [];
+    const next = data?.records || [];
+    total.value = typeof data?.total === 'number' ? data.total : 0;
+    page.value = requestPage;
+    if (reset) {
+      records.value = next;
+    } else {
+      const seen = new Set(records.value.map(item => item.id));
+      records.value = [...records.value, ...next.filter(item => !seen.has(item.id))];
+    }
   } finally {
     loading.value = false;
+    loadingMore.value = false;
+  }
+}
+
+function onGridScroll(event: Event) {
+  const el = event.target as HTMLElement | null;
+  if (!el || loadingMore.value || loading.value || !hasMore.value) return;
+  if (el.scrollHeight - el.scrollTop - el.clientHeight <= SCROLL_THRESHOLD_PX) {
+    void loadMine({ reset: false });
   }
 }
 
@@ -101,6 +150,7 @@ function toggle(id: string) {
 function onUploaded(attachment: Api.Attachment.Item) {
   if (attachment.status === 'ready' && !records.value.some(item => item.id === attachment.id)) {
     records.value = [attachment, ...records.value];
+    total.value += 1;
   }
   toggle(attachment.id);
   tab.value = 'mine';
@@ -133,63 +183,73 @@ function confirm() {
             v-model:value="keyword"
             clearable
             :placeholder="$t('page.attachment.searchName')"
-            @keyup.enter="loadMine"
+            @keyup.enter="resetAndLoadMine"
+            @clear="resetAndLoadMine"
           >
             <template #suffix>
-              <ButtonIcon icon="mdi:magnify" :tooltip-content="$t('common.search')" @click="loadMine" />
+              <ButtonIcon icon="mdi:magnify" :tooltip-content="$t('common.search')" @click="resetAndLoadMine" />
             </template>
           </NInput>
           <NSpin :show="loading">
-            <NEmpty v-if="!records.length" :description="$t('page.attachment.empty')" />
-            <div v-else class="max-h-480px overflow-auto grid grid-cols-4 gap-10px lt-sm:grid-cols-2">
-              <button
-                v-for="item in records"
-                :key="item.id"
-                type="button"
-                class="relative flex-col items-stretch overflow-hidden rounded-8px border text-left transition-colors"
-                :class="
-                  checked.includes(item.id)
-                    ? 'border-primary bg-primary/5 ring-1 ring-primary'
-                    : 'border-gray-200 hover:border-primary/40 dark:border-gray-700'
-                "
-                @click="toggle(item.id)"
-              >
-                <div class="relative h-96px w-full bg-gray-50 dark:bg-gray-800">
-                  <img
-                    v-if="thumbs.urls[item.id]"
-                    :src="thumbs.urls[item.id]"
-                    :alt="item.original_name"
-                    class="h-full w-full object-cover"
-                  />
-                  <div
-                    v-else
-                    class="h-full w-full flex-col-center gap-6px text-gray-400"
-                  >
-                    <NSpin v-if="thumbs.loadingIds[item.id]" :size="18" />
-                    <template v-else>
-                      <Icon :icon="attachmentTypeIcon(item.content_type)" class="text-28px" />
-                      <NButton
-                        v-if="thumbs.failedIds[item.id] && isImageContentType(item.content_type)"
-                        size="tiny"
-                        quaternary
-                        @click.stop="thumbs.retry(item.id)"
-                      >
-                        {{ $t('page.attachment.retry') }}
-                      </NButton>
-                    </template>
+            <NEmpty v-if="!loading && !records.length" :description="$t('page.attachment.empty')" />
+            <div
+              v-else-if="records.length"
+              ref="scrollEl"
+              class="max-h-480px overflow-auto"
+              @scroll.passive="onGridScroll"
+            >
+              <div class="grid grid-cols-4 gap-10px lt-sm:grid-cols-2">
+                <button
+                  v-for="item in records"
+                  :key="item.id"
+                  type="button"
+                  class="relative flex-col items-stretch overflow-hidden rounded-8px border text-left transition-colors"
+                  :class="
+                    checked.includes(item.id)
+                      ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                      : 'border-gray-200 hover:border-primary/40 dark:border-gray-700'
+                  "
+                  @click="toggle(item.id)"
+                >
+                  <div class="relative h-96px w-full bg-gray-50 dark:bg-gray-800">
+                    <img
+                      v-if="thumbs.urls[item.id]"
+                      :src="thumbs.urls[item.id]"
+                      :alt="item.original_name"
+                      class="h-full w-full object-cover"
+                    />
+                    <div v-else class="h-full w-full flex-col-center gap-6px text-gray-400">
+                      <NSpin v-if="thumbs.loadingIds[item.id]" :size="18" />
+                      <template v-else>
+                        <Icon :icon="attachmentTypeIcon(item.content_type)" class="text-28px" />
+                        <NButton
+                          v-if="thumbs.failedIds[item.id] && isImageContentType(item.content_type)"
+                          size="tiny"
+                          quaternary
+                          @click.stop="thumbs.retry(item.id)"
+                        >
+                          {{ $t('page.attachment.retry') }}
+                        </NButton>
+                      </template>
+                    </div>
+                    <div
+                      class="absolute left-8px top-8px rounded-4px bg-white/90 px-4px py-2px dark:bg-gray-900/80"
+                      @click.stop
+                    >
+                      <NCheckbox :checked="checked.includes(item.id)" @update:checked="() => toggle(item.id)" />
+                    </div>
                   </div>
-                  <div
-                    class="absolute left-8px top-8px rounded-4px bg-white/90 px-4px py-2px dark:bg-gray-900/80"
-                    @click.stop
-                  >
-                    <NCheckbox :checked="checked.includes(item.id)" @update:checked="() => toggle(item.id)" />
+                  <div class="min-w-0 px-10px py-8px">
+                    <div class="truncate text-12px font-medium" :title="item.original_name">{{ item.original_name }}</div>
+                    <div class="mt-2px text-11px text-gray-500">{{ formatFileSize(item.size) }}</div>
                   </div>
-                </div>
-                <div class="min-w-0 px-10px py-8px">
-                  <div class="truncate text-12px font-medium" :title="item.original_name">{{ item.original_name }}</div>
-                  <div class="mt-2px text-11px text-gray-500">{{ formatFileSize(item.size) }}</div>
-                </div>
-              </button>
+                </button>
+              </div>
+              <div class="py-12px text-center text-12px text-gray-500">
+                <template v-if="loadingMore">{{ $t('page.attachment.loadingMore') }}</template>
+                <template v-else-if="reachedCap">{{ $t('page.attachment.loadMoreCap') }}</template>
+                <template v-else-if="!hasMore">{{ $t('page.attachment.noMore') }}</template>
+              </div>
             </div>
           </NSpin>
         </NSpace>

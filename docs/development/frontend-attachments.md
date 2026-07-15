@@ -38,7 +38,7 @@
 
 有效上传策略：`POST .../attachments/policy`（设置覆盖 + 代码默认）。附件中心：`/system/attachments`（状态用 `CodeSelect` / `CodeTag` + CodeSet `system.attachment_status`；上传者展示 `uploader_name`）。
 
-选择器「我的上传」为**宫格预览**：图片经 `loadAttachmentPreviewBlob`（`thumb_status=ready` 时优先 `variant=thumb`，否则/失败降级原图）；非图显示类型图标。缩略图并发受限并在关闭时 `revokeObjectURL`。派生对象完整能力见 #36。
+选择器「我的上传」为**宫格预览** + **滚动加载更多**（首屏 24 条，触底追加，软顶 200；搜索重置第 1 页）。图片经 `loadAttachmentPreviewBlob`（`thumb_status=ready` 时优先 `variant=thumb`，否则/失败降级原图）；非图显示类型图标。缩略图并发受限并在关闭时 `revokeObjectURL`。派生对象完整能力见 #36。
 
 Demo：`/demo/attachments`（选择器主路径）。
 
