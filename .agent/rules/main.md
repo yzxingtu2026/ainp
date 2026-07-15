@@ -27,6 +27,7 @@
 - 后端多语言 i18n 见 `i18n`；前端多语言见 `frontend-i18n`。
 - 用户可见时间展示见 `datetime-display`。
 - 统一设置系统见 `settings-system`（管理端 `SettingService` Action；业务只读类型化 Provider，禁止散落 JSON/直写表）。
+- 统一对象存储见 `object-storage`（`ObjectStore` / `BuildKey`；禁止业务拼路径或按 provider 分支）。
 - 前端栈、图标协议见关联规则。
 
 ## 关联规则
@@ -35,6 +36,7 @@
 - `frontend-stack` → `docs/development/frontend-stack.md`
 - `datetime-display` → `docs/development/datetime-display.md`
 - `settings-system` → `docs/development/settings-system.md`
+- `object-storage` → `docs/development/object-storage.md`
 - `icon-library` → `docs/development/icon-library.md`
 - `logging` → `docs/development/logging.md`
 - `api-response` → `docs/development/api-response.md`

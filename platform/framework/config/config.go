@@ -14,6 +14,7 @@ type Config struct {
 	Logging   LoggingConfig  `yaml:"logging"`
 	Auth      AuthConfig     `yaml:"auth"`
 	I18n      I18nConfig     `yaml:"i18n"`
+	Storage   StorageConfig  `yaml:"storage"`
 	StateFile string         `yaml:"state_file"` // 安装状态文件路径，默认 configs/state.yaml
 }
 
@@ -46,6 +47,15 @@ type JWTConfig struct {
 type I18nConfig struct {
 	DefaultLanguage string `yaml:"default_language"` // 缺省语言；空则使用 zh-CN
 	Dir             string `yaml:"dir"`              // 翻译文件目录，默认 "i18n"
+}
+
+type StorageConfig struct {
+	Provider string             `yaml:"provider"` // local（默认）；s3/oss 后续扩展
+	Local    StorageLocalConfig `yaml:"local"`
+}
+
+type StorageLocalConfig struct {
+	RootDir string `yaml:"root_dir"`
 }
 
 func (j JWTConfig) Duration() time.Duration {
@@ -95,6 +105,12 @@ func (c *Config) applyDefaults() {
 	if c.StateFile == "" {
 		c.StateFile = "configs/state.yaml"
 	}
+	if c.Storage.Provider == "" {
+		c.Storage.Provider = "local"
+	}
+	if c.Storage.Local.RootDir == "" {
+		c.Storage.Local.RootDir = "data/objects"
+	}
 }
 
 // applyEnvOverrides 环境变量优先级高于配置文件。
@@ -104,6 +120,12 @@ func (c *Config) applyEnvOverrides() {
 	}
 	if secret := os.Getenv("JWT_SECRET"); secret != "" {
 		c.Auth.JWT.Secret = secret
+	}
+	if root := os.Getenv("STORAGE_LOCAL_ROOT"); root != "" {
+		c.Storage.Local.RootDir = root
+	}
+	if provider := os.Getenv("STORAGE_PROVIDER"); provider != "" {
+		c.Storage.Provider = provider
 	}
 }
 

@@ -14,6 +14,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/i18n"
 	"github.com/yzxingtu2026/ainp/platform/framework/logging"
 	"github.com/yzxingtu2026/ainp/platform/framework/state"
+	"github.com/yzxingtu2026/ainp/platform/framework/storage"
 	"github.com/yzxingtu2026/ainp/platform/modules/demo"
 	"github.com/yzxingtu2026/ainp/platform/modules/system"
 )
@@ -129,6 +130,16 @@ func runNormalMode(ctx context.Context, cfg *config.Config, cfgPath *string) {
 	}
 
 	application := app.New(cfg, db, auditor, tokens)
+
+	store, err := storage.NewFromConfig(storage.Config{
+		Provider: cfg.Storage.Provider,
+		Local:    storage.LocalConfig{RootDir: cfg.Storage.Local.RootDir},
+	}, nil)
+	if err != nil {
+		logging.Error(ctx, "init object store failed", err)
+		os.Exit(1)
+	}
+	application.Storage = store
 
 	// 注册 setup actions（已安装模式下 setup_initialize 会返回已安装错误）
 	st, _ := state.Load(cfg.StateFile)

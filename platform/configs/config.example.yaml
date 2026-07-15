@@ -25,3 +25,10 @@ i18n:
   default_language: zh-CN
   # 翻译文件目录（相对于运行目录）；Agent 新增语言文件放此目录即可
   dir: i18n
+
+storage:
+  # 对象存储 Provider：Phase 1 仅 local；S3/OSS 后续 Adapter
+  provider: local
+  local:
+    # 本地对象根目录（相对运行目录或绝对路径）；勿提交真实生产路径密钥
+    root_dir: data/objects

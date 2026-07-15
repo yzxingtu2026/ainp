@@ -34,3 +34,6 @@ frontend/dist-*/
 # backend hot-reload build output (Air)
 platform/tmp/
 platform/build-errors.log
+
+# local object store root (see storage.local.root_dir)
+platform/data/

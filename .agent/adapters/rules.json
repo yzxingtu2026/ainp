@@ -292,6 +292,23 @@
           "alwaysApply": true
         }
       }
+    },
+    {
+      "id": "object-storage",
+      "source": ".agent/rules/object-storage.md",
+      "qoder": {
+        "path": ".qoder/rules/object-storage.md",
+        "frontmatter": {
+          "trigger": "always_on"
+        }
+      },
+      "cursor": {
+        "path": ".cursor/rules/object-storage.mdc",
+        "frontmatter": {
+          "description": "统一 ObjectStore，禁止业务拼路径或按 provider 分支",
+          "alwaysApply": true
+        }
+      }
     }
   ]
 }
