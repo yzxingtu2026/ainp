@@ -86,11 +86,13 @@ func DefaultUploadPolicy() UploadPolicy {
 		MaxSizeBytes: 20 << 20, // 20 MiB
 		AllowedMIME: []string{
 			"image/png", "image/jpeg", "image/gif", "image/webp",
+			"video/mp4", "video/webm", "video/quicktime",
 			"application/pdf", "text/plain",
 			"application/zip", "application/octet-stream",
 		},
 		AllowedExt: []string{
 			".png", ".jpg", ".jpeg", ".gif", ".webp",
+			".mp4", ".webm", ".mov",
 			".pdf", ".txt", ".zip",
 		},
 		TempRetain:     24 * time.Hour,

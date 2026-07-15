@@ -58,6 +58,9 @@ func AutoMigrate(db *gorm.DB) error {
 	if err := ensureAttachmentStatusConstraint(db); err != nil {
 		return err
 	}
+	if err := ensureAttachmentThumbStatusConstraint(db); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -73,6 +76,24 @@ func ensureAttachmentStatusConstraint(db *gorm.DB) error {
 	}
 	return db.Exec(`ALTER TABLE attachments DROP CONSTRAINT IF EXISTS ck_attachments_status;
 ALTER TABLE attachments ADD CONSTRAINT ck_attachments_status CHECK (status IN ('pending','ready','deleting','deleted','failed'))`).Error
+}
+
+func ensureAttachmentThumbStatusConstraint(db *gorm.DB) error {
+	// Normalize legacy empty string to NULL (CHECK forbids '').
+	if err := db.Exec(`UPDATE attachments SET thumb_status = NULL WHERE thumb_status = ''`).Error; err != nil {
+		return err
+	}
+	var invalid int64
+	if err := db.Model(&model.Attachment{}).Where("thumb_status IS NOT NULL AND thumb_status NOT IN ?", []status.AttachmentThumbStatus{
+		status.AttachmentThumbPending, status.AttachmentThumbReady, status.AttachmentThumbFailed, status.AttachmentThumbSkipped,
+	}).Count(&invalid).Error; err != nil {
+		return err
+	}
+	if invalid > 0 {
+		return fmt.Errorf("attachments contains %d invalid thumb_status values", invalid)
+	}
+	return db.Exec(`ALTER TABLE attachments DROP CONSTRAINT IF EXISTS ck_attachments_thumb_status;
+ALTER TABLE attachments ADD CONSTRAINT ck_attachments_thumb_status CHECK (thumb_status IS NULL OR thumb_status IN ('pending','ready','failed','skipped'))`).Error
 }
 
 func ensureAuthVersionConstraint(db *gorm.DB) error {

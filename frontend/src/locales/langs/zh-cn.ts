@@ -258,6 +258,8 @@ const local: App.I18n.Schema = {
       retry: '重试',
       empty: '暂无附件',
       preview: '预览',
+      previewFailed: '预览加载失败',
+      previewUnavailable: '暂无法预览',
       download: '下载',
       unbind: '解绑',
       confirmUnbind: '确认解除该附件与业务资源的关联？',

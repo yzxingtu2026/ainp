@@ -501,6 +501,8 @@ declare namespace App {
           retry: string;
           empty: string;
           preview: string;
+          previewFailed: string;
+          previewUnavailable: string;
           download: string;
           unbind: string;
           confirmUnbind: string;

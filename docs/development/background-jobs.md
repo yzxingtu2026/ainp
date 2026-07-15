@@ -50,6 +50,8 @@ jobs:
 
 `POST /api/v1/demo/jobs/ping` → Outbox `demo.job_ping.v1` → 入队 `demo.ping` → Worker 进度 → `succeeded`。
 
+附件缩略图（#36）：上传 `ready` → Outbox `attachment.ready.v1` → 入队 `attachment.generate_thumb`（`file` 队列）→ 写入派生对象；详见 `docs/development/attachments.md`。
+
 ## 非目标
 
 管理前端、完整 Scheduler UI、Workflow/DAG、Redis Cluster、具体转码/AI Job 实现、exactly-once。

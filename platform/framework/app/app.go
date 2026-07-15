@@ -58,6 +58,7 @@ func New(cfg *config.Config, db *gorm.DB, auditor audit.Recorder, tokens *auth.T
 	codeSets := codeset.NewRegistry()
 	_ = codeSets.Register(codeset.ActivationStatus())
 	_ = codeSets.Register(codeset.AttachmentStatus())
+	_ = codeSets.Register(codeset.AttachmentThumbStatus())
 	_ = codeSets.Register(codeset.OutboxStatus())
 	_ = codeSets.Register(codeset.DeliveryStatus())
 	_ = codeSets.Register(codeset.JobRunStatus())

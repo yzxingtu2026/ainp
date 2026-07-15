@@ -6,6 +6,7 @@ import {
   attachmentTypeIcon,
   formatFileSize,
   isImageContentType,
+  isVideoContentType,
   useAttachmentGridThumbs
 } from '@/hooks/business/attachment';
 import { DEFAULT_ATTACHMENT_UPLOAD_POLICY } from '@/constants/attachment';
@@ -48,6 +49,8 @@ const policy = ref<Api.Attachment.UploadPolicy | null>(null);
 const page = ref(1);
 const total = ref(0);
 const scrollEl = ref<HTMLElement | null>(null);
+/** 本批上传成功的 id，整批 idle 后再切 tab 并刷新列表 */
+const pendingSelectIds = ref<string[]>([]);
 
 const gridEnabled = computed(() => props.show && tab.value === 'mine');
 const limit = computed(() => props.maxCount || policy.value?.max_uploads_once || DEFAULT_ATTACHMENT_UPLOAD_POLICY.maxUploadsOnce);
@@ -61,11 +64,13 @@ watch(
   async visible => {
     if (!visible) {
       thumbs.clear();
+      pendingSelectIds.value = [];
       return;
     }
     checked.value = [...props.selectedIds];
     tab.value = 'mine';
     keyword.value = '';
+    pendingSelectIds.value = [];
     await Promise.all([loadPolicy(), resetAndLoadMine()]);
   }
 );
@@ -148,12 +153,31 @@ function toggle(id: string) {
 }
 
 function onUploaded(attachment: Api.Attachment.Item) {
-  if (attachment.status === 'ready' && !records.value.some(item => item.id === attachment.id)) {
-    records.value = [attachment, ...records.value];
-    total.value += 1;
+  // 单文件成功时先记入待选；整批 idle 后再切「我的上传」并刷新，避免销毁上传面板中断其余任务
+  if (attachment.status === 'ready' && !pendingSelectIds.value.includes(attachment.id)) {
+    pendingSelectIds.value = [...pendingSelectIds.value, attachment.id];
   }
-  toggle(attachment.id);
+}
+
+async function onUploadIdle() {
+  if (!pendingSelectIds.value.length) return;
+  const ids = [...pendingSelectIds.value];
+  pendingSelectIds.value = [];
   tab.value = 'mine';
+  await resetAndLoadMine();
+  for (const id of ids) {
+    if (!checked.value.includes(id)) {
+      if (!props.multiple) {
+        checked.value = [id];
+        break;
+      }
+      if (checked.value.length >= limit.value) {
+        window.$message?.warning($t('page.attachment.maxCountReached'));
+        break;
+      }
+      checked.value = [...checked.value, id];
+    }
+  }
 }
 
 function close() {
@@ -177,7 +201,7 @@ function confirm() {
     @update:show="(v: boolean) => emit('update:show', v)"
   >
     <NTabs v-model:value="tab" type="line">
-      <NTabPane name="mine" :tab="$t('page.attachment.pickerMine')">
+      <NTabPane name="mine" :tab="$t('page.attachment.pickerMine')" display-directive="show">
         <NSpace vertical>
           <NInput
             v-model:value="keyword"
@@ -219,11 +243,18 @@ function confirm() {
                       class="h-full w-full object-cover"
                     />
                     <div v-else class="h-full w-full flex-col-center gap-6px text-gray-400">
-                      <NSpin v-if="thumbs.loadingIds[item.id]" :size="18" />
+                      <NSpin
+                        v-if="thumbs.loadingIds[item.id] || item.thumb_status === 'pending'"
+                        :size="18"
+                      />
                       <template v-else>
                         <Icon :icon="attachmentTypeIcon(item.content_type)" class="text-28px" />
                         <NButton
-                          v-if="thumbs.failedIds[item.id] && isImageContentType(item.content_type)"
+                          v-if="
+                            thumbs.failedIds[item.id] &&
+                            item.thumb_status === 'ready' &&
+                            (isImageContentType(item.content_type) || isVideoContentType(item.content_type))
+                          "
                           size="tiny"
                           quaternary
                           @click.stop="thumbs.retry(item.id)"
@@ -254,7 +285,7 @@ function confirm() {
           </NSpin>
         </NSpace>
       </NTabPane>
-      <NTabPane name="upload" :tab="$t('page.attachment.pickerUpload')">
+      <NTabPane name="upload" :tab="$t('page.attachment.pickerUpload')" display-directive="show">
         <AttachmentUpload
           :multiple="multiple"
           :max-count="limit"
@@ -262,6 +293,7 @@ function confirm() {
           :allowed-ext="policy?.allowed_ext"
           :allowed-mime="policy?.allowed_mime"
           @success="onUploaded"
+          @idle="onUploadIdle"
         />
       </NTabPane>
     </NTabs>
