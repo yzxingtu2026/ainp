@@ -30,6 +30,7 @@
 - 统一对象存储见 `object-storage`（`ObjectStore` / `BuildKey`；禁止业务拼路径或按 provider 分支）。
 - 租户隔离附件见 `attachments`（元数据 + prepare/transfer token + AccessPolicy；禁止文件进 JSON、禁止未注册 resource_type）。
 - 前端统一附件组件见 `frontend-attachments`（Client/队列/Field；禁止拼 key、禁止附件中心）。
+- Transactional Outbox 见 `transactional-outbox`（同事务写事件；禁止直写 outbox 表 / 同步双写 Redis）。
 - 前端栈、图标协议见关联规则。
 
 ## 关联规则
@@ -41,6 +42,7 @@
 - `object-storage` → `docs/development/object-storage.md`
 - `attachments` → `docs/development/attachments.md`
 - `frontend-attachments` → `docs/development/frontend-attachments.md`
+- `transactional-outbox` → `docs/development/transactional-outbox.md`
 - `icon-library` → `docs/development/icon-library.md`
 - `logging` → `docs/development/logging.md`
 - `api-response` → `docs/development/api-response.md`

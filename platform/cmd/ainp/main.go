@@ -14,6 +14,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/database"
 	"github.com/yzxingtu2026/ainp/platform/framework/i18n"
 	"github.com/yzxingtu2026/ainp/platform/framework/logging"
+	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
 	"github.com/yzxingtu2026/ainp/platform/framework/state"
 	"github.com/yzxingtu2026/ainp/platform/framework/storage"
 	"github.com/yzxingtu2026/ainp/platform/modules/demo"
@@ -148,6 +149,13 @@ func runNormalMode(ctx context.Context, cfg *config.Config, cfgPath *string) {
 		os.Exit(1)
 	}
 	application.TransferTokens = transferTokens
+
+	outboxRT, err := outbox.NewRuntime(db, cfg.Outbox)
+	if err != nil {
+		logging.Error(ctx, "init outbox failed", err)
+		os.Exit(1)
+	}
+	application.Outbox = outboxRT
 
 	// 注册 setup actions（已安装模式下 setup_initialize 会返回已安装错误）
 	st, _ := state.Load(cfg.StateFile)

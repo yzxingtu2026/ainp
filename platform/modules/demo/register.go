@@ -174,7 +174,7 @@ func Register(a *app.App) error {
 		return err
 	}
 
-	return a.RegisterMenu(menu.Menu{
+	if err := a.RegisterMenu(menu.Menu{
 		ID:         "demo.attachments_page",
 		ParentID:   "demo.root",
 		Title:      "附件联调",
@@ -186,5 +186,9 @@ func Register(a *app.App) error {
 		Permission: "system.attachment_list_by_resource",
 		Module:     "demo",
 		Order:      2,
-	})
+	}); err != nil {
+		return err
+	}
+
+	return registerOutboxDemo(a)
 }

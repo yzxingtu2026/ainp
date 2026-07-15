@@ -32,3 +32,16 @@ storage:
   local:
     # 本地对象根目录（相对运行目录或绝对路径）；勿提交真实生产路径密钥
     root_dir: data/objects
+
+outbox:
+  # Transactional Outbox（Issue #20）；省略 enabled 时默认开启
+  enabled: true
+  # Phase 1：postgres（进程内 Handler）；后续可换 redis Streams Adapter
+  transport: postgres
+  batch_size: 32
+  poll_interval: 1s
+  lock_timeout: 30s
+  max_attempts: 10
+  backoff_base: 1s
+  backoff_max: 5m
+  shutdown_timeout: 15s
