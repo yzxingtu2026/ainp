@@ -110,8 +110,10 @@ export const request = createFlatRequest(
       const payload = axiosError.response?.data;
 
       if (axiosError.response?.status === 401) {
-        authStore.resetStore();
-        showErrorMsg(request.state, backendMessage(payload) || 'unauthorized');
+        // 权限变更会递增 auth_version，旧 Token 在此失效；必须等登出完成再提示
+        void authStore.resetStore().then(() => {
+          showErrorMsg(request.state, backendMessage(payload) || $t('request.logoutMsg'));
+        });
         return;
       }
 

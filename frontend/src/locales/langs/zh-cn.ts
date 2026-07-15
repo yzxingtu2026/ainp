@@ -348,7 +348,9 @@ const local: App.I18n.Schema = {
       disabled: '已停用',
       userCount: '用户数',
       permissions: '分配权限',
-      updatedAt: '更新时间'
+      updatedAt: '更新时间',
+      reloginRequired: '权限已更新，你当前角色的登录态已失效，请重新登录后再继续操作。',
+      reloginNow: '重新登录'
     },
     login: {
       common: {

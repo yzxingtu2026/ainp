@@ -592,6 +592,8 @@ declare namespace App {
           userCount: string;
           permissions: string;
           updatedAt: string;
+          reloginRequired: string;
+          reloginNow: string;
         };
         login: {
           common: {

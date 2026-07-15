@@ -352,7 +352,10 @@ const local: App.I18n.Schema = {
       disabled: 'Disabled',
       userCount: 'Users',
       permissions: 'Permissions',
-      updatedAt: 'Updated At'
+      updatedAt: 'Updated At',
+      reloginRequired:
+        'Permissions updated. Your current session is no longer valid because you hold this role. Please sign in again to continue.',
+      reloginNow: 'Sign in again'
     },
     login: {
       common: {
