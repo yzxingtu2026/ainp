@@ -68,11 +68,7 @@ func TestAuthMiddlewareFailsClosedWhenAuthorizationIsStale(t *testing.T) {
 	router := gin.New()
 	router.Use(middleware.RequestID(), middleware.Auth(middleware.AuthOptions{Tokens: tokens, Authorization: provider}))
 	router.GET("/protected", func(c *gin.Context) {
-		if auth.MustFromContext(c.Request.Context()).Authenticated {
-			c.Status(http.StatusNoContent)
-			return
-		}
-		c.Status(http.StatusUnauthorized)
+		c.Status(http.StatusNoContent)
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
@@ -94,11 +90,7 @@ func TestAuthMiddlewareRejectsMismatchedAuthorizationSnapshot(t *testing.T) {
 	router := gin.New()
 	router.Use(middleware.RequestID(), middleware.Auth(middleware.AuthOptions{Tokens: tokens, Authorization: provider}))
 	router.GET("/protected", func(c *gin.Context) {
-		if auth.MustFromContext(c.Request.Context()).Authenticated {
-			c.Status(http.StatusNoContent)
-			return
-		}
-		c.Status(http.StatusUnauthorized)
+		c.Status(http.StatusNoContent)
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/protected", nil)

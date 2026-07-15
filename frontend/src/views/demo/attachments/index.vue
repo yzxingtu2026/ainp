@@ -16,6 +16,7 @@ const demoResourceId = 'demo-task-1';
             resource_type=<code>{{ ATTACHMENT_RESOURCE_TYPES.demoTask }}</code>
             ，resource_id=<code>{{ demoResourceId }}</code>
             ，field=<code>files</code>
+            。主入口为「选择附件」弹层（我的上传 / 上传新文件）。
           </div>
         </NAlert>
         <AttachmentField

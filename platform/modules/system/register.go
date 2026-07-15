@@ -79,7 +79,8 @@ func Register(a *app.App) error {
 	if a.AttachmentPolicies == nil {
 		a.AttachmentPolicies = attachment.NewPolicyRegistry()
 	}
-	attachSvc := NewAttachmentService(a.DB, a.Storage, a.TransferTokens, a.AttachmentPolicies, nil)
+	policyProvider := NewSettingUploadPolicyProvider(settingSvc.Provider())
+	attachSvc := NewAttachmentService(a.DB, a.Storage, a.TransferTokens, a.AttachmentPolicies, policyProvider)
 	if err := registerAttachmentActions(a, attachSvc); err != nil {
 		return err
 	}
@@ -239,9 +240,17 @@ func Register(a *app.App) error {
 		return err
 	}
 
-	return a.RegisterMenu(menu.Menu{
+	if err := a.RegisterMenu(menu.Menu{
 		ID: MenuSettingManagement, ParentID: "system.root", Title: "系统设置", TitleKey: "menu.system.settings.title",
 		Icon: "mdi:tune-vertical", Type: menu.TypeMenu, Path: "/system/settings", Component: "system/settings",
 		Permission: ActionSettingList, BindAction: ActionSettingList, Module: "system", Order: 4,
+	}); err != nil {
+		return err
+	}
+
+	return a.RegisterMenu(menu.Menu{
+		ID: MenuAttachmentCenter, ParentID: "system.root", Title: "附件中心", TitleKey: "menu.system.attachments.title",
+		Icon: "mdi:paperclip", Type: menu.TypeMenu, Path: "/system/attachments", Component: "system/attachments",
+		Permission: ActionAttachmentList, BindAction: ActionAttachmentList, Module: "system", Order: 5,
 	})
 }

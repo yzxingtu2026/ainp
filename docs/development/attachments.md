@@ -34,6 +34,7 @@ Local Provider 返回本服务流式 URL；未来 S3/OSS 可换预签名 URL，�
 1. Action `system.attachment_download_prepare`：校验租户、状态、上传者/业务访问策略后签发 **download** token。
 2. `GET` / `HEAD` `/api/v1/attachments/transfer/:id`：支持 Range、Content-Length、Content-Type、ETag、安全 `Content-Disposition`（拒绝 CRLF）。
 3. 写流前失败返回统一 JSON 信封；开始写流后不再改 JSON。
+4. `download_prepare` 预留 `variant`（`original` / `thumb` / `preview`）；当前仅 `original` 可用，`thumb`/`preview` 返回 `attachment.variant_unavailable`（派生对象见后续 Issue）。
 
 ## 业务绑定与访问策略
 
@@ -44,8 +45,9 @@ Local Provider 返回本服务流式 URL；未来 S3/OSS 可换预签名 URL，�
 
 ## 策略与设置
 
-- 代码默认：`attachment.DefaultUploadPolicy()`（大小、MIME、扩展名、临时保留、transfer TTL）。
-- `PolicyProvider` 稳定接口；当前 `StaticPolicyProvider`；#13 租户覆盖通过 Provider 读取，不建第二套设置表。
+- 代码默认：`attachment.DefaultUploadPolicy()`。
+- 租户覆盖：设置组 `attachment.upload_policy`；`PolicyProvider`（`NewSettingUploadPolicyProvider`）读取有效值。
+- 前端预校验：`system.attachment_policy_get`，禁止硬编码为唯一来源。
 
 ## 删除与补偿
 
@@ -61,6 +63,9 @@ Local Provider 返回本服务流式 URL；未来 S3/OSS 可换预签名 URL，�
 | `system.attachment_download_prepare` | 准备下载 | true |
 | `system.attachment_bind` / `unbind` | 绑定/解绑 | true |
 | `system.attachment_list_by_resource` | 按资源列表 | true |
+| `system.attachment_list` | 分页列表（mine/all）；补充 `uploader_name` | false |
+| `system.attachment_get` | 详情与 links；补充 `uploader_name` | false |
+| `system.attachment_policy_get` | 有效上传策略 | false |
 | `system.attachment_delete` | 删除 | true |
 
 传输端点是专用 HTTP adapter，不接受业务参数；权限决策只在 Action / 领域服务完成。审计记录 attachment/resource/size/type/result，**禁止**记录文件内容与 transfer token 明文。

@@ -33,8 +33,14 @@ const { hasAuth } = useAuth();
 const items = ref<Api.Attachment.Item[]>([]);
 const loading = ref(false);
 const pending = ref<Api.Attachment.Item[]>([]);
+const pickerShow = ref(false);
 
-const canUpload = computed(() => hasAuth(ATTACHMENT_ACTIONS.uploadPrepare));
+const canPick = computed(
+  () =>
+    hasAuth(ATTACHMENT_ACTIONS.uploadPrepare) ||
+    hasAuth(ATTACHMENT_ACTIONS.list) ||
+    hasAuth(ATTACHMENT_ACTIONS.policyGet)
+);
 const canBind = computed(() => hasAuth(ATTACHMENT_ACTIONS.bind));
 const canUnbind = computed(() => hasAuth(ATTACHMENT_ACTIONS.unbind));
 const canDelete = computed(() => hasAuth(ATTACHMENT_ACTIONS.delete));
@@ -61,31 +67,35 @@ async function refresh() {
   }
 }
 
-async function handleUploaded(attachment: Api.Attachment.Item) {
-  if (!props.resourceId) {
-    // 临时上传：业务创建资源后再 bind；此处只展示本地 pending
-    if (!pending.value.some(i => i.id === attachment.id)) {
-      pending.value = [...pending.value, attachment];
+async function handlePicked(selected: Api.Attachment.Item[]) {
+  for (const attachment of selected) {
+    if (items.value.some(item => item.id === attachment.id) || pending.value.some(item => item.id === attachment.id)) {
+      continue;
     }
-    items.value = [...pending.value];
-    return;
+    if (!props.resourceId) {
+      pending.value = [...pending.value, attachment];
+      items.value = [...pending.value];
+      continue;
+    }
+    if (!canBind.value) {
+      window.$message?.error($t('page.attachment.noBindPermission'));
+      return;
+    }
+    const { error } = await bindAttachment({
+      attachment_id: attachment.id,
+      resource_type: props.resourceType,
+      resource_id: props.resourceId,
+      field: props.field
+    });
+    if (error) {
+      window.$message?.error(error.message || $t('page.attachment.bindFailed'));
+      return;
+    }
   }
-  if (!canBind.value) {
-    window.$message?.error($t('page.attachment.noBindPermission'));
-    return;
+  if (props.resourceId) {
+    window.$message?.success($t('page.attachment.uploadSuccess'));
+    await refresh();
   }
-  const { error } = await bindAttachment({
-    attachment_id: attachment.id,
-    resource_type: props.resourceType,
-    resource_id: props.resourceId,
-    field: props.field
-  });
-  if (error) {
-    window.$message?.error(error.message || $t('page.attachment.bindFailed'));
-    return;
-  }
-  window.$message?.success($t('page.attachment.uploadSuccess'));
-  await refresh();
 }
 
 async function handleUnbind(item: Api.Attachment.Item) {
@@ -131,7 +141,6 @@ async function handleDelete(item: Api.Attachment.Item) {
   await refresh();
 }
 
-/** 业务创建资源后调用，将临时附件正式绑定。 */
 async function bindPending(resourceId: string) {
   for (const item of pending.value) {
     const { error } = await bindAttachment({
@@ -156,14 +165,15 @@ watch(() => [props.resourceType, props.resourceId, props.field], refresh);
 
 <template>
   <div class="flex-col gap-16px">
-    <AttachmentUpload
-      v-if="!readonly && canUpload"
-      :multiple="multiple"
-      :max-count="maxCount"
-      :disabled="!canUpload"
-      @success="handleUploaded"
-    />
-    <NAlert v-else-if="!readonly && !canUpload" type="warning" :title="$t('page.attachment.noUploadPermission')" />
+    <div v-if="!readonly" class="flex items-center gap-12px">
+      <NButton type="primary" :disabled="!canPick" @click="pickerShow = true">
+        <template #icon>
+          <SvgIcon icon="mdi:paperclip" />
+        </template>
+        {{ $t('page.attachment.openPicker') }}
+      </NButton>
+      <NAlert v-if="!canPick" class="flex-1" type="warning" :title="$t('page.attachment.noUploadPermission')" />
+    </div>
     <AttachmentList
       :items="items"
       :loading="loading"
@@ -173,6 +183,13 @@ watch(() => [props.resourceType, props.resourceId, props.field], refresh);
       @unbind="handleUnbind"
       @delete="handleDelete"
       @refresh="refresh"
+    />
+    <AttachmentPicker
+      v-model:show="pickerShow"
+      :multiple="multiple"
+      :max-count="maxCount"
+      :selected-ids="items.map(i => i.id)"
+      @confirm="handlePicked"
     />
   </div>
 </template>

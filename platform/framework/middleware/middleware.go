@@ -131,6 +131,7 @@ func Auth(opts AuthOptions) gin.HandlerFunc {
 			}
 			claims, err := opts.Tokens.Parse(token)
 			if err != nil {
+				// 解析失败可能是附件 transfer token（不同 audience），交由后续专用校验。
 				c.Next()
 				return
 			}
@@ -139,7 +140,9 @@ func Auth(opts AuthOptions) gin.HandlerFunc {
 			})
 			if err != nil || snapshot == nil ||
 				snapshot.TenantID != claims.TenantID || snapshot.UserID != claims.UserID || snapshot.AuthVersion != claims.AuthVersion {
-				c.Next()
+				// 会话 JWT 已验签但授权版本失效/不匹配：直接 401，避免匿名继续打到受保护 Action。
+				response.Fail(c, errs.NewKey(errs.CodeUnauthorized, "common.unauthorized", "unauthorized"))
+				c.Abort()
 				return
 			}
 			ac.TenantID = snapshot.TenantID

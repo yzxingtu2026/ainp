@@ -1,5 +1,6 @@
 export const CODESET_KEYS = {
-  activationStatus: 'common.activation_status'
+  activationStatus: 'common.activation_status',
+  attachmentStatus: 'system.attachment_status'
 } as const;
 
 export const ACTIVATION_STATUS = {

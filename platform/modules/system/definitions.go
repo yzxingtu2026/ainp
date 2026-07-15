@@ -28,11 +28,15 @@ const (
 	ActionAttachmentUnbind          = "system.attachment_unbind"
 	ActionAttachmentListByResource  = "system.attachment_list_by_resource"
 	ActionAttachmentDelete          = "system.attachment_delete"
+	ActionAttachmentList            = "system.attachment_list"
+	ActionAttachmentGet             = "system.attachment_get"
+	ActionAttachmentPolicyGet       = "system.attachment_policy_get"
 
-	MenuRoleManagement    = "system.roles"
-	MenuUserManagement    = "system.users"
-	MenuSettingManagement = "system.settings"
-	BuiltinAdminCode      = "admin"
+	MenuRoleManagement      = "system.roles"
+	MenuUserManagement      = "system.users"
+	MenuSettingManagement   = "system.settings"
+	MenuAttachmentCenter    = "system.attachments"
+	BuiltinAdminCode        = "admin"
 )
 
 var adminMinimumPermissions = []string{
@@ -62,6 +66,8 @@ var adminMinimumPermissions = []string{
 	ActionAttachmentUnbind,
 	ActionAttachmentListByResource,
 	ActionAttachmentDelete,
+	ActionAttachmentList,
+	ActionAttachmentGet,
 }
 
 // AdminMinimumPermissions 返回内置管理员必须保留的最小权限副本（测试与文档对齐用）。

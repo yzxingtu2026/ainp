@@ -23,6 +23,7 @@ const local: App.I18n.Schema = {
     delete: 'Delete',
     deleteSuccess: 'Delete Success',
     confirmDelete: 'Are you sure you want to delete?',
+    detail: 'Details',
     edit: 'Edit',
     warning: 'Warning',
     error: 'Error',
@@ -239,6 +240,7 @@ const local: App.I18n.Schema = {
     system_users: 'Users',
     system_roles: 'Roles',
     system_settings: 'Settings',
+    system_attachments: 'Attachments',
     setup: 'Setup'
   },
   page: {
@@ -252,7 +254,7 @@ const local: App.I18n.Schema = {
     },
     attachment: {
       demoTitle: 'Attachment Components',
-      demoHint: 'Upload, preview, download, unbind and delete in a business context. Not a production attachment center.',
+      demoHint: 'Use the picker to upload or select attachments in a business context.',
       dropOrClick: 'Drop files here, or click to select',
       selectFiles: 'Select files',
       uploadHint: 'Max {size} per file. Allowed extensions: {ext}',
@@ -264,7 +266,7 @@ const local: App.I18n.Schema = {
       unbind: 'Unbind',
       confirmUnbind: 'Unbind this attachment from the resource?',
       confirmDelete: 'Delete this attachment permanently?',
-      uploadSuccess: 'Uploaded and bound',
+      uploadSuccess: 'Attachment linked',
       loadFailed: 'Failed to load attachments',
       bindFailed: 'Failed to bind attachment',
       unbindFailed: 'Failed to unbind',
@@ -272,6 +274,27 @@ const local: App.I18n.Schema = {
       downloadFailed: 'Failed to download',
       noUploadPermission: 'No upload permission',
       noBindPermission: 'No bind permission',
+      openPicker: 'Select attachments',
+      pickerTitle: 'Attachment picker',
+      pickerMine: 'My uploads',
+      pickerUpload: 'Upload new',
+      pickerConfirm: 'Confirm',
+      searchName: 'Search by file name',
+      maxCountReached: 'Selection limit reached',
+      loadingMore: 'Loading more…',
+      noMore: 'No more items',
+      loadMoreCap: 'Loaded many results. Narrow the search or open Attachment Center',
+      centerTitle: 'Attachment Center',
+      detailTitle: 'Attachment details',
+      fileName: 'File name',
+      contentType: 'Type',
+      size: 'Size',
+      statusLabel: 'Status',
+      statusAll: 'All statuses',
+      uploader: 'Uploader',
+      createdAt: 'Created at',
+      links: 'Bindings',
+      noLinks: 'No bindings',
       status: {
         queued: 'Queued',
         preparing: 'Preparing',
@@ -332,7 +355,10 @@ const local: App.I18n.Schema = {
       disabled: 'Disabled',
       userCount: 'Users',
       permissions: 'Permissions',
-      updatedAt: 'Updated At'
+      updatedAt: 'Updated At',
+      reloginRequired:
+        'Permissions updated. Your current session is no longer valid because you hold this role. Please sign in again to continue.',
+      reloginNow: 'Sign in again'
     },
     login: {
       common: {

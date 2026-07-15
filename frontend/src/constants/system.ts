@@ -22,5 +22,8 @@ export const SYSTEM_ACTIONS = {
   attachmentBind: 'system.attachment_bind',
   attachmentUnbind: 'system.attachment_unbind',
   attachmentListByResource: 'system.attachment_list_by_resource',
-  attachmentDelete: 'system.attachment_delete'
+  attachmentDelete: 'system.attachment_delete',
+  attachmentList: 'system.attachment_list',
+  attachmentGet: 'system.attachment_get',
+  attachmentPolicyGet: 'system.attachment_policy_get'
 } as const;

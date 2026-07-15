@@ -216,10 +216,26 @@ async function savePermissions() {
   if (!editing.value) return;
   saving.value = true;
   try {
+    const roleCode = editing.value.code;
+    const affectsSelf = authStore.userInfo.roles.includes(roleCode);
     const { error } = await updateRolePermissions(editing.value.id, selectedPermissions.value);
     if (!error) {
-      window.$message?.success($t('common.updateSuccess'));
       permissionsVisible.value = false;
+      if (affectsSelf) {
+        window.$dialog?.warning({
+          title: $t('common.warning'),
+          content: $t('page.role.reloginRequired'),
+          positiveText: $t('page.role.reloginNow'),
+          closable: false,
+          maskClosable: false,
+          closeOnEsc: false,
+          onPositiveClick: async () => {
+            await authStore.resetStore();
+          }
+        });
+        return;
+      }
+      window.$message?.success($t('common.updateSuccess'));
       await loadRoles();
     }
   } finally {

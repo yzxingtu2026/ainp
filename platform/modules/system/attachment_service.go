@@ -63,6 +63,11 @@ type attachmentIDRequest struct {
 	ID string `json:"id"`
 }
 
+type attachmentDownloadPrepareRequest struct {
+	ID      string `json:"id"`
+	Variant string `json:"variant"` // original | thumb | preview；空 = original
+}
+
 type attachmentBindRequest struct {
 	AttachmentID string `json:"attachment_id"`
 	ResourceType string `json:"resource_type"`
@@ -84,6 +89,7 @@ type AttachmentView struct {
 	SHA256       string `json:"sha256,omitempty"`
 	Status       string `json:"status"`
 	UploaderID   string `json:"uploader_id"`
+	UploaderName string `json:"uploader_name,omitempty"`
 	CreatedAt    string `json:"created_at"`
 	UpdatedAt    string `json:"updated_at"`
 }
@@ -175,9 +181,21 @@ func (s *AttachmentService) DownloadPrepare(ctx context.Context, input json.RawM
 	if err != nil {
 		return nil, err
 	}
-	var req attachmentIDRequest
+	var req attachmentDownloadPrepareRequest
 	if err := json.Unmarshal(input, &req); err != nil || req.ID == "" {
 		return nil, errs.ValidationKey("common.validation_failed", "attachment id required")
+	}
+	variant := strings.TrimSpace(strings.ToLower(req.Variant))
+	if variant == "" {
+		variant = "original"
+	}
+	switch variant {
+	case "original":
+		// Phase 1：仅原图；thumb/preview 由派生对象 Issue 落地
+	case "thumb", "preview":
+		return nil, errs.NewKey(errs.CodeNotFound, "attachment.variant_unavailable", "attachment variant not available")
+	default:
+		return nil, errs.ValidationKey("common.validation_failed", "invalid variant")
 	}
 	row, err := s.getOwned(ctx, tenantID, req.ID)
 	if err != nil {

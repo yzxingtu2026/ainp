@@ -12,6 +12,8 @@ const props = withDefaults(
     disabled?: boolean;
     maxCount?: number;
     maxSizeBytes?: number;
+    allowedExt?: string[];
+    allowedMime?: string[];
   }>(),
   {
     multiple: true,
@@ -38,6 +40,8 @@ const {
 } = useAttachmentUploadQueue({
   maxCount: props.maxCount,
   maxSizeBytes: props.maxSizeBytes,
+  allowedExt: props.allowedExt,
+  allowedMime: props.allowedMime,
   onSuccess: async item => {
     if (item.attachment) {
       emit('success', item.attachment);

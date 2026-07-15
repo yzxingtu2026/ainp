@@ -2,6 +2,7 @@ package system
 
 import (
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
+	"github.com/yzxingtu2026/ainp/platform/framework/attachment"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/setting"
 )
@@ -17,8 +18,88 @@ func registerExampleSettings(a *app.App) error {
 	if err := registerPreferencesSetting(a); err != nil {
 		return err
 	}
-	return registerVisibilityDemoSetting(a)
+	if err := registerVisibilityDemoSetting(a); err != nil {
+		return err
+	}
+	return registerAttachmentUploadPolicySetting(a)
 }
+
+func registerAttachmentUploadPolicySetting(a *app.App) error {
+	if err := a.RegisterSettingCategory(setting.Category{
+		Key: "attachment", Title: "附件", TitleKey: "setting.category.attachment.title",
+		Description: "附件上传与保留策略", DescriptionKey: "setting.category.attachment.description",
+		Icon: "mdi:paperclip", Order: 20, Surface: auth.RealmTenant,
+	}); err != nil {
+		return err
+	}
+	minMB := 1.0
+	maxMB := 200.0
+	stepMB := 1.0
+	minHours := 1.0
+	maxHours := 168.0
+	minTTL := 1.0
+	maxTTL := 120.0
+	minOnce := 1.0
+	maxOnce := 50.0
+	def := attachment.DefaultUploadPolicy()
+	extOpts := make([]setting.FieldOption, 0, len(def.AllowedExt))
+	for _, ext := range def.AllowedExt {
+		extOpts = append(extOpts, setting.FieldOption{Value: ext, Label: ext})
+	}
+	mimeOpts := make([]setting.FieldOption, 0, len(def.AllowedMIME))
+	for _, mime := range def.AllowedMIME {
+		mimeOpts = append(mimeOpts, setting.FieldOption{Value: mime, Label: mime})
+	}
+	extDefaults := make([]any, 0, len(def.AllowedExt))
+	for _, ext := range def.AllowedExt {
+		extDefaults = append(extDefaults, ext)
+	}
+	mimeDefaults := make([]any, 0, len(def.AllowedMIME))
+	for _, mime := range def.AllowedMIME {
+		mimeDefaults = append(mimeDefaults, mime)
+	}
+	return a.RegisterSettingDefinition(setting.Definition{
+		Key: SettingKeyAttachmentUploadPolicy, CategoryKey: "attachment",
+		Title: "上传策略", TitleKey: "setting.definition.attachment.upload_policy.title",
+		Description: "控制上传大小、类型与临时保留；代码默认值可在此覆盖", DescriptionKey: "setting.definition.attachment.upload_policy.description",
+		Scope: setting.ScopeTenant, Surface: auth.RealmTenant,
+		Permission: ActionSettingList, Order: 10, SchemaVersion: 1,
+		Fields: []setting.Field{
+			{
+				Key: "max_size_mb", Type: setting.FieldNumber,
+				Label: "最大文件大小 (MB)", LabelKey: "setting.field.attachment.upload_policy.max_size_mb.label",
+				Required: true, Default: float64(def.MaxSizeBytes / (1024 * 1024)), Min: &minMB, Max: &maxMB, Step: &stepMB,
+			},
+			{
+				Key: "allowed_ext", Type: setting.FieldMultiSelect,
+				Label: "允许扩展名", LabelKey: "setting.field.attachment.upload_policy.allowed_ext.label",
+				Required: true, Default: extDefaults, Options: extOpts,
+			},
+			{
+				Key: "allowed_mime", Type: setting.FieldMultiSelect,
+				Label: "允许 MIME", LabelKey: "setting.field.attachment.upload_policy.allowed_mime.label",
+				Required: true, Default: mimeDefaults, Options: mimeOpts,
+			},
+			{
+				Key: "temp_retain_hours", Type: setting.FieldNumber,
+				Label: "临时保留 (小时)", LabelKey: "setting.field.attachment.upload_policy.temp_retain_hours.label",
+				Required: true, Default: def.TempRetain.Hours(), Min: &minHours, Max: &maxHours, Step: &stepMB,
+			},
+			{
+				Key: "transfer_ttl_minutes", Type: setting.FieldNumber,
+				Label: "传输令牌有效期 (分钟)", LabelKey: "setting.field.attachment.upload_policy.transfer_ttl_minutes.label",
+				Required: true, Default: def.TransferTTL.Minutes(), Min: &minTTL, Max: &maxTTL, Step: &stepMB,
+			},
+			{
+				Key: "max_uploads_once", Type: setting.FieldNumber,
+				Label: "单次最多上传数", LabelKey: "setting.field.attachment.upload_policy.max_uploads_once.label",
+				Required: true, Default: float64(def.MaxUploadsOnce), Min: &minOnce, Max: &maxOnce, Step: &stepMB,
+			},
+		},
+	})
+}
+
+func intPtr(v int) *int { return &v }
 
 func registerPreferencesSetting(a *app.App) error {
 	minLen := 1
@@ -133,5 +214,3 @@ func registerVisibilityDemoSetting(a *app.App) error {
 		},
 	})
 }
-
-func intPtr(v int) *int { return &v }
