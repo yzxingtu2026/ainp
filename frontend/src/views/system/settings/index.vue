@@ -17,6 +17,7 @@ const activeCategoryKey = ref('');
 const activeDefinitionKey = ref('');
 const formRef = ref<FormInst | null>(null);
 const formModel = reactive<Record<string, unknown>>({});
+const baseline = ref<Record<string, unknown>>({});
 const current = ref<Api.Setting.Definition | null>(null);
 
 function can(permission: string) {
@@ -31,6 +32,18 @@ const categoryMenuOptions = computed<MenuOption[]>(() =>
     key: category.key,
     icon: () => h(SvgIcon, { icon: category.icon, localIcon: category.local_icon })
   }))
+);
+
+const isDirty = computed(() => {
+  if (!current.value) return false;
+  return current.value.fields.some(field => !isSameValue(formModel[field.key], baseline.value[field.key]));
+});
+
+const showActions = computed(
+  () =>
+    isDirty.value &&
+    Boolean(current.value) &&
+    (can(SYSTEM_ACTIONS.settingUpdate) || can(SYSTEM_ACTIONS.settingReset))
 );
 
 const formRules = computed<FormRules>(() => {
@@ -55,14 +68,38 @@ const formRules = computed<FormRules>(() => {
   return rules;
 });
 
+function isSameValue(left: unknown, right: unknown) {
+  return JSON.stringify(normalizeValue(left)) === JSON.stringify(normalizeValue(right));
+}
+
+function normalizeValue(value: unknown) {
+  if (Array.isArray(value)) return [...value].map(String).sort();
+  return value ?? null;
+}
+
+function cloneValues(values: Record<string, unknown>) {
+  return JSON.parse(JSON.stringify(values)) as Record<string, unknown>;
+}
+
+function snapshotValues(definition: Api.Setting.Definition) {
+  const values: Record<string, unknown> = {};
+  definition.fields.forEach(field => {
+    const value = definition.values[field.key];
+    values[field.key] = value === undefined ? field.default : value;
+  });
+  return values;
+}
+
 function applyDefinition(definition: Api.Setting.Definition | null) {
   current.value = definition;
   Object.keys(formModel).forEach(key => delete formModel[key]);
-  if (!definition) return;
-  definition.fields.forEach(field => {
-    const value = definition.values[field.key];
-    formModel[field.key] = value === undefined ? field.default : value;
-  });
+  if (!definition) {
+    baseline.value = {};
+    return;
+  }
+  const values = snapshotValues(definition);
+  baseline.value = cloneValues(values);
+  Object.assign(formModel, cloneValues(values));
 }
 
 async function loadSettings() {
@@ -71,6 +108,7 @@ async function loadSettings() {
     const { data, error } = await fetchSettingList();
     if (error || !data) {
       categories.value = [];
+      applyDefinition(null);
       return;
     }
     categories.value = data.categories || [];
@@ -83,9 +121,9 @@ async function loadSettings() {
     }
     activeCategoryKey.value = category.key;
     const definition =
-      category.definitions.find(item => item.key === activeDefinitionKey.value) || category.definitions[0];
+      category.definitions.find(item => item.key === activeDefinitionKey.value) || category.definitions[0] || null;
     activeDefinitionKey.value = definition?.key || '';
-    applyDefinition(definition || null);
+    applyDefinition(definition);
   } finally {
     loading.value = false;
   }
@@ -94,13 +132,16 @@ async function loadSettings() {
 function handleCategoryChange(key: string) {
   activeCategoryKey.value = key;
   const category = categories.value.find(item => item.key === key);
-  activeDefinitionKey.value = category?.definitions[0]?.key || '';
-  applyDefinition(category?.definitions[0] || null);
+  const definition = category?.definitions[0] || null;
+  activeDefinitionKey.value = definition?.key || '';
+  applyDefinition(definition);
 }
 
 watch(activeDefinitionKey, key => {
+  if (!key) return;
   const category = activeCategory.value;
   const definition = category?.definitions.find(item => item.key === key) || null;
+  if (definition?.key === current.value?.key) return;
   applyDefinition(definition);
 });
 
@@ -149,8 +190,22 @@ onMounted(loadSettings);
 <template>
   <div class="min-h-500px flex-col-stretch gap-16px overflow-hidden lt-sm:overflow-auto">
     <NCard :title="$t('page.setting.title')" :bordered="false" class="card-wrapper" :loading="loading">
+      <template #header-extra>
+        <NSpace v-if="showActions">
+          <NButton v-if="can(SYSTEM_ACTIONS.settingUpdate)" type="primary" :loading="saving" @click="handleSave">
+            {{ $t('common.confirm') }}
+          </NButton>
+          <NPopconfirm v-if="can(SYSTEM_ACTIONS.settingReset)" @positive-click="handleReset">
+            <template #trigger>
+              <NButton :loading="saving">{{ $t('page.setting.reset') }}</NButton>
+            </template>
+            {{ $t('page.setting.resetConfirm') }}
+          </NPopconfirm>
+        </NSpace>
+      </template>
+
       <NEmpty v-if="!loading && categories.length === 0" :description="$t('page.setting.empty')" />
-      <div v-else class="flex gap-16px lt-md:flex-col">
+      <div v-else-if="categories.length > 0" class="flex gap-16px lt-md:flex-col">
         <div class="w-220px shrink-0 lt-md:w-full">
           <NMenu :value="activeCategoryKey" :options="categoryMenuOptions" @update:value="handleCategoryChange" />
         </div>
@@ -176,12 +231,7 @@ onMounted(loadSettings);
               · revision {{ current.revision }}
             </NAlert>
             <NForm ref="formRef" :model="formModel" :rules="formRules" label-placement="left" label-width="140">
-              <NFormItem
-                v-for="field in current.fields"
-                :key="field.key"
-                :label="field.label"
-                :path="field.key"
-              >
+              <NFormItem v-for="field in current.fields" :key="field.key" :label="field.label" :path="field.key">
                 <div class="w-full">
                   <NInput
                     v-if="field.type === 'text'"
@@ -223,21 +273,8 @@ onMounted(loadSettings);
                 </div>
               </NFormItem>
             </NForm>
-            <NSpace>
-              <NButton v-if="can(SYSTEM_ACTIONS.settingUpdate)" type="primary" :loading="saving" @click="handleSave">
-                {{ $t('common.confirm') }}
-              </NButton>
-              <NPopconfirm v-if="can(SYSTEM_ACTIONS.settingReset)" @positive-click="handleReset">
-                <template #trigger>
-                  <NButton :disabled="current.source === 'default'" :loading="saving">
-                    {{ $t('page.setting.reset') }}
-                  </NButton>
-                </template>
-                {{ $t('page.setting.resetConfirm') }}
-              </NPopconfirm>
-            </NSpace>
           </template>
-          <NEmpty v-else :description="$t('page.setting.empty')" />
+          <NEmpty v-else-if="!loading" :description="$t('page.setting.empty')" />
         </div>
       </div>
     </NCard>
