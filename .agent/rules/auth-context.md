@@ -4,6 +4,8 @@
 - **一用户一租户**；权限为 Role ↔ permission 字符串（默认 `action.id`）；按钮藏UI不够，Action 必须鉴权。
 - 正式 JWT 只表达可信身份并携带 `auth_version`；角色/权限必须由服务端 `AuthorizationProvider` 实时加载，禁止信任 Token 权限快照。
 - 用户状态、密码或角色变化以及角色权限/状态变化，必须在同一事务调用统一授权版本递增入口；旧 Token 下一请求失效。
+- 租户用户管理：username 创建后不可改；状态与资料编辑分离；角色全量替换；不提供物理删除；禁止自停用；须保留至少一名 enabled 内置 admin。
+- 密码统一强度校验（8–72，含字母与数字）；明文/哈希不得进入响应、日志或审计。
 - Dev Token 仅用于显式启用的开发环境，不代表生产 Token 失效语义，也不得进入生产 JWT 路径。
 - Phase 1：Org/Dept 仅预留；禁止普通业务跨租户；DB 须带租户条件。
 - Realm 仅 `tenant` / `platform`；当前登录固定 tenant。普通 Scope 缺 tenant 必须报错，跨租户只走经 platform realm 校验的显式 System 入口。

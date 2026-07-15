@@ -235,10 +235,37 @@ const local: App.I18n.Schema = {
     demo_hello: 'Hello',
     system: 'System',
     system_profile: 'Profile',
+    system_users: 'Users',
     system_roles: 'Roles',
     setup: 'Setup'
   },
   page: {
+    user: {
+      title: 'User Management',
+      createTitle: 'Create User',
+      editTitle: 'Edit User',
+      rolesTitle: 'Assign roles for {name}',
+      passwordTitle: 'Reset password for {name}',
+      username: 'Username',
+      usernameInvalid: 'Username must start with a letter and use 3-64 letters, digits or underscores',
+      displayName: 'Display Name',
+      status: 'Status',
+      roles: 'Roles',
+      updatedAt: 'Updated At',
+      password: 'Password',
+      confirmPassword: 'Confirm Password',
+      passwordHint: 'Password must be 8+ characters and include letters and digits',
+      passwordMismatch: 'The two passwords do not match',
+      assignRoles: 'Assign Roles',
+      resetPassword: 'Reset Password',
+      enable: 'Enable',
+      disable: 'Disable',
+      confirmEnable: 'Enable this user?',
+      confirmDisable: 'Disable this user? Existing tokens will become invalid immediately.',
+      enabled: 'Enabled',
+      disabled: 'Disabled',
+      builtin: 'Built-in'
+    },
     role: {
       title: 'Role Management',
       createTitle: 'Create Role',
@@ -367,7 +394,7 @@ const local: App.I18n.Schema = {
       confirmPassword: 'Confirm Password',
       confirmPasswordPlaceholder: 'Please enter password again',
       passwordMismatch: 'The two passwords are inconsistent',
-      passwordTooShort: 'Password must be at least 6 characters',
+      passwordTooShort: 'Password must be 8+ characters and include letters and digits',
       initialize: 'Initialize',
       completeTitle: 'Setup Complete',
       completeDesc: 'System has been successfully initialized. Please restart the backend server before logging in.',
@@ -387,7 +414,7 @@ const local: App.I18n.Schema = {
     },
     pwd: {
       required: 'Please enter password',
-      invalid: '6-18 characters, including letters, numbers, and underscores'
+      invalid: 'Password must be 8+ characters and include letters and digits'
     },
     confirmPwd: {
       required: 'Please enter password again',

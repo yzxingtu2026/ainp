@@ -482,6 +482,32 @@ declare namespace App {
       };
       route: Record<I18nRouteKey, string>;
       page: {
+        user: {
+          title: string;
+          createTitle: string;
+          editTitle: string;
+          rolesTitle: string;
+          passwordTitle: string;
+          username: string;
+          usernameInvalid: string;
+          displayName: string;
+          status: string;
+          roles: string;
+          updatedAt: string;
+          password: string;
+          confirmPassword: string;
+          passwordHint: string;
+          passwordMismatch: string;
+          assignRoles: string;
+          resetPassword: string;
+          enable: string;
+          disable: string;
+          confirmEnable: string;
+          confirmDisable: string;
+          enabled: string;
+          disabled: string;
+          builtin: string;
+        };
         role: {
           title: string;
           createTitle: string;

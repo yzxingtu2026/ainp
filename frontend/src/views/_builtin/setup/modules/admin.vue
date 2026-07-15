@@ -30,7 +30,7 @@ async function handleSubmit() {
     error.value = $t('page.setup.passwordMismatch');
     return;
   }
-  if (form.value.password.length < 6) {
+  if (!/^(?=.*[A-Za-z])(?=.*[0-9]).{8,72}$/.test(form.value.password)) {
     error.value = $t('page.setup.passwordTooShort');
     return;
   }

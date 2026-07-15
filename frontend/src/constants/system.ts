@@ -5,5 +5,12 @@ export const SYSTEM_ACTIONS = {
   roleUpdate: 'system.role_update',
   roleDelete: 'system.role_delete',
   rolePermissionsUpdate: 'system.role_permissions_update',
-  permissionCatalog: 'system.permission_catalog'
+  permissionCatalog: 'system.permission_catalog',
+  userList: 'system.user_list',
+  userGet: 'system.user_get',
+  userCreate: 'system.user_create',
+  userUpdate: 'system.user_update',
+  userStatusUpdate: 'system.user_status_update',
+  userRolesUpdate: 'system.user_roles_update',
+  userPasswordReset: 'system.user_password_reset'
 } as const;

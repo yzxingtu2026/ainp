@@ -5,11 +5,14 @@ export const REG_PHONE =
   /^[1](([3][0-9])|([4][01456789])|([5][012356789])|([6][2567])|([7][0-8])|([8][0-9])|([9][012356789]))[0-9]{8}$/;
 
 /**
- * Password reg
+ * Password reg — aligned with backend ValidatePassword
  *
- * 6-18 characters, including letters, numbers, and underscores
+ * 8-72 characters, at least one letter and one digit
  */
-export const REG_PWD = /^\w{6,18}$/;
+export const REG_PWD = /^(?=.*[A-Za-z])(?=.*[0-9]).{8,72}$/;
+
+/** System username: letter start, then letters/digits/underscore, 3-64 chars */
+export const REG_SYSTEM_USERNAME = /^[a-zA-Z][a-zA-Z0-9_]{2,63}$/;
 
 /** Email reg */
 export const REG_EMAIL = /^\w+([-+.]\w+)*@\w+([-.]\w+)*\.\w+([-.]\w+)*$/;

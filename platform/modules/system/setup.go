@@ -144,10 +144,8 @@ func (s *SetupService) Initialize(ctx context.Context, input json.RawMessage) (a
 			errs.FieldError{Field: "password", Message: "required", MessageKey: "common.field_required"},
 		)
 	}
-	if len(req.Password) < 6 {
-		return nil, errs.ValidationKey("common.validation_failed", "password must be at least 6 characters",
-			errs.FieldError{Field: "password", Message: "min 6", MessageKey: "common.field_min_length"},
-		)
+	if err := ValidatePassword(req.Password); err != nil {
+		return nil, err
 	}
 
 	// 确定 DSN
