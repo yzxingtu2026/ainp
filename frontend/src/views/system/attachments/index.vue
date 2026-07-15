@@ -100,10 +100,13 @@ async function loadData() {
     });
     if (error) {
       window.$message?.error(error.message || $t('page.attachment.loadFailed'));
+      records.value = [];
+      total.value = 0;
       return;
     }
-    records.value = data?.records || [];
-    total.value = data?.total || 0;
+    // 信封经 transform 后已是 data；列表字段为 records（与角色/用户分页一致）
+    records.value = Array.isArray(data?.records) ? data.records : [];
+    total.value = typeof data?.total === 'number' ? data.total : 0;
   } finally {
     loading.value = false;
   }
@@ -150,45 +153,41 @@ onMounted(loadData);
 
 <template>
   <div class="min-h-500px flex-col-stretch gap-16px overflow-hidden lt-sm:overflow-auto">
-    <NCard :title="$t('page.attachment.centerTitle')" :bordered="false" class="card-wrapper sm:flex-1-hidden">
-      <NSpace vertical class="h-full">
-        <NSpace>
-          <NInput
-            v-model:value="query.keyword"
-            clearable
-            class="w-220px"
-            :placeholder="$t('page.attachment.searchName')"
-            @keyup.enter="loadData"
-          />
-          <NSelect v-model:value="query.status" class="w-160px" :options="statusOptions" clearable />
-          <NButton type="primary" @click="loadData">{{ $t('common.search') }}</NButton>
-        </NSpace>
-        <NDataTable
-          :columns="columns"
-          :data="records"
-          :loading="loading"
-          :row-key="(row: Api.Attachment.Item) => row.id"
-          :scroll-x="1100"
-          flex-height
-          class="sm:h-full"
+    <NCard :title="$t('page.attachment.centerTitle')" :bordered="false" class="card-wrapper">
+      <NSpace class="mb-16px" align="center">
+        <NInput
+          v-model:value="query.keyword"
+          clearable
+          class="w-220px"
+          :placeholder="$t('page.attachment.searchName')"
+          @keyup.enter="loadData"
         />
-        <div class="flex justify-end">
-          <NPagination
-            v-model:page="query.current"
-            v-model:page-size="query.size"
-            :item-count="total"
-            show-size-picker
-            :page-sizes="[10, 20, 50]"
-            @update:page="loadData"
-            @update:page-size="
-              () => {
-                query.current = 1;
-                loadData();
-              }
-            "
-          />
-        </div>
+        <NSelect v-model:value="query.status" class="w-160px" :options="statusOptions" clearable />
+        <NButton type="primary" @click="loadData">{{ $t('common.search') }}</NButton>
       </NSpace>
+      <NDataTable
+        :columns="columns"
+        :data="records"
+        :loading="loading"
+        :row-key="(row: Api.Attachment.Item) => row.id"
+        :scroll-x="1100"
+      />
+      <div class="mt-16px flex justify-end">
+        <NPagination
+          v-model:page="query.current"
+          v-model:page-size="query.size"
+          :item-count="total"
+          show-size-picker
+          :page-sizes="[10, 20, 50]"
+          @update:page="loadData"
+          @update:page-size="
+            () => {
+              query.current = 1;
+              loadData();
+            }
+          "
+        />
+      </div>
     </NCard>
 
     <NDrawer v-model:show="detailVisible" :width="480">
