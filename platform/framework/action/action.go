@@ -39,16 +39,19 @@ type AIMeta struct {
 }
 
 type Metadata struct {
-	Capability     string
-	Surface        auth.Realm
-	Permission     string
-	Name           string // 兜底文案
-	NameKey        string // i18n key，如 action.system.auth_login.name
-	Description    string
-	DescriptionKey string // i18n key，如 action.system.auth_login.description
-	Audit          *bool
-	HTTP           *HTTPMeta
-	AI             *AIMeta
+	Capability             string
+	PermissionGroup        string
+	PermissionGroupName    string
+	PermissionGroupNameKey string
+	Surface                auth.Realm
+	Permission             string
+	Name                   string // 兜底文案
+	NameKey                string // i18n key，如 action.system.auth_login.name
+	Description            string
+	DescriptionKey         string // i18n key，如 action.system.auth_login.description
+	Audit                  *bool
+	HTTP                   *HTTPMeta
+	AI                     *AIMeta
 }
 
 func (m Metadata) PermissionCode(actionID string) string {
@@ -168,16 +171,18 @@ func (r *Registry) writeAudit(ctx context.Context, a Action, perm, result string
 	}
 	ac := auth.MustFromContext(ctx)
 	rec := audit.Record{
-		OccurredAt: time.Now().UTC(),
-		TenantID:   ac.TenantID,
-		Realm:      string(auth.NormalizeRealm(ac.Realm)),
-		UserID:     ac.UserID,
-		ActorType:  actorType(ac),
-		ActionID:   a.ID,
-		Result:     result,
-		RequestID:  ac.RequestID,
-		Permission: perm,
-		Client:     ac.Client,
+		OccurredAt:   time.Now().UTC(),
+		TenantID:     ac.TenantID,
+		Realm:        string(auth.NormalizeRealm(ac.Realm)),
+		UserID:       ac.UserID,
+		ActorType:    actorType(ac),
+		ActionID:     a.ID,
+		Result:       result,
+		RequestID:    ac.RequestID,
+		Permission:   perm,
+		Client:       ac.Client,
+		ResourceType: ac.AuditResourceType,
+		ResourceID:   ac.AuditResourceID,
 	}
 	if err != nil {
 		if ae, ok := errs.AsAppError(err); ok {
@@ -188,7 +193,10 @@ func (r *Registry) writeAudit(ctx context.Context, a Action, perm, result string
 			rec.Summary = "internal error"
 		}
 	} else {
-		rec.Summary = "ok"
+		rec.Summary = ac.AuditSummary
+		if rec.Summary == "" {
+			rec.Summary = "ok"
+		}
 	}
 	if werr := r.auditor.Write(ctx, rec); werr != nil {
 		logging.Error(ctx, "audit write failed", werr, "action_id", a.ID)

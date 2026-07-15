@@ -49,6 +49,11 @@ func Register(a *app.App) error {
 		return err
 	}
 
+	roleSvc := NewRoleService(a.DB, svc, a.Actions, a.Capabilities)
+	if err := registerRoleActions(a, roleSvc); err != nil {
+		return err
+	}
+
 	if err := a.RegisterAction(action.Action{
 		ID: "system.auth_login",
 		Handler: func(ctx context.Context, input json.RawMessage) (any, error) {
@@ -170,7 +175,7 @@ func Register(a *app.App) error {
 		return err
 	}
 
-	return a.RegisterMenu(menu.Menu{
+	if err := a.RegisterMenu(menu.Menu{
 		ID:         "system.profile_refresh",
 		ParentID:   "system.profile",
 		Title:      "刷新资料",
@@ -181,5 +186,13 @@ func Register(a *app.App) error {
 		HideInMenu: true,
 		Module:     "system",
 		Order:      1,
+	}); err != nil {
+		return err
+	}
+
+	return a.RegisterMenu(menu.Menu{
+		ID: MenuRoleManagement, ParentID: "system.root", Title: "角色管理", TitleKey: "menu.system.roles.title",
+		Icon: "mdi:shield-account-outline", Type: menu.TypeMenu, Path: "/system/roles", Component: "system/roles",
+		Permission: ActionRoleList, BindAction: ActionRoleList, Module: "system", Order: 2,
 	})
 }

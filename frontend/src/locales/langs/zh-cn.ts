@@ -231,9 +231,29 @@ const local: App.I18n.Schema = {
     demo_hello: 'Hello',
     system: '系统',
     system_profile: '个人中心',
+    system_roles: '角色管理',
     setup: '安装向导'
   },
   page: {
+    role: {
+      title: '角色管理',
+      createTitle: '新建角色',
+      editTitle: '编辑角色',
+      permissionTitle: '为 {name} 分配权限',
+      permissionSearch: '搜索权限、Action 或说明',
+      selectedCount: '已选择 {count} 项权限',
+      code: '角色编码',
+      name: '角色名称',
+      description: '描述',
+      status: '状态',
+      type: '类型',
+      builtin: '内置',
+      custom: '自定义',
+      enabled: '已启用',
+      disabled: '已停用',
+      userCount: '用户数',
+      permissions: '分配权限'
+    },
     login: {
       common: {
         loginOrRegister: '登录 / 注册',

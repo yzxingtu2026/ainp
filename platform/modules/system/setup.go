@@ -242,11 +242,12 @@ func (s *SetupService) createInitialData(ctx context.Context, db *gorm.DB, tenan
 
 		// 创建 admin 角色
 		if err := tx.Create(&model.Role{
-			ID:       roleID,
-			TenantID: tenantID,
-			Code:     "admin",
-			Name:     "管理员",
-			Status:   status.ActivationEnabled,
+			ID:        roleID,
+			TenantID:  tenantID,
+			Code:      "admin",
+			Name:      "管理员",
+			Status:    status.ActivationEnabled,
+			IsBuiltin: true,
 		}).Error; err != nil {
 			return fmt.Errorf("create role: %w", err)
 		}
@@ -262,12 +263,10 @@ func (s *SetupService) createInitialData(ctx context.Context, db *gorm.DB, tenan
 		}
 
 		// 分配权限
-		perms := []string{
+		perms := append([]string{
 			"demo.hello",
 			"demo.echo",
-			"system.auth_me",
-			"system.auth_permissions",
-		}
+		}, adminMinimumPermissions...)
 		for _, p := range perms {
 			if err := tx.Create(&model.RolePermission{
 				ID:         uuid.NewString(),

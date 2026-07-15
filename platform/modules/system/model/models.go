@@ -23,13 +23,15 @@ type User struct {
 func (User) TableName() string { return "users" }
 
 type Role struct {
-	ID        string                  `gorm:"primaryKey;size:64"`
-	TenantID  string                  `gorm:"size:64;uniqueIndex:ux_roles_tenant_code;not null"`
-	Code      string                  `gorm:"size:64;uniqueIndex:ux_roles_tenant_code;not null"`
-	Name      string                  `gorm:"size:128"`
-	Status    status.ActivationStatus `gorm:"size:32;not null;default:enabled"`
-	CreatedAt time.Time               `gorm:"autoCreateTime"`
-	UpdatedAt time.Time               `gorm:"autoUpdateTime"`
+	ID          string                  `gorm:"primaryKey;size:64"`
+	TenantID    string                  `gorm:"size:64;uniqueIndex:ux_roles_tenant_code;not null"`
+	Code        string                  `gorm:"size:64;uniqueIndex:ux_roles_tenant_code;not null"`
+	Name        string                  `gorm:"size:128;not null"`
+	Description string                  `gorm:"size:512"`
+	Status      status.ActivationStatus `gorm:"size:32;not null;default:enabled"`
+	IsBuiltin   bool                    `gorm:"not null;default:false"`
+	CreatedAt   time.Time               `gorm:"autoCreateTime"`
+	UpdatedAt   time.Time               `gorm:"autoUpdateTime"`
 }
 
 func (Role) TableName() string { return "roles" }

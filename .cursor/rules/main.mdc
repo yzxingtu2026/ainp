@@ -29,6 +29,7 @@ alwaysApply: true
 - 审计最小集见 `audit`。
 - 后端目录与模块边界见 `backend-layout`。
 - CodeSet、状态机与字符串常量见 `code-sets-and-status`。
+- 租户角色、权限目录与管理员保护见 `role-management`。
 - 后端多语言 i18n 见 `i18n`；前端多语言见 `frontend-i18n`。
 - 前端栈、图标协议见关联规则。
 
@@ -46,4 +47,5 @@ alwaysApply: true
 - `frontend-i18n` → `docs/development/frontend-stack.md`
 - `backend-layout` → `docs/development/backend-layout.md`
 - `code-sets-and-status` → `docs/development/code-sets-and-status.md`
+- `role-management` → `docs/development/role-management.md`
 - `team-escalation`

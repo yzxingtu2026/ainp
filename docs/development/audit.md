@@ -59,7 +59,7 @@ Agent 只读要点：`.agent/rules/audit.md`。本文档定义审计与运行日
 
 ## 与 AuthContext 的关系
 
-审计字段从执行时的 `AuthContext` 与 Action 结果填充，不信任客户端上报的「审计内容」。
+审计字段从执行时的 `AuthContext` 与 Action 结果填充，不信任客户端上报的「审计内容」。Service 在确认受租户约束的资源后，可设置 `AuditResourceType`、`AuditResourceID` 与不含敏感信息的 `AuditSummary`；Action 执行链在成功或失败时统一写入 Recorder，Handler 不得直接插入审计表。
 
 ## 保留与查询（原则）
 
@@ -72,6 +72,7 @@ Agent 只读要点：`.agent/rules/audit.md`。本文档定义审计与运行日
 - [ ] 最小集字段齐全；失败含 `result=failure`
 - [ ] 无敏感大字段；未用 Logger 冒充审计
 - [ ] 业务代码未直接写审计表
+- [ ] resource_type/resource_id 来自服务端已校验资源，不信任客户端原值
 
 ## 变更
 
