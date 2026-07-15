@@ -1,0 +1,15 @@
+---
+description: "统一 ObjectStore，禁止业务拼路径或按 provider 分支"
+alwaysApply: true
+---
+<!-- 由 .agent/tools/agent-rules 生成。请修改 .agent/rules/、.agent/skills/、.agent/team/、.agent/adapters/、.agent/templates/ 下的源文件。 -->
+
+# 统一对象存储
+
+- 二进制对象只经 `platform/framework/storage.ObjectStore`；禁止业务拼本地路径、直接 `os.Open` 持久对象，或按 provider 分支。
+- Key 用 `BuildKey` / `ValidateKey`；禁止客户端提交完整 key；原始文件名不进磁盘路径。
+- 管理配置（provider/根目录/未来凭证）走 YAML/环境变量，不进租户设置；附件元数据与上传 API 属上层（#18）。
+- Local Provider：原子 Put、幂等 Delete、流式 Open/Range、拒绝路径穿越与符号链接逃逸。
+- 变更同步 `docs/development/object-storage.md` 并 `agent-rules sync`。
+
+详规：`docs/development/object-storage.md`

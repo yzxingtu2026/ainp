@@ -15,6 +15,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/permission"
 	"github.com/yzxingtu2026/ainp/platform/framework/setting"
 	"github.com/yzxingtu2026/ainp/platform/framework/statemachine"
+	"github.com/yzxingtu2026/ainp/platform/framework/storage"
 	"gorm.io/gorm"
 )
 
@@ -29,6 +30,7 @@ type App struct {
 	CodeSets      *codeset.Registry
 	Settings      *setting.Registry
 	StateMachines *statemachine.Registry
+	Storage       storage.ObjectStore
 	Auditor       audit.Recorder
 	Installed     bool // 是否已完成安装向导
 }
@@ -74,7 +76,9 @@ func (a *App) RegisterMenu(m menu.Menu) error {
 
 func (a *App) RegisterCodeSet(set codeset.CodeSet) error { return a.CodeSets.Register(set) }
 
-func (a *App) RegisterSettingCategory(c setting.Category) error { return a.Settings.RegisterCategory(c) }
+func (a *App) RegisterSettingCategory(c setting.Category) error {
+	return a.Settings.RegisterCategory(c)
+}
 
 func (a *App) RegisterSettingDefinition(def setting.Definition) error {
 	return a.Settings.RegisterDefinition(def)
