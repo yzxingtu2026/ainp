@@ -122,7 +122,7 @@ function confirm() {
     :show="show"
     preset="card"
     :title="$t('page.attachment.pickerTitle')"
-    class="w-760px"
+    class="w-920px max-w-95vw"
     :mask-closable="false"
     @update:show="(v: boolean) => emit('update:show', v)"
   >
@@ -141,12 +141,12 @@ function confirm() {
           </NInput>
           <NSpin :show="loading">
             <NEmpty v-if="!records.length" :description="$t('page.attachment.empty')" />
-            <div v-else class="max-h-420px overflow-auto grid grid-cols-3 gap-12px lt-sm:grid-cols-2">
+            <div v-else class="max-h-480px overflow-auto grid grid-cols-4 gap-10px lt-sm:grid-cols-2">
               <button
                 v-for="item in records"
                 :key="item.id"
                 type="button"
-                class="relative flex-col items-stretch overflow-hidden rounded-10px border text-left transition-colors"
+                class="relative flex-col items-stretch overflow-hidden rounded-8px border text-left transition-colors"
                 :class="
                   checked.includes(item.id)
                     ? 'border-primary bg-primary/5 ring-1 ring-primary'
@@ -154,7 +154,7 @@ function confirm() {
                 "
                 @click="toggle(item.id)"
               >
-                <div class="relative h-112px w-full bg-gray-50 dark:bg-gray-800">
+                <div class="relative h-96px w-full bg-gray-50 dark:bg-gray-800">
                   <img
                     v-if="thumbs.urls[item.id]"
                     :src="thumbs.urls[item.id]"
