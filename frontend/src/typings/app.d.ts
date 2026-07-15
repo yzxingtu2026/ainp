@@ -526,6 +526,7 @@ declare namespace App {
           disabled: string;
           userCount: string;
           permissions: string;
+          updatedAt: string;
         };
         login: {
           common: {

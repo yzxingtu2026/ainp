@@ -15,6 +15,7 @@ import {
   updateRolePermissions
 } from '@/service/api';
 import { useAuthStore } from '@/store/modules/auth';
+import { formatDateTime } from '@/utils/datetime';
 
 defineOptions({ name: 'SystemRoles' });
 
@@ -122,6 +123,12 @@ const columns = computed<DataTableColumns<Api.Role.Record>>(() => [
   },
   { title: $t('page.role.userCount'), key: 'user_count', width: 100 },
   { title: $t('page.role.description'), key: 'description', ellipsis: { tooltip: true }, minWidth: 180 },
+  {
+    title: $t('page.role.updatedAt'),
+    key: 'updated_at',
+    width: 160,
+    render: row => formatDateTime(row.updated_at)
+  },
   {
     title: $t('common.action'),
     key: 'actions',
@@ -241,7 +248,7 @@ onMounted(loadRoles);
         <NButton @click="resetQuery">{{ $t('common.reset') }}</NButton>
         <NButton v-if="can(SYSTEM_ACTIONS.roleCreate)" type="primary" secondary @click="openEditor()">{{ $t('common.add') }}</NButton>
       </NSpace>
-      <NDataTable :columns="columns" :data="records" :loading="loading" :row-key="row => row.id" :scroll-x="1000" />
+      <NDataTable :columns="columns" :data="records" :loading="loading" :row-key="row => row.id" :scroll-x="1100" />
       <div class="mt-16px flex justify-end">
         <NPagination v-model:page="query.current" v-model:page-size="query.size" :item-count="total" show-size-picker :page-sizes="[10, 20, 50]" @update:page="loadRoles" @update:page-size="query.current = 1; loadRoles()" />
       </div>

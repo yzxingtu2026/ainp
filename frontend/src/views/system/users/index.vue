@@ -6,6 +6,7 @@ import { REG_PWD, REG_SYSTEM_USERNAME } from '@/constants/reg';
 import { ACTIVATION_STATUS } from '@/constants/codeset';
 import { SYSTEM_ACTIONS } from '@/constants/system';
 import { $t } from '@/locales';
+import { formatDateTime } from '@/utils/datetime';
 import {
   createUser,
   fetchRoleList,
@@ -75,14 +76,13 @@ const columns = computed<DataTableColumns<Api.User.Record>>(() => [
         default: () => $t(`page.user.${row.status}`)
       })
   },
+  { title: $t('page.user.roles'), key: 'roles', minWidth: 180, ellipsis: { tooltip: true }, render: row => roleNames(row) },
   {
-    title: $t('page.user.roles'),
-    key: 'roles',
-    minWidth: 180,
-    ellipsis: { tooltip: true },
-    render: row => roleNames(row)
+    title: $t('page.user.updatedAt'),
+    key: 'updated_at',
+    width: 160,
+    render: row => formatDateTime(row.updated_at)
   },
-  { title: $t('page.user.updatedAt'), key: 'updated_at', width: 180 },
   {
     title: $t('common.action'),
     key: 'actions',

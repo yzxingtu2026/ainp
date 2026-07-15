@@ -25,12 +25,14 @@
 - CodeSet、状态机与字符串常量见 `code-sets-and-status`。
 - 租户角色、权限目录与管理员保护见 `role-management`。
 - 后端多语言 i18n 见 `i18n`；前端多语言见 `frontend-i18n`。
+- 用户可见时间展示见 `datetime-display`。
 - 前端栈、图标协议见关联规则。
 
 ## 关联规则
 
 - `github-issues-workflow` / `branching-strategy` / `project-context-and-docs`
 - `frontend-stack` → `docs/development/frontend-stack.md`
+- `datetime-display` → `docs/development/datetime-display.md`
 - `icon-library` → `docs/development/icon-library.md`
 - `logging` → `docs/development/logging.md`
 - `api-response` → `docs/development/api-response.md`

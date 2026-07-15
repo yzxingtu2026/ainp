@@ -279,7 +279,8 @@ const local: App.I18n.Schema = {
       enabled: '已启用',
       disabled: '已停用',
       userCount: '用户数',
-      permissions: '分配权限'
+      permissions: '分配权限',
+      updatedAt: '更新时间'
     },
     login: {
       common: {

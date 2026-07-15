@@ -42,6 +42,7 @@ Soybean Admin（壳）
 - [ ] 菜单图标为 Iconify `collection:name`（默认 `mdi`），见 [图标库规范](./icon-library.md)
 - [ ] 未在业务页复制 Layout / 请求 / 权限逻辑
 - [ ] 复杂表格优先 TanStack Table
+- [ ] 用户可见时间使用 `formatDateTime` / `DateTimeText`，见 [时间展示规范](./datetime-display.md)
 - [ ] 新增公共 UI 约定已写入本文档或 `.agent/rules/frontend-stack.md`
 
 ## 变更流程
