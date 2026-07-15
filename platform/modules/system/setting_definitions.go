@@ -65,6 +65,7 @@ func registerExampleSettings(a *app.App) error {
 				Key: "brand_color", Type: setting.FieldColor,
 				Label: "品牌色", LabelKey: "setting.field.general.preferences.brand_color.label",
 				Default: "#18A058",
+				VisibleWhen: &setting.VisibleWhen{Field: "dark_mode", Eq: true},
 			},
 			{
 				Key: "notes", Type: setting.FieldTextarea,

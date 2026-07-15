@@ -51,7 +51,7 @@ const formRules = computed<FormRules>(() => {
   const definition = current.value;
   if (!definition) return rules;
   definition.fields.forEach(field => {
-    if (!field.required) return;
+    if (!field.required || !isFieldVisible(field.key)) return;
     rules[field.key] = [
       {
         required: true,
@@ -67,6 +67,38 @@ const formRules = computed<FormRules>(() => {
   });
   return rules;
 });
+
+function valuesEqual(left: unknown, right: unknown) {
+  return JSON.stringify(normalizeValue(left)) === JSON.stringify(normalizeValue(right));
+}
+
+function resolveFieldValue(fieldKey: string) {
+  if (Object.prototype.hasOwnProperty.call(formModel, fieldKey)) {
+    return formModel[fieldKey];
+  }
+  const field = current.value?.fields.find(item => item.key === fieldKey);
+  return field?.default ?? null;
+}
+
+function isFieldVisible(fieldKey: string, visiting: Set<string> = new Set()): boolean {
+  const definition = current.value;
+  if (!definition) return false;
+  const field = definition.fields.find(item => item.key === fieldKey);
+  if (!field) return false;
+  const when = field.visible_when;
+  if (!when) return true;
+  if (visiting.has(fieldKey)) return false;
+  visiting.add(fieldKey);
+  if (!isFieldVisible(when.field, visiting)) return false;
+  const actual = resolveFieldValue(when.field);
+  if (when.eq !== undefined) {
+    return valuesEqual(actual, when.eq);
+  }
+  if (Array.isArray(when.in) && when.in.length > 0) {
+    return when.in.some(candidate => valuesEqual(actual, candidate));
+  }
+  return false;
+}
 
 function isSameValue(left: unknown, right: unknown) {
   return JSON.stringify(normalizeValue(left)) === JSON.stringify(normalizeValue(right));
@@ -227,7 +259,12 @@ onMounted(loadSettings);
 
           <template v-if="current">
             <NForm ref="formRef" :model="formModel" :rules="formRules" label-placement="left" label-width="140">
-              <NFormItem v-for="field in current.fields" :key="field.key" :label="field.label" :path="field.key">
+              <NFormItem
+                v-for="field in current.fields.filter(item => isFieldVisible(item.key))"
+                :key="field.key"
+                :label="field.label"
+                :path="field.key"
+              >
                 <div class="w-full">
                   <NInput
                     v-if="field.type === 'text'"

@@ -9,6 +9,12 @@ declare namespace Api {
       label_key?: string;
     }
 
+    interface VisibleWhen {
+      field: string;
+      eq?: unknown;
+      in?: unknown[];
+    }
+
     interface Field {
       key: string;
       type: FieldType;
@@ -24,6 +30,7 @@ declare namespace Api {
       max?: number;
       step?: number;
       options?: FieldOption[];
+      visible_when?: VisibleWhen;
     }
 
     interface Definition {

@@ -62,6 +62,108 @@ func TestSettingRegistryRejectsInvalidDefinitions(t *testing.T) {
 	}
 }
 
+func TestSettingVisibleWhenRegistrationAndValidation(t *testing.T) {
+	reg := setting.NewRegistry()
+	if err := reg.RegisterCategory(setting.Category{
+		Key: "general", Title: "General", Icon: "mdi:cog-outline", Surface: auth.RealmTenant,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := reg.RegisterDefinition(setting.Definition{
+		Key: "general.prefs", CategoryKey: "general", Title: "Prefs",
+		Scope: setting.ScopeTenant, Surface: auth.RealmTenant, SchemaVersion: 1,
+		Fields: []setting.Field{
+			{Key: "enabled", Type: setting.FieldBoolean, Label: "Enabled", Default: false},
+			{Key: "title", Type: setting.FieldText, Label: "Title", Required: true, Default: "x",
+				VisibleWhen: &setting.VisibleWhen{Field: "missing", Eq: true}},
+		},
+	}); err == nil {
+		t.Fatal("unknown visible_when field must fail")
+	}
+
+	if err := reg.RegisterDefinition(setting.Definition{
+		Key: "general.prefs", CategoryKey: "general", Title: "Prefs",
+		Scope: setting.ScopeTenant, Surface: auth.RealmTenant, SchemaVersion: 1,
+		Fields: []setting.Field{
+			{Key: "title", Type: setting.FieldText, Label: "Title", Required: true, Default: "x",
+				VisibleWhen: &setting.VisibleWhen{Field: "title", Eq: "x"}},
+		},
+	}); err == nil {
+		t.Fatal("self-referencing visible_when must fail")
+	}
+
+	if err := reg.RegisterDefinition(setting.Definition{
+		Key: "general.prefs", CategoryKey: "general", Title: "Prefs",
+		Scope: setting.ScopeTenant, Surface: auth.RealmTenant, SchemaVersion: 1,
+		Fields: []setting.Field{
+			{Key: "enabled", Type: setting.FieldBoolean, Label: "Enabled", Default: false},
+			{Key: "title", Type: setting.FieldText, Label: "Title", Required: true, Default: "x",
+				VisibleWhen: &setting.VisibleWhen{Field: "enabled"}},
+		},
+	}); err == nil {
+		t.Fatal("visible_when without eq/in must fail")
+	}
+
+	if err := reg.RegisterDefinition(setting.Definition{
+		Key: "general.prefs", CategoryKey: "general", Title: "Prefs",
+		Scope: setting.ScopeTenant, Surface: auth.RealmTenant, SchemaVersion: 1,
+		Fields: []setting.Field{
+			{Key: "a", Type: setting.FieldBoolean, Label: "A", Default: true,
+				VisibleWhen: &setting.VisibleWhen{Field: "b", Eq: true}},
+			{Key: "b", Type: setting.FieldBoolean, Label: "B", Default: true,
+				VisibleWhen: &setting.VisibleWhen{Field: "a", Eq: true}},
+		},
+	}); err == nil {
+		t.Fatal("visible_when cycle must fail")
+	}
+
+	def := setting.Definition{
+		Key: "general.prefs", CategoryKey: "general", Title: "Prefs",
+		Scope: setting.ScopeTenant, Surface: auth.RealmTenant, SchemaVersion: 1,
+		Fields: []setting.Field{
+			{Key: "enabled", Type: setting.FieldBoolean, Label: "Enabled", Default: false},
+			{Key: "mode", Type: setting.FieldSelect, Label: "Mode", Required: true, Default: "a",
+				Options: []setting.FieldOption{{Value: "a", Label: "A"}, {Value: "b", Label: "B"}},
+				VisibleWhen: &setting.VisibleWhen{Field: "enabled", Eq: true}},
+			{Key: "note", Type: setting.FieldText, Label: "Note", Required: true, Default: "n",
+				VisibleWhen: &setting.VisibleWhen{Field: "mode", In: []any{"b"}}},
+		},
+	}
+	if err := reg.RegisterDefinition(def); err != nil {
+		t.Fatal(err)
+	}
+
+	if setting.IsFieldVisible(def, map[string]any{"enabled": false}, "mode") {
+		t.Fatal("mode must be hidden when enabled=false")
+	}
+	if !setting.IsFieldVisible(def, map[string]any{"enabled": true}, "mode") {
+		t.Fatal("mode must be visible when enabled=true")
+	}
+	if setting.IsFieldVisible(def, map[string]any{"enabled": true, "mode": "a"}, "note") {
+		t.Fatal("note must be hidden when mode=a")
+	}
+	if !setting.IsFieldVisible(def, map[string]any{"enabled": true, "mode": "b"}, "note") {
+		t.Fatal("note must be visible when mode=b")
+	}
+	if setting.IsFieldVisible(def, map[string]any{"enabled": false, "mode": "b"}, "note") {
+		t.Fatal("note must be hidden transitively when enabled=false")
+	}
+
+	if err := setting.ValidateValues(def, map[string]any{"enabled": false}); err != nil {
+		t.Fatalf("hidden required fields must be skipped: %v", err)
+	}
+	if err := setting.ValidateValues(def, map[string]any{"enabled": true}); err == nil {
+		t.Fatal("visible required mode must fail when missing")
+	}
+	if err := setting.ValidateValues(def, map[string]any{"enabled": true, "mode": "a"}); err != nil {
+		t.Fatalf("visible mode=a should pass without note: %v", err)
+	}
+	if err := setting.ValidateValues(def, map[string]any{"enabled": true, "mode": "b"}); err == nil {
+		t.Fatal("visible required note must fail when missing")
+	}
+}
+
 func TestSettingActionsAndMenuAreRegistered(t *testing.T) {
 	application := app.New(&config.Config{}, nil, nil, nil)
 	if err := system.Register(application); err != nil {

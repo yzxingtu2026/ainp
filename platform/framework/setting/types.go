@@ -57,6 +57,14 @@ type FieldOption struct {
 	LabelKey string `json:"label_key,omitempty"`
 }
 
+// VisibleWhen declares declarative sibling-field visibility (no expression language).
+// Exactly one of Eq or In must be set. Field must reference another field in the same Definition.
+type VisibleWhen struct {
+	Field string `json:"field"`
+	Eq    any    `json:"eq,omitempty"`
+	In    []any  `json:"in,omitempty"`
+}
+
 type Field struct {
 	Key            string        `json:"key"`
 	Type           FieldType     `json:"type"`
@@ -72,6 +80,7 @@ type Field struct {
 	Max            *float64      `json:"max,omitempty"`
 	Step           *float64      `json:"step,omitempty"`
 	Options        []FieldOption `json:"options,omitempty"`
+	VisibleWhen    *VisibleWhen  `json:"visible_when,omitempty"`
 }
 
 type Category struct {
@@ -174,7 +183,7 @@ func ValidateDefinition(def Definition, categories map[string]Category) error {
 		}
 		seen[def.Fields[i].Key] = struct{}{}
 	}
-	return nil
+	return validateVisibleWhenGraph(def, seen)
 }
 
 func stringsContainsDot(s string) bool {

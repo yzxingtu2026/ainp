@@ -62,6 +62,7 @@ type SettingFieldView struct {
 	Max            *float64              `json:"max,omitempty"`
 	Step           *float64              `json:"step,omitempty"`
 	Options        []setting.FieldOption `json:"options,omitempty"`
+	VisibleWhen    *setting.VisibleWhen  `json:"visible_when,omitempty"`
 }
 
 type SettingDefinitionView struct {
@@ -270,7 +271,7 @@ func toDefinitionView(lang string, eff *setting.Effective) SettingDefinitionView
 			Description: localizedDefinition(lang, field.DescriptionKey, field.Description), DescriptionKey: field.DescriptionKey,
 			Required: field.Required, Default: field.Default,
 			MinLength: field.MinLength, MaxLength: field.MaxLength, Min: field.Min, Max: field.Max, Step: field.Step,
-			Options: localizedOpts,
+			Options: localizedOpts, VisibleWhen: field.VisibleWhen,
 		})
 	}
 	return SettingDefinitionView{

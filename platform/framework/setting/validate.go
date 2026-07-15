@@ -20,6 +20,7 @@ func DefaultValues(def Definition) map[string]any {
 
 // ValidateValues checks submitted values against the definition schema.
 // unknown fields are rejected; types are strict (no silent coercion).
+// Fields hidden by visible_when are skipped (required and type checks).
 func ValidateValues(def Definition, values map[string]any) error {
 	if values == nil {
 		values = map[string]any{}
@@ -34,6 +35,9 @@ func ValidateValues(def Definition, values map[string]any) error {
 		}
 	}
 	for _, field := range def.Fields {
+		if !IsFieldVisible(def, values, field.Key) {
+			continue
+		}
 		raw, ok := values[field.Key]
 		if !ok || raw == nil {
 			if field.Required {
