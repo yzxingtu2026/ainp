@@ -14,6 +14,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/i18n"
 	"github.com/yzxingtu2026/ainp/platform/framework/menu"
 	"github.com/yzxingtu2026/ainp/platform/framework/statemachine"
+	"github.com/yzxingtu2026/ainp/platform/modules/demo/jobs"
 )
 
 func Register(a *app.App) error {
@@ -190,5 +191,11 @@ func Register(a *app.App) error {
 		return err
 	}
 
-	return registerOutboxDemo(a)
+	if err := registerOutboxDemo(a); err != nil {
+		return err
+	}
+	if err := registerJobPingAction(a); err != nil {
+		return err
+	}
+	return jobs.Register(a)
 }

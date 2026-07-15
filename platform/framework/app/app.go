@@ -15,11 +15,13 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/attachment"
 	"github.com/yzxingtu2026/ainp/platform/framework/audit"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
+	"github.com/yzxingtu2026/ainp/platform/framework/asynqadapter"
 	"github.com/yzxingtu2026/ainp/platform/framework/capability"
 	"github.com/yzxingtu2026/ainp/platform/framework/codeset"
 	"github.com/yzxingtu2026/ainp/platform/framework/config"
 	"github.com/yzxingtu2026/ainp/platform/framework/httpserver"
 	"github.com/yzxingtu2026/ainp/platform/framework/i18n"
+	"github.com/yzxingtu2026/ainp/platform/framework/job"
 	"github.com/yzxingtu2026/ainp/platform/framework/logging"
 	"github.com/yzxingtu2026/ainp/platform/framework/menu"
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
@@ -45,6 +47,7 @@ type App struct {
 	AttachmentPolicies *attachment.PolicyRegistry
 	TransferTokens     *attachment.TransferTokenService
 	Outbox             *outbox.Runtime
+	Jobs               *job.Runtime
 	OnHTTP             func(engine *gin.Engine)
 	Auditor            audit.Recorder
 	Installed          bool
@@ -57,6 +60,7 @@ func New(cfg *config.Config, db *gorm.DB, auditor audit.Recorder, tokens *auth.T
 	_ = codeSets.Register(codeset.AttachmentStatus())
 	_ = codeSets.Register(codeset.OutboxStatus())
 	_ = codeSets.Register(codeset.DeliveryStatus())
+	_ = codeSets.Register(codeset.JobRunStatus())
 	return &App{
 		Config:             cfg,
 		DB:                 db,
@@ -138,6 +142,29 @@ func (a *App) Run() error {
 	if a.Outbox != nil {
 		a.Outbox.Start(ctx)
 		defer a.Outbox.Stop()
+	}
+
+	if a.Jobs != nil && a.Jobs.Enabled {
+		a.Jobs.StartRecovery(ctx, a.Config.Jobs.RecoveryIntervalDuration())
+	}
+
+	var worker *asynqadapter.Runner
+	if a.Jobs != nil && a.Jobs.Enabled && a.Config.Jobs.EmbeddedWorker {
+		worker = asynqadapter.NewRunner(
+			asynqadapter.RedisOptFromConfig(a.Config.Redis),
+			asynqadapter.WorkerConfigFromJobs(a.Config.Jobs),
+			a.DB,
+			a.Jobs.Registry,
+			a.Jobs.Store,
+		)
+		worker.Start(ctx)
+		logging.Info(ctx, "embedded asynq worker enabled",
+			"jobs", len(a.Jobs.Registry.List()),
+			"concurrency", a.Config.Jobs.Concurrency,
+		)
+		defer func() {
+			_ = worker.Shutdown(a.Config.Jobs.ShutdownTimeoutDuration())
+		}()
 	}
 
 	srv := &http.Server{Addr: a.Config.Server.Addr, Handler: engine}

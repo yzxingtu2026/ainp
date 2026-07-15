@@ -7,6 +7,7 @@
 - 运行时业务设置在 `framework/setting` 注册；租户覆盖值在业务表，见 `settings-system`。
 - 对象存储在 `framework/storage`（ObjectStore）；禁止业务拼本地路径，见 `object-storage`。
 - Transactional Outbox 在 `framework/outbox`；业务只经 EventWriter 写事件，见 `transactional-outbox`。
+- 后台 Job 在 `framework/job` + `asynqadapter`；业务禁止直连 Asynq，见 `background-jobs`。
 - 后端 `_test.go` 统一放在 `platform/tests/`，使用外部测试包通过公开 API 测试；禁止散落到 `framework/*`、`modules/*`。
 
 详规：`docs/development/backend-layout.md`

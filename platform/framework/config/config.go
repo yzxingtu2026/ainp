@@ -16,7 +16,61 @@ type Config struct {
 	I18n      I18nConfig     `yaml:"i18n"`
 	Storage   StorageConfig  `yaml:"storage"`
 	Outbox    OutboxConfig   `yaml:"outbox"`
+	Redis     RedisConfig    `yaml:"redis"`
+	Jobs      JobsConfig     `yaml:"jobs"`
 	StateFile string         `yaml:"state_file"` // 安装状态文件路径，默认 configs/state.yaml
+}
+
+// RedisConfig is deployment secret/config for Asynq (not tenant settings).
+type RedisConfig struct {
+	Addr         string `yaml:"addr"`
+	Username     string `yaml:"username"`
+	Password     string `yaml:"password"`
+	DB           int    `yaml:"db"`
+	PoolSize     int    `yaml:"pool_size"`
+	DialTimeout  string `yaml:"dial_timeout"`
+	ReadTimeout  string `yaml:"read_timeout"`
+	WriteTimeout string `yaml:"write_timeout"`
+}
+
+func (c RedisConfig) DialTimeoutDuration() time.Duration {
+	return parseDurationOr(c.DialTimeout, 5*time.Second)
+}
+func (c RedisConfig) ReadTimeoutDuration() time.Duration {
+	return parseDurationOr(c.ReadTimeout, 3*time.Second)
+}
+func (c RedisConfig) WriteTimeoutDuration() time.Duration {
+	return parseDurationOr(c.WriteTimeout, 3*time.Second)
+}
+
+// JobsConfig controls background job workers / enqueue (Issue #21).
+type JobsConfig struct {
+	// Enabled defaults to false when omitted (HTTP can run without Redis).
+	Enabled            *bool          `yaml:"enabled"`
+	Concurrency        int            `yaml:"concurrency"`
+	Queues             map[string]int `yaml:"queues"`
+	DefaultTimeout     string         `yaml:"default_timeout"`
+	MaxPayloadBytes    int            `yaml:"max_payload_bytes"`
+	ShutdownTimeout    string         `yaml:"shutdown_timeout"`
+	RecoveryInterval   string         `yaml:"recovery_interval"`
+	EmbeddedWorker     bool           `yaml:"embedded_worker"` // dev-only: run worker inside HTTP process
+}
+
+func (c JobsConfig) IsEnabled() bool {
+	if c.Enabled == nil {
+		return false
+	}
+	return *c.Enabled
+}
+
+func (c JobsConfig) DefaultTimeoutDuration() time.Duration {
+	return parseDurationOr(c.DefaultTimeout, 5*time.Minute)
+}
+func (c JobsConfig) ShutdownTimeoutDuration() time.Duration {
+	return parseDurationOr(c.ShutdownTimeout, 30*time.Second)
+}
+func (c JobsConfig) RecoveryIntervalDuration() time.Duration {
+	return parseDurationOr(c.RecoveryInterval, 30*time.Second)
 }
 
 // OutboxConfig controls Transactional Outbox dispatcher (Issue #20).
@@ -184,6 +238,41 @@ func (c *Config) applyDefaults() {
 	if c.Outbox.ShutdownTimeout == "" {
 		c.Outbox.ShutdownTimeout = "15s"
 	}
+	if c.Redis.Addr == "" {
+		c.Redis.Addr = "127.0.0.1:6379"
+	}
+	if c.Redis.PoolSize <= 0 {
+		c.Redis.PoolSize = 10
+	}
+	if c.Redis.DialTimeout == "" {
+		c.Redis.DialTimeout = "5s"
+	}
+	if c.Redis.ReadTimeout == "" {
+		c.Redis.ReadTimeout = "3s"
+	}
+	if c.Redis.WriteTimeout == "" {
+		c.Redis.WriteTimeout = "3s"
+	}
+	if c.Jobs.Concurrency <= 0 {
+		c.Jobs.Concurrency = 10
+	}
+	if len(c.Jobs.Queues) == 0 {
+		c.Jobs.Queues = map[string]int{
+			"critical": 6, "default": 3, "file": 2, "notification": 2, "ai": 1,
+		}
+	}
+	if c.Jobs.DefaultTimeout == "" {
+		c.Jobs.DefaultTimeout = "5m"
+	}
+	if c.Jobs.MaxPayloadBytes <= 0 {
+		c.Jobs.MaxPayloadBytes = 262144
+	}
+	if c.Jobs.ShutdownTimeout == "" {
+		c.Jobs.ShutdownTimeout = "30s"
+	}
+	if c.Jobs.RecoveryInterval == "" {
+		c.Jobs.RecoveryInterval = "30s"
+	}
 }
 
 // applyEnvOverrides 环境变量优先级高于配置文件。
@@ -199,6 +288,15 @@ func (c *Config) applyEnvOverrides() {
 	}
 	if provider := os.Getenv("STORAGE_PROVIDER"); provider != "" {
 		c.Storage.Provider = provider
+	}
+	if addr := os.Getenv("REDIS_ADDR"); addr != "" {
+		c.Redis.Addr = addr
+	}
+	if pass := os.Getenv("REDIS_PASSWORD"); pass != "" {
+		c.Redis.Password = pass
+	}
+	if user := os.Getenv("REDIS_USERNAME"); user != "" {
+		c.Redis.Username = user
 	}
 }
 
