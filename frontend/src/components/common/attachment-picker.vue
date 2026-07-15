@@ -6,6 +6,7 @@ import {
   attachmentTypeIcon,
   formatFileSize,
   isImageContentType,
+  isVideoContentType,
   useAttachmentGridThumbs
 } from '@/hooks/business/attachment';
 import { DEFAULT_ATTACHMENT_UPLOAD_POLICY } from '@/constants/attachment';
@@ -219,11 +220,18 @@ function confirm() {
                       class="h-full w-full object-cover"
                     />
                     <div v-else class="h-full w-full flex-col-center gap-6px text-gray-400">
-                      <NSpin v-if="thumbs.loadingIds[item.id]" :size="18" />
+                      <NSpin
+                        v-if="thumbs.loadingIds[item.id] || item.thumb_status === 'pending'"
+                        :size="18"
+                      />
                       <template v-else>
                         <Icon :icon="attachmentTypeIcon(item.content_type)" class="text-28px" />
                         <NButton
-                          v-if="thumbs.failedIds[item.id] && isImageContentType(item.content_type)"
+                          v-if="
+                            thumbs.failedIds[item.id] &&
+                            item.thumb_status === 'ready' &&
+                            (isImageContentType(item.content_type) || isVideoContentType(item.content_type))
+                          "
                           size="tiny"
                           quaternary
                           @click.stop="thumbs.retry(item.id)"

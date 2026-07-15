@@ -36,6 +36,11 @@ codeset.system.attachment_status.ready: "Ready"
 codeset.system.attachment_status.deleting: "Deleting"
 codeset.system.attachment_status.deleted: "Deleted"
 codeset.system.attachment_status.failed: "Failed"
+codeset.system.attachment_thumb_status: "Thumbnail status"
+codeset.system.attachment_thumb_status.pending: "Pending"
+codeset.system.attachment_thumb_status.ready: "Ready"
+codeset.system.attachment_thumb_status.failed: "Failed"
+codeset.system.attachment_thumb_status.skipped: "Skipped"
 
 # ── Outbox / Delivery CodeSet ──
 codeset.system.outbox_status: "Outbox status"

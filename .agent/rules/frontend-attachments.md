@@ -1,8 +1,9 @@
 # 前端统一附件组件
 
-- 业务页通过 `AttachmentField` / `AttachmentPicker` 对接 #18；上传放在选择器内，禁止拼 object_key 或长期缓存 transfer token。
+- 业务页通过 `AttachmentField` / `AttachmentPicker` 对接附件协议；上传放在选择器内，禁止拼 object_key 或长期缓存 transfer token。
 - 上传策略经 `attachment.upload_policy` 设置 + `PolicyProvider`；前端预校验拉 `/attachments/policy`。
 - `resourceType` 必须用 `ATTACHMENT_RESOURCE_TYPES` 常量；附件中心仅管理页，不是跨业务文件库。
+- 宫格仅在 `thumb_status=ready` 时请求 `variant=thumb`；禁止未就绪时 silent 降级拉原图；禁止拼 OSS/ObjectStore URL。
 - 变更同步 `docs/development/frontend-attachments.md` 并 `agent-rules sync`。
 
 详规：`docs/development/frontend-attachments.md`

@@ -36,6 +36,11 @@ codeset.system.attachment_status.ready: "可用"
 codeset.system.attachment_status.deleting: "删除中"
 codeset.system.attachment_status.deleted: "已删除"
 codeset.system.attachment_status.failed: "失败"
+codeset.system.attachment_thumb_status: "缩略图状态"
+codeset.system.attachment_thumb_status.pending: "生成中"
+codeset.system.attachment_thumb_status.ready: "已就绪"
+codeset.system.attachment_thumb_status.failed: "生成失败"
+codeset.system.attachment_thumb_status.skipped: "已跳过"
 
 # ── Outbox / Delivery CodeSet ──
 codeset.system.outbox_status: "Outbox 状态"

@@ -16,6 +16,13 @@ const (
 	LabelAttachmentDeleted  = "codeset.system.attachment_status.deleted"
 	LabelAttachmentFailed   = "codeset.system.attachment_status.failed"
 
+	KeyAttachmentThumbStatus     = "system.attachment_thumb_status"
+	NameAttachmentThumbStatus    = "codeset.system.attachment_thumb_status"
+	LabelAttachmentThumbPending  = "codeset.system.attachment_thumb_status.pending"
+	LabelAttachmentThumbReady    = "codeset.system.attachment_thumb_status.ready"
+	LabelAttachmentThumbFailed   = "codeset.system.attachment_thumb_status.failed"
+	LabelAttachmentThumbSkipped  = "codeset.system.attachment_thumb_status.skipped"
+
 	KeyOutboxStatus       = "system.outbox_status"
 	NameOutboxStatus      = "codeset.system.outbox_status"
 	LabelOutboxPending    = "codeset.system.outbox_status.pending"
@@ -62,6 +69,18 @@ func AttachmentStatus() CodeSet {
 			{Value: string(status.AttachmentDeleting), LabelKey: LabelAttachmentDeleting, Semantic: SemanticInfo, Icon: "mdi:delete-clock-outline", Order: 30},
 			{Value: string(status.AttachmentDeleted), LabelKey: LabelAttachmentDeleted, Semantic: SemanticMuted, Icon: "mdi:delete-outline", Order: 40},
 			{Value: string(status.AttachmentFailed), LabelKey: LabelAttachmentFailed, Semantic: SemanticDanger, Icon: "mdi:alert-circle-outline", Order: 50},
+		},
+	}
+}
+
+func AttachmentThumbStatus() CodeSet {
+	return CodeSet{
+		Key: KeyAttachmentThumbStatus, NameKey: NameAttachmentThumbStatus,
+		Items: []CodeItem{
+			{Value: string(status.AttachmentThumbPending), LabelKey: LabelAttachmentThumbPending, Semantic: SemanticWarning, Icon: "mdi:clock-outline", Order: 10},
+			{Value: string(status.AttachmentThumbReady), LabelKey: LabelAttachmentThumbReady, Semantic: SemanticSuccess, Icon: "mdi:image-outline", Order: 20},
+			{Value: string(status.AttachmentThumbFailed), LabelKey: LabelAttachmentThumbFailed, Semantic: SemanticDanger, Icon: "mdi:alert-circle-outline", Order: 30},
+			{Value: string(status.AttachmentThumbSkipped), LabelKey: LabelAttachmentThumbSkipped, Semantic: SemanticMuted, Icon: "mdi:minus-circle-outline", Order: 40},
 		},
 	}
 }

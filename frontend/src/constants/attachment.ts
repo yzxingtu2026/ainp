@@ -26,12 +26,15 @@ export const DEFAULT_ATTACHMENT_UPLOAD_POLICY = {
     'image/jpeg',
     'image/gif',
     'image/webp',
+    'video/mp4',
+    'video/webm',
+    'video/quicktime',
     'application/pdf',
     'text/plain',
     'application/zip',
     'application/octet-stream'
   ],
-  allowedExt: ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.pdf', '.txt', '.zip'],
+  allowedExt: ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.mp4', '.webm', '.mov', '.pdf', '.txt', '.zip'],
   maxUploadsOnce: 10,
   concurrency: 2
 } as const;

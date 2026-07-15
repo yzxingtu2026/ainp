@@ -19,9 +19,11 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 	"github.com/yzxingtu2026/ainp/platform/framework/logging"
+	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
 	"github.com/yzxingtu2026/ainp/platform/framework/status"
 	"github.com/yzxingtu2026/ainp/platform/framework/storage"
 	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
+	"github.com/yzxingtu2026/ainp/platform/modules/system/jobs"
 	"github.com/yzxingtu2026/ainp/platform/modules/system/model"
 	"gorm.io/gorm"
 )
@@ -32,6 +34,7 @@ type AttachmentService struct {
 	tokens   *attachment.TransferTokenService
 	policies *attachment.PolicyRegistry
 	policy   attachment.PolicyProvider
+	outbox   outbox.Writer
 	baseURL  string // public API base for transfer URLs, e.g. empty => relative paths
 }
 
@@ -50,6 +53,9 @@ func NewAttachmentService(
 	}
 	return &AttachmentService{db: db, store: store, tokens: tokens, policies: policies, policy: policy}
 }
+
+// SetOutboxWriter enables reliable thumb-job enqueue after upload ready (optional).
+func (s *AttachmentService) SetOutboxWriter(w outbox.Writer) { s.outbox = w }
 
 func (s *AttachmentService) Policies() *attachment.PolicyRegistry { return s.policies }
 
@@ -88,6 +94,7 @@ type AttachmentView struct {
 	Size         int64  `json:"size"`
 	SHA256       string `json:"sha256,omitempty"`
 	Status       string `json:"status"`
+	ThumbStatus  string `json:"thumb_status,omitempty"`
 	UploaderID   string `json:"uploader_id"`
 	UploaderName string `json:"uploader_name,omitempty"`
 	CreatedAt    string `json:"created_at"`
@@ -190,9 +197,9 @@ func (s *AttachmentService) DownloadPrepare(ctx context.Context, input json.RawM
 		variant = "original"
 	}
 	switch variant {
-	case "original":
-		// Phase 1：仅原图；thumb/preview 由派生对象 Issue 落地
-	case "thumb", "preview":
+	case "original", "thumb":
+	case "preview":
+		// Phase 1：仅 original + thumb；preview 预留
 		return nil, errs.NewKey(errs.CodeNotFound, "attachment.variant_unavailable", "attachment variant not available")
 	default:
 		return nil, errs.ValidationKey("common.validation_failed", "invalid variant")
@@ -204,13 +211,20 @@ func (s *AttachmentService) DownloadPrepare(ctx context.Context, input json.RawM
 	if err := s.authorizeDownload(ctx, tenantID, userID, row); err != nil {
 		return nil, err
 	}
+	size := row.Size
+	if variant == "thumb" {
+		if row.ThumbStatus != status.AttachmentThumbReady || row.ThumbObjectKey == "" {
+			return nil, errs.NewKey(errs.CodeNotFound, "attachment.variant_unavailable", "attachment variant not available")
+		}
+		size = row.ThumbSize
+	}
 	pol, err := s.policy.UploadPolicy(ctx, tenantID)
 	if err != nil {
 		return nil, mapAttachmentError(err)
 	}
 	token, _, tokenExp, err := s.tokens.Issue(attachment.IssueTransferInput{
 		TenantID: tenantID, UserID: userID, AttachmentID: row.ID,
-		Op: attachment.OpDownload, Size: row.Size, TTL: pol.TransferTTL,
+		Op: attachment.OpDownload, Variant: variant, Size: size, TTL: pol.TransferTTL,
 	})
 	if err != nil {
 		return nil, mapAttachmentError(err)
@@ -347,6 +361,12 @@ func (s *AttachmentService) Delete(ctx context.Context, input json.RawMessage) (
 		return nil, mapAttachmentError(err)
 	}
 	objectPending := false
+	if row.ThumbObjectKey != "" {
+		if err := s.store.Delete(ctx, row.ThumbObjectKey); err != nil {
+			logging.Error(ctx, "attachment thumb object delete failed", err, "attachment_id", row.ID, "key_digest", storage.KeyDigest(row.ThumbObjectKey))
+			objectPending = true
+		}
+	}
 	if err := s.store.Delete(ctx, row.ObjectKey); err != nil {
 		logging.Error(ctx, "attachment object delete failed", err, "attachment_id", row.ID, "key_digest", storage.KeyDigest(row.ObjectKey))
 		objectPending = true
@@ -354,8 +374,12 @@ func (s *AttachmentService) Delete(ctx context.Context, input json.RawMessage) (
 		setAttachmentAudit(ctx, row.ID, "attachment delete")
 		return map[string]any{"deleted": true, "object_pending": true}, nil
 	}
+	if objectPending {
+		setAttachmentAudit(ctx, row.ID, "attachment delete")
+		return map[string]any{"deleted": true, "object_pending": true}, nil
+	}
 	_ = s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Model(&model.Attachment{}).Where("id = ?", row.ID).Updates(map[string]any{
-		"status": status.AttachmentDeleted, "updated_at": time.Now().UTC(),
+		"status": status.AttachmentDeleted, "thumb_object_key": "", "updated_at": time.Now().UTC(),
 	}).Error
 	_ = s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Delete(&model.Attachment{}, "id = ?", row.ID).Error
 	setAttachmentAudit(ctx, row.ID, "attachment delete")
@@ -389,6 +413,15 @@ func (s *AttachmentService) CleanupExpired(ctx context.Context, limit int) (int,
 		if row.TenantID != tenantID {
 			continue
 		}
+		if row.ThumbObjectKey != "" {
+			if err := s.store.Delete(ctx, row.ThumbObjectKey); err != nil {
+				logging.Error(ctx, "attachment cleanup thumb delete failed", err, "attachment_id", row.ID, "key_digest", storage.KeyDigest(row.ThumbObjectKey))
+				_ = s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Model(&model.Attachment{}).Where("id = ?", row.ID).Updates(map[string]any{
+					"status": status.AttachmentDeleting, "upload_jti": "", "updated_at": time.Now().UTC(),
+				}).Error
+				continue
+			}
+		}
 		if err := s.store.Delete(ctx, row.ObjectKey); err != nil {
 			logging.Error(ctx, "attachment cleanup object delete failed", err, "attachment_id", row.ID, "key_digest", storage.KeyDigest(row.ObjectKey))
 			_ = s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Model(&model.Attachment{}).Where("id = ?", row.ID).Updates(map[string]any{
@@ -397,7 +430,7 @@ func (s *AttachmentService) CleanupExpired(ctx context.Context, limit int) (int,
 			continue
 		}
 		_ = s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Model(&model.Attachment{}).Where("id = ?", row.ID).Updates(map[string]any{
-			"status": status.AttachmentDeleted, "upload_jti": "", "updated_at": time.Now().UTC(),
+			"status": status.AttachmentDeleted, "upload_jti": "", "thumb_object_key": "", "updated_at": time.Now().UTC(),
 		}).Error
 		_ = s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Delete(&model.Attachment{}, "id = ?", row.ID).Error
 		cleaned++
@@ -467,18 +500,60 @@ func (s *AttachmentService) CompleteUpload(ctx context.Context, claims *attachme
 	if contentType == "application/octet-stream" && detected != "" {
 		contentType = detected
 	}
+	now := time.Now().UTC()
+	thumbStatus := status.AttachmentThumbSkipped
+	if attachment.IsThumbMediaMIME(contentType) {
+		thumbStatus = status.AttachmentThumbPending
+	}
 	updates := map[string]any{
 		"status": status.AttachmentReady, "size": info.Size, "sha256": sum,
-		"content_type": contentType, "upload_jti": "", "updated_at": time.Now().UTC(),
+		"content_type": contentType, "upload_jti": "", "updated_at": now,
+		"thumb_status": thumbStatus, "thumb_error": "", "thumb_updated_at": now,
 	}
-	if err := s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Model(&model.Attachment{}).Where("id = ? AND status = ?", row.ID, status.AttachmentPending).Updates(updates).Error; err != nil {
-		return nil, mapAttachmentError(err)
+
+	applyReady := func(tx *gorm.DB) error {
+		res := tx.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Model(&model.Attachment{}).
+			Where("id = ? AND status = ?", row.ID, status.AttachmentPending).Updates(updates)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return errs.ValidationKey("attachment.not_pending", "attachment is not pending upload")
+		}
+		return nil
+	}
+
+	if s.outbox != nil && thumbStatus == status.AttachmentThumbPending {
+		err := outbox.WithinTx(ctx, s.db, s.outbox, func(tx *gorm.DB, w outbox.Writer) error {
+			if err := applyReady(tx); err != nil {
+				return err
+			}
+			_, err := w.Append(ctx, tx, outbox.AppendInput{
+				EventType:     jobs.EventAttachmentReadyV1,
+				AggregateType: "attachment",
+				AggregateID:   row.ID,
+				Payload: jobs.GenerateThumbPayload{
+					AttachmentID: row.ID,
+					ContentType:  contentType,
+				},
+			})
+			return err
+		})
+		if err != nil {
+			return nil, mapAttachmentError(err)
+		}
+	} else {
+		if err := applyReady(s.db); err != nil {
+			return nil, mapAttachmentError(err)
+		}
 	}
 	row.Status = status.AttachmentReady
 	row.Size = info.Size
 	row.SHA256 = sum
 	row.ContentType = contentType
 	row.UploadJTI = ""
+	row.ThumbStatus = thumbStatus
+	row.ThumbUpdatedAt = &now
 	return row, nil
 }
 
@@ -502,24 +577,14 @@ func (s *sniffReader) Read(p []byte) (int, error) {
 
 // OpenDownload returns a reader for a validated download transfer token.
 func (s *AttachmentService) OpenDownload(ctx context.Context, claims *attachment.TransferClaims) (io.ReadCloser, *model.Attachment, error) {
-	if claims.Op != attachment.OpDownload {
-		return nil, nil, errs.NewKey(errs.CodeForbidden, "attachment.token_invalid", "invalid transfer token")
-	}
-	row, err := s.getOwned(ctx, claims.TenantID, claims.AttachmentID)
-	if err != nil {
-		return nil, nil, err
-	}
-	if err := s.authorizeDownload(ctx, claims.TenantID, claims.UserID, row); err != nil {
-		return nil, nil, err
-	}
-	rc, _, err := s.store.Open(ctx, row.ObjectKey)
-	if err != nil {
-		return nil, nil, mapAttachmentError(err)
-	}
-	return rc, row, nil
+	return s.openDownloadVariant(ctx, claims, false, 0, 0)
 }
 
 func (s *AttachmentService) OpenDownloadRange(ctx context.Context, claims *attachment.TransferClaims, offset, length int64) (io.ReadCloser, *model.Attachment, error) {
+	return s.openDownloadVariant(ctx, claims, true, offset, length)
+}
+
+func (s *AttachmentService) openDownloadVariant(ctx context.Context, claims *attachment.TransferClaims, ranged bool, offset, length int64) (io.ReadCloser, *model.Attachment, error) {
 	if claims.Op != attachment.OpDownload {
 		return nil, nil, errs.NewKey(errs.CodeForbidden, "attachment.token_invalid", "invalid transfer token")
 	}
@@ -530,11 +595,51 @@ func (s *AttachmentService) OpenDownloadRange(ctx context.Context, claims *attac
 	if err := s.authorizeDownload(ctx, claims.TenantID, claims.UserID, row); err != nil {
 		return nil, nil, err
 	}
-	rc, _, err := s.store.OpenRange(ctx, row.ObjectKey, offset, length)
+	variant := strings.TrimSpace(strings.ToLower(claims.Variant))
+	if variant == "" {
+		variant = "original"
+	}
+	key := row.ObjectKey
+	out := *row
+	switch variant {
+	case "original":
+		// use original
+	case "thumb":
+		if row.ThumbStatus != status.AttachmentThumbReady || row.ThumbObjectKey == "" {
+			return nil, nil, errs.NewKey(errs.CodeNotFound, "attachment.variant_unavailable", "attachment variant not available")
+		}
+		key = row.ThumbObjectKey
+		out.ObjectKey = key
+		out.ContentType = row.ThumbContentType
+		if out.ContentType == "" {
+			out.ContentType = "image/jpeg"
+		}
+		out.Size = row.ThumbSize
+		out.SHA256 = ""
+		out.OriginalName = thumbDownloadName(row.OriginalName)
+	default:
+		return nil, nil, errs.NewKey(errs.CodeNotFound, "attachment.variant_unavailable", "attachment variant not available")
+	}
+	var rc io.ReadCloser
+	if ranged {
+		rc, _, err = s.store.OpenRange(ctx, key, offset, length)
+	} else {
+		rc, _, err = s.store.Open(ctx, key)
+	}
 	if err != nil {
 		return nil, nil, mapAttachmentError(err)
 	}
-	return rc, row, nil
+	return rc, &out, nil
+}
+
+func thumbDownloadName(original string) string {
+	base := path.Base(original)
+	ext := path.Ext(base)
+	name := strings.TrimSuffix(base, ext)
+	if name == "" {
+		name = "thumb"
+	}
+	return name + ".thumb.jpg"
 }
 
 func (s *AttachmentService) ParseTransferToken(token string) (*attachment.TransferClaims, error) {
@@ -601,11 +706,15 @@ func (s *AttachmentService) markFailed(ctx context.Context, row *model.Attachmen
 }
 
 func toAttachmentView(row model.Attachment) AttachmentView {
-	return AttachmentView{
+	v := AttachmentView{
 		ID: row.ID, OriginalName: row.OriginalName, ContentType: row.ContentType,
 		Size: row.Size, SHA256: row.SHA256, Status: string(row.Status), UploaderID: row.UploaderID,
 		CreatedAt: row.CreatedAt.UTC().Format(time.RFC3339), UpdatedAt: row.UpdatedAt.UTC().Format(time.RFC3339),
 	}
+	if row.ThumbStatus != "" {
+		v.ThumbStatus = string(row.ThumbStatus)
+	}
+	return v
 }
 
 func validateOriginalName(name string) error {

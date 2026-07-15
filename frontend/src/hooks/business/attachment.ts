@@ -26,9 +26,9 @@ export async function downloadAttachmentById(
 }
 
 /**
- * 宫格/预览加载：优先 thumb，不可用则降级原图。
- * - thumb_status === 'ready'：先请求 thumb，失败再原图
- * - 其他/缺省：直接原图（避免派生未落地前无意义的失败请求）
+ * 宫格缩略图加载：仅在 thumb_status === 'ready' 时请求 variant=thumb。
+ * 未就绪/失败/跳过时不拉原图（避免宫格撑爆带宽）；调用方显示类型图标占位。
+ * 业务大图预览请用 downloadAttachmentById({ variant: 'original' })。
  */
 export async function loadAttachmentPreviewBlob(
   id: string,
@@ -37,19 +37,15 @@ export async function loadAttachmentPreviewBlob(
     thumbStatus?: Api.Attachment.Item['thumb_status'];
     signal?: AbortSignal;
   }
-): Promise<{ blob: Blob; name: string; contentType: string; variant: AttachmentDownloadVariant }> {
+): Promise<{ blob: Blob; name: string; contentType: string; variant: AttachmentDownloadVariant } | null> {
   const preferThumb = options?.preferThumb !== false;
   const canTryThumb = preferThumb && options?.thumbStatus === 'ready';
 
-  if (canTryThumb) {
-    try {
-      return await downloadAttachmentById(id, { variant: 'thumb', signal: options?.signal });
-    } catch {
-      return downloadAttachmentById(id, { variant: 'original', signal: options?.signal });
-    }
+  if (!canTryThumb) {
+    return null;
   }
 
-  return downloadAttachmentById(id, { variant: 'original', signal: options?.signal });
+  return downloadAttachmentById(id, { variant: 'thumb', signal: options?.signal });
 }
 
 export function triggerBrowserDownload(blob: Blob, filename: string) {
@@ -77,8 +73,9 @@ export function useAttachmentPreview() {
     error.value = '';
     abort = new AbortController();
     try {
-      const result = await loadAttachmentPreviewBlob(attachmentId, {
-        preferThumb: true,
+      // 详情预览用原图；宫格另走 useAttachmentGridThumbs
+      const result = await downloadAttachmentById(attachmentId, {
+        variant: 'original',
         signal: abort.signal
       });
       objectUrl.value = URL.createObjectURL(result.blob);
@@ -142,7 +139,9 @@ export function useAttachmentGridThumbs(
       const id = queue.shift()!;
       const item = items.value.find(row => row.id === id);
       if (!item || urls[id] || failedIds[id]) continue;
-      if (!isImageContentType(item.content_type)) continue;
+      if (!isImageContentType(item.content_type) && !isVideoContentType(item.content_type)) continue;
+      // 仅 thumb ready 时加载；pending/failed/skipped/缺省走占位
+      if (item.thumb_status !== 'ready') continue;
 
       active += 1;
       loadingIds[id] = true;
@@ -155,7 +154,7 @@ export function useAttachmentGridThumbs(
         signal: ctrl.signal
       })
         .then(result => {
-          if (disposed || ctrl.signal.aborted) {
+          if (disposed || ctrl.signal.aborted || !result) {
             return;
           }
           if (urls[id]) URL.revokeObjectURL(urls[id]);
@@ -178,7 +177,13 @@ export function useAttachmentGridThumbs(
     if (disposed) return;
     if (options?.enabled && !options.enabled.value) return;
     const wanted = new Set(
-      items.value.filter(item => isImageContentType(item.content_type)).map(item => item.id)
+      items.value
+        .filter(
+          item =>
+            (isImageContentType(item.content_type) || isVideoContentType(item.content_type)) &&
+            item.thumb_status === 'ready'
+        )
+        .map(item => item.id)
     );
     // 回收已不在列表中的 URL
     Object.keys(urls).forEach(id => {

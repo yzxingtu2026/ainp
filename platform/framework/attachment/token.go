@@ -2,6 +2,7 @@ package attachment
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -21,6 +22,7 @@ type TransferClaims struct {
 	UserID       string `json:"uid"`
 	AttachmentID string `json:"aid"`
 	Op           string `json:"op"`
+	Variant      string `json:"var,omitempty"` // original | thumb | preview；空 = original
 	Size         int64  `json:"size,omitempty"`
 	JTI          string `json:"jti"`
 	jwt.RegisteredClaims
@@ -47,6 +49,7 @@ type IssueTransferInput struct {
 	UserID       string
 	AttachmentID string
 	Op           string
+	Variant      string // original | thumb | preview；空 = original
 	Size         int64
 	TTL          time.Duration
 }
@@ -58,6 +61,15 @@ func (s *TransferTokenService) Issue(in IssueTransferInput) (token string, jti s
 	if in.Op != OpUpload && in.Op != OpDownload {
 		return "", "", time.Time{}, fmt.Errorf("invalid transfer op")
 	}
+	variant := strings.TrimSpace(strings.ToLower(in.Variant))
+	if variant == "" {
+		variant = "original"
+	}
+	switch variant {
+	case "original", "thumb", "preview":
+	default:
+		return "", "", time.Time{}, fmt.Errorf("invalid transfer variant")
+	}
 	if in.TTL <= 0 {
 		in.TTL = 15 * time.Minute
 	}
@@ -66,7 +78,7 @@ func (s *TransferTokenService) Issue(in IssueTransferInput) (token string, jti s
 	jti = uuid.NewString()
 	claims := TransferClaims{
 		TenantID: in.TenantID, UserID: in.UserID, AttachmentID: in.AttachmentID,
-		Op: in.Op, Size: in.Size, JTI: jti,
+		Op: in.Op, Variant: variant, Size: in.Size, JTI: jti,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    s.issuer,
 			Subject:   in.UserID,
@@ -100,6 +112,9 @@ func (s *TransferTokenService) Parse(tokenString string) (*TransferClaims, error
 	}
 	if claims.TenantID == "" || claims.UserID == "" || claims.AttachmentID == "" || claims.JTI == "" {
 		return nil, fmt.Errorf("incomplete transfer claims")
+	}
+	if claims.Variant == "" {
+		claims.Variant = "original"
 	}
 	return claims, nil
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/capability"
 	"github.com/yzxingtu2026/ainp/platform/framework/i18n"
 	"github.com/yzxingtu2026/ainp/platform/framework/menu"
+	"github.com/yzxingtu2026/ainp/platform/modules/system/jobs"
 )
 
 func Register(a *app.App) error {
@@ -81,6 +82,9 @@ func Register(a *app.App) error {
 	}
 	policyProvider := NewSettingUploadPolicyProvider(settingSvc.Provider())
 	attachSvc := NewAttachmentService(a.DB, a.Storage, a.TransferTokens, a.AttachmentPolicies, policyProvider)
+	if a.Outbox != nil {
+		attachSvc.SetOutboxWriter(a.Outbox.Writer)
+	}
 	if err := registerAttachmentActions(a, attachSvc); err != nil {
 		return err
 	}
@@ -88,6 +92,9 @@ func Register(a *app.App) error {
 		return err
 	}
 	if err := registerJobActions(a); err != nil {
+		return err
+	}
+	if err := jobs.Register(a); err != nil {
 		return err
 	}
 	a.OnHTTP = func(engine *gin.Engine) {
