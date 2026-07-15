@@ -231,10 +231,37 @@ const local: App.I18n.Schema = {
     demo_hello: 'Hello',
     system: '系统',
     system_profile: '个人中心',
+    system_users: '用户管理',
     system_roles: '角色管理',
     setup: '安装向导'
   },
   page: {
+    user: {
+      title: '用户管理',
+      createTitle: '新建用户',
+      editTitle: '编辑用户',
+      rolesTitle: '为 {name} 分配角色',
+      passwordTitle: '重置 {name} 的密码',
+      username: '用户名',
+      usernameInvalid: '用户名需以字母开头，3-64 位字母/数字/下划线',
+      displayName: '显示名',
+      status: '状态',
+      roles: '角色',
+      updatedAt: '更新时间',
+      password: '密码',
+      confirmPassword: '确认密码',
+      passwordHint: '密码至少 8 位，需同时包含字母和数字',
+      passwordMismatch: '两次输入密码不一致',
+      assignRoles: '分配角色',
+      resetPassword: '重置密码',
+      enable: '启用',
+      disable: '停用',
+      confirmEnable: '确认启用该用户？',
+      confirmDisable: '确认停用该用户？停用后其 Token 将立即失效。',
+      enabled: '已启用',
+      disabled: '已停用',
+      builtin: '内置'
+    },
     role: {
       title: '角色管理',
       createTitle: '新建角色',
@@ -363,7 +390,7 @@ const local: App.I18n.Schema = {
       confirmPassword: '确认密码',
       confirmPasswordPlaceholder: '请再次输入密码',
       passwordMismatch: '两次输入密码不一致',
-      passwordTooShort: '密码长度至少 6 位',
+      passwordTooShort: '密码至少 8 位，需同时包含字母和数字',
       initialize: '开始初始化',
       completeTitle: '安装完成',
       completeDesc: '系统已成功初始化，请重启后端服务后前往登录页面使用',
@@ -383,7 +410,7 @@ const local: App.I18n.Schema = {
     },
     pwd: {
       required: '请输入密码',
-      invalid: '密码格式不正确，6-18位字符，包含字母、数字、下划线'
+      invalid: '密码至少 8 位，需同时包含字母和数字'
     },
     confirmPwd: {
       required: '请输入确认密码',

@@ -54,6 +54,11 @@ func Register(a *app.App) error {
 		return err
 	}
 
+	userSvc := NewUserService(a.DB, svc)
+	if err := registerUserActions(a, userSvc); err != nil {
+		return err
+	}
+
 	if err := a.RegisterAction(action.Action{
 		ID: "system.auth_login",
 		Handler: func(ctx context.Context, input json.RawMessage) (any, error) {
@@ -190,9 +195,17 @@ func Register(a *app.App) error {
 		return err
 	}
 
+	if err := a.RegisterMenu(menu.Menu{
+		ID: MenuUserManagement, ParentID: "system.root", Title: "用户管理", TitleKey: "menu.system.users.title",
+		Icon: "mdi:account-outline", Type: menu.TypeMenu, Path: "/system/users", Component: "system/users",
+		Permission: ActionUserList, BindAction: ActionUserList, Module: "system", Order: 2,
+	}); err != nil {
+		return err
+	}
+
 	return a.RegisterMenu(menu.Menu{
 		ID: MenuRoleManagement, ParentID: "system.root", Title: "角色管理", TitleKey: "menu.system.roles.title",
 		Icon: "mdi:shield-account-outline", Type: menu.TypeMenu, Path: "/system/roles", Component: "system/roles",
-		Permission: ActionRoleList, BindAction: ActionRoleList, Module: "system", Order: 2,
+		Permission: ActionRoleList, BindAction: ActionRoleList, Module: "system", Order: 3,
 	})
 }

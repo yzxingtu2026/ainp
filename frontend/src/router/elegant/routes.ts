@@ -137,6 +137,16 @@ export const generatedRoutes: GeneratedRoute[] = [
           i18nKey: 'route.system_roles',
           hideInMenu: true
         }
+      },
+      {
+        name: 'system_users',
+        path: '/system/users',
+        component: 'view.system_users',
+        meta: {
+          title: 'system_users',
+          i18nKey: 'route.system_users',
+          hideInMenu: true
+        }
       }
     ]
   }

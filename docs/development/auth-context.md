@@ -102,6 +102,20 @@ System
 - Phase 1 以数据库实时读取保证正确性；未来缓存必须具备精准失效，并保持 Provider 契约不变。
 - `dev:` Token 仅在 `dev_token_enabled=true` 时使用，不经过正式 JWT Provider 流程，不得据此推断生产安全语义。
 
+## 租户用户管理
+
+- 用户属于单一租户；`(tenant_id, username)` 联合唯一，username 创建后不可修改。
+- 管理 Action：`system.user_list|get|create|update|status_update|roles_update|password_reset`；状态变更与资料编辑分离。
+- 角色全量替换并事务化：校验角色属于当前租户且 enabled → 替换 UserRole → `BumpAuthVersion`。
+- 不提供物理删除；使用 `disabled` 保留审计主体。当前用户不可自停用；租户须保留至少一名 enabled 内置 `admin` 用户。
+- OrgID/DeptID 仅预留字段，本阶段不实现组织架构选择。
+
+## 密码强度
+
+- 统一由 `ValidatePassword` 校验（安装向导、创建用户、密码重置共用）：长度 8–72，至少包含一个字母和一个数字。
+- 密码只接收明文用于 bcrypt；API/日志/审计/响应禁止回显明文或 `PasswordHash`。
+- 前端仅做一致提示；后端为最终边界。
+
 ## 系统级操作
 
 - 普通 Action：`is_system_operator=false`，强制单租户。
