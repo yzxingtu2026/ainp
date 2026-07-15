@@ -7,10 +7,9 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
-	"github.com/yzxingtu2026/ainp/platform/framework/config"
 	"github.com/yzxingtu2026/ainp/platform/framework/asynqadapter"
+	"github.com/yzxingtu2026/ainp/platform/framework/config"
 	"github.com/yzxingtu2026/ainp/platform/framework/logging"
 	"github.com/yzxingtu2026/ainp/platform/framework/state"
 	"github.com/yzxingtu2026/ainp/platform/internal/boot"
@@ -69,44 +68,23 @@ func main() {
 		p.App.Jobs.StartRecovery(runCtx, cfg.Jobs.RecoveryIntervalDuration())
 	}
 
-	redisOpt := asynqadapter.RedisOpt{
-		Addr:         cfg.Redis.Addr,
-		Username:     cfg.Redis.Username,
-		Password:     cfg.Redis.Password,
-		DB:           cfg.Redis.DB,
-		DialTimeout:  cfg.Redis.DialTimeoutDuration(),
-		ReadTimeout:  cfg.Redis.ReadTimeoutDuration(),
-		WriteTimeout: cfg.Redis.WriteTimeoutDuration(),
-		PoolSize:     cfg.Redis.PoolSize,
-	}
-	srv := asynqadapter.NewServer(redisOpt, asynqadapter.WorkerConfig{
-		Concurrency: cfg.Jobs.Concurrency,
-		Queues:      cfg.Jobs.Queues,
-	}, p.DB, p.App.Jobs.Registry, p.App.Jobs.Store)
-	mux := asynqadapter.NewMux(p.DB, p.App.Jobs.Registry, p.App.Jobs.Store)
+	runner := asynqadapter.NewRunner(
+		asynqadapter.RedisOptFromConfig(cfg.Redis),
+		asynqadapter.WorkerConfigFromJobs(cfg.Jobs),
+		p.DB,
+		p.App.Jobs.Registry,
+		p.App.Jobs.Store,
+	)
 
 	logging.Info(runCtx, "ainp-worker starting",
 		"jobs", len(p.App.Jobs.Registry.List()),
 		"concurrency", cfg.Jobs.Concurrency,
 	)
+	runner.Start(runCtx)
 
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- srv.Run(mux)
-	}()
-
-	select {
-	case <-runCtx.Done():
-		logging.Info(context.Background(), "ainp-worker shutting down")
-		srv.Shutdown()
-		select {
-		case <-errCh:
-		case <-time.After(cfg.Jobs.ShutdownTimeoutDuration()):
-		}
-	case err := <-errCh:
-		if err != nil {
-			logging.Error(ctx, "worker stopped", err)
-			os.Exit(1)
-		}
+	<-runCtx.Done()
+	if err := runner.Shutdown(cfg.Jobs.ShutdownTimeoutDuration()); err != nil {
+		logging.Error(ctx, "worker stopped", err)
+		os.Exit(1)
 	}
 }

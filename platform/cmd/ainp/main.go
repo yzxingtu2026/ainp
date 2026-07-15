@@ -52,14 +52,11 @@ func main() {
 		}
 	}()
 
-	if p.App.Jobs != nil && p.App.Jobs.Enabled {
-		p.App.Jobs.StartRecovery(ctx, cfg.Jobs.RecoveryIntervalDuration())
-	}
-
 	logging.Info(ctx, "ainp is ready",
 		"actions", len(p.App.Actions.List()),
 		"menus", len(p.App.Menus.List()),
 		"jobs_enabled", cfg.Jobs.IsEnabled(),
+		"embedded_worker", cfg.Jobs.IsEnabled() && cfg.Jobs.EmbeddedWorker,
 		"dev_token", cfg.Auth.DevTokenEnabled,
 	)
 	if err := p.App.Run(); err != nil {

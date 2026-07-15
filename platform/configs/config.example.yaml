@@ -71,5 +71,6 @@ jobs:
   max_payload_bytes: 262144
   shutdown_timeout: 30s
   recovery_interval: 30s
-  # 开发可用 embedded_worker；生产请独立部署 cmd/ainp-worker
+  # 开发可用 embedded_worker=true：HTTP 进程内嵌 Asynq Worker，无需另起 ainp-worker
+  # 生产请保持 false，独立部署 cmd/ainp-worker 以便扩容
   embedded_worker: false

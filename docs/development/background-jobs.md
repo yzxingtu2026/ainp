@@ -40,6 +40,7 @@ jobs:
 
 - `jobs.enabled=false`：核心 HTTP 可启动；Job API 返回 `job.unavailable`
 - `enabled=true` 且 Redis 不可用：Worker/组装失败（明确错误）
+- `embedded_worker=true`（仅开发/单机）：在 `cmd/ainp` 内嵌启动 Asynq Worker，关停时一并优雅退出；生产保持 `false` 并独立跑 `cmd/ainp-worker`
 
 ## 运维 Action
 

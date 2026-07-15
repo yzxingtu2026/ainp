@@ -15,6 +15,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/attachment"
 	"github.com/yzxingtu2026/ainp/platform/framework/audit"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
+	"github.com/yzxingtu2026/ainp/platform/framework/asynqadapter"
 	"github.com/yzxingtu2026/ainp/platform/framework/capability"
 	"github.com/yzxingtu2026/ainp/platform/framework/codeset"
 	"github.com/yzxingtu2026/ainp/platform/framework/config"
@@ -141,6 +142,29 @@ func (a *App) Run() error {
 	if a.Outbox != nil {
 		a.Outbox.Start(ctx)
 		defer a.Outbox.Stop()
+	}
+
+	if a.Jobs != nil && a.Jobs.Enabled {
+		a.Jobs.StartRecovery(ctx, a.Config.Jobs.RecoveryIntervalDuration())
+	}
+
+	var worker *asynqadapter.Runner
+	if a.Jobs != nil && a.Jobs.Enabled && a.Config.Jobs.EmbeddedWorker {
+		worker = asynqadapter.NewRunner(
+			asynqadapter.RedisOptFromConfig(a.Config.Redis),
+			asynqadapter.WorkerConfigFromJobs(a.Config.Jobs),
+			a.DB,
+			a.Jobs.Registry,
+			a.Jobs.Store,
+		)
+		worker.Start(ctx)
+		logging.Info(ctx, "embedded asynq worker enabled",
+			"jobs", len(a.Jobs.Registry.List()),
+			"concurrency", a.Config.Jobs.Concurrency,
+		)
+		defer func() {
+			_ = worker.Shutdown(a.Config.Jobs.ShutdownTimeoutDuration())
+		}()
 	}
 
 	srv := &http.Server{Addr: a.Config.Server.Addr, Handler: engine}
