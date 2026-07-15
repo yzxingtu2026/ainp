@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
+	"github.com/yzxingtu2026/ainp/platform/framework/attachment"
 	"github.com/yzxingtu2026/ainp/platform/framework/audit"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/config"
@@ -140,6 +141,13 @@ func runNormalMode(ctx context.Context, cfg *config.Config, cfgPath *string) {
 		os.Exit(1)
 	}
 	application.Storage = store
+
+	transferTokens, err := attachment.NewTransferTokenService(cfg.Auth.JWT.Secret, cfg.Auth.JWT.Issuer)
+	if err != nil {
+		logging.Error(ctx, "init attachment transfer tokens failed", err)
+		os.Exit(1)
+	}
+	application.TransferTokens = transferTokens
 
 	// 注册 setup actions（已安装模式下 setup_initialize 会返回已安装错误）
 	st, _ := state.Load(cfg.StateFile)

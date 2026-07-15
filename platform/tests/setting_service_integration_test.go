@@ -58,6 +58,7 @@ func TestSettingServiceTenantIsolationAndRevision(t *testing.T) {
 	}
 
 	application := app.New(&config.Config{}, testDB, nil, nil)
+	attachStorage(t, application)
 	if err := system.Register(application); err != nil {
 		t.Fatal(err)
 	}

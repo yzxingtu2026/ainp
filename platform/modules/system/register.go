@@ -3,9 +3,12 @@ package system
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
+	"github.com/gin-gonic/gin"
 	"github.com/yzxingtu2026/ainp/platform/framework/action"
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
+	"github.com/yzxingtu2026/ainp/platform/framework/attachment"
 	"github.com/yzxingtu2026/ainp/platform/framework/capability"
 	"github.com/yzxingtu2026/ainp/platform/framework/i18n"
 	"github.com/yzxingtu2026/ainp/platform/framework/menu"
@@ -65,6 +68,23 @@ func Register(a *app.App) error {
 	settingSvc := NewSettingService(a.DB, a.Settings)
 	if err := registerSettingActions(a, settingSvc); err != nil {
 		return err
+	}
+
+	if a.TransferTokens == nil {
+		return fmt.Errorf("attachment transfer token service is required")
+	}
+	if a.Storage == nil {
+		return fmt.Errorf("object store is required for attachments")
+	}
+	if a.AttachmentPolicies == nil {
+		a.AttachmentPolicies = attachment.NewPolicyRegistry()
+	}
+	attachSvc := NewAttachmentService(a.DB, a.Storage, a.TransferTokens, a.AttachmentPolicies, nil)
+	if err := registerAttachmentActions(a, attachSvc); err != nil {
+		return err
+	}
+	a.OnHTTP = func(engine *gin.Engine) {
+		RegisterAttachmentTransferRoutes(engine, attachSvc)
 	}
 
 	if err := a.RegisterAction(action.Action{

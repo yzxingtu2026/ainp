@@ -22,6 +22,13 @@ const (
 	ActionSettingUpdate = "system.setting_update"
 	ActionSettingReset  = "system.setting_reset"
 
+	ActionAttachmentUploadPrepare   = "system.attachment_upload_prepare"
+	ActionAttachmentDownloadPrepare = "system.attachment_download_prepare"
+	ActionAttachmentBind            = "system.attachment_bind"
+	ActionAttachmentUnbind          = "system.attachment_unbind"
+	ActionAttachmentListByResource  = "system.attachment_list_by_resource"
+	ActionAttachmentDelete          = "system.attachment_delete"
+
 	MenuRoleManagement    = "system.roles"
 	MenuUserManagement    = "system.users"
 	MenuSettingManagement = "system.settings"
@@ -49,6 +56,12 @@ var adminMinimumPermissions = []string{
 	ActionSettingGet,
 	ActionSettingUpdate,
 	ActionSettingReset,
+	ActionAttachmentUploadPrepare,
+	ActionAttachmentDownloadPrepare,
+	ActionAttachmentBind,
+	ActionAttachmentUnbind,
+	ActionAttachmentListByResource,
+	ActionAttachmentDelete,
 }
 
 // AdminMinimumPermissions 返回内置管理员必须保留的最小权限副本（测试与文档对齐用）。

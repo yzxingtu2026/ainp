@@ -22,6 +22,7 @@ import (
 
 func TestUserManagementActionsAndMenuAreRegistered(t *testing.T) {
 	application := app.New(&config.Config{}, nil, nil, nil)
+	attachStorage(t, application)
 	if err := system.Register(application); err != nil {
 		t.Fatal(err)
 	}
