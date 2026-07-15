@@ -183,6 +183,9 @@ func TestSettingActionsAndMenuAreRegistered(t *testing.T) {
 	if _, ok := application.Settings.GetDefinition("general.preferences"); !ok {
 		t.Fatal("example setting definition was not registered")
 	}
+	if _, ok := application.Settings.GetDefinition("general.visibility_demo"); !ok {
+		t.Fatal("visibility demo setting definition was not registered")
+	}
 	foundMenu := false
 	for _, registered := range application.Menus.List() {
 		if registered.ID == system.MenuSettingManagement && registered.Permission == system.ActionSettingList {

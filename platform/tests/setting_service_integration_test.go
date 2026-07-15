@@ -76,10 +76,19 @@ func TestSettingServiceTenantIsolationAndRevision(t *testing.T) {
 		t.Fatal(err)
 	}
 	categories := listed.(map[string]any)["categories"].([]system.SettingCategoryView)
-	if len(categories) != 1 || len(categories[0].Definitions) != 1 {
+	if len(categories) != 1 || len(categories[0].Definitions) != 2 {
 		t.Fatalf("unexpected list: %#v", listed)
 	}
-	def := categories[0].Definitions[0]
+	var def system.SettingDefinitionView
+	for _, item := range categories[0].Definitions {
+		if item.Key == "general.preferences" {
+			def = item
+			break
+		}
+	}
+	if def.Key == "" {
+		t.Fatalf("preferences definition missing: %#v", listed)
+	}
 	if def.Source != "default" || def.Revision != 0 || def.Values["display_name"] != "AINP" {
 		t.Fatalf("default effective values = %#v", def)
 	}

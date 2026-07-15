@@ -36,7 +36,10 @@ VisibleWhen: &setting.VisibleWhen{Field: "mode", In: []any{"a", "b"}}
 - 隐藏字段：前端保留表单值；保存校验跳过必填与类型；提交值可原样写入（不强制清默认）
 - 前端按 `visible_when` 动态渲染；后端 `ValidateValues` 以服务端求值为准
 
-示例：`general.preferences.brand_color` 仅在 `dark_mode == true` 时显示（见 `modules/system/setting_definitions.go`）。
+示例：
+
+- `general.preferences.brand_color`：`dark_mode == true` 时显示（`eq`）
+- `general.visibility_demo`：专门联调 `eq` / `in` / 传递隐藏（见 `modules/system/setting_definitions.go`）
 
 ## 租户值
 
