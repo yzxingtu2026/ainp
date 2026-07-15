@@ -360,6 +360,23 @@
           "alwaysApply": true
         }
       }
+    },
+    {
+      "id": "background-jobs",
+      "source": ".agent/rules/background-jobs.md",
+      "qoder": {
+        "path": ".qoder/rules/background-jobs.md",
+        "frontmatter": {
+          "trigger": "always_on"
+        }
+      },
+      "cursor": {
+        "path": ".cursor/rules/background-jobs.mdc",
+        "frontmatter": {
+          "description": "后台 Job：Outbox 入队、禁止直连 Asynq、一个 Job 一个文件",
+          "alwaysApply": true
+        }
+      }
     }
   ]
 }

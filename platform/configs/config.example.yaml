@@ -45,3 +45,31 @@ outbox:
   backoff_base: 1s
   backoff_max: 5m
   shutdown_timeout: 15s
+
+redis:
+  # Asynq / 任务队列 Redis（部署密钥走环境变量 REDIS_PASSWORD，勿提交真实密码）
+  addr: "127.0.0.1:6379"
+  db: 0
+  username: ""
+  password: ""
+  pool_size: 10
+  dial_timeout: 5s
+  read_timeout: 3s
+  write_timeout: 3s
+
+jobs:
+  # Issue #21；省略 enabled 时默认关闭（无 Redis 也可启 HTTP）
+  enabled: false
+  concurrency: 10
+  queues:
+    critical: 6
+    default: 3
+    file: 2
+    notification: 2
+    ai: 1
+  default_timeout: 5m
+  max_payload_bytes: 262144
+  shutdown_timeout: 30s
+  recovery_interval: 30s
+  # 开发可用 embedded_worker；生产请独立部署 cmd/ainp-worker
+  embedded_worker: false

@@ -20,6 +20,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/config"
 	"github.com/yzxingtu2026/ainp/platform/framework/httpserver"
 	"github.com/yzxingtu2026/ainp/platform/framework/i18n"
+	"github.com/yzxingtu2026/ainp/platform/framework/job"
 	"github.com/yzxingtu2026/ainp/platform/framework/logging"
 	"github.com/yzxingtu2026/ainp/platform/framework/menu"
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
@@ -45,6 +46,7 @@ type App struct {
 	AttachmentPolicies *attachment.PolicyRegistry
 	TransferTokens     *attachment.TransferTokenService
 	Outbox             *outbox.Runtime
+	Jobs               *job.Runtime
 	OnHTTP             func(engine *gin.Engine)
 	Auditor            audit.Recorder
 	Installed          bool
@@ -57,6 +59,7 @@ func New(cfg *config.Config, db *gorm.DB, auditor audit.Recorder, tokens *auth.T
 	_ = codeSets.Register(codeset.AttachmentStatus())
 	_ = codeSets.Register(codeset.OutboxStatus())
 	_ = codeSets.Register(codeset.DeliveryStatus())
+	_ = codeSets.Register(codeset.JobRunStatus())
 	return &App{
 		Config:             cfg,
 		DB:                 db,

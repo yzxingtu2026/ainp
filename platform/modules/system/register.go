@@ -87,6 +87,9 @@ func Register(a *app.App) error {
 	if err := registerOutboxActions(a); err != nil {
 		return err
 	}
+	if err := registerJobActions(a); err != nil {
+		return err
+	}
 	a.OnHTTP = func(engine *gin.Engine) {
 		RegisterAttachmentTransferRoutes(engine, attachSvc)
 	}

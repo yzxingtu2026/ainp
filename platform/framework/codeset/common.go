@@ -30,6 +30,17 @@ const (
 	LabelDeliveryProcessing = "codeset.system.delivery_status.processing"
 	LabelDeliverySucceeded  = "codeset.system.delivery_status.succeeded"
 	LabelDeliveryFailed     = "codeset.system.delivery_status.failed"
+
+	KeyJobRunStatus         = "system.job_run_status"
+	NameJobRunStatus        = "codeset.system.job_run_status"
+	LabelJobPendingEnqueue  = "codeset.system.job_run_status.pending_enqueue"
+	LabelJobQueued          = "codeset.system.job_run_status.queued"
+	LabelJobRunning         = "codeset.system.job_run_status.running"
+	LabelJobRetrying        = "codeset.system.job_run_status.retrying"
+	LabelJobSucceeded       = "codeset.system.job_run_status.succeeded"
+	LabelJobFailed          = "codeset.system.job_run_status.failed"
+	LabelJobDead            = "codeset.system.job_run_status.dead"
+	LabelJobCancelled       = "codeset.system.job_run_status.cancelled"
 )
 
 func ActivationStatus() CodeSet {
@@ -76,6 +87,22 @@ func DeliveryStatus() CodeSet {
 			{Value: string(status.DeliveryProcessing), LabelKey: LabelDeliveryProcessing, Semantic: SemanticInfo, Icon: "mdi:progress-clock", Order: 20},
 			{Value: string(status.DeliverySucceeded), LabelKey: LabelDeliverySucceeded, Semantic: SemanticSuccess, Icon: "mdi:check-circle-outline", Order: 30},
 			{Value: string(status.DeliveryFailed), LabelKey: LabelDeliveryFailed, Semantic: SemanticDanger, Icon: "mdi:alert-circle-outline", Order: 40},
+		},
+	}
+}
+
+func JobRunStatus() CodeSet {
+	return CodeSet{
+		Key: KeyJobRunStatus, NameKey: NameJobRunStatus,
+		Items: []CodeItem{
+			{Value: string(status.JobPendingEnqueue), LabelKey: LabelJobPendingEnqueue, Semantic: SemanticWarning, Icon: "mdi:timer-sand", Order: 10},
+			{Value: string(status.JobQueued), LabelKey: LabelJobQueued, Semantic: SemanticInfo, Icon: "mdi:playlist-plus", Order: 20},
+			{Value: string(status.JobRunning), LabelKey: LabelJobRunning, Semantic: SemanticInfo, Icon: "mdi:play-circle-outline", Order: 30},
+			{Value: string(status.JobRetrying), LabelKey: LabelJobRetrying, Semantic: SemanticWarning, Icon: "mdi:restart", Order: 40},
+			{Value: string(status.JobSucceeded), LabelKey: LabelJobSucceeded, Semantic: SemanticSuccess, Icon: "mdi:check-circle-outline", Order: 50},
+			{Value: string(status.JobFailed), LabelKey: LabelJobFailed, Semantic: SemanticDanger, Icon: "mdi:alert-circle-outline", Order: 60},
+			{Value: string(status.JobDead), LabelKey: LabelJobDead, Semantic: SemanticMuted, Icon: "mdi:skull-outline", Order: 70},
+			{Value: string(status.JobCancelled), LabelKey: LabelJobCancelled, Semantic: SemanticMuted, Icon: "mdi:cancel", Order: 80},
 		},
 	}
 }
