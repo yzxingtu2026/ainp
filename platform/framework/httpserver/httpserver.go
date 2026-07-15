@@ -28,6 +28,7 @@ type Options struct {
 	Menus           *menu.Registry
 	CodeSets        *codeset.Registry
 	DB              *gorm.DB
+	OnHTTP          func(engine *gin.Engine)
 }
 
 func New(opts Options) *gin.Engine {
@@ -175,6 +176,10 @@ func New(opts Options) *gin.Engine {
 				r.DELETE(path, handler)
 			}
 		}
+	}
+
+	if opts.OnHTTP != nil {
+		opts.OnHTTP(r)
 	}
 
 	return r

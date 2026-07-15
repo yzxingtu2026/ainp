@@ -1,0 +1,668 @@
+package system
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"path"
+	"strings"
+	"time"
+	"unicode/utf8"
+
+	"github.com/google/uuid"
+	"github.com/yzxingtu2026/ainp/platform/framework/attachment"
+	"github.com/yzxingtu2026/ainp/platform/framework/auth"
+	"github.com/yzxingtu2026/ainp/platform/framework/errs"
+	"github.com/yzxingtu2026/ainp/platform/framework/logging"
+	"github.com/yzxingtu2026/ainp/platform/framework/status"
+	"github.com/yzxingtu2026/ainp/platform/framework/storage"
+	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
+	"github.com/yzxingtu2026/ainp/platform/modules/system/model"
+	"gorm.io/gorm"
+)
+
+type AttachmentService struct {
+	db       *gorm.DB
+	store    storage.ObjectStore
+	tokens   *attachment.TransferTokenService
+	policies *attachment.PolicyRegistry
+	policy   attachment.PolicyProvider
+	baseURL  string // public API base for transfer URLs, e.g. empty => relative paths
+}
+
+func NewAttachmentService(
+	db *gorm.DB,
+	store storage.ObjectStore,
+	tokens *attachment.TransferTokenService,
+	policies *attachment.PolicyRegistry,
+	policy attachment.PolicyProvider,
+) *AttachmentService {
+	if policy == nil {
+		policy = attachment.StaticPolicyProvider{Policy: attachment.DefaultUploadPolicy()}
+	}
+	if policies == nil {
+		policies = attachment.NewPolicyRegistry()
+	}
+	return &AttachmentService{db: db, store: store, tokens: tokens, policies: policies, policy: policy}
+}
+
+func (s *AttachmentService) Policies() *attachment.PolicyRegistry { return s.policies }
+
+type attachmentPrepareRequest struct {
+	OriginalName string `json:"original_name"`
+	ContentType  string `json:"content_type"`
+	Size         int64  `json:"size"`
+}
+
+type attachmentIDRequest struct {
+	ID string `json:"id"`
+}
+
+type attachmentBindRequest struct {
+	AttachmentID string `json:"attachment_id"`
+	ResourceType string `json:"resource_type"`
+	ResourceID   string `json:"resource_id"`
+	Field        string `json:"field"`
+}
+
+type attachmentListRequest struct {
+	ResourceType string `json:"resource_type"`
+	ResourceID   string `json:"resource_id"`
+	Field        string `json:"field"`
+}
+
+type AttachmentView struct {
+	ID           string `json:"id"`
+	OriginalName string `json:"original_name"`
+	ContentType  string `json:"content_type"`
+	Size         int64  `json:"size"`
+	SHA256       string `json:"sha256,omitempty"`
+	Status       string `json:"status"`
+	UploaderID   string `json:"uploader_id"`
+	CreatedAt    string `json:"created_at"`
+	UpdatedAt    string `json:"updated_at"`
+}
+
+type TransferPrepareView struct {
+	Attachment  AttachmentView `json:"attachment"`
+	UploadURL   string         `json:"upload_url,omitempty"`
+	DownloadURL string         `json:"download_url,omitempty"`
+	Token       string         `json:"token"`
+	ExpiresAt   string         `json:"expires_at"`
+	Method      string         `json:"method"`
+}
+
+func (s *AttachmentService) UploadPrepare(ctx context.Context, input json.RawMessage) (any, error) {
+	tenantID, userID, err := tenantIdentity(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var req attachmentPrepareRequest
+	if err := json.Unmarshal(input, &req); err != nil {
+		return nil, errs.ValidationKey("common.validation_failed", "invalid upload prepare request")
+	}
+	req.OriginalName = strings.TrimSpace(req.OriginalName)
+	req.ContentType = strings.TrimSpace(req.ContentType)
+	if req.OriginalName == "" || req.Size <= 0 {
+		return nil, errs.ValidationKey("attachment.invalid_meta", "original_name and size required")
+	}
+	if err := validateOriginalName(req.OriginalName); err != nil {
+		return nil, errs.ValidationKey("attachment.invalid_name", err.Error())
+	}
+	pol, err := s.policy.UploadPolicy(ctx, tenantID)
+	if err != nil {
+		return nil, mapAttachmentError(err)
+	}
+	if req.Size > pol.MaxSizeBytes {
+		return nil, errs.ValidationKey("attachment.size_exceeded", "file too large")
+	}
+	ext := strings.ToLower(path.Ext(req.OriginalName))
+	if !extAllowed(pol.AllowedExt, ext) {
+		return nil, errs.ValidationKey("attachment.ext_forbidden", "file extension not allowed")
+	}
+	if req.ContentType != "" && !mimeAllowed(pol.AllowedMIME, req.ContentType) {
+		return nil, errs.ValidationKey("attachment.mime_forbidden", "content type not allowed")
+	}
+	if req.ContentType == "" {
+		req.ContentType = "application/octet-stream"
+	}
+
+	objectKey, err := storage.BuildKey(storage.KeyParts{
+		TenantID: tenantID, Namespace: "attachments",
+	})
+	if err != nil {
+		return nil, mapAttachmentError(err)
+	}
+	id := uuid.NewString()
+	exp := time.Now().UTC().Add(pol.TempRetain)
+	provider := storage.ProviderLocal
+
+	row := model.Attachment{
+		ID: id, TenantID: tenantID, Provider: provider, ObjectKey: objectKey,
+		OriginalName: req.OriginalName, ContentType: req.ContentType,
+		Size: 0, Status: status.AttachmentPending, UploaderID: userID,
+		ExpectedSize: req.Size, ExpiresAt: &exp,
+	}
+	token, jti, tokenExp, err := s.tokens.Issue(attachment.IssueTransferInput{
+		TenantID: tenantID, UserID: userID, AttachmentID: id,
+		Op: attachment.OpUpload, Size: req.Size, TTL: pol.TransferTTL,
+	})
+	if err != nil {
+		return nil, mapAttachmentError(err)
+	}
+	row.UploadJTI = jti
+
+	if err := s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Create(&row).Error; err != nil {
+		return nil, mapAttachmentError(err)
+	}
+	setAttachmentAudit(ctx, id, "attachment upload prepare")
+	return TransferPrepareView{
+		Attachment: toAttachmentView(row),
+		UploadURL:  "/api/v1/attachments/transfer/" + id,
+		Token:      token,
+		ExpiresAt:  tokenExp.Format(time.RFC3339),
+		Method:     http.MethodPut,
+	}, nil
+}
+
+func (s *AttachmentService) DownloadPrepare(ctx context.Context, input json.RawMessage) (any, error) {
+	tenantID, userID, err := tenantIdentity(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var req attachmentIDRequest
+	if err := json.Unmarshal(input, &req); err != nil || req.ID == "" {
+		return nil, errs.ValidationKey("common.validation_failed", "attachment id required")
+	}
+	row, err := s.getOwned(ctx, tenantID, req.ID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.authorizeDownload(ctx, tenantID, userID, row); err != nil {
+		return nil, err
+	}
+	pol, err := s.policy.UploadPolicy(ctx, tenantID)
+	if err != nil {
+		return nil, mapAttachmentError(err)
+	}
+	token, _, tokenExp, err := s.tokens.Issue(attachment.IssueTransferInput{
+		TenantID: tenantID, UserID: userID, AttachmentID: row.ID,
+		Op: attachment.OpDownload, Size: row.Size, TTL: pol.TransferTTL,
+	})
+	if err != nil {
+		return nil, mapAttachmentError(err)
+	}
+	setAttachmentAudit(ctx, row.ID, "attachment download prepare")
+	return TransferPrepareView{
+		Attachment:  toAttachmentView(*row),
+		DownloadURL: "/api/v1/attachments/transfer/" + row.ID,
+		Token:       token,
+		ExpiresAt:   tokenExp.Format(time.RFC3339),
+		Method:      http.MethodGet,
+	}, nil
+}
+
+func (s *AttachmentService) Bind(ctx context.Context, input json.RawMessage) (any, error) {
+	tenantID, userID, err := tenantIdentity(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var req attachmentBindRequest
+	if err := json.Unmarshal(input, &req); err != nil || req.AttachmentID == "" || req.ResourceType == "" || req.ResourceID == "" {
+		return nil, errs.ValidationKey("common.validation_failed", "invalid bind request")
+	}
+	row, err := s.getOwned(ctx, tenantID, req.AttachmentID)
+	if err != nil {
+		return nil, err
+	}
+	if row.Status != status.AttachmentReady {
+		return nil, errs.ValidationKey("attachment.not_ready", "attachment is not ready")
+	}
+	if err := s.policies.Allow(ctx, req.ResourceType, tenantID, userID, req.ResourceID, req.Field); err != nil {
+		return nil, errs.NewKey(errs.CodeForbidden, "attachment.resource_forbidden", err.Error())
+	}
+	link := model.AttachmentLink{
+		ID: uuid.NewString(), TenantID: tenantID, AttachmentID: row.ID,
+		ResourceType: req.ResourceType, ResourceID: req.ResourceID, Field: req.Field,
+	}
+	if err := s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Create(&link).Error; err != nil {
+		return nil, mapAttachmentError(err)
+	}
+	setAttachmentAudit(ctx, row.ID, "attachment bind")
+	return map[string]any{"link_id": link.ID, "attachment": toAttachmentView(*row)}, nil
+}
+
+func (s *AttachmentService) Unbind(ctx context.Context, input json.RawMessage) (any, error) {
+	tenantID, userID, err := tenantIdentity(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var req attachmentBindRequest
+	if err := json.Unmarshal(input, &req); err != nil || req.AttachmentID == "" || req.ResourceType == "" || req.ResourceID == "" {
+		return nil, errs.ValidationKey("common.validation_failed", "invalid unbind request")
+	}
+	if err := s.policies.Allow(ctx, req.ResourceType, tenantID, userID, req.ResourceID, req.Field); err != nil {
+		return nil, errs.NewKey(errs.CodeForbidden, "attachment.resource_forbidden", err.Error())
+	}
+	res := s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Where(
+		"attachment_id = ? AND resource_type = ? AND resource_id = ? AND field = ?",
+		req.AttachmentID, req.ResourceType, req.ResourceID, req.Field,
+	).Delete(&model.AttachmentLink{})
+	if res.Error != nil {
+		return nil, mapAttachmentError(res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return nil, errs.NewKey(errs.CodeNotFound, "attachment.link_not_found", "attachment link not found")
+	}
+	setAttachmentAudit(ctx, req.AttachmentID, "attachment unbind")
+	return map[string]any{"unbound": true}, nil
+}
+
+func (s *AttachmentService) ListByResource(ctx context.Context, input json.RawMessage) (any, error) {
+	tenantID, userID, err := tenantIdentity(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var req attachmentListRequest
+	if err := json.Unmarshal(input, &req); err != nil || req.ResourceType == "" || req.ResourceID == "" {
+		return nil, errs.ValidationKey("common.validation_failed", "resource_type and resource_id required")
+	}
+	if err := s.policies.Allow(ctx, req.ResourceType, tenantID, userID, req.ResourceID, req.Field); err != nil {
+		return nil, errs.NewKey(errs.CodeForbidden, "attachment.resource_forbidden", err.Error())
+	}
+	q := s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Where("resource_type = ? AND resource_id = ?", req.ResourceType, req.ResourceID)
+	if req.Field != "" {
+		q = q.Where("field = ?", req.Field)
+	}
+	var links []model.AttachmentLink
+	if err := q.Find(&links).Error; err != nil {
+		return nil, mapAttachmentError(err)
+	}
+	items := make([]AttachmentView, 0, len(links))
+	for _, link := range links {
+		row, err := s.getOwned(ctx, tenantID, link.AttachmentID)
+		if err != nil {
+			continue
+		}
+		if row.Status != status.AttachmentReady {
+			continue
+		}
+		items = append(items, toAttachmentView(*row))
+	}
+	return map[string]any{"items": items}, nil
+}
+
+func (s *AttachmentService) Delete(ctx context.Context, input json.RawMessage) (any, error) {
+	tenantID, userID, err := tenantIdentity(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var req attachmentIDRequest
+	if err := json.Unmarshal(input, &req); err != nil || req.ID == "" {
+		return nil, errs.ValidationKey("common.validation_failed", "attachment id required")
+	}
+	row, err := s.getOwned(ctx, tenantID, req.ID)
+	if err != nil {
+		return nil, err
+	}
+	var linkCount int64
+	if err := s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Model(&model.AttachmentLink{}).Where("attachment_id = ?", row.ID).Count(&linkCount).Error; err != nil {
+		return nil, mapAttachmentError(err)
+	}
+	if linkCount > 0 {
+		return nil, errs.ValidationKey("attachment.has_links", "unbind attachment before delete")
+	}
+	if row.UploaderID != userID && !auth.MustFromContext(ctx).HasPermission(ActionAttachmentDelete) {
+		// still require delete permission via Action; uploader may delete own pending/failed
+		if row.Status == status.AttachmentReady {
+			return nil, errs.NewKey(errs.CodeForbidden, "common.forbidden", "forbidden")
+		}
+	}
+	now := time.Now().UTC()
+	updates := map[string]any{"status": status.AttachmentDeleting, "upload_jti": "", "updated_at": now}
+	if err := s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Model(&model.Attachment{}).Where("id = ?", row.ID).Updates(updates).Error; err != nil {
+		return nil, mapAttachmentError(err)
+	}
+	objectPending := false
+	if err := s.store.Delete(ctx, row.ObjectKey); err != nil {
+		logging.Error(ctx, "attachment object delete failed", err, "attachment_id", row.ID, "key_digest", storage.KeyDigest(row.ObjectKey))
+		objectPending = true
+		// keep deleting for CleanupExpired retry; never restore ready/download access
+		setAttachmentAudit(ctx, row.ID, "attachment delete")
+		return map[string]any{"deleted": true, "object_pending": true}, nil
+	}
+	_ = s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Model(&model.Attachment{}).Where("id = ?", row.ID).Updates(map[string]any{
+		"status": status.AttachmentDeleted, "updated_at": time.Now().UTC(),
+	}).Error
+	_ = s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Delete(&model.Attachment{}, "id = ?", row.ID).Error
+	setAttachmentAudit(ctx, row.ID, "attachment delete")
+	return map[string]any{"deleted": true, "object_pending": objectPending}, nil
+}
+
+// CleanupExpired removes expired pending/failed attachments and retries deleting-status object cleanup.
+// DB and ObjectStore are not the same transaction; callers may invoke this periodically or manually.
+func (s *AttachmentService) CleanupExpired(ctx context.Context, limit int) (int, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	tenantID, _, err := tenantIdentity(ctx)
+	if err != nil {
+		return 0, err
+	}
+	now := time.Now().UTC()
+	var rows []model.Attachment
+	q := s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Where(
+		"(status IN ? AND expires_at IS NOT NULL AND expires_at < ?) OR status = ?",
+		[]status.AttachmentStatus{status.AttachmentPending, status.AttachmentFailed},
+		now,
+		status.AttachmentDeleting,
+	).Limit(limit)
+	if err := q.Find(&rows).Error; err != nil {
+		return 0, mapAttachmentError(err)
+	}
+	cleaned := 0
+	for i := range rows {
+		row := &rows[i]
+		if row.TenantID != tenantID {
+			continue
+		}
+		if err := s.store.Delete(ctx, row.ObjectKey); err != nil {
+			logging.Error(ctx, "attachment cleanup object delete failed", err, "attachment_id", row.ID, "key_digest", storage.KeyDigest(row.ObjectKey))
+			_ = s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Model(&model.Attachment{}).Where("id = ?", row.ID).Updates(map[string]any{
+				"status": status.AttachmentDeleting, "upload_jti": "", "updated_at": time.Now().UTC(),
+			}).Error
+			continue
+		}
+		_ = s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Model(&model.Attachment{}).Where("id = ?", row.ID).Updates(map[string]any{
+			"status": status.AttachmentDeleted, "upload_jti": "", "updated_at": time.Now().UTC(),
+		}).Error
+		_ = s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Delete(&model.Attachment{}, "id = ?", row.ID).Error
+		cleaned++
+	}
+	return cleaned, nil
+}
+
+// CompleteUpload streams body into ObjectStore and marks the attachment ready.
+// Called from the dedicated transfer HTTP adapter (not JSON Action).
+func (s *AttachmentService) CompleteUpload(ctx context.Context, claims *attachment.TransferClaims, body io.Reader) (*model.Attachment, error) {
+	if claims.Op != attachment.OpUpload {
+		return nil, errs.NewKey(errs.CodeForbidden, "attachment.token_invalid", "invalid transfer token")
+	}
+	row, err := s.getOwned(ctx, claims.TenantID, claims.AttachmentID)
+	if err != nil {
+		return nil, err
+	}
+	if row.Status != status.AttachmentPending {
+		return nil, errs.ValidationKey("attachment.not_pending", "attachment is not pending upload")
+	}
+	if row.UploaderID != claims.UserID {
+		return nil, errs.NewKey(errs.CodeForbidden, "common.forbidden", "forbidden")
+	}
+	if row.UploadJTI == "" || row.UploadJTI != claims.JTI {
+		return nil, errs.NewKey(errs.CodeForbidden, "attachment.token_replay", "upload token already used or mismatched")
+	}
+	if claims.Size > 0 && claims.Size != row.ExpectedSize {
+		return nil, errs.ValidationKey("attachment.size_mismatch", "size mismatch")
+	}
+
+	pol, err := s.policy.UploadPolicy(ctx, claims.TenantID)
+	if err != nil {
+		return nil, mapAttachmentError(err)
+	}
+
+	hasher := sha256.New()
+	sniff := &sniffReader{r: io.TeeReader(io.LimitReader(body, row.ExpectedSize), hasher), limit: 512}
+	info, err := s.store.Put(ctx, storage.PutRequest{
+		Key: row.ObjectKey, Body: sniff, Size: row.ExpectedSize, ContentType: row.ContentType,
+	})
+	if err != nil {
+		_ = s.markFailed(ctx, row, err.Error())
+		return nil, mapAttachmentError(err)
+	}
+	// Reject truncated or oversized streams: LimitReader stops at ExpectedSize; ensure no leftover byte.
+	extra := make([]byte, 1)
+	if n, _ := body.Read(extra); n > 0 {
+		_ = s.store.Delete(ctx, row.ObjectKey)
+		_ = s.markFailed(ctx, row, "size exceeded")
+		return nil, errs.ValidationKey("attachment.size_mismatch", "size mismatch")
+	}
+	if info.Size != row.ExpectedSize {
+		_ = s.store.Delete(ctx, row.ObjectKey)
+		_ = s.markFailed(ctx, row, "size mismatch")
+		return nil, errs.ValidationKey("attachment.size_mismatch", "size mismatch")
+	}
+
+	detected := http.DetectContentType(sniff.head)
+	if !mimeAllowed(pol.AllowedMIME, detected) && !mimeAllowed(pol.AllowedMIME, row.ContentType) {
+		_ = s.store.Delete(ctx, row.ObjectKey)
+		_ = s.markFailed(ctx, row, "mime forbidden")
+		return nil, errs.ValidationKey("attachment.mime_forbidden", "detected content type not allowed")
+	}
+
+	sum := hex.EncodeToString(hasher.Sum(nil))
+	contentType := row.ContentType
+	if contentType == "application/octet-stream" && detected != "" {
+		contentType = detected
+	}
+	updates := map[string]any{
+		"status": status.AttachmentReady, "size": info.Size, "sha256": sum,
+		"content_type": contentType, "upload_jti": "", "updated_at": time.Now().UTC(),
+	}
+	if err := s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Model(&model.Attachment{}).Where("id = ? AND status = ?", row.ID, status.AttachmentPending).Updates(updates).Error; err != nil {
+		return nil, mapAttachmentError(err)
+	}
+	row.Status = status.AttachmentReady
+	row.Size = info.Size
+	row.SHA256 = sum
+	row.ContentType = contentType
+	row.UploadJTI = ""
+	return row, nil
+}
+
+type sniffReader struct {
+	r     io.Reader
+	limit int
+	head  []byte
+}
+
+func (s *sniffReader) Read(p []byte) (int, error) {
+	n, err := s.r.Read(p)
+	if n > 0 && len(s.head) < s.limit {
+		need := s.limit - len(s.head)
+		if need > n {
+			need = n
+		}
+		s.head = append(s.head, p[:need]...)
+	}
+	return n, err
+}
+
+// OpenDownload returns a reader for a validated download transfer token.
+func (s *AttachmentService) OpenDownload(ctx context.Context, claims *attachment.TransferClaims) (io.ReadCloser, *model.Attachment, error) {
+	if claims.Op != attachment.OpDownload {
+		return nil, nil, errs.NewKey(errs.CodeForbidden, "attachment.token_invalid", "invalid transfer token")
+	}
+	row, err := s.getOwned(ctx, claims.TenantID, claims.AttachmentID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := s.authorizeDownload(ctx, claims.TenantID, claims.UserID, row); err != nil {
+		return nil, nil, err
+	}
+	rc, _, err := s.store.Open(ctx, row.ObjectKey)
+	if err != nil {
+		return nil, nil, mapAttachmentError(err)
+	}
+	return rc, row, nil
+}
+
+func (s *AttachmentService) OpenDownloadRange(ctx context.Context, claims *attachment.TransferClaims, offset, length int64) (io.ReadCloser, *model.Attachment, error) {
+	if claims.Op != attachment.OpDownload {
+		return nil, nil, errs.NewKey(errs.CodeForbidden, "attachment.token_invalid", "invalid transfer token")
+	}
+	row, err := s.getOwned(ctx, claims.TenantID, claims.AttachmentID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := s.authorizeDownload(ctx, claims.TenantID, claims.UserID, row); err != nil {
+		return nil, nil, err
+	}
+	rc, _, err := s.store.OpenRange(ctx, row.ObjectKey, offset, length)
+	if err != nil {
+		return nil, nil, mapAttachmentError(err)
+	}
+	return rc, row, nil
+}
+
+func (s *AttachmentService) ParseTransferToken(token string) (*attachment.TransferClaims, error) {
+	claims, err := s.tokens.Parse(token)
+	if err != nil {
+		return nil, errs.NewKey(errs.CodeUnauthorized, "attachment.token_invalid", "invalid transfer token")
+	}
+	return claims, nil
+}
+
+func (s *AttachmentService) authorizeDownload(ctx context.Context, tenantID, userID string, row *model.Attachment) error {
+	switch row.Status {
+	case status.AttachmentReady:
+		var links []model.AttachmentLink
+		if err := s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Where("attachment_id = ?", row.ID).Find(&links).Error; err != nil {
+			return mapAttachmentError(err)
+		}
+		if len(links) == 0 {
+			if row.UploaderID != userID {
+				return errs.NewKey(errs.CodeForbidden, "common.forbidden", "forbidden")
+			}
+			return nil
+		}
+		for _, link := range links {
+			if err := s.policies.Allow(ctx, link.ResourceType, tenantID, userID, link.ResourceID, link.Field); err == nil {
+				return nil
+			}
+		}
+		return errs.NewKey(errs.CodeForbidden, "attachment.resource_forbidden", "resource access denied")
+	case status.AttachmentPending, status.AttachmentFailed:
+		if row.UploaderID != userID {
+			return errs.NewKey(errs.CodeForbidden, "common.forbidden", "forbidden")
+		}
+		if row.ExpiresAt != nil && time.Now().UTC().After(*row.ExpiresAt) {
+			return errs.NewKey(errs.CodeForbidden, "attachment.expired", "attachment expired")
+		}
+		return nil
+	default:
+		return errs.NewKey(errs.CodeNotFound, "attachment.not_found", "attachment not found")
+	}
+}
+
+func (s *AttachmentService) getOwned(ctx context.Context, tenantID, id string) (*model.Attachment, error) {
+	var row model.Attachment
+	err := s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Where("id = ?", id).First(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, errs.NewKey(errs.CodeNotFound, "attachment.not_found", "attachment not found")
+	}
+	if err != nil {
+		return nil, mapAttachmentError(err)
+	}
+	if row.TenantID != tenantID {
+		return nil, errs.NewKey(errs.CodeNotFound, "attachment.not_found", "attachment not found")
+	}
+	return &row, nil
+}
+
+func (s *AttachmentService) markFailed(ctx context.Context, row *model.Attachment, reason string) error {
+	logging.Info(ctx, "attachment marked failed", "attachment_id", row.ID, "reason", reason)
+	_ = s.store.Delete(ctx, row.ObjectKey)
+	return s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Model(&model.Attachment{}).Where("id = ?", row.ID).Updates(map[string]any{
+		"status": status.AttachmentFailed, "upload_jti": "", "updated_at": time.Now().UTC(),
+	}).Error
+}
+
+func toAttachmentView(row model.Attachment) AttachmentView {
+	return AttachmentView{
+		ID: row.ID, OriginalName: row.OriginalName, ContentType: row.ContentType,
+		Size: row.Size, SHA256: row.SHA256, Status: string(row.Status), UploaderID: row.UploaderID,
+		CreatedAt: row.CreatedAt.UTC().Format(time.RFC3339), UpdatedAt: row.UpdatedAt.UTC().Format(time.RFC3339),
+	}
+}
+
+func validateOriginalName(name string) error {
+	if !utf8.ValidString(name) {
+		return fmt.Errorf("invalid utf-8 name")
+	}
+	if strings.ContainsAny(name, "\r\n\x00") {
+		return fmt.Errorf("illegal characters in name")
+	}
+	if len(name) > 255 {
+		return fmt.Errorf("name too long")
+	}
+	return nil
+}
+
+func extAllowed(allowed []string, ext string) bool {
+	for _, item := range allowed {
+		if strings.EqualFold(item, ext) {
+			return true
+		}
+	}
+	return false
+}
+
+func mimeAllowed(allowed []string, mime string) bool {
+	mime = strings.ToLower(strings.TrimSpace(strings.Split(mime, ";")[0]))
+	for _, item := range allowed {
+		if strings.EqualFold(item, mime) {
+			return true
+		}
+	}
+	return false
+}
+
+func setAttachmentAudit(ctx context.Context, attachmentID, summary string) {
+	if ac, ok := auth.FromContext(ctx); ok && ac != nil {
+		ac.AuditResourceType = "attachment"
+		ac.AuditResourceID = attachmentID
+		ac.AuditSummary = summary
+	}
+}
+
+func mapAttachmentError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, tenant.ErrTenantContextRequired) {
+		return errs.NewKey(errs.CodeUnauthorized, "common.unauthorized", "unauthorized")
+	}
+	if errors.Is(err, storage.ErrNotFound) {
+		return errs.NewKey(errs.CodeNotFound, "attachment.object_missing", "attachment object missing")
+	}
+	if errors.Is(err, storage.ErrSizeMismatch) {
+		return errs.ValidationKey("attachment.size_mismatch", "size mismatch")
+	}
+	if errors.Is(err, storage.ErrInvalidKey) {
+		return errs.ValidationKey("attachment.invalid_key", err.Error())
+	}
+	if _, ok := errs.AsAppError(err); ok {
+		return err
+	}
+	return errs.Wrap(errs.CodeInternal, "attachment operation failed", err)
+}
+
+// ContentDisposition builds a safe Content-Disposition header value.
+func ContentDisposition(filename string) string {
+	safe := strings.Map(func(r rune) rune {
+		if r < 32 || r == '"' || r == '\\' || r == '\r' || r == '\n' {
+			return -1
+		}
+		return r
+	}, filename)
+	if safe == "" {
+		safe = "download"
+	}
+	escaped := strings.ReplaceAll(safe, `"`, "")
+	return fmt.Sprintf(`attachment; filename="%s"`, escaped)
+}

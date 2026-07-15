@@ -36,6 +36,8 @@ func AutoMigrate(db *gorm.DB) error {
 		&model.RolePermission{},
 		&model.UserRole{},
 		&model.TenantSettingValue{},
+		&model.Attachment{},
+		&model.AttachmentLink{},
 	); err != nil {
 		return err
 	}
@@ -45,7 +47,24 @@ func AutoMigrate(db *gorm.DB) error {
 	if err := ensureAuthVersionConstraint(db); err != nil {
 		return err
 	}
+	if err := ensureAttachmentStatusConstraint(db); err != nil {
+		return err
+	}
 	return nil
+}
+
+func ensureAttachmentStatusConstraint(db *gorm.DB) error {
+	var invalid int64
+	if err := db.Model(&model.Attachment{}).Where("status NOT IN ?", []status.AttachmentStatus{
+		status.AttachmentPending, status.AttachmentReady, status.AttachmentDeleting, status.AttachmentDeleted, status.AttachmentFailed,
+	}).Count(&invalid).Error; err != nil {
+		return err
+	}
+	if invalid > 0 {
+		return fmt.Errorf("attachments contains %d invalid status values", invalid)
+	}
+	return db.Exec(`ALTER TABLE attachments DROP CONSTRAINT IF EXISTS ck_attachments_status;
+ALTER TABLE attachments ADD CONSTRAINT ck_attachments_status CHECK (status IN ('pending','ready','deleting','deleted','failed'))`).Error
 }
 
 func ensureAuthVersionConstraint(db *gorm.DB) error {

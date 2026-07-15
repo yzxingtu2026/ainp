@@ -28,6 +28,7 @@
 - 用户可见时间展示见 `datetime-display`。
 - 统一设置系统见 `settings-system`（管理端 `SettingService` Action；业务只读类型化 Provider，禁止散落 JSON/直写表）。
 - 统一对象存储见 `object-storage`（`ObjectStore` / `BuildKey`；禁止业务拼路径或按 provider 分支）。
+- 租户隔离附件见 `attachments`（元数据 + prepare/transfer token + AccessPolicy；禁止文件进 JSON、禁止未注册 resource_type）。
 - 前端栈、图标协议见关联规则。
 
 ## 关联规则
@@ -37,6 +38,7 @@
 - `datetime-display` → `docs/development/datetime-display.md`
 - `settings-system` → `docs/development/settings-system.md`
 - `object-storage` → `docs/development/object-storage.md`
+- `attachments` → `docs/development/attachments.md`
 - `icon-library` → `docs/development/icon-library.md`
 - `logging` → `docs/development/logging.md`
 - `api-response` → `docs/development/api-response.md`

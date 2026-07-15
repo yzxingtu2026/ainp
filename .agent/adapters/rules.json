@@ -309,6 +309,23 @@
           "alwaysApply": true
         }
       }
+    },
+    {
+      "id": "attachments",
+      "source": ".agent/rules/attachments.md",
+      "qoder": {
+        "path": ".qoder/rules/attachments.md",
+        "frontmatter": {
+          "trigger": "always_on"
+        }
+      },
+      "cursor": {
+        "path": ".cursor/rules/attachments.mdc",
+        "frontmatter": {
+          "description": "租户隔离附件：prepare/transfer、AccessPolicy、禁止文件进 JSON",
+          "alwaysApply": true
+        }
+      }
     }
   ]
 }

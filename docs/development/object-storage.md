@@ -7,7 +7,7 @@
 | 层级 | 职责 | 不负责 |
 |------|------|--------|
 | ObjectStore（本 Issue） | Put/Open/Range/Stat/Delete/Exists、本地 Provider、key 安全 | 租户权限、附件元数据、HTTP 上传 API |
-| 附件系统（#18） | 元数据、上传令牌、业务绑定、审计 | 直接拼磁盘路径 / 厂商 SDK |
+| 附件系统（#18） | 元数据、上传令牌、业务绑定、审计（见 `attachments.md`） | 直接拼磁盘路径 / 厂商 SDK |
 | 租户设置（#13） | 大小/类型/保留策略等业务策略 | 创建 ObjectStore 或在线切换 Provider |
 
 启动配置（`storage.provider`、本地根目录、未来 Endpoint/Credential）属 YAML/环境变量/Secret，**不进入**普通租户设置。

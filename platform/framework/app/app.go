@@ -3,7 +3,9 @@ package app
 import (
 	"fmt"
 
+	"github.com/gin-gonic/gin"
 	"github.com/yzxingtu2026/ainp/platform/framework/action"
+	"github.com/yzxingtu2026/ainp/platform/framework/attachment"
 	"github.com/yzxingtu2026/ainp/platform/framework/audit"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/capability"
@@ -20,37 +22,42 @@ import (
 )
 
 type App struct {
-	Config        *config.Config
-	DB            *gorm.DB
-	Tokens        *auth.TokenService
-	Authorization auth.AuthorizationProvider
-	Capabilities  *capability.Registry
-	Actions       *action.Registry
-	Menus         *menu.Registry
-	CodeSets      *codeset.Registry
-	Settings      *setting.Registry
-	StateMachines *statemachine.Registry
-	Storage       storage.ObjectStore
-	Auditor       audit.Recorder
-	Installed     bool // 是否已完成安装向导
+	Config             *config.Config
+	DB                 *gorm.DB
+	Tokens             *auth.TokenService
+	Authorization      auth.AuthorizationProvider
+	Capabilities       *capability.Registry
+	Actions            *action.Registry
+	Menus              *menu.Registry
+	CodeSets           *codeset.Registry
+	Settings           *setting.Registry
+	StateMachines      *statemachine.Registry
+	Storage            storage.ObjectStore
+	AttachmentPolicies *attachment.PolicyRegistry
+	TransferTokens     *attachment.TransferTokenService
+	OnHTTP             func(engine *gin.Engine)
+	Auditor            audit.Recorder
+	Installed          bool
 }
 
 func New(cfg *config.Config, db *gorm.DB, auditor audit.Recorder, tokens *auth.TokenService) *App {
 	checker := permission.NewChecker()
 	codeSets := codeset.NewRegistry()
 	_ = codeSets.Register(codeset.ActivationStatus())
+	_ = codeSets.Register(codeset.AttachmentStatus())
 	return &App{
-		Config:        cfg,
-		DB:            db,
-		Tokens:        tokens,
-		Capabilities:  capability.NewRegistry(),
-		Actions:       action.NewRegistry(checker, auditor),
-		Menus:         menu.NewRegistry(),
-		CodeSets:      codeSets,
-		Settings:      setting.NewRegistry(),
-		StateMachines: statemachine.NewRegistry(),
-		Auditor:       auditor,
-		Installed:     true, // 默认已安装；setup 模式由 main 覆写
+		Config:             cfg,
+		DB:                 db,
+		Tokens:             tokens,
+		Capabilities:       capability.NewRegistry(),
+		Actions:            action.NewRegistry(checker, auditor),
+		Menus:              menu.NewRegistry(),
+		CodeSets:           codeSets,
+		Settings:           setting.NewRegistry(),
+		StateMachines:      statemachine.NewRegistry(),
+		AttachmentPolicies: attachment.NewPolicyRegistry(),
+		Auditor:            auditor,
+		Installed:          true,
 	}
 }
 
@@ -112,6 +119,7 @@ func (a *App) Run() error {
 		Menus:           a.Menus,
 		CodeSets:        a.CodeSets,
 		DB:              a.DB,
+		OnHTTP:          a.OnHTTP,
 	})
 	return engine.Run(a.Config.Server.Addr)
 }

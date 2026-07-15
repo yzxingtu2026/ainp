@@ -3,9 +3,11 @@ package demo
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	"github.com/yzxingtu2026/ainp/platform/framework/action"
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
+	"github.com/yzxingtu2026/ainp/platform/framework/attachment"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/capability"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
@@ -105,6 +107,20 @@ func Register(a *app.App) error {
 		},
 	}); err != nil {
 		return err
+	}
+
+	if a.AttachmentPolicies != nil {
+		if err := a.AttachmentPolicies.Register(attachment.FuncPolicy{
+			Type: "demo.task",
+			Fn: func(_ context.Context, tenantID, userID, resourceID, _ string) error {
+				if tenantID == "" || userID == "" || resourceID == "" {
+					return fmt.Errorf("demo.task attachment access requires identity")
+				}
+				return nil
+			},
+		}); err != nil {
+			return err
+		}
 	}
 
 	if err := a.RegisterCodeSet(taskStatusCodeSet()); err != nil {
