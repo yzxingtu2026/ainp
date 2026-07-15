@@ -13,6 +13,9 @@ export {}
 declare module 'vue' {
   export interface GlobalComponents {
     AppProvider: typeof import('./../components/common/app-provider.vue')['default']
+    AttachmentField: typeof import('./../components/common/attachment-field.vue')['default']
+    AttachmentList: typeof import('./../components/common/attachment-list.vue')['default']
+    AttachmentUpload: typeof import('./../components/common/attachment-upload.vue')['default']
     BetterScroll: typeof import('./../components/custom/better-scroll.vue')['default']
     ButtonIcon: typeof import('./../components/custom/button-icon.vue')['default']
     CodeSelect: typeof import('./../components/common/code-select.vue')['default']
@@ -69,6 +72,7 @@ declare module 'vue' {
     NNotificationProvider: typeof import('naive-ui')['NNotificationProvider']
     NPagination: typeof import('naive-ui')['NPagination']
     NPopconfirm: typeof import('naive-ui')['NPopconfirm']
+    NProgress: typeof import('naive-ui')['NProgress']
     NResult: typeof import('naive-ui')['NResult']
     NScrollbar: typeof import('naive-ui')['NScrollbar']
     NSelect: typeof import('naive-ui')['NSelect']
@@ -102,6 +106,9 @@ declare module 'vue' {
 // For TSX support
 declare global {
   const AppProvider: typeof import('./../components/common/app-provider.vue')['default']
+  const AttachmentField: typeof import('./../components/common/attachment-field.vue')['default']
+  const AttachmentList: typeof import('./../components/common/attachment-list.vue')['default']
+  const AttachmentUpload: typeof import('./../components/common/attachment-upload.vue')['default']
   const BetterScroll: typeof import('./../components/custom/better-scroll.vue')['default']
   const ButtonIcon: typeof import('./../components/custom/button-icon.vue')['default']
   const CodeSelect: typeof import('./../components/common/code-select.vue')['default']
@@ -158,6 +165,7 @@ declare global {
   const NNotificationProvider: typeof import('naive-ui')['NNotificationProvider']
   const NPagination: typeof import('naive-ui')['NPagination']
   const NPopconfirm: typeof import('naive-ui')['NPopconfirm']
+  const NProgress: typeof import('naive-ui')['NProgress']
   const NResult: typeof import('naive-ui')['NResult']
   const NScrollbar: typeof import('naive-ui')['NScrollbar']
   const NSelect: typeof import('naive-ui')['NSelect']

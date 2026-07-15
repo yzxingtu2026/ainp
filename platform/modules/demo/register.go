@@ -160,7 +160,7 @@ func Register(a *app.App) error {
 		return err
 	}
 
-	return a.RegisterMenu(menu.Menu{
+	if err := a.RegisterMenu(menu.Menu{
 		ID:         "demo.hello_btn",
 		ParentID:   "demo.hello_page",
 		Title:      "打个招呼",
@@ -170,5 +170,21 @@ func Register(a *app.App) error {
 		HideInMenu: true,
 		Module:     "demo",
 		Order:      1,
+	}); err != nil {
+		return err
+	}
+
+	return a.RegisterMenu(menu.Menu{
+		ID:         "demo.attachments_page",
+		ParentID:   "demo.root",
+		Title:      "附件联调",
+		TitleKey:   "menu.demo.attachments.title",
+		Icon:       "mdi:paperclip",
+		Type:       menu.TypeMenu,
+		Path:       "/demo/attachments",
+		Component:  "demo/attachments",
+		Permission: "system.attachment_list_by_resource",
+		Module:     "demo",
+		Order:      2,
 	})
 }

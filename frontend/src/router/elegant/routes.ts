@@ -50,6 +50,16 @@ export const generatedRoutes: GeneratedRoute[] = [
     },
     children: [
       {
+        name: 'demo_attachments',
+        path: '/demo/attachments',
+        component: 'view.demo_attachments',
+        meta: {
+          title: 'demo_attachments',
+          i18nKey: 'route.demo_attachments',
+          hideInMenu: true
+        }
+      },
+      {
         name: 'demo_hello',
         path: '/demo/hello',
         component: 'view.demo_hello',

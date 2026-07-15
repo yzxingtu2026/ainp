@@ -326,6 +326,23 @@
           "alwaysApply": true
         }
       }
+    },
+    {
+      "id": "frontend-attachments",
+      "source": ".agent/rules/frontend-attachments.md",
+      "qoder": {
+        "path": ".qoder/rules/frontend-attachments.md",
+        "frontmatter": {
+          "trigger": "always_on"
+        }
+      },
+      "cursor": {
+        "path": ".cursor/rules/frontend-attachments.mdc",
+        "frontmatter": {
+          "description": "前端统一附件组件：Client/队列/Field，禁止拼 key 与附件中心",
+          "alwaysApply": true
+        }
+      }
     }
   ]
 }

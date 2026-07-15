@@ -233,6 +233,7 @@ const local: App.I18n.Schema = {
     home: 'Home',
     demo: 'Demo',
     demo_hello: 'Hello',
+    demo_attachments: 'Attachments',
     system: 'System',
     system_profile: 'Profile',
     system_users: 'Users',
@@ -248,6 +249,44 @@ const local: App.I18n.Schema = {
       reset: 'Reset to defaults',
       resetConfirm: 'Delete tenant overrides and restore code defaults?',
       resetSuccess: 'Settings reset to defaults'
+    },
+    attachment: {
+      demoTitle: 'Attachment Components',
+      demoHint: 'Upload, preview, download, unbind and delete in a business context. Not a production attachment center.',
+      dropOrClick: 'Drop files here, or click to select',
+      selectFiles: 'Select files',
+      uploadHint: 'Max {size} per file. Allowed extensions: {ext}',
+      cancel: 'Cancel upload',
+      retry: 'Retry',
+      empty: 'No attachments',
+      preview: 'Preview',
+      download: 'Download',
+      unbind: 'Unbind',
+      confirmUnbind: 'Unbind this attachment from the resource?',
+      confirmDelete: 'Delete this attachment permanently?',
+      uploadSuccess: 'Uploaded and bound',
+      loadFailed: 'Failed to load attachments',
+      bindFailed: 'Failed to bind attachment',
+      unbindFailed: 'Failed to unbind',
+      deleteFailed: 'Failed to delete',
+      downloadFailed: 'Failed to download',
+      noUploadPermission: 'No upload permission',
+      noBindPermission: 'No bind permission',
+      status: {
+        queued: 'Queued',
+        preparing: 'Preparing',
+        uploading: 'Uploading',
+        completing: 'Completing',
+        success: 'Success',
+        failed: 'Failed',
+        cancelled: 'Cancelled'
+      },
+      precheck: {
+        size: 'File too large',
+        ext: 'Extension not allowed',
+        mime: 'MIME type not allowed',
+        empty: 'Empty file'
+      }
     },
     user: {
       title: 'User Management',

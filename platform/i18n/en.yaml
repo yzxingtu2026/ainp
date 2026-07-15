@@ -167,6 +167,9 @@ menu.system.users.title: "User Management"
 menu.system.roles.title: "Role Management"
 menu.system.settings.title: "Settings"
 
+# ── Demo menus ──
+menu.demo.attachments.title: "Attachments"
+
 # ── Setup Capability ──
 capability.setup.name: "Setup Wizard"
 capability.setup.description: "System initialization setup wizard"
