@@ -262,6 +262,8 @@ const local: App.I18n.Schema = {
       retry: 'Retry',
       empty: 'No attachments',
       preview: 'Preview',
+      previewFailed: 'Failed to load preview',
+      previewUnavailable: 'Preview unavailable',
       download: 'Download',
       unbind: 'Unbind',
       confirmUnbind: 'Unbind this attachment from the resource?',
