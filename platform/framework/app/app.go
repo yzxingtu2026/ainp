@@ -13,6 +13,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/i18n"
 	"github.com/yzxingtu2026/ainp/platform/framework/menu"
 	"github.com/yzxingtu2026/ainp/platform/framework/permission"
+	"github.com/yzxingtu2026/ainp/platform/framework/setting"
 	"github.com/yzxingtu2026/ainp/platform/framework/statemachine"
 	"gorm.io/gorm"
 )
@@ -26,6 +27,7 @@ type App struct {
 	Actions       *action.Registry
 	Menus         *menu.Registry
 	CodeSets      *codeset.Registry
+	Settings      *setting.Registry
 	StateMachines *statemachine.Registry
 	Auditor       audit.Recorder
 	Installed     bool // 是否已完成安装向导
@@ -43,6 +45,7 @@ func New(cfg *config.Config, db *gorm.DB, auditor audit.Recorder, tokens *auth.T
 		Actions:       action.NewRegistry(checker, auditor),
 		Menus:         menu.NewRegistry(),
 		CodeSets:      codeSets,
+		Settings:      setting.NewRegistry(),
 		StateMachines: statemachine.NewRegistry(),
 		Auditor:       auditor,
 		Installed:     true, // 默认已安装；setup 模式由 main 覆写
@@ -70,6 +73,12 @@ func (a *App) RegisterMenu(m menu.Menu) error {
 }
 
 func (a *App) RegisterCodeSet(set codeset.CodeSet) error { return a.CodeSets.Register(set) }
+
+func (a *App) RegisterSettingCategory(c setting.Category) error { return a.Settings.RegisterCategory(c) }
+
+func (a *App) RegisterSettingDefinition(def setting.Definition) error {
+	return a.Settings.RegisterDefinition(def)
+}
 
 func (a *App) RegisterStateMachine(machine statemachine.StateMachine) error {
 	return a.StateMachines.Register(machine, a.CodeSets, a.Actions)

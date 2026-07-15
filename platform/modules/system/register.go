@@ -59,6 +59,14 @@ func Register(a *app.App) error {
 		return err
 	}
 
+	if err := registerExampleSettings(a); err != nil {
+		return err
+	}
+	settingSvc := NewSettingService(a.DB, a.Settings)
+	if err := registerSettingActions(a, settingSvc); err != nil {
+		return err
+	}
+
 	if err := a.RegisterAction(action.Action{
 		ID: "system.auth_login",
 		Handler: func(ctx context.Context, input json.RawMessage) (any, error) {
@@ -203,9 +211,17 @@ func Register(a *app.App) error {
 		return err
 	}
 
-	return a.RegisterMenu(menu.Menu{
+	if err := a.RegisterMenu(menu.Menu{
 		ID: MenuRoleManagement, ParentID: "system.root", Title: "角色管理", TitleKey: "menu.system.roles.title",
 		Icon: "mdi:shield-account-outline", Type: menu.TypeMenu, Path: "/system/roles", Component: "system/roles",
 		Permission: ActionRoleList, BindAction: ActionRoleList, Module: "system", Order: 3,
+	}); err != nil {
+		return err
+	}
+
+	return a.RegisterMenu(menu.Menu{
+		ID: MenuSettingManagement, ParentID: "system.root", Title: "系统设置", TitleKey: "menu.system.settings.title",
+		Icon: "mdi:tune-vertical", Type: menu.TypeMenu, Path: "/system/settings", Component: "system/settings",
+		Permission: ActionSettingList, BindAction: ActionSettingList, Module: "system", Order: 4,
 	})
 }

@@ -35,6 +35,7 @@ func AutoMigrate(db *gorm.DB) error {
 		&model.Role{},
 		&model.RolePermission{},
 		&model.UserRole{},
+		&model.TenantSettingValue{},
 	); err != nil {
 		return err
 	}

@@ -175,6 +175,7 @@ const routeMap: RouteMap = {
   "system": "/system",
   "system_profile": "/system/profile",
   "system_roles": "/system/roles",
+  "system_settings": "/system/settings",
   "system_users": "/system/users"
 };
 

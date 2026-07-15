@@ -139,6 +139,16 @@ export const generatedRoutes: GeneratedRoute[] = [
         }
       },
       {
+        name: 'system_settings',
+        path: '/system/settings',
+        component: 'view.system_settings',
+        meta: {
+          title: 'system_settings',
+          i18nKey: 'route.system_settings',
+          hideInMenu: true
+        }
+      },
+      {
         name: 'system_users',
         path: '/system/users',
         component: 'view.system_users',

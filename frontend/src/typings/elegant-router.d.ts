@@ -29,6 +29,7 @@ declare module "@elegant-router/types" {
     "system": "/system";
     "system_profile": "/system/profile";
     "system_roles": "/system/roles";
+    "system_settings": "/system/settings";
     "system_users": "/system/users";
   };
 
@@ -96,6 +97,7 @@ declare module "@elegant-router/types" {
     | "home"
     | "system_profile"
     | "system_roles"
+    | "system_settings"
     | "system_users"
   >;
 
