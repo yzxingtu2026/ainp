@@ -12,5 +12,9 @@ export const SYSTEM_ACTIONS = {
   userUpdate: 'system.user_update',
   userStatusUpdate: 'system.user_status_update',
   userRolesUpdate: 'system.user_roles_update',
-  userPasswordReset: 'system.user_password_reset'
+  userPasswordReset: 'system.user_password_reset',
+  settingList: 'system.setting_list',
+  settingGet: 'system.setting_get',
+  settingUpdate: 'system.setting_update',
+  settingReset: 'system.setting_reset'
 } as const;

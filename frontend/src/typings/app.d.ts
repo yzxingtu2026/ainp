@@ -482,6 +482,14 @@ declare namespace App {
       };
       route: Record<I18nRouteKey, string>;
       page: {
+        setting: {
+          title: string;
+          empty: string;
+          required: string;
+          reset: string;
+          resetConfirm: string;
+          resetSuccess: string;
+        };
         user: {
           title: string;
           createTitle: string;

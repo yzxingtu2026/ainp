@@ -237,9 +237,18 @@ const local: App.I18n.Schema = {
     system_profile: 'Profile',
     system_users: 'Users',
     system_roles: 'Roles',
+    system_settings: 'Settings',
     setup: 'Setup'
   },
   page: {
+    setting: {
+      title: 'Settings',
+      empty: 'No settings available',
+      required: 'Required',
+      reset: 'Reset to defaults',
+      resetConfirm: 'Delete tenant overrides and restore code defaults?',
+      resetSuccess: 'Settings reset to defaults'
+    },
     user: {
       title: 'User Management',
       createTitle: 'Create User',

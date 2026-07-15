@@ -17,9 +17,15 @@ const (
 	ActionUserRolesUpdate   = "system.user_roles_update"
 	ActionUserPasswordReset = "system.user_password_reset"
 
-	MenuRoleManagement = "system.roles"
-	MenuUserManagement = "system.users"
-	BuiltinAdminCode   = "admin"
+	ActionSettingList   = "system.setting_list"
+	ActionSettingGet    = "system.setting_get"
+	ActionSettingUpdate = "system.setting_update"
+	ActionSettingReset  = "system.setting_reset"
+
+	MenuRoleManagement    = "system.roles"
+	MenuUserManagement    = "system.users"
+	MenuSettingManagement = "system.settings"
+	BuiltinAdminCode      = "admin"
 )
 
 var adminMinimumPermissions = []string{
@@ -39,6 +45,10 @@ var adminMinimumPermissions = []string{
 	ActionUserStatusUpdate,
 	ActionUserRolesUpdate,
 	ActionUserPasswordReset,
+	ActionSettingList,
+	ActionSettingGet,
+	ActionSettingUpdate,
+	ActionSettingReset,
 }
 
 // AdminMinimumPermissions 返回内置管理员必须保留的最小权限副本（测试与文档对齐用）。

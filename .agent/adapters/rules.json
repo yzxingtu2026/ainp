@@ -275,6 +275,23 @@
           "alwaysApply": true
         }
       }
+    },
+    {
+      "id": "settings-system",
+      "source": ".agent/rules/settings-system.md",
+      "qoder": {
+        "path": ".qoder/rules/settings-system.md",
+        "frontmatter": {
+          "trigger": "always_on"
+        }
+      },
+      "cursor": {
+        "path": ".cursor/rules/settings-system.mdc",
+        "frontmatter": {
+          "description": "代码定义租户设置系统，禁止启动配置与松散 JSON 读设置",
+          "alwaysApply": true
+        }
+      }
     }
   ]
 }

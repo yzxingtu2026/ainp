@@ -52,3 +52,18 @@ type UserRole struct {
 }
 
 func (UserRole) TableName() string { return "user_roles" }
+
+// TenantSettingValue stores tenant overrides for one setting definition.
+type TenantSettingValue struct {
+	ID            string    `gorm:"primaryKey;size:64"`
+	TenantID      string    `gorm:"size:64;uniqueIndex:ux_tenant_setting_key;not null;index"`
+	SettingKey    string    `gorm:"size:128;uniqueIndex:ux_tenant_setting_key;not null"`
+	SchemaVersion int       `gorm:"not null"`
+	ValueJSON     []byte    `gorm:"type:jsonb;not null"`
+	Revision      int64     `gorm:"not null;default:1"`
+	UpdatedBy     string    `gorm:"size:64"`
+	CreatedAt     time.Time `gorm:"autoCreateTime"`
+	UpdatedAt     time.Time `gorm:"autoUpdateTime"`
+}
+
+func (TenantSettingValue) TableName() string { return "tenant_setting_values" }

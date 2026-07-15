@@ -50,6 +50,7 @@ platform/
 │   ├── capability/           # Capability 注册表
 │   ├── action/               # Action 注册表与执行链
 │   ├── menu/                 # Menu 注册表（独立）
+│   ├── setting/              # 设置 Category/Definition/Field 注册与 Provider
 │   ├── permission/           # Role ↔ permission
 │   ├── audit/                # 审计写入
 │   ├── httpserver/           # Gin、健康检查
