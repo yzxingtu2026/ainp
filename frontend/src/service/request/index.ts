@@ -107,24 +107,28 @@ export const request = createFlatRequest(
     onError(error) {
       const authStore = useAuthStore();
       const axiosError = error as AxiosError<AinPEnvelope>;
+      const payload = axiosError.response?.data;
 
       if (axiosError.response?.status === 401) {
         authStore.resetStore();
-        showErrorMsg(request.state, backendMessage(axiosError.response.data) || 'unauthorized');
+        showErrorMsg(request.state, backendMessage(payload) || 'unauthorized');
         return;
       }
 
       if (axiosError.response?.status === 403) {
-        showErrorMsg(request.state, backendMessage(axiosError.response.data) || 'forbidden');
+        showErrorMsg(request.state, backendMessage(payload) || 'forbidden');
         return;
       }
 
-      let message = error.message;
+      // HTTP 409/其它业务失败走 Axios error 通道时，优先展示信封 message
+      let message = backendMessage(payload) || error.message;
       let backendErrorCode = '';
 
       if (error.code === BACKEND_ERROR_CODE) {
-        message = backendMessage(error.response?.data) || message;
-        backendErrorCode = String(error.response?.data?.code || '');
+        message = backendMessage(payload) || message;
+        backendErrorCode = String(payload?.code || '');
+      } else if (payload && payload.code !== undefined && payload.code !== null) {
+        backendErrorCode = String(payload.code);
       }
 
       const modalLogoutCodes = import.meta.env.VITE_SERVICE_MODAL_LOGOUT_CODES?.split(',').filter(Boolean) || [];

@@ -68,7 +68,6 @@ var adminMinimumPermissions = []string{
 	ActionAttachmentDelete,
 	ActionAttachmentList,
 	ActionAttachmentGet,
-	ActionAttachmentPolicyGet,
 }
 
 // AdminMinimumPermissions 返回内置管理员必须保留的最小权限副本（测试与文档对齐用）。

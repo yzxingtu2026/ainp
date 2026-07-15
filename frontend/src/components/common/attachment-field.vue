@@ -35,7 +35,12 @@ const loading = ref(false);
 const pending = ref<Api.Attachment.Item[]>([]);
 const pickerShow = ref(false);
 
-const canPick = computed(() => hasAuth(ATTACHMENT_ACTIONS.uploadPrepare) || hasAuth(ATTACHMENT_ACTIONS.list));
+const canPick = computed(
+  () =>
+    hasAuth(ATTACHMENT_ACTIONS.uploadPrepare) ||
+    hasAuth(ATTACHMENT_ACTIONS.list) ||
+    hasAuth(ATTACHMENT_ACTIONS.policyGet)
+);
 const canBind = computed(() => hasAuth(ATTACHMENT_ACTIONS.bind));
 const canUnbind = computed(() => hasAuth(ATTACHMENT_ACTIONS.unbind));
 const canDelete = computed(() => hasAuth(ATTACHMENT_ACTIONS.delete));
