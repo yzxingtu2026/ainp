@@ -38,6 +38,14 @@ type AIMeta struct {
 	Summary    string
 }
 
+// IdempotencyMeta 控制 Action 的幂等策略。
+type IdempotencyMeta struct {
+	Mode                string        // "none" | "optional" | "required"
+	TTL                 time.Duration // 幂等记录保留时间，默认 24h
+	InProgressTimeout   time.Duration // processing 超时，默认 30s
+	CacheBusinessErrors bool          // 是否缓存业务错误响应
+}
+
 type Metadata struct {
 	Capability             string
 	PermissionGroup        string
@@ -52,6 +60,7 @@ type Metadata struct {
 	Audit                  *bool
 	HTTP                   *HTTPMeta
 	AI                     *AIMeta
+	Idempotency            *IdempotencyMeta
 }
 
 func (m Metadata) PermissionCode(actionID string) string {
@@ -68,6 +77,37 @@ func (m Metadata) ShouldAudit() bool {
 	return *m.Audit
 }
 
+// IdempotencyMode 返回幂等模式，未声明时默认 "none"。
+func (m Metadata) IdempotencyMode() string {
+	if m.Idempotency == nil {
+		return "none"
+	}
+	return m.Idempotency.Mode
+}
+
+func validateIdempotency(meta *IdempotencyMeta) error {
+	if meta == nil {
+		return nil
+	}
+	switch meta.Mode {
+	case "none":
+		if meta.TTL != 0 || meta.InProgressTimeout != 0 {
+			return fmt.Errorf("idempotency mode=none must not set TTL or InProgressTimeout")
+		}
+	case "optional", "required":
+		// defaults are fine
+	default:
+		return fmt.Errorf("idempotency mode must be none/optional/required, got %q", meta.Mode)
+	}
+	if meta.TTL < 0 {
+		return fmt.Errorf("idempotency TTL must be >= 0")
+	}
+	if meta.InProgressTimeout < 0 {
+		return fmt.Errorf("idempotency InProgressTimeout must be >= 0")
+	}
+	return nil
+}
+
 type Action struct {
 	ID      string
 	Handler Handler
@@ -75,9 +115,15 @@ type Action struct {
 }
 
 type Registry struct {
-	items   map[string]Action
-	checker *permission.Checker
-	auditor audit.Recorder
+	items               map[string]Action
+	checker             *permission.Checker
+	auditor             audit.Recorder
+	idempotencyExecutor IdempotencyExecutor
+}
+
+// IdempotencyExecutor is the interface for idempotent execution.
+type IdempotencyExecutor interface {
+	Execute(ctx context.Context, actionID string, input json.RawMessage, handler Handler, mode string, cacheBusinessErrors bool, ttl, inProgressTimeout time.Duration) (any, bool, error)
 }
 
 func NewRegistry(checker *permission.Checker, auditor audit.Recorder) *Registry {
@@ -102,6 +148,9 @@ func (r *Registry) Register(a Action) error {
 	if !a.Meta.Surface.Valid() {
 		return fmt.Errorf("invalid action surface: %s", a.Meta.Surface)
 	}
+	if err := validateIdempotency(a.Meta.Idempotency); err != nil {
+		return fmt.Errorf("action %s: %w", a.ID, err)
+	}
 	if _, exists := r.items[a.ID]; exists {
 		return fmt.Errorf("action already registered: %s", a.ID)
 	}
@@ -120,6 +169,10 @@ func (r *Registry) List() []Action {
 		out = append(out, a)
 	}
 	return out
+}
+
+func (r *Registry) SetIdempotencyExecutor(executor IdempotencyExecutor) {
+	r.idempotencyExecutor = executor
 }
 
 func (r *Registry) Invoke(ctx context.Context, actionID string, input json.RawMessage) (any, error) {
@@ -151,6 +204,37 @@ func (r *Registry) Invoke(ctx context.Context, actionID string, input json.RawMe
 	}
 
 	start := time.Now()
+
+	var data any
+	var isReplay bool
+
+	// Idempotency execution path
+	if a.Meta.Idempotency != nil && a.Meta.Idempotency.Mode != "none" && r.idempotencyExecutor != nil {
+		ttl := a.Meta.Idempotency.TTL
+		if ttl == 0 {
+			ttl = 24 * time.Hour
+		}
+		ipt := a.Meta.Idempotency.InProgressTimeout
+		if ipt == 0 {
+			ipt = 30 * time.Second
+		}
+		var execErr error
+		data, isReplay, execErr = r.idempotencyExecutor.Execute(ctx, a.ID, input, a.Handler, a.Meta.Idempotency.Mode, a.Meta.Idempotency.CacheBusinessErrors, ttl, ipt)
+		logging.Info(ctx, "action finished",
+			"action_id", a.ID,
+			"duration_ms", time.Since(start).Milliseconds(),
+			"ok", execErr == nil,
+			"replay", isReplay,
+		)
+		if execErr != nil {
+			r.writeAuditWithReplay(ctx, a, perm, "failure", execErr, isReplay)
+			return nil, execErr
+		}
+		r.writeAuditWithReplay(ctx, a, perm, "success", nil, isReplay)
+		return data, nil
+	}
+
+	// Normal execution path
 	data, err := a.Handler(ctx, input)
 	logging.Info(ctx, "action finished",
 		"action_id", a.ID,
@@ -166,6 +250,10 @@ func (r *Registry) Invoke(ctx context.Context, actionID string, input json.RawMe
 }
 
 func (r *Registry) writeAudit(ctx context.Context, a Action, perm, result string, err error) {
+	r.writeAuditWithReplay(ctx, a, perm, result, err, false)
+}
+
+func (r *Registry) writeAuditWithReplay(ctx context.Context, a Action, perm, result string, err error, replay bool) {
 	if r.auditor == nil || !a.Meta.ShouldAudit() {
 		return
 	}
@@ -183,8 +271,11 @@ func (r *Registry) writeAudit(ctx context.Context, a Action, perm, result string
 		Client:       ac.Client,
 		ResourceType: ac.AuditResourceType,
 		ResourceID:   ac.AuditResourceID,
+		Replay:       replay,
 	}
-	if err != nil {
+	if replay && err == nil {
+		rec.Summary = "replay"
+	} else if err != nil {
 		if ae, ok := errs.AsAppError(err); ok {
 			rec.ErrorCode = ae.Code
 			rec.Summary = ae.Message

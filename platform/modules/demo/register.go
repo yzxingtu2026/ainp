@@ -197,5 +197,12 @@ func Register(a *app.App) error {
 	if err := registerJobPingAction(a); err != nil {
 		return err
 	}
+
+	// Register revision doc demo actions (idempotency + optimistic locking)
+	revisionDocSvc := NewRevisionDocService(a.DB)
+	if err := RegisterRevisionDocActions(a, revisionDocSvc); err != nil {
+		return err
+	}
+
 	return jobs.Register(a)
 }

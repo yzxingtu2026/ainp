@@ -35,6 +35,7 @@ type Context struct {
 	Language          string // 由 Accept-Language 中间件协商；空表示未设置
 	IsSystemOperator  bool
 	Authenticated     bool
+	IdempotencyKey    string // 从 Idempotency-Key 请求头提取
 	AuditResourceType string
 	AuditResourceID   string
 	AuditSummary      string

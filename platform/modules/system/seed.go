@@ -5,8 +5,9 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
-	"github.com/yzxingtu2026/ainp/platform/framework/logging"
+	"github.com/yzxingtu2026/ainp/platform/framework/idempotency"
 	"github.com/yzxingtu2026/ainp/platform/framework/job"
+	"github.com/yzxingtu2026/ainp/platform/framework/logging"
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
 	"github.com/yzxingtu2026/ainp/platform/framework/status"
 	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
@@ -47,6 +48,9 @@ func AutoMigrate(db *gorm.DB) error {
 		return err
 	}
 	if err := job.AutoMigrate(db); err != nil {
+		return err
+	}
+	if err := idempotency.AutoMigrate(db); err != nil {
 		return err
 	}
 	if err := ensureActivationStatusConstraints(db); err != nil {
@@ -189,6 +193,10 @@ func SeedDemo(ctx context.Context, db *gorm.DB) error {
 			"demo.complete",
 			"demo.hello",
 			"demo.echo",
+			"demo.doc_list",
+			"demo.doc_get",
+			"demo.doc_create",
+			"demo.doc_update",
 		}, adminMinimumPermissions...)
 		for _, p := range perms {
 			if err := tx.Create(&model.RolePermission{

@@ -60,6 +60,13 @@ const local: App.I18n.Schema = {
     refreshToken: 'The requested token has expired, refresh the token',
     tokenExpired: 'The requested token has expired'
   },
+  concurrency: {
+    keyRequired: 'Idempotency key is required for this operation',
+    conflict: 'The same idempotency key was used for a different request',
+    inProgress: 'Operation is in progress, please do not resubmit',
+    revisionConflict: 'Data was updated by someone else, refresh and retry',
+    resourceLocked: 'Resource is locked by another operation, please retry later'
+  },
   theme: {
     themeDrawerTitle: 'Theme Configuration',
     tabs: {

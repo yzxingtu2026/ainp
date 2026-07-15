@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"sync"
+
+	"github.com/yzxingtu2026/ainp/platform/framework/revision"
 )
 
 // StoredValue is the persisted tenant override for one definition.
@@ -22,18 +24,19 @@ type ValueStore interface {
 }
 
 // ErrRevisionConflict indicates optimistic lock failure.
-var ErrRevisionConflict = fmt.Errorf("setting revision conflict")
+// Aliased from the public revision package for backward compatibility.
+var ErrRevisionConflict = revision.ErrRevisionConflict
 
 // ErrSchemaVersionMismatch indicates stored schema no longer matches code definition.
 var ErrSchemaVersionMismatch = fmt.Errorf("setting schema version mismatch")
 
 // Effective is the merged view for one definition.
 type Effective struct {
-	Definition   Definition
-	Values       map[string]any
-	Revision     int64
+	Definition    Definition
+	Values        map[string]any
+	Revision      int64
 	SchemaVersion int
-	Source       string // "default" | "tenant"
+	Source        string // "default" | "tenant"
 }
 
 // Provider merges code defaults with tenant overrides.

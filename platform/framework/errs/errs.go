@@ -18,6 +18,12 @@ const (
 	CodeActionNotFound  = 30001
 	CodeCodeSetNotFound = 30002
 
+	CodeIdempotencyKeyRequired = 40001
+	CodeIdempotencyConflict    = 40002
+	CodeOperationInProgress    = 40003
+	CodeRevisionConflict       = 40004
+	CodeResourceLocked         = 40005
+
 	CodeSetupRequired  = 50003
 	CodeSetupInstalled = 50004
 
@@ -26,19 +32,24 @@ const (
 
 // codeDefaultKey 将错误码映射到默认 message_key，供未显式传 key 的旧调用自动关联。
 var codeDefaultKey = map[int]string{
-	CodeValidation:         "common.validation_failed",
-	CodeUnauthorized:       "common.unauthorized",
-	CodeForbidden:          "common.forbidden",
-	CodeNotFound:           "common.not_found",
-	CodeConflict:           "common.conflict",
-	CodeTenantDisabled:     "auth.tenant_disabled",
-	CodeInvalidCredentials: "auth.invalid_credentials",
-	CodeUserDisabled:       "auth.user_disabled",
-	CodeActionNotFound:     "action.not_found",
-	CodeCodeSetNotFound:    "codeset.not_found",
-	CodeSetupRequired:      "setup.required",
-	CodeSetupInstalled:     "setup.already_installed",
-	CodeInternal:           "common.internal_error",
+	CodeValidation:             "common.validation_failed",
+	CodeUnauthorized:           "common.unauthorized",
+	CodeForbidden:              "common.forbidden",
+	CodeNotFound:               "common.not_found",
+	CodeConflict:               "common.conflict",
+	CodeTenantDisabled:         "auth.tenant_disabled",
+	CodeInvalidCredentials:     "auth.invalid_credentials",
+	CodeUserDisabled:           "auth.user_disabled",
+	CodeActionNotFound:         "action.not_found",
+	CodeCodeSetNotFound:        "codeset.not_found",
+	CodeIdempotencyKeyRequired: "idempotency.key_required",
+	CodeIdempotencyConflict:    "idempotency.conflict",
+	CodeOperationInProgress:    "idempotency.in_progress",
+	CodeRevisionConflict:       "common.revision_conflict",
+	CodeResourceLocked:         "common.resource_locked",
+	CodeSetupRequired:          "setup.required",
+	CodeSetupInstalled:         "setup.already_installed",
+	CodeInternal:               "common.internal_error",
 }
 
 type AppError struct {
