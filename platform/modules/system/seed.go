@@ -79,6 +79,10 @@ ALTER TABLE attachments ADD CONSTRAINT ck_attachments_status CHECK (status IN ('
 }
 
 func ensureAttachmentThumbStatusConstraint(db *gorm.DB) error {
+	// Normalize legacy empty string to NULL (CHECK forbids '').
+	if err := db.Exec(`UPDATE attachments SET thumb_status = NULL WHERE thumb_status = ''`).Error; err != nil {
+		return err
+	}
 	var invalid int64
 	if err := db.Model(&model.Attachment{}).Where("thumb_status IS NOT NULL AND thumb_status NOT IN ?", []status.AttachmentThumbStatus{
 		status.AttachmentThumbPending, status.AttachmentThumbReady, status.AttachmentThumbFailed, status.AttachmentThumbSkipped,

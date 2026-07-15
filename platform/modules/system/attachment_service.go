@@ -213,7 +213,7 @@ func (s *AttachmentService) DownloadPrepare(ctx context.Context, input json.RawM
 	}
 	size := row.Size
 	if variant == "thumb" {
-		if row.ThumbStatus != status.AttachmentThumbReady || row.ThumbObjectKey == "" {
+		if row.GetThumbStatus() != status.AttachmentThumbReady || row.ThumbObjectKey == "" {
 			return nil, errs.NewKey(errs.CodeNotFound, "attachment.variant_unavailable", "attachment variant not available")
 		}
 		size = row.ThumbSize
@@ -552,7 +552,7 @@ func (s *AttachmentService) CompleteUpload(ctx context.Context, claims *attachme
 	row.SHA256 = sum
 	row.ContentType = contentType
 	row.UploadJTI = ""
-	row.ThumbStatus = thumbStatus
+	row.SetThumbStatus(thumbStatus)
 	row.ThumbUpdatedAt = &now
 	return row, nil
 }
@@ -605,7 +605,7 @@ func (s *AttachmentService) openDownloadVariant(ctx context.Context, claims *att
 	case "original":
 		// use original
 	case "thumb":
-		if row.ThumbStatus != status.AttachmentThumbReady || row.ThumbObjectKey == "" {
+		if row.GetThumbStatus() != status.AttachmentThumbReady || row.ThumbObjectKey == "" {
 			return nil, nil, errs.NewKey(errs.CodeNotFound, "attachment.variant_unavailable", "attachment variant not available")
 		}
 		key = row.ThumbObjectKey
@@ -711,8 +711,8 @@ func toAttachmentView(row model.Attachment) AttachmentView {
 		Size: row.Size, SHA256: row.SHA256, Status: string(row.Status), UploaderID: row.UploaderID,
 		CreatedAt: row.CreatedAt.UTC().Format(time.RFC3339), UpdatedAt: row.UpdatedAt.UTC().Format(time.RFC3339),
 	}
-	if row.ThumbStatus != "" {
-		v.ThumbStatus = string(row.ThumbStatus)
+	if s := row.GetThumbStatus(); s != "" {
+		v.ThumbStatus = string(s)
 	}
 	return v
 }

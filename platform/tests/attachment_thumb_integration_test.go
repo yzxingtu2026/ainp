@@ -98,8 +98,8 @@ func TestAttachmentThumbSkippedAndVariantGate(t *testing.T) {
 	if err := testDB.Where("id = ?", prep.Attachment.ID).First(&row).Error; err != nil {
 		t.Fatal(err)
 	}
-	if row.ThumbStatus != status.AttachmentThumbSkipped {
-		t.Fatalf("thumb_status = %q want skipped", row.ThumbStatus)
+	if row.GetThumbStatus() != status.AttachmentThumbSkipped {
+		t.Fatalf("thumb_status = %q want skipped", row.GetThumbStatus())
 	}
 	if _, err := svc.DownloadPrepare(ctxA, json.RawMessage(fmt.Sprintf(
 		`{"id":%q,"variant":"thumb"}`, prep.Attachment.ID,
@@ -127,8 +127,8 @@ func TestAttachmentThumbSkippedAndVariantGate(t *testing.T) {
 	if err := testDB.Where("id = ?", imgPrep.Attachment.ID).First(&imgRow).Error; err != nil {
 		t.Fatal(err)
 	}
-	if imgRow.ThumbStatus != status.AttachmentThumbPending {
-		t.Fatalf("thumb_status = %q want pending", imgRow.ThumbStatus)
+	if imgRow.GetThumbStatus() != status.AttachmentThumbPending {
+		t.Fatalf("thumb_status = %q want pending", imgRow.GetThumbStatus())
 	}
 	if _, err := svc.DownloadPrepare(ctxA, json.RawMessage(fmt.Sprintf(
 		`{"id":%q,"variant":"thumb"}`, imgPrep.Attachment.ID,

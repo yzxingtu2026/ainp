@@ -23,11 +23,12 @@ type Attachment struct {
 	ExpectedSize  int64                   `gorm:"not null;default:0"`
 	ExpiresAt     *time.Time              // pending temp retain deadline
 	// Thumb* holds the standard `thumb` derivative (cover ~200² JPEG). Independent of Status.
-	ThumbStatus      status.AttachmentThumbStatus `gorm:"size:32;index:idx_attachments_thumb_status"`
-	ThumbObjectKey   string                       `gorm:"size:512"`
-	ThumbContentType string                       `gorm:"size:128"`
-	ThumbSize        int64                        `gorm:"not null;default:0"`
-	ThumbError       string                       `gorm:"size:512"`
+	// Pointer so upload_prepare inserts NULL (empty string violates ck_attachments_thumb_status).
+	ThumbStatus      *status.AttachmentThumbStatus `gorm:"size:32;index:idx_attachments_thumb_status"`
+	ThumbObjectKey   string                        `gorm:"size:512"`
+	ThumbContentType string                        `gorm:"size:128"`
+	ThumbSize        int64                         `gorm:"not null;default:0"`
+	ThumbError       string                        `gorm:"size:512"`
 	ThumbUpdatedAt   *time.Time
 	CreatedAt        time.Time      `gorm:"autoCreateTime"`
 	UpdatedAt        time.Time      `gorm:"autoUpdateTime"`
@@ -35,6 +36,27 @@ type Attachment struct {
 }
 
 func (Attachment) TableName() string { return "attachments" }
+
+// GetThumbStatus returns the derivative status, or empty when unset (NULL).
+func (a Attachment) GetThumbStatus() status.AttachmentThumbStatus {
+	if a.ThumbStatus == nil {
+		return ""
+	}
+	return *a.ThumbStatus
+}
+
+// SetThumbStatus sets the derivative status pointer (nil clears to NULL).
+func (a *Attachment) SetThumbStatus(s status.AttachmentThumbStatus) {
+	if a == nil {
+		return
+	}
+	if s == "" {
+		a.ThumbStatus = nil
+		return
+	}
+	v := s
+	a.ThumbStatus = &v
+}
 
 // AttachmentLink binds an attachment to a business resource field.
 type AttachmentLink struct {

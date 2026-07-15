@@ -117,11 +117,11 @@ func makeGenerateThumbHandler(a *app.App) func(ctx context.Context, env job.Enve
 			return job.Permanent(errors.New("attachment not ready"))
 		}
 		// Idempotent success if already ready with object.
-		if row.ThumbStatus == status.AttachmentThumbReady && row.ThumbObjectKey != "" {
+		if row.GetThumbStatus() == status.AttachmentThumbReady && row.ThumbObjectKey != "" {
 			_ = reporter.SetResultRef(ctx, row.ThumbObjectKey)
 			return nil
 		}
-		if row.ThumbStatus == status.AttachmentThumbSkipped {
+		if row.GetThumbStatus() == status.AttachmentThumbSkipped {
 			return nil
 		}
 
