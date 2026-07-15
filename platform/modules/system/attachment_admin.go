@@ -106,11 +106,21 @@ func (s *AttachmentService) List(ctx context.Context, input json.RawMessage) (an
 		return nil, mapAttachmentError(err)
 	}
 	records := make([]AttachmentView, 0, len(rows))
+	uploaderIDs := make([]string, 0, len(rows))
 	for _, row := range rows {
 		if row.TenantID != tenantID {
 			continue
 		}
 		records = append(records, toAttachmentView(row))
+		if row.UploaderID != "" {
+			uploaderIDs = append(uploaderIDs, row.UploaderID)
+		}
+	}
+	names := s.resolveUploaderNames(ctx, tenantID, uploaderIDs)
+	for i := range records {
+		if name := names[records[i].UploaderID]; name != "" {
+			records[i].UploaderName = name
+		}
 	}
 	return map[string]any{
 		"current": req.Current, "size": req.Size, "total": total, "records": records,
@@ -153,8 +163,49 @@ func (s *AttachmentService) Get(ctx context.Context, input json.RawMessage) (any
 		Provider:       row.Provider,
 		Links:          linkViews,
 	}
+	if names := s.resolveUploaderNames(ctx, tenantID, []string{row.UploaderID}); names[row.UploaderID] != "" {
+		view.UploaderName = names[row.UploaderID]
+	}
 	if canManage {
 		view.ObjectKey = row.ObjectKey
 	}
 	return view, nil
+}
+
+// resolveUploaderNames 按租户批量解析上传者展示名（优先 display_name，否则 username）。
+func (s *AttachmentService) resolveUploaderNames(ctx context.Context, tenantID string, userIDs []string) map[string]string {
+	out := make(map[string]string)
+	uniq := make([]string, 0, len(userIDs))
+	seen := make(map[string]struct{}, len(userIDs))
+	for _, id := range userIDs {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		uniq = append(uniq, id)
+	}
+	if len(uniq) == 0 {
+		return out
+	}
+	var users []model.User
+	if err := s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).
+		Select("id", "display_name", "username").
+		Where("tenant_id = ? AND id IN ?", tenantID, uniq).
+		Find(&users).Error; err != nil {
+		return out
+	}
+	for _, u := range users {
+		name := strings.TrimSpace(u.DisplayName)
+		if name == "" {
+			name = strings.TrimSpace(u.Username)
+		}
+		if name != "" {
+			out[u.ID] = name
+		}
+	}
+	return out
 }

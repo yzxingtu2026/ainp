@@ -62,8 +62,8 @@ Local Provider 返回本服务流式 URL；未来 S3/OSS 可换预签名 URL，�
 | `system.attachment_download_prepare` | 准备下载 | true |
 | `system.attachment_bind` / `unbind` | 绑定/解绑 | true |
 | `system.attachment_list_by_resource` | 按资源列表 | true |
-| `system.attachment_list` | 分页列表（mine/all） | false |
-| `system.attachment_get` | 详情与 links | false |
+| `system.attachment_list` | 分页列表（mine/all）；补充 `uploader_name` | false |
+| `system.attachment_get` | 详情与 links；补充 `uploader_name` | false |
 | `system.attachment_policy_get` | 有效上传策略 | false |
 | `system.attachment_delete` | 删除 | true |
 

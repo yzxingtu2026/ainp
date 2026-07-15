@@ -84,6 +84,7 @@ type AttachmentView struct {
 	SHA256       string `json:"sha256,omitempty"`
 	Status       string `json:"status"`
 	UploaderID   string `json:"uploader_id"`
+	UploaderName string `json:"uploader_name,omitempty"`
 	CreatedAt    string `json:"created_at"`
 	UpdatedAt    string `json:"updated_at"`
 }

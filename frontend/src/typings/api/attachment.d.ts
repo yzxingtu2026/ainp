@@ -10,6 +10,8 @@ declare namespace Api {
       sha256?: string;
       status: Status;
       uploader_id: string;
+      /** 展示用昵称；缺失时前端回退 uploader_id */
+      uploader_name?: string;
       created_at: string;
       updated_at: string;
     }

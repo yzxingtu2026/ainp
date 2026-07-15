@@ -36,7 +36,7 @@
 | `AttachmentList` | 列表、图片预览、下载、解绑/删除确认 |
 | `AttachmentField` | 打开选择器并绑定到 resource；无 resourceId 时临时 pending |
 
-有效上传策略：`POST .../attachments/policy`（设置覆盖 + 代码默认）。附件中心：`/system/attachments`。
+有效上传策略：`POST .../attachments/policy`（设置覆盖 + 代码默认）。附件中心：`/system/attachments`（状态用 `CodeSelect` / `CodeTag` + CodeSet `system.attachment_status`；上传者展示 `uploader_name`）。
 
 Demo：`/demo/attachments`（选择器主路径）。
 

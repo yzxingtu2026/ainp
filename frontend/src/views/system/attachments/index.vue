@@ -1,7 +1,9 @@
 <script setup lang="tsx">
 import { computed, h, onMounted, reactive, ref } from 'vue';
 import type { DataTableColumns } from 'naive-ui';
-import { NButton, NSpace, NTag } from 'naive-ui';
+import { NButton, NSpace } from 'naive-ui';
+import CodeTag from '@/components/common/code-tag.vue';
+import { CODESET_KEYS } from '@/constants/codeset';
 import { SYSTEM_ACTIONS } from '@/constants/system';
 import { $t } from '@/locales';
 import { formatDateTime } from '@/utils/datetime';
@@ -15,11 +17,17 @@ const loading = ref(false);
 const authStore = useAuthStore();
 const records = ref<Api.Attachment.Item[]>([]);
 const total = ref(0);
-const query = reactive<Api.Attachment.ListParams>({
+const query = reactive<{
+  current: number;
+  size: number;
+  keyword: string;
+  status: string | null;
+  scope: 'all';
+}>({
   current: 1,
   size: 20,
   keyword: '',
-  status: '',
+  status: null,
   scope: 'all'
 });
 const detailVisible = ref(false);
@@ -29,14 +37,9 @@ function can(permission: string) {
   return authStore.userInfo.buttons.includes(permission) || authStore.userInfo.buttons.includes('*');
 }
 
-const statusOptions = [
-  { label: $t('page.attachment.statusAll'), value: '' },
-  { label: 'pending', value: 'pending' },
-  { label: 'ready', value: 'ready' },
-  { label: 'failed', value: 'failed' },
-  { label: 'deleting', value: 'deleting' },
-  { label: 'deleted', value: 'deleted' }
-];
+function uploaderLabel(row: Pick<Api.Attachment.Item, 'uploader_id' | 'uploader_name'>) {
+  return row.uploader_name || row.uploader_id || '-';
+}
 
 const columns = computed<DataTableColumns<Api.Attachment.Item>>(() => [
   { title: $t('page.attachment.fileName'), key: 'original_name', minWidth: 180, ellipsis: { tooltip: true } },
@@ -51,9 +54,15 @@ const columns = computed<DataTableColumns<Api.Attachment.Item>>(() => [
     title: $t('page.attachment.statusLabel'),
     key: 'status',
     width: 110,
-    render: row => h(NTag, { size: 'small' }, { default: () => row.status })
+    render: row => h(CodeTag, { codeSet: CODESET_KEYS.attachmentStatus, value: row.status })
   },
-  { title: $t('page.attachment.uploader'), key: 'uploader_id', width: 160, ellipsis: { tooltip: true } },
+  {
+    title: $t('page.attachment.uploader'),
+    key: 'uploader_name',
+    width: 160,
+    ellipsis: { tooltip: true },
+    render: row => uploaderLabel(row)
+  },
   {
     title: $t('page.attachment.createdAt'),
     key: 'created_at',
@@ -93,7 +102,8 @@ async function loadData() {
   loading.value = true;
   try {
     const { data, error } = await fetchAttachmentList({
-      ...query,
+      current: query.current,
+      size: query.size,
       keyword: query.keyword?.trim() || undefined,
       status: query.status || undefined,
       scope: 'all'
@@ -104,7 +114,6 @@ async function loadData() {
       total.value = 0;
       return;
     }
-    // 信封经 transform 后已是 data；列表字段为 records（与角色/用户分页一致）
     records.value = Array.isArray(data?.records) ? data.records : [];
     total.value = typeof data?.total === 'number' ? data.total : 0;
   } finally {
@@ -162,7 +171,12 @@ onMounted(loadData);
           :placeholder="$t('page.attachment.searchName')"
           @keyup.enter="loadData"
         />
-        <NSelect v-model:value="query.status" class="w-160px" :options="statusOptions" clearable />
+        <CodeSelect
+          v-model:value="query.status"
+          class="w-160px"
+          :code-set="CODESET_KEYS.attachmentStatus"
+          :placeholder="$t('page.attachment.statusAll')"
+        />
         <NButton type="primary" @click="loadData">{{ $t('common.search') }}</NButton>
       </NSpace>
       <NDataTable
@@ -197,8 +211,10 @@ onMounted(loadData);
             <NDescriptionsItem :label="$t('page.attachment.fileName')">{{ detail.original_name }}</NDescriptionsItem>
             <NDescriptionsItem :label="$t('page.attachment.contentType')">{{ detail.content_type }}</NDescriptionsItem>
             <NDescriptionsItem :label="$t('page.attachment.size')">{{ formatFileSize(detail.size) }}</NDescriptionsItem>
-            <NDescriptionsItem :label="$t('page.attachment.statusLabel')">{{ detail.status }}</NDescriptionsItem>
-            <NDescriptionsItem :label="$t('page.attachment.uploader')">{{ detail.uploader_id }}</NDescriptionsItem>
+            <NDescriptionsItem :label="$t('page.attachment.statusLabel')">
+              <CodeTag :code-set="CODESET_KEYS.attachmentStatus" :value="detail.status" />
+            </NDescriptionsItem>
+            <NDescriptionsItem :label="$t('page.attachment.uploader')">{{ uploaderLabel(detail) }}</NDescriptionsItem>
             <NDescriptionsItem :label="$t('page.attachment.createdAt')">{{ formatDateTime(detail.created_at) }}</NDescriptionsItem>
           </NDescriptions>
           <div class="mt-16px text-14px font-medium">{{ $t('page.attachment.links') }}</div>
