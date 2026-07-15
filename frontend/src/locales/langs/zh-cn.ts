@@ -229,6 +229,7 @@ const local: App.I18n.Schema = {
     home: '首页',
     demo: '演示',
     demo_hello: 'Hello',
+    demo_attachments: '附件联调',
     system: '系统',
     system_profile: '个人中心',
     system_users: '用户管理',
@@ -244,6 +245,44 @@ const local: App.I18n.Schema = {
       reset: '重置为默认',
       resetConfirm: '确认删除租户覆盖并恢复代码默认值？',
       resetSuccess: '已重置为默认值'
+    },
+    attachment: {
+      demoTitle: '附件组件联调',
+      demoHint: '在业务上下文中上传/预览/下载/解绑/删除；非生产附件中心。',
+      dropOrClick: '拖拽文件到此处，或点击选择',
+      selectFiles: '选择文件',
+      uploadHint: '单文件不超过 {size}，允许扩展名：{ext}',
+      cancel: '取消上传',
+      retry: '重试',
+      empty: '暂无附件',
+      preview: '预览',
+      download: '下载',
+      unbind: '解绑',
+      confirmUnbind: '确认解除该附件与业务资源的关联？',
+      confirmDelete: '确认删除该附件？删除后不可恢复。',
+      uploadSuccess: '上传并绑定成功',
+      loadFailed: '加载附件列表失败',
+      bindFailed: '绑定附件失败',
+      unbindFailed: '解绑失败',
+      deleteFailed: '删除失败',
+      downloadFailed: '下载失败',
+      noUploadPermission: '无上传权限',
+      noBindPermission: '无绑定权限',
+      status: {
+        queued: '排队中',
+        preparing: '准备中',
+        uploading: '上传中',
+        completing: '完成中',
+        success: '成功',
+        failed: '失败',
+        cancelled: '已取消'
+      },
+      precheck: {
+        size: '文件过大',
+        ext: '扩展名不允许',
+        mime: '类型不允许',
+        empty: '空文件'
+      }
     },
     user: {
       title: '用户管理',

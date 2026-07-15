@@ -21,6 +21,7 @@ declare module "@elegant-router/types" {
     "404": "/404";
     "500": "/500";
     "demo": "/demo";
+    "demo_attachments": "/demo/attachments";
     "demo_hello": "/demo/hello";
     "home": "/home";
     "iframe-page": "/iframe-page/:url";
@@ -93,6 +94,7 @@ declare module "@elegant-router/types" {
     | "iframe-page"
     | "login"
     | "setup"
+    | "demo_attachments"
     | "demo_hello"
     | "home"
     | "system_profile"

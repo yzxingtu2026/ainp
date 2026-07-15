@@ -16,5 +16,11 @@ export const SYSTEM_ACTIONS = {
   settingList: 'system.setting_list',
   settingGet: 'system.setting_get',
   settingUpdate: 'system.setting_update',
-  settingReset: 'system.setting_reset'
+  settingReset: 'system.setting_reset',
+  attachmentUploadPrepare: 'system.attachment_upload_prepare',
+  attachmentDownloadPrepare: 'system.attachment_download_prepare',
+  attachmentBind: 'system.attachment_bind',
+  attachmentUnbind: 'system.attachment_unbind',
+  attachmentListByResource: 'system.attachment_list_by_resource',
+  attachmentDelete: 'system.attachment_delete'
 } as const;

@@ -10,7 +10,7 @@
 | 附件系统（本 Issue） | 元数据、prepare + transfer token、绑定、策略、删除补偿、审计 | 直接拼路径 / 厂商 SDK / 前端组件 |
 | 租户设置（#13） | 未来覆盖大小/MIME/保留策略 | 第二套附件配置表 |
 
-前端上传/预览组件见后续 Issue（#19）。S3/OSS、分片、病毒扫描、公开分享不在本阶段。
+前端上传/预览组件见 `docs/development/frontend-attachments.md`（#19）。
 
 ## 数据模型
 

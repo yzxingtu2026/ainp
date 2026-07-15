@@ -490,6 +490,44 @@ declare namespace App {
           resetConfirm: string;
           resetSuccess: string;
         };
+        attachment: {
+          demoTitle: string;
+          demoHint: string;
+          dropOrClick: string;
+          selectFiles: string;
+          uploadHint: string;
+          cancel: string;
+          retry: string;
+          empty: string;
+          preview: string;
+          download: string;
+          unbind: string;
+          confirmUnbind: string;
+          confirmDelete: string;
+          uploadSuccess: string;
+          loadFailed: string;
+          bindFailed: string;
+          unbindFailed: string;
+          deleteFailed: string;
+          downloadFailed: string;
+          noUploadPermission: string;
+          noBindPermission: string;
+          status: {
+            queued: string;
+            preparing: string;
+            uploading: string;
+            completing: string;
+            success: string;
+            failed: string;
+            cancelled: string;
+          };
+          precheck: {
+            size: string;
+            ext: string;
+            mime: string;
+            empty: string;
+          };
+        };
         user: {
           title: string;
           createTitle: string;

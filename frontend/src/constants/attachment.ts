@@ -1,0 +1,43 @@
+/** 后端已注册的附件 resource_type；前端禁止自由拼接任意字符串。 */
+export const ATTACHMENT_RESOURCE_TYPES = {
+  demoTask: 'demo.task'
+} as const;
+
+export type RegisteredAttachmentResourceType =
+  (typeof ATTACHMENT_RESOURCE_TYPES)[keyof typeof ATTACHMENT_RESOURCE_TYPES];
+
+export const ATTACHMENT_ACTIONS = {
+  uploadPrepare: 'system.attachment_upload_prepare',
+  downloadPrepare: 'system.attachment_download_prepare',
+  bind: 'system.attachment_bind',
+  unbind: 'system.attachment_unbind',
+  listByResource: 'system.attachment_list_by_resource',
+  delete: 'system.attachment_delete'
+} as const;
+
+/** 与后端 DefaultUploadPolicy 对齐的前端预校验默认值（非唯一安全边界）。 */
+export const DEFAULT_ATTACHMENT_UPLOAD_POLICY = {
+  maxSizeBytes: 20 * 1024 * 1024,
+  allowedMime: [
+    'image/png',
+    'image/jpeg',
+    'image/gif',
+    'image/webp',
+    'application/pdf',
+    'text/plain',
+    'application/zip',
+    'application/octet-stream'
+  ],
+  allowedExt: ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.pdf', '.txt', '.zip'],
+  maxUploadsOnce: 10,
+  concurrency: 2
+} as const;
+
+export type AttachmentUploadItemStatus =
+  | 'queued'
+  | 'preparing'
+  | 'uploading'
+  | 'completing'
+  | 'success'
+  | 'failed'
+  | 'cancelled';
