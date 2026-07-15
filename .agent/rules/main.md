@@ -26,7 +26,7 @@
 - 租户角色、权限目录与管理员保护见 `role-management`。
 - 后端多语言 i18n 见 `i18n`；前端多语言见 `frontend-i18n`。
 - 用户可见时间展示见 `datetime-display`。
-- 统一设置系统见 `settings-system`。
+- 统一设置系统见 `settings-system`（管理端 `SettingService` Action；业务只读类型化 Provider，禁止散落 JSON/直写表）。
 - 前端栈、图标协议见关联规则。
 
 ## 关联规则

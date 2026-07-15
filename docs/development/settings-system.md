@@ -48,11 +48,25 @@ VisibleWhen: &setting.VisibleWhen{Field: "mode", In: []any{"a", "b"}}
 - `revision` 乐观锁；`schema_version` 不匹配不得静默误读
 - 未覆盖返回代码默认值；重置删除覆盖行
 
-## Action / 前端
+## Action / 读写入口 / 前端
 
-- Actions：`system.setting_list|get|update|reset`
-- 前端：`/system/settings` 按 Category 导航 + Definition 动态表单；禁止后端下发组件路径/脚本
-- 业务读取用类型化 Provider（如 `Preferences(ctx)`），禁止散落字符串 key + 手工 JSON
+### 管理端（统一读写）
+
+- 入口：`platform/modules/system.SettingService`
+- Actions：`system.setting_list` / `system.setting_get` / `system.setting_update` / `system.setting_reset`
+- 职责：权限、Schema 校验（含 `visible_when`）、revision 乐观锁、审计、缓存失效
+- **禁止**：Handler/业务直接操作 `tenant_setting_values`，或绕过 Service 调用 `ValueStore`
+
+### 业务侧（统一只读）
+
+- 底层：`platform/framework/setting.Provider.Get(ctx, tenantID, settingKey)`（默认值合并 + 可选缓存）
+- 推荐：模块内类型化封装，例如 `SettingService.Preferences(ctx)`
+- **禁止**：业务散落 `Get("xxx")` + 手工抠 JSON；**禁止**业务自行实现 Save（写操作一律走管理 Action）
+
+### 前端
+
+- 页面：`/system/settings` 按 Category 导航 + Definition 动态表单
+- 禁止后端下发组件路径/脚本；特殊控件仅通过前端白名单 Renderer 扩展
 
 ## 检查清单
 
