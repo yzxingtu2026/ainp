@@ -77,11 +77,21 @@ func TestSettingServiceTenantIsolationAndRevision(t *testing.T) {
 		t.Fatal(err)
 	}
 	categories := listed.(map[string]any)["categories"].([]system.SettingCategoryView)
-	if len(categories) != 1 || len(categories[0].Definitions) != 2 {
+	if len(categories) < 1 {
 		t.Fatalf("unexpected list: %#v", listed)
 	}
+	var general *system.SettingCategoryView
+	for i := range categories {
+		if categories[i].Key == "general" {
+			general = &categories[i]
+			break
+		}
+	}
+	if general == nil || len(general.Definitions) < 2 {
+		t.Fatalf("unexpected general category: %#v", listed)
+	}
 	var def system.SettingDefinitionView
-	for _, item := range categories[0].Definitions {
+	for _, item := range general.Definitions {
 		if item.Key == "general.preferences" {
 			def = item
 			break

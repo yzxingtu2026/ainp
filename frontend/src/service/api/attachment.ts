@@ -6,7 +6,10 @@ const ATTACHMENT_API = {
   bind: '/api/v1/system/attachments/bind',
   unbind: '/api/v1/system/attachments/unbind',
   listByResource: '/api/v1/system/attachments/list_by_resource',
-  delete: '/api/v1/system/attachments/delete'
+  delete: '/api/v1/system/attachments/delete',
+  list: '/api/v1/system/attachments/list',
+  get: '/api/v1/system/attachments/get',
+  policy: '/api/v1/system/attachments/policy'
 } as const;
 
 export function prepareAttachmentUpload(payload: {
@@ -86,5 +89,29 @@ export function deleteAttachment(id: string) {
     url: ATTACHMENT_API.delete,
     method: 'post',
     data: { id }
+  });
+}
+
+export function fetchAttachmentList(params: Api.Attachment.ListParams) {
+  return request<Api.Attachment.PageResult>({
+    url: ATTACHMENT_API.list,
+    method: 'post',
+    data: params
+  });
+}
+
+export function fetchAttachment(id: string) {
+  return request<Api.Attachment.Detail>({
+    url: ATTACHMENT_API.get,
+    method: 'post',
+    data: { id }
+  });
+}
+
+export function fetchAttachmentPolicy() {
+  return request<Api.Attachment.UploadPolicy>({
+    url: ATTACHMENT_API.policy,
+    method: 'post',
+    data: {}
   });
 }

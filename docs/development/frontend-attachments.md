@@ -7,7 +7,7 @@
 | 层级 | 职责 | 不负责 |
 |------|------|--------|
 | #18 附件后端 | prepare / transfer / bind / download / 策略 | 前端 UI |
-| 本 Issue 前端 | Client、队列、Upload/List/Field、Demo 联调 | 生产「附件中心」、Provider 分支 |
+| 本 Issue 前端 | Client、队列、Picker/Field/List、Demo、附件中心 | Provider 分支 |
 | 业务页面 | 传入已注册 `resourceType` / `resourceId` / `field` | 拼 object_key、长期缓存 token |
 
 ## Client
@@ -31,11 +31,14 @@
 
 | 组件 | 用途 |
 |------|------|
-| `AttachmentUpload` | 选择/拖拽上传与队列 UI |
+| `AttachmentPicker` | 选择器：我的上传 + 选择器内上传；业务主入口 |
+| `AttachmentUpload` | 队列上传 UI（由选择器/中心复用） |
 | `AttachmentList` | 列表、图片预览、下载、解绑/删除确认 |
-| `AttachmentField` | 业务字段封装：有 `resourceId` 时上传后自动 bind；无则临时 pending，业务保存后 `bindPending` |
+| `AttachmentField` | 打开选择器并绑定到 resource；无 resourceId 时临时 pending |
 
-入口在业务页，不是附件中心。Demo：`/demo/attachments`（`demo.task` / `demo-task-1`）。
+有效上传策略：`POST .../attachments/policy`（设置覆盖 + 代码默认）。附件中心：`/system/attachments`。
+
+Demo：`/demo/attachments`（选择器主路径）。
 
 ## 安全
 

@@ -174,6 +174,7 @@ const routeMap: RouteMap = {
   "login": "/login/:module(pwd-login|code-login|register|reset-pwd|bind-wechat)?",
   "setup": "/setup",
   "system": "/system",
+  "system_attachments": "/system/attachments",
   "system_profile": "/system/profile",
   "system_roles": "/system/roles",
   "system_settings": "/system/settings",

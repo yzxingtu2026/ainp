@@ -335,6 +335,7 @@ declare namespace App {
         delete: string;
         deleteSuccess: string;
         confirmDelete: string;
+        detail: string;
         edit: string;
         warning: string;
         error: string;
@@ -512,6 +513,24 @@ declare namespace App {
           downloadFailed: string;
           noUploadPermission: string;
           noBindPermission: string;
+          openPicker: string;
+          pickerTitle: string;
+          pickerMine: string;
+          pickerUpload: string;
+          pickerConfirm: string;
+          searchName: string;
+          maxCountReached: string;
+          centerTitle: string;
+          detailTitle: string;
+          fileName: string;
+          contentType: string;
+          size: string;
+          statusLabel: string;
+          statusAll: string;
+          uploader: string;
+          createdAt: string;
+          links: string;
+          noLinks: string;
           status: {
             queued: string;
             preparing: string;

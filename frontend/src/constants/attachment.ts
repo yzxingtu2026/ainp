@@ -12,7 +12,10 @@ export const ATTACHMENT_ACTIONS = {
   bind: 'system.attachment_bind',
   unbind: 'system.attachment_unbind',
   listByResource: 'system.attachment_list_by_resource',
-  delete: 'system.attachment_delete'
+  delete: 'system.attachment_delete',
+  list: 'system.attachment_list',
+  get: 'system.attachment_get',
+  policyGet: 'system.attachment_policy_get'
 } as const;
 
 /** 与后端 DefaultUploadPolicy 对齐的前端预校验默认值（非唯一安全边界）。 */

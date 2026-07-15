@@ -26,7 +26,14 @@ export function setupElegantRouter() {
 
       const constantRoutes: RouteKey[] = ['login', 'setup', '403', '404', '500'];
       // 业务页由后端 Metadata 注入菜单；扫目录生成的静态路由不进侧栏，避免 route.xxx 与中文菜单重复
-      const backendDrivenMenus: string[] = ['demo', 'demo_hello', 'demo_attachments', 'system', 'system_profile'];
+      const backendDrivenMenus: string[] = [
+        'demo',
+        'demo_hello',
+        'demo_attachments',
+        'system',
+        'system_profile',
+        'system_attachments'
+      ];
 
       const meta: Partial<RouteMeta> = {
         title: key,

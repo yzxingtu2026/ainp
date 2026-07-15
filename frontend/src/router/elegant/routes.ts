@@ -129,6 +129,16 @@ export const generatedRoutes: GeneratedRoute[] = [
     },
     children: [
       {
+        name: 'system_attachments',
+        path: '/system/attachments',
+        component: 'view.system_attachments',
+        meta: {
+          title: 'system_attachments',
+          i18nKey: 'route.system_attachments',
+          hideInMenu: true
+        }
+      },
+      {
         name: 'system_profile',
         path: '/system/profile',
         component: 'view.system_profile',

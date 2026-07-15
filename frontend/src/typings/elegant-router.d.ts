@@ -28,6 +28,7 @@ declare module "@elegant-router/types" {
     "login": "/login/:module(pwd-login|code-login|register|reset-pwd|bind-wechat)?";
     "setup": "/setup";
     "system": "/system";
+    "system_attachments": "/system/attachments";
     "system_profile": "/system/profile";
     "system_roles": "/system/roles";
     "system_settings": "/system/settings";
@@ -97,6 +98,7 @@ declare module "@elegant-router/types" {
     | "demo_attachments"
     | "demo_hello"
     | "home"
+    | "system_attachments"
     | "system_profile"
     | "system_roles"
     | "system_settings"
