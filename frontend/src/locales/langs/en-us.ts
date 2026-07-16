@@ -318,6 +318,7 @@ const local: App.I18n.Schema = {
     title: 'Log Center',
     detail: 'Log Details',
     noProvider: 'No log source is available. Configure a provider with trusted tenant filtering.',
+    providerUnavailable: 'Log providers are unavailable. Check Loki and its read-only credentials.',
     timestamp: 'Timestamp',
     level: 'Level',
     source: 'Source',
@@ -326,7 +327,9 @@ const local: App.I18n.Schema = {
     keyword: 'Keyword',
     message: 'Message',
     correlation: 'Correlation IDs',
-    attributes: 'Attributes'
+    attributes: 'Attributes',
+    applicationLogs: 'Application Logs',
+    workerLogs: 'Worker Logs'
   },
   page: {
     setting: {

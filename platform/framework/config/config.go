@@ -9,17 +9,40 @@ import (
 )
 
 type Config struct {
-	Server    ServerConfig   `yaml:"server"`
-	Database  DatabaseConfig `yaml:"database"`
-	Logging   LoggingConfig  `yaml:"logging"`
-	Auth      AuthConfig     `yaml:"auth"`
-	I18n      I18nConfig     `yaml:"i18n"`
-	Storage   StorageConfig  `yaml:"storage"`
-	Outbox    OutboxConfig   `yaml:"outbox"`
-	Redis     RedisConfig    `yaml:"redis"`
-	Jobs      JobsConfig     `yaml:"jobs"`
-	StateFile string         `yaml:"state_file"` // 安装状态文件路径，默认 configs/state.yaml
+	Server    ServerConfig    `yaml:"server"`
+	Database  DatabaseConfig  `yaml:"database"`
+	Logging   LoggingConfig   `yaml:"logging"`
+	Auth      AuthConfig      `yaml:"auth"`
+	I18n      I18nConfig      `yaml:"i18n"`
+	Storage   StorageConfig   `yaml:"storage"`
+	Outbox    OutboxConfig    `yaml:"outbox"`
+	Redis     RedisConfig     `yaml:"redis"`
+	Jobs      JobsConfig      `yaml:"jobs"`
+	LogCenter LogCenterConfig `yaml:"log_center"`
+	StateFile string          `yaml:"state_file"` // 安装状态文件路径，默认 configs/state.yaml
 }
+
+type LogCenterConfig struct {
+	Loki LokiConfig `yaml:"loki"`
+}
+
+type LokiConfig struct {
+	Enabled          bool   `yaml:"enabled"`
+	Endpoint         string `yaml:"endpoint"`
+	Timeout          string `yaml:"timeout"`
+	UsernameEnv      string `yaml:"username_env"`
+	PasswordEnv      string `yaml:"password_env"`
+	BearerTokenEnv   string `yaml:"bearer_token_env"`
+	TenantHeaderEnv  string `yaml:"tenant_header_env"`
+	TenantLabel      string `yaml:"tenant_label"`
+	SourceLabel      string `yaml:"source_label"`
+	ApplicationValue string `yaml:"application_value"`
+	WorkerValue      string `yaml:"worker_value"`
+	ServiceLabel     string `yaml:"service_label"`
+	ComponentLabel   string `yaml:"component_label"`
+}
+
+func (c LokiConfig) TimeoutDuration() time.Duration { return parseDurationOr(c.Timeout, 5*time.Second) }
 
 // RedisConfig is deployment secret/config for Asynq (not tenant settings).
 type RedisConfig struct {
@@ -46,14 +69,14 @@ func (c RedisConfig) WriteTimeoutDuration() time.Duration {
 // JobsConfig controls background job workers / enqueue (Issue #21).
 type JobsConfig struct {
 	// Enabled defaults to false when omitted (HTTP can run without Redis).
-	Enabled            *bool          `yaml:"enabled"`
-	Concurrency        int            `yaml:"concurrency"`
-	Queues             map[string]int `yaml:"queues"`
-	DefaultTimeout     string         `yaml:"default_timeout"`
-	MaxPayloadBytes    int            `yaml:"max_payload_bytes"`
-	ShutdownTimeout    string         `yaml:"shutdown_timeout"`
-	RecoveryInterval   string         `yaml:"recovery_interval"`
-	EmbeddedWorker     bool           `yaml:"embedded_worker"` // dev-only: run worker inside HTTP process
+	Enabled          *bool          `yaml:"enabled"`
+	Concurrency      int            `yaml:"concurrency"`
+	Queues           map[string]int `yaml:"queues"`
+	DefaultTimeout   string         `yaml:"default_timeout"`
+	MaxPayloadBytes  int            `yaml:"max_payload_bytes"`
+	ShutdownTimeout  string         `yaml:"shutdown_timeout"`
+	RecoveryInterval string         `yaml:"recovery_interval"`
+	EmbeddedWorker   bool           `yaml:"embedded_worker"` // dev-only: run worker inside HTTP process
 }
 
 func (c JobsConfig) IsEnabled() bool {
@@ -273,6 +296,27 @@ func (c *Config) applyDefaults() {
 	if c.Jobs.RecoveryInterval == "" {
 		c.Jobs.RecoveryInterval = "30s"
 	}
+	if c.LogCenter.Loki.Timeout == "" {
+		c.LogCenter.Loki.Timeout = "5s"
+	}
+	if c.LogCenter.Loki.TenantLabel == "" {
+		c.LogCenter.Loki.TenantLabel = "tenant_id"
+	}
+	if c.LogCenter.Loki.SourceLabel == "" {
+		c.LogCenter.Loki.SourceLabel = "process"
+	}
+	if c.LogCenter.Loki.ApplicationValue == "" {
+		c.LogCenter.Loki.ApplicationValue = "application"
+	}
+	if c.LogCenter.Loki.WorkerValue == "" {
+		c.LogCenter.Loki.WorkerValue = "worker"
+	}
+	if c.LogCenter.Loki.ServiceLabel == "" {
+		c.LogCenter.Loki.ServiceLabel = "service"
+	}
+	if c.LogCenter.Loki.ComponentLabel == "" {
+		c.LogCenter.Loki.ComponentLabel = "component"
+	}
 }
 
 // applyEnvOverrides 环境变量优先级高于配置文件。
@@ -310,6 +354,14 @@ func (c *Config) Validate(requireDSN bool) error {
 	}
 	if _, err := time.ParseDuration(c.Auth.JWT.TTL); err != nil {
 		return fmt.Errorf("auth.jwt.ttl is invalid: %w", err)
+	}
+	if c.LogCenter.Loki.Enabled {
+		if c.LogCenter.Loki.Endpoint == "" {
+			return fmt.Errorf("log_center.loki.endpoint is required when enabled")
+		}
+		if _, err := time.ParseDuration(c.LogCenter.Loki.Timeout); err != nil {
+			return fmt.Errorf("log_center.loki.timeout is invalid: %w", err)
+		}
 	}
 	return nil
 }

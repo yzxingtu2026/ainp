@@ -133,6 +133,8 @@ declare namespace Api {
       name: string;
       display_name: string;
       capabilities: { tenant_filter: boolean; levels?: string[]; description?: string };
+      available: boolean;
+      status: string;
     }
     interface LogQuery extends PageQuery {
       source: string;
