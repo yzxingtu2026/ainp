@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { h, onMounted, reactive, ref } from 'vue';
+import { h, onMounted, reactive, ref, computed } from 'vue';
 import type { DataTableColumns, FormInst } from 'naive-ui';
 import { NButton, NCard, NDataTable, NDivider, NDrawer, NDrawerContent, NForm, NFormItem, NInput, NPopconfirm, NSpace, NSwitch, NTag } from 'naive-ui';
 import { $t } from '@/locales';
@@ -14,8 +14,48 @@ import { formatDateTime } from '@/utils/datetime';
 defineOptions({ name: 'SystemNotificationTemplates' });
 
 const loading = ref(false);
-const records = ref<Api.Notification.TemplateOverride[]>([]);
+const records = ref<Api.Notification.TemplateDefinitionItem[]>([]);
 
+/** Flattened row: one per template variant (channel+locale) */
+interface FlatRow {
+  definition_key: string;
+  category: string;
+  name_key: string;
+  priority: string;
+  allowed_channels: string[];
+  variables: Api.Notification.VariableField[];
+  channel: string;
+  locale: string;
+  default_subject: string;
+  default_body: string;
+  has_override: boolean;
+  override: Api.Notification.TemplateOverrideInfo | null;
+}
+
+const flatRows = computed<FlatRow[]>(() => {
+  const rows: FlatRow[] = [];
+  for (const def of records.value) {
+    for (const tpl of def.templates) {
+      rows.push({
+        definition_key: def.definition_key,
+        category: def.category,
+        name_key: def.name_key,
+        priority: def.priority,
+        allowed_channels: def.allowed_channels,
+        variables: def.variables,
+        channel: tpl.channel,
+        locale: tpl.locale,
+        default_subject: tpl.default_subject,
+        default_body: tpl.default_body,
+        has_override: tpl.has_override,
+        override: tpl.override
+      });
+    }
+  }
+  return rows;
+});
+
+// ── Editor ──
 const editorVisible = ref(false);
 const editorSaving = ref(false);
 const formRef = ref<FormInst | null>(null);
@@ -28,6 +68,7 @@ const editForm = reactive({
   enabled: true
 });
 
+// ── Preview ──
 const previewVisible = ref(false);
 const previewLoading = ref(false);
 const previewData = ref<Api.Notification.PreviewData | null>(null);
@@ -38,44 +79,87 @@ const previewForm = reactive({
   variables: '{}'
 });
 
+const priorityTagType: Record<string, 'default' | 'info' | 'success' | 'warning' | 'error'> = {
+  low: 'default',
+  normal: 'info',
+  high: 'warning',
+  critical: 'error'
+};
 
-const columns: DataTableColumns<Api.Notification.TemplateOverride> = [
-  { title: 'Definition Key', key: 'definition_key', width: 200, ellipsis: { tooltip: true } },
+const columns: DataTableColumns<FlatRow> = [
   {
-    title: 'Channel',
+    title: $t('notificationAdmin.colDefinition'),
+    key: 'definition_key',
+    width: 220,
+    ellipsis: { tooltip: true },
+    render: row => [
+      h('div', { class: 'font-mono text-13px' }, row.definition_key),
+      h('div', { class: 'text-12px opacity-60' }, row.category)
+    ]
+  },
+  {
+    title: $t('notificationAdmin.colPriority'),
+    key: 'priority',
+    width: 80,
+    render: row => h(NTag, { type: priorityTagType[row.priority] || 'default', size: 'small' }, { default: () => row.priority })
+  },
+  {
+    title: $t('notificationAdmin.colChannel'),
     key: 'channel',
-    width: 100,
-    render: row => row.channel
-  },
-  { title: 'Locale', key: 'locale', width: 90 },
-  { title: 'Subject', key: 'subject', minWidth: 200, ellipsis: { tooltip: true } },
-  {
-    title: 'Enabled',
-    key: 'enabled',
     width: 90,
-    render: row => h(NTag, { type: row.enabled ? 'success' : 'default', size: 'small' }, { default: () => (row.enabled ? '✓' : '✗') })
+    render: row => h(NTag, { size: 'small', bordered: false }, { default: () => row.channel })
+  },
+  { title: $t('notificationAdmin.colLocale'), key: 'locale', width: 80 },
+  {
+    title: $t('notificationAdmin.colDefaultSubject'),
+    key: 'default_subject',
+    minWidth: 180,
+    ellipsis: { tooltip: true },
+    render: row => row.default_subject || '—'
   },
   {
-    title: 'Updated At',
-    key: 'updated_at',
+    title: $t('notificationAdmin.colOverride'),
+    key: 'has_override',
+    width: 100,
+    render: row => {
+      if (!row.has_override) {
+        return h(NTag, { size: 'small', type: 'default' }, { default: () => $t('notificationAdmin.noOverride') });
+      }
+      const enabled = row.override?.enabled;
+      return h(
+        NTag,
+        { size: 'small', type: enabled ? 'success' : 'error' },
+        { default: () => (enabled ? $t('notificationAdmin.overrideOn') : $t('notificationAdmin.overrideOff')) }
+      );
+    }
+  },
+  {
+    title: $t('notificationAdmin.colOverrideUpdated'),
+    key: 'override_updated',
     width: 170,
-    render: row => formatDateTime(row.updated_at)
+    render: row => (row.override ? formatDateTime(row.override.updated_at) : '—')
   },
   {
-    title: 'Actions',
+    title: $t('notificationAdmin.colActions'),
     key: 'actions',
-    width: 200,
+    width: 220,
     render: row => [
       h(NButton, { text: true, type: 'primary', size: 'small', onClick: () => openEditor(row) }, { default: () => $t('common.edit') }),
+      row.has_override
+        ? h(
+            NPopconfirm,
+            { onPositiveClick: () => handleReset(row) },
+            {
+              trigger: () => h(NButton, { text: true, type: 'warning', size: 'small', style: 'margin-left:8px' }, { default: () => $t('common.reset') }),
+              default: () => $t('notificationAdmin.resetConfirm')
+            }
+          )
+        : null,
       h(
-        NPopconfirm,
-        { onPositiveClick: () => handleReset(row) },
-        {
-          trigger: () => h(NButton, { text: true, type: 'warning', size: 'small', style: 'margin-left:8px' }, { default: () => $t('common.reset') }),
-          default: () => $t('notificationAdmin.resetConfirm')
-        }
-      ),
-      h(NButton, { text: true, type: 'info', size: 'small', style: 'margin-left:8px', onClick: () => openPreview(row) }, { default: () => $t('notificationAdmin.preview') })
+        NButton,
+        { text: true, type: 'info', size: 'small', style: 'margin-left:8px', onClick: () => openPreview(row) },
+        { default: () => $t('notificationAdmin.preview') }
+      )
     ]
   }
 ];
@@ -92,13 +176,20 @@ async function loadList() {
   }
 }
 
-function openEditor(row: Api.Notification.TemplateOverride) {
+function openEditor(row: FlatRow) {
   editForm.definition_key = row.definition_key;
   editForm.channel = row.channel;
   editForm.locale = row.locale;
-  editForm.subject = row.subject;
-  editForm.body = row.body;
-  editForm.enabled = row.enabled;
+  // 如果有覆盖，加载覆盖内容；否则加载默认内容作为编辑起点
+  if (row.override) {
+    editForm.subject = row.override.subject;
+    editForm.body = row.override.body;
+    editForm.enabled = row.override.enabled;
+  } else {
+    editForm.subject = row.default_subject;
+    editForm.body = row.default_body;
+    editForm.enabled = true;
+  }
   editorVisible.value = true;
 }
 
@@ -117,7 +208,7 @@ async function handleSave() {
   }
 }
 
-async function handleReset(row: Api.Notification.TemplateOverride) {
+async function handleReset(row: FlatRow) {
   const res = await fetchResetNotificationTemplate({
     definition_key: row.definition_key,
     channel: row.channel,
@@ -129,7 +220,7 @@ async function handleReset(row: Api.Notification.TemplateOverride) {
   }
 }
 
-function openPreview(row: Api.Notification.TemplateOverride) {
+function openPreview(row: FlatRow) {
   previewForm.definition_key = row.definition_key;
   previewForm.channel = row.channel;
   previewForm.locale = row.locale;
@@ -173,7 +264,7 @@ onMounted(loadList);
       </template>
       <NDataTable
         :columns="columns"
-        :data="records"
+        :data="flatRows"
         :loading="loading"
         :bordered="false"
         :pagination="false"
@@ -272,7 +363,7 @@ onMounted(loadList);
 }
 
 .preview-block {
-  background: var(--n-color-target);
+  background: rgba(0, 0, 0, 0.04);
   padding: 8px 12px;
   border-radius: 4px;
   font-size: 13px;

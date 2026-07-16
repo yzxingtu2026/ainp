@@ -577,7 +577,25 @@ const local: App.I18n.Schema = {
     resetConfirm: 'Reset to code default template?',
     retry: 'Retry',
     retryConfirm: 'Retry this delivery?',
-    retrySuccess: 'Re-queued'
+    retrySuccess: 'Re-queued',
+    noOverride: 'Default',
+    overrideOn: 'Overridden',
+    overrideOff: 'Disabled',
+    colDefinition: 'Definition',
+    colPriority: 'Priority',
+    colChannel: 'Channel',
+    colLocale: 'Locale',
+    colDefaultSubject: 'Default Subject',
+    colOverride: 'Override',
+    colOverrideUpdated: 'Override Updated',
+    colActions: 'Actions',
+    colId: 'ID',
+    colRecipient: 'Recipient',
+    colStatus: 'Status',
+    colAttempts: 'Attempts',
+    colLastError: 'Last Error',
+    colFailedAt: 'Failed At',
+    colCreatedAt: 'Created At'
   }
 };
 

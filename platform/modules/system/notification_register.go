@@ -187,11 +187,104 @@ func (s *NotificationTemplateService) List(ctx context.Context, _ json.RawMessag
 	if _, err := requireTenant(ctx); err != nil {
 		return nil, err
 	}
+
+	// 1. 获取代码注册的所有通知定义
+	defs := s.registry.List()
+
+	// 2. 获取数据库中的租户覆盖
 	overrides, err := s.repo.ListTemplateOverrides(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"items": overrides}, nil
+
+	// 3. 构建覆盖索引 map[definition_key:channel:locale] -> override
+	overrideMap := make(map[string]*NotificationTemplateOverride)
+	for i := range overrides {
+		key := overrides[i].DefinitionKey + ":" + overrides[i].Channel + ":" + overrides[i].Locale
+		overrideMap[key] = &overrides[i]
+	}
+
+	// 4. 合并：以定义为主体，附加覆盖信息
+	items := make([]map[string]any, 0, len(defs))
+	for _, def := range defs {
+		// 收集变量字段
+		varFields := make([]map[string]any, len(def.Variables.Fields))
+		for i, f := range def.Variables.Fields {
+			varFields[i] = map[string]any{
+				"name":      f.Name,
+				"type":      f.Type,
+				"required":  f.Required,
+				"sensitive": f.Sensitive,
+			}
+		}
+
+		// 收集模板变体（默认值 + 覆盖）
+		templates := make([]map[string]any, 0, len(def.Templates.Variants))
+		for _, ct := range def.Templates.Variants {
+			key := def.Key + ":" + string(ct.Channel) + ":" + ct.Locale
+			ov := overrideMap[key]
+
+			// 默认 subject/body 取决于渠道
+			defaultSubject := ct.Subject
+			defaultBody := ct.Body
+			if ct.InApp != nil {
+				if defaultSubject == "" {
+					defaultSubject = ct.InApp.Title
+				}
+				if defaultBody == "" {
+					defaultBody = ct.InApp.Body
+				}
+			}
+			if ct.Email != nil && defaultSubject == "" {
+				defaultSubject = ct.Email.Subject
+			}
+
+			entry := map[string]any{
+				"channel":         string(ct.Channel),
+				"locale":          ct.Locale,
+				"default_subject": defaultSubject,
+				"default_body":    defaultBody,
+				"has_override":    ov != nil,
+			}
+
+			if ov != nil {
+				entry["override"] = map[string]any{
+					"subject":    ov.Subject,
+					"body":       ov.Body,
+					"enabled":    ov.Enabled,
+					"updated_at": ov.UpdatedAt,
+				}
+			} else {
+				entry["override"] = nil
+			}
+
+			templates = append(templates, entry)
+		}
+
+		// 转换 channel slice 为 string slice
+		allowedChannels := make([]string, len(def.AllowedChannels))
+		for i, ch := range def.AllowedChannels {
+			allowedChannels[i] = string(ch)
+		}
+		defaultChannels := make([]string, len(def.DefaultChannels))
+		for i, ch := range def.DefaultChannels {
+			defaultChannels[i] = string(ch)
+		}
+
+		items = append(items, map[string]any{
+			"definition_key":   def.Key,
+			"category":         def.Category,
+			"name_key":         def.NameKey,
+			"description_key":  def.DescriptionKey,
+			"priority":         string(def.Priority),
+			"allowed_channels": allowedChannels,
+			"default_channels": defaultChannels,
+			"variables":        varFields,
+			"templates":        templates,
+		})
+	}
+
+	return map[string]any{"items": items}, nil
 }
 
 func (s *NotificationTemplateService) Update(ctx context.Context, input json.RawMessage) (any, error) {
@@ -547,6 +640,225 @@ func registerNotificationActions(a *app.App) error {
 		BindAction: ActionNotificationDeliveryList,
 		Module:     "system",
 		Order:      7,
+	}); err != nil {
+		return err
+	}
+
+	// ── Register notification definitions (code-level defaults) ──
+
+	// 1. 用户欢迎通知
+	if err := a.RegisterNotification(notification.Definition{
+		Key:             "user.welcome",
+		Category:        "user",
+		Surface:         notification.SurfaceTenant,
+		NameKey:         "notification.user.welcome.name",
+		DescriptionKey:  "notification.user.welcome.description",
+		Priority:        notification.PriorityNormal,
+		AllowedChannels: []notification.Channel{notification.ChannelInApp},
+		DefaultChannels: []notification.Channel{notification.ChannelInApp},
+		Variables: notification.VariableSchema{
+			Fields: []notification.VariableField{
+				{Name: "username", Type: "string", Required: true},
+				{Name: "tenant_name", Type: "string", Required: false},
+			},
+		},
+		Templates: &notification.TemplateDefinition{
+			Version: 1,
+			Variants: map[string]notification.ChannelTemplate{
+				"in_app:zh-CN": {
+					Channel: notification.ChannelInApp, Locale: "zh-CN",
+					InApp: &notification.InAppTemplate{
+						Title:   "欢迎，{{.username}}",
+						Body:    "您已成功加入{{.tenant_name}}，欢迎开始使用！",
+						Icon:    "mdi:account-check",
+						Summary: "新用户欢迎通知",
+					},
+				},
+				"in_app:en": {
+					Channel: notification.ChannelInApp, Locale: "en",
+					InApp: &notification.InAppTemplate{
+						Title:   "Welcome, {{.username}}",
+						Body:    "You have joined {{.tenant_name}}. Welcome aboard!",
+						Icon:    "mdi:account-check",
+						Summary: "New user welcome notification",
+					},
+				},
+			},
+		},
+	}); err != nil {
+		return err
+	}
+
+	// 2. 密码重置通知
+	if err := a.RegisterNotification(notification.Definition{
+		Key:             "user.password_reset",
+		Category:        "security",
+		Surface:         notification.SurfaceTenant,
+		NameKey:         "notification.user.password_reset.name",
+		DescriptionKey:  "notification.user.password_reset.description",
+		Priority:        notification.PriorityHigh,
+		AllowedChannels: []notification.Channel{notification.ChannelInApp, notification.ChannelEmail},
+		DefaultChannels: []notification.Channel{notification.ChannelInApp},
+		Variables: notification.VariableSchema{
+			Fields: []notification.VariableField{
+				{Name: "username", Type: "string", Required: true},
+				{Name: "reset_link", Type: "string", Required: true, Ephemeral: true},
+				{Name: "expires_in", Type: "string", Required: false},
+			},
+		},
+		Templates: &notification.TemplateDefinition{
+			Version: 1,
+			Variants: map[string]notification.ChannelTemplate{
+				"in_app:zh-CN": {
+					Channel: notification.ChannelInApp, Locale: "zh-CN",
+					InApp: &notification.InAppTemplate{
+						Title:   "密码重置请求",
+						Body:    "{{.username}}，您请求重置密码，请在{{.expires_in}}内完成操作。",
+						Icon:    "mdi:lock-reset",
+						Summary: "安全验证通知",
+					},
+				},
+				"in_app:en": {
+					Channel: notification.ChannelInApp, Locale: "en",
+					InApp: &notification.InAppTemplate{
+						Title:   "Password Reset Request",
+						Body:    "{{.username}}, you requested a password reset. Please complete within {{.expires_in}}.",
+						Icon:    "mdi:lock-reset",
+						Summary: "Security notification",
+					},
+				},
+			},
+		},
+	}); err != nil {
+		return err
+	}
+
+	// 3. 角色变更通知
+	if err := a.RegisterNotification(notification.Definition{
+		Key:             "system.role_changed",
+		Category:        "system",
+		Surface:         notification.SurfaceTenant,
+		NameKey:         "notification.system.role_changed.name",
+		DescriptionKey:  "notification.system.role_changed.description",
+		Priority:        notification.PriorityNormal,
+		AllowedChannels: []notification.Channel{notification.ChannelInApp},
+		DefaultChannels: []notification.Channel{notification.ChannelInApp},
+		Variables: notification.VariableSchema{
+			Fields: []notification.VariableField{
+				{Name: "username", Type: "string", Required: true},
+				{Name: "role_name", Type: "string", Required: true},
+				{Name: "action", Type: "string", Required: true}, // "assigned" or "removed"
+			},
+		},
+		Templates: &notification.TemplateDefinition{
+			Version: 1,
+			Variants: map[string]notification.ChannelTemplate{
+				"in_app:zh-CN": {
+					Channel: notification.ChannelInApp, Locale: "zh-CN",
+					InApp: &notification.InAppTemplate{
+						Title:   "角色变更通知",
+						Body:    "{{.username}}，您的角色已{{.action}}：{{.role_name}}",
+						Icon:    "mdi:shield-account",
+						Summary: "角色权限变更",
+					},
+				},
+				"in_app:en": {
+					Channel: notification.ChannelInApp, Locale: "en",
+					InApp: &notification.InAppTemplate{
+						Title:   "Role Changed",
+						Body:    "{{.username}}, your role has been {{.action}}: {{.role_name}}",
+						Icon:    "mdi:shield-account",
+						Summary: "Role permission change",
+					},
+				},
+			},
+		},
+	}); err != nil {
+		return err
+	}
+
+	// 4. 系统公告
+	if err := a.RegisterNotification(notification.Definition{
+		Key:             "system.announcement",
+		Category:        "system",
+		Surface:         notification.SurfaceTenant,
+		NameKey:         "notification.system.announcement.name",
+		DescriptionKey:  "notification.system.announcement.description",
+		Priority:        notification.PriorityNormal,
+		AllowedChannels: []notification.Channel{notification.ChannelInApp},
+		DefaultChannels: []notification.Channel{notification.ChannelInApp},
+		Variables: notification.VariableSchema{
+			Fields: []notification.VariableField{
+				{Name: "title", Type: "string", Required: true},
+				{Name: "content", Type: "string", Required: true},
+				{Name: "importance", Type: "string", Required: false}, // "info", "warning"
+			},
+		},
+		Templates: &notification.TemplateDefinition{
+			Version: 1,
+			Variants: map[string]notification.ChannelTemplate{
+				"in_app:zh-CN": {
+					Channel: notification.ChannelInApp, Locale: "zh-CN",
+					InApp: &notification.InAppTemplate{
+						Title:   "{{.title}}",
+						Body:    "{{.content}}",
+						Icon:    "mdi:bullhorn",
+						Summary: "系统公告",
+					},
+				},
+				"in_app:en": {
+					Channel: notification.ChannelInApp, Locale: "en",
+					InApp: &notification.InAppTemplate{
+						Title:   "{{.title}}",
+						Body:    "{{.content}}",
+						Icon:    "mdi:bullhorn",
+						Summary: "System Announcement",
+					},
+				},
+			},
+		},
+	}); err != nil {
+		return err
+	}
+
+	// 5. 测试通知（用于验证通知系统是否正常工作）
+	if err := a.RegisterNotification(notification.Definition{
+		Key:             "system.notification_test",
+		Category:        "system",
+		Surface:         notification.SurfaceTenant,
+		NameKey:         "notification.system.notification_test.name",
+		DescriptionKey:  "notification.system.notification_test.description",
+		Priority:        notification.PriorityLow,
+		AllowedChannels: []notification.Channel{notification.ChannelInApp},
+		DefaultChannels: []notification.Channel{notification.ChannelInApp},
+		Variables: notification.VariableSchema{
+			Fields: []notification.VariableField{
+				{Name: "message", Type: "string", Required: false},
+			},
+		},
+		Templates: &notification.TemplateDefinition{
+			Version: 1,
+			Variants: map[string]notification.ChannelTemplate{
+				"in_app:zh-CN": {
+					Channel: notification.ChannelInApp, Locale: "zh-CN",
+					InApp: &notification.InAppTemplate{
+						Title:   "测试通知",
+						Body:    "这是一条测试通知。{{if .message}}{{.message}}{{end}}",
+						Icon:    "mdi:test-tube",
+						Summary: "通知系统连通性测试",
+					},
+				},
+				"in_app:en": {
+					Channel: notification.ChannelInApp, Locale: "en",
+					InApp: &notification.InAppTemplate{
+						Title:   "Test Notification",
+						Body:    "This is a test notification.{{if .message}} {{.message}}{{end}}",
+						Icon:    "mdi:test-tube",
+						Summary: "Notification system connectivity test",
+					},
+				},
+			},
+		},
 	}); err != nil {
 		return err
 	}

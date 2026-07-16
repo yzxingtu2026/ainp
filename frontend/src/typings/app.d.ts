@@ -777,6 +777,24 @@ declare namespace App {
         retry: string;
         retryConfirm: string;
         retrySuccess: string;
+        noOverride: string;
+        overrideOn: string;
+        overrideOff: string;
+        colDefinition: string;
+        colPriority: string;
+        colChannel: string;
+        colLocale: string;
+        colDefaultSubject: string;
+        colOverride: string;
+        colOverrideUpdated: string;
+        colActions: string;
+        colId: string;
+        colRecipient: string;
+        colStatus: string;
+        colAttempts: string;
+        colLastError: string;
+        colFailedAt: string;
+        colCreatedAt: string;
       };
       datatable: {
         itemCount: string;

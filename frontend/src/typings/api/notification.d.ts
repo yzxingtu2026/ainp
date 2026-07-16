@@ -42,25 +42,48 @@ declare namespace Api {
       affected: number;
     }
 
-    /** Template override item */
-    interface TemplateOverride {
-      id: string;
-      tenant_id: string;
-      definition_key: string;
-      channel: string;
-      locale: string;
-      version: number;
+    /** Template override info (from database) */
+    interface TemplateOverrideInfo {
       subject: string;
       body: string;
       enabled: boolean;
-      updated_by: string;
-      created_at: string;
       updated_at: string;
+    }
+
+    /** Template variant with default + override */
+    interface TemplateVariantItem {
+      channel: string;
+      locale: string;
+      default_subject: string;
+      default_body: string;
+      has_override: boolean;
+      override: TemplateOverrideInfo | null;
+    }
+
+    /** Variable field definition */
+    interface VariableField {
+      name: string;
+      type: string;
+      required: boolean;
+      sensitive: boolean;
+    }
+
+    /** Merged template definition (code default + tenant override) */
+    interface TemplateDefinitionItem {
+      definition_key: string;
+      category: string;
+      name_key: string;
+      description_key: string;
+      priority: string;
+      allowed_channels: string[];
+      default_channels: string[];
+      variables: VariableField[];
+      templates: TemplateVariantItem[];
     }
 
     /** Template list response */
     interface TemplateListData {
-      items: TemplateOverride[];
+      items: TemplateDefinitionItem[];
     }
 
     /** Template preview response */

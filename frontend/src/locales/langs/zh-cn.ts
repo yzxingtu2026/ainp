@@ -572,7 +572,25 @@ const local: App.I18n.Schema = {
     resetConfirm: '确定重置为代码默认模板？',
     retry: '重试',
     retryConfirm: '确定重试此投递？',
-    retrySuccess: '已重新入队'
+    retrySuccess: '已重新入队',
+    noOverride: '默认',
+    overrideOn: '已覆盖',
+    overrideOff: '已禁用',
+    colDefinition: '通知定义',
+    colPriority: '优先级',
+    colChannel: '渠道',
+    colLocale: '语言',
+    colDefaultSubject: '默认标题',
+    colOverride: '覆盖状态',
+    colOverrideUpdated: '覆盖更新时间',
+    colActions: '操作',
+    colId: 'ID',
+    colRecipient: '收件人',
+    colStatus: '状态',
+    colAttempts: '尝试次数',
+    colLastError: '最近错误',
+    colFailedAt: '失败时间',
+    colCreatedAt: '创建时间'
   }
 };
 

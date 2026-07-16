@@ -36,36 +36,36 @@ const statusTagType: Record<string, 'error' | 'warning' | 'success' | 'default'>
 };
 
 const columns: DataTableColumns<Api.Notification.DeliveryItem> = [
-  { title: 'ID', key: 'id', width: 120, ellipsis: { tooltip: true } },
-  { title: 'Channel', key: 'channel', width: 90 },
-  { title: 'Recipient', key: 'recipient_id', width: 120, ellipsis: { tooltip: true } },
+  { title: $t('notificationAdmin.colId'), key: 'id', width: 120, ellipsis: { tooltip: true } },
+  { title: $t('notificationAdmin.colChannel'), key: 'channel', width: 90 },
+  { title: $t('notificationAdmin.colRecipient'), key: 'recipient_id', width: 120, ellipsis: { tooltip: true } },
   {
-    title: 'Status',
+    title: $t('notificationAdmin.colStatus'),
     key: 'status',
     width: 100,
     render: row => h(NTag, { type: statusTagType[row.status] || 'default', size: 'small' }, { default: () => row.status })
   },
   {
-    title: 'Attempts',
+    title: $t('notificationAdmin.colAttempts'),
     key: 'attempts',
     width: 90,
     render: row => `${row.attempts}/${row.max_attempts}`
   },
-  { title: 'Last Error', key: 'last_error', minWidth: 200, ellipsis: { tooltip: true } },
+  { title: $t('notificationAdmin.colLastError'), key: 'last_error', minWidth: 200, ellipsis: { tooltip: true } },
   {
-    title: 'Failed At',
+    title: $t('notificationAdmin.colFailedAt'),
     key: 'failed_at',
     width: 170,
     render: row => (row.failed_at ? formatDateTime(row.failed_at) : '-')
   },
   {
-    title: 'Created At',
+    title: $t('notificationAdmin.colCreatedAt'),
     key: 'created_at',
     width: 170,
     render: row => formatDateTime(row.created_at)
   },
   {
-    title: 'Actions',
+    title: $t('notificationAdmin.colActions'),
     key: 'actions',
     width: 100,
     render: row => {
