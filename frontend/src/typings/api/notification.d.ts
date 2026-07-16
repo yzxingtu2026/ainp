@@ -41,5 +41,70 @@ declare namespace Api {
     interface MarkAllReadData {
       affected: number;
     }
+
+    /** Template override item */
+    interface TemplateOverride {
+      id: string;
+      tenant_id: string;
+      definition_key: string;
+      channel: string;
+      locale: string;
+      version: number;
+      subject: string;
+      body: string;
+      enabled: boolean;
+      updated_by: string;
+      created_at: string;
+      updated_at: string;
+    }
+
+    /** Template list response */
+    interface TemplateListData {
+      items: TemplateOverride[];
+    }
+
+    /** Template preview response */
+    interface PreviewData {
+      source: string;
+      version: number;
+      channel: string;
+      locale: string;
+      subject: string;
+      body: string;
+      title: string;
+      summary: string;
+      text_body: string;
+      html_body: string;
+      sms_text: string;
+      im_text: string;
+    }
+
+    /** Delivery record item */
+    interface DeliveryItem {
+      id: string;
+      tenant_id: string;
+      request_id: string;
+      recipient_type: string;
+      recipient_id: string;
+      channel: string;
+      provider: string;
+      status: string;
+      attempts: number;
+      max_attempts: number;
+      external_id: string;
+      last_error: string;
+      sent_at: string | null;
+      delivered_at: string | null;
+      failed_at: string | null;
+      scheduled_at: string | null;
+      created_at: string;
+      updated_at: string;
+    }
+
+    /** Delivery list response */
+    interface DeliveryListData {
+      items: DeliveryItem[];
+      total: number;
+    }
   }
 }

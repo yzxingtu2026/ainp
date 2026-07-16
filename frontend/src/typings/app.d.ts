@@ -764,6 +764,20 @@ declare namespace App {
         filterArchived: string;
         filterPlaceholder: string;
       };
+      notificationAdmin: {
+        templateTitle: string;
+        deliveryTitle: string;
+        editTemplate: string;
+        preview: string;
+        previewTitle: string;
+        render: string;
+        renderResult: string;
+        invalidJson: string;
+        resetConfirm: string;
+        retry: string;
+        retryConfirm: string;
+        retrySuccess: string;
+      };
       datatable: {
         itemCount: string;
         fixed: {

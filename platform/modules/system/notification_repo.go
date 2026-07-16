@@ -313,6 +313,28 @@ func (r *NotificationRepository) Unarchive(ctx context.Context, userID, notifica
 		Update("archived_at", sql.NullTime{}).Error
 }
 
+// RetryDelivery resets a failed/dead delivery back to pending for retry.
+func (r *NotificationRepository) RetryDelivery(ctx context.Context, deliveryID string) error {
+	result := r.db.WithContext(ctx).
+		Scopes(tenant.ScopeByTenant(ctx)).
+		Model(&NotificationDelivery{}).
+		Where("id = ? AND status IN ?", deliveryID, []string{string(notification.DeliveryFailed), string(notification.DeliveryDead)}).
+		Updates(map[string]any{
+			"status":     string(notification.DeliveryPending),
+			"attempts":   0,
+			"last_error": "",
+			"failed_at":  sql.NullTime{},
+			"updated_at": time.Now().UTC(),
+		})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
 // --- Helper ---
 
 func tenantIDFromCtx(ctx context.Context) string {

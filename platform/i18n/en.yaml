@@ -225,6 +225,8 @@ menu.system.users.title: "User Management"
 menu.system.roles.title: "Role Management"
 menu.system.settings.title: "Settings"
 menu.system.attachments.title: "Attachments"
+menu.system.notification_templates.title: "Notification Templates"
+menu.system.notification_deliveries.title: "Delivery Records"
 
 # ── Demo menus ──
 menu.demo.attachments.title: "Attachments"

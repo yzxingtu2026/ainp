@@ -56,3 +56,76 @@ export function fetchUnarchiveNotification(id: string) {
     data: { id }
   });
 }
+
+// ── Admin: Template override management ──
+
+/** List template overrides */
+export function fetchNotificationTemplates() {
+  return request<Api.Notification.TemplateListData>({
+    url: '/api/v1/system/notification/templates',
+    method: 'post'
+  });
+}
+
+/** Update or create a template override */
+export function fetchUpdateNotificationTemplate(params: {
+  definition_key: string;
+  channel: string;
+  locale: string;
+  subject: string;
+  body: string;
+  enabled?: boolean;
+}) {
+  return request({
+    url: '/api/v1/system/notification/templates/update',
+    method: 'post',
+    data: params
+  });
+}
+
+/** Reset a template override to code default */
+export function fetchResetNotificationTemplate(params: {
+  definition_key: string;
+  channel: string;
+  locale: string;
+}) {
+  return request({
+    url: '/api/v1/system/notification/templates/reset',
+    method: 'post',
+    data: params
+  });
+}
+
+/** Preview a template with variables (no delivery) */
+export function fetchPreviewNotificationTemplate(params: {
+  definition_key: string;
+  channel: string;
+  locale: string;
+  variables?: Record<string, any>;
+}) {
+  return request<Api.Notification.PreviewData>({
+    url: '/api/v1/system/notification/templates/preview',
+    method: 'post',
+    data: params
+  });
+}
+
+// ── Admin: Delivery management ──
+
+/** List failed deliveries */
+export function fetchDeliveryList(params: { current?: number; size?: number }) {
+  return request<Api.Notification.DeliveryListData>({
+    url: '/api/v1/system/notification/deliveries',
+    method: 'post',
+    data: params
+  });
+}
+
+/** Retry a failed delivery */
+export function fetchRetryDelivery(id: string) {
+  return request({
+    url: '/api/v1/system/notification/deliveries/retry',
+    method: 'post',
+    data: { id }
+  });
+}

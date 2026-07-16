@@ -339,7 +339,64 @@ func (s *NotificationDeliveryService) List(ctx context.Context, input json.RawMe
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"items": items, "total": total}, nil
+	// Map to API response with proper null serialization
+	result := make([]map[string]any, len(items))
+	for i, d := range items {
+		var sentAt, deliveredAt, failedAt, scheduledAt any
+		if d.SentAt != nil {
+			sentAt = d.SentAt
+		}
+		if d.DeliveredAt != nil {
+			deliveredAt = d.DeliveredAt
+		}
+		if d.FailedAt != nil {
+			failedAt = d.FailedAt
+		}
+		if d.ScheduledAt != nil {
+			scheduledAt = d.ScheduledAt
+		}
+		result[i] = map[string]any{
+			"id":             d.ID,
+			"tenant_id":      d.TenantID,
+			"request_id":     d.RequestID,
+			"recipient_type": d.RecipientType,
+			"recipient_id":   d.RecipientID,
+			"channel":        d.Channel,
+			"provider":       d.Provider,
+			"status":         d.Status,
+			"attempts":       d.Attempts,
+			"max_attempts":   d.MaxAttempts,
+			"external_id":    d.ExternalID,
+			"last_error":     d.LastError,
+			"sent_at":        sentAt,
+			"delivered_at":   deliveredAt,
+			"failed_at":      failedAt,
+			"scheduled_at":   scheduledAt,
+			"created_at":     d.CreatedAt,
+			"updated_at":     d.UpdatedAt,
+		}
+	}
+	return map[string]any{"items": result, "total": total}, nil
+}
+
+func (s *NotificationDeliveryService) Retry(ctx context.Context, input json.RawMessage) (any, error) {
+	ac, err := requireTenant(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var req struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(input, &req); err != nil || strings.TrimSpace(req.ID) == "" {
+		return nil, errs.ValidationKey("common.validation_failed", "id required")
+	}
+	if err := s.repo.RetryDelivery(ctx, req.ID); err != nil {
+		return nil, err
+	}
+	ac.AuditResourceType = "notification_delivery"
+	ac.AuditResourceID = req.ID
+	ac.AuditSummary = "retry failed delivery"
+	return map[string]any{"retried": true}, nil
 }
 
 // --- Registration ---
@@ -407,6 +464,7 @@ func registerNotificationActions(a *app.App) error {
 		{ActionNotificationTemplateUpdate, "/api/v1/system/notification/templates/update", "更新模板覆盖", "action.system.notification_template_update.name", "更新模板覆盖内容", "action.system.notification_template_update.description", &auditOn, tplSvc.Update},
 		{ActionNotificationTemplateReset, "/api/v1/system/notification/templates/reset", "重置模板覆盖", "action.system.notification_template_reset.name", "重置为代码默认模板", "action.system.notification_template_reset.description", &auditOn, tplSvc.Reset},
 		{ActionNotificationDeliveryList, "/api/v1/system/notification/deliveries", "Delivery 列表", "action.system.notification_delivery_list.name", "查询失败投递记录", "action.system.notification_delivery_list.description", &auditOff, deliverySvc.List},
+		{ActionNotificationDeliveryRetry, "/api/v1/system/notification/deliveries/retry", "重试投递", "action.system.notification_delivery_retry.name", "重试失败投递记录", "action.system.notification_delivery_retry.description", &auditOn, deliverySvc.Retry},
 		{ActionNotificationTemplatePreview, "/api/v1/system/notification/templates/preview", "模板预览", "action.system.notification_template_preview.name", "预览模板渲染结果（不触发投递）", "action.system.notification_template_preview.description", &auditOff, tplSvc.Preview},
 	}
 	for _, spec := range adminSpecs {
@@ -454,6 +512,41 @@ func registerNotificationActions(a *app.App) error {
 		Path:       "/notification/list",
 		Component:  "notification/list",
 		HideInMenu: true,
+	}); err != nil {
+		return err
+	}
+
+	// Admin management menus (visible in sidebar under system)
+	if err := a.RegisterMenu(menu.Menu{
+		ID:         "system.notification_templates",
+		ParentID:   "system.root",
+		Title:      "通知模板",
+		TitleKey:   "menu.system.notification_templates.title",
+		Icon:       "mdi:email-edit-outline",
+		Type:       menu.TypeMenu,
+		Path:       "/system/notification-templates",
+		Component:  "system/notification-templates",
+		Permission: ActionNotificationTemplateList,
+		BindAction: ActionNotificationTemplateList,
+		Module:     "system",
+		Order:      6,
+	}); err != nil {
+		return err
+	}
+
+	if err := a.RegisterMenu(menu.Menu{
+		ID:         "system.notification_deliveries",
+		ParentID:   "system.root",
+		Title:      "投递记录",
+		TitleKey:   "menu.system.notification_deliveries.title",
+		Icon:       "mdi:truck-delivery-outline",
+		Type:       menu.TypeMenu,
+		Path:       "/system/notification-deliveries",
+		Component:  "system/notification-deliveries",
+		Permission: ActionNotificationDeliveryList,
+		BindAction: ActionNotificationDeliveryList,
+		Module:     "system",
+		Order:      7,
 	}); err != nil {
 		return err
 	}

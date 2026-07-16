@@ -248,6 +248,8 @@ const local: App.I18n.Schema = {
     system_roles: 'Roles',
     system_settings: 'Settings',
     system_attachments: 'Attachments',
+    'system_notification-deliveries': 'Delivery Records',
+    'system_notification-templates': 'Notification Templates',
     notification: 'Notifications',
     notification_list: 'Notification List',
     setup: 'Setup'
@@ -562,6 +564,20 @@ const local: App.I18n.Schema = {
     filterUnread: 'Unread',
     filterArchived: 'Include Archived',
     filterPlaceholder: 'Filter'
+  },
+  notificationAdmin: {
+    templateTitle: 'Notification Template Management',
+    deliveryTitle: 'Delivery Records',
+    editTemplate: 'Edit Template Override',
+    preview: 'Preview',
+    previewTitle: 'Template Preview',
+    render: 'Render',
+    renderResult: 'Render Result',
+    invalidJson: 'Invalid JSON format',
+    resetConfirm: 'Reset to code default template?',
+    retry: 'Retry',
+    retryConfirm: 'Retry this delivery?',
+    retrySuccess: 'Re-queued'
   }
 };
 

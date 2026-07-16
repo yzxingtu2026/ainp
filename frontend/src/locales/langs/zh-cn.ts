@@ -244,6 +244,8 @@ const local: App.I18n.Schema = {
     system_roles: '角色管理',
     system_settings: '系统设置',
     system_attachments: '附件中心',
+    'system_notification-deliveries': '投递记录',
+    'system_notification-templates': '通知模板',
     notification: '通知',
     notification_list: '通知列表',
     setup: '安装向导'
@@ -557,6 +559,20 @@ const local: App.I18n.Schema = {
     filterUnread: '未读',
     filterArchived: '含已归档',
     filterPlaceholder: '筛选'
+  },
+  notificationAdmin: {
+    templateTitle: '通知模板管理',
+    deliveryTitle: '投递记录',
+    editTemplate: '编辑模板覆盖',
+    preview: '预览',
+    previewTitle: '模板预览',
+    render: '渲染',
+    renderResult: '渲染结果',
+    invalidJson: 'JSON 格式错误',
+    resetConfirm: '确定重置为代码默认模板？',
+    retry: '重试',
+    retryConfirm: '确定重试此投递？',
+    retrySuccess: '已重新入队'
   }
 };
 
