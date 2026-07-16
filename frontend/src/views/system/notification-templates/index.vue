@@ -86,6 +86,26 @@ const priorityTagType: Record<string, 'default' | 'info' | 'success' | 'warning'
   critical: 'error'
 };
 
+// 值 → i18n key 映射
+const priorityI18n: Record<string, string> = {
+  low: 'notificationAdmin.priorityLow',
+  normal: 'notificationAdmin.priorityNormal',
+  high: 'notificationAdmin.priorityHigh',
+  critical: 'notificationAdmin.priorityCritical'
+};
+const channelI18n: Record<string, string> = {
+  in_app: 'notificationAdmin.channelInApp',
+  email: 'notificationAdmin.channelEmail',
+  sms: 'notificationAdmin.channelSms',
+  webhook: 'notificationAdmin.channelWebhook',
+  im: 'notificationAdmin.channelIm'
+};
+const categoryI18n: Record<string, string> = {
+  user: 'notificationAdmin.categoryUser',
+  security: 'notificationAdmin.categorySecurity',
+  system: 'notificationAdmin.categorySystem'
+};
+
 const columns: DataTableColumns<FlatRow> = [
   {
     title: $t('notificationAdmin.colDefinition'),
@@ -93,21 +113,21 @@ const columns: DataTableColumns<FlatRow> = [
     width: 220,
     ellipsis: { tooltip: true },
     render: row => [
-      h('div', { class: 'font-mono text-13px' }, row.definition_key),
-      h('div', { class: 'text-12px opacity-60' }, row.category)
+      h('div', { class: 'text-13px font-medium' }, $t(row.name_key as any) || row.definition_key),
+      h('div', { class: 'text-12px opacity-60' }, $t((categoryI18n[row.category] || '') as any) || row.category)
     ]
   },
   {
     title: $t('notificationAdmin.colPriority'),
     key: 'priority',
     width: 80,
-    render: row => h(NTag, { type: priorityTagType[row.priority] || 'default', size: 'small' }, { default: () => row.priority })
+    render: row => h(NTag, { type: priorityTagType[row.priority] || 'default', size: 'small' }, { default: () => $t((priorityI18n[row.priority] || '') as any) || row.priority })
   },
   {
     title: $t('notificationAdmin.colChannel'),
     key: 'channel',
     width: 90,
-    render: row => h(NTag, { size: 'small', bordered: false }, { default: () => row.channel })
+    render: row => h(NTag, { size: 'small', bordered: false }, { default: () => $t((channelI18n[row.channel] || '') as any) || row.channel })
   },
   { title: $t('notificationAdmin.colLocale'), key: 'locale', width: 80 },
   {

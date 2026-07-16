@@ -603,7 +603,19 @@ const local: App.I18n.Schema = {
     formVariables: 'Variables (JSON)',
     formSource: 'Source',
     formTitle: 'InApp Title',
-    formSummary: 'Summary'
+    formSummary: 'Summary',
+    priorityLow: 'Low',
+    priorityNormal: 'Normal',
+    priorityHigh: 'High',
+    priorityCritical: 'Critical',
+    channelInApp: 'In-App',
+    channelEmail: 'Email',
+    channelSms: 'SMS',
+    channelWebhook: 'Webhook',
+    channelIm: 'IM',
+    categoryUser: 'User',
+    categorySecurity: 'Security',
+    categorySystem: 'System'
   }
 };
 

@@ -803,6 +803,18 @@ declare namespace App {
         formSource: string;
         formTitle: string;
         formSummary: string;
+        priorityLow: string;
+        priorityNormal: string;
+        priorityHigh: string;
+        priorityCritical: string;
+        channelInApp: string;
+        channelEmail: string;
+        channelSms: string;
+        channelWebhook: string;
+        channelIm: string;
+        categoryUser: string;
+        categorySecurity: string;
+        categorySystem: string;
       };
       datatable: {
         itemCount: string;

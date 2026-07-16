@@ -598,7 +598,19 @@ const local: App.I18n.Schema = {
     formVariables: '变量 (JSON)',
     formSource: '来源',
     formTitle: 'InApp 标题',
-    formSummary: '摘要'
+    formSummary: '摘要',
+    priorityLow: '低',
+    priorityNormal: '普通',
+    priorityHigh: '高',
+    priorityCritical: '紧急',
+    channelInApp: '站内',
+    channelEmail: '邮件',
+    channelSms: '短信',
+    channelWebhook: 'Webhook',
+    channelIm: '即时通讯',
+    categoryUser: '用户',
+    categorySecurity: '安全',
+    categorySystem: '系统'
   }
 };
 
