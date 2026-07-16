@@ -134,7 +134,7 @@ type ResolvedModel struct {
 	ProviderID    string
 	Protocol      string
 	BaseURL       string
-	CredentialRef string
+	Credential    string `json:"-"`
 	DeploymentID  string
 	RemoteModelID string
 	ModelType     ModelType

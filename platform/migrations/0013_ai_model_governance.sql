@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS ai_providers (
   name varchar(128) NOT NULL,
   protocol varchar(64) NOT NULL,
   base_url varchar(512) NOT NULL DEFAULT '',
-  credential_ref varchar(160) NOT NULL,
+  credential_ciphertext text NOT NULL,
   status varchar(32) NOT NULL DEFAULT 'enabled' CHECK (status IN ('enabled','disabled')),
   config_json jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),

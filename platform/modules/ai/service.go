@@ -19,15 +19,22 @@ const enabled = "enabled"
 
 var codePattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{1,63}$`)
 
-type Service struct {
-	db       *gorm.DB
-	types    *aimodel.ProviderTypeRegistry
-	secrets  aimodel.SecretResolver
-	adapters map[string]aimodel.ModelDiscoveryProvider
+func credentialAAD(tenantID, providerID string) []byte {
+	return []byte("ai-provider:" + tenantID + ":" + providerID)
+}
+func configureProviderView(provider *Provider) {
+	provider.CredentialConfigured = provider.CredentialCiphertext != ""
 }
 
-func NewService(db *gorm.DB, types *aimodel.ProviderTypeRegistry, secrets aimodel.SecretResolver) *Service {
-	return &Service{db: db, types: types, secrets: secrets, adapters: map[string]aimodel.ModelDiscoveryProvider{aimodel.ProtocolOpenAI: aimodel.NewHTTPDiscoveryAdapter(aimodel.ProtocolOpenAI), aimodel.ProtocolAnthropic: aimodel.NewHTTPDiscoveryAdapter(aimodel.ProtocolAnthropic), aimodel.ProtocolOpenAICompatible: aimodel.NewHTTPDiscoveryAdapter(aimodel.ProtocolOpenAICompatible)}}
+type Service struct {
+	db          *gorm.DB
+	types       *aimodel.ProviderTypeRegistry
+	credentials aimodel.CredentialCipher
+	adapters    map[string]aimodel.ModelDiscoveryProvider
+}
+
+func NewService(db *gorm.DB, types *aimodel.ProviderTypeRegistry, credentials aimodel.CredentialCipher) *Service {
+	return &Service{db: db, types: types, credentials: credentials, adapters: map[string]aimodel.ModelDiscoveryProvider{aimodel.ProtocolOpenAI: aimodel.NewHTTPDiscoveryAdapter(aimodel.ProtocolOpenAI), aimodel.ProtocolAnthropic: aimodel.NewHTTPDiscoveryAdapter(aimodel.ProtocolAnthropic), aimodel.ProtocolOpenAICompatible: aimodel.NewHTTPDiscoveryAdapter(aimodel.ProtocolOpenAICompatible)}}
 }
 func tenant(ctx context.Context) (string, error) {
 	ac := auth.MustFromContext(ctx)
@@ -58,20 +65,20 @@ type IDRequest struct {
 	ID string `json:"id" validate:"required"`
 }
 type ProviderCreateRequest struct {
-	Code          string         `json:"code" validate:"required"`
-	Name          string         `json:"name" validate:"required"`
-	Protocol      string         `json:"protocol" validate:"required"`
-	BaseURL       string         `json:"base_url"`
-	CredentialRef string         `json:"credential_ref" validate:"required"`
-	Status        string         `json:"status"`
-	Config        map[string]any `json:"config"`
+	Code       string         `json:"code" validate:"required"`
+	Name       string         `json:"name" validate:"required"`
+	Protocol   string         `json:"protocol" validate:"required"`
+	BaseURL    string         `json:"base_url"`
+	Credential string         `json:"credential" validate:"required"`
+	Status     string         `json:"status"`
+	Config     map[string]any `json:"config"`
 }
 type ProviderUpdateRequest struct {
-	ID            string         `json:"id" validate:"required"`
-	Name          string         `json:"name" validate:"required"`
-	BaseURL       string         `json:"base_url"`
-	CredentialRef string         `json:"credential_ref" validate:"required"`
-	Config        map[string]any `json:"config"`
+	ID         string         `json:"id" validate:"required"`
+	Name       string         `json:"name" validate:"required"`
+	BaseURL    string         `json:"base_url"`
+	Credential string         `json:"credential"`
+	Config     map[string]any `json:"config"`
 }
 type StatusRequest struct {
 	ID     string `json:"id" validate:"required"`
@@ -129,6 +136,9 @@ func (s *Service) ListProviders(ctx context.Context, r ListRequest) (any, error)
 	q.Model(&Provider{}).Count(&n)
 	var rows []Provider
 	e = q.Order("created_at desc").Offset(r.Offset()).Limit(r.PageSize).Find(&rows).Error
+	for i := range rows {
+		configureProviderView(&rows[i])
+	}
 	return pagination.NewResult(rows, n, r.Request), dbError(e, "list providers")
 }
 func (s *Service) GetProvider(ctx context.Context, r IDRequest) (any, error) {
@@ -141,6 +151,7 @@ func (s *Service) GetProvider(ctx context.Context, r IDRequest) (any, error) {
 	if e == gorm.ErrRecordNotFound {
 		return nil, errs.New(errs.CodeNotFound, "provider not found")
 	}
+	configureProviderView(&v)
 	return v, dbError(e, "get provider")
 }
 func (s *Service) CreateProvider(ctx context.Context, r ProviderCreateRequest) (any, error) {
@@ -165,8 +176,14 @@ func (s *Service) CreateProvider(ctx context.Context, r ProviderCreateRequest) (
 			return nil, errs.Validation(e.Error())
 		}
 	}
-	v := Provider{ID: uuid.NewString(), TenantID: tid, Code: r.Code, Name: r.Name, Protocol: r.Protocol, BaseURL: r.BaseURL, CredentialRef: r.CredentialRef, Status: r.Status, ConfigJSON: marshal(r.Config)}
+	providerID := uuid.NewString()
+	ciphertext, e := s.credentials.Encrypt(ctx, r.Credential, credentialAAD(tid, providerID))
+	if e != nil {
+		return nil, errs.Wrap(errs.CodeInternal, "encrypt provider credential failed", e)
+	}
+	v := Provider{ID: providerID, TenantID: tid, Code: r.Code, Name: r.Name, Protocol: r.Protocol, BaseURL: r.BaseURL, CredentialCiphertext: ciphertext, Status: r.Status, ConfigJSON: marshal(r.Config)}
 	e = s.db.WithContext(ctx).Create(&v).Error
+	configureProviderView(&v)
 	return v, dbError(e, "provider")
 }
 func (s *Service) UpdateProvider(ctx context.Context, r ProviderUpdateRequest) (any, error) {
@@ -179,7 +196,15 @@ func (s *Service) UpdateProvider(ctx context.Context, r ProviderUpdateRequest) (
 			return nil, errs.Validation(e.Error())
 		}
 	}
-	res := s.db.WithContext(ctx).Model(&Provider{}).Where("tenant_id=? AND id=?", tid, r.ID).Updates(map[string]any{"name": r.Name, "base_url": r.BaseURL, "credential_ref": r.CredentialRef, "config_json": marshal(r.Config)})
+	updates := map[string]any{"name": r.Name, "base_url": r.BaseURL, "config_json": marshal(r.Config)}
+	if r.Credential != "" {
+		ciphertext, err := s.credentials.Encrypt(ctx, r.Credential, credentialAAD(tid, r.ID))
+		if err != nil {
+			return nil, errs.Wrap(errs.CodeInternal, "encrypt provider credential failed", err)
+		}
+		updates["credential_ciphertext"] = ciphertext
+	}
+	res := s.db.WithContext(ctx).Model(&Provider{}).Where("tenant_id=? AND id=?", tid, r.ID).Updates(updates)
 	if res.Error != nil {
 		return nil, dbError(res.Error, "update provider")
 	}
@@ -216,9 +241,9 @@ func (s *Service) Discover(ctx context.Context, r DiscoverRequest) (any, error) 
 	if !ok || !pt.ModelDiscovery {
 		return nil, errs.New(errs.CodeValidation, "model discovery is not supported")
 	}
-	key, e := s.secrets.Resolve(ctx, p.CredentialRef)
+	key, e := s.credentials.Decrypt(ctx, p.CredentialCiphertext, credentialAAD(tid, p.ID))
 	if e != nil {
-		return nil, errs.New(errs.CodeValidation, "credential reference cannot be resolved")
+		return nil, errs.New(errs.CodeValidation, "provider credential cannot be decrypted")
 	}
 	adapter := s.adapters[p.Protocol]
 	if adapter == nil {
@@ -442,11 +467,12 @@ func (s *Service) Resolve(ctx context.Context, code string, req aimodel.Capabili
 	if !aimodel.Satisfies(effective, req) {
 		return nil, errs.New(errs.CodeValidation, "model capability requirement is not satisfied")
 	}
-	if _, e = s.secrets.Resolve(ctx, p.CredentialRef); e != nil {
-		return nil, errs.New(errs.CodeValidation, "credential reference cannot be resolved")
+	credential, err := s.credentials.Decrypt(ctx, p.CredentialCiphertext, credentialAAD(tid, p.ID))
+	if err != nil {
+		return nil, errs.New(errs.CodeValidation, "provider credential cannot be decrypted")
 	}
 	_ = json.Unmarshal(d.ConfigJSON, &config)
-	return &aimodel.ResolvedModel{ProviderID: p.ID, Protocol: p.Protocol, BaseURL: p.BaseURL, CredentialRef: p.CredentialRef, DeploymentID: d.ID, RemoteModelID: d.RemoteModelID, ModelType: aimodel.ModelType(d.ModelType), Capabilities: effective, Limits: limits, Config: config}, nil
+	return &aimodel.ResolvedModel{ProviderID: p.ID, Protocol: p.Protocol, BaseURL: p.BaseURL, Credential: credential, DeploymentID: d.ID, RemoteModelID: d.RemoteModelID, ModelType: aimodel.ModelType(d.ModelType), Capabilities: effective, Limits: limits, Config: config}, nil
 }
 
 var _ aimodel.Resolver = (*Service)(nil)

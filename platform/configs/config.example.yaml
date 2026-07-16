@@ -28,6 +28,10 @@ i18n:
   # 翻译文件目录（相对于运行目录）；Agent 新增语言文件放此目录即可
   dir: i18n
 
+ai:
+  # 32 字节随机密钥的 Base64；生产建议通过 AI_CREDENTIAL_ENCRYPTION_KEY 注入
+  credential_encryption_key: "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
+
 storage:
   # 对象存储 Provider：Phase 1 仅 local；S3/OSS 后续 Adapter
   provider: local

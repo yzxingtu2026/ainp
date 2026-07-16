@@ -3,20 +3,23 @@ package ai
 import (
 	"encoding/json"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 type Provider struct {
-	ID            string          `gorm:"primaryKey;size:64" json:"id"`
-	TenantID      string          `gorm:"size:64;not null;uniqueIndex:ux_ai_providers_tenant_code" json:"-"`
-	Code          string          `gorm:"size:64;not null;uniqueIndex:ux_ai_providers_tenant_code" json:"code"`
-	Name          string          `gorm:"size:128;not null" json:"name"`
-	Protocol      string          `gorm:"size:64;not null" json:"protocol"`
-	BaseURL       string          `gorm:"size:512" json:"base_url"`
-	CredentialRef string          `gorm:"size:160;not null" json:"credential_ref"`
-	Status        string          `gorm:"size:32;not null;default:enabled" json:"status"`
-	ConfigJSON    json.RawMessage `gorm:"type:jsonb;not null;default:'{}'" json:"config_json"`
-	CreatedAt     time.Time       `json:"created_at"`
-	UpdatedAt     time.Time       `json:"updated_at"`
+	ID                   string          `gorm:"primaryKey;size:64" json:"id"`
+	TenantID             string          `gorm:"size:64;not null;uniqueIndex:ux_ai_providers_tenant_code" json:"-"`
+	Code                 string          `gorm:"size:64;not null;uniqueIndex:ux_ai_providers_tenant_code" json:"code"`
+	Name                 string          `gorm:"size:128;not null" json:"name"`
+	Protocol             string          `gorm:"size:64;not null" json:"protocol"`
+	BaseURL              string          `gorm:"size:512" json:"base_url"`
+	CredentialCiphertext string          `gorm:"type:text;not null" json:"-"`
+	CredentialConfigured bool            `gorm:"-" json:"credential_configured"`
+	Status               string          `gorm:"size:32;not null;default:enabled" json:"status"`
+	ConfigJSON           json.RawMessage `gorm:"type:jsonb;not null;default:'{}'" json:"config_json"`
+	CreatedAt            time.Time       `json:"created_at"`
+	UpdatedAt            time.Time       `json:"updated_at"`
 }
 
 func (Provider) TableName() string { return "ai_providers" }
@@ -50,6 +53,20 @@ type Alias struct {
 
 func (Alias) TableName() string { return "ai_model_aliases" }
 
-func AutoMigrate(db interface{ AutoMigrate(...interface{}) error }) error {
+func AutoMigrate(db *gorm.DB) error {
+	if db.Migrator().HasTable(&Provider{}) && db.Migrator().HasColumn(&Provider{}, "credential_ref") && !db.Migrator().HasColumn(&Provider{}, "credential_ciphertext") {
+		if err := db.Exec(`ALTER TABLE ai_providers ADD COLUMN credential_ciphertext text NOT NULL DEFAULT ''`).Error; err != nil {
+			return err
+		}
+		if err := db.Exec(`UPDATE ai_providers SET status = 'disabled' WHERE credential_ciphertext = ''`).Error; err != nil {
+			return err
+		}
+		if err := db.Migrator().DropColumn(&Provider{}, "credential_ref"); err != nil {
+			return err
+		}
+		if err := db.Exec(`ALTER TABLE ai_providers ALTER COLUMN credential_ciphertext DROP DEFAULT`).Error; err != nil {
+			return err
+		}
+	}
 	return db.AutoMigrate(&Provider{}, &Deployment{}, &Alias{})
 }

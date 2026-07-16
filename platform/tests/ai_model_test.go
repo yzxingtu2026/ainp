@@ -2,10 +2,13 @@ package tests
 
 import (
 	"context"
-	"os"
+	"encoding/base64"
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/yzxingtu2026/ainp/platform/framework/aimodel"
+	"github.com/yzxingtu2026/ainp/platform/modules/ai"
 )
 
 func TestProviderTypeRegistryRejectsInvalidAndDuplicateValues(t *testing.T) {
@@ -27,19 +30,49 @@ func TestProviderTypeRegistryRejectsInvalidAndDuplicateValues(t *testing.T) {
 	}
 }
 
-func TestEnvSecretResolverFailClosed(t *testing.T) {
-	r := aimodel.EnvSecretResolver{}
-	if _, err := r.Resolve(context.Background(), "plain-key"); err == nil {
-		t.Fatal("plain secret must fail")
+func TestCredentialCipherEncryptsWithRandomNonceAndAAD(t *testing.T) {
+	key := base64.StdEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef"))
+	cipher, err := aimodel.NewAESGCMCredentialCipher(key)
+	if err != nil {
+		t.Fatal(err)
 	}
-	t.Setenv("AINP_TEST_AI_SECRET", "secret-value")
-	value, err := r.Resolve(context.Background(), "env:AINP_TEST_AI_SECRET")
-	if err != nil || value != "secret-value" {
-		t.Fatalf("unexpected resolution: %q %v", value, err)
+	ctx := context.Background()
+	aad := []byte("ai-provider:tenant-a:provider-a")
+	first, err := cipher.Encrypt(ctx, "sk-secret", aad)
+	if err != nil {
+		t.Fatal(err)
 	}
-	os.Unsetenv("AINP_TEST_AI_MISSING")
-	if _, err := r.Resolve(context.Background(), "env:AINP_TEST_AI_MISSING"); err == nil {
-		t.Fatal("missing env must fail")
+	second, err := cipher.Encrypt(ctx, "sk-secret", aad)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first == second || first == "sk-secret" {
+		t.Fatal("ciphertext must use a random nonce and hide plaintext")
+	}
+	plaintext, err := cipher.Decrypt(ctx, first, aad)
+	if err != nil || plaintext != "sk-secret" {
+		t.Fatalf("unexpected decrypt: %q %v", plaintext, err)
+	}
+	if _, err := cipher.Decrypt(ctx, first, []byte("ai-provider:tenant-b:provider-a")); err == nil {
+		t.Fatal("ciphertext must be bound to tenant and provider")
+	}
+	if _, err := aimodel.NewAESGCMCredentialCipher("not-a-key"); err == nil {
+		t.Fatal("invalid encryption key must fail")
+	}
+}
+
+func TestProviderJSONNeverExposesCredentialCiphertext(t *testing.T) {
+	provider := ai.Provider{ID: "provider-a", CredentialCiphertext: "v1:classified", CredentialConfigured: true}
+	encoded, err := json.Marshal(provider)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(encoded)
+	if strings.Contains(text, "classified") || strings.Contains(text, "ciphertext") {
+		t.Fatalf("credential leaked in JSON: %s", text)
+	}
+	if !strings.Contains(text, `"credential_configured":true`) {
+		t.Fatalf("configured marker missing: %s", text)
 	}
 }
 
