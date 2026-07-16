@@ -66,6 +66,14 @@ func (s *InAppNotificationService) List(ctx context.Context, input json.RawMessa
 	// Map to API response
 	notifications := make([]map[string]any, len(items))
 	for i, n := range items {
+		var readAt any
+		if n.ReadAt.Valid {
+			readAt = n.ReadAt.Time
+		}
+		var archivedAt any
+		if n.ArchivedAt.Valid {
+			archivedAt = n.ArchivedAt.Time
+		}
 		notifications[i] = map[string]any{
 			"id":          n.ID,
 			"title":       n.Title,
@@ -74,8 +82,8 @@ func (s *InAppNotificationService) List(ctx context.Context, input json.RawMessa
 			"icon":        n.Icon,
 			"local_icon":  n.LocalIcon,
 			"action_json": json.RawMessage(n.ActionJSON),
-			"read_at":     n.ReadAt,
-			"archived_at": n.ArchivedAt,
+			"read_at":     readAt,
+			"archived_at": archivedAt,
 			"created_at":  n.CreatedAt,
 		}
 	}
