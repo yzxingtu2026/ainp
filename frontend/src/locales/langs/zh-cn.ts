@@ -591,7 +591,7 @@ const local: App.I18n.Schema = {
     colLastError: '最近错误',
     colFailedAt: '失败时间',
     colCreatedAt: '创建时间',
-    formDefinitionKey: '通知定义',
+    formDefinitionKey: '模版名称定义',
     formSubject: '标题',
     formBody: '正文',
     formEnabled: '启用',

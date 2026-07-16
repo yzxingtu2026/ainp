@@ -349,7 +349,7 @@ codeset.system.notification_delivery_status.cancelled: "已取消"
 codeset.system.notification_delivery_status.skipped: "已跳过"
 
 # ── 通知域错误 ──
-notification.definition_not_found: "通知定义不存在"
+notification.definition_not_found: "通知模版不存在"
 notification.template_missing: "通知模板缺失"
 notification.recipient_invalid: "通知收件人无效"
 notification.delivery_failed: "通知投递失败"
