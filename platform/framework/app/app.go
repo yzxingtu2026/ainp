@@ -107,8 +107,15 @@ func (a *App) RegisterAction(act action.Action) error {
 
 func (a *App) RegisterMenu(m menu.Menu) error {
 	if m.BindAction != "" {
-		if _, ok := a.Actions.Get(m.BindAction); !ok {
+		bound, ok := a.Actions.Get(m.BindAction)
+		if !ok {
 			return fmt.Errorf("bind_action not registered: %s", m.BindAction)
+		}
+		if bound.Meta.AccessMode() == action.AccessPermission && m.Type == menu.TypeButton && m.Permission == "" {
+			return fmt.Errorf("permission action button requires permission: %s", m.ID)
+		}
+		if bound.Meta.AccessMode() != action.AccessPermission && m.Permission != "" {
+			return fmt.Errorf("%s action menu must not declare permission: %s", bound.Meta.AccessMode(), m.ID)
 		}
 	}
 	return a.Menus.Register(m)

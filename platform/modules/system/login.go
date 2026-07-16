@@ -80,7 +80,7 @@ func (s *AuthService) Login(ctx context.Context, tokens *auth.TokenService, inpu
 		return nil, errs.Wrap(errs.CodeInternal, "issue token failed", err)
 	}
 
-	// 写入上下文，供执行链审计落 tenant_id / user_id（登录为 Public Action）
+	// 写入上下文，供执行链审计落 tenant_id / user_id（登录为 public Action）
 	if ac := auth.MustFromContext(ctx); ac != nil {
 		ac.TenantID = u.TenantID
 		ac.Realm = auth.RealmTenant

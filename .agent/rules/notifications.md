@@ -40,21 +40,23 @@
 
 10. **管理 Action** 归入 `system.notification_management` PermissionGroup，需显式授权。
 
+11. **个人通知 Action** 使用 authenticated，不进入角色权限目录；必须固定使用 AuthContext tenant/user scope。
+
 ## Provider Adapter 边界
 
-11. **ChannelProvider 接口**：实现 `Name()`, `Channel()`, `Send()` 方法。
+12. **ChannelProvider 接口**：实现 `Name()`, `Channel()`, `Send()` 方法。
     - `Send` 返回 `ProviderReceipt`（provider/external_id/accepted_at/retryable）
     - 错误分为 Retryable（瞬时）和 Permanent（不可重试）
     - 新 Adapter 不需要修改业务模块或 Orchestrator
 
-12. **InApp Provider**：
+13. **InApp Provider**：
     - 创建 `user_notifications` 记录
     - 使用 `(delivery_id, user_id)` 唯一约束保证幂等
     - 站内通知与 `window.$notification` toast 分离：toast 用于临时 UI 提示
 
 ## 文件组织
 
-13. **Framework 层**：`platform/framework/notification/` — 类型、接口、合同
-14. **Module 层**：`platform/modules/system/notification_*.go` — 具体实现
+14. **Framework 层**：`platform/framework/notification/` — 类型、接口、合同
+15. **Module 层**：`platform/modules/system/notification_*.go` — 具体实现
 15. **Job**：`platform/modules/system/jobs/notification_deliver.go` — 一个 Job Type 一个文件
 16. **Fake Provider**：`platform/framework/notification/fake/` — 测试用

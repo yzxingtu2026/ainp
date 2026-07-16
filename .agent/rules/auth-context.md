@@ -1,7 +1,8 @@
 # 多租户与鉴权上下文
 
 - 租户/用户只从 Token/会话解析写入 `AuthContext`；**禁止**信任 Body/Query 的 `tenant_id`。
-- **一用户一租户**；权限为 Role ↔ permission 字符串（默认 `action.id`）；按钮藏UI不够，Action 必须鉴权。
+- **一用户一租户**；Action Access 为 public/authenticated/permission，空值默认 permission；permission 模式使用 Role ↔ permission 字符串（默认 `action.id`）。
+- authenticated 仍须完成 Token/会话、AuthorizationProvider、租户/用户状态、realm 与 `auth_version` 校验，只跳过额外角色 permission。
 - 正式 JWT 只表达可信身份并携带 `auth_version`；角色/权限必须由服务端 `AuthorizationProvider` 实时加载，禁止信任 Token 权限快照。
 - 用户状态、密码或角色变化以及角色权限/状态变化，必须在同一事务调用统一授权版本递增入口；旧 Token 下一请求失效。
 - 租户用户管理：username 创建后不可改；状态与资料编辑分离；角色全量替换；不提供物理删除；禁止自停用；须保留至少一名 enabled 内置 admin。

@@ -34,6 +34,7 @@ func RegisterSetupActions(a *app.App, svc *SetupService) error {
 		},
 		Meta: action.Metadata{
 			Capability:     "setup",
+			Access:         action.AccessPublic,
 			Name:           "安装状态",
 			NameKey:        "action.setup.status.name",
 			Description:    "返回当前安装状态",
@@ -42,7 +43,6 @@ func RegisterSetupActions(a *app.App, svc *SetupService) error {
 			HTTP: &action.HTTPMeta{
 				Method: "GET",
 				Path:   "/api/v1/setup/status",
-				Public: true,
 			},
 		},
 	}); err != nil {
@@ -57,6 +57,7 @@ func RegisterSetupActions(a *app.App, svc *SetupService) error {
 		},
 		Meta: action.Metadata{
 			Capability:     "setup",
+			Access:         action.AccessPublic,
 			Name:           "环境检查",
 			NameKey:        "action.setup.check_env.name",
 			Description:    "检查运行环境是否就绪",
@@ -65,7 +66,6 @@ func RegisterSetupActions(a *app.App, svc *SetupService) error {
 			HTTP: &action.HTTPMeta{
 				Method: "GET",
 				Path:   "/api/v1/setup/check-env",
-				Public: true,
 			},
 		},
 	}); err != nil {
@@ -80,6 +80,7 @@ func RegisterSetupActions(a *app.App, svc *SetupService) error {
 		},
 		Meta: action.Metadata{
 			Capability:     "setup",
+			Access:         action.AccessPublic,
 			Name:           "测试数据库",
 			NameKey:        "action.setup.test_db.name",
 			Description:    "测试数据库连通性",
@@ -88,7 +89,6 @@ func RegisterSetupActions(a *app.App, svc *SetupService) error {
 			HTTP: &action.HTTPMeta{
 				Method: "POST",
 				Path:   "/api/v1/setup/test-db",
-				Public: true,
 			},
 		},
 	}); err != nil {
@@ -103,6 +103,7 @@ func RegisterSetupActions(a *app.App, svc *SetupService) error {
 		},
 		Meta: action.Metadata{
 			Capability:     "setup",
+			Access:         action.AccessPublic,
 			Name:           "初始化系统",
 			NameKey:        "action.setup.initialize.name",
 			Description:    "创建初始租户与管理员账号",
@@ -111,7 +112,6 @@ func RegisterSetupActions(a *app.App, svc *SetupService) error {
 			HTTP: &action.HTTPMeta{
 				Method: "POST",
 				Path:   "/api/v1/setup/initialize",
-				Public: true,
 			},
 		},
 	}); err != nil {

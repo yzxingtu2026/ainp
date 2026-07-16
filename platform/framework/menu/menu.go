@@ -57,8 +57,8 @@ func (r *Registry) Register(m Menu) error {
 	default:
 		return fmt.Errorf("invalid menu type: %s", m.Type)
 	}
-	if m.Type == TypeButton && m.Permission == "" {
-		return fmt.Errorf("button menu requires permission: %s", m.ID)
+	if m.Type == TypeButton && m.Permission == "" && m.BindAction == "" {
+		return fmt.Errorf("button menu requires permission or bind_action: %s", m.ID)
 	}
 	if m.Icon != "" && !strings.Contains(m.Icon, ":") {
 		return fmt.Errorf("menu icon must be collection:name: %s", m.Icon)
