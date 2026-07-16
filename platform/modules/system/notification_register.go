@@ -32,6 +32,7 @@ const (
 	ActionNotificationTemplateReset   = "system.notification_template_reset"
 	ActionNotificationTemplatePreview = "system.notification_template_preview"
 	ActionNotificationDeliveryList    = "system.notification_delivery_list"
+	ActionNotificationDeliveryGet     = "system.notification_delivery_get"
 	ActionNotificationDeliveryRetry   = "system.notification_delivery_retry"
 )
 
@@ -517,6 +518,70 @@ func (s *NotificationDeliveryService) Retry(ctx context.Context, input json.RawM
 	return map[string]any{"retried": true}, nil
 }
 
+// Get returns a single delivery detail with rendered message content.
+func (s *NotificationDeliveryService) Get(ctx context.Context, input json.RawMessage) (any, error) {
+	if _, err := requireTenant(ctx); err != nil {
+		return nil, err
+	}
+	var req struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(input, &req); err != nil || strings.TrimSpace(req.ID) == "" {
+		return nil, errs.ValidationKey("common.validation_failed", "id required")
+	}
+	row, err := s.repo.GetDeliveryDetail(ctx, req.ID)
+	if err != nil {
+		return nil, err
+	}
+	if row == nil {
+		return nil, errs.NewKey(errs.CodeNotFound, "notification.delivery_not_found", "delivery not found")
+	}
+	var sentAt, deliveredAt, failedAt, scheduledAt any
+	if row.SentAt != nil {
+		sentAt = row.SentAt
+	}
+	if row.DeliveredAt != nil {
+		deliveredAt = row.DeliveredAt
+	}
+	if row.FailedAt != nil {
+		failedAt = row.FailedAt
+	}
+	if row.ScheduledAt != nil {
+		scheduledAt = row.ScheduledAt
+	}
+	var variables map[string]any
+	_ = json.Unmarshal(row.VariablesJSON, &variables)
+	return map[string]any{
+		"id":             row.ID,
+		"tenant_id":      row.TenantID,
+		"request_id":     row.RequestID,
+		"recipient_type": row.RecipientType,
+		"recipient_id":   row.RecipientID,
+		"recipient_name": row.RecipientName,
+		"channel":        row.Channel,
+		"provider":       row.Provider,
+		"locale":         row.Locale,
+		"status":         row.Status,
+		"attempts":       row.Attempts,
+		"max_attempts":   row.MaxAttempts,
+		"external_id":    row.ExternalID,
+		"last_error":     row.LastError,
+		"definition_key": row.DefinitionKey,
+		"variables":      variables,
+		"content": map[string]any{
+			"title":   row.Title,
+			"summary": row.Summary,
+			"body":    row.Body,
+		},
+		"sent_at":      sentAt,
+		"delivered_at": deliveredAt,
+		"failed_at":    failedAt,
+		"scheduled_at": scheduledAt,
+		"created_at":   row.CreatedAt,
+		"updated_at":   row.UpdatedAt,
+	}, nil
+}
+
 // --- Registration ---
 
 func registerNotificationActions(a *app.App) error {
@@ -638,7 +703,8 @@ func registerNotificationActions(a *app.App) error {
 		{ActionNotificationTemplateList, "/api/v1/system/notification/templates", "模板覆盖列表", "action.system.notification_template_list.name", "列出租户模板覆盖", "action.system.notification_template_list.description", &auditOff, tplSvc.List},
 		{ActionNotificationTemplateUpdate, "/api/v1/system/notification/templates/update", "更新模板覆盖", "action.system.notification_template_update.name", "更新模板覆盖内容", "action.system.notification_template_update.description", &auditOn, tplSvc.Update},
 		{ActionNotificationTemplateReset, "/api/v1/system/notification/templates/reset", "重置模板覆盖", "action.system.notification_template_reset.name", "重置为代码默认模板", "action.system.notification_template_reset.description", &auditOn, tplSvc.Reset},
-		{ActionNotificationDeliveryList, "/api/v1/system/notification/deliveries", "Delivery 列表", "action.system.notification_delivery_list.name", "查询失败投递记录", "action.system.notification_delivery_list.description", &auditOff, deliverySvc.List},
+		{ActionNotificationDeliveryList, "/api/v1/system/notification/deliveries", "Delivery 列表", "action.system.notification_delivery_list.name", "查询投递记录", "action.system.notification_delivery_list.description", &auditOff, deliverySvc.List},
+		{ActionNotificationDeliveryGet, "/api/v1/system/notification/deliveries/get", "Delivery 详情", "action.system.notification_delivery_get.name", "查询投递详情", "action.system.notification_delivery_get.description", &auditOff, deliverySvc.Get},
 		{ActionNotificationDeliveryRetry, "/api/v1/system/notification/deliveries/retry", "重试投递", "action.system.notification_delivery_retry.name", "重试失败投递记录", "action.system.notification_delivery_retry.description", &auditOn, deliverySvc.Retry},
 		{ActionNotificationTemplatePreview, "/api/v1/system/notification/templates/preview", "模板预览", "action.system.notification_template_preview.name", "预览模板渲染结果（不触发投递）", "action.system.notification_template_preview.description", &auditOff, tplSvc.Preview},
 	}

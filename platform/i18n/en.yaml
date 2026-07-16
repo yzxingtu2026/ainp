@@ -320,7 +320,9 @@ action.system.notification_template_reset.description: "Reset to code default te
 action.system.notification_template_preview.name: "Template Preview"
 action.system.notification_template_preview.description: "Preview template rendering (no delivery triggered)"
 action.system.notification_delivery_list.name: "Delivery List"
-action.system.notification_delivery_list.description: "Query failed delivery records"
+action.system.notification_delivery_list.description: "Query delivery records"
+action.system.notification_delivery_get.name: "Delivery Detail"
+action.system.notification_delivery_get.description: "Query delivery detail with message content"
 action.system.notification_delivery_retry.name: "Retry Delivery"
 action.system.notification_delivery_retry.description: "Manually retry failed/dead deliveries"
 

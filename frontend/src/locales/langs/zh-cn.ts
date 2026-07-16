@@ -616,7 +616,19 @@ const local: App.I18n.Schema = {
     statusDead: '已死信',
     categoryUser: '用户',
     categorySecurity: '安全',
-    categorySystem: '系统'
+    categorySystem: '系统',
+    detailTitle: '投递详情',
+    detailInfo: '基本信息',
+    detailContent: '消息内容',
+    detailError: '错误信息',
+    detailDefinitionKey: '模板定义',
+    detailLocale: '语言',
+    detailProvider: '服务商',
+    detailExternalId: '外部 ID',
+    detailSentAt: '发送时间',
+    detailDeliveredAt: '送达时间',
+    detailScheduledAt: '计划时间',
+    noContent: '暂无内容预览'
   }
 };
 

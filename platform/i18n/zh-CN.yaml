@@ -320,7 +320,9 @@ action.system.notification_template_reset.description: "重置为代码默认模
 action.system.notification_template_preview.name: "模板预览"
 action.system.notification_template_preview.description: "预览模板渲染结果（不触发投递）"
 action.system.notification_delivery_list.name: "Delivery 列表"
-action.system.notification_delivery_list.description: "查询失败投递记录"
+action.system.notification_delivery_list.description: "查询投递记录"
+action.system.notification_delivery_get.name: "Delivery 详情"
+action.system.notification_delivery_get.description: "查询投递详情及消息内容"
 action.system.notification_delivery_retry.name: "重试投递"
 action.system.notification_delivery_retry.description: "人工重试 failed/dead 投递"
 

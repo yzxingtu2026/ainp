@@ -132,5 +132,17 @@ declare namespace Api {
       items: DeliveryItem[];
       total: number;
     }
+
+    /** Delivery detail with message content */
+    interface DeliveryDetail extends DeliveryItem {
+      locale: string;
+      definition_key: string;
+      variables: Record<string, unknown>;
+      content: {
+        title: string;
+        summary: string;
+        body: string;
+      };
+    }
   }
 }

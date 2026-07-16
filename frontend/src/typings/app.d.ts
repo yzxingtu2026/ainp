@@ -821,6 +821,18 @@ declare namespace App {
         categoryUser: string;
         categorySecurity: string;
         categorySystem: string;
+        detailTitle: string;
+        detailInfo: string;
+        detailContent: string;
+        detailError: string;
+        detailDefinitionKey: string;
+        detailLocale: string;
+        detailProvider: string;
+        detailExternalId: string;
+        detailSentAt: string;
+        detailDeliveredAt: string;
+        detailScheduledAt: string;
+        noContent: string;
       };
       datatable: {
         itemCount: string;

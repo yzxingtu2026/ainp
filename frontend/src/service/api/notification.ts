@@ -121,6 +121,15 @@ export function fetchDeliveryList(params: { current?: number; size?: number }) {
   });
 }
 
+/** Get delivery detail with message content */
+export function fetchDeliveryDetail(id: string) {
+  return request<Api.Notification.DeliveryDetail>({
+    url: '/api/v1/system/notification/deliveries/get',
+    method: 'post',
+    data: { id }
+  });
+}
+
 /** Retry a failed delivery */
 export function fetchRetryDelivery(id: string) {
   return request({

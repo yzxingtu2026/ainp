@@ -36,6 +36,7 @@ export const SYSTEM_ACTIONS = {
   notificationTemplateUpdate: 'system.notification_template_update',
   notificationTemplateReset: 'system.notification_template_reset',
   notificationDeliveryList: 'system.notification_delivery_list',
+  notificationDeliveryGet: 'system.notification_delivery_get',
   notificationDeliveryRetry: 'system.notification_delivery_retry',
   notificationTemplatePreview: 'system.notification_template_preview'
 } as const;

@@ -621,7 +621,19 @@ const local: App.I18n.Schema = {
     statusDead: 'Dead Letter',
     categoryUser: 'User',
     categorySecurity: 'Security',
-    categorySystem: 'System'
+    categorySystem: 'System',
+    detailTitle: 'Delivery Detail',
+    detailInfo: 'Basic Info',
+    detailContent: 'Message Content',
+    detailError: 'Error Info',
+    detailDefinitionKey: 'Definition Key',
+    detailLocale: 'Locale',
+    detailProvider: 'Provider',
+    detailExternalId: 'External ID',
+    detailSentAt: 'Sent At',
+    detailDeliveredAt: 'Delivered At',
+    detailScheduledAt: 'Scheduled At',
+    noContent: 'No content preview available'
   }
 };
 
