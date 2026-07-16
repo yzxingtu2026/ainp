@@ -236,6 +236,7 @@ const local: App.I18n.Schema = {
     ai: 'AI Center',
     ai_models: 'Model Catalog',
     ai_providers: 'Model Providers',
+    ai_runtime: 'Model Debugger',
     login: 'Login',
     403: 'No Permission',
     404: 'Page Not Found',
@@ -663,6 +664,9 @@ const local: App.I18n.Schema = {
       audio_input: 'Audio Input',
       audio_output: 'Audio Output'
     }
+  },
+  aiRuntime: {
+    title: 'Model Debugger', modelAlias: 'Model Alias', prompt: 'Prompt', promptPlaceholder: 'Enter a test message', generate: 'Generate', stream: 'Stream', output: 'Output', emptyOutput: 'No output', requestFailed: 'Model request failed'
   },
   notificationAdmin: {
     templateTitle: 'Notification Template Management',

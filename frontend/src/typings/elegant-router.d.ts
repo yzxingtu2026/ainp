@@ -23,6 +23,7 @@ declare module "@elegant-router/types" {
     "ai": "/ai";
     "ai_models": "/ai/models";
     "ai_providers": "/ai/providers";
+    "ai_runtime": "/ai/runtime";
     "demo": "/demo";
     "demo_attachments": "/demo/attachments";
     "demo_hello": "/demo/hello";
@@ -112,6 +113,7 @@ declare module "@elegant-router/types" {
     | "setup"
     | "ai_models"
     | "ai_providers"
+    | "ai_runtime"
     | "demo_attachments"
     | "demo_hello"
     | "home"

@@ -844,6 +844,17 @@ declare namespace App {
         aliasReferenced: string;
         features: Record<(typeof import('@/constants/ai').MODEL_FEATURES)[number], string>;
       };
+      aiRuntime: {
+        title: string;
+        modelAlias: string;
+        prompt: string;
+        promptPlaceholder: string;
+        generate: string;
+        stream: string;
+        output: string;
+        emptyOutput: string;
+        requestFailed: string;
+      };
       notificationAdmin: {
         templateTitle: string;
         deliveryTitle: string;

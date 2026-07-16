@@ -15,3 +15,4 @@ export const deleteAIDeployment=(id:string)=>post<{deleted:boolean}>('deployment
 export const fetchAIAliases=()=>post<Api.AI.Alias[]>('aliases/list');
 export const upsertAIAlias=(code:string,deploymentId:string)=>post<Api.AI.Alias>('aliases/upsert',{code,deployment_id:deploymentId});
 export const deleteAIAlias=(code:string)=>post<{deleted:boolean}>('aliases/delete',{code});
+export const generateAIModel=(data:Record<string,unknown>)=>post<Api.AI.GenerateResponse>('models/generate',data);
