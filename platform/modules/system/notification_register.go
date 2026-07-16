@@ -422,28 +422,30 @@ func registerNotificationActions(a *app.App) error {
 		}
 	}
 
-	// Register notification menu
+	// Register notification menu (hidden from sidebar; entry via header bell icon → "view all")
 	if err := a.RegisterMenu(menu.Menu{
-		ID:       "notification",
-		ParentID: "",
-		Type:     "directory",
-		Title:    "通知",
-		TitleKey: "menu.notification.title",
-		Icon:     "mdi:bell-outline",
-		Order:    50,
+		ID:         "notification",
+		ParentID:   "",
+		Type:       "directory",
+		Title:      "通知",
+		TitleKey:   "menu.notification.title",
+		Icon:       "mdi:bell-outline",
+		Order:      50,
+		HideInMenu: true,
 	}); err != nil {
 		return err
 	}
 	if err := a.RegisterMenu(menu.Menu{
-		ID:        "notification.list",
-		ParentID:  "notification",
-		Type:      "menu",
-		Title:     "我的通知",
-		TitleKey:  "menu.notification.list.title",
-		Icon:      "mdi:bell-outline",
-		Order:     1,
-		Path:      "/notification/list",
-		Component: "view.notification_list",
+		ID:         "notification.list",
+		ParentID:   "notification",
+		Type:       "menu",
+		Title:      "我的通知",
+		TitleKey:   "menu.notification.list.title",
+		Icon:       "mdi:bell-outline",
+		Order:      1,
+		Path:       "/notification/list",
+		Component:  "view.notification_list",
+		HideInMenu: true,
 	}); err != nil {
 		return err
 	}
