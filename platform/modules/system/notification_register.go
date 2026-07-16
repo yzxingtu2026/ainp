@@ -438,7 +438,7 @@ func (s *NotificationDeliveryService) List(ctx context.Context, input json.RawMe
 		Size    int `json:"size"`
 	}
 	_ = json.Unmarshal(input, &req)
-	items, total, err := s.repo.ListFailedDeliveries(ctx, req.Current, req.Size)
+	items, total, err := s.repo.ListDeliveries(ctx, req.Current, req.Size)
 	if err != nil {
 		return nil, err
 	}

@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
+	"github.com/yzxingtu2026/ainp/platform/framework/i18n"
 	"github.com/yzxingtu2026/ainp/platform/framework/logging"
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
 	"github.com/yzxingtu2026/ainp/platform/framework/status"
@@ -609,6 +610,15 @@ func setUserAudit(ctx context.Context, userID, summary string) {
 	}
 }
 
+// resolveLocale extracts the locale from the request context (Accept-Language header),
+// falling back to the system default language.
+func (s *UserService) resolveLocale(ctx context.Context) string {
+	if lang := i18n.FromCtx(ctx); lang != "" {
+		return lang
+	}
+	return i18n.DefaultLang()
+}
+
 // ── Notification helpers (fire-and-forget within transaction) ──
 
 // notifyRoleChanged writes a system.role_changed outbox event.
@@ -631,6 +641,7 @@ func (s *UserService) notifyRoleChanged(ctx context.Context, tx *gorm.DB, userID
 			"role_name": strings.Join(roleNames, ", "),
 			"action":    "assigned",
 		},
+		"locale":          s.resolveLocale(ctx),
 		"idempotency_key": fmt.Sprintf("role_changed:%s:%d", userID, time.Now().UnixMilli()),
 	}
 	if _, err := s.outboxWriter.Append(ctx, tx, outbox.AppendInput{
@@ -659,6 +670,7 @@ func (s *UserService) notifyPasswordReset(ctx context.Context, tx *gorm.DB, user
 			"reset_link": "", // Phase 1: in-app only, no email link
 			"expires_in": "30 minutes",
 		},
+		"locale":          s.resolveLocale(ctx),
 		"idempotency_key": fmt.Sprintf("password_reset:%s:%d", userID, time.Now().UnixMilli()),
 	}
 	if _, err := s.outboxWriter.Append(ctx, tx, outbox.AppendInput{
