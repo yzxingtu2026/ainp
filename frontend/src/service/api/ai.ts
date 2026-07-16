@@ -1,0 +1,15 @@
+import { request } from '../request';
+const post=<T>(path:string,data:Record<string,unknown>={})=>request<T>({url:`/api/v1/ai/${path}`,method:'post',data});
+export const fetchProviderTypes=()=>post<Array<{protocol:string;name:string;model_discovery:boolean}>>('provider-types/list');
+export const fetchAIProviders=(params:Record<string,unknown>)=>post<Api.AI.Page<Api.AI.Provider>>('providers/list',params);
+export const createAIProvider=(data:Record<string,unknown>)=>post<Api.AI.Provider>('providers/create',data);
+export const updateAIProvider=(data:Record<string,unknown>)=>post<Api.AI.Provider>('providers/update',data);
+export const updateAIProviderStatus=(id:string,status:Api.AI.Status)=>post<Api.AI.Provider>('providers/status/update',{id,status});
+export const discoverAIModels=(providerId:string)=>post<{items:Api.AI.RemoteModel[];next_cursor?:string}>('providers/discover-models',{provider_id:providerId,limit:100});
+export const fetchAIDeployments=(params:Record<string,unknown>)=>post<Api.AI.Page<Api.AI.Deployment>>('deployments/list',params);
+export const createAIDeployment=(data:Record<string,unknown>)=>post<Api.AI.Deployment>('deployments/create',data);
+export const importAIDeployments=(items:Record<string,unknown>[])=>post<Api.AI.Deployment[]>('deployments/import',{items});
+export const updateAIDeploymentStatus=(id:string,status:Api.AI.Status)=>post<Api.AI.Deployment>('deployments/status/update',{id,status});
+export const fetchAIAliases=()=>post<Api.AI.Alias[]>('aliases/list');
+export const upsertAIAlias=(code:string,deploymentId:string)=>post<Api.AI.Alias>('aliases/upsert',{code,deployment_id:deploymentId});
+export const deleteAIAlias=(code:string)=>post<{deleted:boolean}>('aliases/delete',{code});

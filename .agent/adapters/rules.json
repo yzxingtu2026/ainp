@@ -446,6 +446,23 @@
           "alwaysApply": true
         }
       }
+    },
+    {
+      "id": "ai-model-providers",
+      "source": ".agent/rules/ai-model-providers.md",
+      "qoder": {
+        "path": ".qoder/rules/ai-model-providers.md",
+        "frontmatter": {
+          "trigger": "always_on"
+        }
+      },
+      "cursor": {
+        "path": ".cursor/rules/ai-model-providers.mdc",
+        "frontmatter": {
+          "description": "AI 模型 Provider、Secret、Discovery、能力矩阵、Alias 与 Resolver 边界",
+          "alwaysApply": true
+        }
+      }
     }
   ]
 }

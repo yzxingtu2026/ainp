@@ -229,6 +229,9 @@ const local: App.I18n.Schema = {
     }
   },
   route: {
+    ai: 'AI 中心',
+    ai_models: '模型目录',
+    ai_providers: '模型供应商',
     login: '登录',
     403: '无权限',
     404: '页面不存在',

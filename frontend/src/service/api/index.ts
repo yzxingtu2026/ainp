@@ -8,3 +8,4 @@ export * from './setup';
 export * from './attachment';
 export * from './notification';
 export * from './operations';
+export * from './ai';

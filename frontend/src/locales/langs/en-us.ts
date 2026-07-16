@@ -233,6 +233,9 @@ const local: App.I18n.Schema = {
     }
   },
   route: {
+    ai: 'AI Center',
+    ai_models: 'Model Catalog',
+    ai_providers: 'Model Providers',
     login: 'Login',
     403: 'No Permission',
     404: 'Page Not Found',

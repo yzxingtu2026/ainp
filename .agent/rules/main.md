@@ -36,6 +36,7 @@
 - 后台任务 Job 见 `background-jobs`（经 Outbox 入队；禁止业务直连 Asynq）。
 - 幂等、乐观锁、数据库不变量锁见 `idempotency-concurrency`（Mutation Action 必须评估幂等；并发更新资源必须用 revision；行锁必须经 dblock）。
 - 统一通知协议见 `notifications`（业务禁止直连渠道 SDK；必须注册 Definition/变量 Schema/渠道模板；可靠通知走 Outbox → Orchestrator → Job；模板安全限制；站内通知与 toast 分离）。
+- AI 模型治理见 `ai-model-providers`（业务只引用 Alias；Provider Type/能力交集/Secret/Discovery 均 fail-closed）。
 - 前端栈、图标协议见关联规则。
 - Copilot PR 语义审查见 `copilot-code-review`；它只负责中文语义反馈，不替代合并门禁与人工审批。
 
@@ -52,6 +53,7 @@
 - `background-jobs` → `docs/development/background-jobs.md`
 - `idempotency-concurrency` → `docs/development/idempotency-concurrency.md`
 - `notifications` → `docs/development/notifications.md`（Agent 要点见 `.agent/rules/notifications.md`）
+- `ai-model-providers` → `docs/development/ai-model-providers.md`
 - `icon-library` → `docs/development/icon-library.md`
 - `logging` → `docs/development/logging.md`
 - `api-response` → `docs/development/api-response.md`

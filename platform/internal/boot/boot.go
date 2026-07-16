@@ -17,6 +17,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
 	"github.com/yzxingtu2026/ainp/platform/framework/state"
 	"github.com/yzxingtu2026/ainp/platform/framework/storage"
+	"github.com/yzxingtu2026/ainp/platform/modules/ai"
 	"github.com/yzxingtu2026/ainp/platform/modules/demo"
 	"github.com/yzxingtu2026/ainp/platform/modules/operations"
 	"github.com/yzxingtu2026/ainp/platform/modules/system"
@@ -65,6 +66,9 @@ func OpenInstalled(ctx context.Context, cfg *config.Config) (*Platform, error) {
 	}
 	if err := system.AutoMigrate(db); err != nil {
 		return nil, fmt.Errorf("system migrate: %w", err)
+	}
+	if err := ai.AutoMigrate(db); err != nil {
+		return nil, fmt.Errorf("ai migrate: %w", err)
 	}
 	if err := system.SeedDemo(ctx, db); err != nil {
 		return nil, fmt.Errorf("system seed: %w", err)
@@ -137,6 +141,9 @@ func OpenInstalled(ctx context.Context, cfg *config.Config) (*Platform, error) {
 	}
 	if err := system.Register(application); err != nil {
 		return nil, fmt.Errorf("register system: %w", err)
+	}
+	if err := ai.Register(application); err != nil {
+		return nil, fmt.Errorf("register ai: %w", err)
 	}
 	if err := operations.Register(application, system.NewOperationsNotificationDeliveryService(application)); err != nil {
 		return nil, fmt.Errorf("register operations: %w", err)
