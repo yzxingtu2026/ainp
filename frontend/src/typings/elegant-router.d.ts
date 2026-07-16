@@ -31,6 +31,8 @@ declare module "@elegant-router/types" {
     "setup": "/setup";
     "system": "/system";
     "system_attachments": "/system/attachments";
+    "system_notification-deliveries": "/system/notification-deliveries";
+    "system_notification-templates": "/system/notification-templates";
     "system_profile": "/system/profile";
     "system_roles": "/system/roles";
     "system_settings": "/system/settings";
@@ -103,6 +105,8 @@ declare module "@elegant-router/types" {
     | "home"
     | "notification_list"
     | "system_attachments"
+    | "system_notification-deliveries"
+    | "system_notification-templates"
     | "system_profile"
     | "system_roles"
     | "system_settings"

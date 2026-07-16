@@ -6,8 +6,11 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/logging"
 	"github.com/yzxingtu2026/ainp/platform/framework/notification"
+	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
+	"github.com/yzxingtu2026/ainp/platform/modules/system/jobs"
 	"gorm.io/gorm"
 )
 
@@ -141,7 +144,7 @@ func NewGormDeliverStore(repo *NotificationRepository) *GormDeliverStore {
 	return &GormDeliverStore{repo: repo}
 }
 
-func (s *GormDeliverStore) LoadDelivery(ctx context.Context, deliveryID string) (*deliveryCtx, error) {
+func (s *GormDeliverStore) LoadDelivery(ctx context.Context, deliveryID string) (*jobs.DeliveryContext, error) {
 	del, err := s.repo.GetDelivery(ctx, deliveryID)
 	if err != nil {
 		return nil, err
@@ -155,14 +158,16 @@ func (s *GormDeliverStore) LoadDelivery(ctx context.Context, deliveryID string) 
 		return nil, err
 	}
 	varsJSON := []byte("{}")
+	defKey := ""
 	if req != nil {
 		varsJSON = req.VariablesJSON
+		defKey = req.DefinitionKey
 	}
-	return &deliveryCtx{
+	return &jobs.DeliveryContext{
 		DeliveryID:    del.ID,
 		RequestID:     del.RequestID,
 		TenantID:      del.TenantID,
-		DefinitionKey: req.DefinitionKey,
+		DefinitionKey: defKey,
 		RecipientType: del.RecipientType,
 		RecipientID:   del.RecipientID,
 		Channel:       del.Channel,
@@ -175,18 +180,8 @@ func (s *GormDeliverStore) UpdateDeliveryStatus(ctx context.Context, deliveryID 
 	return s.repo.UpdateDeliveryStatus(ctx, deliveryID, status, externalID, lastError)
 }
 
-// deliveryCtx is an internal alias to avoid import cycles.
-type deliveryCtx = struct {
-	DeliveryID    string
-	RequestID     string
-	TenantID      string
-	DefinitionKey string
-	RecipientType string
-	RecipientID   string
-	Channel       string
-	Locale        string
-	VariablesJSON []byte
-}
+// Compile-time check: GormDeliverStore implements jobs.NotificationDeliverStore
+var _ jobs.NotificationDeliverStore = (*GormDeliverStore)(nil)
 
 // --- OrchestratorLogger implementation ---
 
@@ -242,11 +237,21 @@ type NotificationOutboxPayload struct {
 	IdempotencyKey string                       `json:"idempotency_key,omitempty"`
 }
 
-func (h *NotificationOutboxHandler) Handle(ctx context.Context, env outboxEnvelope) error {
+func (h *NotificationOutboxHandler) Handle(ctx context.Context, env outbox.Envelope) error {
 	var payload NotificationOutboxPayload
 	if err := json.Unmarshal(env.Payload, &payload); err != nil {
 		return fmt.Errorf("notification outbox: invalid payload: %w", err)
 	}
+
+	// Inject auth context from Envelope (Outbox Dispatcher goroutine has no auth)
+	ctx = auth.WithContext(ctx, &auth.Context{
+		TenantID:      env.TenantID,
+		Realm:         auth.NormalizeRealm(env.Realm),
+		UserID:        env.ActorID,
+		RequestID:     env.CorrelationID,
+		Authenticated: true,
+		Client:        "outbox",
+	})
 
 	input := notification.NotificationInput{
 		DefinitionKey:  payload.DefinitionKey,
@@ -262,16 +267,14 @@ func (h *NotificationOutboxHandler) Handle(ctx context.Context, env outboxEnvelo
 	}
 
 	_, _, err := h.service.Orchestrator().Process(ctx, input)
+	if err != nil {
+		logging.Error(ctx, "notification outbox: orchestrator process failed", err,
+			"event_id", env.ID,
+			"definition_key", payload.DefinitionKey,
+			"tenant_id", env.TenantID,
+		)
+	}
 	return err
-}
-
-// outboxEnvelope is a minimal outbox envelope representation for the handler.
-type outboxEnvelope struct {
-	TenantID      string
-	ActorID       string
-	CorrelationID string
-	CausationID   string
-	Payload       json.RawMessage
 }
 
 // --- User lookup for recipient resolver ---

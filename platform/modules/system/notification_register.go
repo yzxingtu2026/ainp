@@ -10,8 +10,13 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
+	"github.com/yzxingtu2026/ainp/platform/framework/i18n"
+	"github.com/yzxingtu2026/ainp/platform/framework/job"
+	"github.com/yzxingtu2026/ainp/platform/framework/logging"
 	"github.com/yzxingtu2026/ainp/platform/framework/menu"
 	"github.com/yzxingtu2026/ainp/platform/framework/notification"
+	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
+	"github.com/yzxingtu2026/ainp/platform/modules/system/jobs"
 	"gorm.io/gorm"
 )
 
@@ -27,6 +32,7 @@ const (
 	ActionNotificationTemplateReset   = "system.notification_template_reset"
 	ActionNotificationTemplatePreview = "system.notification_template_preview"
 	ActionNotificationDeliveryList    = "system.notification_delivery_list"
+	ActionNotificationDeliveryGet     = "system.notification_delivery_get"
 	ActionNotificationDeliveryRetry   = "system.notification_delivery_retry"
 )
 
@@ -187,11 +193,109 @@ func (s *NotificationTemplateService) List(ctx context.Context, _ json.RawMessag
 	if _, err := requireTenant(ctx); err != nil {
 		return nil, err
 	}
+
+	// 获取请求语言，用于翻译 name/description
+	lang := i18n.FromCtx(ctx)
+
+	// 1. 获取代码注册的所有通知定义
+	defs := s.registry.List()
+
+	// 2. 获取数据库中的租户覆盖
 	overrides, err := s.repo.ListTemplateOverrides(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"items": overrides}, nil
+
+	// 3. 构建覆盖索引 map[definition_key:channel:locale] -> override
+	overrideMap := make(map[string]*NotificationTemplateOverride)
+	for i := range overrides {
+		key := overrides[i].DefinitionKey + ":" + overrides[i].Channel + ":" + overrides[i].Locale
+		overrideMap[key] = &overrides[i]
+	}
+
+	// 4. 合并：以定义为主体，附加覆盖信息
+	items := make([]map[string]any, 0, len(defs))
+	for _, def := range defs {
+		// 收集变量字段
+		varFields := make([]map[string]any, len(def.Variables.Fields))
+		for i, f := range def.Variables.Fields {
+			varFields[i] = map[string]any{
+				"name":      f.Name,
+				"type":      f.Type,
+				"required":  f.Required,
+				"sensitive": f.Sensitive,
+			}
+		}
+
+		// 收集模板变体（默认值 + 覆盖）
+		templates := make([]map[string]any, 0, len(def.Templates.Variants))
+		for _, ct := range def.Templates.Variants {
+			key := def.Key + ":" + string(ct.Channel) + ":" + ct.Locale
+			ov := overrideMap[key]
+
+			// 默认 subject/body 取决于渠道
+			defaultSubject := ct.Subject
+			defaultBody := ct.Body
+			if ct.InApp != nil {
+				if defaultSubject == "" {
+					defaultSubject = ct.InApp.Title
+				}
+				if defaultBody == "" {
+					defaultBody = ct.InApp.Body
+				}
+			}
+			if ct.Email != nil && defaultSubject == "" {
+				defaultSubject = ct.Email.Subject
+			}
+
+			entry := map[string]any{
+				"channel":         string(ct.Channel),
+				"locale":          ct.Locale,
+				"default_subject": defaultSubject,
+				"default_body":    defaultBody,
+				"has_override":    ov != nil,
+			}
+
+			if ov != nil {
+				entry["override"] = map[string]any{
+					"subject":    ov.Subject,
+					"body":       ov.Body,
+					"enabled":    ov.Enabled,
+					"updated_at": ov.UpdatedAt,
+				}
+			} else {
+				entry["override"] = nil
+			}
+
+			templates = append(templates, entry)
+		}
+
+		// 转换 channel slice 为 string slice
+		allowedChannels := make([]string, len(def.AllowedChannels))
+		for i, ch := range def.AllowedChannels {
+			allowedChannels[i] = string(ch)
+		}
+		defaultChannels := make([]string, len(def.DefaultChannels))
+		for i, ch := range def.DefaultChannels {
+			defaultChannels[i] = string(ch)
+		}
+
+		items = append(items, map[string]any{
+			"definition_key":   def.Key,
+			"name":             i18n.T(lang, def.NameKey),
+			"description":      i18n.T(lang, def.DescriptionKey),
+			"category":         def.Category,
+			"name_key":         def.NameKey,
+			"description_key":  def.DescriptionKey,
+			"priority":         string(def.Priority),
+			"allowed_channels": allowedChannels,
+			"default_channels": defaultChannels,
+			"variables":        varFields,
+			"templates":        templates,
+		})
+	}
+
+	return map[string]any{"items": items}, nil
 }
 
 func (s *NotificationTemplateService) Update(ctx context.Context, input json.RawMessage) (any, error) {
@@ -319,27 +423,198 @@ func (s *NotificationTemplateService) Preview(ctx context.Context, input json.Ra
 // --- Delivery management actions ---
 
 type NotificationDeliveryService struct {
-	repo *NotificationRepository
+	repo     *NotificationRepository
+	enqueuer job.Enqueuer
 }
 
-func NewNotificationDeliveryService(repo *NotificationRepository) *NotificationDeliveryService {
-	return &NotificationDeliveryService{repo: repo}
+func NewNotificationDeliveryService(repo *NotificationRepository, enqueuer ...job.Enqueuer) *NotificationDeliveryService {
+	service := &NotificationDeliveryService{repo: repo}
+	if len(enqueuer) > 0 {
+		service.enqueuer = enqueuer[0]
+	}
+	return service
 }
 
 func (s *NotificationDeliveryService) List(ctx context.Context, input json.RawMessage) (any, error) {
+	ac, err := requireTenant(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var req struct {
+		Current int    `json:"current"`
+		Size    int    `json:"size"`
+		Status  string `json:"status"`
+		Channel string `json:"channel"`
+	}
+	if err := json.Unmarshal(input, &req); err != nil {
+		return nil, errs.ValidationKey("common.validation_failed", "invalid input")
+	}
+	if req.Status != "" && !notification.NotificationDeliveryStatus(req.Status).Valid() {
+		return nil, errs.ValidationKey("common.validation_failed", "invalid status")
+	}
+	if req.Channel != "" && !notification.Channel(req.Channel).Valid() {
+		return nil, errs.ValidationKey("common.validation_failed", "invalid channel")
+	}
+	items, total, err := s.repo.ListDeliveries(ctx, req.Current, req.Size, req.Status, req.Channel)
+	if err != nil {
+		return nil, err
+	}
+	// Batch lookup recipient display names (user type only)
+	var userIDs []string
+	seen := make(map[string]struct{})
+	for _, d := range items {
+		if d.RecipientType == "user" || d.RecipientType == "" {
+			if _, ok := seen[d.RecipientID]; !ok {
+				seen[d.RecipientID] = struct{}{}
+				userIDs = append(userIDs, d.RecipientID)
+			}
+		}
+	}
+	nameMap, _ := s.repo.BatchLookupUserNames(ctx, ac.TenantID, userIDs)
+	// Map to API response with proper null serialization
+	result := make([]map[string]any, len(items))
+	for i, d := range items {
+		var sentAt, deliveredAt, failedAt, scheduledAt any
+		if d.SentAt != nil {
+			sentAt = d.SentAt
+		}
+		if d.DeliveredAt != nil {
+			deliveredAt = d.DeliveredAt
+		}
+		if d.FailedAt != nil {
+			failedAt = d.FailedAt
+		}
+		if d.ScheduledAt != nil {
+			scheduledAt = d.ScheduledAt
+		}
+		recipientName := nameMap[d.RecipientID]
+		result[i] = map[string]any{
+			"id":             d.ID,
+			"tenant_id":      d.TenantID,
+			"request_id":     d.RequestID,
+			"recipient_type": d.RecipientType,
+			"recipient_id":   d.RecipientID,
+			"recipient_name": recipientName,
+			"channel":        d.Channel,
+			"provider":       d.Provider,
+			"status":         d.Status,
+			"attempts":       d.Attempts,
+			"max_attempts":   d.MaxAttempts,
+			"external_id":    d.ExternalID,
+			"last_error":     d.LastError,
+			"sent_at":        sentAt,
+			"delivered_at":   deliveredAt,
+			"failed_at":      failedAt,
+			"scheduled_at":   scheduledAt,
+			"created_at":     d.CreatedAt,
+			"updated_at":     d.UpdatedAt,
+		}
+	}
+	return map[string]any{"items": result, "total": total}, nil
+}
+
+func (s *NotificationDeliveryService) Retry(ctx context.Context, input json.RawMessage) (any, error) {
+	ac, err := requireTenant(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var req struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(input, &req); err != nil || strings.TrimSpace(req.ID) == "" {
+		return nil, errs.ValidationKey("common.validation_failed", "id required")
+	}
+	if s.enqueuer == nil {
+		return nil, errs.NewKey(errs.CodeNotificationDeliveryFailed, "notification.delivery_failed", "notification jobs unavailable")
+	}
+	delivery, err := s.repo.GetDelivery(ctx, req.ID)
+	if err != nil {
+		return nil, err
+	}
+	if delivery == nil {
+		return nil, errs.NewKey(errs.CodeNotFound, "notification.delivery_not_found", "delivery not found")
+	}
+	if delivery.Status != string(notification.DeliveryFailed) && delivery.Status != string(notification.DeliveryDead) {
+		return nil, errs.ValidationKey("notification.delivery_not_retryable", "delivery is not failed or dead")
+	}
+	if _, err := s.enqueuer.Enqueue(ctx, job.EnqueueInput{
+		Type:           jobs.NotificationDeliverJobType,
+		IdempotencyKey: "notification-retry:" + req.ID + ":" + time.Now().UTC().Format(time.RFC3339Nano),
+		Payload:        jobs.NotificationDeliverPayload{DeliveryID: req.ID},
+	}); err != nil {
+		return nil, errs.Wrap(errs.CodeNotificationDeliveryFailed, "enqueue notification retry failed", err)
+	}
+	if err := s.repo.RetryDelivery(ctx, req.ID); err != nil {
+		return nil, err
+	}
+	ac.AuditResourceType = "notification_delivery"
+	ac.AuditResourceID = req.ID
+	ac.AuditSummary = "retry failed delivery"
+	return map[string]any{"retried": true}, nil
+}
+
+// Get returns a single delivery detail with rendered message content.
+func (s *NotificationDeliveryService) Get(ctx context.Context, input json.RawMessage) (any, error) {
 	if _, err := requireTenant(ctx); err != nil {
 		return nil, err
 	}
 	var req struct {
-		Current int `json:"current"`
-		Size    int `json:"size"`
+		ID string `json:"id"`
 	}
-	_ = json.Unmarshal(input, &req)
-	items, total, err := s.repo.ListFailedDeliveries(ctx, req.Current, req.Size)
+	if err := json.Unmarshal(input, &req); err != nil || strings.TrimSpace(req.ID) == "" {
+		return nil, errs.ValidationKey("common.validation_failed", "id required")
+	}
+	row, err := s.repo.GetDeliveryDetail(ctx, req.ID)
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"items": items, "total": total}, nil
+	if row == nil {
+		return nil, errs.NewKey(errs.CodeNotFound, "notification.delivery_not_found", "delivery not found")
+	}
+	var sentAt, deliveredAt, failedAt, scheduledAt any
+	if row.SentAt != nil {
+		sentAt = row.SentAt
+	}
+	if row.DeliveredAt != nil {
+		deliveredAt = row.DeliveredAt
+	}
+	if row.FailedAt != nil {
+		failedAt = row.FailedAt
+	}
+	if row.ScheduledAt != nil {
+		scheduledAt = row.ScheduledAt
+	}
+	var variables map[string]any
+	_ = json.Unmarshal(row.VariablesJSON, &variables)
+	return map[string]any{
+		"id":             row.ID,
+		"tenant_id":      row.TenantID,
+		"request_id":     row.RequestID,
+		"recipient_type": row.RecipientType,
+		"recipient_id":   row.RecipientID,
+		"recipient_name": row.RecipientName,
+		"channel":        row.Channel,
+		"provider":       row.Provider,
+		"locale":         row.Locale,
+		"status":         row.Status,
+		"attempts":       row.Attempts,
+		"max_attempts":   row.MaxAttempts,
+		"external_id":    row.ExternalID,
+		"last_error":     row.LastError,
+		"definition_key": row.DefinitionKey,
+		"variables":      variables,
+		"content": map[string]any{
+			"title":   row.Title,
+			"summary": row.Summary,
+			"body":    row.Body,
+		},
+		"sent_at":      sentAt,
+		"delivered_at": deliveredAt,
+		"failed_at":    failedAt,
+		"scheduled_at": scheduledAt,
+		"created_at":   row.CreatedAt,
+		"updated_at":   row.UpdatedAt,
+	}, nil
 }
 
 // --- Registration ---
@@ -358,7 +633,68 @@ func registerNotificationActions(a *app.App) error {
 	inAppSvc := NewInAppNotificationService(repo)
 	overrideProvider := NewGormOverrideProvider(repo)
 	tplSvc := NewNotificationTemplateService(repo, a.Notifications, a.NotificationRenderer, overrideProvider)
-	deliverySvc := NewNotificationDeliveryService(repo)
+	var jobEnqueuer job.Enqueuer
+	if a.Jobs != nil && a.Jobs.Enabled {
+		jobEnqueuer = a.Jobs.Enqueuer
+	}
+	deliverySvc := NewNotificationDeliveryService(repo, jobEnqueuer)
+
+	// ── Build Orchestrator + NotificationService ──
+	inAppProvider := NewInAppProvider(repo)
+	providers := map[notification.Channel]notification.ChannelProvider{
+		notification.ChannelInApp: inAppProvider,
+	}
+	recipientResolver := notification.NewTenantUserResolver(UserExistsFn(a.DB))
+
+	var notifSvc *NotificationService
+	var enqueuer *NotificationJobEnqueuer
+	if a.Jobs != nil && a.Jobs.Enabled {
+		enqueuer = NewNotificationJobEnqueuer(func(ctx context.Context, deliveryID string) error {
+			_, err := a.Jobs.Enqueuer.Enqueue(ctx, job.EnqueueInput{
+				Type:           jobs.NotificationDeliverJobType,
+				IdempotencyKey: "notif-delivery:" + deliveryID,
+				Payload:        jobs.NotificationDeliverPayload{DeliveryID: deliveryID},
+			})
+			return err
+		})
+	} else {
+		// No-op enqueuer when Jobs disabled
+		enqueuer = NewNotificationJobEnqueuer(func(ctx context.Context, deliveryID string) error {
+			logging.Warn(ctx, "notification jobs disabled; delivery not enqueued", "delivery_id", deliveryID)
+			return nil
+		})
+	}
+	notifSvc = NewNotificationService(a.DB, repo, a.Notifications, a.NotificationRenderer,
+		notification.NewTemplateResolver(a.NotificationRenderer, overrideProvider),
+		recipientResolver, enqueuer, providers)
+	_ = notifSvc // used for Outbox handler below
+
+	// ── Register notification.deliver Job ──
+	if a.Jobs != nil {
+		deliverStore := NewGormDeliverStore(repo)
+		deliverHandler := jobs.NewNotificationDeliverHandler(
+			deliverStore, providers, a.NotificationRenderer,
+			notification.NewTemplateResolver(a.NotificationRenderer, overrideProvider),
+			a.Notifications,
+		)
+		if err := a.Jobs.Register(jobs.NotificationDeliverJobDefinition(), deliverHandler); err != nil {
+			return err
+		}
+	}
+
+	// ── Register Outbox event definition + handler ──
+	if a.Outbox != nil {
+		if err := a.Outbox.RegisterDefinition(outbox.Definition{
+			EventType: "notification.requested.v1", SchemaVersion: 1,
+			Description: "Business requests a notification delivery via Orchestrator",
+		}); err != nil {
+			return err
+		}
+		outboxHandler := NewNotificationOutboxHandler(notifSvc)
+		if err := a.Outbox.RegisterHandler(outboxHandler); err != nil {
+			return err
+		}
+	}
 
 	auditOn := true
 	auditOff := false
@@ -406,7 +742,9 @@ func registerNotificationActions(a *app.App) error {
 		{ActionNotificationTemplateList, "/api/v1/system/notification/templates", "模板覆盖列表", "action.system.notification_template_list.name", "列出租户模板覆盖", "action.system.notification_template_list.description", &auditOff, tplSvc.List},
 		{ActionNotificationTemplateUpdate, "/api/v1/system/notification/templates/update", "更新模板覆盖", "action.system.notification_template_update.name", "更新模板覆盖内容", "action.system.notification_template_update.description", &auditOn, tplSvc.Update},
 		{ActionNotificationTemplateReset, "/api/v1/system/notification/templates/reset", "重置模板覆盖", "action.system.notification_template_reset.name", "重置为代码默认模板", "action.system.notification_template_reset.description", &auditOn, tplSvc.Reset},
-		{ActionNotificationDeliveryList, "/api/v1/system/notification/deliveries", "Delivery 列表", "action.system.notification_delivery_list.name", "查询失败投递记录", "action.system.notification_delivery_list.description", &auditOff, deliverySvc.List},
+		{ActionNotificationDeliveryList, "/api/v1/system/notification/deliveries", "Delivery 列表", "action.system.notification_delivery_list.name", "查询投递记录", "action.system.notification_delivery_list.description", &auditOff, deliverySvc.List},
+		{ActionNotificationDeliveryGet, "/api/v1/system/notification/deliveries/get", "Delivery 详情", "action.system.notification_delivery_get.name", "查询投递详情", "action.system.notification_delivery_get.description", &auditOff, deliverySvc.Get},
+		{ActionNotificationDeliveryRetry, "/api/v1/system/notification/deliveries/retry", "重试投递", "action.system.notification_delivery_retry.name", "重试失败投递记录", "action.system.notification_delivery_retry.description", &auditOn, deliverySvc.Retry},
 		{ActionNotificationTemplatePreview, "/api/v1/system/notification/templates/preview", "模板预览", "action.system.notification_template_preview.name", "预览模板渲染结果（不触发投递）", "action.system.notification_template_preview.description", &auditOff, tplSvc.Preview},
 	}
 	for _, spec := range adminSpecs {
@@ -454,6 +792,260 @@ func registerNotificationActions(a *app.App) error {
 		Path:       "/notification/list",
 		Component:  "notification/list",
 		HideInMenu: true,
+	}); err != nil {
+		return err
+	}
+
+	// Admin management menus (visible in sidebar under system)
+	if err := a.RegisterMenu(menu.Menu{
+		ID:         "system.notification_templates",
+		ParentID:   "system.root",
+		Title:      "通知模板",
+		TitleKey:   "menu.system.notification_templates.title",
+		Icon:       "mdi:email-edit-outline",
+		Type:       menu.TypeMenu,
+		Path:       "/system/notification-templates",
+		Component:  "system/notification-templates",
+		Permission: ActionNotificationTemplateList,
+		BindAction: ActionNotificationTemplateList,
+		Module:     "system",
+		Order:      6,
+	}); err != nil {
+		return err
+	}
+
+	if err := a.RegisterMenu(menu.Menu{
+		ID:         "system.notification_deliveries",
+		ParentID:   "system.root",
+		Title:      "投递记录",
+		TitleKey:   "menu.system.notification_deliveries.title",
+		Icon:       "mdi:truck-delivery-outline",
+		Type:       menu.TypeMenu,
+		Path:       "/system/notification-deliveries",
+		Component:  "system/notification-deliveries",
+		Permission: ActionNotificationDeliveryList,
+		BindAction: ActionNotificationDeliveryList,
+		Module:     "system",
+		Order:      7,
+	}); err != nil {
+		return err
+	}
+
+	// ── Register notification definitions (code-level defaults) ──
+
+	// 1. 用户欢迎通知
+	if err := a.RegisterNotification(notification.Definition{
+		Key:             "user.welcome",
+		Category:        "user",
+		Surface:         notification.SurfaceTenant,
+		NameKey:         "notification.user.welcome.name",
+		DescriptionKey:  "notification.user.welcome.description",
+		Priority:        notification.PriorityNormal,
+		AllowedChannels: []notification.Channel{notification.ChannelInApp},
+		DefaultChannels: []notification.Channel{notification.ChannelInApp},
+		Variables: notification.VariableSchema{
+			Fields: []notification.VariableField{
+				{Name: "username", Type: "string", Required: true},
+				{Name: "tenant_name", Type: "string", Required: false},
+			},
+		},
+		Templates: &notification.TemplateDefinition{
+			Version: 1,
+			Variants: map[string]notification.ChannelTemplate{
+				"in_app:zh-CN": {
+					Channel: notification.ChannelInApp, Locale: "zh-CN",
+					InApp: &notification.InAppTemplate{
+						Title:   "欢迎，{{.username}}",
+						Body:    "您已成功加入{{.tenant_name}}，欢迎开始使用！",
+						Icon:    "mdi:account-check",
+						Summary: "新用户欢迎通知",
+					},
+				},
+				"in_app:en": {
+					Channel: notification.ChannelInApp, Locale: "en",
+					InApp: &notification.InAppTemplate{
+						Title:   "Welcome, {{.username}}",
+						Body:    "You have joined {{.tenant_name}}. Welcome aboard!",
+						Icon:    "mdi:account-check",
+						Summary: "New user welcome notification",
+					},
+				},
+			},
+		},
+	}); err != nil {
+		return err
+	}
+
+	// 2. 密码重置通知
+	if err := a.RegisterNotification(notification.Definition{
+		Key:             "user.password_reset",
+		Category:        "security",
+		Surface:         notification.SurfaceTenant,
+		NameKey:         "notification.user.password_reset.name",
+		DescriptionKey:  "notification.user.password_reset.description",
+		Priority:        notification.PriorityHigh,
+		AllowedChannels: []notification.Channel{notification.ChannelInApp, notification.ChannelEmail},
+		DefaultChannels: []notification.Channel{notification.ChannelInApp},
+		Variables: notification.VariableSchema{
+			Fields: []notification.VariableField{
+				{Name: "username", Type: "string", Required: true},
+				{Name: "reset_link", Type: "string", Required: true, Ephemeral: true},
+				{Name: "expires_in", Type: "string", Required: false},
+			},
+		},
+		Templates: &notification.TemplateDefinition{
+			Version: 1,
+			Variants: map[string]notification.ChannelTemplate{
+				"in_app:zh-CN": {
+					Channel: notification.ChannelInApp, Locale: "zh-CN",
+					InApp: &notification.InAppTemplate{
+						Title:   "密码重置请求",
+						Body:    "{{.username}}，您请求重置密码，请在{{.expires_in}}内完成操作。",
+						Icon:    "mdi:lock-reset",
+						Summary: "安全验证通知",
+					},
+				},
+				"in_app:en": {
+					Channel: notification.ChannelInApp, Locale: "en",
+					InApp: &notification.InAppTemplate{
+						Title:   "Password Reset Request",
+						Body:    "{{.username}}, you requested a password reset. Please complete within {{.expires_in}}.",
+						Icon:    "mdi:lock-reset",
+						Summary: "Security notification",
+					},
+				},
+			},
+		},
+	}); err != nil {
+		return err
+	}
+
+	// 3. 角色变更通知
+	if err := a.RegisterNotification(notification.Definition{
+		Key:             "system.role_changed",
+		Category:        "system",
+		Surface:         notification.SurfaceTenant,
+		NameKey:         "notification.system.role_changed.name",
+		DescriptionKey:  "notification.system.role_changed.description",
+		Priority:        notification.PriorityNormal,
+		AllowedChannels: []notification.Channel{notification.ChannelInApp},
+		DefaultChannels: []notification.Channel{notification.ChannelInApp},
+		Variables: notification.VariableSchema{
+			Fields: []notification.VariableField{
+				{Name: "username", Type: "string", Required: true},
+				{Name: "role_name", Type: "string", Required: true},
+				{Name: "action", Type: "string", Required: true}, // "assigned" or "removed"
+			},
+		},
+		Templates: &notification.TemplateDefinition{
+			Version: 1,
+			Variants: map[string]notification.ChannelTemplate{
+				"in_app:zh-CN": {
+					Channel: notification.ChannelInApp, Locale: "zh-CN",
+					InApp: &notification.InAppTemplate{
+						Title:   "角色变更通知",
+						Body:    "{{.username}}，您的角色已{{.action}}：{{.role_name}}",
+						Icon:    "mdi:shield-account",
+						Summary: "角色权限变更",
+					},
+				},
+				"in_app:en": {
+					Channel: notification.ChannelInApp, Locale: "en",
+					InApp: &notification.InAppTemplate{
+						Title:   "Role Changed",
+						Body:    "{{.username}}, your role has been {{.action}}: {{.role_name}}",
+						Icon:    "mdi:shield-account",
+						Summary: "Role permission change",
+					},
+				},
+			},
+		},
+	}); err != nil {
+		return err
+	}
+
+	// 4. 系统公告
+	if err := a.RegisterNotification(notification.Definition{
+		Key:             "system.announcement",
+		Category:        "system",
+		Surface:         notification.SurfaceTenant,
+		NameKey:         "notification.system.announcement.name",
+		DescriptionKey:  "notification.system.announcement.description",
+		Priority:        notification.PriorityNormal,
+		AllowedChannels: []notification.Channel{notification.ChannelInApp},
+		DefaultChannels: []notification.Channel{notification.ChannelInApp},
+		Variables: notification.VariableSchema{
+			Fields: []notification.VariableField{
+				{Name: "title", Type: "string", Required: true},
+				{Name: "content", Type: "string", Required: true},
+				{Name: "importance", Type: "string", Required: false}, // "info", "warning"
+			},
+		},
+		Templates: &notification.TemplateDefinition{
+			Version: 1,
+			Variants: map[string]notification.ChannelTemplate{
+				"in_app:zh-CN": {
+					Channel: notification.ChannelInApp, Locale: "zh-CN",
+					InApp: &notification.InAppTemplate{
+						Title:   "{{.title}}",
+						Body:    "{{.content}}",
+						Icon:    "mdi:bullhorn",
+						Summary: "系统公告",
+					},
+				},
+				"in_app:en": {
+					Channel: notification.ChannelInApp, Locale: "en",
+					InApp: &notification.InAppTemplate{
+						Title:   "{{.title}}",
+						Body:    "{{.content}}",
+						Icon:    "mdi:bullhorn",
+						Summary: "System Announcement",
+					},
+				},
+			},
+		},
+	}); err != nil {
+		return err
+	}
+
+	// 5. 测试通知（用于验证通知系统是否正常工作）
+	if err := a.RegisterNotification(notification.Definition{
+		Key:             "system.notification_test",
+		Category:        "system",
+		Surface:         notification.SurfaceTenant,
+		NameKey:         "notification.system.notification_test.name",
+		DescriptionKey:  "notification.system.notification_test.description",
+		Priority:        notification.PriorityLow,
+		AllowedChannels: []notification.Channel{notification.ChannelInApp},
+		DefaultChannels: []notification.Channel{notification.ChannelInApp},
+		Variables: notification.VariableSchema{
+			Fields: []notification.VariableField{
+				{Name: "message", Type: "string", Required: false},
+			},
+		},
+		Templates: &notification.TemplateDefinition{
+			Version: 1,
+			Variants: map[string]notification.ChannelTemplate{
+				"in_app:zh-CN": {
+					Channel: notification.ChannelInApp, Locale: "zh-CN",
+					InApp: &notification.InAppTemplate{
+						Title:   "测试通知",
+						Body:    "这是一条测试通知。{{if .message}}{{.message}}{{end}}",
+						Icon:    "mdi:test-tube",
+						Summary: "通知系统连通性测试",
+					},
+				},
+				"in_app:en": {
+					Channel: notification.ChannelInApp, Locale: "en",
+					InApp: &notification.InAppTemplate{
+						Title:   "Test Notification",
+						Body:    "This is a test notification.{{if .message}} {{.message}}{{end}}",
+						Icon:    "mdi:test-tube",
+						Summary: "Notification system connectivity test",
+					},
+				},
+			},
+		},
 	}); err != nil {
 		return err
 	}
