@@ -233,6 +233,9 @@ const local: App.I18n.Schema = {
     }
   },
   route: {
+    ai: 'AI Center',
+    ai_models: 'Model Catalog',
+    ai_providers: 'Model Providers',
     login: 'Login',
     403: 'No Permission',
     404: 'Page Not Found',
@@ -639,6 +642,27 @@ const local: App.I18n.Schema = {
     filterUnread: 'Unread',
     filterArchived: 'Include Archived',
     filterPlaceholder: 'Filter'
+  },
+  aiModel: {
+    alias: 'Alias',
+    bindAlias: 'Bind Alias',
+    enabled: 'Enabled',
+    disabled: 'Disabled',
+    editTitle: 'Edit Model',
+    createTitle: 'Create Model',
+    deleteConfirm: 'Delete this model? This action cannot be undone.',
+    aliasReferenced: 'Remove all Alias bindings before deleting this model',
+    features: {
+      streaming: 'Streaming',
+      tool_calling: 'Tool Calling',
+      parallel_tool_calls: 'Parallel Tool Calls',
+      structured_output: 'Structured Output',
+      vision: 'Vision',
+      embeddings: 'Embeddings',
+      image_generation: 'Image Generation',
+      audio_input: 'Audio Input',
+      audio_output: 'Audio Output'
+    }
   },
   notificationAdmin: {
     templateTitle: 'Notification Template Management',

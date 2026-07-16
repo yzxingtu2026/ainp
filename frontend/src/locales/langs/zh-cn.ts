@@ -229,6 +229,9 @@ const local: App.I18n.Schema = {
     }
   },
   route: {
+    ai: 'AI 中心',
+    ai_models: '模型目录',
+    ai_providers: '模型供应商',
     login: '登录',
     403: '无权限',
     404: '页面不存在',
@@ -633,6 +636,27 @@ const local: App.I18n.Schema = {
     filterUnread: '未读',
     filterArchived: '含已归档',
     filterPlaceholder: '筛选'
+  },
+  aiModel: {
+    alias: '别名',
+    bindAlias: '绑定别名',
+    enabled: '启用',
+    disabled: '停用',
+    editTitle: '编辑模型',
+    createTitle: '新增模型',
+    deleteConfirm: '确定删除该模型？删除后无法恢复。',
+    aliasReferenced: '请先解除该模型绑定的别名',
+    features: {
+      streaming: '流式输出',
+      tool_calling: '工具调用',
+      parallel_tool_calls: '并行工具调用',
+      structured_output: '结构化输出',
+      vision: '视觉理解',
+      embeddings: '向量嵌入',
+      image_generation: '图像生成',
+      audio_input: '音频输入',
+      audio_output: '音频输出'
+    }
   },
   notificationAdmin: {
     templateTitle: '通知模板管理',

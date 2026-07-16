@@ -20,6 +20,9 @@ declare module "@elegant-router/types" {
     "403": "/403";
     "404": "/404";
     "500": "/500";
+    "ai": "/ai";
+    "ai_models": "/ai/models";
+    "ai_providers": "/ai/providers";
     "demo": "/demo";
     "demo_attachments": "/demo/attachments";
     "demo_hello": "/demo/hello";
@@ -76,6 +79,7 @@ declare module "@elegant-router/types" {
     | "403"
     | "404"
     | "500"
+    | "ai"
     | "demo"
     | "home"
     | "iframe-page"
@@ -106,6 +110,8 @@ declare module "@elegant-router/types" {
     | "iframe-page"
     | "login"
     | "setup"
+    | "ai_models"
+    | "ai_providers"
     | "demo_attachments"
     | "demo_hello"
     | "home"

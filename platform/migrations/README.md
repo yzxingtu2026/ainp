@@ -8,3 +8,5 @@
 - `0005_attachments.sql` 创建 `attachments` / `attachment_links` 与状态 CHECK；附件策略与 AccessPolicy 由代码注册。
 - `0011_audit_log_indexes.sql` 为租户审计时间线、Action 与资源筛选增加复合索引。
 - `0012_authentication_sessions.sql` 创建统一认证身份、challenge 与轮换会话表；旧 JWT 缺少 `sid`，升级后需重新登录。
+- `0013_ai_model_governance.sql` 创建租户隔离的 Provider、Model Deployment 与 Alias 表，只包含结构、约束和引用完整性，不写模型业务数据。
+- `0014_ai_provider_encrypted_credentials.sql` 将 Provider 凭证改为数据库密文；旧引用不兼容，升级时停用并要求管理员重新录入。

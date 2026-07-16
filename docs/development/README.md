@@ -1,5 +1,7 @@
 # 开发规范
 
+- [AI 模型供应商与模型目录](./ai-model-providers.md)：Provider Type、Secret、Discovery、Deployment 能力、Alias 与 Resolver 边界。
+
 本目录用于沉淀面向开发者的公共规范详规。`.agent/rules/` 仅保留 Agent 硬约束要点并引用本文档，避免双份堆砌。
 
 - 通用封装、统一组件、公共工具的适用范围和调用方式。

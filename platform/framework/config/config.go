@@ -18,7 +18,12 @@ type Config struct {
 	Outbox    OutboxConfig   `yaml:"outbox"`
 	Redis     RedisConfig    `yaml:"redis"`
 	Jobs      JobsConfig     `yaml:"jobs"`
+	AI        AIConfig       `yaml:"ai"`
 	StateFile string         `yaml:"state_file"` // 安装状态文件路径，默认 configs/state.yaml
+}
+
+type AIConfig struct {
+	CredentialEncryptionKey string `yaml:"credential_encryption_key"`
 }
 
 // RedisConfig is deployment secret/config for Asynq (not tenant settings).
@@ -310,6 +315,9 @@ func (c *Config) applyEnvOverrides() {
 	if user := os.Getenv("REDIS_USERNAME"); user != "" {
 		c.Redis.Username = user
 	}
+	if key := os.Getenv("AI_CREDENTIAL_ENCRYPTION_KEY"); key != "" {
+		c.AI.CredentialEncryptionKey = key
+	}
 }
 
 // Validate 校验必填项；setup 模式（DSN 可为空）由调用方在 Load 后自行判断。
@@ -319,6 +327,9 @@ func (c *Config) Validate(requireDSN bool) error {
 	}
 	if c.Auth.JWT.Secret == "" {
 		return fmt.Errorf("auth.jwt.secret is required")
+	}
+	if c.AI.CredentialEncryptionKey == "" {
+		return fmt.Errorf("ai.credential_encryption_key is required")
 	}
 	if duration, err := time.ParseDuration(c.Auth.JWT.TTL); err != nil || duration <= 0 {
 		return fmt.Errorf("auth.jwt.ttl is invalid")
