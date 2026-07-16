@@ -233,7 +233,7 @@ menu.system.settings.title: "系统设置"
 menu.system.attachments.title: "附件中心"
 menu.system.notification_templates.title: "通知模板"
 menu.operations.notification_deliveries.title: "通知投递"
-menu.operations.root.title: "运维中心"
+menu.operations.root.title: "运维"
 menu.operations.jobs.title: "任务运行"
 menu.operations.outbox.title: "Outbox 事件"
 

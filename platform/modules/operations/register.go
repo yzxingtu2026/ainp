@@ -70,7 +70,7 @@ func registerNotificationDeliveryActions(a *app.App, svc NotificationDeliverySer
 }
 
 func registerMenus(a *app.App, includeDeliveries bool) error {
-	if err := a.RegisterMenu(menu.Menu{ID: "operations.root", Title: "运维中心", TitleKey: "menu.operations.root.title", Icon: "mdi:monitor-dashboard", Type: menu.TypeDirectory, Module: "operations", Order: 20}); err != nil {
+	if err := a.RegisterMenu(menu.Menu{ID: "operations.root", Title: "运维", TitleKey: "menu.operations.root.title", Icon: "mdi:monitor-dashboard", Type: menu.TypeDirectory, Module: "operations", Order: 20}); err != nil {
 		return err
 	}
 	menus := []menu.Menu{
