@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { h, onMounted, reactive, ref, computed } from 'vue';
-import type { DataTableColumns, FormInst } from 'naive-ui';
-import { NButton, NCard, NDataTable, NDivider, NForm, NFormItem, NInput, NModal, NPopconfirm, NSpace, NSwitch, NTab, NTag, NTabs } from 'naive-ui';
+import type { DataTableColumns } from 'naive-ui';
+import { NButton, NCard, NDataTable, NDivider, NFormItem, NInput, NModal, NPopconfirm, NSelect, NSpace, NSwitch, NTab, NTag, NTabs } from 'naive-ui';
 import { $t } from '@/locales';
 import {
   fetchNotificationTemplates,
@@ -17,6 +17,27 @@ const loading = ref(false);
 const records = ref<Api.Notification.TemplateDefinitionItem[]>([]);
 const activeChannel = ref('all');
 
+/** Per-locale template data */
+interface LocaleData {
+  locale: string;
+  default_subject: string;
+  default_body: string;
+  has_override: boolean;
+  override: Api.Notification.TemplateOverrideInfo | null;
+}
+
+/** Merged row: one per (definition + channel) */
+interface MergedRow {
+  definition_key: string;
+  name: string;
+  description: string;
+  category: string;
+  priority: string;
+  channel: string;
+  locales: LocaleData[];
+  variables: Api.Notification.VariableField[];
+}
+
 /** 从定义数据中提取实际使用的渠道列表 */
 const availableChannels = computed<string[]>(() => {
   const channelSet = new Set<string>();
@@ -28,44 +49,33 @@ const availableChannels = computed<string[]>(() => {
   return Array.from(channelSet);
 });
 
-/** Flattened row: one per template variant (channel+locale) */
-interface FlatRow {
-  definition_key: string;
-  name: string;
-  description: string;
-  category: string;
-  name_key: string;
-  priority: string;
-  allowed_channels: string[];
-  variables: Api.Notification.VariableField[];
-  channel: string;
-  locale: string;
-  default_subject: string;
-  default_body: string;
-  has_override: boolean;
-  override: Api.Notification.TemplateOverrideInfo | null;
-}
-
-const flatRows = computed<FlatRow[]>(() => {
-  const rows: FlatRow[] = [];
+const mergedRows = computed<MergedRow[]>(() => {
+  const rows: MergedRow[] = [];
   for (const def of records.value) {
+    // Group templates by channel
+    const channelMap = new Map<string, LocaleData[]>();
     for (const tpl of def.templates) {
       if (activeChannel.value !== 'all' && tpl.channel !== activeChannel.value) continue;
-      rows.push({
-        definition_key: def.definition_key,
-        name: def.name,
-        description: def.description,
-        category: def.category,
-        name_key: def.name_key,
-        priority: def.priority,
-        allowed_channels: def.allowed_channels,
-        variables: def.variables,
-        channel: tpl.channel,
+      const arr = channelMap.get(tpl.channel) || [];
+      arr.push({
         locale: tpl.locale,
         default_subject: tpl.default_subject,
         default_body: tpl.default_body,
         has_override: tpl.has_override,
         override: tpl.override
+      });
+      channelMap.set(tpl.channel, arr);
+    }
+    for (const [channel, locales] of channelMap) {
+      rows.push({
+        definition_key: def.definition_key,
+        name: def.name,
+        description: def.description,
+        category: def.category,
+        priority: def.priority,
+        channel,
+        locales,
+        variables: def.variables
       });
     }
   }
@@ -75,15 +85,22 @@ const flatRows = computed<FlatRow[]>(() => {
 // ── Editor ──
 const editorVisible = ref(false);
 const editorSaving = ref(false);
-const formRef = ref<FormInst | null>(null);
-const editForm = reactive({
-  definition_key: '',
-  channel: '',
-  locale: '',
-  subject: '',
-  body: '',
-  enabled: true
-});
+const editorDefinitionKey = ref('');
+const editorChannel = ref('');
+const editorActiveLocale = ref('');
+const editorVariables = ref<Api.Notification.VariableField[]>([]);
+
+/** Per-locale edit form data, keyed by locale string */
+interface LocaleFormData {
+  subject: string;
+  body: string;
+  enabled: boolean;
+  defaultSubject: string;
+  defaultBody: string;
+  hasOverride: boolean;
+  dirty: boolean;
+}
+const editorLocales = ref<Record<string, LocaleFormData>>({});
 
 // ── Preview ──
 const previewVisible = ref(false);
@@ -123,7 +140,23 @@ const categoryI18n: Record<string, string> = {
   system: 'notificationAdmin.categorySystem'
 };
 
-const columns = computed<DataTableColumns<FlatRow>>(() => [
+/** Aggregate override status: true if any locale has override */
+function anyOverride(row: MergedRow): boolean {
+  return row.locales.some(l => l.has_override);
+}
+
+/** Latest override updated_at across locales */
+function latestOverrideUpdated(row: MergedRow): string | null {
+  let latest = '';
+  for (const l of row.locales) {
+    if (l.override && l.override.updated_at > latest) {
+      latest = l.override.updated_at;
+    }
+  }
+  return latest || null;
+}
+
+const columns = computed<DataTableColumns<MergedRow>>(() => [
   {
     title: $t('notificationAdmin.colDefinition'),
     key: 'definition_key',
@@ -140,27 +173,34 @@ const columns = computed<DataTableColumns<FlatRow>>(() => [
     width: 100,
     render: row => h(NTag, { type: priorityTagType[row.priority] || 'default', size: 'small' }, { default: () => $t((priorityI18n[row.priority] || '') as any) || row.priority })
   },
-  { title: $t('notificationAdmin.colLocale'), key: 'locale', width: 80 },
+  {
+    title: $t('notificationAdmin.colLocale'),
+    key: 'locales',
+    width: 140,
+    render: row => h(NSpace, { size: 4 }, {
+      default: () => row.locales.map(l => h(NTag, { size: 'small', bordered: false }, { default: () => l.locale }))
+    })
+  },
   {
     title: $t('notificationAdmin.colDefaultSubject'),
     key: 'default_subject',
     minWidth: 180,
     ellipsis: { tooltip: true },
-    render: row => row.default_subject || '—'
+    render: row => row.locales[0]?.default_subject || '—'
   },
   {
     title: $t('notificationAdmin.colOverride'),
     key: 'has_override',
     width: 110,
     render: row => {
-      if (!row.has_override) {
+      if (!anyOverride(row)) {
         return h(NTag, { size: 'small', type: 'default' }, { default: () => $t('notificationAdmin.noOverride') });
       }
-      const enabled = row.override?.enabled;
+      const enabledLocales = row.locales.filter(l => l.has_override && l.override?.enabled);
       return h(
         NTag,
-        { size: 'small', type: enabled ? 'success' : 'error' },
-        { default: () => (enabled ? $t('notificationAdmin.overrideOn') : $t('notificationAdmin.overrideOff')) }
+        { size: 'small', type: enabledLocales.length > 0 ? 'success' : 'error' },
+        { default: () => enabledLocales.length > 0 ? $t('notificationAdmin.overrideOn') : $t('notificationAdmin.overrideOff') }
       );
     }
   },
@@ -168,7 +208,10 @@ const columns = computed<DataTableColumns<FlatRow>>(() => [
     title: $t('notificationAdmin.colOverrideUpdated'),
     key: 'override_updated',
     width: 170,
-    render: row => (row.override ? formatDateTime(row.override.updated_at) : '—')
+    render: row => {
+      const ts = latestOverrideUpdated(row);
+      return ts ? formatDateTime(ts) : '—';
+    }
   },
   {
     title: $t('common.action'),
@@ -178,10 +221,10 @@ const columns = computed<DataTableColumns<FlatRow>>(() => [
     render: row => h(NSpace, null, {
       default: () => [
         h(NButton, { size: 'small', onClick: () => openEditor(row) }, { default: () => $t('common.edit') }),
-        row.has_override
+        anyOverride(row)
           ? h(
               NPopconfirm,
-              { onPositiveClick: () => handleReset(row) },
+              { onPositiveClick: () => handleResetAll(row) },
               {
                 trigger: () => h(NButton, { size: 'small', type: 'warning' }, { default: () => $t('common.reset') }),
                 default: () => $t('notificationAdmin.resetConfirm')
@@ -206,29 +249,53 @@ async function loadList() {
   }
 }
 
-function openEditor(row: FlatRow) {
-  editForm.definition_key = row.definition_key;
-  editForm.channel = row.channel;
-  editForm.locale = row.locale;
-  // 如果有覆盖，加载覆盖内容；否则加载默认内容作为编辑起点
-  if (row.override) {
-    editForm.subject = row.override.subject;
-    editForm.body = row.override.body;
-    editForm.enabled = row.override.enabled;
-  } else {
-    editForm.subject = row.default_subject;
-    editForm.body = row.default_body;
-    editForm.enabled = true;
+function openEditor(row: MergedRow) {
+  editorDefinitionKey.value = row.definition_key;
+  editorChannel.value = row.channel;
+  editorVariables.value = row.variables;
+  editorActiveLocale.value = row.locales[0]?.locale || '';
+
+  const formMap: Record<string, LocaleFormData> = {};
+  for (const l of row.locales) {
+    formMap[l.locale] = {
+      subject: l.override ? l.override.subject : l.default_subject,
+      body: l.override ? l.override.body : l.default_body,
+      enabled: l.override ? l.override.enabled : true,
+      defaultSubject: l.default_subject,
+      defaultBody: l.default_body,
+      hasOverride: l.has_override,
+      dirty: false
+    };
   }
+  editorLocales.value = formMap;
   editorVisible.value = true;
 }
 
 async function handleSave() {
-  await formRef.value?.validate();
   editorSaving.value = true;
   try {
-    const res = await fetchUpdateNotificationTemplate(editForm);
-    if (!res.error) {
+    // Save each locale that is dirty
+    const promises: Promise<any>[] = [];
+    for (const [locale, data] of Object.entries(editorLocales.value)) {
+      if (!data.dirty) continue;
+      promises.push(
+        fetchUpdateNotificationTemplate({
+          definition_key: editorDefinitionKey.value,
+          channel: editorChannel.value,
+          locale,
+          subject: data.subject,
+          body: data.body,
+          enabled: data.enabled
+        })
+      );
+    }
+    if (promises.length === 0) {
+      editorVisible.value = false;
+      return;
+    }
+    const results = await Promise.all(promises);
+    const hasError = results.some(r => r.error);
+    if (!hasError) {
       window.$message?.success($t('common.modifySuccess'));
       editorVisible.value = false;
       await loadList();
@@ -238,26 +305,39 @@ async function handleSave() {
   }
 }
 
-async function handleReset(row: FlatRow) {
-  const res = await fetchResetNotificationTemplate({
-    definition_key: row.definition_key,
-    channel: row.channel,
-    locale: row.locale
-  });
-  if (!res.error) {
+async function handleResetAll(row: MergedRow) {
+  // Reset all locales that have override
+  const promises = row.locales
+    .filter(l => l.has_override)
+    .map(l =>
+      fetchResetNotificationTemplate({
+        definition_key: row.definition_key,
+        channel: row.channel,
+        locale: l.locale
+      })
+    );
+  const results = await Promise.all(promises);
+  if (!results.some(r => r.error)) {
     window.$message?.success($t('common.modifySuccess'));
     await loadList();
   }
 }
 
-function openPreview(row: FlatRow) {
+function openPreview(row: MergedRow) {
   previewForm.definition_key = row.definition_key;
   previewForm.channel = row.channel;
-  previewForm.locale = row.locale;
+  previewForm.locale = row.locales[0]?.locale || '';
   previewForm.variables = '{}';
   previewData.value = null;
   previewVisible.value = true;
 }
+
+/** Locale options for preview selector */
+const previewLocaleOptions = computed(() => {
+  const row = mergedRows.value.find(r => r.definition_key === previewForm.definition_key && r.channel === previewForm.channel);
+  if (!row) return [];
+  return row.locales.map(l => ({ label: l.locale, value: l.locale }));
+});
 
 async function handlePreview() {
   previewLoading.value = true;
@@ -295,33 +375,43 @@ onMounted(loadList);
           {{ $t((channelI18n[ch] || ch) as any) || ch }}
         </NTab>
       </NTabs>
-      <NDataTable :columns="columns" :data="flatRows" :loading="loading" :row-key="row => `${row.definition_key}:${row.channel}:${row.locale}`" :scroll-x="1100" />
+      <NDataTable :columns="columns" :data="mergedRows" :loading="loading" :row-key="row => `${row.definition_key}:${row.channel}`" :scroll-x="1100" />
     </NCard>
 
-    <!-- Edit modal -->
-    <NModal v-model:show="editorVisible" preset="card" class="w-560px max-w-90vw" :title="$t('notificationAdmin.editTemplate')">
-      <NForm ref="formRef" :model="editForm" label-placement="top">
-        <NFormItem :label="$t('notificationAdmin.formDefinitionKey')">
-          <NInput :value="editForm.definition_key" disabled />
-        </NFormItem>
-        <NSpace>
-          <NFormItem :label="$t('notificationAdmin.colChannel')">
-            <NInput :value="editForm.channel" disabled style="width: 140px" />
-          </NFormItem>
-          <NFormItem :label="$t('notificationAdmin.colLocale')">
-            <NInput :value="editForm.locale" disabled style="width: 140px" />
-          </NFormItem>
-        </NSpace>
-        <NFormItem :label="$t('notificationAdmin.formSubject')">
-          <NInput v-model:value="editForm.subject" type="text" />
-        </NFormItem>
-        <NFormItem :label="$t('notificationAdmin.formBody')">
-          <NInput v-model:value="editForm.body" type="textarea" :rows="8" />
-        </NFormItem>
-        <NFormItem :label="$t('notificationAdmin.formEnabled')">
-          <NSwitch v-model:value="editForm.enabled" />
-        </NFormItem>
-      </NForm>
+    <!-- Edit modal with locale tabs -->
+    <NModal v-model:show="editorVisible" preset="card" class="w-640px max-w-90vw" :title="$t('notificationAdmin.editTemplate')">
+      <div class="mb-12px flex items-center gap-8px text-13px opacity-70">
+        <span>{{ $t('notificationAdmin.formDefinitionKey') }}: <strong>{{ editorDefinitionKey }}</strong></span>
+        <span>·</span>
+        <span>{{ $t('notificationAdmin.colChannel') }}: <strong>{{ $t((channelI18n[editorChannel] || editorChannel) as any) || editorChannel }}</strong></span>
+      </div>
+      <NTabs v-model:value="editorActiveLocale" type="bar" animated>
+        <template v-for="(formData, locale) in editorLocales" :key="locale">
+          <NTab :name="String(locale)">
+            <NFormItem :label="$t('notificationAdmin.formSubject')">
+              <NInput
+                :value="formData.subject"
+                type="text"
+                @update:value="(v: string) => { formData.subject = v; formData.dirty = true }"
+              />
+            </NFormItem>
+            <NFormItem :label="$t('notificationAdmin.formBody')">
+              <NInput
+                :value="formData.body"
+                type="textarea"
+                :rows="6"
+                @update:value="(v: string) => { formData.body = v; formData.dirty = true }"
+              />
+            </NFormItem>
+            <NFormItem :label="$t('notificationAdmin.formEnabled')">
+              <NSwitch
+                :value="formData.enabled"
+                @update:value="(v: boolean) => { formData.enabled = v; formData.dirty = true }"
+              />
+            </NFormItem>
+          </NTab>
+        </template>
+      </NTabs>
       <template #footer>
         <NSpace justify="end">
           <NButton @click="editorVisible = false">{{ $t('common.cancel') }}</NButton>
@@ -330,24 +420,22 @@ onMounted(loadList);
       </template>
     </NModal>
 
-    <!-- Preview modal -->
+    <!-- Preview modal with locale selector -->
     <NModal v-model:show="previewVisible" preset="card" class="w-640px max-w-90vw" :title="$t('notificationAdmin.previewTitle')">
-      <NForm label-placement="top">
-        <NSpace>
-          <NFormItem :label="$t('notificationAdmin.colChannel')">
-            <NInput :value="previewForm.channel" disabled style="width: 140px" />
-          </NFormItem>
-          <NFormItem :label="$t('notificationAdmin.colLocale')">
-            <NInput :value="previewForm.locale" disabled style="width: 140px" />
-          </NFormItem>
-        </NSpace>
-        <NFormItem :label="$t('notificationAdmin.formVariables')">
-          <NInput v-model:value="previewForm.variables" type="textarea" :rows="4" />
-        </NFormItem>
-        <NButton type="primary" :loading="previewLoading" @click="handlePreview">
-          {{ $t('notificationAdmin.render') }}
-        </NButton>
-      </NForm>
+      <div class="mb-12px flex items-center gap-8px text-13px opacity-70">
+        <span>{{ $t('notificationAdmin.formDefinitionKey') }}: <strong>{{ previewForm.definition_key }}</strong></span>
+        <span>·</span>
+        <span>{{ $t('notificationAdmin.colChannel') }}: <strong>{{ $t((channelI18n[previewForm.channel] || previewForm.channel) as any) || previewForm.channel }}</strong></span>
+      </div>
+      <NFormItem :label="$t('notificationAdmin.colLocale')">
+        <NSelect v-model:value="previewForm.locale" :options="previewLocaleOptions" class="w-200px" />
+      </NFormItem>
+      <NFormItem :label="$t('notificationAdmin.formVariables')">
+        <NInput v-model:value="previewForm.variables" type="textarea" :rows="3" />
+      </NFormItem>
+      <NButton type="primary" :loading="previewLoading" @click="handlePreview">
+        {{ $t('notificationAdmin.render') }}
+      </NButton>
 
       <div v-if="previewData" class="mt-16px">
         <NDivider>{{ $t('notificationAdmin.renderResult') }}</NDivider>
