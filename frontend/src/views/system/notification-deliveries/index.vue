@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { h, onMounted, reactive, ref } from 'vue';
+import { computed, h, onMounted, reactive, ref } from 'vue';
 import type { DataTableColumns } from 'naive-ui';
-import { NButton, NCard, NDataTable, NPopconfirm, NTag } from 'naive-ui';
+import { NButton, NCard, NDataTable, NPagination, NPopconfirm, NSpace, NTag } from 'naive-ui';
 import { $t } from '@/locales';
 import { fetchDeliveryList, fetchRetryDelivery } from '@/service/api';
 import { formatDateTime } from '@/utils/datetime';
@@ -11,21 +11,7 @@ defineOptions({ name: 'SystemNotificationDeliveries' });
 const loading = ref(false);
 const records = ref<Api.Notification.DeliveryItem[]>([]);
 const total = ref(0);
-const pagination = reactive({
-  page: 1,
-  pageSize: 20,
-  showSizePicker: true,
-  pageSizes: [10, 20, 50],
-  onChange: (page: number) => {
-    pagination.page = page;
-    loadList();
-  },
-  onUpdatePageSize: (size: number) => {
-    pagination.pageSize = size;
-    pagination.page = 1;
-    loadList();
-  }
-});
+const query = reactive({ current: 1, size: 20 });
 
 const statusTagType: Record<string, 'error' | 'warning' | 'success' | 'default'> = {
   failed: 'error',
@@ -35,9 +21,9 @@ const statusTagType: Record<string, 'error' | 'warning' | 'success' | 'default'>
   delivered: 'success'
 };
 
-const columns: DataTableColumns<Api.Notification.DeliveryItem> = [
+const columns = computed<DataTableColumns<Api.Notification.DeliveryItem>>(() => [
   { title: $t('notificationAdmin.colId'), key: 'id', width: 120, ellipsis: { tooltip: true } },
-  { title: $t('notificationAdmin.colChannel'), key: 'channel', width: 90 },
+  { title: $t('notificationAdmin.colChannel'), key: 'channel', width: 100 },
   { title: $t('notificationAdmin.colRecipient'), key: 'recipient_id', width: 120, ellipsis: { tooltip: true } },
   {
     title: $t('notificationAdmin.colStatus'),
@@ -65,29 +51,34 @@ const columns: DataTableColumns<Api.Notification.DeliveryItem> = [
     render: row => formatDateTime(row.created_at)
   },
   {
-    title: $t('notificationAdmin.colActions'),
+    title: $t('common.action'),
     key: 'actions',
-    width: 100,
+    width: 120,
+    fixed: 'right',
     render: row => {
       if (row.status !== 'failed' && row.status !== 'dead') return null;
-      return h(
-        NPopconfirm,
-        { onPositiveClick: () => handleRetry(row) },
-        {
-          trigger: () => h(NButton, { text: true, type: 'primary', size: 'small' }, { default: () => $t('notificationAdmin.retry') }),
-          default: () => $t('notificationAdmin.retryConfirm')
-        }
-      );
+      return h(NSpace, null, {
+        default: () => [
+          h(
+            NPopconfirm,
+            { onPositiveClick: () => handleRetry(row) },
+            {
+              trigger: () => h(NButton, { size: 'small', type: 'primary' }, { default: () => $t('notificationAdmin.retry') }),
+              default: () => $t('notificationAdmin.retryConfirm')
+            }
+          )
+        ]
+      });
     }
   }
-];
+]);
 
 async function loadList() {
   loading.value = true;
   try {
     const res = await fetchDeliveryList({
-      current: pagination.page,
-      size: pagination.pageSize
+      current: query.current,
+      size: query.size
     });
     if (!res.error && res.data) {
       records.value = res.data.items || [];
@@ -112,18 +103,21 @@ onMounted(loadList);
 <template>
   <div class="min-h-500px flex-col-stretch gap-16px overflow-hidden lt-sm:overflow-auto">
     <NCard :title="$t('notificationAdmin.deliveryTitle')" :bordered="false" class="card-wrapper">
-      <template #header-extra>
-        <NButton type="primary" size="small" @click="loadList">{{ $t('common.refresh') }}</NButton>
-      </template>
-      <NDataTable
-        :columns="columns"
-        :data="records"
-        :loading="loading"
-        :bordered="false"
-        :pagination="pagination"
-        :row-key="(row: Api.Notification.DeliveryItem) => row.id"
-        size="small"
-      />
+      <NSpace class="mb-16px" align="center">
+        <NButton type="primary" secondary @click="loadList">{{ $t('common.refresh') }}</NButton>
+      </NSpace>
+      <NDataTable :columns="columns" :data="records" :loading="loading" :row-key="row => row.id" :scroll-x="1200" />
+      <div class="mt-16px flex justify-end">
+        <NPagination
+          v-model:page="query.current"
+          v-model:page-size="query.size"
+          :item-count="total"
+          show-size-picker
+          :page-sizes="[10, 20, 50]"
+          @update:page="loadList"
+          @update:page-size="query.current = 1; loadList()"
+        />
+      </div>
     </NCard>
   </div>
 </template>

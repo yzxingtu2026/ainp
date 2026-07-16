@@ -583,7 +583,6 @@ const local: App.I18n.Schema = {
     colDefaultSubject: '默认标题',
     colOverride: '覆盖状态',
     colOverrideUpdated: '覆盖更新时间',
-    colActions: '操作',
     colId: 'ID',
     colRecipient: '收件人',
     colStatus: '状态',

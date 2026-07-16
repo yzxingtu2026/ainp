@@ -787,7 +787,6 @@ declare namespace App {
         colDefaultSubject: string;
         colOverride: string;
         colOverrideUpdated: string;
-        colActions: string;
         colId: string;
         colRecipient: string;
         colStatus: string;

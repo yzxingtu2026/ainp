@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { h, onMounted, reactive, ref, computed } from 'vue';
 import type { DataTableColumns, FormInst } from 'naive-ui';
-import { NButton, NCard, NDataTable, NDivider, NDrawer, NDrawerContent, NForm, NFormItem, NInput, NPopconfirm, NSpace, NSwitch, NTag } from 'naive-ui';
+import { NButton, NCard, NDataTable, NDivider, NForm, NFormItem, NInput, NModal, NPopconfirm, NSpace, NSwitch, NTag } from 'naive-ui';
 import { $t } from '@/locales';
 import {
   fetchNotificationTemplates,
@@ -110,11 +110,11 @@ const categoryI18n: Record<string, string> = {
   system: 'notificationAdmin.categorySystem'
 };
 
-const columns: DataTableColumns<FlatRow> = [
+const columns = computed<DataTableColumns<FlatRow>>(() => [
   {
     title: $t('notificationAdmin.colDefinition'),
     key: 'definition_key',
-    width: 220,
+    minWidth: 200,
     ellipsis: { tooltip: true },
     render: row => [
       h('div', { class: 'text-13px font-medium' }, row.name || row.definition_key),
@@ -124,13 +124,13 @@ const columns: DataTableColumns<FlatRow> = [
   {
     title: $t('notificationAdmin.colPriority'),
     key: 'priority',
-    width: 80,
+    width: 100,
     render: row => h(NTag, { type: priorityTagType[row.priority] || 'default', size: 'small' }, { default: () => $t((priorityI18n[row.priority] || '') as any) || row.priority })
   },
   {
     title: $t('notificationAdmin.colChannel'),
     key: 'channel',
-    width: 90,
+    width: 100,
     render: row => h(NTag, { size: 'small', bordered: false }, { default: () => $t((channelI18n[row.channel] || '') as any) || row.channel })
   },
   { title: $t('notificationAdmin.colLocale'), key: 'locale', width: 80 },
@@ -144,7 +144,7 @@ const columns: DataTableColumns<FlatRow> = [
   {
     title: $t('notificationAdmin.colOverride'),
     key: 'has_override',
-    width: 100,
+    width: 110,
     render: row => {
       if (!row.has_override) {
         return h(NTag, { size: 'small', type: 'default' }, { default: () => $t('notificationAdmin.noOverride') });
@@ -164,29 +164,28 @@ const columns: DataTableColumns<FlatRow> = [
     render: row => (row.override ? formatDateTime(row.override.updated_at) : '—')
   },
   {
-    title: $t('notificationAdmin.colActions'),
+    title: $t('common.action'),
     key: 'actions',
-    width: 220,
-    render: row => [
-      h(NButton, { text: true, type: 'primary', size: 'small', onClick: () => openEditor(row) }, { default: () => $t('common.edit') }),
-      row.has_override
-        ? h(
-            NPopconfirm,
-            { onPositiveClick: () => handleReset(row) },
-            {
-              trigger: () => h(NButton, { text: true, type: 'warning', size: 'small', style: 'margin-left:8px' }, { default: () => $t('common.reset') }),
-              default: () => $t('notificationAdmin.resetConfirm')
-            }
-          )
-        : null,
-      h(
-        NButton,
-        { text: true, type: 'info', size: 'small', style: 'margin-left:8px', onClick: () => openPreview(row) },
-        { default: () => $t('notificationAdmin.preview') }
-      )
-    ]
+    width: 240,
+    fixed: 'right',
+    render: row => h(NSpace, null, {
+      default: () => [
+        h(NButton, { size: 'small', onClick: () => openEditor(row) }, { default: () => $t('common.edit') }),
+        row.has_override
+          ? h(
+              NPopconfirm,
+              { onPositiveClick: () => handleReset(row) },
+              {
+                trigger: () => h(NButton, { size: 'small', type: 'warning' }, { default: () => $t('common.reset') }),
+                default: () => $t('notificationAdmin.resetConfirm')
+              }
+            )
+          : null,
+        h(NButton, { size: 'small', type: 'info', ghost: true, onClick: () => openPreview(row) }, { default: () => $t('notificationAdmin.preview') })
+      ].filter(Boolean)
+    })
   }
-];
+]);
 
 async function loadList() {
   loading.value = true;
@@ -283,93 +282,82 @@ onMounted(loadList);
 <template>
   <div class="min-h-500px flex-col-stretch gap-16px overflow-hidden lt-sm:overflow-auto">
     <NCard :title="$t('notificationAdmin.templateTitle')" :bordered="false" class="card-wrapper">
-      <template #header-extra>
-        <NButton type="primary" size="small" @click="loadList">{{ $t('common.refresh') }}</NButton>
-      </template>
-      <NDataTable
-        :columns="columns"
-        :data="flatRows"
-        :loading="loading"
-        :bordered="false"
-        :pagination="false"
-        size="small"
-      />
+      <NSpace class="mb-16px" align="center">
+        <NButton type="primary" secondary @click="loadList">{{ $t('common.refresh') }}</NButton>
+      </NSpace>
+      <NDataTable :columns="columns" :data="flatRows" :loading="loading" :row-key="row => `${row.definition_key}:${row.channel}:${row.locale}`" :scroll-x="1200" />
     </NCard>
 
-    <!-- Edit drawer -->
-    <NDrawer v-model:show="editorVisible" :width="520">
-      <NDrawerContent :title="$t('notificationAdmin.editTemplate')" closable>
-        <NForm ref="formRef" :model="editForm" label-placement="top">
-          <NFormItem :label="$t('notificationAdmin.formDefinitionKey')">
-            <NInput :value="editForm.definition_key" disabled />
+    <!-- Edit modal -->
+    <NModal v-model:show="editorVisible" preset="card" class="w-560px max-w-90vw" :title="$t('notificationAdmin.editTemplate')">
+      <NForm ref="formRef" :model="editForm" label-placement="top">
+        <NFormItem :label="$t('notificationAdmin.formDefinitionKey')">
+          <NInput :value="editForm.definition_key" disabled />
+        </NFormItem>
+        <NSpace>
+          <NFormItem :label="$t('notificationAdmin.colChannel')">
+            <NInput :value="editForm.channel" disabled style="width: 140px" />
           </NFormItem>
-          <NSpace>
-            <NFormItem :label="$t('notificationAdmin.colChannel')">
-              <NInput :value="editForm.channel" disabled style="width: 140px" />
-            </NFormItem>
-            <NFormItem :label="$t('notificationAdmin.colLocale')">
-              <NInput :value="editForm.locale" disabled style="width: 140px" />
-            </NFormItem>
-          </NSpace>
-          <NFormItem :label="$t('notificationAdmin.formSubject')">
-            <NInput v-model:value="editForm.subject" type="text" />
+          <NFormItem :label="$t('notificationAdmin.colLocale')">
+            <NInput :value="editForm.locale" disabled style="width: 140px" />
           </NFormItem>
-          <NFormItem :label="$t('notificationAdmin.formBody')">
-            <NInput v-model:value="editForm.body" type="textarea" :rows="8" />
-          </NFormItem>
-          <NFormItem :label="$t('notificationAdmin.formEnabled')">
-            <NSwitch v-model:value="editForm.enabled" />
-          </NFormItem>
-        </NForm>
-        <template #footer>
-          <NSpace>
-            <NButton @click="editorVisible = false">{{ $t('common.cancel') }}</NButton>
-            <NButton type="primary" :loading="editorSaving" @click="handleSave">{{ $t('common.confirm') }}</NButton>
-          </NSpace>
-        </template>
-      </NDrawerContent>
-    </NDrawer>
+        </NSpace>
+        <NFormItem :label="$t('notificationAdmin.formSubject')">
+          <NInput v-model:value="editForm.subject" type="text" />
+        </NFormItem>
+        <NFormItem :label="$t('notificationAdmin.formBody')">
+          <NInput v-model:value="editForm.body" type="textarea" :rows="8" />
+        </NFormItem>
+        <NFormItem :label="$t('notificationAdmin.formEnabled')">
+          <NSwitch v-model:value="editForm.enabled" />
+        </NFormItem>
+      </NForm>
+      <template #footer>
+        <NSpace justify="end">
+          <NButton @click="editorVisible = false">{{ $t('common.cancel') }}</NButton>
+          <NButton type="primary" :loading="editorSaving" @click="handleSave">{{ $t('common.confirm') }}</NButton>
+        </NSpace>
+      </template>
+    </NModal>
 
-    <!-- Preview drawer -->
-    <NDrawer v-model:show="previewVisible" :width="600">
-      <NDrawerContent :title="$t('notificationAdmin.previewTitle')" closable>
-        <NForm label-placement="top">
-          <NSpace>
-            <NFormItem :label="$t('notificationAdmin.colChannel')">
-              <NInput :value="previewForm.channel" disabled style="width: 140px" />
-            </NFormItem>
-            <NFormItem :label="$t('notificationAdmin.colLocale')">
-              <NInput :value="previewForm.locale" disabled style="width: 140px" />
-            </NFormItem>
-          </NSpace>
-          <NFormItem :label="$t('notificationAdmin.formVariables')">
-            <NInput v-model:value="previewForm.variables" type="textarea" :rows="4" />
+    <!-- Preview modal -->
+    <NModal v-model:show="previewVisible" preset="card" class="w-640px max-w-90vw" :title="$t('notificationAdmin.previewTitle')">
+      <NForm label-placement="top">
+        <NSpace>
+          <NFormItem :label="$t('notificationAdmin.colChannel')">
+            <NInput :value="previewForm.channel" disabled style="width: 140px" />
           </NFormItem>
-          <NButton type="primary" :loading="previewLoading" @click="handlePreview">
-            {{ $t('notificationAdmin.render') }}
-          </NButton>
-        </NForm>
+          <NFormItem :label="$t('notificationAdmin.colLocale')">
+            <NInput :value="previewForm.locale" disabled style="width: 140px" />
+          </NFormItem>
+        </NSpace>
+        <NFormItem :label="$t('notificationAdmin.formVariables')">
+          <NInput v-model:value="previewForm.variables" type="textarea" :rows="4" />
+        </NFormItem>
+        <NButton type="primary" :loading="previewLoading" @click="handlePreview">
+          {{ $t('notificationAdmin.render') }}
+        </NButton>
+      </NForm>
 
-        <div v-if="previewData" class="mt-16px">
-          <NDivider>{{ $t('notificationAdmin.renderResult') }}</NDivider>
-          <div class="preview-section">
-            <div class="preview-label">{{ $t('notificationAdmin.formSource') }}: {{ previewData.source }} (v{{ previewData.version }})</div>
-            <div class="preview-label">{{ $t('notificationAdmin.formSubject') }}:</div>
-            <pre class="preview-block">{{ previewData.subject }}</pre>
-            <div class="preview-label">{{ $t('notificationAdmin.formBody') }}:</div>
-            <pre class="preview-block">{{ previewData.body }}</pre>
-            <template v-if="previewData.title">
-              <div class="preview-label">{{ $t('notificationAdmin.formTitle') }}:</div>
-              <pre class="preview-block">{{ previewData.title }}</pre>
-            </template>
-            <template v-if="previewData.summary">
-              <div class="preview-label">{{ $t('notificationAdmin.formSummary') }}:</div>
-              <pre class="preview-block">{{ previewData.summary }}</pre>
-            </template>
-          </div>
+      <div v-if="previewData" class="mt-16px">
+        <NDivider>{{ $t('notificationAdmin.renderResult') }}</NDivider>
+        <div class="preview-section">
+          <div class="preview-label">{{ $t('notificationAdmin.formSource') }}: {{ previewData.source }} (v{{ previewData.version }})</div>
+          <div class="preview-label">{{ $t('notificationAdmin.formSubject') }}:</div>
+          <pre class="preview-block">{{ previewData.subject }}</pre>
+          <div class="preview-label">{{ $t('notificationAdmin.formBody') }}:</div>
+          <pre class="preview-block">{{ previewData.body }}</pre>
+          <template v-if="previewData.title">
+            <div class="preview-label">{{ $t('notificationAdmin.formTitle') }}:</div>
+            <pre class="preview-block">{{ previewData.title }}</pre>
+          </template>
+          <template v-if="previewData.summary">
+            <div class="preview-label">{{ $t('notificationAdmin.formSummary') }}:</div>
+            <pre class="preview-block">{{ previewData.summary }}</pre>
+          </template>
         </div>
-      </NDrawerContent>
-    </NDrawer>
+      </div>
+    </NModal>
   </div>
 </template>
 

@@ -588,7 +588,6 @@ const local: App.I18n.Schema = {
     colDefaultSubject: 'Default Subject',
     colOverride: 'Override',
     colOverrideUpdated: 'Override Updated',
-    colActions: 'Actions',
     colId: 'ID',
     colRecipient: 'Recipient',
     colStatus: 'Status',
