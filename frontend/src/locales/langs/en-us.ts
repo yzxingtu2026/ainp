@@ -595,7 +595,15 @@ const local: App.I18n.Schema = {
     colAttempts: 'Attempts',
     colLastError: 'Last Error',
     colFailedAt: 'Failed At',
-    colCreatedAt: 'Created At'
+    colCreatedAt: 'Created At',
+    formDefinitionKey: 'Definition Key',
+    formSubject: 'Subject',
+    formBody: 'Body',
+    formEnabled: 'Enabled',
+    formVariables: 'Variables (JSON)',
+    formSource: 'Source',
+    formTitle: 'InApp Title',
+    formSummary: 'Summary'
   }
 };
 

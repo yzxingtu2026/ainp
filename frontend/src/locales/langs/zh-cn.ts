@@ -590,7 +590,15 @@ const local: App.I18n.Schema = {
     colAttempts: '尝试次数',
     colLastError: '最近错误',
     colFailedAt: '失败时间',
-    colCreatedAt: '创建时间'
+    colCreatedAt: '创建时间',
+    formDefinitionKey: '通知定义',
+    formSubject: '标题',
+    formBody: '正文',
+    formEnabled: '启用',
+    formVariables: '变量 (JSON)',
+    formSource: '来源',
+    formTitle: 'InApp 标题',
+    formSummary: '摘要'
   }
 };
 

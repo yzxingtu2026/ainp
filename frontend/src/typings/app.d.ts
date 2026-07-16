@@ -795,6 +795,14 @@ declare namespace App {
         colLastError: string;
         colFailedAt: string;
         colCreatedAt: string;
+        formDefinitionKey: string;
+        formSubject: string;
+        formBody: string;
+        formEnabled: string;
+        formVariables: string;
+        formSource: string;
+        formTitle: string;
+        formSummary: string;
       };
       datatable: {
         itemCount: string;

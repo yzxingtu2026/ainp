@@ -276,24 +276,24 @@ onMounted(loadList);
     <NDrawer v-model:show="editorVisible" :width="520">
       <NDrawerContent :title="$t('notificationAdmin.editTemplate')" closable>
         <NForm ref="formRef" :model="editForm" label-placement="top">
-          <NFormItem label="Definition Key">
+          <NFormItem :label="$t('notificationAdmin.formDefinitionKey')">
             <NInput :value="editForm.definition_key" disabled />
           </NFormItem>
           <NSpace>
-            <NFormItem label="Channel">
+            <NFormItem :label="$t('notificationAdmin.colChannel')">
               <NInput :value="editForm.channel" disabled style="width: 140px" />
             </NFormItem>
-            <NFormItem label="Locale">
+            <NFormItem :label="$t('notificationAdmin.colLocale')">
               <NInput :value="editForm.locale" disabled style="width: 140px" />
             </NFormItem>
           </NSpace>
-          <NFormItem label="Subject">
+          <NFormItem :label="$t('notificationAdmin.formSubject')">
             <NInput v-model:value="editForm.subject" type="text" />
           </NFormItem>
-          <NFormItem label="Body">
+          <NFormItem :label="$t('notificationAdmin.formBody')">
             <NInput v-model:value="editForm.body" type="textarea" :rows="8" />
           </NFormItem>
-          <NFormItem label="Enabled">
+          <NFormItem :label="$t('notificationAdmin.formEnabled')">
             <NSwitch v-model:value="editForm.enabled" />
           </NFormItem>
         </NForm>
@@ -311,14 +311,14 @@ onMounted(loadList);
       <NDrawerContent :title="$t('notificationAdmin.previewTitle')" closable>
         <NForm label-placement="top">
           <NSpace>
-            <NFormItem label="Channel">
+            <NFormItem :label="$t('notificationAdmin.colChannel')">
               <NInput :value="previewForm.channel" disabled style="width: 140px" />
             </NFormItem>
-            <NFormItem label="Locale">
+            <NFormItem :label="$t('notificationAdmin.colLocale')">
               <NInput :value="previewForm.locale" disabled style="width: 140px" />
             </NFormItem>
           </NSpace>
-          <NFormItem label="Variables (JSON)">
+          <NFormItem :label="$t('notificationAdmin.formVariables')">
             <NInput v-model:value="previewForm.variables" type="textarea" :rows="4" />
           </NFormItem>
           <NButton type="primary" :loading="previewLoading" @click="handlePreview">
@@ -329,17 +329,17 @@ onMounted(loadList);
         <div v-if="previewData" class="mt-16px">
           <NDivider>{{ $t('notificationAdmin.renderResult') }}</NDivider>
           <div class="preview-section">
-            <div class="preview-label">Source: {{ previewData.source }} (v{{ previewData.version }})</div>
-            <div class="preview-label">Subject:</div>
+            <div class="preview-label">{{ $t('notificationAdmin.formSource') }}: {{ previewData.source }} (v{{ previewData.version }})</div>
+            <div class="preview-label">{{ $t('notificationAdmin.formSubject') }}:</div>
             <pre class="preview-block">{{ previewData.subject }}</pre>
-            <div class="preview-label">Body:</div>
+            <div class="preview-label">{{ $t('notificationAdmin.formBody') }}:</div>
             <pre class="preview-block">{{ previewData.body }}</pre>
             <template v-if="previewData.title">
-              <div class="preview-label">Title:</div>
+              <div class="preview-label">{{ $t('notificationAdmin.formTitle') }}:</div>
               <pre class="preview-block">{{ previewData.title }}</pre>
             </template>
             <template v-if="previewData.summary">
-              <div class="preview-label">Summary:</div>
+              <div class="preview-label">{{ $t('notificationAdmin.formSummary') }}:</div>
               <pre class="preview-block">{{ previewData.summary }}</pre>
             </template>
           </div>
