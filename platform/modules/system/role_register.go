@@ -14,7 +14,7 @@ func registerRoleActions(a *app.App, svc *RoleService) error {
 		description string
 		handler     action.Handler
 	}{
-		{ActionRoleList, "/api/v1/system/roles/list", "角色列表", "分页查询当前租户角色", svc.List},
+		{ActionRoleList, "/api/v1/system/roles/list", "角色列表", "分页查询当前租户角色", action.JSON(svc.list)},
 		{ActionRoleGet, "/api/v1/system/roles/get", "角色详情", "查询当前租户角色与权限", typedAction[roleIDRequest](svc.Get)},
 		{ActionRoleCreate, "/api/v1/system/roles/create", "创建角色", "创建当前租户角色", typedAction[roleCreateRequest](svc.Create)},
 		{ActionRoleUpdate, "/api/v1/system/roles/update", "更新角色", "更新当前租户角色资料与状态", typedAction[roleUpdateRequest](svc.Update)},

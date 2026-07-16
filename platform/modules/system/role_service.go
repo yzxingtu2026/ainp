@@ -15,6 +15,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/capability"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 	"github.com/yzxingtu2026/ainp/platform/framework/i18n"
+	"github.com/yzxingtu2026/ainp/platform/framework/pagination"
 	"github.com/yzxingtu2026/ainp/platform/framework/status"
 	"github.com/yzxingtu2026/ainp/platform/modules/system/model"
 	"gorm.io/gorm"
@@ -35,10 +36,9 @@ func NewRoleService(db *gorm.DB, authService *AuthService, actions *action.Regis
 }
 
 type roleListRequest struct {
-	Current int                     `json:"current"`
-	Size    int                     `json:"size"`
+	pagination.Request
 	Keyword string                  `json:"keyword"`
-	Status  status.ActivationStatus `json:"status"`
+	Status  status.ActivationStatus `json:"status" validate:"omitempty,oneof=enabled disabled"`
 }
 
 type roleIDRequest struct {
@@ -121,24 +121,14 @@ func validateRoleStatus(value status.ActivationStatus) bool {
 }
 
 func (s *RoleService) List(ctx context.Context, input json.RawMessage) (any, error) {
+	return action.JSON(s.list)(ctx, input)
+}
+
+func (s *RoleService) list(ctx context.Context, req roleListRequest) (any, error) {
 	tenantID, _, err := tenantIdentity(ctx)
 	if err != nil {
 		return nil, err
 	}
-	var req roleListRequest
-	if err := decodeRoleRequest(input, &req); err != nil {
-		return nil, err
-	}
-	if req.Current < 1 {
-		req.Current = 1
-	}
-	if req.Size < 1 || req.Size > 100 {
-		req.Size = 20
-	}
-	if req.Status != "" && !validateRoleStatus(req.Status) {
-		return nil, errs.ValidationKey("common.validation_failed", "invalid status")
-	}
-
 	query := s.db.WithContext(ctx).Table("roles AS r").Where("r.tenant_id = ?", tenantID)
 	if keyword := strings.TrimSpace(req.Keyword); keyword != "" {
 		like := "%" + keyword + "%"
@@ -158,14 +148,14 @@ func (s *RoleService) List(ctx context.Context, input json.RawMessage) (any, err
 	if err := query.Select("r.*, COUNT(ur.id) AS user_count").
 		Joins("LEFT JOIN user_roles ur ON ur.role_id = r.id AND ur.tenant_id = r.tenant_id").
 		Group("r.id").Order("r.is_builtin DESC, r.created_at ASC, r.id ASC").
-		Offset((req.Current - 1) * req.Size).Limit(req.Size).Scan(&rows).Error; err != nil {
+		Offset(req.Offset()).Limit(req.PageSize).Scan(&rows).Error; err != nil {
 		return nil, errs.Wrap(errs.CodeInternal, "list roles failed", err)
 	}
 	records := make([]RoleView, 0, len(rows))
 	for _, row := range rows {
 		records = append(records, roleView(row.Role, row.UserCount, nil))
 	}
-	return map[string]any{"current": req.Current, "size": req.Size, "total": total, "records": records}, nil
+	return pagination.NewResult(records, total, req.Request), nil
 }
 
 func (s *RoleService) Get(ctx context.Context, input json.RawMessage) (any, error) {

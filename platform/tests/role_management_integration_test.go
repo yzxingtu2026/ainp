@@ -15,6 +15,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/config"
 	"github.com/yzxingtu2026/ainp/platform/framework/database"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
+	"github.com/yzxingtu2026/ainp/platform/framework/pagination"
 	"github.com/yzxingtu2026/ainp/platform/framework/permission"
 	"github.com/yzxingtu2026/ainp/platform/framework/status"
 	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
@@ -152,11 +153,11 @@ func TestRoleManagementTenantIsolationAndProtection(t *testing.T) {
 	if _, err := service.Create(ctxA, json.RawMessage(`{"code":"operator","name":"Duplicate","status":"enabled"}`)); appErrorCode(err) != errs.CodeConflict {
 		t.Fatalf("same-tenant duplicate role error = %v", err)
 	}
-	listed, err := service.List(ctxA, json.RawMessage(`{"current":1,"size":20,"keyword":"operator"}`))
+	listed, err := service.List(ctxA, json.RawMessage(`{"page":1,"page_size":20,"keyword":"operator"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if listed.(map[string]any)["total"].(int64) != 1 {
+	if listed.(pagination.Result[system.RoleView]).Total != 1 {
 		t.Fatalf("tenant role list leaked data: %#v", listed)
 	}
 

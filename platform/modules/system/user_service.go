@@ -11,11 +11,13 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/yzxingtu2026/ainp/platform/framework/action"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 	"github.com/yzxingtu2026/ainp/platform/framework/i18n"
 	"github.com/yzxingtu2026/ainp/platform/framework/logging"
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
+	"github.com/yzxingtu2026/ainp/platform/framework/pagination"
 	"github.com/yzxingtu2026/ainp/platform/framework/status"
 	"github.com/yzxingtu2026/ainp/platform/modules/system/model"
 	"golang.org/x/crypto/bcrypt"
@@ -41,10 +43,9 @@ func (s *UserService) SetOutboxWriter(w outbox.Writer) {
 }
 
 type userListRequest struct {
-	Current int                     `json:"current"`
-	Size    int                     `json:"size"`
+	pagination.Request
 	Keyword string                  `json:"keyword"`
-	Status  status.ActivationStatus `json:"status"`
+	Status  status.ActivationStatus `json:"status" validate:"omitempty,oneof=enabled disabled"`
 	RoleID  string                  `json:"role_id"`
 }
 
@@ -117,24 +118,14 @@ func validateUserStatus(value status.ActivationStatus) bool {
 }
 
 func (s *UserService) List(ctx context.Context, input json.RawMessage) (any, error) {
+	return action.JSON(s.list)(ctx, input)
+}
+
+func (s *UserService) list(ctx context.Context, req userListRequest) (any, error) {
 	tenantID, _, err := tenantIdentity(ctx)
 	if err != nil {
 		return nil, err
 	}
-	var req userListRequest
-	if err := decodeUserRequest(input, &req); err != nil {
-		return nil, err
-	}
-	if req.Current < 1 {
-		req.Current = 1
-	}
-	if req.Size < 1 || req.Size > 100 {
-		req.Size = 20
-	}
-	if req.Status != "" && !validateUserStatus(req.Status) {
-		return nil, errs.ValidationKey("common.validation_failed", "invalid status")
-	}
-
 	query := s.db.WithContext(ctx).Table("users AS u").Where("u.tenant_id = ?", tenantID)
 	if keyword := strings.TrimSpace(req.Keyword); keyword != "" {
 		like := "%" + keyword + "%"
@@ -157,7 +148,7 @@ func (s *UserService) List(ctx context.Context, input json.RawMessage) (any, err
 
 	var users []model.User
 	if err := query.Select("u.*").Order("u.created_at ASC, u.id ASC").
-		Offset((req.Current - 1) * req.Size).Limit(req.Size).Scan(&users).Error; err != nil {
+		Offset(req.Offset()).Limit(req.PageSize).Scan(&users).Error; err != nil {
 		return nil, errs.Wrap(errs.CodeInternal, "list users failed", err)
 	}
 
@@ -169,7 +160,7 @@ func (s *UserService) List(ctx context.Context, input json.RawMessage) (any, err
 	for _, user := range users {
 		records = append(records, userView(user, roleMap[user.ID]))
 	}
-	return map[string]any{"current": req.Current, "size": req.Size, "total": total, "records": records}, nil
+	return pagination.NewResult(records, total, req.Request), nil
 }
 
 func (s *UserService) Get(ctx context.Context, input json.RawMessage) (any, error) {

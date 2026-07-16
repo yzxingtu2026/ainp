@@ -22,8 +22,8 @@ declare namespace Api {
     interface ListData {
       items: NotificationItem[];
       total: number;
-      current: number;
-      size: number;
+      page: number;
+      page_size: number;
     }
 
     /** Unread count response */

@@ -11,6 +11,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
+	"github.com/yzxingtu2026/ainp/platform/framework/pagination"
 	"github.com/yzxingtu2026/ainp/platform/framework/status"
 	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"gorm.io/gorm"
@@ -27,22 +28,19 @@ type outboxEventIDRequest struct {
 	EventID string `json:"event_id" validate:"required"`
 }
 
+type outboxListRequest struct {
+	pagination.Request
+	EventType string `json:"event_type"`
+	Status    string `json:"status" validate:"omitempty,oneof=pending processing published failed dead"`
+}
+
 func (s *OutboxService) List(ctx context.Context, input json.RawMessage) (any, error) {
+	return action.JSON(s.list)(ctx, input)
+}
+
+func (s *OutboxService) list(ctx context.Context, req outboxListRequest) (any, error) {
 	if _, err := requireTenant(ctx); err != nil {
 		return nil, err
-	}
-	var req struct {
-		EventType string `json:"event_type"`
-		Status    string `json:"status"`
-		Current   int    `json:"current"`
-		Size      int    `json:"size"`
-	}
-	_ = json.Unmarshal(input, &req)
-	if req.Current < 1 {
-		req.Current = 1
-	}
-	if req.Size < 1 || req.Size > 100 {
-		req.Size = 20
 	}
 	db := s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Model(&outbox.Event{})
 	if value := strings.TrimSpace(req.EventType); value != "" {
@@ -56,10 +54,10 @@ func (s *OutboxService) List(ctx context.Context, input json.RawMessage) (any, e
 		return nil, err
 	}
 	var rows []outbox.Event
-	if err := db.Order("occurred_at DESC").Offset((req.Current - 1) * req.Size).Limit(req.Size).Find(&rows).Error; err != nil {
+	if err := db.Order("occurred_at DESC").Offset(req.Offset()).Limit(req.PageSize).Find(&rows).Error; err != nil {
 		return nil, err
 	}
-	return map[string]any{"items": rows, "total": total, "current": req.Current, "size": req.Size}, nil
+	return pagination.NewResult(rows, total, req.Request), nil
 }
 
 type OutboxService struct {
@@ -186,7 +184,7 @@ func registerOutboxActions(a *app.App) error {
 		audit                                  *bool
 		handler                                func(context.Context, json.RawMessage) (any, error)
 	}{
-		{ActionOutboxList, "/api/v1/operations/outbox/list", "Outbox 事件列表", "action.operations.outbox_list.name", "分页查询租户 Outbox 事件", "action.operations.outbox_list.description", &auditOff, svc.List},
+		{ActionOutboxList, "/api/v1/operations/outbox/list", "Outbox 事件列表", "action.operations.outbox_list.name", "分页查询租户 Outbox 事件", "action.operations.outbox_list.description", &auditOff, action.JSON(svc.list)},
 		{ActionOutboxSummary, "/api/v1/operations/outbox/summary", "Outbox 摘要", "action.operations.outbox_summary.name", "查询租户 Outbox 状态计数", "action.operations.outbox_summary.description", &auditOff, svc.Summary},
 		{ActionOutboxListDeliveries, "/api/v1/operations/outbox/deliveries", "Outbox 投递记录", "action.operations.outbox_list_deliveries.name", "查看事件 Handler 投递状态", "action.operations.outbox_list_deliveries.description", &auditOff, action.JSON(svc.listDeliveries)},
 		{ActionOutboxRetry, "/api/v1/operations/outbox/retry", "重试 Outbox 事件", "action.operations.outbox_retry.name", "将 failed/dead 事件重置为 pending（不可改 payload）", "action.operations.outbox_retry.description", &auditOn, action.JSON(svc.retry)},

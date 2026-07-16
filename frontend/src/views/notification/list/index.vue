@@ -21,8 +21,8 @@ const notifications = ref<Api.Notification.NotificationItem[]>([]);
 const total = ref(0);
 const unreadCount = ref(0);
 const query = reactive({
-  current: 1,
-  size: 20,
+  page: 1,
+  page_size: 20,
   unread_only: false,
   exclude_archived: true
 });
@@ -92,7 +92,7 @@ function handleNavigate(item: Api.Notification.NotificationItem) {
 }
 
 function resetQuery() {
-  query.current = 1;
+  query.page = 1;
   query.unread_only = false;
   query.exclude_archived = true;
   loadList();
@@ -111,7 +111,7 @@ const currentFilter = computed({
     return 'all';
   },
   set(val: string) {
-    query.current = 1;
+    query.page = 1;
     if (val === 'unread') {
       query.unread_only = true;
       query.exclude_archived = true;
@@ -156,7 +156,7 @@ onMounted(loadList);
           :options="filterOptions"
           :placeholder="$t('notification.filterPlaceholder')"
         />
-        <NButton type="primary" @click="query.current = 1; loadList()">
+        <NButton type="primary" @click="query.page = 1; loadList()">
           {{ $t('common.refresh') }}
         </NButton>
         <NButton @click="resetQuery">{{ $t('common.reset') }}</NButton>
@@ -225,13 +225,13 @@ onMounted(loadList);
 
       <div class="mt-16px flex justify-end">
         <NPagination
-          v-model:page="query.current"
-          v-model:page-size="query.size"
+          v-model:page="query.page"
+          v-model:page-size="query.page_size"
           :item-count="total"
           show-size-picker
           :page-sizes="[10, 20, 50]"
           @update:page="loadList"
-          @update:page-size="query.current = 1; loadList()"
+          @update:page-size="query.page = 1; loadList()"
         />
       </div>
     </NCard>

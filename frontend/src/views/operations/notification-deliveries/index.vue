@@ -17,7 +17,7 @@ const { hasAuth } = useAuth();
 const loading = ref(false);
 const records = ref<Api.Operations.DeliveryItem[]>([]);
 const total = ref(0);
-const query = reactive({ current: 1, size: 20, status: '', channel: '' });
+const query = reactive({ page: 1, page_size: 20, status: '', channel: '' });
 
 // Drawer state
 const drawerVisible = ref(false);
@@ -142,8 +142,8 @@ async function loadList() {
   loading.value = true;
   try {
     const res = await fetchDeliveryList({
-      current: query.current,
-      size: query.size,
+      page: query.page,
+      page_size: query.page_size,
       status: query.status || undefined,
       channel: query.channel || undefined
     });
@@ -181,7 +181,7 @@ async function handleRetry(row: Api.Operations.DeliveryItem) {
 onMounted(loadList);
 
 function handleFilterChange() {
-  query.current = 1;
+  query.page = 1;
   loadList();
 }
 </script>
@@ -210,13 +210,13 @@ function handleFilterChange() {
       <NDataTable :columns="columns" :data="records" :loading="loading" :row-key="row => row.id" :scroll-x="900" />
       <div class="mt-16px flex justify-end">
         <NPagination
-          v-model:page="query.current"
-          v-model:page-size="query.size"
+          v-model:page="query.page"
+          v-model:page-size="query.page_size"
           :item-count="total"
           show-size-picker
           :page-sizes="[10, 20, 50]"
           @update:page="loadList"
-          @update:page-size="query.current = 1; loadList()"
+          @update:page-size="query.page = 1; loadList()"
         />
       </div>
     </NCard>

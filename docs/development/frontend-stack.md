@@ -35,6 +35,8 @@ Soybean Admin（壳）
 
 ## Agent / 开发者检查清单
 
+分页表格统一使用 `hooks/common/table.ts`：API 请求为 `page/page_size`，响应为 `items/total/page/page_size`；筛选提交、重置或页大小变化回到第一页。类型化筛选定义只描述控件和序列化，不包含 SQL 字段、操作符或授权逻辑。
+
 开始前端任务前确认：
 
 - [ ] 未引入其他后台脚手架作为主壳

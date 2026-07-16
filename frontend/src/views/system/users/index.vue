@@ -26,7 +26,7 @@ const authStore = useAuthStore();
 const records = ref<Api.User.Record[]>([]);
 const total = ref(0);
 const roleOptions = ref<SelectOption[]>([]);
-const query = reactive<Api.User.ListParams>({ current: 1, size: 20, keyword: '', status: '', role_id: undefined });
+const query = reactive<Api.User.ListParams>({ page: 1, page_size: 20, keyword: '', status: '', role_id: undefined });
 
 const editorVisible = ref(false);
 const rolesVisible = ref(false);
@@ -150,9 +150,9 @@ const columns = computed<DataTableColumns<Api.User.Record>>(() => [
 ]);
 
 async function loadRoleOptions() {
-  const { data, error } = await fetchRoleList({ current: 1, size: 100, status: ACTIVATION_STATUS.enabled });
+  const { data, error } = await fetchRoleList({ page: 1, page_size: 100, status: ACTIVATION_STATUS.enabled });
   if (!error && data) {
-    roleOptions.value = data.records.map(role => ({
+    roleOptions.value = data.items.map(role => ({
       label: role.is_builtin ? `${role.name} (${$t('page.user.builtin')})` : role.name,
       value: role.id
     }));
@@ -164,7 +164,7 @@ async function loadUsers() {
   try {
     const { data, error } = await fetchUserList(query);
     if (!error && data) {
-      records.value = data.records;
+      records.value = data.items;
       total.value = data.total;
     }
   } finally {
@@ -176,7 +176,7 @@ function resetQuery() {
   query.keyword = '';
   query.status = '';
   query.role_id = undefined;
-  query.current = 1;
+  query.page = 1;
   loadUsers();
 }
 
@@ -302,7 +302,7 @@ onMounted(async () => {
         <NButton
           type="primary"
           @click="
-            query.current = 1;
+            query.page = 1;
             loadUsers();
           "
         >
@@ -316,14 +316,14 @@ onMounted(async () => {
       <NDataTable :columns="columns" :data="records" :loading="loading" :row-key="row => row.id" :scroll-x="1100" />
       <div class="mt-16px flex justify-end">
         <NPagination
-          v-model:page="query.current"
-          v-model:page-size="query.size"
+          v-model:page="query.page"
+          v-model:page-size="query.page_size"
           :item-count="total"
           show-size-picker
           :page-sizes="[10, 20, 50]"
           @update:page="loadUsers"
           @update:page-size="
-            query.current = 1;
+            query.page = 1;
             loadUsers();
           "
         />

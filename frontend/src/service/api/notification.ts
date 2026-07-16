@@ -4,8 +4,8 @@ import { request } from '../request';
 export function fetchNotifications(params: {
   unread_only?: boolean;
   exclude_archived?: boolean;
-  current?: number;
-  size?: number;
+  page?: number;
+  page_size?: number;
 }) {
   return request<Api.Notification.ListData>({
     url: '/api/v1/notifications/list',

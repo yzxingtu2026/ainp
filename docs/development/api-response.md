@@ -115,6 +115,8 @@ greeting := i18n.T(lang, "demo.hello_greeting")
 
 ## 分页（在 `data` 内）
 
+列表请求统一使用 `page` / `page_size`；缺省值和上限由 `framework/pagination.Request.Normalize` 维护。
+
 ```json
 {
   "code": 0,
@@ -129,7 +131,7 @@ greeting := i18n.T(lang, "demo.hello_greeting")
 }
 ```
 
-列表接口统一使用 `items` / `total` / `page` / `page_size`，禁止再发明 `list`/`rows`/`records` 等多种键名（历史兼容除外并限期收敛）。
+列表接口统一使用 `pagination.Result[T]` 产生 `items` / `total` / `page` / `page_size`，禁止再发明 `list`/`rows`/`records`/`current`/`size` 等多种键名。分页结果不负责 HTTP 输出，外层仍由 `response.OK` 统一包装。
 
 ## 错误码分段
 

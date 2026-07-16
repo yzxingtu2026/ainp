@@ -103,8 +103,8 @@ async function loadMine(options?: { reset?: boolean }) {
 
   try {
     const { data, error } = await fetchAttachmentList({
-      current: requestPage,
-      size: PAGE_SIZE,
+      page: requestPage,
+      page_size: PAGE_SIZE,
       scope: 'mine',
       keyword: keyword.value.trim() || undefined,
       status: 'ready'
@@ -113,7 +113,7 @@ async function loadMine(options?: { reset?: boolean }) {
       window.$message?.error(error.message || $t('page.attachment.loadFailed'));
       return;
     }
-    const next = data?.records || [];
+    const next = data?.items || [];
     total.value = typeof data?.total === 'number' ? data.total : 0;
     page.value = requestPage;
     if (reset) {

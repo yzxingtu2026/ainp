@@ -14,6 +14,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/database"
 	"github.com/yzxingtu2026/ainp/platform/framework/job"
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
+	"github.com/yzxingtu2026/ainp/platform/framework/pagination"
 	"github.com/yzxingtu2026/ainp/platform/framework/status"
 	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"github.com/yzxingtu2026/ainp/platform/modules/system"
@@ -92,22 +93,22 @@ func TestNotificationDeliveryAdminFiltersRetryAndTenantIsolation(t *testing.T) {
 	enqueuer := &recordingJobEnqueuer{}
 	service := system.NewNotificationDeliveryService(repo, enqueuer)
 
-	defaultResult, err := service.List(ctx, json.RawMessage(`{"current":1,"size":20}`))
+	defaultResult, err := service.List(ctx, json.RawMessage(`{"page":1,"page_size":20}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if total := defaultResult.(map[string]any)["total"].(int64); total != 2 {
+	if total := defaultResult.(pagination.Result[map[string]any]).Total; total != 2 {
 		t.Fatalf("default list total = %d, want failed/dead records only", total)
 	}
-	filtered, err := service.List(ctx, json.RawMessage(`{"current":1,"size":20,"status":"failed","channel":"email"}`))
+	filtered, err := service.List(ctx, json.RawMessage(`{"page":1,"page_size":20,"status":"failed","channel":"email"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	filteredMap := filtered.(map[string]any)
-	if total := filteredMap["total"].(int64); total != 1 {
+	filteredPage := filtered.(pagination.Result[map[string]any])
+	if total := filteredPage.Total; total != 1 {
 		t.Fatalf("filtered total = %d, want 1", total)
 	}
-	items := filteredMap["items"].([]map[string]any)
+	items := filteredPage.Items
 	if items[0]["id"] != "a-failed-email" {
 		t.Fatalf("tenant filter returned %#v", items)
 	}

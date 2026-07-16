@@ -16,6 +16,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/menu"
 	"github.com/yzxingtu2026/ainp/platform/framework/notification"
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
+	"github.com/yzxingtu2026/ainp/platform/framework/pagination"
 	"github.com/yzxingtu2026/ainp/platform/modules/system/jobs"
 	"gorm.io/gorm"
 )
@@ -38,30 +39,26 @@ type InAppNotificationService struct {
 	repo *NotificationRepository
 }
 
+type inAppNotificationListRequest struct {
+	pagination.Request
+	UnreadOnly      bool `json:"unread_only"`
+	ExcludeArchived bool `json:"exclude_archived"`
+}
+
 func NewInAppNotificationService(repo *NotificationRepository) *InAppNotificationService {
 	return &InAppNotificationService{repo: repo}
 }
 
 func (s *InAppNotificationService) List(ctx context.Context, input json.RawMessage) (any, error) {
+	return action.JSON(s.list)(ctx, input)
+}
+
+func (s *InAppNotificationService) list(ctx context.Context, req inAppNotificationListRequest) (any, error) {
 	ac, err := requireTenant(ctx)
 	if err != nil {
 		return nil, err
 	}
-	var req struct {
-		UnreadOnly      bool `json:"unread_only"`
-		ExcludeArchived bool `json:"exclude_archived"`
-		Current         int  `json:"current"`
-		Size            int  `json:"size"`
-	}
-	_ = json.Unmarshal(input, &req)
-	if req.Current < 1 {
-		req.Current = 1
-	}
-	if req.Size < 1 || req.Size > 100 {
-		req.Size = 20
-	}
-
-	items, total, err := s.repo.ListUserNotifications(ctx, ac.UserID, req.UnreadOnly, req.ExcludeArchived, req.Current, req.Size)
+	items, total, err := s.repo.ListUserNotifications(ctx, ac.UserID, req.UnreadOnly, req.ExcludeArchived, req.Page, req.PageSize)
 	if err != nil {
 		return nil, err
 	}
@@ -90,12 +87,7 @@ func (s *InAppNotificationService) List(ctx context.Context, input json.RawMessa
 			"created_at":  n.CreatedAt,
 		}
 	}
-	return map[string]any{
-		"items":   notifications,
-		"total":   total,
-		"current": req.Current,
-		"size":    req.Size,
-	}, nil
+	return pagination.NewResult(notifications, total, req.Request), nil
 }
 
 func (s *InAppNotificationService) UnreadCount(ctx context.Context, _ json.RawMessage) (any, error) {
@@ -424,6 +416,12 @@ type NotificationDeliveryService struct {
 	enqueuer job.Enqueuer
 }
 
+type notificationDeliveryListRequest struct {
+	pagination.Request
+	Status  string `json:"status" validate:"omitempty,oneof=pending queued sending sent delivered failed dead cancelled skipped"`
+	Channel string `json:"channel" validate:"omitempty,oneof=in_app email sms webhook im"`
+}
+
 func NewNotificationDeliveryService(repo *NotificationRepository, enqueuer ...job.Enqueuer) *NotificationDeliveryService {
 	service := &NotificationDeliveryService{repo: repo}
 	if len(enqueuer) > 0 {
@@ -444,26 +442,15 @@ func NewOperationsNotificationDeliveryService(a *app.App) *NotificationDeliveryS
 }
 
 func (s *NotificationDeliveryService) List(ctx context.Context, input json.RawMessage) (any, error) {
+	return action.JSON(s.list)(ctx, input)
+}
+
+func (s *NotificationDeliveryService) list(ctx context.Context, req notificationDeliveryListRequest) (any, error) {
 	ac, err := requireTenant(ctx)
 	if err != nil {
 		return nil, err
 	}
-	var req struct {
-		Current int    `json:"current"`
-		Size    int    `json:"size"`
-		Status  string `json:"status"`
-		Channel string `json:"channel"`
-	}
-	if err := json.Unmarshal(input, &req); err != nil {
-		return nil, errs.ValidationKey("common.validation_failed", "invalid input")
-	}
-	if req.Status != "" && !notification.NotificationDeliveryStatus(req.Status).Valid() {
-		return nil, errs.ValidationKey("common.validation_failed", "invalid status")
-	}
-	if req.Channel != "" && !notification.Channel(req.Channel).Valid() {
-		return nil, errs.ValidationKey("common.validation_failed", "invalid channel")
-	}
-	items, total, err := s.repo.ListDeliveries(ctx, req.Current, req.Size, req.Status, req.Channel)
+	items, total, err := s.repo.ListDeliveries(ctx, req.Page, req.PageSize, req.Status, req.Channel)
 	if err != nil {
 		return nil, err
 	}
@@ -518,7 +505,7 @@ func (s *NotificationDeliveryService) List(ctx context.Context, input json.RawMe
 			"updated_at":     d.UpdatedAt,
 		}
 	}
-	return map[string]any{"items": result, "total": total}, nil
+	return pagination.NewResult(result, total, req.Request), nil
 }
 
 func (s *NotificationDeliveryService) Retry(ctx context.Context, input json.RawMessage) (any, error) {

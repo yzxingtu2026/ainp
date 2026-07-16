@@ -17,6 +17,7 @@ import {
 } from '@/hooks/business/attachment';
 import { deleteAttachment, fetchAttachment, fetchAttachmentList } from '@/service/api';
 import { useAuthStore } from '@/store/modules/auth';
+import { pageAfterDelete } from '@/hooks/common/table';
 
 defineOptions({ name: 'SystemAttachments' });
 
@@ -25,14 +26,14 @@ const authStore = useAuthStore();
 const records = ref<Api.Attachment.Item[]>([]);
 const total = ref(0);
 const query = reactive<{
-  current: number;
-  size: number;
+  page: number;
+  page_size: number;
   keyword: string;
   status: string | null;
   scope: 'all';
 }>({
-  current: 1,
-  size: 20,
+  page: 1,
+  page_size: 20,
   keyword: '',
   status: null,
   scope: 'all'
@@ -130,8 +131,8 @@ async function loadData() {
   loading.value = true;
   try {
     const { data, error } = await fetchAttachmentList({
-      current: query.current,
-      size: query.size,
+      page: query.page,
+      page_size: query.page_size,
       keyword: query.keyword?.trim() || undefined,
       status: query.status || undefined,
       scope: 'all'
@@ -142,7 +143,7 @@ async function loadData() {
       total.value = 0;
       return;
     }
-    records.value = Array.isArray(data?.records) ? data.records : [];
+    records.value = Array.isArray(data?.items) ? data.items : [];
     total.value = typeof data?.total === 'number' ? data.total : 0;
   } finally {
     loading.value = false;
@@ -187,6 +188,7 @@ function handleDelete(row: Api.Attachment.Item) {
         window.$message?.error(error.message || $t('page.attachment.deleteFailed'));
         return;
       }
+      query.page = pageAfterDelete(query.page, records.value.length);
       await loadData();
     }
   });
@@ -212,7 +214,7 @@ onMounted(loadData);
           :code-set="CODESET_KEYS.attachmentStatus"
           :placeholder="$t('page.attachment.statusAll')"
         />
-        <NButton type="primary" @click="loadData">{{ $t('common.search') }}</NButton>
+        <NButton type="primary" @click="query.page = 1; loadData()">{{ $t('common.search') }}</NButton>
       </NSpace>
       <NDataTable
         :columns="columns"
@@ -223,15 +225,15 @@ onMounted(loadData);
       />
       <div class="mt-16px flex justify-end">
         <NPagination
-          v-model:page="query.current"
-          v-model:page-size="query.size"
+          v-model:page="query.page"
+          v-model:page-size="query.page_size"
           :item-count="total"
           show-size-picker
           :page-sizes="[10, 20, 50]"
           @update:page="loadData"
           @update:page-size="
             () => {
-              query.current = 1;
+              query.page = 1;
               loadData();
             }
           "

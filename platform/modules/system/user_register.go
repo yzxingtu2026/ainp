@@ -14,7 +14,7 @@ func registerUserActions(a *app.App, svc *UserService) error {
 		description string
 		handler     action.Handler
 	}{
-		{ActionUserList, "/api/v1/system/users/list", "用户列表", "分页查询当前租户用户", svc.List},
+		{ActionUserList, "/api/v1/system/users/list", "用户列表", "分页查询当前租户用户", action.JSON(svc.list)},
 		{ActionUserGet, "/api/v1/system/users/get", "用户详情", "查询当前租户用户与角色", typedAction[userIDRequest](svc.Get)},
 		{ActionUserCreate, "/api/v1/system/users/create", "创建用户", "创建当前租户用户并分配角色", typedAction[userCreateRequest](svc.Create)},
 		{ActionUserUpdate, "/api/v1/system/users/update", "更新用户", "更新当前租户用户资料", typedAction[userUpdateRequest](svc.Update)},
