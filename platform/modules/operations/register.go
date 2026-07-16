@@ -53,9 +53,6 @@ func Register(a *app.App, deliveries NotificationDeliveryService) error {
 	if err := registerAuditLogActions(a); err != nil {
 		return err
 	}
-	if err := registerLogActions(a); err != nil {
-		return err
-	}
 	if deliveries != nil {
 		if err := registerNotificationDeliveryActions(a, deliveries); err != nil {
 			return err
@@ -101,7 +98,6 @@ func registerMenus(a *app.App, includeDeliveries bool) error {
 		menus = append(menus, menu.Menu{ID: "operations.notification_deliveries", ParentID: "operations.root", Title: "通知投递", TitleKey: "menu.operations.notification_deliveries.title", Icon: "mdi:truck-delivery-outline", Type: menu.TypeMenu, Path: "/operations/notification-deliveries", Component: "operations/notification-deliveries", Permission: ActionNotificationDeliveryList, BindAction: ActionNotificationDeliveryList, Module: "operations", Order: 3})
 	}
 	menus = append(menus, menu.Menu{ID: "operations.audit_logs", ParentID: "operations.root", Title: "操作审计", TitleKey: "menu.operations.audit_logs.title", Icon: "mdi:text-box-search-outline", Type: menu.TypeMenu, Path: "/operations/audit-logs", Component: "operations/audit-logs", Permission: ActionAuditLogList, BindAction: ActionAuditLogList, Module: "operations", Order: 4})
-	menus = append(menus, menu.Menu{ID: "operations.logs", ParentID: "operations.root", Title: "日志中心", TitleKey: "menu.operations.logs.title", Icon: "mdi:file-search-outline", Type: menu.TypeMenu, Path: "/operations/logs", Component: "operations/logs", Permission: ActionLogQuery, BindAction: ActionLogQuery, Module: "operations", Order: 5})
 	for _, item := range menus {
 		if err := a.RegisterMenu(item); err != nil {
 			return err
