@@ -25,7 +25,7 @@ Provider 按 AuthContext 的 `tenant_id` 隔离。管理员提交的供应商凭
 
 每次加密使用随机 nonce，并以 `tenant_id + provider_id` 作为 AAD，密文不能跨 Provider 搬用。API 只返回 `credential_configured`；不返回明文或密文。编辑 Provider 时凭证留空表示保留，填写表示重新加密。解密后的凭证只能存在于单次服务端发现/解析请求内存中，禁止进入 API、日志、审计或普通租户设置。
 
-自定义 Endpoint 仅接受无 userinfo 的 HTTPS 公网地址；localhost、环回、私网、链路本地和不安全重定向均拒绝。发现请求固定超时、分页上限、响应体上限，错误只返回脱敏摘要。
+自定义 Endpoint 填写服务根地址且结尾不带 `/v1`，例如 `https://api.example.com`；发现 Adapter 统一追加 `/v1/models`。Endpoint 仅接受无 userinfo 的 HTTPS 公网地址；localhost、环回、私网、链路本地和不安全重定向均拒绝。发现请求固定超时、分页上限、响应体上限，错误只返回脱敏摘要。
 
 ## Deployment 与能力
 
