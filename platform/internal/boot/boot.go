@@ -13,6 +13,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/database"
 	"github.com/yzxingtu2026/ainp/platform/framework/i18n"
 	"github.com/yzxingtu2026/ainp/platform/framework/job"
+	logloki "github.com/yzxingtu2026/ainp/platform/framework/logcenter/loki"
 	"github.com/yzxingtu2026/ainp/platform/framework/logging"
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
 	"github.com/yzxingtu2026/ainp/platform/framework/state"
@@ -76,6 +77,18 @@ func OpenInstalled(ctx context.Context, cfg *config.Config) (*Platform, error) {
 	}
 
 	application := app.New(cfg, db, auditor, tokens)
+	if cfg.LogCenter.Loki.Enabled {
+		applicationLogs, workerLogs, err := logloki.NewProviders(cfg.LogCenter.Loki)
+		if err != nil {
+			return nil, fmt.Errorf("loki providers: %w", err)
+		}
+		if err := application.LogProviders.Register(applicationLogs); err != nil {
+			return nil, fmt.Errorf("register application logs: %w", err)
+		}
+		if err := application.LogProviders.Register(workerLogs); err != nil {
+			return nil, fmt.Errorf("register worker logs: %w", err)
+		}
+	}
 
 	store, err := storage.NewFromConfig(storage.Config{
 		Provider: cfg.Storage.Provider,

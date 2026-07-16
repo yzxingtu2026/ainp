@@ -123,6 +123,8 @@ logging.Error(ctx, "purchase create failed", err, "purchase_id", id)
 
 日志中心使用 `/operations/logs`，允许后续页面通过 URL query 预填：`source`、`start_at`、`end_at`、`request_id`、`trace_id`、`action_id`、`job_type`、`job_run_id`、`event_id`。这些参数仍经过服务端白名单和范围校验。
 
+Loki Provider 的启用、凭据环境变量、labels 与采集 pipeline 见 `docs/deployment/loki.md`。前端不得提交原始 LogQL；应用与 Worker Provider 由服务端固定附加 tenant/source selector。
+
 ## 检查清单
 
 - [ ] 新代码只通过框架 Logger 打运行日志

@@ -10,6 +10,23 @@ logging:
   level: info
   format: text # text | json
 
+log_center:
+  loki:
+    enabled: false
+    endpoint: "http://127.0.0.1:3100"
+    timeout: 5s
+    # 仅填写环境变量名称；真实凭据不得写入配置文件
+    username_env: LOKI_USERNAME
+    password_env: LOKI_PASSWORD
+    bearer_token_env: LOKI_BEARER_TOKEN
+    tenant_header_env: LOKI_TENANT_HEADER
+    tenant_label: tenant_id
+    source_label: process
+    application_value: application
+    worker_value: worker
+    service_label: service
+    component_label: component
+
 auth:
   # 开发桩：Authorization: Bearer dev:<tenant_id>:<user_id>:<perm1,perm2,...>
   # 生产必须关闭；正式 JWT 优先
