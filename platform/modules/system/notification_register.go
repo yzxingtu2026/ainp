@@ -11,8 +11,12 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 	"github.com/yzxingtu2026/ainp/platform/framework/i18n"
+	"github.com/yzxingtu2026/ainp/platform/framework/job"
+	"github.com/yzxingtu2026/ainp/platform/framework/logging"
 	"github.com/yzxingtu2026/ainp/platform/framework/menu"
 	"github.com/yzxingtu2026/ainp/platform/framework/notification"
+	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
+	"github.com/yzxingtu2026/ainp/platform/modules/system/jobs"
 	"gorm.io/gorm"
 )
 
@@ -515,6 +519,63 @@ func registerNotificationActions(a *app.App) error {
 	overrideProvider := NewGormOverrideProvider(repo)
 	tplSvc := NewNotificationTemplateService(repo, a.Notifications, a.NotificationRenderer, overrideProvider)
 	deliverySvc := NewNotificationDeliveryService(repo)
+
+	// ── Build Orchestrator + NotificationService ──
+	inAppProvider := NewInAppProvider(repo)
+	providers := map[notification.Channel]notification.ChannelProvider{
+		notification.ChannelInApp: inAppProvider,
+	}
+	recipientResolver := notification.NewTenantUserResolver(UserExistsFn(a.DB))
+
+	var notifSvc *NotificationService
+	var enqueuer *NotificationJobEnqueuer
+	if a.Jobs != nil && a.Jobs.Enabled {
+		enqueuer = NewNotificationJobEnqueuer(func(ctx context.Context, deliveryID string) error {
+			_, err := a.Jobs.Enqueuer.Enqueue(ctx, job.EnqueueInput{
+				Type:           jobs.NotificationDeliverJobType,
+				IdempotencyKey: "notif-delivery:" + deliveryID,
+				Payload:        jobs.NotificationDeliverPayload{DeliveryID: deliveryID},
+			})
+			return err
+		})
+	} else {
+		// No-op enqueuer when Jobs disabled
+		enqueuer = NewNotificationJobEnqueuer(func(ctx context.Context, deliveryID string) error {
+			logging.Warn(ctx, "notification jobs disabled; delivery not enqueued", "delivery_id", deliveryID)
+			return nil
+		})
+	}
+	notifSvc = NewNotificationService(a.DB, repo, a.Notifications, a.NotificationRenderer,
+		notification.NewTemplateResolver(a.NotificationRenderer, overrideProvider),
+		recipientResolver, enqueuer, providers)
+	_ = notifSvc // used for Outbox handler below
+
+	// ── Register notification.deliver Job ──
+	if a.Jobs != nil {
+		deliverStore := NewGormDeliverStore(repo)
+		deliverHandler := jobs.NewNotificationDeliverHandler(
+			deliverStore, providers, a.NotificationRenderer,
+			notification.NewTemplateResolver(a.NotificationRenderer, overrideProvider),
+			a.Notifications,
+		)
+		if err := a.Jobs.Register(jobs.NotificationDeliverJobDefinition(), deliverHandler); err != nil {
+			return err
+		}
+	}
+
+	// ── Register Outbox event definition + handler ──
+	if a.Outbox != nil {
+		if err := a.Outbox.RegisterDefinition(outbox.Definition{
+			EventType: "notification.requested.v1", SchemaVersion: 1,
+			Description: "Business requests a notification delivery via Orchestrator",
+		}); err != nil {
+			return err
+		}
+		outboxHandler := NewNotificationOutboxHandler(notifSvc)
+		if err := a.Outbox.RegisterHandler(outboxHandler); err != nil {
+			return err
+		}
+	}
 
 	auditOn := true
 	auditOff := false

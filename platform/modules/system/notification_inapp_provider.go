@@ -9,6 +9,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/logging"
 	"github.com/yzxingtu2026/ainp/platform/framework/notification"
 	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
+	"github.com/yzxingtu2026/ainp/platform/modules/system/jobs"
 	"gorm.io/gorm"
 )
 
@@ -134,7 +135,7 @@ func NewInAppProviderStore(db *gorm.DB, repo *NotificationRepository) *InAppProv
 }
 
 // LoadDeliveryForJob implements the jobs.NotificationDeliverStore interface.
-func (s *InAppProviderStore) LoadDelivery(ctx context.Context, deliveryID string) (*deliveryCtx, error) {
+func (s *InAppProviderStore) LoadDelivery(ctx context.Context, deliveryID string) (*jobs.DeliveryContext, error) {
 	del, err := s.repo.GetDelivery(ctx, deliveryID)
 	if err != nil {
 		return nil, err
@@ -152,7 +153,7 @@ func (s *InAppProviderStore) LoadDelivery(ctx context.Context, deliveryID string
 		varsJSON = req.VariablesJSON
 		defKey = req.DefinitionKey
 	}
-	return &deliveryCtx{
+	return &jobs.DeliveryContext{
 		DeliveryID:    del.ID,
 		RequestID:     del.RequestID,
 		TenantID:      del.TenantID,

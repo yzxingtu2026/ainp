@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"regexp"
 	"sort"
 	"strings"
@@ -12,6 +13,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
+	"github.com/yzxingtu2026/ainp/platform/framework/logging"
+	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
 	"github.com/yzxingtu2026/ainp/platform/framework/status"
 	"github.com/yzxingtu2026/ainp/platform/modules/system/model"
 	"golang.org/x/crypto/bcrypt"
@@ -22,12 +25,18 @@ import (
 var usernamePattern = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_]{2,63}$`)
 
 type UserService struct {
-	db   *gorm.DB
-	auth *AuthService
+	db           *gorm.DB
+	auth         *AuthService
+	outboxWriter outbox.Writer
 }
 
 func NewUserService(db *gorm.DB, authService *AuthService) *UserService {
 	return &UserService{db: db, auth: authService}
+}
+
+// SetOutboxWriter injects the outbox writer for reliable notification dispatch.
+func (s *UserService) SetOutboxWriter(w outbox.Writer) {
+	s.outboxWriter = w
 }
 
 type userListRequest struct {
@@ -327,12 +336,14 @@ func (s *UserService) UpdateRoles(ctx context.Context, input json.RawMessage) (a
 		return nil, err
 	}
 	var roles []model.Role
+	var targetUsername string
 	setUserAudit(ctx, req.ID, "user roles updated")
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		user, err := s.findUser(ctx, tx, tenantID, req.ID, true)
 		if err != nil {
 			return err
 		}
+		targetUsername = user.Username
 		roles, err = s.validateAssignableRoles(ctx, tx, tenantID, req.RoleIDs)
 		if err != nil {
 			return err
@@ -344,7 +355,12 @@ func (s *UserService) UpdateRoles(ctx context.Context, input json.RawMessage) (a
 		if err := replaceUserRoles(tx, tenantID, user.ID, roleIDs(roles)); err != nil {
 			return err
 		}
-		return s.auth.BumpAuthVersion(ctx, tx, tenantID, user.ID)
+		if err := s.auth.BumpAuthVersion(ctx, tx, tenantID, user.ID); err != nil {
+			return err
+		}
+		// Write notification outbox event in same transaction
+		s.notifyRoleChanged(ctx, tx, user.ID, targetUsername, roles)
+		return nil
 	})
 	if err != nil {
 		return nil, normalizeUserError(err, "update user roles failed")
@@ -368,16 +384,23 @@ func (s *UserService) ResetPassword(ctx context.Context, input json.RawMessage) 
 	if err != nil {
 		return nil, errs.Wrap(errs.CodeInternal, "hash password failed", err)
 	}
+	var targetUsername string
 	setUserAudit(ctx, req.ID, "user password reset")
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		user, err := s.findUser(ctx, tx, tenantID, req.ID, true)
 		if err != nil {
 			return err
 		}
+		targetUsername = user.Username
 		if err := tx.Model(user).Update("password_hash", string(hash)).Error; err != nil {
 			return err
 		}
-		return s.auth.BumpAuthVersion(ctx, tx, tenantID, user.ID)
+		if err := s.auth.BumpAuthVersion(ctx, tx, tenantID, user.ID); err != nil {
+			return err
+		}
+		// Write notification outbox event in same transaction
+		s.notifyPasswordReset(ctx, tx, user.ID, targetUsername)
+		return nil
 	})
 	if err != nil {
 		return nil, normalizeUserError(err, "reset user password failed")
@@ -583,5 +606,67 @@ func setUserAudit(ctx context.Context, userID, summary string) {
 		ac.AuditResourceType = "user"
 		ac.AuditResourceID = userID
 		ac.AuditSummary = summary
+	}
+}
+
+// ── Notification helpers (fire-and-forget within transaction) ──
+
+// notifyRoleChanged writes a system.role_changed outbox event.
+// Errors are logged but do not fail the transaction.
+func (s *UserService) notifyRoleChanged(ctx context.Context, tx *gorm.DB, userID, username string, roles []model.Role) {
+	if s.outboxWriter == nil {
+		return
+	}
+	roleNames := make([]string, len(roles))
+	for i, r := range roles {
+		roleNames[i] = r.Name
+	}
+	payload := map[string]any{
+		"definition_key": "system.role_changed",
+		"recipients": []map[string]any{
+			{"type": "user", "id": userID},
+		},
+		"variables": map[string]any{
+			"username":  username,
+			"role_name": strings.Join(roleNames, ", "),
+			"action":    "assigned",
+		},
+		"idempotency_key": fmt.Sprintf("role_changed:%s:%d", userID, time.Now().UnixMilli()),
+	}
+	if _, err := s.outboxWriter.Append(ctx, tx, outbox.AppendInput{
+		EventType:     "notification.requested.v1",
+		AggregateType: "user",
+		AggregateID:   userID,
+		Payload:       payload,
+	}); err != nil {
+		logging.Warn(ctx, "notify role_changed outbox append failed", "user_id", userID, "error", err)
+	}
+}
+
+// notifyPasswordReset writes a user.password_reset outbox event.
+// Errors are logged but do not fail the transaction.
+func (s *UserService) notifyPasswordReset(ctx context.Context, tx *gorm.DB, userID, username string) {
+	if s.outboxWriter == nil {
+		return
+	}
+	payload := map[string]any{
+		"definition_key": "user.password_reset",
+		"recipients": []map[string]any{
+			{"type": "user", "id": userID},
+		},
+		"variables": map[string]any{
+			"username":   username,
+			"reset_link": "", // Phase 1: in-app only, no email link
+			"expires_in": "30 minutes",
+		},
+		"idempotency_key": fmt.Sprintf("password_reset:%s:%d", userID, time.Now().UnixMilli()),
+	}
+	if _, err := s.outboxWriter.Append(ctx, tx, outbox.AppendInput{
+		EventType:     "notification.requested.v1",
+		AggregateType: "user",
+		AggregateID:   userID,
+		Payload:       payload,
+	}); err != nil {
+		logging.Warn(ctx, "notify password_reset outbox append failed", "user_id", userID, "error", err)
 	}
 }

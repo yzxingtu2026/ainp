@@ -59,6 +59,9 @@ func Register(a *app.App) error {
 	}
 
 	userSvc := NewUserService(a.DB, svc)
+	if a.Outbox != nil {
+		userSvc.SetOutboxWriter(a.Outbox.Writer)
+	}
 	if err := registerUserActions(a, userSvc); err != nil {
 		return err
 	}
