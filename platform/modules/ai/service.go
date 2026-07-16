@@ -367,6 +367,9 @@ func (s *Service) UpdateDeployment(ctx context.Context, r DeploymentUpdateReques
 		return nil, e
 	}
 	res := s.db.WithContext(ctx).Model(&Deployment{}).Where("tenant_id=? AND id=?", tid, r.ID).Updates(map[string]any{"display_name": r.DisplayName, "model_type": r.ModelType, "capabilities_json": marshal(r.Capabilities), "limits_json": marshal(r.Limits), "config_json": marshal(r.Config)})
+	if res.Error != nil {
+		return nil, dbError(res.Error, "update deployment")
+	}
 	if res.RowsAffected == 0 {
 		return nil, errs.New(errs.CodeNotFound, "deployment not found")
 	}
@@ -381,10 +384,34 @@ func (s *Service) UpdateDeploymentStatus(ctx context.Context, r StatusRequest) (
 		return nil, e
 	}
 	res := s.db.WithContext(ctx).Model(&Deployment{}).Where("tenant_id=? AND id=?", tid, r.ID).Update("status", r.Status)
+	if res.Error != nil {
+		return nil, dbError(res.Error, "update deployment status")
+	}
 	if res.RowsAffected == 0 {
 		return nil, errs.New(errs.CodeNotFound, "deployment not found")
 	}
 	return s.GetDeployment(ctx, IDRequest{r.ID})
+}
+func (s *Service) DeleteDeployment(ctx context.Context, r IDRequest) (any, error) {
+	tid, e := tenant(ctx)
+	if e != nil {
+		return nil, e
+	}
+	var aliases int64
+	if e = s.db.WithContext(ctx).Model(&Alias{}).Where("tenant_id=? AND deployment_id=?", tid, r.ID).Count(&aliases).Error; e != nil {
+		return nil, dbError(e, "check deployment aliases")
+	}
+	if aliases > 0 {
+		return nil, errs.New(errs.CodeConflict, "deployment is referenced by aliases")
+	}
+	res := s.db.WithContext(ctx).Where("tenant_id=? AND id=?", tid, r.ID).Delete(&Deployment{})
+	if res.Error != nil {
+		return nil, dbError(res.Error, "delete deployment")
+	}
+	if res.RowsAffected == 0 {
+		return nil, errs.New(errs.CodeNotFound, "deployment not found")
+	}
+	return map[string]any{"deleted": true}, nil
 }
 func (s *Service) ListAliases(ctx context.Context, _ struct{}) (any, error) {
 	tid, e := tenant(ctx)

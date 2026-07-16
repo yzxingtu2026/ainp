@@ -643,6 +643,16 @@ const local: App.I18n.Schema = {
     filterArchived: 'Include Archived',
     filterPlaceholder: 'Filter'
   },
+  aiModel: {
+    alias: 'Alias',
+    bindAlias: 'Bind Alias',
+    enabled: 'Enabled',
+    disabled: 'Disabled',
+    editTitle: 'Edit Model',
+    createTitle: 'Create Model',
+    deleteConfirm: 'Delete this model? This action cannot be undone.',
+    aliasReferenced: 'Remove all Alias bindings before deleting this model'
+  },
   notificationAdmin: {
     templateTitle: 'Notification Template Management',
     deliveryTitle: 'Delivery Records',

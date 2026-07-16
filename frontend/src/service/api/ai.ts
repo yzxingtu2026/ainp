@@ -8,8 +8,10 @@ export const updateAIProviderStatus=(id:string,status:Api.AI.Status)=>post<Api.A
 export const discoverAIModels=(providerId:string)=>post<{items:Api.AI.RemoteModel[];next_cursor?:string}>('providers/discover-models',{provider_id:providerId,limit:100});
 export const fetchAIDeployments=(params:Record<string,unknown>)=>post<Api.AI.Page<Api.AI.Deployment>>('deployments/list',params);
 export const createAIDeployment=(data:Record<string,unknown>)=>post<Api.AI.Deployment>('deployments/create',data);
+export const updateAIDeployment=(data:Record<string,unknown>)=>post<Api.AI.Deployment>('deployments/update',data);
 export const importAIDeployments=(items:Record<string,unknown>[])=>post<Api.AI.Deployment[]>('deployments/import',{items});
 export const updateAIDeploymentStatus=(id:string,status:Api.AI.Status)=>post<Api.AI.Deployment>('deployments/status/update',{id,status});
+export const deleteAIDeployment=(id:string)=>post<{deleted:boolean}>('deployments/delete',{id});
 export const fetchAIAliases=()=>post<Api.AI.Alias[]>('aliases/list');
 export const upsertAIAlias=(code:string,deploymentId:string)=>post<Api.AI.Alias>('aliases/upsert',{code,deployment_id:deploymentId});
 export const deleteAIAlias=(code:string)=>post<{deleted:boolean}>('aliases/delete',{code});

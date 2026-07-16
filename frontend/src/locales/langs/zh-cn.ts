@@ -637,6 +637,16 @@ const local: App.I18n.Schema = {
     filterArchived: '含已归档',
     filterPlaceholder: '筛选'
   },
+  aiModel: {
+    alias: '别名',
+    bindAlias: '绑定别名',
+    enabled: '启用',
+    disabled: '停用',
+    editTitle: '编辑模型',
+    createTitle: '新增模型',
+    deleteConfirm: '确定删除该模型？删除后无法恢复。',
+    aliasReferenced: '请先解除该模型绑定的别名'
+  },
   notificationAdmin: {
     templateTitle: '通知模板管理',
     deliveryTitle: '投递记录',

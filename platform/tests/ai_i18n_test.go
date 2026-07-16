@@ -20,6 +20,7 @@ func TestAIRegistrationTranslationKeysExist(t *testing.T) {
 		"provider_type_list", "provider_list", "provider_get", "provider_create", "provider_update",
 		"provider_status_update", "provider_discover_models", "deployment_list", "deployment_get",
 		"deployment_create", "deployment_import", "deployment_update", "deployment_status_update",
+		"deployment_delete",
 		"alias_list", "alias_upsert", "alias_delete",
 	}
 	for _, actionID := range actions {

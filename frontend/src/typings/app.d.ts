@@ -833,6 +833,16 @@ declare namespace App {
         correlation: string;
         attributes: string;
       };
+      aiModel: {
+        alias: string;
+        bindAlias: string;
+        enabled: string;
+        disabled: string;
+        editTitle: string;
+        createTitle: string;
+        deleteConfirm: string;
+        aliasReferenced: string;
+      };
       notificationAdmin: {
         templateTitle: string;
         deliveryTitle: string;
