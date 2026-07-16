@@ -142,6 +142,7 @@ function onPopoverShow(visible: boolean) {
               :class="{ unread: !item.read_at }"
               @click="handleNavigate(item)"
             >
+              <span v-if="!item.read_at" class="unread-dot"></span>
               <div class="item-icon">
                 <SvgIcon v-if="item.icon" :icon="item.icon" :style="{ fontSize: '18px' }" />
                 <SvgIcon v-else icon="mdi:bell-outline" :style="{ fontSize: '18px' }" />
@@ -208,18 +209,31 @@ function onPopoverShow(visible: boolean) {
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  padding: 8px 8px;
+  padding: 8px 8px 8px 4px;
   border-radius: 6px;
   cursor: pointer;
   transition: background-color 0.15s;
+  position: relative;
 }
 
 .notification-item:hover {
-  background-color: var(--n-color-hover);
+  background-color: rgba(0, 0, 0, 0.04);
 }
 
 .notification-item.unread {
-  background-color: var(--n-color-target);
+  background-color: rgba(24, 160, 88, 0.06);
+}
+
+.unread-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  min-width: 8px;
+  border-radius: 50%;
+  background-color: #18a058;
+  flex-shrink: 0;
+  margin-top: 12px;
+  box-shadow: 0 0 0 2px rgba(24, 160, 88, 0.2);
 }
 
 .item-icon {

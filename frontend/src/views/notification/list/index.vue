@@ -295,11 +295,13 @@ onMounted(loadList);
 
 .unread-dot {
   display: inline-block;
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
+  min-width: 8px;
   border-radius: 50%;
   background-color: #18a058;
   flex-shrink: 0;
+  box-shadow: 0 0 0 2px rgba(24, 160, 88, 0.2);
 }
 
 .item-summary {
