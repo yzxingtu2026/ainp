@@ -77,7 +77,8 @@ System
 验 Token/会话 → AuthorizationProvider（tenant + user + realm + auth_version）
   → 实时校验租户/用户状态与版本
   → 加载当前 roles / permissions → AuthContext
-  → permission（默认 action.id）
+  → Action access（public / authenticated / permission）
+  → permission 模式下校验 permission（默认 action.id）
   → Handler(ctx, input)
   → 审计（meta.audit）
 ```
@@ -90,7 +91,7 @@ System
 
 正式 JWT 的 Token 无效、缺少授权版本、版本过期、用户停用或租户停用均按未认证处理，避免继续使用旧会话；已经通过身份校验但缺少 Action permission 才返回 forbidden。
 
-前端按钮按 permission 显隐；**后端 Action 必须再鉴权**。
+前端按钮按 permission 显隐；**后端 Action 必须按 access 再鉴权**。`authenticated` 仍必须经过正式 Token/会话、AuthorizationProvider、租户/用户状态与 `auth_version` 校验，只跳过额外角色 permission。
 
 ## 授权版本与失效
 

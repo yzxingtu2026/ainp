@@ -154,3 +154,4 @@ outbox.Write(ctx, tx, outbox.Envelope{
 - 敏感变量标记 `sensitive`/`ephemeral`，不持久化到 variables_json
 - ActionDescriptor 禁止 javascript: 和外部 URL
 - 用户只能访问自己的通知
+- 个人通知 Action 使用 `access=authenticated`，不进入角色权限目录；服务端固定使用 AuthContext 的 tenant/user scope

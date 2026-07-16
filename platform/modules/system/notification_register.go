@@ -699,7 +699,7 @@ func registerNotificationActions(a *app.App) error {
 	auditOn := true
 	auditOff := false
 
-	// User notification actions (permission: system.notification_user)
+	// User notification actions are authenticated base capabilities scoped to the current user.
 	userSpecs := []struct {
 		id, path, name, nameKey, desc, descKey string
 		audit                                  *bool
@@ -718,6 +718,7 @@ func registerNotificationActions(a *app.App) error {
 			Handler: spec.handler,
 			Meta: action.Metadata{
 				Capability:             "system",
+				Access:                 action.AccessAuthenticated,
 				Name:                   spec.name,
 				NameKey:                spec.nameKey,
 				Description:            spec.desc,

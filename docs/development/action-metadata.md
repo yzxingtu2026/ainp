@@ -73,8 +73,12 @@ purchase_order_create    # 禁止缺少 capability 点分前缀（除非 capabil
 
 ### 权限默认值（已拍板）
 
-- **默认权限码 = `action.id`**。
+- Action 的 `access` 只有 `public`、`authenticated`、`permission` 三种；省略时默认 `permission`，保持 fail-closed。
+- `public` 允许匿名调用；`authenticated` 要求有效登录上下文但不校验角色 permission；`permission` 要求有效登录且通过 permission 校验。
+- `access` 属于 Action 语义，与 HTTP/MCP 等执行入口无关；禁止在 `HTTPMeta` 维护第二套公开访问配置。
+- `permission` 模式的**默认权限码 = `action.id`**。
 - 仅在确需聚合/别名时填写 `meta.permission` 覆盖；一般不覆盖。
+- `public` / `authenticated` Action 不得声明可分配 permission，也不进入角色权限目录。
 
 ## Metadata（挂在 Action 上）
 
@@ -85,6 +89,7 @@ purchase_order_create    # 禁止缺少 capability 点分前缀（除非 capabil
 | `capability` | string | 是 | 所属 Capability.id |
 | `surface` | string | 否 | `tenant` / `platform`；省略兼容为 `tenant` |
 | `permission` | string | 否 | 默认等于 `action.id` |
+| `access` | enum | 否 | `public` / `authenticated` / `permission`，默认 `permission` |
 | `permission_group` | string | 否 | 权限树功能组稳定 key，如 `system.role_management` |
 | `permission_group_name` / `permission_group_name_key` | string | 否 | 功能组 fallback 名称与 i18n key |
 | `name` | string | 否 | 展示名 |
@@ -133,14 +138,14 @@ purchase_order_create    # 禁止缺少 capability 点分前缀（除非 capabil
 | `type` | string | 是 | `directory` \| `menu` \| `button` |
 | `path` | string | 条件 | `menu` 叶子建议必填（前端路由） |
 | `component` | string | 否 | 动态路由组件约定 |
-| `permission` | string | 否 | 可见/可点所需权限；**按钮建议必填**且等于某 `action.id` |
+| `permission` | string | 否 | permission Action 的可见/可点权限；authenticated 基础入口不得填写 |
 | `bind_action` | string | 否 | 关联主 Action（文档/审计）；按钮常与 `permission` 相同 |
 | `hide_in_menu` | bool | 否 | 默认 false；按钮通常不出现在侧栏 |
 | `keepalive` | bool | 否 | 仅 `menu` 有意义 |
 | `module` | string | 否 | 如 `erp` |
 | `surface` | string | 否 | `tenant` / `platform`；省略兼容为 `tenant` |
 
-Action 执行时先校验 AuthContext realm 与 surface，再校验 permission。菜单接口先按 surface 过滤，再按 permission 过滤。`Module` 不得用于推断 realm。
+Action 执行时先校验 AuthContext realm 与 surface，再按 access 执行认证/permission 策略。菜单与 CodeSet 接口为 authenticated 基础能力，但返回内容仍先按 surface、再按业务 permission 过滤。`Module` 不得用于推断 realm。
 
 ### 类型约定
 
@@ -150,7 +155,7 @@ Action 执行时先校验 AuthContext realm 与 surface，再校验 permission�
 | `menu` | 页面 | 建议有 path | 建议有，控制菜单可见 |
 | `button` | 页内按钮/操作 | 无 path | **必填**，等于可执行的 `action.id` |
 
-按钮不进入侧栏树展示（`hide_in_menu=true` 或组装菜单树时过滤 `type=button`）；前端按 `permission` / 权限列表控制按钮显隐。
+按钮不进入侧栏树展示（`hide_in_menu=true` 或组装菜单树时过滤 `type=button`）；permission Action 的按钮按权限列表显隐，authenticated Action 的按钮只依赖有效登录状态并必须 `bind_action`。
 
 ### 示例
 

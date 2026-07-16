@@ -61,11 +61,11 @@ func New(opts Options) *gin.Engine {
 	})
 
 	r.GET("/api/v1/menus", func(c *gin.Context) {
-		ac, ok := auth.FromContext(c.Request.Context())
-		if !ok || ac == nil || !ac.Authenticated {
-			response.Fail(c, errs.NewKey(errs.CodeUnauthorized, "common.unauthorized", "unauthorized"))
+		if err := action.RequireAuthenticated(c.Request.Context()); err != nil {
+			response.Fail(c, err)
 			return
 		}
+		ac := auth.MustFromContext(c.Request.Context())
 		hasPerm := func(code string) bool {
 			return ac.HasPermission(code)
 		}
@@ -93,11 +93,11 @@ func New(opts Options) *gin.Engine {
 
 	if opts.CodeSets != nil {
 		codesetHandler := func(c *gin.Context) {
-			ac, ok := auth.FromContext(c.Request.Context())
-			if !ok || ac == nil || !ac.Authenticated {
-				response.Fail(c, errs.NewKey(errs.CodeUnauthorized, "common.unauthorized", "unauthorized"))
+			if err := action.RequireAuthenticated(c.Request.Context()); err != nil {
+				response.Fail(c, err)
 				return
 			}
+			ac := auth.MustFromContext(c.Request.Context())
 			version := opts.CodeSets.Version()
 			etag := `"` + version + `"`
 			if c.GetHeader("If-None-Match") == etag {

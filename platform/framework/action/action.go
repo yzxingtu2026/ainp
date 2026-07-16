@@ -15,11 +15,18 @@ import (
 
 type Handler func(ctx context.Context, input json.RawMessage) (any, error)
 
+type AccessMode string
+
+const (
+	AccessPublic        AccessMode = "public"
+	AccessAuthenticated AccessMode = "authenticated"
+	AccessPermission    AccessMode = "permission"
+)
+
 type HTTPMeta struct {
 	Method  string
 	Path    string
 	Enabled *bool
-	Public  bool
 }
 
 func (h *HTTPMeta) IsEnabled() bool {
@@ -48,6 +55,7 @@ type IdempotencyMeta struct {
 
 type Metadata struct {
 	Capability             string
+	Access                 AccessMode
 	PermissionGroup        string
 	PermissionGroupName    string
 	PermissionGroupNameKey string
@@ -61,6 +69,13 @@ type Metadata struct {
 	HTTP                   *HTTPMeta
 	AI                     *AIMeta
 	Idempotency            *IdempotencyMeta
+}
+
+func (m Metadata) AccessMode() AccessMode {
+	if m.Access == "" {
+		return AccessPermission
+	}
+	return m.Access
 }
 
 func (m Metadata) PermissionCode(actionID string) string {
@@ -148,6 +163,16 @@ func (r *Registry) Register(a Action) error {
 	if !a.Meta.Surface.Valid() {
 		return fmt.Errorf("invalid action surface: %s", a.Meta.Surface)
 	}
+	a.Meta.Access = a.Meta.AccessMode()
+	switch a.Meta.Access {
+	case AccessPublic, AccessAuthenticated:
+		if a.Meta.Permission != "" {
+			return fmt.Errorf("action %s: %s access must not declare permission", a.ID, a.Meta.Access)
+		}
+	case AccessPermission:
+	default:
+		return fmt.Errorf("action %s: invalid access mode %q", a.ID, a.Meta.Access)
+	}
 	if err := validateIdempotency(a.Meta.Idempotency); err != nil {
 		return fmt.Errorf("action %s: %w", a.ID, err)
 	}
@@ -188,15 +213,12 @@ func (r *Registry) Invoke(ctx context.Context, actionID string, input json.RawMe
 		return nil, err
 	}
 	perm := a.Meta.PermissionCode(a.ID)
-	public := a.Meta.HTTP != nil && a.Meta.HTTP.Public
-
-	if !public {
-		if ac == nil || !ac.Authenticated {
-			err := errs.New(errs.CodeUnauthorized, "unauthorized")
+	if a.Meta.AccessMode() != AccessPublic {
+		if err := RequireAuthenticated(ctx); err != nil {
 			r.writeAudit(ctx, a, perm, "failure", err)
 			return nil, err
 		}
-		if r.checker != nil && !r.checker.Allow(ac, perm) {
+		if a.Meta.AccessMode() == AccessPermission && r.checker != nil && !r.checker.Allow(ac, perm) {
 			err := errs.New(errs.CodeForbidden, "forbidden")
 			r.writeAudit(ctx, a, perm, "failure", err)
 			return nil, err
@@ -247,6 +269,15 @@ func (r *Registry) Invoke(ctx context.Context, actionID string, input json.RawMe
 	}
 	r.writeAudit(ctx, a, perm, "success", nil)
 	return data, nil
+}
+
+// RequireAuthenticated is the shared access policy for authenticated-only endpoints.
+func RequireAuthenticated(ctx context.Context) error {
+	ac, ok := auth.FromContext(ctx)
+	if !ok || ac == nil || !ac.Authenticated {
+		return errs.New(errs.CodeUnauthorized, "unauthorized")
+	}
+	return nil
 }
 
 func (r *Registry) writeAudit(ctx context.Context, a Action, perm, result string, err error) {

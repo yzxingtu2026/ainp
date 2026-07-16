@@ -1,7 +1,7 @@
 # 租户角色与权限管理
 
 - Role/UserRole/RolePermission 操作必须从 AuthContext 取 tenant，并同时校验资源 tenant；禁止信任请求 tenant_id。
-- permission 只来自 tenant realm 已启用、非 Public 的 Action Registry；按 permission 去重，Menu ID 不作为权限。
+- permission 只来自 tenant realm、`access=permission` 的 Action Registry；按 permission 去重，public/authenticated 不展示、不写角色权限，Menu ID 不作为权限。
 - 角色 code 创建后不可改；权限替换、启停和删除必须事务化，权限/状态变化同事务调用 #14 授权版本失效入口。
 - 内置 admin 不可删除/停用，必须保留最小管理权限；有关联用户的角色拒绝删除。
 - 用户角色分配/停用须在事务中保证租户至少保留一名 enabled 内置 admin；只能分配当前租户 enabled 角色。

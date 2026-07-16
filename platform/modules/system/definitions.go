@@ -40,8 +40,6 @@ const (
 )
 
 var adminMinimumPermissions = []string{
-	"system.auth_me",
-	"system.auth_permissions",
 	ActionRoleList,
 	ActionRoleGet,
 	ActionRoleCreate,

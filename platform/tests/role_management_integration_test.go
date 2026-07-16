@@ -40,10 +40,21 @@ func TestRoleManagementActionsAndMenuAreRegistered(t *testing.T) {
 			t.Fatalf("role action permission group = %q", registered.Meta.PermissionGroup)
 		}
 	}
+	for _, actionID := range []string{
+		"system.auth_me", "system.auth_permissions",
+	} {
+		registered, ok := application.Actions.Get(actionID)
+		if !ok || registered.Meta.AccessMode() != action.AccessAuthenticated {
+			t.Fatalf("basic action %s must be authenticated", actionID)
+		}
+	}
 	foundMenu := false
 	for _, registered := range application.Menus.List() {
 		if registered.ID == system.MenuRoleManagement && registered.Permission == system.ActionRoleList {
 			foundMenu = true
+		}
+		if (registered.ID == "system.profile" || registered.ID == "system.profile_refresh") && registered.Permission != "" {
+			t.Fatalf("authenticated profile entry must not require permission: %#v", registered)
 		}
 	}
 	if !foundMenu {
@@ -104,17 +115,18 @@ func TestRoleManagementTenantIsolationAndProtection(t *testing.T) {
 	for _, definition := range []struct {
 		id         string
 		permission string
-		public     bool
+		access     action.AccessMode
 	}{
 		{id: "system.role_list"},
 		{id: "system.role_update"},
 		{id: "system.shared_a", permission: "system.shared"},
 		{id: "system.shared_b", permission: "system.shared"},
-		{id: "system.public", public: true},
+		{id: "system.public", access: action.AccessPublic},
+		{id: "system.authenticated", access: action.AccessAuthenticated},
 	} {
 		if err := actions.Register(action.Action{ID: definition.id, Handler: dummy, Meta: action.Metadata{
-			Capability: "system", Permission: definition.permission, Name: definition.id,
-			HTTP: &action.HTTPMeta{Method: "POST", Path: "/" + definition.id, Public: definition.public},
+			Capability: "system", Permission: definition.permission, Name: definition.id, Access: definition.access,
+			HTTP: &action.HTTPMeta{Method: "POST", Path: "/" + definition.id},
 		}}); err != nil {
 			t.Fatal(err)
 		}
@@ -154,6 +166,9 @@ func TestRoleManagementTenantIsolationAndProtection(t *testing.T) {
 	if _, err := service.Create(ctxA, json.RawMessage(`{"code":"invalid","name":"Invalid","status":"enabled","permissions":["unknown.permission"]}`)); appErrorCode(err) != errs.CodeValidation {
 		t.Fatalf("invalid permission error = %v", err)
 	}
+	if _, err := service.Create(ctxA, json.RawMessage(`{"code":"base-access","name":"Base Access","status":"enabled","permissions":["system.authenticated"]}`)); appErrorCode(err) != errs.CodeValidation {
+		t.Fatalf("authenticated action permission must be rejected: %v", err)
+	}
 
 	if err := testDB.Create(&model.UserRole{ID: "ur-a", TenantID: "tenant-a", UserID: "user-a", RoleID: roleA.ID}).Error; err != nil {
 		t.Fatal(err)
@@ -192,6 +207,9 @@ func TestRoleManagementTenantIsolationAndProtection(t *testing.T) {
 		}
 		if item.Permission == "system.public" {
 			t.Fatal("public action must not be assignable")
+		}
+		if item.Permission == "system.authenticated" {
+			t.Fatal("authenticated action must not be assignable")
 		}
 		if item.Permission == "system.shared" && len(item.ActionIDs) != 2 {
 			t.Fatalf("shared permission was not deduplicated: %#v", item)

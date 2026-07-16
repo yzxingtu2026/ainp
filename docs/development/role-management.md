@@ -4,7 +4,8 @@
 
 - 角色属于单一租户，所有查询与写入必须同时约束 `tenant_id + role_id`。
 - `code` 在租户内唯一且创建后不可修改；不同租户可使用相同 code。
-- permission 只来自 tenant realm 下已启用、非 Public 的 Action Registry；Menu ID 不是 permission。
+- permission 只来自 tenant realm 下 `access=permission` 的 Action Registry；HTTP 是否暴露不改变可分配性，Menu ID 不是 permission。
+- `public` / `authenticated` Action 不进入权限目录或 `role_permissions`；存量基础 permission 可保留，但运行时不依赖、目录不展示，也不要求批量回填或清理。
 - 多个 Action 可共享一个 permission，权限目录按 permission 去重并保留关联 Action ID。
 
 ## 写操作
@@ -17,7 +18,7 @@
 ## 内置管理员保护
 
 - 安装向导创建 `is_builtin=true` 的 `admin` 角色，该角色不可删除、停用或修改 code。
-- 内置管理员必须保留角色管理、权限目录、当前用户与权限读取的最小权限集合。
+- 内置管理员必须保留角色、用户、设置等管理能力的最小权限集合；当前用户与权限读取属于 authenticated 基础能力，不在最小 permission 中。
 - 安装向导负责创建初始租户、管理员、内置角色和初始权限；Demo Seed 仅负责开发演示数据。
 - Schema Migration 只维护字段、索引与约束，不创建或修补角色、管理员及权限等业务数据；未来存量升级另设版本化业务数据升级机制。
 - 用户管理解除角色或停用用户时，须在同一事务中校验租户至少保留一个 enabled 的内置 `admin` 用户。

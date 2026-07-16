@@ -354,7 +354,7 @@ func (s *RoleService) PermissionCatalog(ctx context.Context, _ json.RawMessage) 
 	items := make(map[string]map[string]*PermissionCatalogItem)
 	lang := auth.MustFromContext(ctx).Language
 	for _, registered := range s.actions.List() {
-		if auth.NormalizeRealm(registered.Meta.Surface) != auth.RealmTenant || registered.Meta.HTTP == nil || !registered.Meta.HTTP.IsEnabled() || registered.Meta.HTTP.Public {
+		if auth.NormalizeRealm(registered.Meta.Surface) != auth.RealmTenant || registered.Meta.AccessMode() != action.AccessPermission {
 			continue
 		}
 		capabilityID := registered.Meta.Capability
@@ -401,7 +401,7 @@ func (s *RoleService) PermissionCatalog(ctx context.Context, _ json.RawMessage) 
 func (s *RoleService) assignablePermissions() map[string]struct{} {
 	allowed := make(map[string]struct{})
 	for _, registered := range s.actions.List() {
-		if auth.NormalizeRealm(registered.Meta.Surface) == auth.RealmTenant && registered.Meta.HTTP != nil && registered.Meta.HTTP.IsEnabled() && !registered.Meta.HTTP.Public {
+		if auth.NormalizeRealm(registered.Meta.Surface) == auth.RealmTenant && registered.Meta.AccessMode() == action.AccessPermission {
 			allowed[registered.Meta.PermissionCode(registered.ID)] = struct{}{}
 		}
 	}

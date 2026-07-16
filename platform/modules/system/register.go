@@ -40,13 +40,13 @@ func Register(a *app.App) error {
 		},
 		Meta: action.Metadata{
 			Capability: "system",
+			Access:     action.AccessPublic,
 			Name:       "Ping",
 			NameKey:    "action.system.ping.name",
 			Audit:      &auditOff,
 			HTTP: &action.HTTPMeta{
 				Method: "GET",
 				Path:   "/api/v1/system/ping",
-				Public: true,
 			},
 		},
 	}); err != nil {
@@ -111,6 +111,7 @@ func Register(a *app.App) error {
 		},
 		Meta: action.Metadata{
 			Capability:     "system",
+			Access:         action.AccessPublic,
 			Name:           "登录",
 			NameKey:        "action.system.auth_login.name",
 			Description:    "校验账号密码并签发 JWT",
@@ -119,7 +120,6 @@ func Register(a *app.App) error {
 			HTTP: &action.HTTPMeta{
 				Method: "POST",
 				Path:   "/api/v1/system/auth/login",
-				Public: true,
 			},
 		},
 	}); err != nil {
@@ -133,6 +133,7 @@ func Register(a *app.App) error {
 		},
 		Meta: action.Metadata{
 			Capability:     "system",
+			Access:         action.AccessAuthenticated,
 			Name:           "当前用户",
 			NameKey:        "action.system.auth_me.name",
 			Description:    "返回当前登录用户摘要与权限",
@@ -154,6 +155,7 @@ func Register(a *app.App) error {
 		},
 		Meta: action.Metadata{
 			Capability:     "system",
+			Access:         action.AccessAuthenticated,
 			Name:           "权限列表",
 			NameKey:        "action.system.auth_permissions.name",
 			Description:    "返回当前用户角色与 permission 列表",
@@ -217,7 +219,6 @@ func Register(a *app.App) error {
 		Type:       menu.TypeMenu,
 		Path:       "/system/profile",
 		Component:  "system/profile",
-		Permission: "system.auth_me",
 		BindAction: "system.auth_me",
 		Module:     "system",
 		Order:      1,
@@ -231,7 +232,6 @@ func Register(a *app.App) error {
 		Title:      "刷新资料",
 		TitleKey:   "menu.system.profile_refresh.title",
 		Type:       menu.TypeButton,
-		Permission: "system.auth_me",
 		BindAction: "system.auth_me",
 		HideInMenu: true,
 		Module:     "system",
