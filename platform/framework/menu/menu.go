@@ -84,7 +84,8 @@ func (r *Registry) List() []Menu {
 	return out
 }
 
-// TreeForUser 返回侧栏可见节点（过滤 button）；按 permission 过滤。
+// TreeForUser 返回用户可见菜单节点（过滤 button，保留 HideInMenu 以供前端路由注册）。
+// HideInMenu 的菜单仍返回给前端用于路由注册，前端通过 hideInMenu meta 控制侧栏隐藏。
 func (r *Registry) TreeForUser(realm auth.Realm, hasPerm func(string) bool) []Menu {
 	all := r.List()
 	out := make([]Menu, 0, len(all))
@@ -92,7 +93,7 @@ func (r *Registry) TreeForUser(realm auth.Realm, hasPerm func(string) bool) []Me
 		if m.Surface != auth.NormalizeRealm(realm) {
 			continue
 		}
-		if m.Type == TypeButton || m.HideInMenu {
+		if m.Type == TypeButton {
 			continue
 		}
 		if m.Permission != "" && hasPerm != nil && !hasPerm(m.Permission) {
