@@ -35,6 +35,7 @@
 - 幂等、乐观锁、数据库不变量锁见 `idempotency-concurrency`（Mutation Action 必须评估幂等；并发更新资源必须用 revision；行锁必须经 dblock）。
 - 统一通知协议见 `notifications`（业务禁止直连渠道 SDK；必须注册 Definition/变量 Schema/渠道模板；可靠通知走 Outbox → Orchestrator → Job；模板安全限制；站内通知与 toast 分离）。
 - 前端栈、图标协议见关联规则。
+- Copilot PR 语义审查见 `copilot-code-review`；它只负责中文语义反馈，不替代合并门禁与人工审批。
 
 ## 关联规则
 
@@ -61,3 +62,4 @@
 - `code-sets-and-status` → `docs/development/code-sets-and-status.md`
 - `role-management` → `docs/development/role-management.md`
 - `team-escalation`
+- `copilot-code-review` → `docs/development/copilot-code-review.md`

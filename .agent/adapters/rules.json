@@ -90,6 +90,24 @@
       }
     },
     {
+      "id": "copilot-code-review",
+      "source": ".agent/rules/copilot-code-review.md",
+      "qoder": {
+        "path": ".qoder/rules/copilot-code-review.md",
+        "frontmatter": {
+          "trigger": "model_decision",
+          "description": "配置或参与 Copilot PR 语义审查时"
+        }
+      },
+      "cursor": {
+        "path": ".cursor/rules/copilot-code-review.mdc",
+        "frontmatter": {
+          "description": "Copilot 中文语义审查、复审与合并门禁边界",
+          "alwaysApply": false
+        }
+      }
+    },
+    {
       "id": "frontend-stack",
       "source": ".agent/rules/frontend-stack.md",
       "qoder": {
