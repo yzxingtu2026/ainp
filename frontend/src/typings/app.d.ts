@@ -842,6 +842,7 @@ declare namespace App {
         createTitle: string;
         deleteConfirm: string;
         aliasReferenced: string;
+        features: Record<(typeof import('@/constants/ai').MODEL_FEATURES)[number], string>;
       };
       notificationAdmin: {
         templateTitle: string;

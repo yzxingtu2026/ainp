@@ -651,7 +651,18 @@ const local: App.I18n.Schema = {
     editTitle: 'Edit Model',
     createTitle: 'Create Model',
     deleteConfirm: 'Delete this model? This action cannot be undone.',
-    aliasReferenced: 'Remove all Alias bindings before deleting this model'
+    aliasReferenced: 'Remove all Alias bindings before deleting this model',
+    features: {
+      streaming: 'Streaming',
+      tool_calling: 'Tool Calling',
+      parallel_tool_calls: 'Parallel Tool Calls',
+      structured_output: 'Structured Output',
+      vision: 'Vision',
+      embeddings: 'Embeddings',
+      image_generation: 'Image Generation',
+      audio_input: 'Audio Input',
+      audio_output: 'Audio Output'
+    }
   },
   notificationAdmin: {
     templateTitle: 'Notification Template Management',

@@ -645,7 +645,18 @@ const local: App.I18n.Schema = {
     editTitle: '编辑模型',
     createTitle: '新增模型',
     deleteConfirm: '确定删除该模型？删除后无法恢复。',
-    aliasReferenced: '请先解除该模型绑定的别名'
+    aliasReferenced: '请先解除该模型绑定的别名',
+    features: {
+      streaming: '流式输出',
+      tool_calling: '工具调用',
+      parallel_tool_calls: '并行工具调用',
+      structured_output: '结构化输出',
+      vision: '视觉理解',
+      embeddings: '向量嵌入',
+      image_generation: '图像生成',
+      audio_input: '音频输入',
+      audio_output: '音频输出'
+    }
   },
   notificationAdmin: {
     templateTitle: '通知模板管理',
