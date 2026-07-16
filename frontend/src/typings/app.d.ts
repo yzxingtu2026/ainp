@@ -745,6 +745,25 @@ declare namespace App {
         pin: string;
         unpin: string;
       };
+      notification: {
+        title: string;
+        pageTitle: string;
+        markRead: string;
+        markAllRead: string;
+        markAllReadSuccess: string;
+        viewAll: string;
+        empty: string;
+        archive: string;
+        archiveSuccess: string;
+        unarchive: string;
+        unarchiveSuccess: string;
+        archived: string;
+        unreadBadge: string;
+        filterAll: string;
+        filterUnread: string;
+        filterArchived: string;
+        filterPlaceholder: string;
+      };
       datatable: {
         itemCount: string;
         fixed: {

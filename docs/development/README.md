@@ -23,5 +23,9 @@
 - [统一对象存储](./object-storage.md)
 - [租户隔离附件系统](./attachments.md)
 - [前端统一附件组件](./frontend-attachments.md)
+- [统一通知协议与站内通知](./notifications.md)
+- [事务性 Outbox](./transactional-outbox.md)
+- [幂等与并发控制](./idempotency-concurrency.md)
+- [后台 Job](./background-jobs.md)
 
 新增或调整公共能力时，请同步更新本目录或 `.agent/rules/`、`.agent/skills/`、`.agent/team/`，运行 `agent-rules sync`，并在 Issue/PR 中说明规范位置。

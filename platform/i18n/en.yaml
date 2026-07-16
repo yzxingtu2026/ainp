@@ -291,3 +291,65 @@ action.demo.doc_create.description: "Create a demo document (idempotency optiona
 action.demo.doc_update.name: "Update document"
 action.demo.doc_update.description: "Update a demo document (optimistic lock)"
 demo.doc_not_found: "document not found"
+
+# ── Notification Capability ──
+capability.system.notification_user: "Notification Actions"
+capability.system.notification_management: "Notification Management"
+
+# ── Notification Actions ──
+action.system.notification_list.name: "Notification List"
+action.system.notification_list.description: "List current user notifications with pagination"
+action.system.notification_unread_count.name: "Unread Count"
+action.system.notification_unread_count.description: "Get unread notification count for current user"
+action.system.notification_mark_read.name: "Mark Read"
+action.system.notification_mark_read.description: "Mark a single notification as read"
+action.system.notification_mark_all_read.name: "Mark All Read"
+action.system.notification_mark_all_read.description: "Mark all notifications as read"
+action.system.notification_archive.name: "Archive Notification"
+action.system.notification_archive.description: "Archive a single notification"
+action.system.notification_unarchive.name: "Unarchive Notification"
+action.system.notification_unarchive.description: "Unarchive a single notification"
+action.system.notification_template_list.name: "Template Overrides"
+action.system.notification_template_list.description: "List tenant template overrides"
+action.system.notification_template_update.name: "Update Template Override"
+action.system.notification_template_update.description: "Update template override content"
+action.system.notification_template_reset.name: "Reset Template Override"
+action.system.notification_template_reset.description: "Reset to code default template"
+action.system.notification_template_preview.name: "Template Preview"
+action.system.notification_template_preview.description: "Preview template rendering (no delivery triggered)"
+action.system.notification_delivery_list.name: "Delivery List"
+action.system.notification_delivery_list.description: "Query failed delivery records"
+action.system.notification_delivery_retry.name: "Retry Delivery"
+action.system.notification_delivery_retry.description: "Manually retry failed/dead deliveries"
+
+# ── Notification Permission Groups ──
+permission_group.system.notification_user: "Notification Actions"
+permission_group.system.notification_management: "Notification Management"
+
+# ── Notification Menus ──
+menu.notification.title: "Notifications"
+menu.notification.list.title: "My Notifications"
+
+# ── Notification CodeSets ──
+codeset.system.notification_request_status: "Notification Request Status"
+codeset.system.notification_request_status.pending: "Pending"
+codeset.system.notification_request_status.processed: "Processed"
+codeset.system.notification_request_status.failed: "Failed"
+codeset.system.notification_delivery_status: "Notification Delivery Status"
+codeset.system.notification_delivery_status.pending: "Pending"
+codeset.system.notification_delivery_status.queued: "Queued"
+codeset.system.notification_delivery_status.sending: "Sending"
+codeset.system.notification_delivery_status.sent: "Sent"
+codeset.system.notification_delivery_status.delivered: "Delivered"
+codeset.system.notification_delivery_status.failed: "Failed"
+codeset.system.notification_delivery_status.dead: "Dead"
+codeset.system.notification_delivery_status.cancelled: "Cancelled"
+codeset.system.notification_delivery_status.skipped: "Skipped"
+
+# ── Notification Errors ──
+notification.definition_not_found: "notification definition not found"
+notification.template_missing: "notification template missing"
+notification.recipient_invalid: "notification recipient invalid"
+notification.delivery_failed: "notification delivery failed"
+notification.duplicate_request: "duplicate notification request"
+notification.render_failed: "template rendering failed"

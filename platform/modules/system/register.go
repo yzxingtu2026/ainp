@@ -261,9 +261,17 @@ func Register(a *app.App) error {
 		return err
 	}
 
-	return a.RegisterMenu(menu.Menu{
+	if err := a.RegisterMenu(menu.Menu{
 		ID: MenuAttachmentCenter, ParentID: "system.root", Title: "附件中心", TitleKey: "menu.system.attachments.title",
 		Icon: "mdi:paperclip", Type: menu.TypeMenu, Path: "/system/attachments", Component: "system/attachments",
 		Permission: ActionAttachmentList, BindAction: ActionAttachmentList, Module: "system", Order: 5,
-	})
+	}); err != nil {
+		return err
+	}
+
+	if err := registerNotificationActions(a); err != nil {
+		return err
+	}
+
+	return nil
 }

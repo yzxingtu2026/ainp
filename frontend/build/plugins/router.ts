@@ -32,7 +32,9 @@ export function setupElegantRouter() {
         'demo_attachments',
         'system',
         'system_profile',
-        'system_attachments'
+        'system_attachments',
+        'notification',
+        'notification_list'
       ];
 
       const meta: Partial<RouteMeta> = {

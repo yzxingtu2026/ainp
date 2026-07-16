@@ -108,6 +108,28 @@ export const generatedRoutes: GeneratedRoute[] = [
     }
   },
   {
+    name: 'notification',
+    path: '/notification',
+    component: 'layout.base',
+    meta: {
+      title: 'notification',
+      i18nKey: 'route.notification',
+      hideInMenu: true
+    },
+    children: [
+      {
+        name: 'notification_list',
+        path: '/notification/list',
+        component: 'view.notification_list',
+        meta: {
+          title: 'notification_list',
+          i18nKey: 'route.notification_list',
+          hideInMenu: true
+        }
+      }
+    ]
+  },
+  {
     name: 'setup',
     path: '/setup',
     component: 'layout.blank$view.setup',

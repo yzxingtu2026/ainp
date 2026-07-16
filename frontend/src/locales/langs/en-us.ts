@@ -248,6 +248,8 @@ const local: App.I18n.Schema = {
     system_roles: 'Roles',
     system_settings: 'Settings',
     system_attachments: 'Attachments',
+    notification: 'Notifications',
+    notification_list: 'Notification List',
     setup: 'Setup'
   },
   page: {
@@ -541,6 +543,25 @@ const local: App.I18n.Schema = {
       right: 'Right Fixed',
       unFixed: 'Unfixed'
     }
+  },
+  notification: {
+    title: 'Notifications',
+    pageTitle: 'My Notifications',
+    markRead: 'Mark as Read',
+    markAllRead: 'Mark All Read',
+    markAllReadSuccess: 'All marked as read',
+    viewAll: 'View All',
+    empty: 'No notifications',
+    archive: 'Archive',
+    archiveSuccess: 'Archived',
+    unarchive: 'Unarchive',
+    unarchiveSuccess: 'Unarchived',
+    archived: 'Archived',
+    unreadBadge: '{count} unread',
+    filterAll: 'All',
+    filterUnread: 'Unread',
+    filterArchived: 'Include Archived',
+    filterPlaceholder: 'Filter'
   }
 };
 
