@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/logging"
 	"github.com/yzxingtu2026/ainp/platform/framework/notification"
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
@@ -242,6 +243,16 @@ func (h *NotificationOutboxHandler) Handle(ctx context.Context, env outbox.Envel
 		return fmt.Errorf("notification outbox: invalid payload: %w", err)
 	}
 
+	// Inject auth context from Envelope (Outbox Dispatcher goroutine has no auth)
+	ctx = auth.WithContext(ctx, &auth.Context{
+		TenantID:      env.TenantID,
+		Realm:         auth.NormalizeRealm(env.Realm),
+		UserID:        env.ActorID,
+		RequestID:     env.CorrelationID,
+		Authenticated: true,
+		Client:        "outbox",
+	})
+
 	input := notification.NotificationInput{
 		DefinitionKey:  payload.DefinitionKey,
 		Recipients:     payload.Recipients,
@@ -256,6 +267,13 @@ func (h *NotificationOutboxHandler) Handle(ctx context.Context, env outbox.Envel
 	}
 
 	_, _, err := h.service.Orchestrator().Process(ctx, input)
+	if err != nil {
+		logging.Error(ctx, "notification outbox: orchestrator process failed", err,
+			"event_id", env.ID,
+			"definition_key", payload.DefinitionKey,
+			"tenant_id", env.TenantID,
+		)
+	}
 	return err
 }
 
