@@ -176,6 +176,34 @@ func (r *NotificationRepository) ListDeliveries(ctx context.Context, page, pageS
 	return deliveries, total, err
 }
 
+// BatchLookupUserNames returns a userID → displayName map for the given IDs.
+// Falls back to Username when DisplayName is empty.
+func (r *NotificationRepository) BatchLookupUserNames(ctx context.Context, tenantID string, userIDs []string) (map[string]string, error) {
+	if len(userIDs) == 0 {
+		return map[string]string{}, nil
+	}
+	var rows []struct {
+		ID          string `gorm:"column:id"`
+		Username    string `gorm:"column:username"`
+		DisplayName string `gorm:"column:display_name"`
+	}
+	if err := r.db.WithContext(ctx).Table("users").
+		Select("id, username, display_name").
+		Where("tenant_id = ? AND id IN ?", tenantID, userIDs).
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	result := make(map[string]string, len(rows))
+	for _, r := range rows {
+		name := r.DisplayName
+		if name == "" {
+			name = r.Username
+		}
+		result[r.ID] = name
+	}
+	return result, nil
+}
+
 // --- Template override operations ---
 
 // ListTemplateOverrides returns all overrides for a tenant.

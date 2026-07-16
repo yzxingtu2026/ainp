@@ -430,7 +430,8 @@ func NewNotificationDeliveryService(repo *NotificationRepository) *NotificationD
 }
 
 func (s *NotificationDeliveryService) List(ctx context.Context, input json.RawMessage) (any, error) {
-	if _, err := requireTenant(ctx); err != nil {
+	ac, err := requireTenant(ctx)
+	if err != nil {
 		return nil, err
 	}
 	var req struct {
@@ -442,6 +443,18 @@ func (s *NotificationDeliveryService) List(ctx context.Context, input json.RawMe
 	if err != nil {
 		return nil, err
 	}
+	// Batch lookup recipient display names (user type only)
+	var userIDs []string
+	seen := make(map[string]struct{})
+	for _, d := range items {
+		if d.RecipientType == "user" || d.RecipientType == "" {
+			if _, ok := seen[d.RecipientID]; !ok {
+				seen[d.RecipientID] = struct{}{}
+				userIDs = append(userIDs, d.RecipientID)
+			}
+		}
+	}
+	nameMap, _ := s.repo.BatchLookupUserNames(ctx, ac.TenantID, userIDs)
 	// Map to API response with proper null serialization
 	result := make([]map[string]any, len(items))
 	for i, d := range items {
@@ -458,12 +471,14 @@ func (s *NotificationDeliveryService) List(ctx context.Context, input json.RawMe
 		if d.ScheduledAt != nil {
 			scheduledAt = d.ScheduledAt
 		}
+		recipientName := nameMap[d.RecipientID]
 		result[i] = map[string]any{
 			"id":             d.ID,
 			"tenant_id":      d.TenantID,
 			"request_id":     d.RequestID,
 			"recipient_type": d.RecipientType,
 			"recipient_id":   d.RecipientID,
+			"recipient_name": recipientName,
 			"channel":        d.Channel,
 			"provider":       d.Provider,
 			"status":         d.Status,

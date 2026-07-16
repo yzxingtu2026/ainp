@@ -812,6 +812,12 @@ declare namespace App {
         channelSms: string;
         channelWebhook: string;
         channelIm: string;
+        statusPending: string;
+        statusQueued: string;
+        statusSent: string;
+        statusDelivered: string;
+        statusFailed: string;
+        statusDead: string;
         categoryUser: string;
         categorySecurity: string;
         categorySystem: string;

@@ -613,6 +613,12 @@ const local: App.I18n.Schema = {
     channelSms: 'SMS',
     channelWebhook: 'Webhook',
     channelIm: 'IM',
+    statusPending: 'Pending',
+    statusQueued: 'Queued',
+    statusSent: 'Sent',
+    statusDelivered: 'Delivered',
+    statusFailed: 'Failed',
+    statusDead: 'Dead Letter',
     categoryUser: 'User',
     categorySecurity: 'Security',
     categorySystem: 'System'

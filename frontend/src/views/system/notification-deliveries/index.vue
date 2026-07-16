@@ -17,19 +17,53 @@ const statusTagType: Record<string, 'error' | 'warning' | 'success' | 'default'>
   failed: 'error',
   dead: 'error',
   pending: 'warning',
+  queued: 'warning',
   sent: 'success',
   delivered: 'success'
 };
 
+const channelI18n: Record<string, string> = {
+  in_app: 'notificationAdmin.channelInApp',
+  inapp: 'notificationAdmin.channelInApp',
+  email: 'notificationAdmin.channelEmail',
+  sms: 'notificationAdmin.channelSms',
+  webhook: 'notificationAdmin.channelWebhook',
+  im: 'notificationAdmin.channelIm'
+};
+
+const statusI18n: Record<string, string> = {
+  pending: 'notificationAdmin.statusPending',
+  queued: 'notificationAdmin.statusQueued',
+  sent: 'notificationAdmin.statusSent',
+  delivered: 'notificationAdmin.statusDelivered',
+  failed: 'notificationAdmin.statusFailed',
+  dead: 'notificationAdmin.statusDead'
+};
+
 const columns = computed<DataTableColumns<Api.Notification.DeliveryItem>>(() => [
-  { title: $t('notificationAdmin.colId'), key: 'id', width: 120, ellipsis: { tooltip: true } },
-  { title: $t('notificationAdmin.colChannel'), key: 'channel', width: 100 },
-  { title: $t('notificationAdmin.colRecipient'), key: 'recipient_id', width: 120, ellipsis: { tooltip: true } },
+  {
+    title: $t('notificationAdmin.colChannel'),
+    key: 'channel',
+    width: 100,
+    render: row => $t((channelI18n[row.channel] || row.channel) as any) || row.channel
+  },
+  {
+    title: $t('notificationAdmin.colRecipient'),
+    key: 'recipient_name',
+    width: 140,
+    ellipsis: { tooltip: true },
+    render: row => row.recipient_name || row.recipient_id
+  },
   {
     title: $t('notificationAdmin.colStatus'),
     key: 'status',
     width: 100,
-    render: row => h(NTag, { type: statusTagType[row.status] || 'default', size: 'small' }, { default: () => row.status })
+    render: row =>
+      h(
+        NTag,
+        { type: statusTagType[row.status] || 'default', size: 'small' },
+        { default: () => $t((statusI18n[row.status] || row.status) as any) || row.status }
+      )
   },
   {
     title: $t('notificationAdmin.colAttempts'),

@@ -111,6 +111,7 @@ declare namespace Api {
       request_id: string;
       recipient_type: string;
       recipient_id: string;
+      recipient_name: string;
       channel: string;
       provider: string;
       status: string;

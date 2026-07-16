@@ -608,6 +608,12 @@ const local: App.I18n.Schema = {
     channelSms: '短信',
     channelWebhook: 'Webhook',
     channelIm: '即时通讯',
+    statusPending: '待处理',
+    statusQueued: '已入队',
+    statusSent: '已发送',
+    statusDelivered: '已送达',
+    statusFailed: '失败',
+    statusDead: '已死信',
     categoryUser: '用户',
     categorySecurity: '安全',
     categorySystem: '系统'
