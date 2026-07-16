@@ -767,6 +767,7 @@ declare namespace App {
       notificationAdmin: {
         templateTitle: string;
         deliveryTitle: string;
+        tabAll: string;
         editTemplate: string;
         preview: string;
         previewTitle: string;

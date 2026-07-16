@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { h, onMounted, reactive, ref, computed } from 'vue';
 import type { DataTableColumns, FormInst } from 'naive-ui';
-import { NButton, NCard, NDataTable, NDivider, NForm, NFormItem, NInput, NModal, NPopconfirm, NSpace, NSwitch, NTag } from 'naive-ui';
+import { NButton, NCard, NDataTable, NDivider, NForm, NFormItem, NInput, NModal, NPopconfirm, NSpace, NSwitch, NTab, NTag, NTabs } from 'naive-ui';
 import { $t } from '@/locales';
 import {
   fetchNotificationTemplates,
@@ -15,6 +15,18 @@ defineOptions({ name: 'SystemNotificationTemplates' });
 
 const loading = ref(false);
 const records = ref<Api.Notification.TemplateDefinitionItem[]>([]);
+const activeChannel = ref('all');
+
+/** 从定义数据中提取实际使用的渠道列表 */
+const availableChannels = computed<string[]>(() => {
+  const channelSet = new Set<string>();
+  for (const def of records.value) {
+    for (const tpl of def.templates) {
+      channelSet.add(tpl.channel);
+    }
+  }
+  return Array.from(channelSet);
+});
 
 /** Flattened row: one per template variant (channel+locale) */
 interface FlatRow {
@@ -38,6 +50,7 @@ const flatRows = computed<FlatRow[]>(() => {
   const rows: FlatRow[] = [];
   for (const def of records.value) {
     for (const tpl of def.templates) {
+      if (activeChannel.value !== 'all' && tpl.channel !== activeChannel.value) continue;
       rows.push({
         definition_key: def.definition_key,
         name: def.name,
@@ -126,12 +139,6 @@ const columns = computed<DataTableColumns<FlatRow>>(() => [
     key: 'priority',
     width: 100,
     render: row => h(NTag, { type: priorityTagType[row.priority] || 'default', size: 'small' }, { default: () => $t((priorityI18n[row.priority] || '') as any) || row.priority })
-  },
-  {
-    title: $t('notificationAdmin.colChannel'),
-    key: 'channel',
-    width: 100,
-    render: row => h(NTag, { size: 'small', bordered: false }, { default: () => $t((channelI18n[row.channel] || '') as any) || row.channel })
   },
   { title: $t('notificationAdmin.colLocale'), key: 'locale', width: 80 },
   {
@@ -282,10 +289,13 @@ onMounted(loadList);
 <template>
   <div class="min-h-500px flex-col-stretch gap-16px overflow-hidden lt-sm:overflow-auto">
     <NCard :title="$t('notificationAdmin.templateTitle')" :bordered="false" class="card-wrapper">
-      <NSpace class="mb-16px" align="center">
-        <NButton type="primary" secondary @click="loadList">{{ $t('common.refresh') }}</NButton>
-      </NSpace>
-      <NDataTable :columns="columns" :data="flatRows" :loading="loading" :row-key="row => `${row.definition_key}:${row.channel}:${row.locale}`" :scroll-x="1200" />
+      <NTabs v-model:value="activeChannel" type="line" class="mb-12px">
+        <NTab name="all">{{ $t('notificationAdmin.tabAll') }}</NTab>
+        <NTab v-for="ch in availableChannels" :key="ch" :name="ch">
+          {{ $t((channelI18n[ch] || ch) as any) || ch }}
+        </NTab>
+      </NTabs>
+      <NDataTable :columns="columns" :data="flatRows" :loading="loading" :row-key="row => `${row.definition_key}:${row.channel}:${row.locale}`" :scroll-x="1100" />
     </NCard>
 
     <!-- Edit modal -->

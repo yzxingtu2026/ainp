@@ -103,9 +103,6 @@ onMounted(loadList);
 <template>
   <div class="min-h-500px flex-col-stretch gap-16px overflow-hidden lt-sm:overflow-auto">
     <NCard :title="$t('notificationAdmin.deliveryTitle')" :bordered="false" class="card-wrapper">
-      <NSpace class="mb-16px" align="center">
-        <NButton type="primary" secondary @click="loadList">{{ $t('common.refresh') }}</NButton>
-      </NSpace>
       <NDataTable :columns="columns" :data="records" :loading="loading" :row-key="row => row.id" :scroll-x="1200" />
       <div class="mt-16px flex justify-end">
         <NPagination

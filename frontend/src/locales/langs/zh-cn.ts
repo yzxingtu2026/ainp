@@ -563,6 +563,7 @@ const local: App.I18n.Schema = {
   notificationAdmin: {
     templateTitle: '通知模板管理',
     deliveryTitle: '投递记录',
+    tabAll: '全部',
     editTemplate: '编辑模板覆盖',
     preview: '预览',
     previewTitle: '模板预览',
@@ -576,7 +577,7 @@ const local: App.I18n.Schema = {
     noOverride: '默认',
     overrideOn: '已覆盖',
     overrideOff: '已禁用',
-    colDefinition: '通知定义',
+    colDefinition: '模版名称',
     colPriority: '优先级',
     colChannel: '渠道',
     colLocale: '语言',
