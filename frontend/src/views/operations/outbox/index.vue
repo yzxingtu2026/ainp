@@ -43,32 +43,34 @@ onMounted(load);
 </script>
 
 <template>
-  <NCard :title="$t('operations.outboxTitle')" :bordered="false">
-    <NSpace class="mb-12px">
-      <NInput v-model:value="query.event_type" clearable :placeholder="$t('operations.eventType')" @keyup.enter="search" />
-      <NSelect v-model:value="query.status" clearable class="w-180px" :options="statusOptions" :placeholder="$t('operations.statusLabel')" />
-      <NButton type="primary" @click="search">{{ $t('common.search') }}</NButton>
-    </NSpace>
-    <NDataTable :columns="columns" :data="rows" :loading="loading" :row-key="row => row.id" :scroll-x="1000" />
-    <div class="mt-16px flex justify-end"><NPagination v-model:page="query.current" v-model:page-size="query.size" :item-count="total" show-size-picker :page-sizes="[10,20,50]" @update:page="load" @update:page-size="search" /></div>
-  </NCard>
-  <NDrawer v-model:show="drawer" :width="620">
-    <NDrawerContent :title="$t('operations.outboxDetail')" closable>
-      <template v-if="detail">
-        <NDescriptions :column="1" bordered>
-          <NDescriptionsItem :label="$t('operations.eventType')">{{ detail.event.event_type }}</NDescriptionsItem>
-          <NDescriptionsItem :label="$t('operations.statusLabel')">{{ $t(`operations.status.${detail.event.status}` as any) }}</NDescriptionsItem>
-          <NDescriptionsItem :label="$t('operations.payload')"><pre class="m-0 whitespace-pre-wrap break-all">{{ JSON.stringify(detail.event.payload, null, 2) }}</pre></NDescriptionsItem>
-        </NDescriptions>
-        <NDataTable
-          class="mt-16px" :data="detail.deliveries" :columns="[
-            { title: $t('operations.handler'), key: 'handler_name' },
-            { title: $t('operations.statusLabel'), key: 'status' },
-            { title: $t('operations.attempts'), key: 'attempts' },
-            { title: $t('operations.error'), key: 'last_error' }
-          ]"
-        />
-      </template>
-    </NDrawerContent>
-  </NDrawer>
+  <div class="min-h-500px">
+    <NCard :title="$t('operations.outboxTitle')" :bordered="false">
+      <NSpace class="mb-12px">
+        <NInput v-model:value="query.event_type" clearable :placeholder="$t('operations.eventType')" @keyup.enter="search" />
+        <NSelect v-model:value="query.status" clearable class="w-180px" :options="statusOptions" :placeholder="$t('operations.statusLabel')" />
+        <NButton type="primary" @click="search">{{ $t('common.search') }}</NButton>
+      </NSpace>
+      <NDataTable :columns="columns" :data="rows" :loading="loading" :row-key="row => row.id" :scroll-x="1000" />
+      <div class="mt-16px flex justify-end"><NPagination v-model:page="query.current" v-model:page-size="query.size" :item-count="total" show-size-picker :page-sizes="[10,20,50]" @update:page="load" @update:page-size="search" /></div>
+    </NCard>
+    <NDrawer v-model:show="drawer" :width="620">
+      <NDrawerContent :title="$t('operations.outboxDetail')" closable>
+        <template v-if="detail">
+          <NDescriptions :column="1" bordered>
+            <NDescriptionsItem :label="$t('operations.eventType')">{{ detail.event.event_type }}</NDescriptionsItem>
+            <NDescriptionsItem :label="$t('operations.statusLabel')">{{ $t(`operations.status.${detail.event.status}` as any) }}</NDescriptionsItem>
+            <NDescriptionsItem :label="$t('operations.payload')"><pre class="m-0 whitespace-pre-wrap break-all">{{ JSON.stringify(detail.event.payload, null, 2) }}</pre></NDescriptionsItem>
+          </NDescriptions>
+          <NDataTable
+            class="mt-16px" :data="detail.deliveries" :columns="[
+              { title: $t('operations.handler'), key: 'handler_name' },
+              { title: $t('operations.statusLabel'), key: 'status' },
+              { title: $t('operations.attempts'), key: 'attempts' },
+              { title: $t('operations.error'), key: 'last_error' }
+            ]"
+          />
+        </template>
+      </NDrawerContent>
+    </NDrawer>
+  </div>
 </template>

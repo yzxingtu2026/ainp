@@ -53,25 +53,27 @@ onMounted(load);
 </script>
 
 <template>
-  <NCard :title="$t('operations.jobsTitle')" :bordered="false">
-    <NSpace class="mb-12px">
-      <NInput v-model:value="query.job_type" clearable :placeholder="$t('operations.jobType')" @keyup.enter="search" />
-      <NSelect v-model:value="query.status" clearable class="w-180px" :options="statusOptions" :placeholder="$t('operations.statusLabel')" />
-      <NButton type="primary" @click="search">{{ $t('common.search') }}</NButton>
-    </NSpace>
-    <NDataTable :columns="columns" :data="rows" :loading="loading" :row-key="row => row.id" :scroll-x="1000" />
-    <div class="mt-16px flex justify-end"><NPagination v-model:page="query.current" v-model:page-size="query.size" :item-count="total" show-size-picker :page-sizes="[10,20,50]" @update:page="load" @update:page-size="search" /></div>
-  </NCard>
-  <NDrawer v-model:show="drawer" :width="560">
-    <NDrawerContent :title="$t('operations.jobDetail')" closable>
-      <NDescriptions v-if="detail" :column="1" bordered>
-        <NDescriptionsItem :label="$t('operations.jobType')">{{ detail.job_type }}</NDescriptionsItem>
-        <NDescriptionsItem :label="$t('operations.statusLabel')">{{ $t(`operations.status.${detail.status}` as any) }}</NDescriptionsItem>
-        <NDescriptionsItem :label="$t('operations.progress')">{{ detail.progress }}% {{ detail.progress_message }}</NDescriptionsItem>
-        <NDescriptionsItem :label="$t('operations.createdAt')">{{ formatDateTime(detail.created_at) }}</NDescriptionsItem>
-        <NDescriptionsItem :label="$t('operations.updatedAt')">{{ formatDateTime(detail.updated_at) }}</NDescriptionsItem>
-        <NDescriptionsItem :label="$t('operations.error')">{{ detail.last_error || '-' }}</NDescriptionsItem>
-      </NDescriptions>
-    </NDrawerContent>
-  </NDrawer>
+  <div class="min-h-500px">
+    <NCard :title="$t('operations.jobsTitle')" :bordered="false">
+      <NSpace class="mb-12px">
+        <NInput v-model:value="query.job_type" clearable :placeholder="$t('operations.jobType')" @keyup.enter="search" />
+        <NSelect v-model:value="query.status" clearable class="w-180px" :options="statusOptions" :placeholder="$t('operations.statusLabel')" />
+        <NButton type="primary" @click="search">{{ $t('common.search') }}</NButton>
+      </NSpace>
+      <NDataTable :columns="columns" :data="rows" :loading="loading" :row-key="row => row.id" :scroll-x="1000" />
+      <div class="mt-16px flex justify-end"><NPagination v-model:page="query.current" v-model:page-size="query.size" :item-count="total" show-size-picker :page-sizes="[10,20,50]" @update:page="load" @update:page-size="search" /></div>
+    </NCard>
+    <NDrawer v-model:show="drawer" :width="560">
+      <NDrawerContent :title="$t('operations.jobDetail')" closable>
+        <NDescriptions v-if="detail" :column="1" bordered>
+          <NDescriptionsItem :label="$t('operations.jobType')">{{ detail.job_type }}</NDescriptionsItem>
+          <NDescriptionsItem :label="$t('operations.statusLabel')">{{ $t(`operations.status.${detail.status}` as any) }}</NDescriptionsItem>
+          <NDescriptionsItem :label="$t('operations.progress')">{{ detail.progress }}% {{ detail.progress_message }}</NDescriptionsItem>
+          <NDescriptionsItem :label="$t('operations.createdAt')">{{ formatDateTime(detail.created_at) }}</NDescriptionsItem>
+          <NDescriptionsItem :label="$t('operations.updatedAt')">{{ formatDateTime(detail.updated_at) }}</NDescriptionsItem>
+          <NDescriptionsItem :label="$t('operations.error')">{{ detail.last_error || '-' }}</NDescriptionsItem>
+        </NDescriptions>
+      </NDrawerContent>
+    </NDrawer>
+  </div>
 </template>
