@@ -3,6 +3,7 @@ package operations
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/yzxingtu2026/ainp/platform/framework/action"
@@ -27,7 +28,7 @@ type auditLogListRequest struct {
 	pagination.Request
 	StartAt      string `json:"start_at"`
 	EndAt        string `json:"end_at"`
-	UserID       string `json:"user_id"`
+	UserKeyword  string `json:"user_keyword"`
 	ActorType    string `json:"actor_type"`
 	ActionID     string `json:"action_id"`
 	Result       string `json:"result" validate:"omitempty,oneof=success failure"`
@@ -76,7 +77,11 @@ func (s *AuditLogService) list(ctx context.Context, req auditLogListRequest) (an
 		Select("a.*, COALESCE(u.display_name, u.username, '') AS actor_name").
 		Joins("LEFT JOIN users AS u ON u.id = a.user_id AND u.tenant_id = a.tenant_id").
 		Where("a.tenant_id = ? AND a.occurred_at >= ? AND a.occurred_at <= ?", ac.TenantID, start, end)
-	filters := map[string]string{"a.user_id": req.UserID, "a.actor_type": req.ActorType, "a.action_id": req.ActionID, "a.result": req.Result, "a.resource_type": req.ResourceType, "a.resource_id": req.ResourceID, "a.request_id": req.RequestID, "a.client": req.Client}
+	if keyword := strings.TrimSpace(req.UserKeyword); keyword != "" {
+		like := "%" + strings.ToLower(keyword) + "%"
+		q = q.Where("LOWER(u.username) LIKE ? OR LOWER(u.display_name) LIKE ?", like, like)
+	}
+	filters := map[string]string{"a.actor_type": req.ActorType, "a.action_id": req.ActionID, "a.result": req.Result, "a.resource_type": req.ResourceType, "a.resource_id": req.ResourceID, "a.request_id": req.RequestID, "a.client": req.Client}
 	for column, value := range filters {
 		if value != "" {
 			q = q.Where(column+" = ?", value)

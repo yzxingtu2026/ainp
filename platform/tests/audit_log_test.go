@@ -45,13 +45,21 @@ func TestAuditLogActionsFilterAndEnforceTenantScope(t *testing.T) {
 	if _, err := application.Actions.Invoke(denied, operations.ActionAuditLogList, json.RawMessage(`{}`)); errorCode(err) != errs.CodeForbidden {
 		t.Fatalf("audit list without permission must be forbidden: %v", err)
 	}
-	result, err := application.Actions.Invoke(ctx, operations.ActionAuditLogList, json.RawMessage(`{"action_id":"demo.doc_create","result":"success","resource_type":"doc","resource_id":"d1","request_id":"req-1","client":"web","page":1,"page_size":20}`))
+	result, err := application.Actions.Invoke(ctx, operations.ActionAuditLogList, json.RawMessage(`{"user_keyword":"HISTOR","action_id":"demo.doc_create","result":"success","resource_type":"doc","resource_id":"d1","request_id":"req-1","client":"web","page":1,"page_size":20}`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	data := result.(pagination.Result[operations.AuditLogItem])
 	if data.Total != 1 || len(data.Items) != 1 || data.Items[0].ID != "a1" || data.Items[0].ActorName != "Historical User" {
 		t.Fatalf("unexpected audit list: %#v", data)
+	}
+	usernameResult, err := application.Actions.Invoke(ctx, operations.ActionAuditLogList, json.RawMessage(`{"user_keyword":"OLD-US"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	usernameData := usernameResult.(pagination.Result[operations.AuditLogItem])
+	if usernameData.Total != 1 || len(usernameData.Items) != 1 || usernameData.Items[0].ID != "a1" {
+		t.Fatalf("username fuzzy filter failed: %#v", usernameData)
 	}
 	if _, err := application.Actions.Invoke(ctx, operations.ActionAuditLogGet, json.RawMessage(`{"id":"a3"}`)); errorCode(err) != errs.CodeNotFound {
 		t.Fatalf("cross-tenant detail must be opaque 404: %v", err)
@@ -60,7 +68,7 @@ func TestAuditLogActionsFilterAndEnforceTenantScope(t *testing.T) {
 	if err := db.Model(&audit.Record{}).Where("tenant_id = ? AND action_id = ?", "t1", operations.ActionAuditLogList).Count(&queryAuditCount).Error; err != nil {
 		t.Fatal(err)
 	}
-	if queryAuditCount != 1 {
+	if queryAuditCount != 2 {
 		t.Fatalf("audit query must be audited, count=%d", queryAuditCount)
 	}
 }

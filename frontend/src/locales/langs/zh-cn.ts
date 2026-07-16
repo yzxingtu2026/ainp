@@ -295,6 +295,7 @@ const local: App.I18n.Schema = {
     occurredAt: '操作时间',
     actor: '操作人',
     userId: '操作人 ID',
+    userKeyword: '用户名或用户昵称',
     actorType: '主体类型',
     result: '结果',
     success: '成功',

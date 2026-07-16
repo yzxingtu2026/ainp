@@ -299,6 +299,7 @@ const local: App.I18n.Schema = {
     occurredAt: 'Occurred At',
     actor: 'Actor',
     userId: 'User ID',
+    userKeyword: 'Username or display name',
     actorType: 'Actor Type',
     result: 'Result',
     success: 'Success',

@@ -30,7 +30,7 @@ const range = ref<[number, number] | null>([Date.now() - 86400000, Date.now()]);
 const query = reactive({
   page: 1,
   page_size: 20,
-  user_id: '',
+  user_keyword: '',
   actor_type: '',
   action_id: '',
   result: '',
@@ -85,7 +85,7 @@ function payload(): Api.Operations.AuditLogQuery {
     ...query,
     start_at: range.value?.[0] ? new Date(range.value[0]).toISOString() : undefined,
     end_at: range.value?.[1] ? new Date(range.value[1]).toISOString() : undefined,
-    user_id: query.user_id || undefined,
+    user_keyword: query.user_keyword || undefined,
     actor_type: query.actor_type || undefined,
     action_id: query.action_id || undefined,
     result: query.result || undefined,
@@ -125,7 +125,7 @@ onMounted(load);
     <NCard :title="$t('auditLog.title')" :bordered="false">
       <NSpace class="mb-12px" wrap>
         <NDatePicker v-model:value="range" type="datetimerange" clearable class="w-360px" />
-        <NInput v-model:value="query.user_id" clearable :placeholder="$t('auditLog.userId')" />
+        <NInput v-model:value="query.user_keyword" clearable :placeholder="$t('auditLog.userKeyword')" />
         <NInput v-model:value="query.action_id" clearable placeholder="Action ID" />
         <NSelect
           v-model:value="query.result"

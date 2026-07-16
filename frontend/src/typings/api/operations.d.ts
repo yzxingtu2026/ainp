@@ -96,7 +96,7 @@ declare namespace Api {
     interface AuditLogQuery extends PageQuery {
       start_at?: string;
       end_at?: string;
-      user_id?: string;
+      user_keyword?: string;
       actor_type?: string;
       action_id?: string;
       result?: string;

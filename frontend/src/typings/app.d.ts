@@ -805,6 +805,7 @@ declare namespace App {
         occurredAt: string;
         actor: string;
         userId: string;
+        userKeyword: string;
         actorType: string;
         result: string;
         success: string;
