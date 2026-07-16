@@ -1,9 +1,6 @@
 package system
 
 import (
-	"context"
-	"encoding/json"
-
 	"github.com/yzxingtu2026/ainp/platform/framework/action"
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
 )
@@ -15,15 +12,15 @@ func registerUserActions(a *app.App, svc *UserService) error {
 		path        string
 		name        string
 		description string
-		handler     func(context.Context, json.RawMessage) (any, error)
+		handler     action.Handler
 	}{
 		{ActionUserList, "/api/v1/system/users/list", "用户列表", "分页查询当前租户用户", svc.List},
-		{ActionUserGet, "/api/v1/system/users/get", "用户详情", "查询当前租户用户与角色", svc.Get},
-		{ActionUserCreate, "/api/v1/system/users/create", "创建用户", "创建当前租户用户并分配角色", svc.Create},
-		{ActionUserUpdate, "/api/v1/system/users/update", "更新用户", "更新当前租户用户资料", svc.Update},
-		{ActionUserStatusUpdate, "/api/v1/system/users/status/update", "更新用户状态", "启停当前租户用户并使旧 Token 失效", svc.UpdateStatus},
-		{ActionUserRolesUpdate, "/api/v1/system/users/roles/update", "更新用户角色", "事务化替换用户角色并使旧 Token 失效", svc.UpdateRoles},
-		{ActionUserPasswordReset, "/api/v1/system/users/password/reset", "重置用户密码", "重置密码并使旧 Token 失效", svc.ResetPassword},
+		{ActionUserGet, "/api/v1/system/users/get", "用户详情", "查询当前租户用户与角色", typedAction[userIDRequest](svc.Get)},
+		{ActionUserCreate, "/api/v1/system/users/create", "创建用户", "创建当前租户用户并分配角色", typedAction[userCreateRequest](svc.Create)},
+		{ActionUserUpdate, "/api/v1/system/users/update", "更新用户", "更新当前租户用户资料", typedAction[userUpdateRequest](svc.Update)},
+		{ActionUserStatusUpdate, "/api/v1/system/users/status/update", "更新用户状态", "启停当前租户用户并使旧 Token 失效", typedAction[userStatusRequest](svc.UpdateStatus)},
+		{ActionUserRolesUpdate, "/api/v1/system/users/roles/update", "更新用户角色", "事务化替换用户角色并使旧 Token 失效", typedAction[userRolesRequest](svc.UpdateRoles)},
+		{ActionUserPasswordReset, "/api/v1/system/users/password/reset", "重置用户密码", "重置密码并使旧 Token 失效", typedAction[userPasswordRequest](svc.ResetPassword)},
 	}
 	for _, definition := range definitions {
 		definition := definition

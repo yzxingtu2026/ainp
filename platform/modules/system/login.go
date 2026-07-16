@@ -2,7 +2,6 @@ package system
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"time"
 
@@ -16,22 +15,11 @@ import (
 )
 
 type loginRequest struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
+	Username string `json:"username" validate:"required"`
+	Password string `json:"password" validate:"required"`
 }
 
-func (s *AuthService) Login(ctx context.Context, tokens *auth.TokenService, input json.RawMessage) (any, error) {
-	var req loginRequest
-	if err := json.Unmarshal(input, &req); err != nil {
-		return nil, errs.ValidationKey("common.validation_failed", "invalid json")
-	}
-	if req.Username == "" || req.Password == "" {
-		return nil, errs.ValidationKey("common.validation_failed", "username and password required",
-			errs.FieldError{Field: "username", Message: "required", MessageKey: "common.field_required"},
-			errs.FieldError{Field: "password", Message: "required", MessageKey: "common.field_required"},
-		)
-	}
-
+func (s *AuthService) login(ctx context.Context, tokens *auth.TokenService, req loginRequest) (any, error) {
 	t, err := s.FindDefaultTenant(ctx)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {

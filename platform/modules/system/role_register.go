@@ -1,9 +1,6 @@
 package system
 
 import (
-	"context"
-	"encoding/json"
-
 	"github.com/yzxingtu2026/ainp/platform/framework/action"
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
 )
@@ -15,14 +12,14 @@ func registerRoleActions(a *app.App, svc *RoleService) error {
 		path        string
 		name        string
 		description string
-		handler     func(context.Context, json.RawMessage) (any, error)
+		handler     action.Handler
 	}{
 		{ActionRoleList, "/api/v1/system/roles/list", "角色列表", "分页查询当前租户角色", svc.List},
-		{ActionRoleGet, "/api/v1/system/roles/get", "角色详情", "查询当前租户角色与权限", svc.Get},
-		{ActionRoleCreate, "/api/v1/system/roles/create", "创建角色", "创建当前租户角色", svc.Create},
-		{ActionRoleUpdate, "/api/v1/system/roles/update", "更新角色", "更新当前租户角色资料与状态", svc.Update},
-		{ActionRoleDelete, "/api/v1/system/roles/delete", "删除角色", "删除未分配用户的非内置角色", svc.Delete},
-		{ActionRolePermissionsUpdate, "/api/v1/system/roles/permissions/update", "更新角色权限", "事务化替换角色权限并使旧 Token 失效", svc.UpdatePermissions},
+		{ActionRoleGet, "/api/v1/system/roles/get", "角色详情", "查询当前租户角色与权限", typedAction[roleIDRequest](svc.Get)},
+		{ActionRoleCreate, "/api/v1/system/roles/create", "创建角色", "创建当前租户角色", typedAction[roleCreateRequest](svc.Create)},
+		{ActionRoleUpdate, "/api/v1/system/roles/update", "更新角色", "更新当前租户角色资料与状态", typedAction[roleUpdateRequest](svc.Update)},
+		{ActionRoleDelete, "/api/v1/system/roles/delete", "删除角色", "删除未分配用户的非内置角色", typedAction[roleIDRequest](svc.Delete)},
+		{ActionRolePermissionsUpdate, "/api/v1/system/roles/permissions/update", "更新角色权限", "事务化替换角色权限并使旧 Token 失效", typedAction[rolePermissionsRequest](svc.UpdatePermissions)},
 		{ActionPermissionCatalog, "/api/v1/system/permissions/catalog", "权限目录", "从 Action Registry 返回可分配权限目录", svc.PermissionCatalog},
 	}
 	for _, definition := range definitions {

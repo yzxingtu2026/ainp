@@ -45,6 +45,7 @@ platform/
 │   ├── logging/              # slog 门面
 │   ├── response/             # API 信封
 │   ├── errs/                 # AppError 与码段
+│   ├── validation/           # 强类型 DTO 结构校验与字段错误映射
 │   ├── auth/                 # AuthContext
 │   ├── tenant/               # 租户与 Scope 钩子
 │   ├── capability/           # Capability 注册表
@@ -95,6 +96,7 @@ tests        → framework + modules（仅测试依赖）
 
 - 业务执行入口只有 **Action**；Gin 只做 HTTP 适配。
 - `operations` 不反向依赖 `system`；通知等领域能力通过最小接口注入运维注册器。
+- `framework/validation` 仅依赖通用错误体系，不依赖 Gin 或业务 module；查库、权限、租户、资源与状态规则保留在 Service。
 - 禁止 module 内手写响应 JSON；走 `response` + `errs`。
 - 禁止业务 `print`；走 `logging`。
 - `_test.go` 不放在 `framework/*` 或 `modules/*`；统一放入 `platform/tests/`。

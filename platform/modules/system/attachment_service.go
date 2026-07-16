@@ -60,13 +60,13 @@ func (s *AttachmentService) SetOutboxWriter(w outbox.Writer) { s.outbox = w }
 func (s *AttachmentService) Policies() *attachment.PolicyRegistry { return s.policies }
 
 type attachmentPrepareRequest struct {
-	OriginalName string `json:"original_name"`
+	OriginalName string `json:"original_name" validate:"required,max=255"`
 	ContentType  string `json:"content_type"`
-	Size         int64  `json:"size"`
+	Size         int64  `json:"size" validate:"required,min=1"`
 }
 
 type attachmentIDRequest struct {
-	ID string `json:"id"`
+	ID string `json:"id" validate:"required"`
 }
 
 type attachmentDownloadPrepareRequest struct {
@@ -75,9 +75,9 @@ type attachmentDownloadPrepareRequest struct {
 }
 
 type attachmentBindRequest struct {
-	AttachmentID string `json:"attachment_id"`
-	ResourceType string `json:"resource_type"`
-	ResourceID   string `json:"resource_id"`
+	AttachmentID string `json:"attachment_id" validate:"required"`
+	ResourceType string `json:"resource_type" validate:"required"`
+	ResourceID   string `json:"resource_id" validate:"required"`
 	Field        string `json:"field"`
 }
 

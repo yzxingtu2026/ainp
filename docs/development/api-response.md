@@ -169,12 +169,17 @@ greeting := i18n.T(lang, "demo.hello_greeting")
   "message_key": "common.validation_failed",
   "data": {
     "fields": [
-      { "field": "qty", "message": "必填", "message_key": "common.field_required" }
+      { "field": "role_ids[0]", "message": "UUID 格式不正确", "message_key": "validation.uuid" }
     ]
   },
   "request_id": "req_xxx"
 }
 ```
+
+- 顶层错误固定为 `CodeValidation`（`10001`）与 `common.validation_failed`。
+- `fields` 一次返回全部结构错误；`field` 使用 JSON 路径，不暴露 Go 字段名。
+- 未知字段使用 `validation.unknown_field`；非法 JSON、类型错误和多个 JSON 值使用 `validation.invalid_json`。
+- 字段 `message` 由 `response.Fail` 按 `message_key` 和请求语言本地化。
 
 ## Action 与 `AppError`
 

@@ -10,6 +10,22 @@ common.field_required: "required"
 common.revision_conflict: "data was updated by someone else, refresh and retry"
 common.resource_locked: "resource is locked by another operation, please retry later"
 
+# ── Request Validation ──
+validation.required: "this field is required"
+validation.min: "the value is below the allowed minimum"
+validation.max: "the value exceeds the allowed maximum"
+validation.length: "the field length is invalid"
+validation.email: "the email format is invalid"
+validation.uuid: "the UUID format is invalid"
+validation.one_of: "the value is not allowed"
+validation.url: "the URL format is invalid"
+validation.locale: "the locale is not supported"
+validation.timezone: "the timezone is invalid"
+validation.invalid: "the field value is invalid"
+validation.invalid_json: "the JSON request is invalid"
+validation.unknown_field: "the request contains an unknown field"
+validation.invalid_range: "the field range is invalid"
+
 # ── Auth ──
 auth.invalid_credentials: "invalid username or password"
 auth.tenant_disabled: "tenant is disabled"
