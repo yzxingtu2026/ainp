@@ -444,7 +444,7 @@ func registerNotificationActions(a *app.App) error {
 		Icon:       "mdi:bell-outline",
 		Order:      1,
 		Path:       "/notification/list",
-		Component:  "view.notification_list",
+		Component:  "notification/list",
 		HideInMenu: true,
 	}); err != nil {
 		return err

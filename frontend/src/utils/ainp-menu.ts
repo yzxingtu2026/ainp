@@ -1,8 +1,8 @@
 import type { ElegantConstRoute } from '@elegant-router/types';
 
-/** 将后端 component 路径转为 elegant view key，如 demo/hello -> demo_hello */
+/** 将后端 component 路径转为 elegant view key，如 view.notification_list → notification_list，demo/hello → demo_hello */
 export function toViewKey(component?: string, id?: string): string {
-  const raw = (component || id || 'unknown').replace(/^\//, '').replace(/\//g, '_').replace(/\./g, '_');
+  const raw = (component || id || 'unknown').replace(/^\//, '').replace(/^view\./, '').replace(/\//g, '_').replace(/\./g, '_');
   return raw;
 }
 
