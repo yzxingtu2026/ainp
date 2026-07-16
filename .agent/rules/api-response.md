@@ -8,6 +8,7 @@
 - 资源不存在用业务码（如 `10004`）+ HTTP 200，不用裸 404 表示领域资源缺失。
 - Handler 经框架 `AppError` / `response.OK|Fail` 出口；错误码按分段常量，禁止魔法数。
 - 请求验证错误必须是 `CodeValidation` + `common.validation_failed` + `AppError.Fields`；字段名使用 JSON 路径，字段文案使用稳定 `validation.*` key。
+- 分页请求固定 `page/page_size`，成功载荷由 `pagination.Result[T]` 输出 `items/total/page/page_size`；禁止 `records/current/size` 和手写分页 map。
 - 新业务错误使用 `errs.NewKey(code, key, fallback)`；业务 handler 用 `i18n.FromCtx(ctx)` + `i18n.T(lang, key)`。
 
 详规：`docs/development/api-response.md`

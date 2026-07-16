@@ -66,6 +66,33 @@ export function useNaiveTable<ResponseData, ApiData>(options: UseNaiveTableOptio
 
 type PaginationParams = Pick<PaginationProps, 'page' | 'pageSize'>;
 
+export interface ListPageQuery {
+  page: number;
+  page_size: number;
+}
+
+export interface ListPageResult<T> extends ListPageQuery {
+  items: T[];
+  total: number;
+}
+
+export type TableFilterControl =
+  | { control: 'search' }
+  | { control: 'codeset'; codeSet: string }
+  | { control: 'date-range' };
+
+export function defineTableFilters<Query extends object>(filters: Partial<Record<keyof Query, TableFilterControl>>) {
+  return filters;
+}
+
+export function toListPageQuery(params: PaginationParams): ListPageQuery {
+  return { page: params.page || 1, page_size: params.pageSize || 20 };
+}
+
+export function pageAfterDelete(page: number, itemCount: number) {
+  return page > 1 && itemCount <= 1 ? page - 1 : page;
+}
+
 type UseNaivePaginatedTableOptions<ResponseData, ApiData> = UseNaiveTableOptions<ResponseData, ApiData, true> & {
   paginationProps?: Omit<PaginationProps, 'page' | 'pageSize' | 'itemCount'>;
   /**
@@ -74,7 +101,7 @@ type UseNaivePaginatedTableOptions<ResponseData, ApiData> = UseNaiveTableOptions
    * @default true
    */
   showTotal?: boolean;
-  onPaginationParamsChange?: (params: PaginationParams) => void | Promise<void>;
+  onPaginationParamsChange?: (params: ListPageQuery) => void | Promise<void>;
 };
 
 export function useNaivePaginatedTable<ResponseData, ApiData>(
@@ -154,7 +181,7 @@ export function useNaivePaginatedTable<ResponseData, ApiData>(
     );
 
     watch(paginationParams, async newVal => {
-      await options.onPaginationParamsChange?.(newVal);
+      await options.onPaginationParamsChange?.(toListPageQuery(newVal));
 
       await result.getData();
     });
@@ -231,17 +258,17 @@ export function useTableOperate<TableData>(
 }
 
 export function defaultTransform<ApiData>(
-  response: FlatResponseData<any, Api.Common.PaginatingQueryRecord<ApiData>>
+  response: FlatResponseData<any, ListPageResult<ApiData>>
 ): PaginationData<ApiData> {
   const { data, error } = response;
 
   if (!error) {
-    const { records, current, size, total } = data;
+    const { items, page, page_size: pageSize, total } = data;
 
     return {
-      data: records,
-      pageNum: current,
-      pageSize: size,
+      data: items,
+      pageNum: page,
+      pageSize,
       total
     };
   }

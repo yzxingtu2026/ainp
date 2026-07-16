@@ -28,7 +28,7 @@ JSON Decode → Normalize → validation.Struct → Validate(ctx) → Service
 
 ## 与列表协议的关系
 
-列表分页和筛选协议由 #58 建立。其 Request DTO 必须复用 `action.JSON[T]` 与本验证器，不得建立第二套解析或验证逻辑；当前 Issue 不定义分页字段语义。
+列表分页和筛选 Request DTO 嵌入 `pagination.Request`，并复用 `action.JSON[T]` 与本验证器，不得建立第二套解析或验证逻辑。完整协议见 `list-query.md`。
 
 ## 测试
 

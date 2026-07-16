@@ -16,17 +16,17 @@ declare namespace Api {
     }
 
     interface ListParams {
-      current: number;
-      size: number;
+      page: number;
+      page_size: number;
       keyword?: string;
       status?: ActivationStatus | '';
     }
 
     interface ListResult {
-      current: number;
-      size: number;
+      page: number;
+      page_size: number;
       total: number;
-      records: Record[];
+      items: Record[];
     }
 
     interface PermissionItem {

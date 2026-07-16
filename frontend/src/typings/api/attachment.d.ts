@@ -57,8 +57,8 @@ declare namespace Api {
     }
 
     interface ListParams {
-      current?: number;
-      size?: number;
+      page?: number;
+      page_size?: number;
       keyword?: string;
       status?: string;
       scope?: 'all' | 'mine';
@@ -66,10 +66,10 @@ declare namespace Api {
     }
 
     interface PageResult {
-      current: number;
-      size: number;
+      page: number;
+      page_size: number;
       total: number;
-      records: Item[];
+      items: Item[];
     }
 
     interface Link {

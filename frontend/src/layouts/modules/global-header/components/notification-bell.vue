@@ -24,7 +24,7 @@ async function loadUnreadCount() {
 async function loadRecentNotifications() {
   loading.value = true;
   try {
-    const res = await fetchNotifications({ current: 1, size: 8, exclude_archived: true });
+    const res = await fetchNotifications({ page: 1, page_size: 8, exclude_archived: true });
     if (!res.error && res.data) {
       notifications.value = res.data.items;
     }

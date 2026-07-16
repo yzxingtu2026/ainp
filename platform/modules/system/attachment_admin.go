@@ -6,19 +6,20 @@ import (
 	"strings"
 	"time"
 
+	"github.com/yzxingtu2026/ainp/platform/framework/action"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
+	"github.com/yzxingtu2026/ainp/platform/framework/pagination"
 	"github.com/yzxingtu2026/ainp/platform/framework/status"
 	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"github.com/yzxingtu2026/ainp/platform/modules/system/model"
 )
 
 type attachmentAdminListRequest struct {
-	Current  int    `json:"current"`
-	Size     int    `json:"size"`
+	pagination.Request
 	Keyword  string `json:"keyword"`
-	Status   string `json:"status"`
-	Scope    string `json:"scope"` // all | mine
+	Status   string `json:"status" validate:"omitempty,oneof=pending ready deleting deleted failed"`
+	Scope    string `json:"scope" validate:"omitempty,oneof=all mine"` // all | mine
 	Uploader string `json:"uploader_id"`
 }
 
@@ -53,17 +54,13 @@ func (s *AttachmentService) PolicyGet(ctx context.Context, _ json.RawMessage) (a
 
 // List supports attachment center (scope=all) and picker recent uploads (scope=mine).
 func (s *AttachmentService) List(ctx context.Context, input json.RawMessage) (any, error) {
+	return action.JSON(s.list)(ctx, input)
+}
+
+func (s *AttachmentService) list(ctx context.Context, req attachmentAdminListRequest) (any, error) {
 	tenantID, userID, err := tenantIdentity(ctx)
 	if err != nil {
 		return nil, err
-	}
-	var req attachmentAdminListRequest
-	_ = json.Unmarshal(input, &req)
-	if req.Current < 1 {
-		req.Current = 1
-	}
-	if req.Size < 1 || req.Size > 100 {
-		req.Size = 20
 	}
 	scope := strings.TrimSpace(req.Scope)
 	if scope == "" {
@@ -102,7 +99,7 @@ func (s *AttachmentService) List(ctx context.Context, input json.RawMessage) (an
 	}
 	var rows []model.Attachment
 	if err := query.Order("created_at DESC, id DESC").
-		Offset((req.Current - 1) * req.Size).Limit(req.Size).Find(&rows).Error; err != nil {
+		Offset(req.Offset()).Limit(req.PageSize).Find(&rows).Error; err != nil {
 		return nil, mapAttachmentError(err)
 	}
 	records := make([]AttachmentView, 0, len(rows))
@@ -122,9 +119,7 @@ func (s *AttachmentService) List(ctx context.Context, input json.RawMessage) (an
 			records[i].UploaderName = name
 		}
 	}
-	return map[string]any{
-		"current": req.Current, "size": req.Size, "total": total, "records": records,
-	}, nil
+	return pagination.NewResult(records, total, req.Request), nil
 }
 
 // Get returns attachment detail and links for attachment center.

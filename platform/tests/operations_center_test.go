@@ -9,7 +9,9 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/config"
+	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
+	"github.com/yzxingtu2026/ainp/platform/framework/pagination"
 	"github.com/yzxingtu2026/ainp/platform/framework/status"
 	"github.com/yzxingtu2026/ainp/platform/modules/operations"
 	"github.com/yzxingtu2026/ainp/platform/modules/system"
@@ -88,14 +90,16 @@ func TestOutboxListFiltersAndKeepsTenantScope(t *testing.T) {
 		}
 	}
 	ctx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t1", Realm: auth.RealmTenant})
-	result, err := operations.NewOutboxService(db).List(ctx, json.RawMessage(`{"event_type":"demo.a.v1","status":"failed","current":1,"size":10}`))
+	result, err := operations.NewOutboxService(db).List(ctx, json.RawMessage(`{"event_type":"demo.a.v1","status":"failed","page":1,"page_size":10}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	data := result.(map[string]any)
-	items := data["items"].([]outbox.Event)
-	if data["total"].(int64) != 1 || len(items) != 1 || items[0].ID != "t1-a" {
+	data := result.(pagination.Result[outbox.Event])
+	if data.Total != 1 || len(data.Items) != 1 || data.Items[0].ID != "t1-a" {
 		t.Fatalf("unexpected tenant-scoped list: %#v", data)
+	}
+	if _, err := operations.NewOutboxService(db).List(ctx, json.RawMessage(`{"status":"invalid"}`)); errorCode(err) != errs.CodeValidation {
+		t.Fatalf("invalid status must fail validation: %v", err)
 	}
 	encoded, err := json.Marshal(data)
 	if err != nil {

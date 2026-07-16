@@ -13,6 +13,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/config"
 	"github.com/yzxingtu2026/ainp/platform/framework/database"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
+	"github.com/yzxingtu2026/ainp/platform/framework/pagination"
 	"github.com/yzxingtu2026/ainp/platform/framework/status"
 	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"github.com/yzxingtu2026/ainp/platform/modules/system"
@@ -167,18 +168,18 @@ func TestUserManagementTenantIsolationAndProtection(t *testing.T) {
 		t.Fatalf("disabled role assignment error = %v", err)
 	}
 
-	listed, err := service.List(ctxA, json.RawMessage(`{"current":1,"size":20,"keyword":"alice"}`))
+	listed, err := service.List(ctxA, json.RawMessage(`{"page":1,"page_size":20,"keyword":"alice"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if listed.(map[string]any)["total"].(int64) != 1 {
+	if listed.(pagination.Result[system.UserView]).Total != 1 {
 		t.Fatalf("tenant user list leaked data: %#v", listed)
 	}
-	filtered, err := service.List(ctxA, json.RawMessage(`{"current":1,"size":20,"role_id":"operator-a"}`))
+	filtered, err := service.List(ctxA, json.RawMessage(`{"page":1,"page_size":20,"role_id":"operator-a"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if filtered.(map[string]any)["total"].(int64) != 1 {
+	if filtered.(pagination.Result[system.UserView]).Total != 1 {
 		t.Fatalf("role filter failed: %#v", filtered)
 	}
 	if _, err := service.Get(ctxA, json.RawMessage(fmt.Sprintf(`{"id":%q}`, userB.ID))); appErrorCode(err) != errs.CodeNotFound {

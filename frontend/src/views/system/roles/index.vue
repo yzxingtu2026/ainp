@@ -16,6 +16,7 @@ import {
 } from '@/service/api';
 import { useAuthStore } from '@/store/modules/auth';
 import { formatDateTime } from '@/utils/datetime';
+import { pageAfterDelete } from '@/hooks/common/table';
 
 defineOptions({ name: 'SystemRoles' });
 
@@ -24,7 +25,7 @@ const authStore = useAuthStore();
 const saving = ref(false);
 const records = ref<Api.Role.Record[]>([]);
 const total = ref(0);
-const query = reactive<Api.Role.ListParams>({ current: 1, size: 20, keyword: '', status: '' });
+const query = reactive<Api.Role.ListParams>({ page: 1, page_size: 20, keyword: '', status: '' });
 const editorVisible = ref(false);
 const permissionsVisible = ref(false);
 const editing = ref<Api.Role.Record | null>(null);
@@ -154,7 +155,7 @@ async function loadRoles() {
   try {
     const { data, error } = await fetchRoleList(query);
     if (!error && data) {
-      records.value = data.records;
+      records.value = data.items;
       total.value = data.total;
     }
   } finally {
@@ -165,7 +166,7 @@ async function loadRoles() {
 function resetQuery() {
   query.keyword = '';
   query.status = '';
-  query.current = 1;
+  query.page = 1;
   loadRoles();
 }
 
@@ -247,6 +248,7 @@ async function handleDelete(role: Api.Role.Record) {
   const { error } = await deleteRole(role.id);
   if (!error) {
     window.$message?.success($t('common.deleteSuccess'));
+    query.page = pageAfterDelete(query.page, records.value.length);
     await loadRoles();
   }
 }
@@ -260,13 +262,13 @@ onMounted(loadRoles);
       <NSpace class="mb-16px" align="center">
         <NInput v-model:value="query.keyword" clearable :placeholder="$t('common.keywordSearch')" @keyup.enter="loadRoles" />
         <NSelect v-model:value="query.status" clearable class="w-160px" :options="statusOptions" :placeholder="$t('page.role.status')" />
-        <NButton type="primary" @click="query.current = 1; loadRoles()">{{ $t('common.search') }}</NButton>
+        <NButton type="primary" @click="query.page = 1; loadRoles()">{{ $t('common.search') }}</NButton>
         <NButton @click="resetQuery">{{ $t('common.reset') }}</NButton>
         <NButton v-if="can(SYSTEM_ACTIONS.roleCreate)" type="primary" secondary @click="openEditor()">{{ $t('common.add') }}</NButton>
       </NSpace>
       <NDataTable :columns="columns" :data="records" :loading="loading" :row-key="row => row.id" :scroll-x="1100" />
       <div class="mt-16px flex justify-end">
-        <NPagination v-model:page="query.current" v-model:page-size="query.size" :item-count="total" show-size-picker :page-sizes="[10, 20, 50]" @update:page="loadRoles" @update:page-size="query.current = 1; loadRoles()" />
+        <NPagination v-model:page="query.page" v-model:page-size="query.page_size" :item-count="total" show-size-picker :page-sizes="[10, 20, 50]" @update:page="loadRoles" @update:page-size="query.page = 1; loadRoles()" />
       </div>
     </NCard>
 

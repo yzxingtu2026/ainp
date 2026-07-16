@@ -13,7 +13,7 @@ const { hasAuth } = useAuth();
 const loading = ref(false);
 const rows = ref<Api.Operations.JobRun[]>([]);
 const total = ref(0);
-const query = reactive({ current: 1, size: 20, job_type: '', status: '' });
+const query = reactive({ page: 1, page_size: 20, job_type: '', status: '' });
 const detail = ref<Api.Operations.JobRun | null>(null);
 const drawer = ref(false);
 const statuses = ['pending_enqueue', 'queued', 'running', 'retrying', 'succeeded', 'failed', 'dead', 'cancelled'];
@@ -48,7 +48,7 @@ async function mutate(call: () => ReturnType<typeof fetchCancelJob>) {
   const res = await call();
   if (!res.error) { window.$message?.success($t('operations.success')); await load(); }
 }
-function search() { query.current = 1; load(); }
+function search() { query.page = 1; load(); }
 onMounted(load);
 </script>
 
@@ -61,7 +61,7 @@ onMounted(load);
         <NButton type="primary" @click="search">{{ $t('common.search') }}</NButton>
       </NSpace>
       <NDataTable :columns="columns" :data="rows" :loading="loading" :row-key="row => row.id" :scroll-x="1000" />
-      <div class="mt-16px flex justify-end"><NPagination v-model:page="query.current" v-model:page-size="query.size" :item-count="total" show-size-picker :page-sizes="[10,20,50]" @update:page="load" @update:page-size="search" /></div>
+      <div class="mt-16px flex justify-end"><NPagination v-model:page="query.page" v-model:page-size="query.page_size" :item-count="total" show-size-picker :page-sizes="[10,20,50]" @update:page="load" @update:page-size="search" /></div>
     </NCard>
     <NDrawer v-model:show="drawer" :width="560">
       <NDrawerContent :title="$t('operations.jobDetail')" closable>

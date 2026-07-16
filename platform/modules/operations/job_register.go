@@ -10,11 +10,18 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 	"github.com/yzxingtu2026/ainp/platform/framework/job"
+	"github.com/yzxingtu2026/ainp/platform/framework/pagination"
 	"github.com/yzxingtu2026/ainp/platform/framework/status"
 )
 
 type jobIDRequest struct {
 	ID string `json:"id" validate:"required"`
+}
+
+type jobListRequest struct {
+	pagination.Request
+	JobType string `json:"job_type"`
+	Status  string `json:"status" validate:"omitempty,oneof=pending_enqueue queued running retrying succeeded failed dead cancelled"`
 }
 
 const (
@@ -46,26 +53,23 @@ func (s *JobService) require() error {
 }
 
 func (s *JobService) List(ctx context.Context, input json.RawMessage) (any, error) {
+	return action.JSON(s.list)(ctx, input)
+}
+
+func (s *JobService) list(ctx context.Context, req jobListRequest) (any, error) {
 	if err := s.require(); err != nil {
 		return nil, err
 	}
 	if _, err := requireTenant(ctx); err != nil {
 		return nil, err
 	}
-	var req struct {
-		JobType string `json:"job_type"`
-		Status  string `json:"status"`
-		Current int    `json:"current"`
-		Size    int    `json:"size"`
-	}
-	_ = json.Unmarshal(input, &req)
 	rows, total, err := s.store.List(ctx, job.ListQuery{
-		JobType: req.JobType, Status: req.Status, Page: req.Current, PageSize: req.Size,
+		JobType: req.JobType, Status: req.Status, Page: req.Page, PageSize: req.PageSize,
 	})
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"items": rows, "total": total, "current": req.Current, "size": req.Size}, nil
+	return pagination.NewResult(rows, total, req.Request), nil
 }
 
 func (s *JobService) get(ctx context.Context, req jobIDRequest) (any, error) {
@@ -155,7 +159,7 @@ func registerJobActions(a *app.App) error {
 		audit                                  *bool
 		handler                                func(context.Context, json.RawMessage) (any, error)
 	}{
-		{ActionJobList, "/api/v1/operations/jobs/list", "任务列表", "action.operations.job_list.name", "分页查询当前租户 Job", "action.operations.job_list.description", &auditOff, svc.List},
+		{ActionJobList, "/api/v1/operations/jobs/list", "任务列表", "action.operations.job_list.name", "分页查询当前租户 Job", "action.operations.job_list.description", &auditOff, action.JSON(svc.list)},
 		{ActionJobGet, "/api/v1/operations/jobs/get", "任务详情", "action.operations.job_get.name", "查询 JobRun 详情", "action.operations.job_get.description", &auditOff, action.JSON(svc.get)},
 		{ActionJobCancel, "/api/v1/operations/jobs/cancel", "取消任务", "action.operations.job_cancel.name", "协作式请求取消", "action.operations.job_cancel.description", &auditOn, action.JSON(svc.cancel)},
 		{ActionJobRetry, "/api/v1/operations/jobs/retry", "重试任务", "action.operations.job_retry.name", "对 failed/dead 新建重试 JobRun", "action.operations.job_retry.description", &auditOn, action.JSON(svc.retry)},

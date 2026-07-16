@@ -32,7 +32,7 @@ export function fetchRetryOutbox(eventId: string) {
   return request({ url: '/api/v1/operations/outbox/retry', method: 'post', data: { event_id: eventId } });
 }
 
-export function fetchDeliveryList(params: { current?: number; size?: number; status?: string; channel?: string }) {
+export function fetchDeliveryList(params: { page?: number; page_size?: number; status?: string; channel?: string }) {
   return request<Api.Operations.DeliveryListData>({
     url: '/api/v1/operations/notification-deliveries/list',
     method: 'post',
