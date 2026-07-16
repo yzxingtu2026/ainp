@@ -19,5 +19,40 @@ declare namespace Api {
       event: OutboxEvent & { payload: unknown; metadata: unknown };
       deliveries: OutboxDelivery[];
     }
+    interface DeliveryItem {
+      id: string;
+      tenant_id: string;
+      request_id: string;
+      recipient_type: string;
+      recipient_id: string;
+      recipient_name: string;
+      channel: string;
+      provider: string;
+      status: string;
+      attempts: number;
+      max_attempts: number;
+      external_id: string;
+      last_error: string;
+      sent_at: string | null;
+      delivered_at: string | null;
+      failed_at: string | null;
+      scheduled_at: string | null;
+      created_at: string;
+      updated_at: string;
+    }
+    interface DeliveryListData {
+      items: DeliveryItem[];
+      total: number;
+    }
+    interface DeliveryDetail extends DeliveryItem {
+      locale: string;
+      definition_key: string;
+      variables: Record<string, unknown>;
+      content: {
+        title: string;
+        summary: string;
+        body: string;
+      };
+    }
   }
 }

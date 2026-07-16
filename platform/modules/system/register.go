@@ -91,12 +91,6 @@ func Register(a *app.App) error {
 	if err := registerAttachmentActions(a, attachSvc); err != nil {
 		return err
 	}
-	if err := registerOutboxActions(a); err != nil {
-		return err
-	}
-	if err := registerJobActions(a); err != nil {
-		return err
-	}
 	if err := jobs.Register(a); err != nil {
 		return err
 	}
@@ -268,27 +262,6 @@ func Register(a *app.App) error {
 		ID: MenuAttachmentCenter, ParentID: "system.root", Title: "附件中心", TitleKey: "menu.system.attachments.title",
 		Icon: "mdi:paperclip", Type: menu.TypeMenu, Path: "/system/attachments", Component: "system/attachments",
 		Permission: ActionAttachmentList, BindAction: ActionAttachmentList, Module: "system", Order: 5,
-	}); err != nil {
-		return err
-	}
-
-	if err := a.RegisterMenu(menu.Menu{
-		ID: "operations.root", Title: "运维", TitleKey: "menu.operations.root.title",
-		Icon: "mdi:monitor-dashboard", Type: menu.TypeDirectory, Module: "system", Order: 20,
-	}); err != nil {
-		return err
-	}
-	if err := a.RegisterMenu(menu.Menu{
-		ID: "operations.jobs", ParentID: "operations.root", Title: "任务运行", TitleKey: "menu.operations.jobs.title",
-		Icon: "mdi:briefcase-clock-outline", Type: menu.TypeMenu, Path: "/operations/jobs", Component: "operations/jobs",
-		Permission: ActionJobList, BindAction: ActionJobList, Module: "system", Order: 1,
-	}); err != nil {
-		return err
-	}
-	if err := a.RegisterMenu(menu.Menu{
-		ID: "operations.outbox", ParentID: "operations.root", Title: "Outbox 事件", TitleKey: "menu.operations.outbox.title",
-		Icon: "mdi:tray-arrow-up", Type: menu.TypeMenu, Path: "/operations/outbox", Component: "operations/outbox",
-		Permission: ActionOutboxList, BindAction: ActionOutboxList, Module: "system", Order: 2,
 	}); err != nil {
 		return err
 	}

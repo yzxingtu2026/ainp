@@ -203,15 +203,6 @@ export const generatedRoutes: GeneratedRoute[] = [
         }
       },
       {
-        name: 'system_notification-deliveries',
-        path: '/system/notification-deliveries',
-        component: 'view.system_notification-deliveries',
-        meta: {
-          title: 'system_notification-deliveries',
-          i18nKey: 'route.system_notification-deliveries'
-        }
-      },
-      {
         name: 'system_notification-templates',
         path: '/system/notification-templates',
         component: 'view.system_notification-templates',

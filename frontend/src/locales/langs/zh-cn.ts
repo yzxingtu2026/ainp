@@ -244,7 +244,6 @@ const local: App.I18n.Schema = {
     system_roles: '角色管理',
     system_settings: '系统设置',
     system_attachments: '附件中心',
-    'system_notification-deliveries': '投递记录',
     'system_notification-templates': '通知模板',
     notification: '通知',
     notification_list: '通知列表',

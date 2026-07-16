@@ -38,7 +38,7 @@
 
 9. **用户只能访问自己的通知**：管理员不能仅凭同租户默认读取其他用户站内通知。
 
-10. **管理 Action** 按授权边界拆分：模板归 `system.notification_configuration`，投递归 `system.operations.notification_delivery`，均需显式授权。
+10. **管理 Action** 按授权边界拆分：模板归 `system.notification_configuration`，投递归 `operations.notification_delivery`，均需显式授权。
 
 11. **个人通知 Action** 使用 authenticated，不进入角色权限目录；必须固定使用 AuthContext tenant/user scope。
 

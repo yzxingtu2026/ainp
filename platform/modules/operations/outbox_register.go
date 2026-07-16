@@ -1,4 +1,4 @@
-package system
+package operations
 
 import (
 	"context"
@@ -17,10 +17,10 @@ import (
 )
 
 const (
-	ActionOutboxList           = "system.outbox_list"
-	ActionOutboxSummary        = "system.outbox_summary"
-	ActionOutboxListDeliveries = "system.outbox_list_deliveries"
-	ActionOutboxRetry          = "system.outbox_retry"
+	ActionOutboxList           = "operations.outbox_list"
+	ActionOutboxSummary        = "operations.outbox_summary"
+	ActionOutboxListDeliveries = "operations.outbox_list_deliveries"
+	ActionOutboxRetry          = "operations.outbox_retry"
 )
 
 func (s *OutboxService) List(ctx context.Context, input json.RawMessage) (any, error) {
@@ -194,24 +194,24 @@ func registerOutboxActions(a *app.App) error {
 		audit                                  *bool
 		handler                                func(context.Context, json.RawMessage) (any, error)
 	}{
-		{ActionOutboxList, "/api/v1/system/outbox/list", "Outbox 事件列表", "action.system.outbox_list.name", "分页查询租户 Outbox 事件", "action.system.outbox_list.description", &auditOff, svc.List},
-		{ActionOutboxSummary, "/api/v1/system/outbox/summary", "Outbox 摘要", "action.system.outbox_summary.name", "查询租户 Outbox 状态计数", "action.system.outbox_summary.description", &auditOff, svc.Summary},
-		{ActionOutboxListDeliveries, "/api/v1/system/outbox/deliveries", "Outbox 投递记录", "action.system.outbox_list_deliveries.name", "查看事件 Handler 投递状态", "action.system.outbox_list_deliveries.description", &auditOff, svc.ListDeliveries},
-		{ActionOutboxRetry, "/api/v1/system/outbox/retry", "重试 Outbox 事件", "action.system.outbox_retry.name", "将 failed/dead 事件重置为 pending（不可改 payload）", "action.system.outbox_retry.description", &auditOn, svc.Retry},
+		{ActionOutboxList, "/api/v1/operations/outbox/list", "Outbox 事件列表", "action.operations.outbox_list.name", "分页查询租户 Outbox 事件", "action.operations.outbox_list.description", &auditOff, svc.List},
+		{ActionOutboxSummary, "/api/v1/operations/outbox/summary", "Outbox 摘要", "action.operations.outbox_summary.name", "查询租户 Outbox 状态计数", "action.operations.outbox_summary.description", &auditOff, svc.Summary},
+		{ActionOutboxListDeliveries, "/api/v1/operations/outbox/deliveries", "Outbox 投递记录", "action.operations.outbox_list_deliveries.name", "查看事件 Handler 投递状态", "action.operations.outbox_list_deliveries.description", &auditOff, svc.ListDeliveries},
+		{ActionOutboxRetry, "/api/v1/operations/outbox/retry", "重试 Outbox 事件", "action.operations.outbox_retry.name", "将 failed/dead 事件重置为 pending（不可改 payload）", "action.operations.outbox_retry.description", &auditOn, svc.Retry},
 	}
 	for _, spec := range specs {
 		if err := a.RegisterAction(action.Action{
 			ID:      spec.id,
 			Handler: spec.handler,
 			Meta: action.Metadata{
-				Capability:             "system",
+				Capability:             "operations",
 				Name:                   spec.name,
 				NameKey:                spec.nameKey,
 				Description:            spec.desc,
 				DescriptionKey:         spec.descKey,
-				PermissionGroup:        "system.operations.outbox",
+				PermissionGroup:        "operations.outbox",
 				PermissionGroupName:    "Outbox 运维",
-				PermissionGroupNameKey: "permission_group.system.operations.outbox",
+				PermissionGroupNameKey: "permission_group.operations.outbox",
 				Audit:                  spec.audit,
 				HTTP: &action.HTTPMeta{
 					Method: "POST",

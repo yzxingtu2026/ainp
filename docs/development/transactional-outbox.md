@@ -39,7 +39,7 @@ Phase 1 **不依赖 Redis**；架构预留 Redis Streams Transport，替换传�
 - Outbox：`pending` → `processing` → `published` | `failed` →（超限）`dead`。
 - Delivery：`pending` / `processing` / `succeeded` / `failed`；成功 Handler 不因其他 Handler 失败而重跑。
 
-CodeSet：`system.outbox_status`、`system.delivery_status`。
+CodeSet：`operations.outbox_status`、`operations.delivery_status`。
 
 ## Dispatcher（postgres）
 
@@ -53,9 +53,9 @@ CodeSet：`system.outbox_status`、`system.delivery_status`。
 
 | Action | 说明 |
 |--------|------|
-| `system.outbox_summary` | 状态计数与最老未完成时间 |
-| `system.outbox_list_deliveries` | 查看某事件 deliveries |
-| `system.outbox_retry` | 将 failed/dead 重置为 pending（**不可改 payload**）；审计 |
+| `operations.outbox_summary` | 状态计数与最老未完成时间 |
+| `operations.outbox_list_deliveries` | 查看某事件 deliveries |
+| `operations.outbox_retry` | 将 failed/dead 重置为 pending（**不可改 payload**）；审计 |
 
 ## Demo
 

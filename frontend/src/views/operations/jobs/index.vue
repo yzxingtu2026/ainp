@@ -3,6 +3,7 @@ import { computed, h, onMounted, reactive, ref } from 'vue';
 import type { DataTableColumns } from 'naive-ui';
 import { NButton, NCard, NDataTable, NDescriptions, NDescriptionsItem, NDrawer, NDrawerContent, NInput, NPagination, NPopconfirm, NSelect, NSpace, NTag } from 'naive-ui';
 import { useAuth } from '@/hooks/business/auth';
+import { OPERATIONS_ACTIONS } from '@/constants/operations';
 import { $t } from '@/locales';
 import { fetchCancelJob, fetchJobDetail, fetchJobList, fetchRetryJob } from '@/service/api';
 import { formatDateTime } from '@/utils/datetime';
@@ -17,8 +18,8 @@ const detail = ref<Api.Operations.JobRun | null>(null);
 const drawer = ref(false);
 const statuses = ['pending_enqueue', 'queued', 'running', 'retrying', 'succeeded', 'failed', 'dead', 'cancelled'];
 const statusOptions = computed(() => statuses.map(value => ({ value, label: $t(`operations.status.${value}` as any) })));
-const canCancel = (row: Api.Operations.JobRun) => hasAuth('system.job_cancel') && ['pending_enqueue', 'queued', 'running', 'retrying'].includes(row.status);
-const canRetry = (row: Api.Operations.JobRun) => hasAuth('system.job_retry') && ['failed', 'dead'].includes(row.status);
+const canCancel = (row: Api.Operations.JobRun) => hasAuth(OPERATIONS_ACTIONS.jobCancel) && ['pending_enqueue', 'queued', 'running', 'retrying'].includes(row.status);
+const canRetry = (row: Api.Operations.JobRun) => hasAuth(OPERATIONS_ACTIONS.jobRetry) && ['failed', 'dead'].includes(row.status);
 const columns = computed<DataTableColumns<Api.Operations.JobRun>>(() => [
   { title: $t('operations.jobType'), key: 'job_type', ellipsis: { tooltip: true } },
   { title: $t('operations.statusLabel'), key: 'status', width: 130, render: r => h(NTag, { size: 'small' }, { default: () => $t(`operations.status.${r.status}` as any) }) },
@@ -26,7 +27,7 @@ const columns = computed<DataTableColumns<Api.Operations.JobRun>>(() => [
   { title: $t('operations.attempts'), key: 'attempt', width: 100, render: r => `${r.attempt}/${r.max_attempts}` },
   { title: $t('operations.createdAt'), key: 'created_at', width: 180, render: r => formatDateTime(r.created_at) },
   { title: $t('common.action'), key: 'action', width: 220, render: r => h(NSpace, null, { default: () => [
-    ...(hasAuth('system.job_get') ? [h(NButton, { size: 'small', onClick: () => openDetail(r.id) }, { default: () => $t('common.detail') })] : []),
+    ...(hasAuth(OPERATIONS_ACTIONS.jobGet) ? [h(NButton, { size: 'small', onClick: () => openDetail(r.id) }, { default: () => $t('common.detail') })] : []),
     ...(canCancel(r) ? [h(NPopconfirm, { onPositiveClick: () => mutate(() => fetchCancelJob(r.id)) }, { trigger: () => h(NButton, { size: 'small', type: 'warning' }, { default: () => $t('operations.cancelJob') }), default: () => $t('operations.confirmAction') })] : []),
     ...(canRetry(r) ? [h(NPopconfirm, { onPositiveClick: () => mutate(() => fetchRetryJob(r.id)) }, { trigger: () => h(NButton, { size: 'small', type: 'primary' }, { default: () => $t('operations.retry') }), default: () => $t('operations.confirmAction') })] : [])
   ] }) }

@@ -11,6 +11,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/config"
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
 	"github.com/yzxingtu2026/ainp/platform/framework/status"
+	"github.com/yzxingtu2026/ainp/platform/modules/operations"
 	"github.com/yzxingtu2026/ainp/platform/modules/system"
 )
 
@@ -20,11 +21,19 @@ func TestOperationsMetadataKeepsPermissionsAndSplitsGroups(t *testing.T) {
 	if err := system.Register(application); err != nil {
 		t.Fatal(err)
 	}
+	if err := operations.Register(application, system.NewOperationsNotificationDeliveryService(application)); err != nil {
+		t.Fatal(err)
+	}
 	wantGroups := map[string]string{
-		system.ActionJobList:                  "system.operations.jobs",
-		system.ActionOutboxList:               "system.operations.outbox",
-		system.ActionNotificationTemplateList: "system.notification_configuration",
-		system.ActionNotificationDeliveryList: "system.operations.notification_delivery",
+		operations.ActionJobList:                  "operations.jobs",
+		operations.ActionOutboxList:               "operations.outbox",
+		system.ActionNotificationTemplateList:     "system.notification_configuration",
+		operations.ActionNotificationDeliveryList: "operations.notification_delivery",
+	}
+	wantPaths := map[string]string{
+		operations.ActionJobList:                  "/api/v1/operations/jobs/list",
+		operations.ActionOutboxList:               "/api/v1/operations/outbox/list",
+		operations.ActionNotificationDeliveryList: "/api/v1/operations/notification-deliveries/list",
 	}
 	for id, group := range wantGroups {
 		registered, ok := application.Actions.Get(id)
@@ -37,15 +46,28 @@ func TestOperationsMetadataKeepsPermissionsAndSplitsGroups(t *testing.T) {
 		if registered.Meta.PermissionGroup != group {
 			t.Fatalf("action %s group=%s want=%s", id, registered.Meta.PermissionGroup, group)
 		}
+		if id != system.ActionNotificationTemplateList {
+			if registered.Meta.Capability != "operations" {
+				t.Fatalf("action %s capability=%s", id, registered.Meta.Capability)
+			}
+			if registered.Meta.HTTP == nil || registered.Meta.HTTP.Path != wantPaths[id] {
+				t.Fatalf("action %s path=%v want=%s", id, registered.Meta.HTTP, wantPaths[id])
+			}
+		}
+	}
+	for _, oldID := range []string{"system.job_list", "system.outbox_list", "system.notification_delivery_list"} {
+		if _, ok := application.Actions.Get(oldID); ok {
+			t.Fatalf("legacy action must not be registered: %s", oldID)
+		}
 	}
 	menus := map[string]struct{ parent, permission string }{}
 	for _, item := range application.Menus.List() {
 		menus[item.ID] = struct{ parent, permission string }{item.ParentID, item.Permission}
 	}
 	for id, want := range map[string]struct{ parent, permission string }{
-		"operations.jobs":                    {"operations.root", system.ActionJobList},
-		"operations.outbox":                  {"operations.root", system.ActionOutboxList},
-		"operations.notification_deliveries": {"operations.root", system.ActionNotificationDeliveryList},
+		"operations.jobs":                    {"operations.root", operations.ActionJobList},
+		"operations.outbox":                  {"operations.root", operations.ActionOutboxList},
+		"operations.notification_deliveries": {"operations.root", operations.ActionNotificationDeliveryList},
 	} {
 		if menus[id] != want {
 			t.Fatalf("menu %s=%#v want=%#v", id, menus[id], want)
@@ -66,7 +88,7 @@ func TestOutboxListFiltersAndKeepsTenantScope(t *testing.T) {
 		}
 	}
 	ctx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t1", Realm: auth.RealmTenant})
-	result, err := system.NewOutboxService(db).List(ctx, json.RawMessage(`{"event_type":"demo.a.v1","status":"failed","current":1,"size":10}`))
+	result, err := operations.NewOutboxService(db).List(ctx, json.RawMessage(`{"event_type":"demo.a.v1","status":"failed","current":1,"size":10}`))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -3,6 +3,7 @@ import { computed, h, onMounted, reactive, ref } from 'vue';
 import type { DataTableColumns } from 'naive-ui';
 import { NButton, NCard, NDataTable, NDescriptions, NDescriptionsItem, NDrawer, NDrawerContent, NInput, NPagination, NPopconfirm, NSelect, NSpace, NTag } from 'naive-ui';
 import { useAuth } from '@/hooks/business/auth';
+import { OPERATIONS_ACTIONS } from '@/constants/operations';
 import { $t } from '@/locales';
 import { fetchOutboxDetail, fetchOutboxList, fetchRetryOutbox } from '@/service/api';
 import { formatDateTime } from '@/utils/datetime';
@@ -24,8 +25,8 @@ const columns = computed<DataTableColumns<Api.Operations.OutboxEvent>>(() => [
   { title: $t('operations.attempts'), key: 'attempts', width: 90 },
   { title: $t('operations.occurredAt'), key: 'occurred_at', width: 180, render: r => formatDateTime(r.occurred_at) },
   { title: $t('common.action'), key: 'action', width: 170, render: r => h(NSpace, null, { default: () => [
-    ...(hasAuth('system.outbox_list_deliveries') ? [h(NButton, { size: 'small', onClick: () => openDetail(r.id) }, { default: () => $t('common.detail') })] : []),
-    ...(hasAuth('system.outbox_retry') && ['failed', 'dead'].includes(r.status) ? [h(NPopconfirm, { onPositiveClick: () => retry(r.id) }, { trigger: () => h(NButton, { size: 'small', type: 'primary' }, { default: () => $t('operations.retry') }), default: () => $t('operations.confirmAction') })] : [])
+    ...(hasAuth(OPERATIONS_ACTIONS.outboxListDeliveries) ? [h(NButton, { size: 'small', onClick: () => openDetail(r.id) }, { default: () => $t('common.detail') })] : []),
+    ...(hasAuth(OPERATIONS_ACTIONS.outboxRetry) && ['failed', 'dead'].includes(r.status) ? [h(NPopconfirm, { onPositiveClick: () => retry(r.id) }, { trigger: () => h(NButton, { size: 'small', type: 'primary' }, { default: () => $t('operations.retry') }), default: () => $t('operations.confirmAction') })] : [])
   ] }) }
 ]);
 async function load() {

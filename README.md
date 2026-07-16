@@ -297,7 +297,7 @@ ainp/
 ├── platform/                 # Go module: github.com/yzxingtu2026/ainp/platform
 │   ├── cmd/ainp/
 │   ├── framework/            # app, logging, response, auth, action, menu, audit, database...
-│   ├── modules/              # Phase 1: system（可选）, demo
+│   ├── modules/              # Phase 1: system, operations, demo
 │   ├── configs/
 │   └── migrations/
 ├── frontend/                 # Soybean Admin + Naive UI（后续）

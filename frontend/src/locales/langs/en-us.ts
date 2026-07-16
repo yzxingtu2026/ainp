@@ -248,7 +248,6 @@ const local: App.I18n.Schema = {
     system_roles: 'Roles',
     system_settings: 'Settings',
     system_attachments: 'Attachments',
-    'system_notification-deliveries': 'Delivery Records',
     'system_notification-templates': 'Notification Templates',
     notification: 'Notifications',
     notification_list: 'Notification List',

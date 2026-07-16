@@ -31,9 +31,6 @@ const (
 	ActionNotificationTemplateUpdate  = "system.notification_template_update"
 	ActionNotificationTemplateReset   = "system.notification_template_reset"
 	ActionNotificationTemplatePreview = "system.notification_template_preview"
-	ActionNotificationDeliveryList    = "system.notification_delivery_list"
-	ActionNotificationDeliveryGet     = "system.notification_delivery_get"
-	ActionNotificationDeliveryRetry   = "system.notification_delivery_retry"
 )
 
 // InAppNotificationService provides user-facing notification actions.
@@ -435,6 +432,17 @@ func NewNotificationDeliveryService(repo *NotificationRepository, enqueuer ...jo
 	return service
 }
 
+func NewOperationsNotificationDeliveryService(a *app.App) *NotificationDeliveryService {
+	if a == nil || a.DB == nil {
+		return nil
+	}
+	var enqueuer job.Enqueuer
+	if a.Jobs != nil && a.Jobs.Enabled {
+		enqueuer = a.Jobs.Enqueuer
+	}
+	return NewNotificationDeliveryService(NewNotificationRepository(a.DB), enqueuer)
+}
+
 func (s *NotificationDeliveryService) List(ctx context.Context, input json.RawMessage) (any, error) {
 	ac, err := requireTenant(ctx)
 	if err != nil {
@@ -633,12 +641,6 @@ func registerNotificationActions(a *app.App) error {
 	inAppSvc := NewInAppNotificationService(repo)
 	overrideProvider := NewGormOverrideProvider(repo)
 	tplSvc := NewNotificationTemplateService(repo, a.Notifications, a.NotificationRenderer, overrideProvider)
-	var jobEnqueuer job.Enqueuer
-	if a.Jobs != nil && a.Jobs.Enabled {
-		jobEnqueuer = a.Jobs.Enqueuer
-	}
-	deliverySvc := NewNotificationDeliveryService(repo, jobEnqueuer)
-
 	// ── Build Orchestrator + NotificationService ──
 	inAppProvider := NewInAppProvider(repo)
 	providers := map[notification.Channel]notification.ChannelProvider{
@@ -734,7 +736,7 @@ func registerNotificationActions(a *app.App) error {
 		}
 	}
 
-	// Admin actions use separate configuration and delivery-operation authorization boundaries.
+	// Notification configuration remains in the system capability.
 	adminSpecs := []struct {
 		id, path, name, nameKey, desc, descKey string
 		audit                                  *bool
@@ -743,16 +745,9 @@ func registerNotificationActions(a *app.App) error {
 		{ActionNotificationTemplateList, "/api/v1/system/notification/templates", "模板覆盖列表", "action.system.notification_template_list.name", "列出租户模板覆盖", "action.system.notification_template_list.description", &auditOff, tplSvc.List},
 		{ActionNotificationTemplateUpdate, "/api/v1/system/notification/templates/update", "更新模板覆盖", "action.system.notification_template_update.name", "更新模板覆盖内容", "action.system.notification_template_update.description", &auditOn, tplSvc.Update},
 		{ActionNotificationTemplateReset, "/api/v1/system/notification/templates/reset", "重置模板覆盖", "action.system.notification_template_reset.name", "重置为代码默认模板", "action.system.notification_template_reset.description", &auditOn, tplSvc.Reset},
-		{ActionNotificationDeliveryList, "/api/v1/system/notification/deliveries", "Delivery 列表", "action.system.notification_delivery_list.name", "查询投递记录", "action.system.notification_delivery_list.description", &auditOff, deliverySvc.List},
-		{ActionNotificationDeliveryGet, "/api/v1/system/notification/deliveries/get", "Delivery 详情", "action.system.notification_delivery_get.name", "查询投递详情", "action.system.notification_delivery_get.description", &auditOff, deliverySvc.Get},
-		{ActionNotificationDeliveryRetry, "/api/v1/system/notification/deliveries/retry", "重试投递", "action.system.notification_delivery_retry.name", "重试失败投递记录", "action.system.notification_delivery_retry.description", &auditOn, deliverySvc.Retry},
 		{ActionNotificationTemplatePreview, "/api/v1/system/notification/templates/preview", "模板预览", "action.system.notification_template_preview.name", "预览模板渲染结果（不触发投递）", "action.system.notification_template_preview.description", &auditOff, tplSvc.Preview},
 	}
 	for _, spec := range adminSpecs {
-		group, groupName, groupNameKey := "system.notification_configuration", "通知配置", "permission_group.system.notification_configuration"
-		if spec.id == ActionNotificationDeliveryList || spec.id == ActionNotificationDeliveryGet || spec.id == ActionNotificationDeliveryRetry {
-			group, groupName, groupNameKey = "system.operations.notification_delivery", "通知投递运维", "permission_group.system.operations.notification_delivery"
-		}
 		if err := a.RegisterAction(action.Action{
 			ID:      spec.id,
 			Handler: spec.handler,
@@ -762,9 +757,9 @@ func registerNotificationActions(a *app.App) error {
 				NameKey:                spec.nameKey,
 				Description:            spec.desc,
 				DescriptionKey:         spec.descKey,
-				PermissionGroup:        group,
-				PermissionGroupName:    groupName,
-				PermissionGroupNameKey: groupNameKey,
+				PermissionGroup:        "system.notification_configuration",
+				PermissionGroupName:    "通知配置",
+				PermissionGroupNameKey: "permission_group.system.notification_configuration",
 				Audit:                  spec.audit,
 				HTTP:                   &action.HTTPMeta{Method: "POST", Path: spec.path},
 			},
@@ -815,23 +810,6 @@ func registerNotificationActions(a *app.App) error {
 		BindAction: ActionNotificationTemplateList,
 		Module:     "system",
 		Order:      6,
-	}); err != nil {
-		return err
-	}
-
-	if err := a.RegisterMenu(menu.Menu{
-		ID:         "operations.notification_deliveries",
-		ParentID:   "operations.root",
-		Title:      "投递记录",
-		TitleKey:   "menu.system.notification_deliveries.title",
-		Icon:       "mdi:truck-delivery-outline",
-		Type:       menu.TypeMenu,
-		Path:       "/operations/notification-deliveries",
-		Component:  "operations/notification-deliveries",
-		Permission: ActionNotificationDeliveryList,
-		BindAction: ActionNotificationDeliveryList,
-		Module:     "system",
-		Order:      7,
 	}); err != nil {
 		return err
 	}

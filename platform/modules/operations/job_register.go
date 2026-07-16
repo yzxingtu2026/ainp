@@ -1,4 +1,4 @@
-package system
+package operations
 
 import (
 	"context"
@@ -15,10 +15,10 @@ import (
 )
 
 const (
-	ActionJobList   = "system.job_list"
-	ActionJobGet    = "system.job_get"
-	ActionJobCancel = "system.job_cancel"
-	ActionJobRetry  = "system.job_retry"
+	ActionJobList   = "operations.job_list"
+	ActionJobGet    = "operations.job_get"
+	ActionJobCancel = "operations.job_cancel"
+	ActionJobRetry  = "operations.job_retry"
 )
 
 type JobService struct {
@@ -170,24 +170,24 @@ func registerJobActions(a *app.App) error {
 		audit                                  *bool
 		handler                                func(context.Context, json.RawMessage) (any, error)
 	}{
-		{ActionJobList, "/api/v1/system/jobs/list", "任务列表", "action.system.job_list.name", "分页查询当前租户 Job", "action.system.job_list.description", &auditOff, svc.List},
-		{ActionJobGet, "/api/v1/system/jobs/get", "任务详情", "action.system.job_get.name", "查询 JobRun 详情", "action.system.job_get.description", &auditOff, svc.Get},
-		{ActionJobCancel, "/api/v1/system/jobs/cancel", "取消任务", "action.system.job_cancel.name", "协作式请求取消", "action.system.job_cancel.description", &auditOn, svc.Cancel},
-		{ActionJobRetry, "/api/v1/system/jobs/retry", "重试任务", "action.system.job_retry.name", "对 failed/dead 新建重试 JobRun", "action.system.job_retry.description", &auditOn, svc.Retry},
+		{ActionJobList, "/api/v1/operations/jobs/list", "任务列表", "action.operations.job_list.name", "分页查询当前租户 Job", "action.operations.job_list.description", &auditOff, svc.List},
+		{ActionJobGet, "/api/v1/operations/jobs/get", "任务详情", "action.operations.job_get.name", "查询 JobRun 详情", "action.operations.job_get.description", &auditOff, svc.Get},
+		{ActionJobCancel, "/api/v1/operations/jobs/cancel", "取消任务", "action.operations.job_cancel.name", "协作式请求取消", "action.operations.job_cancel.description", &auditOn, svc.Cancel},
+		{ActionJobRetry, "/api/v1/operations/jobs/retry", "重试任务", "action.operations.job_retry.name", "对 failed/dead 新建重试 JobRun", "action.operations.job_retry.description", &auditOn, svc.Retry},
 	}
 	for _, spec := range specs {
 		if err := a.RegisterAction(action.Action{
 			ID:      spec.id,
 			Handler: spec.handler,
 			Meta: action.Metadata{
-				Capability:             "system",
+				Capability:             "operations",
 				Name:                   spec.name,
 				NameKey:                spec.nameKey,
 				Description:            spec.desc,
 				DescriptionKey:         spec.descKey,
-				PermissionGroup:        "system.operations.jobs",
+				PermissionGroup:        "operations.jobs",
 				PermissionGroupName:    "任务运维",
-				PermissionGroupNameKey: "permission_group.system.operations.jobs",
+				PermissionGroupNameKey: "permission_group.operations.jobs",
 				Audit:                  spec.audit,
 				HTTP:                   &action.HTTPMeta{Method: "POST", Path: spec.path},
 			},

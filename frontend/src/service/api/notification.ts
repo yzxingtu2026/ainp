@@ -109,32 +109,3 @@ export function fetchPreviewNotificationTemplate(params: {
     data: params
   });
 }
-
-// ── Admin: Delivery management ──
-
-/** List failed deliveries */
-export function fetchDeliveryList(params: { current?: number; size?: number; status?: string; channel?: string }) {
-  return request<Api.Notification.DeliveryListData>({
-    url: '/api/v1/system/notification/deliveries',
-    method: 'post',
-    data: params
-  });
-}
-
-/** Get delivery detail with message content */
-export function fetchDeliveryDetail(id: string) {
-  return request<Api.Notification.DeliveryDetail>({
-    url: '/api/v1/system/notification/deliveries/get',
-    method: 'post',
-    data: { id }
-  });
-}
-
-/** Retry a failed delivery */
-export function fetchRetryDelivery(id: string) {
-  return request({
-    url: '/api/v1/system/notification/deliveries/retry',
-    method: 'post',
-    data: { id }
-  });
-}
