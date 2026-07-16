@@ -359,9 +359,7 @@ func (s *UserService) UpdateRoles(ctx context.Context, input json.RawMessage) (a
 		if err := s.auth.BumpAuthVersion(ctx, tx, tenantID, user.ID); err != nil {
 			return err
 		}
-		// Write notification outbox event in same transaction
-		s.notifyRoleChanged(ctx, tx, user.ID, targetUsername, roles)
-		return nil
+		return s.notifyRoleChanged(ctx, tx, user.ID, targetUsername, roles)
 	})
 	if err != nil {
 		return nil, normalizeUserError(err, "update user roles failed")
@@ -399,9 +397,7 @@ func (s *UserService) ResetPassword(ctx context.Context, input json.RawMessage) 
 		if err := s.auth.BumpAuthVersion(ctx, tx, tenantID, user.ID); err != nil {
 			return err
 		}
-		// Write notification outbox event in same transaction
-		s.notifyPasswordReset(ctx, tx, user.ID, targetUsername)
-		return nil
+		return s.notifyPasswordReset(ctx, tx, user.ID, targetUsername)
 	})
 	if err != nil {
 		return nil, normalizeUserError(err, "reset user password failed")
@@ -619,13 +615,12 @@ func (s *UserService) resolveLocale(ctx context.Context) string {
 	return i18n.DefaultLang()
 }
 
-// ── Notification helpers (fire-and-forget within transaction) ──
+// ── Notification helpers ──
 
 // notifyRoleChanged writes a system.role_changed outbox event.
-// Errors are logged but do not fail the transaction.
-func (s *UserService) notifyRoleChanged(ctx context.Context, tx *gorm.DB, userID, username string, roles []model.Role) {
+func (s *UserService) notifyRoleChanged(ctx context.Context, tx *gorm.DB, userID, username string, roles []model.Role) error {
 	if s.outboxWriter == nil {
-		return
+		return nil
 	}
 	roleNames := make([]string, len(roles))
 	for i, r := range roles {
@@ -651,14 +646,15 @@ func (s *UserService) notifyRoleChanged(ctx context.Context, tx *gorm.DB, userID
 		Payload:       payload,
 	}); err != nil {
 		logging.Warn(ctx, "notify role_changed outbox append failed", "user_id", userID, "error", err)
+		return fmt.Errorf("append role changed notification: %w", err)
 	}
+	return nil
 }
 
 // notifyPasswordReset writes a user.password_reset outbox event.
-// Errors are logged but do not fail the transaction.
-func (s *UserService) notifyPasswordReset(ctx context.Context, tx *gorm.DB, userID, username string) {
+func (s *UserService) notifyPasswordReset(ctx context.Context, tx *gorm.DB, userID, username string) error {
 	if s.outboxWriter == nil {
-		return
+		return nil
 	}
 	payload := map[string]any{
 		"definition_key": "user.password_reset",
@@ -680,5 +676,7 @@ func (s *UserService) notifyPasswordReset(ctx context.Context, tx *gorm.DB, user
 		Payload:       payload,
 	}); err != nil {
 		logging.Warn(ctx, "notify password_reset outbox append failed", "user_id", userID, "error", err)
+		return fmt.Errorf("append password reset notification: %w", err)
 	}
+	return nil
 }

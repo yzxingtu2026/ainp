@@ -160,10 +160,18 @@ func (r *NotificationRepository) ListFailedDeliveries(ctx context.Context, page,
 	return deliveries, total, err
 }
 
-// ListDeliveries returns paginated delivery records (all statuses) for the tenant.
-func (r *NotificationRepository) ListDeliveries(ctx context.Context, page, pageSize int) ([]NotificationDelivery, int64, error) {
+// ListDeliveries returns filtered, paginated delivery records for the tenant.
+func (r *NotificationRepository) ListDeliveries(ctx context.Context, page, pageSize int, status, channel string) ([]NotificationDelivery, int64, error) {
 	var total int64
 	q := r.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx))
+	if status != "" {
+		q = q.Where("status = ?", status)
+	} else {
+		q = q.Where("status IN ?", []string{string(notification.DeliveryFailed), string(notification.DeliveryDead)})
+	}
+	if channel != "" {
+		q = q.Where("channel = ?", channel)
+	}
 	q.Model(&NotificationDelivery{}).Count(&total)
 
 	var deliveries []NotificationDelivery

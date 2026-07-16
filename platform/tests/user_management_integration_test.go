@@ -235,4 +235,18 @@ func TestUserManagementTenantIsolationAndProtection(t *testing.T) {
 	if err := bcrypt.CompareHashAndPassword([]byte(resetUser.PasswordHash), []byte("Admin2@12")); err == nil {
 		t.Fatal("old password must not remain valid")
 	}
+
+	service.SetOutboxWriter(failingOutboxWriter{})
+	beforeHash := resetUser.PasswordHash
+	beforeVersion := resetUser.AuthVersion
+	if _, err := service.ResetPassword(ctxA, json.RawMessage(fmt.Sprintf(`{"id":%q,"password":"Rollback@123"}`, second.ID))); err == nil {
+		t.Fatal("password reset should fail when the outbox append fails")
+	}
+	var rolledBack model.User
+	if err := testDB.First(&rolledBack, "id = ?", second.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if rolledBack.PasswordHash != beforeHash || rolledBack.AuthVersion != beforeVersion {
+		t.Fatalf("outbox failure did not roll back user mutation: version=%d", rolledBack.AuthVersion)
+	}
 }

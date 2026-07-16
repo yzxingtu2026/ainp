@@ -423,11 +423,16 @@ func (s *NotificationTemplateService) Preview(ctx context.Context, input json.Ra
 // --- Delivery management actions ---
 
 type NotificationDeliveryService struct {
-	repo *NotificationRepository
+	repo     *NotificationRepository
+	enqueuer job.Enqueuer
 }
 
-func NewNotificationDeliveryService(repo *NotificationRepository) *NotificationDeliveryService {
-	return &NotificationDeliveryService{repo: repo}
+func NewNotificationDeliveryService(repo *NotificationRepository, enqueuer ...job.Enqueuer) *NotificationDeliveryService {
+	service := &NotificationDeliveryService{repo: repo}
+	if len(enqueuer) > 0 {
+		service.enqueuer = enqueuer[0]
+	}
+	return service
 }
 
 func (s *NotificationDeliveryService) List(ctx context.Context, input json.RawMessage) (any, error) {
@@ -436,11 +441,21 @@ func (s *NotificationDeliveryService) List(ctx context.Context, input json.RawMe
 		return nil, err
 	}
 	var req struct {
-		Current int `json:"current"`
-		Size    int `json:"size"`
+		Current int    `json:"current"`
+		Size    int    `json:"size"`
+		Status  string `json:"status"`
+		Channel string `json:"channel"`
 	}
-	_ = json.Unmarshal(input, &req)
-	items, total, err := s.repo.ListDeliveries(ctx, req.Current, req.Size)
+	if err := json.Unmarshal(input, &req); err != nil {
+		return nil, errs.ValidationKey("common.validation_failed", "invalid input")
+	}
+	if req.Status != "" && !notification.NotificationDeliveryStatus(req.Status).Valid() {
+		return nil, errs.ValidationKey("common.validation_failed", "invalid status")
+	}
+	if req.Channel != "" && !notification.Channel(req.Channel).Valid() {
+		return nil, errs.ValidationKey("common.validation_failed", "invalid channel")
+	}
+	items, total, err := s.repo.ListDeliveries(ctx, req.Current, req.Size, req.Status, req.Channel)
 	if err != nil {
 		return nil, err
 	}
@@ -508,6 +523,26 @@ func (s *NotificationDeliveryService) Retry(ctx context.Context, input json.RawM
 	}
 	if err := json.Unmarshal(input, &req); err != nil || strings.TrimSpace(req.ID) == "" {
 		return nil, errs.ValidationKey("common.validation_failed", "id required")
+	}
+	if s.enqueuer == nil {
+		return nil, errs.NewKey(errs.CodeNotificationDeliveryFailed, "notification.delivery_failed", "notification jobs unavailable")
+	}
+	delivery, err := s.repo.GetDelivery(ctx, req.ID)
+	if err != nil {
+		return nil, err
+	}
+	if delivery == nil {
+		return nil, errs.NewKey(errs.CodeNotFound, "notification.delivery_not_found", "delivery not found")
+	}
+	if delivery.Status != string(notification.DeliveryFailed) && delivery.Status != string(notification.DeliveryDead) {
+		return nil, errs.ValidationKey("notification.delivery_not_retryable", "delivery is not failed or dead")
+	}
+	if _, err := s.enqueuer.Enqueue(ctx, job.EnqueueInput{
+		Type:           jobs.NotificationDeliverJobType,
+		IdempotencyKey: "notification-retry:" + req.ID + ":" + time.Now().UTC().Format(time.RFC3339Nano),
+		Payload:        jobs.NotificationDeliverPayload{DeliveryID: req.ID},
+	}); err != nil {
+		return nil, errs.Wrap(errs.CodeNotificationDeliveryFailed, "enqueue notification retry failed", err)
 	}
 	if err := s.repo.RetryDelivery(ctx, req.ID); err != nil {
 		return nil, err
@@ -598,7 +633,11 @@ func registerNotificationActions(a *app.App) error {
 	inAppSvc := NewInAppNotificationService(repo)
 	overrideProvider := NewGormOverrideProvider(repo)
 	tplSvc := NewNotificationTemplateService(repo, a.Notifications, a.NotificationRenderer, overrideProvider)
-	deliverySvc := NewNotificationDeliveryService(repo)
+	var jobEnqueuer job.Enqueuer
+	if a.Jobs != nil && a.Jobs.Enabled {
+		jobEnqueuer = a.Jobs.Enqueuer
+	}
+	deliverySvc := NewNotificationDeliveryService(repo, jobEnqueuer)
 
 	// ── Build Orchestrator + NotificationService ──
 	inAppProvider := NewInAppProvider(repo)

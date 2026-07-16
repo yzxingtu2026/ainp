@@ -113,7 +113,7 @@ export function fetchPreviewNotificationTemplate(params: {
 // ── Admin: Delivery management ──
 
 /** List failed deliveries */
-export function fetchDeliveryList(params: { current?: number; size?: number }) {
+export function fetchDeliveryList(params: { current?: number; size?: number; status?: string; channel?: string }) {
   return request<Api.Notification.DeliveryListData>({
     url: '/api/v1/system/notification/deliveries',
     method: 'post',

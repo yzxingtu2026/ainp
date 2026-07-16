@@ -563,6 +563,8 @@ const local: App.I18n.Schema = {
   notificationAdmin: {
     templateTitle: '通知模板管理',
     deliveryTitle: '投递记录',
+    filterStatus: '筛选状态',
+    filterChannel: '筛选渠道',
     tabAll: '全部',
     editTemplate: '编辑模板覆盖',
     preview: '预览',

@@ -568,6 +568,8 @@ const local: App.I18n.Schema = {
   notificationAdmin: {
     templateTitle: 'Notification Template Management',
     deliveryTitle: 'Delivery Records',
+    filterStatus: 'Filter status',
+    filterChannel: 'Filter channel',
     tabAll: 'All',
     editTemplate: 'Edit Template Override',
     preview: 'Preview',

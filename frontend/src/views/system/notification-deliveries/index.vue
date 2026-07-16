@@ -3,7 +3,7 @@ import { computed, h, onMounted, reactive, ref } from 'vue';
 import type { DataTableColumns } from 'naive-ui';
 import {
   NButton, NCard, NDataTable, NDescriptions, NDescriptionsItem, NDivider,
-  NDrawer, NDrawerContent, NEmpty, NPagination, NPopconfirm, NSpace, NTag
+  NDrawer, NDrawerContent, NEmpty, NPagination, NPopconfirm, NSelect, NSpace, NTag
 } from 'naive-ui';
 import { $t } from '@/locales';
 import { fetchDeliveryDetail, fetchDeliveryList, fetchRetryDelivery } from '@/service/api';
@@ -14,7 +14,7 @@ defineOptions({ name: 'SystemNotificationDeliveries' });
 const loading = ref(false);
 const records = ref<Api.Notification.DeliveryItem[]>([]);
 const total = ref(0);
-const query = reactive({ current: 1, size: 20 });
+const query = reactive({ current: 1, size: 20, status: '', channel: '' });
 
 // Drawer state
 const drawerVisible = ref(false);
@@ -47,6 +47,22 @@ const statusI18n: Record<string, string> = {
   failed: 'notificationAdmin.statusFailed',
   dead: 'notificationAdmin.statusDead'
 };
+
+const statusOptions = computed(() => [
+  { label: $t('notificationAdmin.statusFailed'), value: 'failed' },
+  { label: $t('notificationAdmin.statusDead'), value: 'dead' },
+  { label: $t('notificationAdmin.statusPending'), value: 'pending' },
+  { label: $t('notificationAdmin.statusQueued'), value: 'queued' },
+  { label: $t('notificationAdmin.statusSent'), value: 'sent' },
+  { label: $t('notificationAdmin.statusDelivered'), value: 'delivered' }
+]);
+
+const channelOptions = computed(() =>
+  ['in_app', 'email', 'sms', 'webhook', 'im'].map(value => ({
+    label: $t(channelI18n[value] as any),
+    value
+  }))
+);
 
 const columns = computed<DataTableColumns<Api.Notification.DeliveryItem>>(() => [
   {
@@ -120,7 +136,9 @@ async function loadList() {
   try {
     const res = await fetchDeliveryList({
       current: query.current,
-      size: query.size
+      size: query.size,
+      status: query.status || undefined,
+      channel: query.channel || undefined
     });
     if (!res.error && res.data) {
       records.value = res.data.items || [];
@@ -154,11 +172,34 @@ async function handleRetry(row: Api.Notification.DeliveryItem) {
 }
 
 onMounted(loadList);
+
+function handleFilterChange() {
+  query.current = 1;
+  loadList();
+}
 </script>
 
 <template>
   <div class="min-h-500px flex-col-stretch gap-16px overflow-hidden lt-sm:overflow-auto">
     <NCard :title="$t('notificationAdmin.deliveryTitle')" :bordered="false" class="card-wrapper">
+      <NSpace class="mb-12px">
+        <NSelect
+          v-model:value="query.status"
+          clearable
+          class="w-160px"
+          :options="statusOptions"
+          :placeholder="$t('notificationAdmin.filterStatus')"
+          @update:value="handleFilterChange"
+        />
+        <NSelect
+          v-model:value="query.channel"
+          clearable
+          class="w-160px"
+          :options="channelOptions"
+          :placeholder="$t('notificationAdmin.filterChannel')"
+          @update:value="handleFilterChange"
+        />
+      </NSpace>
       <NDataTable :columns="columns" :data="records" :loading="loading" :row-key="row => row.id" :scroll-x="900" />
       <div class="mt-16px flex justify-end">
         <NPagination
