@@ -63,7 +63,11 @@ Agent 只读要点：`.agent/rules/audit.md`。本文档定义审计与运行日
 
 ## 保留与查询（原则）
 
-- 须支持按 `tenant_id`、`action_id`、`user_id`、`occurred_at`、`request_id` 查询。
+- 租户侧只读查询统一经 `system.audit_log_list/get`，保持 `permission` 模式；查询行为本身 `audit=true`。
+- Repository/Service 必须从 AuthContext 取得 `tenant_id` 并先施加租户条件，禁止请求参数切换租户；跨租户详情统一返回不存在。
+- 列表默认最近 24 小时，最大跨度 31 天，默认倒序，分页上限 100；须支持 `action_id`、`user_id`、`actor_type`、`result`、资源、`request_id`、`client` 筛选。
+- 查询响应只包含审计稳定字段与操作人辅助名称；用户不存在时保留并展示原始 `user_id`。
+- 审计数据只读，不提供修改、删除、补录或重放 Action。高频普通 list/get、轮询、未读数默认 `audit=false`。
 - 保留周期与归档策略后续在运维/合规文档中定；实现上预留按租户清理的能力。
 
 ## 检查清单
@@ -73,6 +77,7 @@ Agent 只读要点：`.agent/rules/audit.md`。本文档定义审计与运行日
 - [ ] 无敏感大字段；未用 Logger 冒充审计
 - [ ] 业务代码未直接写审计表
 - [ ] resource_type/resource_id 来自服务端已校验资源，不信任客户端原值
+- [ ] 查询强制租户范围、有限时间跨度和分页上限，且不泄露跨租户记录存在性
 
 ## 变更
 

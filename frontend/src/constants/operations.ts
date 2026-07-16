@@ -9,5 +9,7 @@ export const OPERATIONS_ACTIONS = {
   outboxRetry: 'operations.outbox_retry',
   notificationDeliveryList: 'operations.notification_delivery_list',
   notificationDeliveryGet: 'operations.notification_delivery_get',
-  notificationDeliveryRetry: 'operations.notification_delivery_retry'
+  notificationDeliveryRetry: 'operations.notification_delivery_retry',
+  auditLogList: 'system.audit_log_list',
+  auditLogGet: 'system.audit_log_get'
 } as const;

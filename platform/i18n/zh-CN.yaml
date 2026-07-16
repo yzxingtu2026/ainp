@@ -50,6 +50,7 @@ permission_group.system.attachment_management: "附件管理"
 permission_group.operations.outbox: "Outbox 运维"
 permission_group.operations.jobs: "任务运维"
 permission_group.operations.notification_delivery: "通知投递运维"
+permission_group.system.operations.audit: "操作审计"
 permission_group.system.notification_configuration: "通知配置"
 
 # ── 附件状态 CodeSet ──
@@ -252,6 +253,15 @@ menu.operations.notification_deliveries.title: "通知投递"
 menu.operations.root.title: "运维"
 menu.operations.jobs.title: "任务运行"
 menu.operations.outbox.title: "Outbox 事件"
+menu.operations.audit_logs.title: "操作审计"
+
+action.system.audit_log_list.name: "审计列表"
+action.system.audit_log_list.description: "查询当前租户操作审计"
+action.system.audit_log_get.name: "审计详情"
+action.system.audit_log_get.description: "查询当前租户操作审计详情"
+audit.not_found: "审计记录不存在"
+audit.invalid_time: "审计时间格式无效"
+audit.invalid_range: "审计时间范围必须为正且不超过 31 天"
 
 # ── 演示域 Menu ──
 menu.demo.attachments.title: "附件联调"

@@ -29,6 +29,7 @@ declare module "@elegant-router/types" {
     "notification": "/notification";
     "notification_list": "/notification/list";
     "operations": "/operations";
+    "operations_audit-logs": "/operations/audit-logs";
     "operations_jobs": "/operations/jobs";
     "operations_notification-deliveries": "/operations/notification-deliveries";
     "operations_outbox": "/operations/outbox";
@@ -108,6 +109,7 @@ declare module "@elegant-router/types" {
     | "demo_hello"
     | "home"
     | "notification_list"
+    | "operations_audit-logs"
     | "operations_jobs"
     | "operations_notification-deliveries"
     | "operations_outbox"

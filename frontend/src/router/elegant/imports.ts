@@ -25,6 +25,7 @@ export const views: Record<LastLevelRouteKey, RouteComponent | (() => Promise<Ro
   demo_hello: () => import("@/views/demo/hello/index.vue"),
   home: () => import("@/views/home/index.vue"),
   notification_list: () => import("@/views/notification/list/index.vue"),
+  "operations_audit-logs": () => import("@/views/operations/audit-logs/index.vue"),
   operations_jobs: () => import("@/views/operations/jobs/index.vue"),
   "operations_notification-deliveries": () => import("@/views/operations/notification-deliveries/index.vue"),
   operations_outbox: () => import("@/views/operations/outbox/index.vue"),
