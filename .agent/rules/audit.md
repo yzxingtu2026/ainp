@@ -7,5 +7,6 @@
 - 租户审计查询必须从 AuthContext 强制 tenant scope，跨租户详情返回不存在；默认 24 小时、最大 31 天、分页最多 100。
 - 操作人筛选按当前租户用户名或用户昵称模糊查询，不使用用户 ID 作为查询条件。
 - 审计查询本身 `audit=true` 且数据只读；普通高频 list/get/轮询默认 `audit=false`。用户不存在时仍保留原始 `user_id`。
+- 日志来源、运行日志查询和详情属于安全敏感读取，必须 `audit=true`；运行日志正文不得复制进审计表。
 
 详规：`docs/development/audit.md`

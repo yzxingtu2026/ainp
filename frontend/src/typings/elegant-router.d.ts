@@ -31,6 +31,7 @@ declare module "@elegant-router/types" {
     "operations": "/operations";
     "operations_audit-logs": "/operations/audit-logs";
     "operations_jobs": "/operations/jobs";
+    "operations_logs": "/operations/logs";
     "operations_notification-deliveries": "/operations/notification-deliveries";
     "operations_outbox": "/operations/outbox";
     "setup": "/setup";
@@ -111,6 +112,7 @@ declare module "@elegant-router/types" {
     | "notification_list"
     | "operations_audit-logs"
     | "operations_jobs"
+    | "operations_logs"
     | "operations_notification-deliveries"
     | "operations_outbox"
     | "system_attachments"

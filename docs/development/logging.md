@@ -99,6 +99,30 @@ logging.Error(ctx, "purchase create failed", err, "purchase_id", id)
 
 审计事件字段与写入时机见 `docs/development/audit.md`。本规范仅要求：**不得用运行日志冒充审计**。
 
+## 日志中心查询架构
+
+- 运行日志继续输出结构化 stdout，由 Loki/OpenSearch 等外部系统采集；AINP 业务数据库不得作为运行日志主存储。
+- 框架层 `framework/logcenter` 定义只读 Provider、来源 Registry、统一 `Entry/Query/Page` 和错误语义；业务模块不得按 Provider 类型分支，也不得透传 Loki/SQL 等原生 DSL。
+- 日志中心不读取任意服务器文件，不返回 Provider 凭证、服务器路径，不提供 Shell、SQL 或命令执行能力。
+- 操作审计、运行日志、JobRun、Outbox Event 各自保持独立事实源，关联只使用稳定 ID，不复制日志正文。
+
+### 租户与平台边界
+
+- tenant realm 只列出声明 `TenantFilter=true` 的 Provider，并强制将 AuthContext `tenant_id` 注入查询；Provider 返回其他租户数据时 fail-closed。
+- PostgreSQL 原始日志、混合租户 Worker 日志等无法证明租户隔离的来源不得暴露给 tenant Action。
+- platform realm 的跨租户入口、权限和 Provider 由后续平台控制台单独实现，不得借用 tenant 入口降级开放。
+
+### 统一查询限制
+
+- 默认最近 15 分钟，最大跨度 24 小时，分页最多 100 条，Provider 超时 5 秒，单次结构化结果最多 1 MiB。
+- 白名单筛选：level、service、component、keyword、request/trace/action ID、job type/run ID、event ID、source。
+- 查询端统一对 password、Token、Authorization、连接串、API Key、证件/银行卡字段脱敏；消息最多 4096 字节，属性值最多 1024 字节。
+- `system.log_source_list/query/get` 使用 `system.operations.logs` 权限组并强制审计。
+
+### 关联跳转协议
+
+日志中心使用 `/operations/logs`，允许后续页面通过 URL query 预填：`source`、`start_at`、`end_at`、`request_id`、`trace_id`、`action_id`、`job_type`、`job_run_id`、`event_id`。这些参数仍经过服务端白名单和范围校验。
+
 ## 检查清单
 
 - [ ] 新代码只通过框架 Logger 打运行日志

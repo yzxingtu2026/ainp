@@ -252,6 +252,7 @@ const local: App.I18n.Schema = {
     operations_outbox: 'Outbox 事件',
     'operations_notification-deliveries': '通知投递',
     'operations_audit-logs': '操作审计',
+    operations_logs: '日志中心',
     setup: '安装向导'
   },
   operations: {
@@ -308,6 +309,20 @@ const local: App.I18n.Schema = {
     requestId: 'Request ID',
     permission: '权限',
     actions: { system_audit_log_list: '审计列表', system_audit_log_get: '审计详情' }
+  },
+  logCenter: {
+    title: '日志中心',
+    detail: '日志详情',
+    noProvider: '暂无可用日志来源，请先配置支持租户隔离的日志 Provider',
+    timestamp: '时间',
+    level: '级别',
+    source: '来源',
+    service: '服务',
+    component: '组件',
+    keyword: '关键词',
+    message: '消息',
+    correlation: '关联标识',
+    attributes: '结构化属性'
   },
   page: {
     setting: {

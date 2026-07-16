@@ -819,6 +819,20 @@ declare namespace App {
         permission: string;
         actions: { system_audit_log_list: string; system_audit_log_get: string };
       };
+      logCenter: {
+        title: string;
+        detail: string;
+        noProvider: string;
+        timestamp: string;
+        level: string;
+        source: string;
+        service: string;
+        component: string;
+        keyword: string;
+        message: string;
+        correlation: string;
+        attributes: string;
+      };
       notificationAdmin: {
         templateTitle: string;
         deliveryTitle: string;

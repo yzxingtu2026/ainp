@@ -160,6 +160,16 @@ export const generatedRoutes: GeneratedRoute[] = [
         }
       },
       {
+        name: 'operations_logs',
+        path: '/operations/logs',
+        component: 'view.operations_logs',
+        meta: {
+          title: 'operations_logs',
+          i18nKey: 'route.operations_logs',
+          hideInMenu: true
+        }
+      },
+      {
         name: 'operations_notification-deliveries',
         path: '/operations/notification-deliveries',
         component: 'view.operations_notification-deliveries',

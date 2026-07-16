@@ -67,3 +67,23 @@ export function fetchAuditLogDetail(id: string) {
     data: { id }
   });
 }
+
+export function fetchLogSources() {
+  return request<{ sources: Api.Operations.LogSource[] }>({
+    url: '/api/v1/operations/logs/sources',
+    method: 'post',
+    data: {}
+  });
+}
+
+export function fetchLogQuery(data: Api.Operations.LogQuery) {
+  return request<Api.Operations.LogPage>({ url: '/api/v1/operations/logs/query', method: 'post', data });
+}
+
+export function fetchLogDetail(source: string, id: string) {
+  return request<{ log_entry: Api.Operations.LogEntry }>({
+    url: '/api/v1/operations/logs/get',
+    method: 'post',
+    data: { source, id }
+  });
+}

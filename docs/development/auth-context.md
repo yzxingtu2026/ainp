@@ -144,6 +144,8 @@ Phase 1 可不实现解析与证书，但 Tenant 模型预留例如：
 运行日志自动带 `tenant_id`、`user_id`、`request_id`、`action_id` 等（见 `logging.md`）。  
 审计事件须含租户与操作者等最小集（见 `audit.md`）。
 
+tenant realm 日志查询只允许使用声明支持可信租户过滤的 Provider，且 `tenant_id` 必须由服务端 AuthContext 注入，不接受客户端上传。无法证明租户隔离的 Worker、数据库或平台日志必须 fail-closed，并留给独立 platform realm 入口。
+
 ## 前端
 
 - 只携带 Token；业务 API 不传「当前 tenant_id」。
@@ -158,6 +160,7 @@ Phase 1 可不实现解析与证书，但 Tenant 模型预留例如：
 - [ ] 正式 JWT 不携带/信任 roles 与 permissions，授权来自当前 Provider 快照
 - [ ] 权限相关写操作与 `auth_version` 递增处于同一事务
 - [ ] Tenant 模型已预留域名字段（即使暂未使用）
+- [ ] tenant 日志 Provider 明确支持可信租户过滤，查询未接受客户端 tenant_id
 
 ## 变更
 

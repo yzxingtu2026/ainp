@@ -11,5 +11,8 @@ export const OPERATIONS_ACTIONS = {
   notificationDeliveryGet: 'operations.notification_delivery_get',
   notificationDeliveryRetry: 'operations.notification_delivery_retry',
   auditLogList: 'system.audit_log_list',
-  auditLogGet: 'system.audit_log_get'
+  auditLogGet: 'system.audit_log_get',
+  logSourceList: 'system.log_source_list',
+  logQuery: 'system.log_query',
+  logGet: 'system.log_get'
 } as const;

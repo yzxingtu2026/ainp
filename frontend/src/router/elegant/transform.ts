@@ -177,6 +177,7 @@ const routeMap: RouteMap = {
   "operations": "/operations",
   "operations_audit-logs": "/operations/audit-logs",
   "operations_jobs": "/operations/jobs",
+  "operations_logs": "/operations/logs",
   "operations_notification-deliveries": "/operations/notification-deliveries",
   "operations_outbox": "/operations/outbox",
   "setup": "/setup",
