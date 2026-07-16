@@ -6,17 +6,11 @@ import (
 	"errors"
 	"time"
 
-	"github.com/yzxingtu2026/ainp/platform/framework/action"
-	"github.com/yzxingtu2026/ainp/platform/framework/app"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 	"github.com/yzxingtu2026/ainp/platform/framework/logcenter"
 )
 
 const (
-	ActionLogSourceList = "system.log_source_list"
-	ActionLogQuery      = "system.log_query"
-	ActionLogGet        = "system.log_get"
-
 	logDefaultRange = 15 * time.Minute
 	logMaxRange     = 24 * time.Hour
 	logQueryTimeout = 5 * time.Second
@@ -186,22 +180,4 @@ func mapLogError(err error) error {
 	default:
 		return errs.NewKey(errs.CodeInternal, "logs.unavailable", "log provider unavailable")
 	}
-}
-
-func registerLogActions(a *app.App) error {
-	svc := NewLogService(a.LogProviders)
-	auditOn := true
-	for _, spec := range []struct {
-		id, path, name, nameKey, desc, descKey string
-		handler                                action.Handler
-	}{
-		{ActionLogSourceList, "/api/v1/operations/logs/sources", "日志来源", "action.system.log_source_list.name", "列出当前租户可用日志来源", "action.system.log_source_list.description", action.JSON(svc.sources)},
-		{ActionLogQuery, "/api/v1/operations/logs/query", "日志查询", "action.system.log_query.name", "查询当前租户结构化运行日志", "action.system.log_query.description", action.JSON(svc.query)},
-		{ActionLogGet, "/api/v1/operations/logs/get", "日志详情", "action.system.log_get.name", "查询当前租户结构化日志详情", "action.system.log_get.description", action.JSON(svc.get)},
-	} {
-		if err := a.RegisterAction(action.Action{ID: spec.id, Handler: spec.handler, Meta: action.Metadata{Capability: "operations", Name: spec.name, NameKey: spec.nameKey, Description: spec.desc, DescriptionKey: spec.descKey, PermissionGroup: "system.operations.logs", PermissionGroupName: "日志中心", PermissionGroupNameKey: "permission_group.system.operations.logs", Audit: &auditOn, HTTP: &action.HTTPMeta{Method: "POST", Path: spec.path}}}); err != nil {
-			return err
-		}
-	}
-	return nil
 }

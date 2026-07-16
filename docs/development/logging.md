@@ -117,11 +117,11 @@ logging.Error(ctx, "purchase create failed", err, "purchase_id", id)
 - 默认最近 15 分钟，最大跨度 24 小时，分页最多 100 条，Provider 超时 5 秒，单次结构化结果最多 1 MiB。
 - 白名单筛选：level、service、component、keyword、request/trace/action ID、job type/run ID、event ID、source。
 - 查询端统一对 password、Token、Authorization、连接串、API Key、证件/银行卡字段脱敏；消息最多 4096 字节，属性值最多 1024 字节。
-- `system.log_source_list/query/get` 使用 `system.operations.logs` 权限组并强制审计。
+- 当前阶段不注册日志中心 Action、HTTP API、权限组或菜单；只保留 `framework/logcenter` Provider 协议、脱敏能力与前端页面骨架。恢复产品入口必须另开 Issue，并重新评估可信 Provider、租户隔离与审计边界。
 
 ### 关联跳转协议
 
-日志中心使用 `/operations/logs`，允许后续页面通过 URL query 预填：`source`、`start_at`、`end_at`、`request_id`、`trace_id`、`action_id`、`job_type`、`job_run_id`、`event_id`。这些参数仍经过服务端白名单和范围校验。
+保留页面骨架 `/operations/logs` 仅用于未来恢复开发；当前没有菜单与后端 API，不属于可用产品入口。未来恢复时，URL query 预填参数仍必须经过服务端白名单和范围校验。
 
 ## 检查清单
 

@@ -32,14 +32,12 @@ func TestOperationsMetadataKeepsPermissionsAndSplitsGroups(t *testing.T) {
 		system.ActionNotificationTemplateList:     "system.notification_configuration",
 		operations.ActionNotificationDeliveryList: "operations.notification_delivery",
 		operations.ActionAuditLogList:             "system.operations.audit",
-		operations.ActionLogQuery:                 "system.operations.logs",
 	}
 	wantPaths := map[string]string{
 		operations.ActionJobList:                  "/api/v1/operations/jobs/list",
 		operations.ActionOutboxList:               "/api/v1/operations/outbox/list",
 		operations.ActionNotificationDeliveryList: "/api/v1/operations/notification-deliveries/list",
 		operations.ActionAuditLogList:             "/api/v1/operations/audit-logs/list",
-		operations.ActionLogQuery:                 "/api/v1/operations/logs/query",
 	}
 	for id, group := range wantGroups {
 		registered, ok := application.Actions.Get(id)
@@ -75,11 +73,18 @@ func TestOperationsMetadataKeepsPermissionsAndSplitsGroups(t *testing.T) {
 		"operations.outbox":                  {"operations.root", operations.ActionOutboxList, "mdi:tray-arrow-up"},
 		"operations.notification_deliveries": {"operations.root", operations.ActionNotificationDeliveryList, "mdi:truck-delivery-outline"},
 		"operations.audit_logs":              {"operations.root", operations.ActionAuditLogList, "mdi:text-box-search-outline"},
-		"operations.logs":                    {"operations.root", operations.ActionLogQuery, "mdi:file-search-outline"},
 	} {
 		if menus[id] != want {
 			t.Fatalf("menu %s=%#v want=%#v", id, menus[id], want)
 		}
+	}
+	for _, actionID := range []string{"system.log_source_list", "system.log_query", "system.log_get"} {
+		if _, ok := application.Actions.Get(actionID); ok {
+			t.Fatalf("log center action must not be registered: %s", actionID)
+		}
+	}
+	if _, ok := menus["operations.logs"]; ok {
+		t.Fatal("log center menu must not be registered")
 	}
 }
 
