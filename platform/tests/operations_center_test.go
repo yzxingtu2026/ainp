@@ -97,4 +97,20 @@ func TestOutboxListFiltersAndKeepsTenantScope(t *testing.T) {
 	if data["total"].(int64) != 1 || len(items) != 1 || items[0].ID != "t1-a" {
 		t.Fatalf("unexpected tenant-scoped list: %#v", data)
 	}
+	encoded, err := json.Marshal(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload struct {
+		Items []map[string]any `json:"items"`
+	}
+	if err := json.Unmarshal(encoded, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.Items) != 1 || payload.Items[0]["id"] != "t1-a" || payload.Items[0]["event_type"] != "demo.a.v1" || payload.Items[0]["status"] != "failed" {
+		t.Fatalf("unexpected outbox JSON contract: %s", encoded)
+	}
+	if _, exposed := payload.Items[0]["TenantID"]; exposed {
+		t.Fatalf("outbox JSON must use explicit public fields: %s", encoded)
+	}
 }
