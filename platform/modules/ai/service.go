@@ -18,6 +18,7 @@ import (
 const enabled = "enabled"
 
 var codePattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{1,63}$`)
+var aliasCodePattern = regexp.MustCompile(`^[a-z][a-z0-9._-]{0,63}$`)
 
 func credentialAAD(tenantID, providerID string) []byte {
 	return []byte("ai-provider:" + tenantID + ":" + providerID)
@@ -115,6 +116,12 @@ type AliasUpsertRequest struct {
 	Code         string `json:"code" validate:"required"`
 	DeploymentID string `json:"deployment_id" validate:"required"`
 }
+
+func (r *AliasUpsertRequest) Normalize() {
+	r.Code = strings.TrimSpace(r.Code)
+	r.DeploymentID = strings.TrimSpace(r.DeploymentID)
+}
+
 type AliasDeleteRequest struct {
 	Code string `json:"code" validate:"required"`
 }
@@ -427,11 +434,13 @@ func (s *Service) UpsertAlias(ctx context.Context, r AliasUpsertRequest) (any, e
 	if e != nil {
 		return nil, e
 	}
-	if !codePattern.MatchString(r.Code) {
-		return nil, errs.Validation("invalid alias code")
+	if !aliasCodePattern.MatchString(r.Code) {
+		return nil, errs.ValidationKey("common.validation_failed", "invalid alias code", errs.FieldError{Field: "code", Message: "must start with a lowercase letter and contain only lowercase letters, digits, dot, underscore or hyphen", MessageKey: "validation.invalid"})
 	}
 	var n int64
-	s.db.WithContext(ctx).Model(&Deployment{}).Where("tenant_id=? AND id=?", tid, r.DeploymentID).Count(&n)
+	if e = s.db.WithContext(ctx).Model(&Deployment{}).Where("tenant_id=? AND id=?", tid, r.DeploymentID).Count(&n).Error; e != nil {
+		return nil, dbError(e, "check alias deployment")
+	}
 	if n == 0 {
 		return nil, errs.New(errs.CodeNotFound, "deployment not found")
 	}
