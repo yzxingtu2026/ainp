@@ -244,11 +244,41 @@ const local: App.I18n.Schema = {
     system_roles: '角色管理',
     system_settings: '系统设置',
     system_attachments: '附件中心',
-    'system_notification-deliveries': '投递记录',
     'system_notification-templates': '通知模板',
     notification: '通知',
     notification_list: '通知列表',
+    operations: '运维',
+    operations_jobs: '任务运行',
+    operations_outbox: 'Outbox 事件',
+    'operations_notification-deliveries': '通知投递',
     setup: '安装向导'
+  },
+  operations: {
+    jobsTitle: '任务运行',
+    outboxTitle: 'Outbox 事件',
+    jobDetail: '任务详情',
+    outboxDetail: '事件详情',
+    jobType: '任务类型',
+    eventType: '事件类型',
+    aggregate: '聚合对象',
+    statusLabel: '状态',
+    progress: '进度',
+    attempts: '尝试次数',
+    createdAt: '创建时间',
+    updatedAt: '更新时间',
+    occurredAt: '发生时间',
+    cancelJob: '取消',
+    retry: '重试',
+    confirmAction: '确认执行此操作？',
+    success: '操作成功',
+    error: '错误信息',
+    payload: '事件载荷',
+    handler: 'Handler',
+    status: {
+      pending_enqueue: '待入队', queued: '已入队', running: '运行中', retrying: '重试中',
+      succeeded: '成功', failed: '失败', dead: '死信', cancelled: '已取消',
+      pending: '待处理', processing: '处理中', published: '已发布'
+    }
   },
   page: {
     setting: {

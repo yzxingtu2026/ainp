@@ -28,10 +28,13 @@ declare module "@elegant-router/types" {
     "login": "/login/:module(pwd-login|code-login|register|reset-pwd|bind-wechat)?";
     "notification": "/notification";
     "notification_list": "/notification/list";
+    "operations": "/operations";
+    "operations_jobs": "/operations/jobs";
+    "operations_notification-deliveries": "/operations/notification-deliveries";
+    "operations_outbox": "/operations/outbox";
     "setup": "/setup";
     "system": "/system";
     "system_attachments": "/system/attachments";
-    "system_notification-deliveries": "/system/notification-deliveries";
     "system_notification-templates": "/system/notification-templates";
     "system_profile": "/system/profile";
     "system_roles": "/system/roles";
@@ -76,6 +79,7 @@ declare module "@elegant-router/types" {
     | "iframe-page"
     | "login"
     | "notification"
+    | "operations"
     | "setup"
     | "system"
   >;
@@ -104,8 +108,10 @@ declare module "@elegant-router/types" {
     | "demo_hello"
     | "home"
     | "notification_list"
+    | "operations_jobs"
+    | "operations_notification-deliveries"
+    | "operations_outbox"
     | "system_attachments"
-    | "system_notification-deliveries"
     | "system_notification-templates"
     | "system_profile"
     | "system_roles"

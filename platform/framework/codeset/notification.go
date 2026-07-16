@@ -20,7 +20,7 @@ func NotificationRequestStatus() CodeSet {
 // NotificationDeliveryStatus returns the CodeSet for notification delivery lifecycle.
 func NotificationDeliveryStatus() CodeSet {
 	return CodeSet{
-		Key:     "system.notification_delivery_status",
+		Key:     "operations.notification_delivery_status",
 		NameKey: "codeset.notification_delivery_status.name",
 		Items: []CodeItem{
 			{Value: string(notification.DeliveryPending), Label: "Pending", LabelKey: "codeset.notification_delivery_status.pending", Semantic: SemanticDefault},

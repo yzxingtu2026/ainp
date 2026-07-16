@@ -34,7 +34,11 @@ export function setupElegantRouter() {
         'system_profile',
         'system_attachments',
         'notification',
-        'notification_list'
+        'notification_list',
+        'operations',
+        'operations_jobs',
+        'operations_outbox',
+        'operations_notification-deliveries'
       ];
 
       const meta: Partial<RouteMeta> = {

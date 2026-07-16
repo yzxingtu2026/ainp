@@ -88,7 +88,7 @@ func (r *Registry) List() []Menu {
 // HideInMenu 的菜单仍返回给前端用于路由注册，前端通过 hideInMenu meta 控制侧栏隐藏。
 func (r *Registry) TreeForUser(realm auth.Realm, hasPerm func(string) bool) []Menu {
 	all := r.List()
-	out := make([]Menu, 0, len(all))
+	visible := make(map[string]Menu, len(all))
 	for _, m := range all {
 		if m.Surface != auth.NormalizeRealm(realm) {
 			continue
@@ -99,7 +99,33 @@ func (r *Registry) TreeForUser(realm auth.Realm, hasPerm func(string) bool) []Me
 		if m.Permission != "" && hasPerm != nil && !hasPerm(m.Permission) {
 			continue
 		}
-		out = append(out, m)
+		visible[m.ID] = m
+	}
+	changed := true
+	for changed {
+		changed = false
+		for id, m := range visible {
+			if m.Type != TypeDirectory {
+				continue
+			}
+			hasChild := false
+			for _, child := range visible {
+				if child.ParentID == id {
+					hasChild = true
+					break
+				}
+			}
+			if !hasChild {
+				delete(visible, id)
+				changed = true
+			}
+		}
+	}
+	out := make([]Menu, 0, len(visible))
+	for _, m := range all {
+		if _, ok := visible[m.ID]; ok {
+			out = append(out, m)
+		}
 	}
 	return out
 }

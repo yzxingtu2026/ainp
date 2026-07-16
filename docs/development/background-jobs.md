@@ -44,7 +44,7 @@ jobs:
 
 ## 运维 Action
 
-`system.job_list` / `job_get` / `job_cancel` / `job_retry`（取消与重试审计；不可改 Payload）。
+`operations.job_list` / `job_get` / `job_cancel` / `job_retry`（取消与重试审计；不可改 Payload）。
 
 ## Demo
 

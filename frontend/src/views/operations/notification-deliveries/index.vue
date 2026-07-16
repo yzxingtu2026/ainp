@@ -6,20 +6,23 @@ import {
   NDrawer, NDrawerContent, NEmpty, NPagination, NPopconfirm, NSelect, NSpace, NTag
 } from 'naive-ui';
 import { $t } from '@/locales';
+import { useAuth } from '@/hooks/business/auth';
+import { OPERATIONS_ACTIONS } from '@/constants/operations';
 import { fetchDeliveryDetail, fetchDeliveryList, fetchRetryDelivery } from '@/service/api';
 import { formatDateTime } from '@/utils/datetime';
 
-defineOptions({ name: 'SystemNotificationDeliveries' });
+defineOptions({ name: 'OperationsNotificationDeliveries' });
+const { hasAuth } = useAuth();
 
 const loading = ref(false);
-const records = ref<Api.Notification.DeliveryItem[]>([]);
+const records = ref<Api.Operations.DeliveryItem[]>([]);
 const total = ref(0);
 const query = reactive({ current: 1, size: 20, status: '', channel: '' });
 
 // Drawer state
 const drawerVisible = ref(false);
 const drawerLoading = ref(false);
-const detail = ref<Api.Notification.DeliveryDetail | null>(null);
+const detail = ref<Api.Operations.DeliveryDetail | null>(null);
 
 const statusTagType: Record<string, 'error' | 'warning' | 'success' | 'default'> = {
   failed: 'error',
@@ -64,7 +67,7 @@ const channelOptions = computed(() =>
   }))
 );
 
-const columns = computed<DataTableColumns<Api.Notification.DeliveryItem>>(() => [
+const columns = computed<DataTableColumns<Api.Operations.DeliveryItem>>(() => [
   {
     title: $t('notificationAdmin.colChannel'),
     key: 'channel',
@@ -109,12 +112,16 @@ const columns = computed<DataTableColumns<Api.Notification.DeliveryItem>>(() => 
     render: row =>
       h(NSpace, null, {
         default: () => [
-          h(
-            NButton,
-            { size: 'small', type: 'info', ghost: true, onClick: () => openDetail(row) },
-            { default: () => $t('common.detail') }
-          ),
-          ...(row.status === 'failed' || row.status === 'dead'
+          ...(hasAuth(OPERATIONS_ACTIONS.notificationDeliveryGet)
+            ? [
+                h(
+                  NButton,
+                  { size: 'small', type: 'info', ghost: true, onClick: () => openDetail(row) },
+                  { default: () => $t('common.detail') }
+                )
+              ]
+            : []),
+          ...(hasAuth(OPERATIONS_ACTIONS.notificationDeliveryRetry) && (row.status === 'failed' || row.status === 'dead')
             ? [
                 h(
                   NPopconfirm,
@@ -149,7 +156,7 @@ async function loadList() {
   }
 }
 
-async function openDetail(row: Api.Notification.DeliveryItem) {
+async function openDetail(row: Api.Operations.DeliveryItem) {
   drawerVisible.value = true;
   drawerLoading.value = true;
   detail.value = null;
@@ -163,7 +170,7 @@ async function openDetail(row: Api.Notification.DeliveryItem) {
   }
 }
 
-async function handleRetry(row: Api.Notification.DeliveryItem) {
+async function handleRetry(row: Api.Operations.DeliveryItem) {
   const res = await fetchRetryDelivery(row.id);
   if (!res.error) {
     window.$message?.success($t('notificationAdmin.retrySuccess'));

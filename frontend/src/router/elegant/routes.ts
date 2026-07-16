@@ -130,6 +130,48 @@ export const generatedRoutes: GeneratedRoute[] = [
     ]
   },
   {
+    name: 'operations',
+    path: '/operations',
+    component: 'layout.base',
+    meta: {
+      title: 'operations',
+      i18nKey: 'route.operations',
+      hideInMenu: true
+    },
+    children: [
+      {
+        name: 'operations_jobs',
+        path: '/operations/jobs',
+        component: 'view.operations_jobs',
+        meta: {
+          title: 'operations_jobs',
+          i18nKey: 'route.operations_jobs',
+          hideInMenu: true
+        }
+      },
+      {
+        name: 'operations_notification-deliveries',
+        path: '/operations/notification-deliveries',
+        component: 'view.operations_notification-deliveries',
+        meta: {
+          title: 'operations_notification-deliveries',
+          i18nKey: 'route.operations_notification-deliveries',
+          hideInMenu: true
+        }
+      },
+      {
+        name: 'operations_outbox',
+        path: '/operations/outbox',
+        component: 'view.operations_outbox',
+        meta: {
+          title: 'operations_outbox',
+          i18nKey: 'route.operations_outbox',
+          hideInMenu: true
+        }
+      }
+    ]
+  },
+  {
     name: 'setup',
     path: '/setup',
     component: 'layout.blank$view.setup',
@@ -158,15 +200,6 @@ export const generatedRoutes: GeneratedRoute[] = [
           title: 'system_attachments',
           i18nKey: 'route.system_attachments',
           hideInMenu: true
-        }
-      },
-      {
-        name: 'system_notification-deliveries',
-        path: '/system/notification-deliveries',
-        component: 'view.system_notification-deliveries',
-        meta: {
-          title: 'system_notification-deliveries',
-          i18nKey: 'route.system_notification-deliveries'
         }
       },
       {

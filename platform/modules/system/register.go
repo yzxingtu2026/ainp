@@ -91,12 +91,6 @@ func Register(a *app.App) error {
 	if err := registerAttachmentActions(a, attachSvc); err != nil {
 		return err
 	}
-	if err := registerOutboxActions(a); err != nil {
-		return err
-	}
-	if err := registerJobActions(a); err != nil {
-		return err
-	}
 	if err := jobs.Register(a); err != nil {
 		return err
 	}

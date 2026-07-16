@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
+	"github.com/yzxingtu2026/ainp/platform/framework/asynqadapter"
 	"github.com/yzxingtu2026/ainp/platform/framework/attachment"
 	"github.com/yzxingtu2026/ainp/platform/framework/audit"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
@@ -12,12 +13,12 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/database"
 	"github.com/yzxingtu2026/ainp/platform/framework/i18n"
 	"github.com/yzxingtu2026/ainp/platform/framework/job"
-	"github.com/yzxingtu2026/ainp/platform/framework/asynqadapter"
 	"github.com/yzxingtu2026/ainp/platform/framework/logging"
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
 	"github.com/yzxingtu2026/ainp/platform/framework/state"
 	"github.com/yzxingtu2026/ainp/platform/framework/storage"
 	"github.com/yzxingtu2026/ainp/platform/modules/demo"
+	"github.com/yzxingtu2026/ainp/platform/modules/operations"
 	"github.com/yzxingtu2026/ainp/platform/modules/system"
 	"gorm.io/gorm"
 )
@@ -136,6 +137,9 @@ func OpenInstalled(ctx context.Context, cfg *config.Config) (*Platform, error) {
 	}
 	if err := system.Register(application); err != nil {
 		return nil, fmt.Errorf("register system: %w", err)
+	}
+	if err := operations.Register(application, system.NewOperationsNotificationDeliveryService(application)); err != nil {
+		return nil, fmt.Errorf("register operations: %w", err)
 	}
 	if err := demo.Register(application); err != nil {
 		return nil, fmt.Errorf("register demo: %w", err)

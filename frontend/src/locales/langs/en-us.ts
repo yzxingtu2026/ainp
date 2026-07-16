@@ -248,11 +248,41 @@ const local: App.I18n.Schema = {
     system_roles: 'Roles',
     system_settings: 'Settings',
     system_attachments: 'Attachments',
-    'system_notification-deliveries': 'Delivery Records',
     'system_notification-templates': 'Notification Templates',
     notification: 'Notifications',
     notification_list: 'Notification List',
+    operations: 'Operations',
+    operations_jobs: 'Job Runs',
+    operations_outbox: 'Outbox Events',
+    'operations_notification-deliveries': 'Notification Deliveries',
     setup: 'Setup'
+  },
+  operations: {
+    jobsTitle: 'Job Runs',
+    outboxTitle: 'Outbox Events',
+    jobDetail: 'Job Details',
+    outboxDetail: 'Event Details',
+    jobType: 'Job Type',
+    eventType: 'Event Type',
+    aggregate: 'Aggregate',
+    statusLabel: 'Status',
+    progress: 'Progress',
+    attempts: 'Attempts',
+    createdAt: 'Created At',
+    updatedAt: 'Updated At',
+    occurredAt: 'Occurred At',
+    cancelJob: 'Cancel',
+    retry: 'Retry',
+    confirmAction: 'Confirm this operation?',
+    success: 'Operation succeeded',
+    error: 'Error',
+    payload: 'Payload',
+    handler: 'Handler',
+    status: {
+      pending_enqueue: 'Pending Enqueue', queued: 'Queued', running: 'Running', retrying: 'Retrying',
+      succeeded: 'Succeeded', failed: 'Failed', dead: 'Dead', cancelled: 'Cancelled',
+      pending: 'Pending', processing: 'Processing', published: 'Published'
+    }
   },
   page: {
     setting: {
