@@ -18,6 +18,7 @@
 - 业务逻辑下沉到服务/领域/公共模块，不堆在路由或 UI 事件里。
 - 关键流程用统一日志，禁止零散 `print`（见 `logging`）。
 - API 信封与错误码见 `api-response`。
+- 强类型请求 DTO 与验证分层见 `validation`；列表查询接入边界见 `list-query`。
 - Action / 菜单注册见 `action-metadata`。
 - 多租户与鉴权上下文见 `auth-context`。
 - 审计最小集见 `audit`。
@@ -53,6 +54,8 @@
 - `icon-library` → `docs/development/icon-library.md`
 - `logging` → `docs/development/logging.md`
 - `api-response` → `docs/development/api-response.md`
+- `validation` → `docs/development/validation.md`
+- `list-query` → `docs/development/list-query.md`
 - `action-metadata` → `docs/development/action-metadata.md`
 - `auth-context` → `docs/development/auth-context.md`
 - `audit` → `docs/development/audit.md`

@@ -100,9 +100,9 @@ func Register(a *app.App) error {
 
 	if err := a.RegisterAction(action.Action{
 		ID: "system.auth_login",
-		Handler: func(ctx context.Context, input json.RawMessage) (any, error) {
-			return svc.Login(ctx, a.Tokens, input)
-		},
+		Handler: action.JSON(func(ctx context.Context, input loginRequest) (any, error) {
+			return svc.login(ctx, a.Tokens, input)
+		}),
 		Meta: action.Metadata{
 			Capability:     "system",
 			Access:         action.AccessPublic,

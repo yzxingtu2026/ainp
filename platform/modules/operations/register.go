@@ -22,6 +22,20 @@ type NotificationDeliveryService interface {
 	Retry(context.Context, json.RawMessage) (any, error)
 }
 
+type notificationDeliveryIDRequest struct {
+	ID string `json:"id" validate:"required"`
+}
+
+func typedNotificationDeliveryID(handler func(context.Context, json.RawMessage) (any, error)) action.Handler {
+	return action.JSON(func(ctx context.Context, request notificationDeliveryIDRequest) (any, error) {
+		input, err := json.Marshal(request)
+		if err != nil {
+			return nil, err
+		}
+		return handler(ctx, input)
+	})
+}
+
 func Register(a *app.App, deliveries NotificationDeliveryService) error {
 	if err := a.RegisterCapability(capability.Capability{
 		ID: "operations", Name: "运维", NameKey: "capability.operations.name",
@@ -52,8 +66,8 @@ func registerNotificationDeliveryActions(a *app.App, svc NotificationDeliverySer
 		handler                                func(context.Context, json.RawMessage) (any, error)
 	}{
 		{ActionNotificationDeliveryList, "/api/v1/operations/notification-deliveries/list", "投递列表", "action.operations.notification_delivery_list.name", "查询通知投递记录", "action.operations.notification_delivery_list.description", &auditOff, svc.List},
-		{ActionNotificationDeliveryGet, "/api/v1/operations/notification-deliveries/get", "投递详情", "action.operations.notification_delivery_get.name", "查询通知投递详情", "action.operations.notification_delivery_get.description", &auditOff, svc.Get},
-		{ActionNotificationDeliveryRetry, "/api/v1/operations/notification-deliveries/retry", "重试投递", "action.operations.notification_delivery_retry.name", "重试失败通知投递", "action.operations.notification_delivery_retry.description", &auditOn, svc.Retry},
+		{ActionNotificationDeliveryGet, "/api/v1/operations/notification-deliveries/get", "投递详情", "action.operations.notification_delivery_get.name", "查询通知投递详情", "action.operations.notification_delivery_get.description", &auditOff, typedNotificationDeliveryID(svc.Get)},
+		{ActionNotificationDeliveryRetry, "/api/v1/operations/notification-deliveries/retry", "重试投递", "action.operations.notification_delivery_retry.name", "重试失败通知投递", "action.operations.notification_delivery_retry.description", &auditOn, typedNotificationDeliveryID(svc.Retry)},
 	}
 	for _, spec := range specs {
 		if err := a.RegisterAction(action.Action{ID: spec.id, Handler: spec.handler, Meta: action.Metadata{

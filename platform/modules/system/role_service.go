@@ -42,27 +42,27 @@ type roleListRequest struct {
 }
 
 type roleIDRequest struct {
-	ID string `json:"id"`
+	ID string `json:"id" validate:"required"`
 }
 
 type roleCreateRequest struct {
-	Code        string                  `json:"code"`
-	Name        string                  `json:"name"`
+	Code        string                  `json:"code" validate:"required,min=2,max=64"`
+	Name        string                  `json:"name" validate:"required,max=128"`
 	Description string                  `json:"description"`
-	Status      status.ActivationStatus `json:"status"`
-	Permissions []string                `json:"permissions"`
+	Status      status.ActivationStatus `json:"status" validate:"omitempty,oneof=enabled disabled"`
+	Permissions []string                `json:"permissions" validate:"max=200,dive,required"`
 }
 
 type roleUpdateRequest struct {
-	ID          string                  `json:"id"`
-	Name        string                  `json:"name"`
+	ID          string                  `json:"id" validate:"required"`
+	Name        string                  `json:"name" validate:"required,max=128"`
 	Description string                  `json:"description"`
-	Status      status.ActivationStatus `json:"status"`
+	Status      status.ActivationStatus `json:"status" validate:"required,oneof=enabled disabled"`
 }
 
 type rolePermissionsRequest struct {
-	ID          string   `json:"id"`
-	Permissions []string `json:"permissions"`
+	ID          string   `json:"id" validate:"required"`
+	Permissions []string `json:"permissions" validate:"max=200,dive,required"`
 }
 
 type RoleView struct {

@@ -7,6 +7,7 @@
 - `code == 0` 成功；业务可预期失败用 **HTTP 200 + `code != 0`**；401/403/429/5xx 等协议/系统问题用对应 HTTP。
 - 资源不存在用业务码（如 `10004`）+ HTTP 200，不用裸 404 表示领域资源缺失。
 - Handler 经框架 `AppError` / `response.OK|Fail` 出口；错误码按分段常量，禁止魔法数。
+- 请求验证错误必须是 `CodeValidation` + `common.validation_failed` + `AppError.Fields`；字段名使用 JSON 路径，字段文案使用稳定 `validation.*` key。
 - 新业务错误使用 `errs.NewKey(code, key, fallback)`；业务 handler 用 `i18n.FromCtx(ctx)` + `i18n.T(lang, key)`。
 
 详规：`docs/development/api-response.md`

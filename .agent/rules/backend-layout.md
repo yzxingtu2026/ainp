@@ -8,6 +8,7 @@
 - 对象存储在 `framework/storage`（ObjectStore）；禁止业务拼本地路径，见 `object-storage`。
 - Transactional Outbox 在 `framework/outbox`；业务只经 EventWriter 写事件，见 `transactional-outbox`。
 - 后台 Job 在 `framework/job` + `asynqadapter`；业务禁止直连 Asynq，见 `background-jobs`。
+- 通用请求结构校验在 `framework/validation`；领域、数据库、权限与租户规则保留在 `modules/*` Service。
 - Job / Outbox / 通知投递管理 Action、API、菜单统一归 `modules/operations` 与 `operations.*` 语义；领域服务通过接口注入，`operations` 禁止反向依赖 `system`。
 - 后端 `_test.go` 统一放在 `platform/tests/`，使用外部测试包通过公开 API 测试；禁止散落到 `framework/*`、`modules/*`。
 

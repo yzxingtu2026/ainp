@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"strings"
 	"time"
 
 	"github.com/yzxingtu2026/ainp/platform/framework/action"
@@ -13,6 +12,10 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/job"
 	"github.com/yzxingtu2026/ainp/platform/framework/status"
 )
+
+type jobIDRequest struct {
+	ID string `json:"id" validate:"required"`
+}
 
 const (
 	ActionJobList   = "operations.job_list"
@@ -65,18 +68,12 @@ func (s *JobService) List(ctx context.Context, input json.RawMessage) (any, erro
 	return map[string]any{"items": rows, "total": total, "current": req.Current, "size": req.Size}, nil
 }
 
-func (s *JobService) Get(ctx context.Context, input json.RawMessage) (any, error) {
+func (s *JobService) get(ctx context.Context, req jobIDRequest) (any, error) {
 	if err := s.require(); err != nil {
 		return nil, err
 	}
 	if _, err := requireTenant(ctx); err != nil {
 		return nil, err
-	}
-	var req struct {
-		ID string `json:"id"`
-	}
-	if err := json.Unmarshal(input, &req); err != nil || strings.TrimSpace(req.ID) == "" {
-		return nil, errs.ValidationKey("common.validation_failed", "id required")
 	}
 	run, err := s.store.Get(ctx, req.ID)
 	if err != nil {
@@ -88,19 +85,13 @@ func (s *JobService) Get(ctx context.Context, input json.RawMessage) (any, error
 	return map[string]any{"job": run}, nil
 }
 
-func (s *JobService) Cancel(ctx context.Context, input json.RawMessage) (any, error) {
+func (s *JobService) cancel(ctx context.Context, req jobIDRequest) (any, error) {
 	if err := s.require(); err != nil {
 		return nil, err
 	}
 	ac, err := requireTenant(ctx)
 	if err != nil {
 		return nil, err
-	}
-	var req struct {
-		ID string `json:"id"`
-	}
-	if err := json.Unmarshal(input, &req); err != nil || strings.TrimSpace(req.ID) == "" {
-		return nil, errs.ValidationKey("common.validation_failed", "id required")
 	}
 	if err := s.store.MarkCancelRequested(ctx, req.ID); err != nil {
 		if errors.Is(err, job.ErrConflict) {
@@ -114,7 +105,7 @@ func (s *JobService) Cancel(ctx context.Context, input json.RawMessage) (any, er
 	return map[string]any{"id": req.ID, "cancel_requested": true}, nil
 }
 
-func (s *JobService) Retry(ctx context.Context, input json.RawMessage) (any, error) {
+func (s *JobService) retry(ctx context.Context, req jobIDRequest) (any, error) {
 	if err := s.require(); err != nil {
 		return nil, err
 	}
@@ -124,12 +115,6 @@ func (s *JobService) Retry(ctx context.Context, input json.RawMessage) (any, err
 	ac, err := requireTenant(ctx)
 	if err != nil {
 		return nil, err
-	}
-	var req struct {
-		ID string `json:"id"`
-	}
-	if err := json.Unmarshal(input, &req); err != nil || strings.TrimSpace(req.ID) == "" {
-		return nil, errs.ValidationKey("common.validation_failed", "id required")
 	}
 	old, err := s.store.Get(ctx, req.ID)
 	if err != nil {
@@ -171,9 +156,9 @@ func registerJobActions(a *app.App) error {
 		handler                                func(context.Context, json.RawMessage) (any, error)
 	}{
 		{ActionJobList, "/api/v1/operations/jobs/list", "任务列表", "action.operations.job_list.name", "分页查询当前租户 Job", "action.operations.job_list.description", &auditOff, svc.List},
-		{ActionJobGet, "/api/v1/operations/jobs/get", "任务详情", "action.operations.job_get.name", "查询 JobRun 详情", "action.operations.job_get.description", &auditOff, svc.Get},
-		{ActionJobCancel, "/api/v1/operations/jobs/cancel", "取消任务", "action.operations.job_cancel.name", "协作式请求取消", "action.operations.job_cancel.description", &auditOn, svc.Cancel},
-		{ActionJobRetry, "/api/v1/operations/jobs/retry", "重试任务", "action.operations.job_retry.name", "对 failed/dead 新建重试 JobRun", "action.operations.job_retry.description", &auditOn, svc.Retry},
+		{ActionJobGet, "/api/v1/operations/jobs/get", "任务详情", "action.operations.job_get.name", "查询 JobRun 详情", "action.operations.job_get.description", &auditOff, action.JSON(svc.get)},
+		{ActionJobCancel, "/api/v1/operations/jobs/cancel", "取消任务", "action.operations.job_cancel.name", "协作式请求取消", "action.operations.job_cancel.description", &auditOn, action.JSON(svc.cancel)},
+		{ActionJobRetry, "/api/v1/operations/jobs/retry", "重试任务", "action.operations.job_retry.name", "对 failed/dead 新建重试 JobRun", "action.operations.job_retry.description", &auditOn, action.JSON(svc.retry)},
 	}
 	for _, spec := range specs {
 		if err := a.RegisterAction(action.Action{

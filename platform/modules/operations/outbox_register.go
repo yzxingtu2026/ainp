@@ -23,6 +23,10 @@ const (
 	ActionOutboxRetry          = "operations.outbox_retry"
 )
 
+type outboxEventIDRequest struct {
+	EventID string `json:"event_id" validate:"required"`
+}
+
 func (s *OutboxService) List(ctx context.Context, input json.RawMessage) (any, error) {
 	if _, err := requireTenant(ctx); err != nil {
 		return nil, err
@@ -108,15 +112,9 @@ func (s *OutboxService) Summary(ctx context.Context, _ json.RawMessage) (any, er
 	}, nil
 }
 
-func (s *OutboxService) ListDeliveries(ctx context.Context, input json.RawMessage) (any, error) {
+func (s *OutboxService) listDeliveries(ctx context.Context, req outboxEventIDRequest) (any, error) {
 	if _, err := requireTenant(ctx); err != nil {
 		return nil, err
-	}
-	var req struct {
-		EventID string `json:"event_id"`
-	}
-	if err := json.Unmarshal(input, &req); err != nil || strings.TrimSpace(req.EventID) == "" {
-		return nil, errs.ValidationKey("common.validation_failed", "event_id required")
 	}
 	var ev outbox.Event
 	if err := s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).
@@ -149,16 +147,10 @@ func (s *OutboxService) ListDeliveries(ctx context.Context, input json.RawMessag
 	}, nil
 }
 
-func (s *OutboxService) Retry(ctx context.Context, input json.RawMessage) (any, error) {
+func (s *OutboxService) retry(ctx context.Context, req outboxEventIDRequest) (any, error) {
 	ac, err := requireTenant(ctx)
 	if err != nil {
 		return nil, err
-	}
-	var req struct {
-		EventID string `json:"event_id"`
-	}
-	if err := json.Unmarshal(input, &req); err != nil || strings.TrimSpace(req.EventID) == "" {
-		return nil, errs.ValidationKey("common.validation_failed", "event_id required")
 	}
 	var ev outbox.Event
 	if err := s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).
@@ -196,8 +188,8 @@ func registerOutboxActions(a *app.App) error {
 	}{
 		{ActionOutboxList, "/api/v1/operations/outbox/list", "Outbox 事件列表", "action.operations.outbox_list.name", "分页查询租户 Outbox 事件", "action.operations.outbox_list.description", &auditOff, svc.List},
 		{ActionOutboxSummary, "/api/v1/operations/outbox/summary", "Outbox 摘要", "action.operations.outbox_summary.name", "查询租户 Outbox 状态计数", "action.operations.outbox_summary.description", &auditOff, svc.Summary},
-		{ActionOutboxListDeliveries, "/api/v1/operations/outbox/deliveries", "Outbox 投递记录", "action.operations.outbox_list_deliveries.name", "查看事件 Handler 投递状态", "action.operations.outbox_list_deliveries.description", &auditOff, svc.ListDeliveries},
-		{ActionOutboxRetry, "/api/v1/operations/outbox/retry", "重试 Outbox 事件", "action.operations.outbox_retry.name", "将 failed/dead 事件重置为 pending（不可改 payload）", "action.operations.outbox_retry.description", &auditOn, svc.Retry},
+		{ActionOutboxListDeliveries, "/api/v1/operations/outbox/deliveries", "Outbox 投递记录", "action.operations.outbox_list_deliveries.name", "查看事件 Handler 投递状态", "action.operations.outbox_list_deliveries.description", &auditOff, action.JSON(svc.listDeliveries)},
+		{ActionOutboxRetry, "/api/v1/operations/outbox/retry", "重试 Outbox 事件", "action.operations.outbox_retry.name", "将 failed/dead 事件重置为 pending（不可改 payload）", "action.operations.outbox_retry.description", &auditOn, action.JSON(svc.retry)},
 	}
 	for _, spec := range specs {
 		if err := a.RegisterAction(action.Action{

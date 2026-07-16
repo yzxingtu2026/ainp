@@ -49,39 +49,39 @@ type userListRequest struct {
 }
 
 type userIDRequest struct {
-	ID string `json:"id"`
+	ID string `json:"id" validate:"required"`
 }
 
 type userCreateRequest struct {
-	Username    string                  `json:"username"`
-	DisplayName string                  `json:"display_name"`
-	Password    string                  `json:"password"`
-	Status      status.ActivationStatus `json:"status"`
-	RoleIDs     []string                `json:"role_ids"`
+	Username    string                  `json:"username" validate:"required,min=3,max=64"`
+	DisplayName string                  `json:"display_name" validate:"required,max=128"`
+	Password    string                  `json:"password" validate:"required"`
+	Status      status.ActivationStatus `json:"status" validate:"omitempty,oneof=enabled disabled"`
+	RoleIDs     []string                `json:"role_ids" validate:"max=20,dive,required"`
 	OrgID       string                  `json:"org_id"`
 	DeptID      string                  `json:"dept_id"`
 }
 
 type userUpdateRequest struct {
-	ID          string `json:"id"`
-	DisplayName string `json:"display_name"`
+	ID          string `json:"id" validate:"required"`
+	DisplayName string `json:"display_name" validate:"required,max=128"`
 	OrgID       string `json:"org_id"`
 	DeptID      string `json:"dept_id"`
 }
 
 type userStatusRequest struct {
-	ID     string                  `json:"id"`
-	Status status.ActivationStatus `json:"status"`
+	ID     string                  `json:"id" validate:"required"`
+	Status status.ActivationStatus `json:"status" validate:"required,oneof=enabled disabled"`
 }
 
 type userRolesRequest struct {
-	ID      string   `json:"id"`
-	RoleIDs []string `json:"role_ids"`
+	ID      string   `json:"id" validate:"required"`
+	RoleIDs []string `json:"role_ids" validate:"max=20,dive,required"`
 }
 
 type userPasswordRequest struct {
-	ID       string `json:"id"`
-	Password string `json:"password"`
+	ID       string `json:"id" validate:"required"`
+	Password string `json:"password" validate:"required"`
 }
 
 type UserRoleBrief struct {

@@ -193,6 +193,40 @@
       }
     },
     {
+      "id": "validation",
+      "source": ".agent/rules/validation.md",
+      "qoder": {
+        "path": ".qoder/rules/validation.md",
+        "frontmatter": {
+          "trigger": "always_on"
+        }
+      },
+      "cursor": {
+        "path": ".cursor/rules/validation.mdc",
+        "frontmatter": {
+          "description": "强类型请求 DTO、统一验证生命周期与领域校验边界",
+          "alwaysApply": true
+        }
+      }
+    },
+    {
+      "id": "list-query",
+      "source": ".agent/rules/list-query.md",
+      "qoder": {
+        "path": ".qoder/rules/list-query.md",
+        "frontmatter": {
+          "trigger": "always_on"
+        }
+      },
+      "cursor": {
+        "path": ".cursor/rules/list-query.mdc",
+        "frontmatter": {
+          "description": "统一列表查询必须复用强类型请求验证器",
+          "alwaysApply": true
+        }
+      }
+    },
+    {
       "id": "auth-context",
       "source": ".agent/rules/auth-context.md",
       "qoder": {
