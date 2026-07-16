@@ -114,3 +114,28 @@ func TestOutboxListFiltersAndKeepsTenantScope(t *testing.T) {
 		t.Fatalf("outbox JSON must use explicit public fields: %s", encoded)
 	}
 }
+
+func TestNotificationDeliveryListDefaultsToAllStatuses(t *testing.T) {
+	db := openOutboxTestDB(t)
+	repo := system.NewNotificationRepository(db)
+	if err := repo.AutoMigrate(); err != nil {
+		t.Fatal(err)
+	}
+	ctx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t1", Realm: auth.RealmTenant})
+	for _, delivery := range []system.NotificationDelivery{
+		{ID: "t1-sent", TenantID: "t1", RequestID: "r1", RecipientID: "u1", Channel: "in_app", Status: "sent"},
+		{ID: "t1-failed", TenantID: "t1", RequestID: "r2", RecipientID: "u1", Channel: "in_app", Status: "failed"},
+		{ID: "t2-sent", TenantID: "t2", RequestID: "r3", RecipientID: "u2", Channel: "in_app", Status: "sent"},
+	} {
+		if err := repo.CreateDelivery(ctx, &delivery); err != nil {
+			t.Fatal(err)
+		}
+	}
+	items, total, err := repo.ListDeliveries(ctx, 1, 20, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 2 || len(items) != 2 {
+		t.Fatalf("default delivery list must include all tenant statuses: total=%d items=%#v", total, items)
+	}
+}

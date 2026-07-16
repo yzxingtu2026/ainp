@@ -166,8 +166,6 @@ func (r *NotificationRepository) ListDeliveries(ctx context.Context, page, pageS
 	q := r.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx))
 	if status != "" {
 		q = q.Where("status = ?", status)
-	} else {
-		q = q.Where("status IN ?", []string{string(notification.DeliveryFailed), string(notification.DeliveryDead)})
 	}
 	if channel != "" {
 		q = q.Where("channel = ?", channel)
