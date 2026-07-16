@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { h, onMounted, reactive, ref, computed } from 'vue';
 import type { DataTableColumns } from 'naive-ui';
-import { NButton, NCard, NDataTable, NDivider, NFormItem, NInput, NModal, NPopconfirm, NSelect, NSpace, NSwitch, NTab, NTag, NTabs } from 'naive-ui';
+import { NButton, NCard, NDataTable, NDivider, NFormItem, NInput, NModal, NPopconfirm, NSelect, NSpace, NSwitch, NTab, NTabPane, NTag, NTabs } from 'naive-ui';
 import { $t } from '@/locales';
 import {
   fetchNotificationTemplates,
@@ -387,29 +387,31 @@ onMounted(loadList);
       </div>
       <NTabs v-model:value="editorActiveLocale" type="bar" animated>
         <template v-for="(formData, locale) in editorLocales" :key="locale">
-          <NTab :name="String(locale)">
-            <NFormItem :label="$t('notificationAdmin.formSubject')">
-              <NInput
-                :value="formData.subject"
-                type="text"
-                @update:value="(v: string) => { formData.subject = v; formData.dirty = true }"
-              />
-            </NFormItem>
-            <NFormItem :label="$t('notificationAdmin.formBody')">
-              <NInput
-                :value="formData.body"
-                type="textarea"
-                :rows="6"
-                @update:value="(v: string) => { formData.body = v; formData.dirty = true }"
-              />
-            </NFormItem>
-            <NFormItem :label="$t('notificationAdmin.formEnabled')">
-              <NSwitch
-                :value="formData.enabled"
-                @update:value="(v: boolean) => { formData.enabled = v; formData.dirty = true }"
-              />
-            </NFormItem>
-          </NTab>
+          <NTabPane :name="String(locale)" :tab="String(locale)">
+            <div class="flex flex-col gap-12px py-8px">
+              <NFormItem :label="$t('notificationAdmin.formSubject')">
+                <NInput
+                  :value="formData.subject"
+                  type="text"
+                  @update:value="(v: string) => { formData.subject = v; formData.dirty = true }"
+                />
+              </NFormItem>
+              <NFormItem :label="$t('notificationAdmin.formBody')">
+                <NInput
+                  :value="formData.body"
+                  type="textarea"
+                  :rows="6"
+                  @update:value="(v: string) => { formData.body = v; formData.dirty = true }"
+                />
+              </NFormItem>
+              <NFormItem :label="$t('notificationAdmin.formEnabled')">
+                <NSwitch
+                  :value="formData.enabled"
+                  @update:value="(v: boolean) => { formData.enabled = v; formData.dirty = true }"
+                />
+              </NFormItem>
+            </div>
+          </NTabPane>
         </template>
       </NTabs>
       <template #footer>
