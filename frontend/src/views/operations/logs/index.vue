@@ -55,13 +55,6 @@ const levelOptions = computed(() =>
     sources.value.find(s => s.name === activeSource.value)?.capabilities.levels || ['debug', 'info', 'warn', 'error']
   ).map(value => ({ value, label: value.toUpperCase() }))
 );
-const hasAvailableSource = computed(() => sources.value.some(source => source.available));
-const sourceName = (source: Api.Operations.LogSource) =>
-  source.name === 'loki.application'
-    ? $t('logCenter.applicationLogs')
-    : source.name === 'loki.worker'
-      ? $t('logCenter.workerLogs')
-      : source.display_name;
 const levelType = (level: string) =>
   (({ debug: 'default', info: 'info', warn: 'warning', error: 'error' })[level] || 'default') as
     | 'default'
@@ -113,9 +106,9 @@ async function loadSources() {
     if (!res.error && res.data) {
       sources.value = res.data.sources || [];
       const requestedSource = typeof route.query.source === 'string' ? route.query.source : '';
-      activeSource.value = sources.value.some(source => source.name === requestedSource && source.available)
+      activeSource.value = sources.value.some(source => source.name === requestedSource)
         ? requestedSource
-        : sources.value.find(source => source.available)?.name || '';
+        : sources.value[0]?.name || '';
     }
   } finally {
     sourceLoading.value = false;
@@ -181,16 +174,9 @@ onMounted(() => {
     <NCard :title="$t('logCenter.title')" :bordered="false">
       <NSpin :show="sourceLoading">
         <NEmpty v-if="sources.length === 0" class="py-64px" :description="$t('logCenter.noProvider')" />
-        <NEmpty v-else-if="!hasAvailableSource" class="py-64px" :description="$t('logCenter.providerUnavailable')" />
         <template v-else>
           <NTabs v-model:value="activeSource" type="line" animated>
-            <NTabPane
-              v-for="source in sources"
-              :key="source.name"
-              :name="source.name"
-              :tab="sourceName(source)"
-              :disabled="!source.available"
-            />
+            <NTabPane v-for="source in sources" :key="source.name" :name="source.name" :tab="source.display_name" />
           </NTabs>
           <NSpace class="mb-12px" wrap>
             <NDatePicker v-model:value="range" type="datetimerange" clearable class="w-360px" />

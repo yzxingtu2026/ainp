@@ -7,6 +7,5 @@
 - 日志中心只经 `framework/logcenter` 只读 Provider 查询外部日志；业务库不存运行日志，业务模块禁止 Provider 分支或透传原生 DSL。
 - tenant 查询默认 15 分钟、最大 24 小时、分页 100、超时 5 秒、结果 1 MiB；统一白名单筛选与脱敏/截断。
 - 只有声明可信 tenant filter 的 Provider 可用于 tenant realm；否则 fail-closed。平台/数据库原始日志不得降级开放给租户。
-- Loki 配置只保存 endpoint 与环境变量名称，凭据禁止入库/入仓；LogQL 只能由白名单 DTO 构造并强制 tenant/source selector，高基数关联 ID 留在 JSON 正文。
 
 详规：`docs/development/logging.md`
