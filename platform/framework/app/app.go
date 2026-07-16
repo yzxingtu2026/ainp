@@ -23,6 +23,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/i18n"
 	"github.com/yzxingtu2026/ainp/platform/framework/idempotency"
 	"github.com/yzxingtu2026/ainp/platform/framework/job"
+	"github.com/yzxingtu2026/ainp/platform/framework/logcenter"
 	"github.com/yzxingtu2026/ainp/platform/framework/logging"
 	"github.com/yzxingtu2026/ainp/platform/framework/menu"
 	"github.com/yzxingtu2026/ainp/platform/framework/notification"
@@ -51,6 +52,7 @@ type App struct {
 	Outbox               *outbox.Runtime
 	Jobs                 *job.Runtime
 	Notifications        *notification.DefinitionRegistry
+	LogProviders         *logcenter.Registry
 	NotificationRenderer *notification.Renderer
 	OnHTTP               func(engine *gin.Engine)
 	Auditor              audit.Recorder
@@ -88,6 +90,7 @@ func New(cfg *config.Config, db *gorm.DB, auditor audit.Recorder, tokens *auth.T
 		StateMachines:        statemachine.NewRegistry(),
 		AttachmentPolicies:   attachment.NewPolicyRegistry(),
 		Notifications:        notification.NewDefinitionRegistry(),
+		LogProviders:         logcenter.NewRegistry(),
 		NotificationRenderer: notification.NewRenderer(),
 		Auditor:              auditor,
 		Installed:            true,

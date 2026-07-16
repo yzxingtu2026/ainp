@@ -11,5 +11,6 @@
 - Phase 1：Org/Dept 仅预留；禁止普通业务跨租户；DB 须带租户条件。
 - Realm 仅 `tenant` / `platform`；当前登录固定 tenant。普通 Scope 缺 tenant 必须报错，跨租户只走经 platform realm 校验的显式 System 入口。
 - 预留租户绑定自定义域名（Phase 1 可不实现）。
+- tenant 日志查询只使用声明可信 tenant filter 的 Provider，tenant_id 由 AuthContext 注入；混合租户或数据库原始日志必须 fail-closed。
 
 详规：`docs/development/auth-context.md`

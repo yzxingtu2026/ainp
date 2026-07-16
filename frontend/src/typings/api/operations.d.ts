@@ -129,5 +129,49 @@ declare namespace Api {
       page: number;
       page_size: number;
     }
+    interface LogSource {
+      name: string;
+      display_name: string;
+      capabilities: { tenant_filter: boolean; levels?: string[]; description?: string };
+    }
+    interface LogQuery extends PageQuery {
+      source: string;
+      start_at?: string;
+      end_at?: string;
+      level?: string;
+      service?: string;
+      component?: string;
+      keyword?: string;
+      request_id?: string;
+      trace_id?: string;
+      action_id?: string;
+      job_type?: string;
+      job_run_id?: string;
+      event_id?: string;
+    }
+    interface LogEntry {
+      id: string;
+      timestamp: string;
+      level: string;
+      service?: string;
+      component?: string;
+      message: string;
+      request_id?: string;
+      trace_id?: string;
+      tenant_id?: string;
+      user_id?: string;
+      action_id?: string;
+      job_type?: string;
+      job_run_id?: string;
+      event_id?: string;
+      source: string;
+      attributes?: Record<string, unknown>;
+    }
+    interface LogPage {
+      items: LogEntry[];
+      total: number;
+      page: number;
+      page_size: number;
+    }
   }
 }

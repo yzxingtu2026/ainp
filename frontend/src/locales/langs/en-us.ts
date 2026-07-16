@@ -256,6 +256,7 @@ const local: App.I18n.Schema = {
     operations_outbox: 'Outbox Events',
     'operations_notification-deliveries': 'Notification Deliveries',
     'operations_audit-logs': 'Audit Logs',
+    operations_logs: 'Log Center',
     setup: 'Setup'
   },
   operations: {
@@ -312,6 +313,20 @@ const local: App.I18n.Schema = {
     requestId: 'Request ID',
     permission: 'Permission',
     actions: { system_audit_log_list: 'Audit List', system_audit_log_get: 'Audit Details' }
+  },
+  logCenter: {
+    title: 'Log Center',
+    detail: 'Log Details',
+    noProvider: 'No log source is available. Configure a provider with trusted tenant filtering.',
+    timestamp: 'Timestamp',
+    level: 'Level',
+    source: 'Source',
+    service: 'Service',
+    component: 'Component',
+    keyword: 'Keyword',
+    message: 'Message',
+    correlation: 'Correlation IDs',
+    attributes: 'Attributes'
   },
   page: {
     setting: {
