@@ -25,6 +25,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/job"
 	"github.com/yzxingtu2026/ainp/platform/framework/logging"
 	"github.com/yzxingtu2026/ainp/platform/framework/menu"
+	"github.com/yzxingtu2026/ainp/platform/framework/notification"
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
 	"github.com/yzxingtu2026/ainp/platform/framework/permission"
 	"github.com/yzxingtu2026/ainp/platform/framework/setting"
@@ -34,24 +35,26 @@ import (
 )
 
 type App struct {
-	Config             *config.Config
-	DB                 *gorm.DB
-	Tokens             *auth.TokenService
-	Authorization      auth.AuthorizationProvider
-	Capabilities       *capability.Registry
-	Actions            *action.Registry
-	Menus              *menu.Registry
-	CodeSets           *codeset.Registry
-	Settings           *setting.Registry
-	StateMachines      *statemachine.Registry
-	Storage            storage.ObjectStore
-	AttachmentPolicies *attachment.PolicyRegistry
-	TransferTokens     *attachment.TransferTokenService
-	Outbox             *outbox.Runtime
-	Jobs               *job.Runtime
-	OnHTTP             func(engine *gin.Engine)
-	Auditor            audit.Recorder
-	Installed          bool
+	Config               *config.Config
+	DB                   *gorm.DB
+	Tokens               *auth.TokenService
+	Authorization        auth.AuthorizationProvider
+	Capabilities         *capability.Registry
+	Actions              *action.Registry
+	Menus                *menu.Registry
+	CodeSets             *codeset.Registry
+	Settings             *setting.Registry
+	StateMachines        *statemachine.Registry
+	Storage              storage.ObjectStore
+	AttachmentPolicies   *attachment.PolicyRegistry
+	TransferTokens       *attachment.TransferTokenService
+	Outbox               *outbox.Runtime
+	Jobs                 *job.Runtime
+	Notifications        *notification.DefinitionRegistry
+	NotificationRenderer *notification.Renderer
+	OnHTTP               func(engine *gin.Engine)
+	Auditor              audit.Recorder
+	Installed            bool
 }
 
 func New(cfg *config.Config, db *gorm.DB, auditor audit.Recorder, tokens *auth.TokenService) *App {
@@ -63,6 +66,8 @@ func New(cfg *config.Config, db *gorm.DB, auditor audit.Recorder, tokens *auth.T
 	_ = codeSets.Register(codeset.OutboxStatus())
 	_ = codeSets.Register(codeset.DeliveryStatus())
 	_ = codeSets.Register(codeset.JobRunStatus())
+	_ = codeSets.Register(codeset.NotificationRequestStatus())
+	_ = codeSets.Register(codeset.NotificationDeliveryStatus())
 
 	actions := action.NewRegistry(checker, auditor)
 
@@ -72,18 +77,20 @@ func New(cfg *config.Config, db *gorm.DB, auditor audit.Recorder, tokens *auth.T
 	actions.SetIdempotencyExecutor(idempotency.NewActionAdapter(idemExec))
 
 	return &App{
-		Config:             cfg,
-		DB:                 db,
-		Tokens:             tokens,
-		Capabilities:       capability.NewRegistry(),
-		Actions:            actions,
-		Menus:              menu.NewRegistry(),
-		CodeSets:           codeSets,
-		Settings:           setting.NewRegistry(),
-		StateMachines:      statemachine.NewRegistry(),
-		AttachmentPolicies: attachment.NewPolicyRegistry(),
-		Auditor:            auditor,
-		Installed:          true,
+		Config:               cfg,
+		DB:                   db,
+		Tokens:               tokens,
+		Capabilities:         capability.NewRegistry(),
+		Actions:              actions,
+		Menus:                menu.NewRegistry(),
+		CodeSets:             codeSets,
+		Settings:             setting.NewRegistry(),
+		StateMachines:        statemachine.NewRegistry(),
+		AttachmentPolicies:   attachment.NewPolicyRegistry(),
+		Notifications:        notification.NewDefinitionRegistry(),
+		NotificationRenderer: notification.NewRenderer(),
+		Auditor:              auditor,
+		Installed:            true,
 	}
 }
 
@@ -119,6 +126,10 @@ func (a *App) RegisterSettingDefinition(def setting.Definition) error {
 
 func (a *App) RegisterStateMachine(machine statemachine.StateMachine) error {
 	return a.StateMachines.Register(machine, a.CodeSets, a.Actions)
+}
+
+func (a *App) RegisterNotification(def notification.Definition) error {
+	return a.Notifications.Register(def)
 }
 
 func (a *App) Run() error {

@@ -244,6 +244,8 @@ const local: App.I18n.Schema = {
     system_roles: '角色管理',
     system_settings: '系统设置',
     system_attachments: '附件中心',
+    notification: '通知',
+    notification_list: '通知列表',
     setup: '安装向导'
   },
   page: {
@@ -536,6 +538,25 @@ const local: App.I18n.Schema = {
       right: '右固定',
       unFixed: '取消固定'
     }
+  },
+  notification: {
+    title: '通知',
+    pageTitle: '我的通知',
+    markRead: '标记已读',
+    markAllRead: '全部已读',
+    markAllReadSuccess: '已全部标记为已读',
+    viewAll: '查看全部',
+    empty: '暂无通知',
+    archive: '归档',
+    archiveSuccess: '已归档',
+    unarchive: '取消归档',
+    unarchiveSuccess: '已取消归档',
+    archived: '已归档',
+    unreadBadge: '{count} 条未读',
+    filterAll: '全部',
+    filterUnread: '未读',
+    filterArchived: '含已归档',
+    filterPlaceholder: '筛选'
   }
 };
 

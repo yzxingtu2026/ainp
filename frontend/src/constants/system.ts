@@ -25,5 +25,15 @@ export const SYSTEM_ACTIONS = {
   attachmentDelete: 'system.attachment_delete',
   attachmentList: 'system.attachment_list',
   attachmentGet: 'system.attachment_get',
-  attachmentPolicyGet: 'system.attachment_policy_get'
+  attachmentPolicyGet: 'system.attachment_policy_get',
+  notificationList: 'system.notification_list',
+  notificationUnreadCount: 'system.notification_unread_count',
+  notificationMarkRead: 'system.notification_mark_read',
+  notificationMarkAllRead: 'system.notification_mark_all_read',
+  notificationArchive: 'system.notification_archive',
+  notificationUnarchive: 'system.notification_unarchive',
+  notificationTemplateList: 'system.notification_template_list',
+  notificationTemplateUpdate: 'system.notification_template_update',
+  notificationTemplateReset: 'system.notification_template_reset',
+  notificationDeliveryList: 'system.notification_delivery_list'
 } as const;
