@@ -29,7 +29,10 @@ permission_group.system.role_management: "权限管理"
 permission_group.system.user_management: "用户管理"
 permission_group.system.setting_management: "设置管理"
 permission_group.system.attachment_management: "附件管理"
-permission_group.system.outbox_management: "Outbox 运维"
+permission_group.system.operations.outbox: "Outbox 运维"
+permission_group.system.operations.jobs: "任务运维"
+permission_group.system.operations.notification_delivery: "通知投递运维"
+permission_group.system.notification_configuration: "通知配置"
 
 # ── 附件状态 CodeSet ──
 codeset.system.attachment_status: "附件状态"
@@ -65,7 +68,6 @@ codeset.system.job_run_status.succeeded: "成功"
 codeset.system.job_run_status.failed: "失败"
 codeset.system.job_run_status.dead: "死信"
 codeset.system.job_run_status.cancelled: "已取消"
-permission_group.system.job_management: "任务运维"
 
 # ── 系统域 Action ──
 action.system.ping.name: "Ping"
@@ -131,6 +133,8 @@ action.system.attachment_get.name: "附件详情"
 action.system.attachment_get.description: "查询附件详情与业务绑定"
 action.system.outbox_summary.name: "Outbox 摘要"
 action.system.outbox_summary.description: "查询租户 Outbox 状态计数"
+action.system.outbox_list.name: "Outbox 事件列表"
+action.system.outbox_list.description: "分页查询租户 Outbox 事件"
 action.system.outbox_list_deliveries.name: "Outbox 投递记录"
 action.system.outbox_list_deliveries.description: "查看事件 Handler 投递状态"
 action.system.outbox_retry.name: "重试 Outbox 事件"
@@ -227,6 +231,9 @@ menu.system.settings.title: "系统设置"
 menu.system.attachments.title: "附件中心"
 menu.system.notification_templates.title: "通知模板"
 menu.system.notification_deliveries.title: "投递记录"
+menu.operations.root.title: "运维中心"
+menu.operations.jobs.title: "任务运行"
+menu.operations.outbox.title: "Outbox 事件"
 
 # ── 演示域 Menu ──
 menu.demo.attachments.title: "附件联调"
@@ -328,7 +335,6 @@ action.system.notification_delivery_retry.description: "人工重试 failed/dead
 
 # ── 通知域权限组 ──
 permission_group.system.notification_user: "通知操作"
-permission_group.system.notification_management: "通知管理"
 
 # ── 通知域 Menu ──
 menu.notification.title: "通知"

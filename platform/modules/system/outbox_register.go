@@ -17,10 +17,46 @@ import (
 )
 
 const (
+	ActionOutboxList           = "system.outbox_list"
 	ActionOutboxSummary        = "system.outbox_summary"
 	ActionOutboxListDeliveries = "system.outbox_list_deliveries"
 	ActionOutboxRetry          = "system.outbox_retry"
 )
+
+func (s *OutboxService) List(ctx context.Context, input json.RawMessage) (any, error) {
+	if _, err := requireTenant(ctx); err != nil {
+		return nil, err
+	}
+	var req struct {
+		EventType string `json:"event_type"`
+		Status    string `json:"status"`
+		Current   int    `json:"current"`
+		Size      int    `json:"size"`
+	}
+	_ = json.Unmarshal(input, &req)
+	if req.Current < 1 {
+		req.Current = 1
+	}
+	if req.Size < 1 || req.Size > 100 {
+		req.Size = 20
+	}
+	db := s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Model(&outbox.Event{})
+	if value := strings.TrimSpace(req.EventType); value != "" {
+		db = db.Where("event_type = ?", value)
+	}
+	if value := strings.TrimSpace(req.Status); value != "" {
+		db = db.Where("status = ?", value)
+	}
+	var total int64
+	if err := db.Count(&total).Error; err != nil {
+		return nil, err
+	}
+	var rows []outbox.Event
+	if err := db.Order("occurred_at DESC").Offset((req.Current - 1) * req.Size).Limit(req.Size).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	return map[string]any{"items": rows, "total": total, "current": req.Current, "size": req.Size}, nil
+}
 
 type OutboxService struct {
 	db *gorm.DB
@@ -96,12 +132,18 @@ func (s *OutboxService) ListDeliveries(ctx context.Context, input json.RawMessag
 	}
 	return map[string]any{
 		"event": map[string]any{
-			"id":          ev.ID,
-			"event_type":  ev.EventType,
-			"status":      ev.Status,
-			"attempts":    ev.Attempts,
-			"last_error":  ev.LastError,
-			"occurred_at": ev.OccurredAt,
+			"id":             ev.ID,
+			"event_type":     ev.EventType,
+			"status":         ev.Status,
+			"attempts":       ev.Attempts,
+			"last_error":     ev.LastError,
+			"occurred_at":    ev.OccurredAt,
+			"aggregate_type": ev.AggregateType,
+			"aggregate_id":   ev.AggregateID,
+			"payload":        json.RawMessage(ev.PayloadJSON),
+			"metadata":       json.RawMessage(ev.MetadataJSON),
+			"available_at":   ev.AvailableAt,
+			"published_at":   ev.PublishedAt,
 		},
 		"deliveries": deliveries,
 	}, nil
@@ -144,9 +186,6 @@ func requireTenant(ctx context.Context) (*auth.Context, error) {
 }
 
 func registerOutboxActions(a *app.App) error {
-	if a.DB == nil {
-		return nil
-	}
 	svc := NewOutboxService(a.DB)
 	auditOn := true
 	auditOff := false
@@ -155,6 +194,7 @@ func registerOutboxActions(a *app.App) error {
 		audit                                  *bool
 		handler                                func(context.Context, json.RawMessage) (any, error)
 	}{
+		{ActionOutboxList, "/api/v1/system/outbox/list", "Outbox 事件列表", "action.system.outbox_list.name", "分页查询租户 Outbox 事件", "action.system.outbox_list.description", &auditOff, svc.List},
 		{ActionOutboxSummary, "/api/v1/system/outbox/summary", "Outbox 摘要", "action.system.outbox_summary.name", "查询租户 Outbox 状态计数", "action.system.outbox_summary.description", &auditOff, svc.Summary},
 		{ActionOutboxListDeliveries, "/api/v1/system/outbox/deliveries", "Outbox 投递记录", "action.system.outbox_list_deliveries.name", "查看事件 Handler 投递状态", "action.system.outbox_list_deliveries.description", &auditOff, svc.ListDeliveries},
 		{ActionOutboxRetry, "/api/v1/system/outbox/retry", "重试 Outbox 事件", "action.system.outbox_retry.name", "将 failed/dead 事件重置为 pending（不可改 payload）", "action.system.outbox_retry.description", &auditOn, svc.Retry},
@@ -169,9 +209,9 @@ func registerOutboxActions(a *app.App) error {
 				NameKey:                spec.nameKey,
 				Description:            spec.desc,
 				DescriptionKey:         spec.descKey,
-				PermissionGroup:        "system.outbox_management",
+				PermissionGroup:        "system.operations.outbox",
 				PermissionGroupName:    "Outbox 运维",
-				PermissionGroupNameKey: "permission_group.system.outbox_management",
+				PermissionGroupNameKey: "permission_group.system.operations.outbox",
 				Audit:                  spec.audit,
 				HTTP: &action.HTTPMeta{
 					Method: "POST",

@@ -734,7 +734,7 @@ func registerNotificationActions(a *app.App) error {
 		}
 	}
 
-	// Admin notification management actions (permission: system.notification_management)
+	// Admin actions use separate configuration and delivery-operation authorization boundaries.
 	adminSpecs := []struct {
 		id, path, name, nameKey, desc, descKey string
 		audit                                  *bool
@@ -749,6 +749,10 @@ func registerNotificationActions(a *app.App) error {
 		{ActionNotificationTemplatePreview, "/api/v1/system/notification/templates/preview", "模板预览", "action.system.notification_template_preview.name", "预览模板渲染结果（不触发投递）", "action.system.notification_template_preview.description", &auditOff, tplSvc.Preview},
 	}
 	for _, spec := range adminSpecs {
+		group, groupName, groupNameKey := "system.notification_configuration", "通知配置", "permission_group.system.notification_configuration"
+		if spec.id == ActionNotificationDeliveryList || spec.id == ActionNotificationDeliveryGet || spec.id == ActionNotificationDeliveryRetry {
+			group, groupName, groupNameKey = "system.operations.notification_delivery", "通知投递运维", "permission_group.system.operations.notification_delivery"
+		}
 		if err := a.RegisterAction(action.Action{
 			ID:      spec.id,
 			Handler: spec.handler,
@@ -758,9 +762,9 @@ func registerNotificationActions(a *app.App) error {
 				NameKey:                spec.nameKey,
 				Description:            spec.desc,
 				DescriptionKey:         spec.descKey,
-				PermissionGroup:        "system.notification_management",
-				PermissionGroupName:    "通知管理",
-				PermissionGroupNameKey: "permission_group.system.notification_management",
+				PermissionGroup:        group,
+				PermissionGroupName:    groupName,
+				PermissionGroupNameKey: groupNameKey,
 				Audit:                  spec.audit,
 				HTTP:                   &action.HTTPMeta{Method: "POST", Path: spec.path},
 			},
@@ -816,14 +820,14 @@ func registerNotificationActions(a *app.App) error {
 	}
 
 	if err := a.RegisterMenu(menu.Menu{
-		ID:         "system.notification_deliveries",
-		ParentID:   "system.root",
+		ID:         "operations.notification_deliveries",
+		ParentID:   "operations.root",
 		Title:      "投递记录",
 		TitleKey:   "menu.system.notification_deliveries.title",
 		Icon:       "mdi:truck-delivery-outline",
 		Type:       menu.TypeMenu,
-		Path:       "/system/notification-deliveries",
-		Component:  "system/notification-deliveries",
+		Path:       "/operations/notification-deliveries",
+		Component:  "operations/notification-deliveries",
 		Permission: ActionNotificationDeliveryList,
 		BindAction: ActionNotificationDeliveryList,
 		Module:     "system",

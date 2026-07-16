@@ -50,10 +50,10 @@ func (s *JobService) List(ctx context.Context, input json.RawMessage) (any, erro
 		return nil, err
 	}
 	var req struct {
-		JobType  string `json:"job_type"`
-		Status   string `json:"status"`
-		Current  int    `json:"current"`
-		Size     int    `json:"size"`
+		JobType string `json:"job_type"`
+		Status  string `json:"status"`
+		Current int    `json:"current"`
+		Size    int    `json:"size"`
 	}
 	_ = json.Unmarshal(input, &req)
 	rows, total, err := s.store.List(ctx, job.ListQuery{
@@ -185,9 +185,9 @@ func registerJobActions(a *app.App) error {
 				NameKey:                spec.nameKey,
 				Description:            spec.desc,
 				DescriptionKey:         spec.descKey,
-				PermissionGroup:        "system.job_management",
+				PermissionGroup:        "system.operations.jobs",
 				PermissionGroupName:    "任务运维",
-				PermissionGroupNameKey: "permission_group.system.job_management",
+				PermissionGroupNameKey: "permission_group.system.operations.jobs",
 				Audit:                  spec.audit,
 				HTTP:                   &action.HTTPMeta{Method: "POST", Path: spec.path},
 			},

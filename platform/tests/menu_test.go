@@ -19,3 +19,23 @@ func TestRegistryFiltersMenusByRealm(t *testing.T) {
 		t.Fatalf("unexpected tenant menus: %#v", items)
 	}
 }
+
+func TestRegistryPrunesDirectoryWithoutVisibleChildren(t *testing.T) {
+	r := menu.NewRegistry()
+	for _, item := range []menu.Menu{
+		{ID: "operations.root", Type: menu.TypeDirectory},
+		{ID: "operations.jobs", ParentID: "operations.root", Type: menu.TypeMenu, Permission: "system.job_list"},
+		{ID: "operations.outbox", ParentID: "operations.root", Type: menu.TypeMenu, Permission: "system.outbox_list"},
+	} {
+		if err := r.Register(item); err != nil {
+			t.Fatal(err)
+		}
+	}
+	items := r.TreeForUser(auth.RealmTenant, func(permission string) bool { return permission == "system.job_list" })
+	if len(items) != 2 || items[0].ID != "operations.jobs" || items[1].ID != "operations.root" {
+		t.Fatalf("unexpected visible operations tree: %#v", items)
+	}
+	if items := r.TreeForUser(auth.RealmTenant, func(string) bool { return false }); len(items) != 0 {
+		t.Fatalf("empty operations directory must be hidden: %#v", items)
+	}
+}

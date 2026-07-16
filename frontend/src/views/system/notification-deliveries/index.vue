@@ -6,10 +6,12 @@ import {
   NDrawer, NDrawerContent, NEmpty, NPagination, NPopconfirm, NSelect, NSpace, NTag
 } from 'naive-ui';
 import { $t } from '@/locales';
+import { useAuth } from '@/hooks/business/auth';
 import { fetchDeliveryDetail, fetchDeliveryList, fetchRetryDelivery } from '@/service/api';
 import { formatDateTime } from '@/utils/datetime';
 
 defineOptions({ name: 'SystemNotificationDeliveries' });
+const { hasAuth } = useAuth();
 
 const loading = ref(false);
 const records = ref<Api.Notification.DeliveryItem[]>([]);
@@ -109,12 +111,16 @@ const columns = computed<DataTableColumns<Api.Notification.DeliveryItem>>(() => 
     render: row =>
       h(NSpace, null, {
         default: () => [
-          h(
-            NButton,
-            { size: 'small', type: 'info', ghost: true, onClick: () => openDetail(row) },
-            { default: () => $t('common.detail') }
-          ),
-          ...(row.status === 'failed' || row.status === 'dead'
+          ...(hasAuth('system.notification_delivery_get')
+            ? [
+                h(
+                  NButton,
+                  { size: 'small', type: 'info', ghost: true, onClick: () => openDetail(row) },
+                  { default: () => $t('common.detail') }
+                )
+              ]
+            : []),
+          ...(hasAuth('system.notification_delivery_retry') && (row.status === 'failed' || row.status === 'dead')
             ? [
                 h(
                   NPopconfirm,

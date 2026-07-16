@@ -272,6 +272,27 @@ func Register(a *app.App) error {
 		return err
 	}
 
+	if err := a.RegisterMenu(menu.Menu{
+		ID: "operations.root", Title: "运维", TitleKey: "menu.operations.root.title",
+		Icon: "mdi:monitor-dashboard", Type: menu.TypeDirectory, Module: "system", Order: 20,
+	}); err != nil {
+		return err
+	}
+	if err := a.RegisterMenu(menu.Menu{
+		ID: "operations.jobs", ParentID: "operations.root", Title: "任务运行", TitleKey: "menu.operations.jobs.title",
+		Icon: "mdi:briefcase-clock-outline", Type: menu.TypeMenu, Path: "/operations/jobs", Component: "operations/jobs",
+		Permission: ActionJobList, BindAction: ActionJobList, Module: "system", Order: 1,
+	}); err != nil {
+		return err
+	}
+	if err := a.RegisterMenu(menu.Menu{
+		ID: "operations.outbox", ParentID: "operations.root", Title: "Outbox 事件", TitleKey: "menu.operations.outbox.title",
+		Icon: "mdi:tray-arrow-up", Type: menu.TypeMenu, Path: "/operations/outbox", Component: "operations/outbox",
+		Permission: ActionOutboxList, BindAction: ActionOutboxList, Module: "system", Order: 2,
+	}); err != nil {
+		return err
+	}
+
 	if err := registerNotificationActions(a); err != nil {
 		return err
 	}

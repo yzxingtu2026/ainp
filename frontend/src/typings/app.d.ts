@@ -764,6 +764,41 @@ declare namespace App {
         filterArchived: string;
         filterPlaceholder: string;
       };
+      operations: {
+        jobsTitle: string;
+        outboxTitle: string;
+        jobDetail: string;
+        outboxDetail: string;
+        jobType: string;
+        eventType: string;
+        aggregate: string;
+        statusLabel: string;
+        progress: string;
+        attempts: string;
+        createdAt: string;
+        updatedAt: string;
+        occurredAt: string;
+        cancelJob: string;
+        retry: string;
+        confirmAction: string;
+        success: string;
+        error: string;
+        payload: string;
+        handler: string;
+        status: {
+          pending_enqueue: string;
+          queued: string;
+          running: string;
+          retrying: string;
+          succeeded: string;
+          failed: string;
+          dead: string;
+          cancelled: string;
+          pending: string;
+          processing: string;
+          published: string;
+        };
+      };
       notificationAdmin: {
         templateTitle: string;
         deliveryTitle: string;

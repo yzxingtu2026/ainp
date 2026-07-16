@@ -102,6 +102,8 @@ purchase_order_create    # 禁止缺少 capability 点分前缀（除非 capabil
 
 权限目录的展示层级固定为 `Capability → PermissionGroup → Permission/Action`。同一功能的一组 Action 应声明相同的 `permission_group`；未声明时进入 Capability 的 `other` 组，禁止前端根据 action.id 文本临时猜分组。
 
+菜单按用户工作场景组织，PermissionGroup 按授权边界组织，两者不要求一一对应。配置类权限与运行运维类权限必须拆分，例如通知模板配置与通知投递运维即使位于相邻导航，也不得共用权限组。禁止将 Job、Outbox、通知投递合并为单一宽泛的运维权限组。
+
 ### HTTPMeta
 
 | 字段 | 类型 | 说明 |
@@ -123,6 +125,8 @@ purchase_order_create    # 禁止缺少 capability 点分前缀（除非 capabil
 `workflow`、`input_schema`、`output_schema`、`ui`、更细的 MCP 开关等：结构可先占位，业务可不填。
 
 ## Menu（独立注册）
+
+目录节点只表达导航结构，原则上不声明额外 permission。目录是否可见由权限过滤后是否仍有可见子菜单决定；无可见子菜单时必须隐藏整个目录。侧栏最多两级，新增顶层工作区时直接注册其二级页面，不通过系统管理制造三级菜单。
 
 与 `docs/development/icon-library.md` 一致。
 
