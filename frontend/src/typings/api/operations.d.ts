@@ -1,19 +1,56 @@
 declare namespace Api {
   namespace Operations {
-    interface PageQuery { page?: number; page_size?: number }
+    interface PageQuery {
+      page?: number;
+      page_size?: number;
+    }
     interface JobRun {
-      id: string; job_type: string; queue: string; status: string; progress: number;
-      progress_message?: string; attempt: number; max_attempts: number; last_error?: string;
-      created_at: string; updated_at: string; started_at?: string; finished_at?: string; cancel_requested_at?: string;
+      id: string;
+      job_type: string;
+      queue: string;
+      status: string;
+      progress: number;
+      progress_message?: string;
+      attempt: number;
+      max_attempts: number;
+      last_error?: string;
+      created_at: string;
+      updated_at: string;
+      started_at?: string;
+      finished_at?: string;
+      cancel_requested_at?: string;
     }
-    interface JobListData { items: JobRun[]; total: number; page: number; page_size: number }
+    interface JobListData {
+      items: JobRun[];
+      total: number;
+      page: number;
+      page_size: number;
+    }
     interface OutboxEvent {
-      id: string; event_type: string; aggregate_type: string; aggregate_id: string; status: string;
-      attempts: number; last_error?: string; occurred_at: string; available_at: string; published_at?: string;
+      id: string;
+      event_type: string;
+      aggregate_type: string;
+      aggregate_id: string;
+      status: string;
+      attempts: number;
+      last_error?: string;
+      occurred_at: string;
+      available_at: string;
+      published_at?: string;
     }
-    interface OutboxListData { items: OutboxEvent[]; total: number; page: number; page_size: number }
+    interface OutboxListData {
+      items: OutboxEvent[];
+      total: number;
+      page: number;
+      page_size: number;
+    }
     interface OutboxDelivery {
-      id: string; handler_name: string; status: string; attempts: number; processed_at?: string; last_error?: string;
+      id: string;
+      handler_name: string;
+      status: string;
+      attempts: number;
+      processed_at?: string;
+      last_error?: string;
     }
     interface OutboxDetail {
       event: OutboxEvent & { payload: unknown; metadata: unknown };
@@ -55,6 +92,42 @@ declare namespace Api {
         summary: string;
         body: string;
       };
+    }
+    interface AuditLogQuery extends PageQuery {
+      start_at?: string;
+      end_at?: string;
+      user_keyword?: string;
+      actor_type?: string;
+      action_id?: string;
+      result?: string;
+      resource_type?: string;
+      resource_id?: string;
+      request_id?: string;
+      client?: string;
+    }
+    interface AuditLog {
+      id: string;
+      occurred_at: string;
+      user_id: string;
+      actor_name: string;
+      action_name: string;
+      actor_type: string;
+      action_id: string;
+      result: string;
+      request_id: string;
+      permission: string;
+      error_code: number;
+      resource_type: string;
+      resource_id: string;
+      client: string;
+      summary: string;
+      replay: boolean;
+    }
+    interface AuditLogListData {
+      items: AuditLog[];
+      total: number;
+      page: number;
+      page_size: number;
     }
   }
 }

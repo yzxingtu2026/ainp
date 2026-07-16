@@ -140,6 +140,16 @@ export const generatedRoutes: GeneratedRoute[] = [
     },
     children: [
       {
+        name: 'operations_audit-logs',
+        path: '/operations/audit-logs',
+        component: 'view.operations_audit-logs',
+        meta: {
+          title: 'operations_audit-logs',
+          i18nKey: 'route.operations_audit-logs',
+          hideInMenu: true
+        }
+      },
+      {
         name: 'operations_jobs',
         path: '/operations/jobs',
         component: 'view.operations_jobs',

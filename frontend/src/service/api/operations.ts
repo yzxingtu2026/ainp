@@ -55,3 +55,15 @@ export function fetchRetryDelivery(id: string) {
     data: { id }
   });
 }
+
+export function fetchAuditLogList(data: Api.Operations.AuditLogQuery) {
+  return request<Api.Operations.AuditLogListData>({ url: '/api/v1/operations/audit-logs/list', method: 'post', data });
+}
+
+export function fetchAuditLogDetail(id: string) {
+  return request<{ audit_log: Api.Operations.AuditLog }>({
+    url: '/api/v1/operations/audit-logs/get',
+    method: 'post',
+    data: { id }
+  });
+}

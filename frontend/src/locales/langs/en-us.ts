@@ -255,6 +255,7 @@ const local: App.I18n.Schema = {
     operations_jobs: 'Job Runs',
     operations_outbox: 'Outbox Events',
     'operations_notification-deliveries': 'Notification Deliveries',
+    'operations_audit-logs': 'Audit Logs',
     setup: 'Setup'
   },
   operations: {
@@ -279,10 +280,38 @@ const local: App.I18n.Schema = {
     payload: 'Payload',
     handler: 'Handler',
     status: {
-      pending_enqueue: 'Pending Enqueue', queued: 'Queued', running: 'Running', retrying: 'Retrying',
-      succeeded: 'Succeeded', failed: 'Failed', dead: 'Dead', cancelled: 'Cancelled',
-      pending: 'Pending', processing: 'Processing', published: 'Published'
+      pending_enqueue: 'Pending Enqueue',
+      queued: 'Queued',
+      running: 'Running',
+      retrying: 'Retrying',
+      succeeded: 'Succeeded',
+      failed: 'Failed',
+      dead: 'Dead',
+      cancelled: 'Cancelled',
+      pending: 'Pending',
+      processing: 'Processing',
+      published: 'Published'
     }
+  },
+  auditLog: {
+    title: 'Audit Logs',
+    detail: 'Audit Details',
+    occurredAt: 'Occurred At',
+    actor: 'Actor',
+    userId: 'User ID',
+    userKeyword: 'Username or display name',
+    actorType: 'Actor Type',
+    result: 'Result',
+    success: 'Success',
+    failure: 'Failure',
+    resource: 'Resource',
+    resourceType: 'Resource Type',
+    resourceId: 'Resource ID',
+    client: 'Client',
+    summary: 'Summary',
+    requestId: 'Request ID',
+    permission: 'Permission',
+    actions: { system_audit_log_list: 'Audit List', system_audit_log_get: 'Audit Details' }
   },
   page: {
     setting: {
@@ -516,7 +545,8 @@ const local: App.I18n.Schema = {
       initialize: 'Initialize',
       completeTitle: 'Setup Complete',
       completeDesc: 'System has been successfully initialized. Please restart the backend server before logging in.',
-      restartRequired: 'The backend server needs to be restarted to load the new configuration. Please restart and then click the button below to proceed to login.',
+      restartRequired:
+        'The backend server needs to be restarted to load the new configuration. Please restart and then click the button below to proceed to login.',
       goLogin: 'Go to Login'
     }
   },

@@ -799,6 +799,26 @@ declare namespace App {
           published: string;
         };
       };
+      auditLog: {
+        title: string;
+        detail: string;
+        occurredAt: string;
+        actor: string;
+        userId: string;
+        userKeyword: string;
+        actorType: string;
+        result: string;
+        success: string;
+        failure: string;
+        resource: string;
+        resourceType: string;
+        resourceId: string;
+        client: string;
+        summary: string;
+        requestId: string;
+        permission: string;
+        actions: { system_audit_log_list: string; system_audit_log_get: string };
+      };
       notificationAdmin: {
         templateTitle: string;
         deliveryTitle: string;

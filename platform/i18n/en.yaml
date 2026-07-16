@@ -50,6 +50,7 @@ permission_group.system.attachment_management: "Attachment Management"
 permission_group.operations.outbox: "Outbox Operations"
 permission_group.operations.jobs: "Job Operations"
 permission_group.operations.notification_delivery: "Notification Delivery Operations"
+permission_group.system.operations.audit: "Audit Logs"
 permission_group.system.notification_configuration: "Notification Configuration"
 
 # ── Attachment status CodeSet ──
@@ -252,6 +253,15 @@ menu.operations.notification_deliveries.title: "Notification Deliveries"
 menu.operations.root.title: "Operations"
 menu.operations.jobs.title: "Job Runs"
 menu.operations.outbox.title: "Outbox Events"
+menu.operations.audit_logs.title: "Audit Logs"
+
+action.system.audit_log_list.name: "Audit List"
+action.system.audit_log_list.description: "Query tenant audit logs"
+action.system.audit_log_get.name: "Audit Details"
+action.system.audit_log_get.description: "Query tenant audit log details"
+audit.not_found: "Audit log not found"
+audit.invalid_time: "Invalid audit time"
+audit.invalid_range: "Audit range must be positive and at most 31 days"
 
 # ── Demo menus ──
 menu.demo.attachments.title: "Attachments"

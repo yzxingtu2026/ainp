@@ -251,6 +251,7 @@ const local: App.I18n.Schema = {
     operations_jobs: '任务运行',
     operations_outbox: 'Outbox 事件',
     'operations_notification-deliveries': '通知投递',
+    'operations_audit-logs': '操作审计',
     setup: '安装向导'
   },
   operations: {
@@ -275,10 +276,38 @@ const local: App.I18n.Schema = {
     payload: '事件载荷',
     handler: 'Handler',
     status: {
-      pending_enqueue: '待入队', queued: '已入队', running: '运行中', retrying: '重试中',
-      succeeded: '成功', failed: '失败', dead: '死信', cancelled: '已取消',
-      pending: '待处理', processing: '处理中', published: '已发布'
+      pending_enqueue: '待入队',
+      queued: '已入队',
+      running: '运行中',
+      retrying: '重试中',
+      succeeded: '成功',
+      failed: '失败',
+      dead: '死信',
+      cancelled: '已取消',
+      pending: '待处理',
+      processing: '处理中',
+      published: '已发布'
     }
+  },
+  auditLog: {
+    title: '操作审计',
+    detail: '审计详情',
+    occurredAt: '操作时间',
+    actor: '操作人',
+    userId: '操作人 ID',
+    userKeyword: '用户名或用户昵称',
+    actorType: '主体类型',
+    result: '结果',
+    success: '成功',
+    failure: '失败',
+    resource: '资源',
+    resourceType: '资源类型',
+    resourceId: '资源 ID',
+    client: '客户端',
+    summary: '摘要',
+    requestId: 'Request ID',
+    permission: '权限',
+    actions: { system_audit_log_list: '审计列表', system_audit_log_get: '审计详情' }
   },
   page: {
     setting: {

@@ -175,6 +175,7 @@ const routeMap: RouteMap = {
   "notification": "/notification",
   "notification_list": "/notification/list",
   "operations": "/operations",
+  "operations_audit-logs": "/operations/audit-logs",
   "operations_jobs": "/operations/jobs",
   "operations_notification-deliveries": "/operations/notification-deliveries",
   "operations_outbox": "/operations/outbox",
