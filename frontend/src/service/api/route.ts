@@ -2,8 +2,8 @@ import { request } from '../request';
 import { transformAinPMenusToRoutes } from '@/utils/ainp-menu';
 import { createStaticRoutes } from '@/router/routes';
 
-/** 仅保留本地欢迎页；demo/system 等业务页由后端菜单动态注入，避免与 Elegant 扫目录静态路由重复 */
-const LOCAL_AUTH_ROUTE_NAMES = new Set(['home']);
+/** 本地始终保留的路由：home 为欢迎页，notification 为铃铛入口（不依赖后端菜单） */
+const LOCAL_AUTH_ROUTE_NAMES = new Set(['home', 'notification']);
 
 /** get constant routes — 使用本地内置常量路由 */
 export function fetchGetConstantRoutes() {
