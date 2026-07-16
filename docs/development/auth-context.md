@@ -38,7 +38,7 @@ System
 
 ## AuthContext
 
-经框架写入 `context.Context`，业务只读：`auth.FromContext(ctx)`。普通登录 Token 使用 audience `ainp:tenant-console`；Token 同时校验 issuer、audience、realm 与正整数 `auth_version`。JWT 只表达已签名的 `tenant_id + user_id + realm + auth_version`，不携带或信任角色/权限快照。该协议启用后旧 Token 需要重新登录。
+经框架写入 `context.Context`，业务只读：`auth.FromContext(ctx)`。普通登录 Token 使用 audience `ainp:tenant-console`；Token 同时校验 issuer、audience、realm、正整数 `auth_version` 与有效 `session_id`。JWT 只表达已签名的 `tenant_id + user_id + realm + auth_version + session_id`，不携带或信任角色/权限快照。会话撤销、过期或版本不一致均 fail-closed。详见 `authentication-and-session.md`；该协议启用后旧 Token 需要重新登录。
 
 | 字段 | 必填 | 说明 |
 |------|------|------|

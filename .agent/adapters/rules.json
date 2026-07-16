@@ -244,6 +244,23 @@
       }
     },
     {
+      "id": "authentication-and-session",
+      "source": ".agent/rules/authentication-and-session.md",
+      "qoder": {
+        "path": ".qoder/rules/authentication-and-session.md",
+        "frontmatter": {
+          "trigger": "always_on"
+        }
+      },
+      "cursor": {
+        "path": ".cursor/rules/authentication-and-session.mdc",
+        "frontmatter": {
+          "description": "统一认证与会话：Authenticator、Identity、Session 与 refresh 轮换安全边界",
+          "alwaysApply": true
+        }
+      }
+    },
+    {
       "id": "audit",
       "source": ".agent/rules/audit.md",
       "qoder": {

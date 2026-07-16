@@ -1,4 +1,4 @@
-import { localStg } from '@/utils/storage';
+import { localStg, sessionStg } from '@/utils/storage';
 
 /** Get token */
 export function getToken() {
@@ -8,5 +8,5 @@ export function getToken() {
 /** Clear auth storage */
 export function clearAuthStorage() {
   localStg.remove('token');
-  localStg.remove('refreshToken');
+  sessionStg.remove('refreshToken');
 }

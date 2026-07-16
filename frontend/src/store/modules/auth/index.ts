@@ -2,9 +2,9 @@ import { computed, reactive, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import { defineStore } from 'pinia';
 import { useLoading } from '@sa/hooks';
-import { fetchGetUserInfo, fetchLogin } from '@/service/api';
+import { fetchGetUserInfo, fetchLogin, fetchLogout } from '@/service/api';
 import { useRouterPush } from '@/hooks/common/router';
-import { localStg } from '@/utils/storage';
+import { localStg, sessionStg } from '@/utils/storage';
 import { SetupStoreId } from '@/enum';
 import { $t } from '@/locales';
 import { useRouteStore } from '../route';
@@ -53,6 +53,14 @@ export const useAuthStore = defineStore(SetupStoreId.Auth, () => {
 
     tabStore.cacheTabs();
     routeStore.resetStore();
+  }
+
+  async function logout() {
+    try {
+      await fetchLogout();
+    } finally {
+      await resetStore();
+    }
   }
 
   /** Record the user ID of the previous login session Used to compare with the current user ID on next login */
@@ -130,9 +138,9 @@ export const useAuthStore = defineStore(SetupStoreId.Auth, () => {
   }
 
   async function loginByToken(loginToken: Api.Auth.LoginToken) {
-    // 1. stored in the localStorage, the later requests need it in headers
+    // Access token persists for reloads; the rotating refresh token is tab-scoped.
     localStg.set('token', loginToken.token);
-    localStg.set('refreshToken', loginToken.refreshToken);
+    sessionStg.set('refreshToken', loginToken.refreshToken);
 
     // 2. get user info
     const pass = await getUserInfo();
@@ -179,6 +187,7 @@ export const useAuthStore = defineStore(SetupStoreId.Auth, () => {
     isLogin,
     loginLoading,
     resetStore,
+    logout,
     login,
     initUserInfo
   };

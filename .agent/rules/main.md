@@ -21,6 +21,7 @@
 - 强类型请求 DTO 与验证分层见 `validation`；列表查询接入边界见 `list-query`。
 - Action / 菜单注册见 `action-metadata`。
 - 多租户与鉴权上下文见 `auth-context`。
+- 统一认证与会话见 `authentication-and-session`（Authenticator / Identity / Session / refresh 轮换；渠道禁止旁路签 Token）。
 - 审计最小集见 `audit`。
 - 后端目录与模块边界见 `backend-layout`。
 - CodeSet、状态机与字符串常量见 `code-sets-and-status`。
@@ -58,6 +59,7 @@
 - `list-query` → `docs/development/list-query.md`
 - `action-metadata` → `docs/development/action-metadata.md`
 - `auth-context` → `docs/development/auth-context.md`
+- `authentication-and-session` → `docs/development/authentication-and-session.md`
 - `audit` → `docs/development/audit.md`
 - `i18n` → `docs/development/api-response.md`
 - `frontend-i18n` → `docs/development/frontend-stack.md`

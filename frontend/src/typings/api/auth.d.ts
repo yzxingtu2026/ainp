@@ -16,10 +16,17 @@ declare namespace Api {
     /** AINP /api/v1/system/auth/login data */
     interface AinPLoginData {
       access_token: string;
+      refresh_token: string;
       token_type: string;
       expires_in: number;
       expires_at: string;
+      session_id: string;
       user: AinPUserProfile;
+    }
+
+    interface AuthMethod {
+      method: string;
+      capabilities: { challenge: boolean; redirect: boolean; label_key?: string };
     }
 
     interface AinPUserProfile {
