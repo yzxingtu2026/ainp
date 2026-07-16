@@ -314,7 +314,6 @@ const local: App.I18n.Schema = {
     title: '日志中心',
     detail: '日志详情',
     noProvider: '暂无可用日志来源，请先配置支持租户隔离的日志 Provider',
-    providerUnavailable: '日志来源当前不可用，请检查 Loki 服务与只读凭据',
     timestamp: '时间',
     level: '级别',
     source: '来源',
@@ -323,9 +322,7 @@ const local: App.I18n.Schema = {
     keyword: '关键词',
     message: '消息',
     correlation: '关联标识',
-    attributes: '结构化属性',
-    applicationLogs: '应用日志',
-    workerLogs: 'Worker 日志'
+    attributes: '结构化属性'
   },
   page: {
     setting: {

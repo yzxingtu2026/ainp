@@ -29,8 +29,6 @@ type Source struct {
 	Name         string       `json:"name"`
 	DisplayName  string       `json:"display_name"`
 	Capabilities Capabilities `json:"capabilities"`
-	Available    bool         `json:"available"`
-	Status       string       `json:"status"`
 }
 
 type Query struct {
@@ -90,8 +88,6 @@ type Provider interface {
 	Get(context.Context, Ref) (*Entry, error)
 }
 
-type HealthProvider interface{ Health(context.Context) error }
-
 type Registry struct {
 	mu    sync.RWMutex
 	items map[string]Provider
@@ -124,7 +120,7 @@ func (r *Registry) List() []Source {
 	defer r.mu.RUnlock()
 	out := make([]Source, 0, len(r.items))
 	for _, p := range r.items {
-		out = append(out, Source{Name: p.Name(), DisplayName: p.DisplayName(), Capabilities: p.Capabilities(), Available: true, Status: "available"})
+		out = append(out, Source{Name: p.Name(), DisplayName: p.DisplayName(), Capabilities: p.Capabilities()})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
@@ -145,8 +141,7 @@ func (p *FakeProvider) DisplayName() string {
 	}
 	return p.SourceName
 }
-func (p *FakeProvider) Capabilities() Capabilities   { return p.Caps }
-func (p *FakeProvider) Health(context.Context) error { return p.Err }
+func (p *FakeProvider) Capabilities() Capabilities { return p.Caps }
 
 func (p *FakeProvider) Query(ctx context.Context, q Query) (Page, error) {
 	if p.Err != nil {

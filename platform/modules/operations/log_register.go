@@ -37,7 +37,7 @@ type logQueryRequest struct {
 	JobType   string `json:"job_type"`
 	JobRunID  string `json:"job_run_id"`
 	EventID   string `json:"event_id"`
-	Page      int    `json:"page" validate:"min=1,max=100"`
+	Page      int    `json:"page" validate:"min=1"`
 	PageSize  int    `json:"page_size" validate:"min=1,max=100"`
 }
 
@@ -69,16 +69,6 @@ func (s *LogService) sources(ctx context.Context, _ struct{}) (any, error) {
 	visible := sources[:0]
 	for _, source := range sources {
 		if source.Capabilities.TenantFilter {
-			if provider, ok := s.providers.Get(source.Name); ok {
-				if health, ok := provider.(logcenter.HealthProvider); ok {
-					healthCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-					if err := health.Health(healthCtx); err != nil {
-						source.Available = false
-						source.Status = "unavailable"
-					}
-					cancel()
-				}
-			}
 			visible = append(visible, source)
 		}
 	}

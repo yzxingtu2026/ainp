@@ -823,7 +823,6 @@ declare namespace App {
         title: string;
         detail: string;
         noProvider: string;
-        providerUnavailable: string;
         timestamp: string;
         level: string;
         source: string;
@@ -833,8 +832,6 @@ declare namespace App {
         message: string;
         correlation: string;
         attributes: string;
-        applicationLogs: string;
-        workerLogs: string;
       };
       notificationAdmin: {
         templateTitle: string;
