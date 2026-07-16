@@ -16,6 +16,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/attachment"
 	"github.com/yzxingtu2026/ainp/platform/framework/audit"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
+	"github.com/yzxingtu2026/ainp/platform/framework/authentication"
 	"github.com/yzxingtu2026/ainp/platform/framework/capability"
 	"github.com/yzxingtu2026/ainp/platform/framework/codeset"
 	"github.com/yzxingtu2026/ainp/platform/framework/config"
@@ -40,6 +41,8 @@ type App struct {
 	DB                   *gorm.DB
 	Tokens               *auth.TokenService
 	Authorization        auth.AuthorizationProvider
+	Authenticators       *authentication.Registry
+	AuthRateLimiter      authentication.RateLimiter
 	Capabilities         *capability.Registry
 	Actions              *action.Registry
 	Menus                *menu.Registry
@@ -82,6 +85,8 @@ func New(cfg *config.Config, db *gorm.DB, auditor audit.Recorder, tokens *auth.T
 		Config:               cfg,
 		DB:                   db,
 		Tokens:               tokens,
+		Authenticators:       authentication.NewRegistry(),
+		AuthRateLimiter:      authentication.NewMemoryRateLimiter(10, time.Minute),
 		Capabilities:         capability.NewRegistry(),
 		Actions:              actions,
 		Menus:                menu.NewRegistry(),

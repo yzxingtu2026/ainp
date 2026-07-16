@@ -46,14 +46,14 @@ func (c RedisConfig) WriteTimeoutDuration() time.Duration {
 // JobsConfig controls background job workers / enqueue (Issue #21).
 type JobsConfig struct {
 	// Enabled defaults to false when omitted (HTTP can run without Redis).
-	Enabled            *bool          `yaml:"enabled"`
-	Concurrency        int            `yaml:"concurrency"`
-	Queues             map[string]int `yaml:"queues"`
-	DefaultTimeout     string         `yaml:"default_timeout"`
-	MaxPayloadBytes    int            `yaml:"max_payload_bytes"`
-	ShutdownTimeout    string         `yaml:"shutdown_timeout"`
-	RecoveryInterval   string         `yaml:"recovery_interval"`
-	EmbeddedWorker     bool           `yaml:"embedded_worker"` // dev-only: run worker inside HTTP process
+	Enabled          *bool          `yaml:"enabled"`
+	Concurrency      int            `yaml:"concurrency"`
+	Queues           map[string]int `yaml:"queues"`
+	DefaultTimeout   string         `yaml:"default_timeout"`
+	MaxPayloadBytes  int            `yaml:"max_payload_bytes"`
+	ShutdownTimeout  string         `yaml:"shutdown_timeout"`
+	RecoveryInterval string         `yaml:"recovery_interval"`
+	EmbeddedWorker   bool           `yaml:"embedded_worker"` // dev-only: run worker inside HTTP process
 }
 
 func (c JobsConfig) IsEnabled() bool {
@@ -139,12 +139,13 @@ type AuthConfig struct {
 	// DevTokenEnabled 开发桩；生产必须为 false。正式 JWT 优先。
 	DevTokenEnabled bool      `yaml:"dev_token_enabled"`
 	JWT             JWTConfig `yaml:"jwt"`
+	RefreshTTL      string    `yaml:"refresh_ttl"`
 }
 
 type JWTConfig struct {
 	Secret string `yaml:"secret"`
 	Issuer string `yaml:"issuer"`
-	TTL    string `yaml:"ttl"` // e.g. 24h
+	TTL    string `yaml:"ttl"` // e.g. 15m
 }
 
 type I18nConfig struct {
@@ -163,11 +164,19 @@ type StorageLocalConfig struct {
 
 func (j JWTConfig) Duration() time.Duration {
 	if j.TTL == "" {
-		return 24 * time.Hour
+		return 15 * time.Minute
 	}
 	d, err := time.ParseDuration(j.TTL)
 	if err != nil || d <= 0 {
-		return 24 * time.Hour
+		return 15 * time.Minute
+	}
+	return d
+}
+
+func (a AuthConfig) RefreshDuration() time.Duration {
+	d, err := time.ParseDuration(a.RefreshTTL)
+	if err != nil || d <= 0 {
+		return 30 * 24 * time.Hour
 	}
 	return d
 }
@@ -203,7 +212,10 @@ func (c *Config) applyDefaults() {
 		c.Auth.JWT.Issuer = "ainp"
 	}
 	if c.Auth.JWT.TTL == "" {
-		c.Auth.JWT.TTL = "24h"
+		c.Auth.JWT.TTL = "15m"
+	}
+	if c.Auth.RefreshTTL == "" {
+		c.Auth.RefreshTTL = "720h"
 	}
 	if c.StateFile == "" {
 		c.StateFile = "configs/state.yaml"
@@ -308,8 +320,11 @@ func (c *Config) Validate(requireDSN bool) error {
 	if c.Auth.JWT.Secret == "" {
 		return fmt.Errorf("auth.jwt.secret is required")
 	}
-	if _, err := time.ParseDuration(c.Auth.JWT.TTL); err != nil {
-		return fmt.Errorf("auth.jwt.ttl is invalid: %w", err)
+	if duration, err := time.ParseDuration(c.Auth.JWT.TTL); err != nil || duration <= 0 {
+		return fmt.Errorf("auth.jwt.ttl is invalid")
+	}
+	if duration, err := time.ParseDuration(c.Auth.RefreshTTL); err != nil || duration <= 0 {
+		return fmt.Errorf("auth.refresh_ttl is invalid")
 	}
 	return nil
 }

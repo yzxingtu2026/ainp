@@ -29,12 +29,12 @@ func TestAuthMiddlewareUsesCurrentAuthorizationSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	token, _, err := tokens.Issue("tenant-1", "user-1", 7)
+	token, _, err := tokens.Issue("tenant-1", "user-1", "session-1", 7)
 	if err != nil {
 		t.Fatal(err)
 	}
 	provider := &fakeAuthorizationProvider{snapshot: &auth.AuthorizationSnapshot{
-		TenantID: "tenant-1", UserID: "user-1", AuthVersion: 7,
+		TenantID: "tenant-1", UserID: "user-1", SessionID: "session-1", AuthVersion: 7,
 		Roles: []string{"current-role"}, Permissions: []string{"current.permission"},
 	}}
 	router := gin.New()
@@ -55,7 +55,7 @@ func TestAuthMiddlewareUsesCurrentAuthorizationSnapshot(t *testing.T) {
 	if resp.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want %d", resp.Code, http.StatusNoContent)
 	}
-	if provider.request.TenantID != "tenant-1" || provider.request.UserID != "user-1" || provider.request.AuthVersion != 7 {
+	if provider.request.TenantID != "tenant-1" || provider.request.UserID != "user-1" || provider.request.SessionID != "session-1" || provider.request.AuthVersion != 7 {
 		t.Fatalf("unexpected provider request: %#v", provider.request)
 	}
 }
@@ -63,7 +63,7 @@ func TestAuthMiddlewareUsesCurrentAuthorizationSnapshot(t *testing.T) {
 func TestAuthMiddlewareFailsClosedWhenAuthorizationIsStale(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	tokens, _ := auth.NewTokenService("test-secret", "ainp-test", time.Hour)
-	token, _, _ := tokens.Issue("tenant-1", "user-1", 1)
+	token, _, _ := tokens.Issue("tenant-1", "user-1", "session-1", 1)
 	provider := &fakeAuthorizationProvider{err: auth.ErrAuthorizationStale}
 	router := gin.New()
 	router.Use(middleware.RequestID(), middleware.Auth(middleware.AuthOptions{Tokens: tokens, Authorization: provider}))
@@ -83,9 +83,9 @@ func TestAuthMiddlewareFailsClosedWhenAuthorizationIsStale(t *testing.T) {
 func TestAuthMiddlewareRejectsMismatchedAuthorizationSnapshot(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	tokens, _ := auth.NewTokenService("test-secret", "ainp-test", time.Hour)
-	token, _, _ := tokens.Issue("tenant-1", "user-1", 1)
+	token, _, _ := tokens.Issue("tenant-1", "user-1", "session-1", 1)
 	provider := &fakeAuthorizationProvider{snapshot: &auth.AuthorizationSnapshot{
-		TenantID: "tenant-2", UserID: "user-1", AuthVersion: 1, Permissions: []string{"*"},
+		TenantID: "tenant-2", UserID: "user-1", SessionID: "session-1", AuthVersion: 1, Permissions: []string{"*"},
 	}}
 	router := gin.New()
 	router.Use(middleware.RequestID(), middleware.Auth(middleware.AuthOptions{Tokens: tokens, Authorization: provider}))

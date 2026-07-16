@@ -81,10 +81,11 @@ curl -s -X POST localhost:8080/api/v1/demo/hello \
 ```yaml
 auth:
   dev_token_enabled: false
+  refresh_ttl: 720h
   jwt:
     secret: "<生产随机密钥>"
     issuer: ainp
-    ttl: 24h
+    ttl: 15m
 ```
 
 ## 目录

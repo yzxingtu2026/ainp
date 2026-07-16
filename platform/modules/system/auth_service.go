@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sort"
+	"time"
 
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/status"
@@ -138,13 +139,22 @@ func (s *AuthService) LoadAuthorization(ctx context.Context, req auth.Authorizat
 	if u.AuthVersion != req.AuthVersion {
 		return nil, auth.ErrAuthorizationStale
 	}
+	if req.SessionID != "" {
+		var count int64
+		now := time.Now().UTC()
+		if err := s.db.WithContext(ctx).Model(&model.AuthSession{}).
+			Where("id = ? AND tenant_id = ? AND user_id = ? AND auth_version = ? AND revoked_at IS NULL AND expires_at > ?", req.SessionID, req.TenantID, req.UserID, req.AuthVersion, now).
+			Count(&count).Error; err != nil || count != 1 {
+			return nil, auth.ErrAuthorizationInvalid
+		}
+	}
 
 	roles, permissions, err := s.LoadRolesAndPermissions(ctx, u.ID, u.TenantID)
 	if err != nil {
 		return nil, err
 	}
 	return &auth.AuthorizationSnapshot{
-		TenantID: u.TenantID, UserID: u.ID, OrgID: u.OrgID, DeptID: u.DeptID,
+		TenantID: u.TenantID, UserID: u.ID, SessionID: req.SessionID, OrgID: u.OrgID, DeptID: u.DeptID,
 		Roles: roles, Permissions: permissions, AuthVersion: u.AuthVersion,
 	}, nil
 }

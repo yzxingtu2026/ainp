@@ -72,6 +72,19 @@ export const request = createFlatRequest(
         request.state.errMsgStack = request.state.errMsgStack.filter(item => item !== msg);
       }
 
+      const expiredTokenCodes = import.meta.env.VITE_SERVICE_EXPIRED_TOKEN_CODES?.split(',').filter(Boolean) || [];
+      if (expiredTokenCodes.includes(responseCode)) {
+        if ((response.config as any).__authRetried) return null;
+        const success = await handleExpiredRequest(request.state);
+        if (success) {
+          const Authorization = getAuthorization();
+          (response.config as any).__authRetried = true;
+          Object.assign(response.config.headers, { Authorization, 'Accept-Language': getAcceptLanguage() });
+          return instance.request(response.config) as Promise<AxiosResponse>;
+        }
+        return null;
+      }
+
       const logoutCodes = import.meta.env.VITE_SERVICE_LOGOUT_CODES?.split(',').filter(Boolean) || [];
       if (logoutCodes.includes(responseCode)) {
         handleLogout();
@@ -96,16 +109,6 @@ export const request = createFlatRequest(
           }
         });
         return null;
-      }
-
-      const expiredTokenCodes = import.meta.env.VITE_SERVICE_EXPIRED_TOKEN_CODES?.split(',').filter(Boolean) || [];
-      if (expiredTokenCodes.includes(responseCode)) {
-        const success = await handleExpiredRequest(request.state);
-        if (success) {
-          const Authorization = getAuthorization();
-          Object.assign(response.config.headers, { Authorization, 'Accept-Language': getAcceptLanguage() });
-          return instance.request(response.config) as Promise<AxiosResponse>;
-        }
       }
 
       return null;

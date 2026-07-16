@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, reactive } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { loginModuleRecord } from '@/constants/app';
 import { useAuthStore } from '@/store/modules/auth';
 import { useRouterPush } from '@/hooks/common/router';
 import { useFormRules, useNaiveForm } from '@/hooks/common/form';
 import { $t } from '@/locales';
+import { fetchAuthMethods } from '@/service/api';
 
 defineOptions({
   name: 'PwdLogin'
@@ -13,6 +14,12 @@ defineOptions({
 const authStore = useAuthStore();
 const { toggleLoginModule } = useRouterPush();
 const { formRef, validate } = useNaiveForm();
+const enabledMethods = ref(new Set<string>(['password']));
+
+onMounted(async () => {
+  const { data, error } = await fetchAuthMethods();
+  if (!error && data) enabledMethods.value = new Set(data.methods.map(item => item.method));
+});
 
 interface FormModel {
   userName: string;
@@ -86,11 +93,13 @@ async function handleAccountLogin(account: Account) {
         {{ $t('common.confirm') }}
       </NButton>
       <div class="flex-y-center justify-between gap-12px">
-        <NButton class="flex-1" block @click="toggleLoginModule('code-login')">
+        <NButton
+          v-if="enabledMethods.has('sms_otp') || enabledMethods.has('email_otp')"
+          class="flex-1"
+          block
+          @click="toggleLoginModule('code-login')"
+        >
           {{ $t(loginModuleRecord['code-login']) }}
-        </NButton>
-        <NButton class="flex-1" block @click="toggleLoginModule('register')">
-          {{ $t(loginModuleRecord.register) }}
         </NButton>
       </div>
       <NDivider class="text-14px text-#666 !m-0">{{ $t('page.login.pwdLogin.otherAccountLogin') }}</NDivider>

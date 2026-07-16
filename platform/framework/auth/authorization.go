@@ -14,6 +14,7 @@ var (
 type AuthorizationRequest struct {
 	TenantID    string
 	UserID      string
+	SessionID   string
 	Realm       Realm
 	AuthVersion uint64
 }
@@ -22,6 +23,7 @@ type AuthorizationRequest struct {
 type AuthorizationSnapshot struct {
 	TenantID    string
 	UserID      string
+	SessionID   string
 	OrgID       string
 	DeptID      string
 	Roles       []string

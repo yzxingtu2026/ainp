@@ -3,6 +3,8 @@ declare namespace StorageType {
   interface Session {
     /** The theme color */
     themeColor: string;
+    /** Rotating refresh token; scoped to the current browser tab. */
+    refreshToken: string;
     // /**
     //  * the theme settings
     //  */
@@ -16,8 +18,6 @@ declare namespace StorageType {
     token: string;
     /** Fixed sider with mix-menu */
     mixSiderFixed: CommonType.YesOrNo;
-    /** The refresh token */
-    refreshToken: string;
     /** The theme color */
     themeColor: string;
     /** The dark mode */

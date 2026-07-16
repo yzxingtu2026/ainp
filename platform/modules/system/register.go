@@ -30,6 +30,14 @@ func Register(a *app.App) error {
 
 	svc := NewAuthService(a.DB)
 	a.Authorization = svc
+	if a.Authenticators == nil {
+		return fmt.Errorf("authenticator registry is required")
+	}
+	if err := a.Authenticators.Register(NewPasswordAuthenticator(svc)); err != nil {
+		return err
+	}
+	sessionSvc := NewSessionService(a.DB, a.Tokens, svc, a.Config.Auth.RefreshDuration())
+	unifiedAuth := NewUnifiedAuthService(a.DB, a.Authenticators, svc, sessionSvc, a.AuthRateLimiter)
 	auditOn := true
 	auditOff := false
 
@@ -100,15 +108,15 @@ func Register(a *app.App) error {
 
 	if err := a.RegisterAction(action.Action{
 		ID: "system.auth_login",
-		Handler: action.JSON(func(ctx context.Context, input loginRequest) (any, error) {
-			return svc.login(ctx, a.Tokens, input)
+		Handler: action.JSON(func(ctx context.Context, input LegacyLoginRequest) (any, error) {
+			return unifiedAuth.LegacyLogin(ctx, input)
 		}),
 		Meta: action.Metadata{
 			Capability:     "system",
 			Access:         action.AccessPublic,
 			Name:           "登录",
 			NameKey:        "action.system.auth_login.name",
-			Description:    "校验账号密码并签发 JWT",
+			Description:    "通过统一认证与会话链路完成密码登录",
 			DescriptionKey: "action.system.auth_login.description",
 			Audit:          &auditOn,
 			HTTP: &action.HTTPMeta{
@@ -117,6 +125,10 @@ func Register(a *app.App) error {
 			},
 		},
 	}); err != nil {
+		return err
+	}
+
+	if err := registerAuthenticationActions(a, unifiedAuth, auditOn, auditOff); err != nil {
 		return err
 	}
 

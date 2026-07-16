@@ -21,7 +21,7 @@ export function fetchLogin(userName: string, password: string) {
     const token = payload.token || payload.access_token;
     const mapped: Api.Auth.LoginToken = {
       token,
-      refreshToken: payload.refreshToken || ''
+      refreshToken: payload.refreshToken || payload.refresh_token || ''
     };
     return { data: mapped, error: null, response: res.response };
   });
@@ -40,14 +40,10 @@ export function fetchGetUserInfo() {
     const menusRes = await request<Api.Route.AinPMenusData>({ url: '/api/v1/menus' });
     const buttons =
       !menusRes.error && menusRes.data
-        ? (menusRes.data.buttons || [])
-            .map(b => b.permission || b.bind_action || '')
-            .filter(Boolean)
+        ? (menusRes.data.buttons || []).map(b => b.permission || b.bind_action || '').filter(Boolean)
         : profile.buttons || profile.permissions || [];
 
-    const permissionButtons = Array.from(
-      new Set([...(profile.permissions || []), ...buttons].filter(Boolean))
-    );
+    const permissionButtons = Array.from(new Set([...(profile.permissions || []), ...buttons].filter(Boolean)));
 
     const mapped: Api.Auth.UserInfo = {
       realm: profile.realm,
@@ -65,11 +61,27 @@ export function fetchGetUserInfo() {
  * Phase 1 无 refresh token；失败即登出。
  */
 export function fetchRefreshToken(_refreshToken: string) {
-  return Promise.resolve({
-    data: null,
-    error: new Error('refresh token not supported'),
-    response: null
+  return request<Api.Auth.LoginToken>({
+    url: '/api/v1/system/auth/refresh',
+    method: 'post',
+    data: { refresh_token: _refreshToken }
+  }).then(res => {
+    if (res.error || !res.data) return res;
+    const payload = res.data as unknown as Api.Auth.AinPLoginData;
+    return {
+      data: { token: payload.access_token, refreshToken: payload.refresh_token },
+      error: null,
+      response: res.response
+    };
   });
+}
+
+export function fetchAuthMethods() {
+  return request<{ methods: Api.Auth.AuthMethod[] }>({ url: '/api/v1/system/auth/methods' });
+}
+
+export function fetchLogout() {
+  return request<{ revoked: boolean }>({ url: '/api/v1/system/auth/logout', method: 'post' });
 }
 
 /** @deprecated mock only */

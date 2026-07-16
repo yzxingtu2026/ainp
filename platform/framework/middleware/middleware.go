@@ -150,10 +150,10 @@ func Auth(opts AuthOptions) gin.HandlerFunc {
 				return
 			}
 			snapshot, err := opts.Authorization.LoadAuthorization(c.Request.Context(), auth.AuthorizationRequest{
-				TenantID: claims.TenantID, UserID: claims.UserID, Realm: claims.Realm, AuthVersion: claims.AuthVersion,
+				TenantID: claims.TenantID, UserID: claims.UserID, SessionID: claims.SessionID, Realm: claims.Realm, AuthVersion: claims.AuthVersion,
 			})
 			if err != nil || snapshot == nil ||
-				snapshot.TenantID != claims.TenantID || snapshot.UserID != claims.UserID || snapshot.AuthVersion != claims.AuthVersion {
+				snapshot.TenantID != claims.TenantID || snapshot.UserID != claims.UserID || snapshot.SessionID != claims.SessionID || snapshot.AuthVersion != claims.AuthVersion {
 				// 会话 JWT 已验签但授权版本失效/不匹配：直接 401，避免匿名继续打到受保护 Action。
 				response.Fail(c, errs.NewKey(errs.CodeUnauthorized, "common.unauthorized", "unauthorized"))
 				c.Abort()
@@ -162,6 +162,7 @@ func Auth(opts AuthOptions) gin.HandlerFunc {
 			ac.TenantID = snapshot.TenantID
 			ac.Realm = claims.Realm
 			ac.UserID = snapshot.UserID
+			ac.SessionID = snapshot.SessionID
 			ac.OrgID = snapshot.OrgID
 			ac.DeptID = snapshot.DeptID
 			ac.Roles = append([]string(nil), snapshot.Roles...)

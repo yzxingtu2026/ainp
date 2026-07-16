@@ -61,6 +61,8 @@ func Fail(c *gin.Context, err error) {
 		httpStatus = http.StatusForbidden
 	case errs.CodeConflict:
 		httpStatus = http.StatusConflict
+	case errs.CodeTooManyRequests:
+		httpStatus = http.StatusTooManyRequests
 	case errs.CodeInternal:
 		httpStatus = http.StatusInternalServerError
 	}

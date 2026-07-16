@@ -1,6 +1,7 @@
 package model
 
 import (
+	"encoding/json"
 	"github.com/yzxingtu2026/ainp/platform/framework/status"
 	"time"
 )
@@ -21,6 +22,55 @@ type User struct {
 }
 
 func (User) TableName() string { return "users" }
+
+type AuthIdentity struct {
+	ID                   string                  `gorm:"primaryKey;size:64"`
+	TenantID             string                  `gorm:"size:64;uniqueIndex:ux_auth_identity_subject;not null;index"`
+	UserID               string                  `gorm:"size:64;not null;index"`
+	Provider             string                  `gorm:"size:64;uniqueIndex:ux_auth_identity_subject;not null"`
+	Subject              string                  `gorm:"size:255;uniqueIndex:ux_auth_identity_subject;not null"`
+	NormalizedIdentifier string                  `gorm:"size:255;index"`
+	Status               status.ActivationStatus `gorm:"size:32;not null;default:enabled"`
+	VerifiedAt           time.Time               `gorm:"not null"`
+	Metadata             json.RawMessage         `gorm:"type:jsonb"`
+	CreatedAt            time.Time               `gorm:"autoCreateTime"`
+	UpdatedAt            time.Time               `gorm:"autoUpdateTime"`
+}
+
+func (AuthIdentity) TableName() string { return "auth_identities" }
+
+type AuthSession struct {
+	ID                       string     `gorm:"primaryKey;size:64"`
+	TenantID                 string     `gorm:"size:64;not null;index:idx_auth_sessions_owner"`
+	UserID                   string     `gorm:"size:64;not null;index:idx_auth_sessions_owner"`
+	Realm                    string     `gorm:"size:32;not null"`
+	Client                   string     `gorm:"size:64;not null"`
+	DeviceSummary            string     `gorm:"size:255"`
+	RefreshTokenHash         string     `gorm:"size:64;not null;uniqueIndex"`
+	PreviousRefreshTokenHash string     `gorm:"size:64;index"`
+	AuthVersion              uint64     `gorm:"not null"`
+	ExpiresAt                time.Time  `gorm:"not null;index"`
+	LastSeenAt               time.Time  `gorm:"not null"`
+	RevokedAt                *time.Time `gorm:"index"`
+	CreatedAt                time.Time  `gorm:"autoCreateTime"`
+	UpdatedAt                time.Time  `gorm:"autoUpdateTime"`
+}
+
+func (AuthSession) TableName() string { return "auth_sessions" }
+
+type AuthChallenge struct {
+	ID          string     `gorm:"primaryKey;size:64"`
+	Method      string     `gorm:"size:64;not null;index"`
+	SecretHash  string     `gorm:"size:64"`
+	Client      string     `gorm:"size:64"`
+	Attempts    int        `gorm:"not null;default:0"`
+	MaxAttempts int        `gorm:"not null;default:5"`
+	ExpiresAt   time.Time  `gorm:"not null;index"`
+	ConsumedAt  *time.Time `gorm:"index"`
+	CreatedAt   time.Time  `gorm:"autoCreateTime"`
+}
+
+func (AuthChallenge) TableName() string { return "auth_challenges" }
 
 type Role struct {
 	ID          string                  `gorm:"primaryKey;size:64"`

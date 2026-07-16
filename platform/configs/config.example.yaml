@@ -11,6 +11,8 @@ logging:
   format: text # text | json
 
 auth:
+  # refresh token 会话有效期；仅保存摘要并在每次刷新时轮换
+  refresh_ttl: 720h
   # 开发桩：Authorization: Bearer dev:<tenant_id>:<user_id>:<perm1,perm2,...>
   # 生产必须关闭；正式 JWT 优先
   dev_token_enabled: false
@@ -18,7 +20,7 @@ auth:
     # 生产务必更换为足够长的随机密钥；勿提交真实密钥
     secret: "change-me-dev-only-not-for-production"
     issuer: ainp
-    ttl: 24h
+    ttl: 15m
 
 i18n:
   # 未传 Accept-Language 时的默认语言；支持 zh-CN、en

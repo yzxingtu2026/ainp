@@ -14,6 +14,7 @@
 - [API 响应与错误](./api-response.md)
 - [Action / Metadata / 菜单注册](./action-metadata.md)
 - [多租户与鉴权上下文](./auth-context.md)
+- [统一认证与会话](./authentication-and-session.md)
 - [审计日志（最小集）](./audit.md)
 - [后端目录与模块边界](./backend-layout.md)
 - [CodeSet、状态机与字符串常量](./code-sets-and-status.md)
