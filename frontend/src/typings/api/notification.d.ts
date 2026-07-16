@@ -71,6 +71,8 @@ declare namespace Api {
     /** Merged template definition (code default + tenant override) */
     interface TemplateDefinitionItem {
       definition_key: string;
+      name: string;
+      description: string;
       category: string;
       name_key: string;
       description_key: string;

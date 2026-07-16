@@ -10,6 +10,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
+	"github.com/yzxingtu2026/ainp/platform/framework/i18n"
 	"github.com/yzxingtu2026/ainp/platform/framework/menu"
 	"github.com/yzxingtu2026/ainp/platform/framework/notification"
 	"gorm.io/gorm"
@@ -188,6 +189,9 @@ func (s *NotificationTemplateService) List(ctx context.Context, _ json.RawMessag
 		return nil, err
 	}
 
+	// 获取请求语言，用于翻译 name/description
+	lang := i18n.FromCtx(ctx)
+
 	// 1. 获取代码注册的所有通知定义
 	defs := s.registry.List()
 
@@ -273,6 +277,8 @@ func (s *NotificationTemplateService) List(ctx context.Context, _ json.RawMessag
 
 		items = append(items, map[string]any{
 			"definition_key":   def.Key,
+			"name":             i18n.T(lang, def.NameKey),
+			"description":      i18n.T(lang, def.DescriptionKey),
 			"category":         def.Category,
 			"name_key":         def.NameKey,
 			"description_key":  def.DescriptionKey,

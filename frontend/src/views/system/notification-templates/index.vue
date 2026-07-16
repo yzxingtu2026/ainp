@@ -19,6 +19,8 @@ const records = ref<Api.Notification.TemplateDefinitionItem[]>([]);
 /** Flattened row: one per template variant (channel+locale) */
 interface FlatRow {
   definition_key: string;
+  name: string;
+  description: string;
   category: string;
   name_key: string;
   priority: string;
@@ -38,6 +40,8 @@ const flatRows = computed<FlatRow[]>(() => {
     for (const tpl of def.templates) {
       rows.push({
         definition_key: def.definition_key,
+        name: def.name,
+        description: def.description,
         category: def.category,
         name_key: def.name_key,
         priority: def.priority,
@@ -113,7 +117,7 @@ const columns: DataTableColumns<FlatRow> = [
     width: 220,
     ellipsis: { tooltip: true },
     render: row => [
-      h('div', { class: 'text-13px font-medium' }, $t(row.name_key as any) || row.definition_key),
+      h('div', { class: 'text-13px font-medium' }, row.name || row.definition_key),
       h('div', { class: 'text-12px opacity-60' }, $t((categoryI18n[row.category] || '') as any) || row.category)
     ]
   },
