@@ -200,9 +200,35 @@ func (s *AgentService) get(ctx context.Context, id string, edit bool) (*Agent, *
 	}
 	return &row, ac, nil
 }
+// AgentDetail is the builder-facing agent payload. Contract fields are read-only overlays.
+type AgentDetail struct {
+	Agent
+	BaseInstructions      string   `json:"base_instructions,omitempty"`
+	ManagedFields         []string `json:"managed_fields,omitempty"`
+	RequiredToolSelectors []string `json:"required_tool_selectors,omitempty"`
+}
+
 func (s *AgentService) Get(ctx context.Context, r IDRequest) (any, error) {
 	row, _, e := s.get(ctx, r.ID, false)
-	return row, e
+	if e != nil {
+		return nil, e
+	}
+	return s.toDetail(row), nil
+}
+
+func (s *AgentService) toDetail(row *Agent) AgentDetail {
+	detail := AgentDetail{Agent: *row}
+	if row.ContractKey == "" || row.ContractVersion == "" || s.contracts == nil {
+		return detail
+	}
+	contract, ok := s.contracts.Get(row.ContractKey, row.ContractVersion)
+	if !ok {
+		return detail
+	}
+	detail.BaseInstructions = contract.BaseInstructions
+	detail.ManagedFields = append([]string{}, contract.ManagedFields...)
+	detail.RequiredToolSelectors = append([]string{}, contract.RequiredToolSelectors...)
+	return detail
 }
 
 func (s *AgentService) Create(ctx context.Context, r AgentCreateRequest) (any, error) {

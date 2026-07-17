@@ -38,7 +38,13 @@ export function setupElegantRouter() {
         'operations',
         'operations_jobs',
         'operations_outbox',
-        'operations_notification-deliveries'
+        'operations_notification-deliveries',
+        'ai',
+        'ai_agents',
+        'ai_agent-builder',
+        'ai_models',
+        'ai_providers',
+        'ai_runtime'
       ];
 
       const meta: Partial<RouteMeta> = {
@@ -52,6 +58,10 @@ export function setupElegantRouter() {
 
       if (backendDrivenMenus.includes(key)) {
         meta.hideInMenu = true;
+      }
+
+      if (key === 'ai_agent-builder') {
+        meta.activeMenu = 'ai_agents' as RouteKey;
       }
 
       return meta;

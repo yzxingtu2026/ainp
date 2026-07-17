@@ -3,6 +3,7 @@ package tests
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/yzxingtu2026/ainp/platform/framework/action"
@@ -40,6 +41,25 @@ func TestAgentActionRequestsAcceptSnakeCaseJSON(t *testing.T) {
 	}
 	if result.(ai.AgentToolSearchRequest).Limit != 10 {
 		t.Fatalf("tool search limit was not decoded: %#v", result)
+	}
+}
+
+func TestAgentDetailExposesReadOnlyContractOverlay(t *testing.T) {
+	detail := ai.AgentDetail{
+		Agent:                 ai.Agent{ID: "a1", Code: "demo", Name: "Demo", Source: "builtin", Visibility: "tenant", Status: "enabled", Revision: 1},
+		BaseInstructions:      "Keep tenant boundaries.",
+		ManagedFields:         []string{"code", "source"},
+		RequiredToolSelectors: []string{"meta:tool.search"},
+	}
+	encoded, err := json.Marshal(detail)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(encoded)
+	for _, want := range []string{`"base_instructions":"Keep tenant boundaries."`, `"managed_fields":["code","source"]`, `"required_tool_selectors":["meta:tool.search"]`} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("missing %s in %s", want, text)
+		}
 	}
 }
 

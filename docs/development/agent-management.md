@@ -30,4 +30,10 @@ Agent Contract（代码注册的能力与安全契约）
 
 数据库 migration 只建 schema。Setup 通过租户初始化 hook 幂等创建 `system.operations`；存量租户由显式 `ai.agent_builtin_reconcile` Action 同步。reconcile 只创建缺失实例或升级托管字段，不覆盖租户可编辑字段，不删除历史版本。
 
+## Agent Builder
+
+智能体编排工作台（Agent Builder）是面向创建者与租户管理员的配置/调试入口，路由为全屏 `/ai/agent-builder`（列表 `/ai/agents` 负责入口跳转）。Builder 复用本层 Action：创建、元数据更新、版本发布、工具绑定与 diagnostics；`agent_get` 额外返回只读 Contract 覆盖字段：`base_instructions`、`managed_fields`、`required_tool_selectors`。
+
+Phase A 右栏预览仅为可识别 Mock，不得调用 Generate、不得创建正式 Conversation/Run。真实预览必须走 Conversation + Agent Runtime，且与 #80 AI Workspace 正式会话隔离。
+
 本层不实现 Conversation、Agent Run/Step、Workspace、知识库或长期记忆。这些运行对象后续只能引用明确的 `agent_version_id`。

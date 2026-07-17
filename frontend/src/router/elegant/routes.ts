@@ -50,6 +50,17 @@ export const generatedRoutes: GeneratedRoute[] = [
     },
     children: [
       {
+        name: 'ai_agent-builder',
+        path: '/ai/agent-builder',
+        component: 'view.ai_agent-builder',
+        meta: {
+          title: 'ai_agent-builder',
+          i18nKey: 'route.ai_agent-builder',
+          hideInMenu: true,
+          activeMenu: 'ai_agents'
+        }
+      },
+      {
         name: 'ai_agents',
         path: '/ai/agents',
         component: 'view.ai_agents',
