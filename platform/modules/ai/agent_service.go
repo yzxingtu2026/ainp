@@ -53,22 +53,48 @@ type AgentListRequest struct {
 	OwnerUserID string `json:"owner_user_id"`
 }
 type AgentCreateRequest struct {
-	Code, Name, Description, Source, Visibility, ModelAlias, TenantInstructions, UserInstructions string
-	AvatarAttachmentID                                                                            *string
-	GenerationConfig, ToolPolicy                                                                  map[string]any
+	Code               string         `json:"code" validate:"required"`
+	Name               string         `json:"name" validate:"required"`
+	Description        string         `json:"description"`
+	Source             string         `json:"source"`
+	Visibility         string         `json:"visibility"`
+	ModelAlias         string         `json:"model_alias" validate:"required"`
+	TenantInstructions string         `json:"tenant_instructions"`
+	UserInstructions   string         `json:"user_instructions"`
+	AvatarAttachmentID *string        `json:"avatar_attachment_id"`
+	GenerationConfig   map[string]any `json:"generation_config"`
+	ToolPolicy         map[string]any `json:"tool_policy"`
 }
 type AgentUpdateRequest struct {
-	ID, Name, Description string
-	AvatarAttachmentID    *string
-	Revision              uint64
+	ID                 string  `json:"id" validate:"required"`
+	Name               string  `json:"name" validate:"required"`
+	Description        string  `json:"description"`
+	AvatarAttachmentID *string `json:"avatar_attachment_id"`
+	Revision           uint64  `json:"revision" validate:"required"`
 }
 type AgentVersionCreateRequest struct {
-	AgentID, ModelAlias, TenantInstructions, UserInstructions string
-	GenerationConfig, ToolPolicy                              map[string]any
-	Revision                                                  uint64
+	AgentID            string         `json:"agent_id" validate:"required"`
+	ModelAlias         string         `json:"model_alias" validate:"required"`
+	TenantInstructions string         `json:"tenant_instructions"`
+	UserInstructions   string         `json:"user_instructions"`
+	GenerationConfig   map[string]any `json:"generation_config"`
+	ToolPolicy         map[string]any `json:"tool_policy"`
+	Revision           uint64         `json:"revision" validate:"required"`
 }
-type AgentBindRequest struct{ AgentID, ToolID string }
-type AgentUnbindRequest struct{ AgentID, ToolID string }
+type AgentBindRequest struct {
+	AgentID string `json:"agent_id" validate:"required"`
+	ToolID  string `json:"tool_id" validate:"required"`
+}
+type AgentUnbindRequest struct {
+	AgentID string `json:"agent_id" validate:"required"`
+	ToolID  string `json:"tool_id" validate:"required"`
+}
+type AgentStatusRequest struct {
+	ID       string `json:"id" validate:"required"`
+	Status   string `json:"status" validate:"required"`
+	Revision uint64 `json:"revision" validate:"required"`
+}
+type AgentEmptyRequest struct{}
 
 func agentActor(ctx context.Context) (*auth.Context, error) {
 	ac := auth.MustFromContext(ctx)
@@ -224,7 +250,11 @@ func (s *AgentService) Create(ctx context.Context, r AgentCreateRequest) (any, e
 	return row, nil
 }
 
-type AgentDuplicateRequest struct{ ID, Code, Name string }
+type AgentDuplicateRequest struct {
+	ID   string `json:"id" validate:"required"`
+	Code string `json:"code" validate:"required"`
+	Name string `json:"name" validate:"required"`
+}
 
 func (s *AgentService) Duplicate(ctx context.Context, r AgentDuplicateRequest) (any, error) {
 	row, ac, err := s.get(ctx, r.ID, false)
@@ -284,7 +314,7 @@ func (s *AgentService) Update(ctx context.Context, r AgentUpdateRequest) (any, e
 	}
 	return s.Get(ctx, IDRequest{ID: r.ID})
 }
-func (s *AgentService) Status(ctx context.Context, r StatusRequest) (any, error) {
+func (s *AgentService) Status(ctx context.Context, r AgentStatusRequest) (any, error) {
 	row, _, e := s.get(ctx, r.ID, true)
 	if e != nil {
 		return nil, e
@@ -298,8 +328,12 @@ func (s *AgentService) Status(ctx context.Context, r StatusRequest) (any, error)
 			return nil, errs.New(errs.CodeConflict, "agent diagnostics failed")
 		}
 	}
-	if e = s.db.WithContext(ctx).Model(row).Updates(map[string]any{"status": r.Status, "revision": gorm.Expr("revision + 1")}).Error; e != nil {
-		return nil, e
+	result := s.db.WithContext(ctx).Model(&Agent{}).Where("id=? AND tenant_id=? AND revision=?", row.ID, row.TenantID, r.Revision).Updates(map[string]any{"status": r.Status, "revision": gorm.Expr("revision + 1")})
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected != 1 {
+		return nil, errs.New(errs.CodeConflict, "agent revision conflict")
 	}
 	return s.Get(ctx, IDRequest{ID: r.ID})
 }
@@ -444,7 +478,7 @@ func (s *AgentService) Diagnostics(ctx context.Context, r IDRequest) (any, error
 	return map[string]any{"healthy": len(issues) == 0, "issues": issues}, nil
 }
 
-func (s *AgentService) ReconcileBuiltin(ctx context.Context, _ json.RawMessage) (any, error) {
+func (s *AgentService) ReconcileBuiltin(ctx context.Context, _ AgentEmptyRequest) (any, error) {
 	ac, e := agentActor(ctx)
 	if e != nil {
 		return nil, e

@@ -23,8 +23,16 @@ export const fetchAIToolConfirmations=(scopeId?:string)=>post<Api.AI.ToolConfirm
 export const approveAIToolConfirmation=(id:string)=>post<Api.AI.ToolResult>('tool-confirmations/approve',{id});
 export const rejectAIToolConfirmation=(id:string)=>post<{id:string;status:string}>('tool-confirmations/reject',{id});
 export const fetchAIAgents=(params:Record<string,unknown>)=>post<Api.AI.Page<Api.AI.Agent>>('agents/list',params);
+export const fetchAIAgent=(id:string)=>post<Api.AI.Agent>('agents/get',{id});
 export const createAIAgent=(data:Record<string,unknown>)=>post<Api.AI.Agent>('agents/create',data);
-export const updateAIAgentStatus=(id:string,status:string)=>post<Api.AI.Agent>('agents/status/update',{id,status});
+export const updateAIAgent=(data:Record<string,unknown>)=>post<Api.AI.Agent>('agents/update',data);
+export const duplicateAIAgent=(data:Record<string,unknown>)=>post<Api.AI.Agent>('agents/duplicate',data);
+export const updateAIAgentStatus=(id:string,status:string,revision:number)=>post<Api.AI.Agent>('agents/status/update',{id,status,revision});
 export const fetchAIAgentVersions=(id:string)=>post<Api.AI.AgentVersion[]>('agent-versions/list',{id});
+export const publishAIAgentVersion=(data:Record<string,unknown>)=>post<Api.AI.AgentVersion>('agent-versions/publish',data);
+export const searchAIAgentTools=(data:Record<string,unknown>)=>post<Api.AI.ToolCandidate[]>('agent-tools/search',data);
+export const fetchAIAgentTools=(id:string)=>post<Api.AI.AgentToolBinding[]>('agent-tools/list',{id});
+export const bindAIAgentTool=(agentId:string,toolId:string)=>post<Api.AI.AgentToolBinding>('agent-tools/bind',{agent_id:agentId,tool_id:toolId});
+export const unbindAIAgentTool=(agentId:string,toolId:string)=>post<{deleted:boolean}>('agent-tools/unbind',{agent_id:agentId,tool_id:toolId});
 export const fetchAIAgentDiagnostics=(id:string)=>post<Api.AI.AgentDiagnostics>('agents/diagnostics',{id});
 export const reconcileBuiltinAIAgent=()=>post<{created:boolean;agent:Api.AI.Agent}>('agents/builtin/reconcile');

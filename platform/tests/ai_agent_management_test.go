@@ -1,14 +1,38 @@
 package tests
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 
+	"github.com/yzxingtu2026/ainp/platform/framework/action"
 	"github.com/yzxingtu2026/ainp/platform/framework/aiagent"
+	"github.com/yzxingtu2026/ainp/platform/modules/ai"
 )
 
 func validAgentContract() aiagent.Contract {
 	return aiagent.Contract{Key: "demo.assistant", Version: "1.0.0", Name: "Demo", BaseInstructions: "Keep tenant boundaries.", RequiredModelCapabilities: []string{"chat", "tools"}, RequiredToolSelectors: []string{"meta:tool.search"}, ConfigSchema: json.RawMessage(`{"type":"object"}`), SingletonScope: aiagent.SingletonNone, ManagedFields: []string{"source", "contract_key"}, UpgradePolicy: "managed-fields"}
+}
+
+func TestAgentActionRequestsAcceptSnakeCaseJSON(t *testing.T) {
+	create := action.JSON(func(_ context.Context, request ai.AgentCreateRequest) (any, error) { return request, nil })
+	input := json.RawMessage(`{"code":"test","name":"测试","description":"","source":"personal","visibility":"private","model_alias":"test","user_instructions":"hhh","generation_config":{},"tool_policy":{}}`)
+	result, err := create(context.Background(), input)
+	if err != nil {
+		t.Fatalf("decode create request: %v", err)
+	}
+	if result.(ai.AgentCreateRequest).ModelAlias != "test" {
+		t.Fatalf("model_alias was not decoded: %#v", result)
+	}
+
+	empty := action.JSON(func(_ context.Context, request ai.AgentEmptyRequest) (any, error) { return request, nil })
+	if _, err := empty(context.Background(), json.RawMessage(`{}`)); err != nil {
+		t.Fatalf("decode reconcile request: %v", err)
+	}
+	status := action.JSON(func(_ context.Context, request ai.AgentStatusRequest) (any, error) { return request, nil })
+	if _, err := status(context.Background(), json.RawMessage(`{"id":"agent-1","status":"enabled","revision":2}`)); err != nil {
+		t.Fatalf("decode status request: %v", err)
+	}
 }
 
 func TestAgentContractRegistryFailClosed(t *testing.T) {
