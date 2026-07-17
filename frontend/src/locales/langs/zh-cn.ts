@@ -383,6 +383,7 @@ const local: App.I18n.Schema = {
       panePrompt: '人设与回复逻辑',
       paneConfig: '参数与能力编排',
       panePreview: '预览与调试',
+      groupBasic: '基本信息',
       tenantInstructions: '租户指令',
       tenantPlaceholder: '租户管理员可补充的业务约束与话术',
       runInstructions: 'Run 指令（仅预览）',

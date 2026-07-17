@@ -387,6 +387,7 @@ const local: App.I18n.Schema = {
       panePrompt: 'Persona & reply logic',
       paneConfig: 'Parameters & capabilities',
       panePreview: 'Preview & debug',
+      groupBasic: 'Basic info',
       tenantInstructions: 'Tenant instructions',
       tenantPlaceholder: 'Tenant-admin business constraints and wording',
       runInstructions: 'Run instructions (preview only)',
