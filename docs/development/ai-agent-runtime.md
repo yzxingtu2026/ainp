@@ -18,7 +18,7 @@ Builder 预览约束：
 
 - Worker 使用行锁和短 lease 抢占。同一 Run 的重复 Job、有主 lease 或终态均幂等 no-op；过期 lease 才允许接管。
 - 每次 Job 从 AuthorizationProvider 重新加载 actor 当前权限和 auth version，不使用平台管理员身份或长期 service token。
-- 模型调用只经统一 Model Runtime；调用前由 ContextCompactor 按目标模型判断预算并固定 Snapshot。
+- 模型调用只经统一 Model Runtime；Agent 执行使用 `Stream`，Provider 的 `output_text.delta` 到达后立即追加为 `run.delta`，禁止等待完整 `Generate` 响应后再人为切片伪造流式输出。调用前由 ContextCompactor 按目标模型判断预算并固定 Snapshot。
 - Provider context overflow 只允许受预算限制的压缩重试；step/model/tool/compaction/Token/时长均有硬上限。
 - ToolScope 只允许 Agent bindings 与 meta search/load。Handle 只在服务端内存使用，不写 Message/Event。
 - 敏感工具复用 ToolConfirmation。Run 保存 confirmation/invocation 引用并释放 lease；恢复前校验 actor、auth version、会话 revision、Agent/Tool/Schema 和已持久化调用结果。

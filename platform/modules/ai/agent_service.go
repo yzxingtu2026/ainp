@@ -67,10 +67,10 @@ type AgentCreateRequest struct {
 	ToolPolicy         map[string]any `json:"tool_policy"`
 }
 type AgentUpdateRequest struct {
-	ID                 string         `json:"id" validate:"required"`
-	Name               string         `json:"name" validate:"required"`
-	Description        string         `json:"description"`
-	AvatarAttachmentID *string        `json:"avatar_attachment_id"`
+	ID                 string  `json:"id" validate:"required"`
+	Name               string  `json:"name" validate:"required"`
+	Description        string  `json:"description"`
+	AvatarAttachmentID *string `json:"avatar_attachment_id"`
 	// 以下为 Builder 草稿运行配置；写入 Agent 草稿列，不创建 Version、不晋升 current。
 	ModelAlias         string         `json:"model_alias"`
 	TenantInstructions string         `json:"tenant_instructions"`
@@ -216,6 +216,7 @@ func (s *AgentService) get(ctx context.Context, id string, edit bool) (*Agent, *
 	}
 	return &row, ac, nil
 }
+
 // AgentDetail is the builder-facing agent payload. Contract fields are read-only overlays.
 type AgentDetail struct {
 	Agent
@@ -276,7 +277,7 @@ func (s *AgentService) Create(ctx context.Context, r AgentCreateRequest) (any, e
 	if r.Source == "personal" && r.Visibility != "private" {
 		return nil, errs.New(errs.CodeValidation, "personal agent must be private")
 	}
-	if _, err := s.models.Resolve(ctx, r.ModelAlias, aimodel.CapabilityRequirements{ModelType: aimodel.ModelTypeChat}); err != nil {
+	if _, err := s.models.Resolve(ctx, r.ModelAlias, agentRuntimeModelRequirements()); err != nil {
 		return nil, err
 	}
 	owner := ac.UserID
@@ -370,7 +371,7 @@ func (s *AgentService) Update(ctx context.Context, r AgentUpdateRequest) (any, e
 			return nil, errs.New(errs.CodeValidation, "instructions exceed limit")
 		}
 		if strings.TrimSpace(r.ModelAlias) != "" {
-			if _, err := s.models.Resolve(ctx, r.ModelAlias, aimodel.CapabilityRequirements{ModelType: aimodel.ModelTypeChat}); err != nil {
+			if _, err := s.models.Resolve(ctx, r.ModelAlias, agentRuntimeModelRequirements()); err != nil {
 				return nil, err
 			}
 		}
@@ -438,13 +439,13 @@ func (s *AgentService) CreateVersion(ctx context.Context, r AgentVersionCreateRe
 			return e
 		}
 		res := tx.Model(&Agent{}).Where("id=? AND tenant_id=? AND revision=?", row.ID, row.TenantID, r.Revision).Updates(map[string]any{
-			"current_version":            next,
-			"revision":                   gorm.Expr("revision + 1"),
-			"has_draft":                  false,
-			"draft_tenant_instructions":  "",
-			"draft_model_alias":          "",
-			"draft_generation_config":    marshal(map[string]any{}),
-			"draft_tool_policy":          marshal(map[string]any{}),
+			"current_version":           next,
+			"revision":                  gorm.Expr("revision + 1"),
+			"has_draft":                 false,
+			"draft_tenant_instructions": "",
+			"draft_model_alias":         "",
+			"draft_generation_config":   marshal(map[string]any{}),
+			"draft_tool_policy":         marshal(map[string]any{}),
 		})
 		if res.Error != nil {
 			return res.Error
@@ -491,15 +492,12 @@ func (s *AgentService) MaterializePreview(ctx context.Context, r AgentPreviewMat
 }
 
 func (s *AgentService) validateVersionInputs(ctx context.Context, row *Agent, modelAlias, tenantInstructions string) error {
-	req := aimodel.CapabilityRequirements{ModelType: aimodel.ModelTypeChat}
+	req := agentRuntimeModelRequirements()
 	if row.ContractKey != "" {
 		if c, ok := s.contracts.Get(row.ContractKey, row.ContractVersion); ok {
 			for _, v := range c.RequiredModelCapabilities {
-				if v == "streaming" {
-					req.Features = append(req.Features, aimodel.FeatureStreaming)
-				}
-				if v == "tools" {
-					req.Features = append(req.Features, aimodel.FeatureToolCalling)
+				if v == "vision" {
+					req.Features = append(req.Features, aimodel.FeatureVision)
 				}
 			}
 		}
@@ -511,6 +509,13 @@ func (s *AgentService) validateVersionInputs(ctx context.Context, row *Agent, mo
 		return errs.New(errs.CodeValidation, "instructions exceed limit")
 	}
 	return nil
+}
+
+func agentRuntimeModelRequirements() aimodel.CapabilityRequirements {
+	return aimodel.CapabilityRequirements{
+		ModelType: aimodel.ModelTypeChat,
+		Features:  []aimodel.Feature{aimodel.FeatureStreaming, aimodel.FeatureToolCalling},
+	}
 }
 
 func nextAgentVersionNumber(ctx context.Context, tx *gorm.DB, tenantID, agentID string) (int, error) {
@@ -617,7 +622,7 @@ func (s *AgentService) Diagnostics(ctx context.Context, r IDRequest) (any, error
 	var v AgentVersion
 	if e = s.db.WithContext(ctx).Where("tenant_id=? AND agent_id=? AND version=?", row.TenantID, row.ID, row.CurrentVersion).First(&v).Error; e != nil {
 		issues = append(issues, map[string]string{"code": "version.missing", "message": "current version is missing"})
-	} else if _, x := s.models.Resolve(ctx, v.ModelAlias, aimodel.CapabilityRequirements{ModelType: aimodel.ModelTypeChat}); x != nil {
+	} else if _, x := s.models.Resolve(ctx, v.ModelAlias, agentRuntimeModelRequirements()); x != nil {
 		issues = append(issues, map[string]string{"code": "model.unavailable", "message": x.Error()})
 	}
 	for _, id := range s.requiredTools(row) {

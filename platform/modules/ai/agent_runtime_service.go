@@ -531,7 +531,7 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 			return err
 		}
 		request := aimodelruntime.GenerateRequest{ModelAlias: version.ModelAlias, ToolScopeID: scopeID, EnableTools: true, Instructions: version.TenantInstructions, Messages: messages, Metadata: map[string]string{"agent_id": agent.ID, "agent_run_id": run.ID}}
-		value, callErr := s.invocations.Generate(ctx, request)
+		response, callErr := s.streamModel(ctx, run, request)
 		run.ModelCalls++
 		if e := s.persistCounters(ctx, run); e != nil {
 			return e
@@ -544,11 +544,6 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 			}
 			_ = s.finishStep(ctx, run, step, "failed", map[string]any{}, "model_failed")
 			return s.fail(ctx, run, "model_failed")
-		}
-		response, ok := asGenerateResponse(value)
-		if !ok {
-			_ = s.finishStep(ctx, run, step, "failed", map[string]any{"value_type": fmt.Sprintf("%T", value)}, "invalid_model_response")
-			return s.fail(ctx, run, "invalid_model_response")
 		}
 		var invocation ModelInvocation
 		if s.db.WithContext(ctx).Where("tenant_id=? AND agent_run_id=?", run.TenantID, run.ID).Order("created_at DESC").First(&invocation).Error == nil {
@@ -583,9 +578,6 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 			finalStep, stepErr := s.newStep(ctx, run, aiagentruntime.StepFinalize, map[string]any{"text_bytes": len(text)})
 			if stepErr != nil {
 				return stepErr
-			}
-			if e := s.emitDeltas(ctx, run, text); e != nil {
-				return s.fail(ctx, run, "event_failed")
 			}
 			streamID, e := s.conversations.Begin(ctx, run.ConversationID, "run-final:"+run.ID)
 			if e != nil {
@@ -728,18 +720,149 @@ func resultStatus(result *aiconversation.CompactionResult) string {
 	return result.Status
 }
 
-func asGenerateResponse(value any) (aimodelruntime.GenerateResponse, bool) {
-	switch v := value.(type) {
-	case aimodelruntime.GenerateResponse:
-		return v, true
-	case *aimodelruntime.GenerateResponse:
-		if v == nil {
-			return aimodelruntime.GenerateResponse{}, false
-		}
-		return *v, true
-	default:
-		return aimodelruntime.GenerateResponse{}, false
+func (s *AgentRuntimeService) streamModel(ctx context.Context, run *AgentRun, request aimodelruntime.GenerateRequest) (aimodelruntime.GenerateResponse, error) {
+	value, err := s.invocations.Stream(ctx, request)
+	if err != nil {
+		return aimodelruntime.GenerateResponse{}, err
 	}
+	stream, ok := value.(action.StreamResult)
+	if !ok {
+		return aimodelruntime.GenerateResponse{}, &aimodelruntime.RuntimeError{
+			Category: aimodelruntime.ErrorStreamProtocol,
+			Message:  fmt.Sprintf("invalid model stream result: %T", value),
+		}
+	}
+	if stream.Cancel != nil {
+		defer stream.Cancel()
+	}
+
+	response := aimodelruntime.GenerateResponse{FinishReason: aimodelruntime.FinishError}
+	itemIndexes := map[string]int{}
+	terminal := false
+
+	addItem := func(event aimodelruntime.StreamEvent, fallbackType aimodelruntime.PartType) int {
+		if index, exists := itemIndexes[event.ItemID]; exists {
+			return index
+		}
+		item := aimodelruntime.OutputItem{ID: event.ItemID, Type: fallbackType}
+		if event.Item != nil {
+			item = *event.Item
+			if item.ID == "" {
+				item.ID = event.ItemID
+			}
+		}
+		response.Output = append(response.Output, item)
+		index := len(response.Output) - 1
+		itemIndexes[event.ItemID] = index
+		return index
+	}
+
+	for wrapped := range stream.Events {
+		event, ok := wrapped.Data.(aimodelruntime.StreamEvent)
+		if !ok {
+			return aimodelruntime.GenerateResponse{}, &aimodelruntime.RuntimeError{
+				Category: aimodelruntime.ErrorStreamProtocol,
+				Message:  fmt.Sprintf("invalid model stream event: %T", wrapped.Data),
+			}
+		}
+		if event.ResponseID != "" {
+			response.ID = event.ResponseID
+			response.ProviderRequestID = event.ResponseID
+		}
+		switch event.Type {
+		case aimodelruntime.EventOutputItemStarted:
+			addItem(event, aimodelruntime.PartOutputText)
+		case aimodelruntime.EventOutputTextDelta:
+			index, exists := itemIndexes[event.ItemID]
+			if !exists {
+				return aimodelruntime.GenerateResponse{}, &aimodelruntime.RuntimeError{Category: aimodelruntime.ErrorStreamProtocol, Message: "text delta without output item"}
+			}
+			response.Output[index].Text += event.Delta
+			if event.Delta != "" {
+				if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+					return s.appendEvent(ctx, tx, run, "run.delta", nil, map[string]any{"delta": event.Delta})
+				}); err != nil {
+					return aimodelruntime.GenerateResponse{}, err
+				}
+			}
+		case aimodelruntime.EventToolCallStarted:
+			addItem(event, aimodelruntime.PartToolCall)
+		case aimodelruntime.EventToolArgumentsDelta:
+			index, exists := itemIndexes[event.ItemID]
+			if !exists {
+				return aimodelruntime.GenerateResponse{}, &aimodelruntime.RuntimeError{Category: aimodelruntime.ErrorStreamProtocol, Message: "tool arguments without tool call"}
+			}
+			response.Output[index].Arguments = append(response.Output[index].Arguments, event.Delta...)
+		case aimodelruntime.EventToolCallCompleted:
+			index, exists := itemIndexes[event.ItemID]
+			if !exists {
+				return aimodelruntime.GenerateResponse{}, &aimodelruntime.RuntimeError{Category: aimodelruntime.ErrorStreamProtocol, Message: "completed tool call without start"}
+			}
+			if event.Item != nil {
+				if event.Item.ToolCallID != "" {
+					response.Output[index].ToolCallID = event.Item.ToolCallID
+				}
+				if event.Item.ToolName != "" {
+					response.Output[index].ToolName = event.Item.ToolName
+				}
+				if len(event.Item.Arguments) > 0 {
+					response.Output[index].Arguments = append(json.RawMessage(nil), event.Item.Arguments...)
+				}
+			}
+		case aimodelruntime.EventUsageUpdated:
+			mergeStreamUsage(&response.Usage, event.Usage)
+			if event.FinishReason != "" {
+				response.FinishReason = event.FinishReason
+			}
+		case aimodelruntime.EventResponseCompleted:
+			terminal = true
+			response.FinishReason = event.FinishReason
+			mergeStreamUsage(&response.Usage, event.Usage)
+		case aimodelruntime.EventResponseFailed:
+			if event.Error != nil {
+				return aimodelruntime.GenerateResponse{}, event.Error
+			}
+			return aimodelruntime.GenerateResponse{}, &aimodelruntime.RuntimeError{Category: aimodelruntime.ErrorProviderUnavailable, Message: "model stream failed"}
+		}
+	}
+	if !terminal {
+		return aimodelruntime.GenerateResponse{}, &aimodelruntime.RuntimeError{Category: aimodelruntime.ErrorStreamProtocol, Message: "model stream ended without terminal event"}
+	}
+	return response, nil
+}
+
+func mergeStreamUsage(target *aimodelruntime.Usage, update *aimodelruntime.Usage) {
+	if update == nil {
+		return
+	}
+	if update.InputTokens != nil {
+		target.InputTokens = update.InputTokens
+	}
+	if update.OutputTokens != nil {
+		target.OutputTokens = update.OutputTokens
+	}
+	if update.TotalTokens != nil {
+		target.TotalTokens = update.TotalTokens
+	}
+	if update.CachedInputTokens != nil {
+		target.CachedInputTokens = update.CachedInputTokens
+	}
+	if update.ReasoningTokens != nil {
+		target.ReasoningTokens = update.ReasoningTokens
+	}
+	target.Reported = target.Reported || update.Reported
+}
+
+func asGenerateResponse(value any) (aimodelruntime.GenerateResponse, bool) {
+	switch response := value.(type) {
+	case aimodelruntime.GenerateResponse:
+		return response, true
+	case *aimodelruntime.GenerateResponse:
+		if response != nil {
+			return *response, true
+		}
+	}
+	return aimodelruntime.GenerateResponse{}, false
 }
 
 func (s *AgentRuntimeService) ensureToolScope(ctx context.Context, run *AgentRun, agent *Agent) (string, error) {
@@ -934,24 +1057,6 @@ func (s *AgentRuntimeService) currentConversationRevision(ctx context.Context, r
 	var c Conversation
 	_ = s.db.WithContext(ctx).Select("revision").Where("tenant_id=? AND id=?", run.TenantID, run.ConversationID).First(&c).Error
 	return c.Revision
-}
-func (s *AgentRuntimeService) emitDeltas(ctx context.Context, run *AgentRun, text string) error {
-	// 按 rune 分片，避免截断多字节字符；小分片便于前端流式渲染。
-	const size = 24
-	runes := []rune(text)
-	for offset := 0; offset < len(runes); offset += size {
-		end := offset + size
-		if end > len(runes) {
-			end = len(runes)
-		}
-		chunk := string(runes[offset:end])
-		if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			return s.appendEvent(ctx, tx, run, "run.delta", nil, map[string]any{"delta": chunk})
-		}); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 func (s *AgentRuntimeService) pause(ctx context.Context, run *AgentRun, reason string) error {
 	return s.terminalLike(ctx, run, "paused", reason, false)
