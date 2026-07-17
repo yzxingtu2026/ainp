@@ -571,13 +571,13 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
               </NFormItem>
               <NDivider>{{ $t('page.agentBuilder.generationParams') }}</NDivider>
               <div class="grid grid-cols-3 gap-12px">
-                <NFormItem label="temperature">
+                <NFormItem :label="$t('page.agentBuilder.temperature')">
                   <NInputNumber v-model:value="draft.temperature" :min="0" :max="2" :step="0.1" class="w-full" />
                 </NFormItem>
-                <NFormItem label="top_p">
+                <NFormItem :label="$t('page.agentBuilder.topP')">
                   <NInputNumber v-model:value="draft.top_p" :min="0" :max="1" :step="0.05" class="w-full" />
                 </NFormItem>
-                <NFormItem label="max_output_tokens">
+                <NFormItem :label="$t('page.agentBuilder.maxOutputTokens')">
                   <NInputNumber v-model:value="draft.max_output_tokens" :min="1" :max="1000000" class="w-full" />
                 </NFormItem>
               </div>
@@ -743,7 +743,15 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
               <NFormItem :label="$t('page.agentBuilder.modelAlias')">
                 <NSelect v-model:value="draft.model_alias" filterable :options="modelOptions" />
               </NFormItem>
-              <NFormItem label="temperature"><NInputNumber v-model:value="draft.temperature" :min="0" :max="2" :step="0.1" class="w-full" /></NFormItem>
+              <NFormItem :label="$t('page.agentBuilder.temperature')">
+                <NInputNumber v-model:value="draft.temperature" :min="0" :max="2" :step="0.1" class="w-full" />
+              </NFormItem>
+              <NFormItem :label="$t('page.agentBuilder.topP')">
+                <NInputNumber v-model:value="draft.top_p" :min="0" :max="1" :step="0.05" class="w-full" />
+              </NFormItem>
+              <NFormItem :label="$t('page.agentBuilder.maxOutputTokens')">
+                <NInputNumber v-model:value="draft.max_output_tokens" :min="1" :max="1000000" class="w-full" />
+              </NFormItem>
               <NAlert
                 v-if="diagnostics"
                 class="mb-12px"

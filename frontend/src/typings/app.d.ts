@@ -567,6 +567,9 @@ declare namespace App {
           modelAlias: string;
           modelAliasPlaceholder: string;
           generationParams: string;
+          temperature: string;
+          topP: string;
+          maxOutputTokens: string;
           tools: string;
           toolSearchPlaceholder: string;
           boundTools: string;
