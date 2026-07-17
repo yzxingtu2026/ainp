@@ -464,7 +464,7 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
           <div class="shrink-0 border-b px-12px py-8px font-600">{{ $t('page.agentBuilder.panePrompt') }}</div>
           <div class="min-h-0 flex-1 overflow-y-auto px-12px py-10px">
             <NForm label-placement="top">
-              <NFormItem :label="$t('page.agentBuilder.tenantInstructions')">
+              <NFormItem :show-label="false">
                 <NInput
                   v-model:value="draft.tenant_instructions"
                   type="textarea"
@@ -717,8 +717,15 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
         <div class="min-h-0 flex-1 overflow-y-auto px-12px py-10px">
           <template v-if="mobileTab === 'prompt'">
             <NForm label-placement="top">
-              <NFormItem :label="$t('page.agentBuilder.tenantInstructions')">
-                <NInput v-model:value="draft.tenant_instructions" type="textarea" :rows="8" :maxlength="instructionLimit" show-count />
+              <NFormItem :show-label="false">
+                <NInput
+                  v-model:value="draft.tenant_instructions"
+                  type="textarea"
+                  :rows="8"
+                  :maxlength="instructionLimit"
+                  show-count
+                  :placeholder="$t('page.agentBuilder.tenantPlaceholder')"
+                />
               </NFormItem>
               <NFormItem :label="$t('page.agentBuilder.runInstructions')">
                 <NInput v-model:value="runInstructions" type="textarea" :rows="3" />

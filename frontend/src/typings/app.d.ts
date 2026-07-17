@@ -543,7 +543,6 @@ declare namespace App {
           paneConfig: string;
           panePreview: string;
           groupBasic: string;
-          tenantInstructions: string;
           tenantPlaceholder: string;
           runInstructions: string;
           runPlaceholder: string;
