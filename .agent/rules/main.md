@@ -41,6 +41,7 @@
 - AI 多模态输入见 `ai-multimodal`（Content Parts、附件安全解析、媒体预算与不可信派生文本）。
 - AI 工具运行时见 `tool-runtime`（常驻 search/load、动态 Schema 投影、Handle、确认与调用事实）。
 - AI 智能体管理见 `agent-management`（Contract/Definition/不可变 Version、ownership、Alias 与 Tool Binding 边界）。
+- AI 会话事实层见 `ai-conversations`（固定 Agent Version、追加消息、幂等、ContextAssembler 与 Snapshot 边界）。
 - 前端栈、图标协议见关联规则。
 - Copilot PR 语义审查见 `copilot-code-review`；它只负责中文语义反馈，不替代合并门禁与人工审批。
 
@@ -62,6 +63,7 @@
 - `ai-multimodal` → `docs/development/ai-multimodal.md`
 - `tool-runtime` → `docs/development/tool-runtime.md`
 - `agent-management` → `docs/development/agent-management.md`
+- `ai-conversations` → `docs/development/ai-conversations.md`
 - `icon-library` → `docs/development/icon-library.md`
 - `logging` → `docs/development/logging.md`
 - `api-response` → `docs/development/api-response.md`

@@ -67,16 +67,17 @@ const (
 )
 
 type ContentPart struct {
-	Type              PartType           `json:"type"`
-	Text              string             `json:"text,omitempty"`
-	ImageAttachmentID string             `json:"image_attachment_id,omitempty"`
-	ImageDetail       ImageDetail        `json:"detail,omitempty"`
-	ToolCallID        string             `json:"tool_call_id,omitempty"`
-	ToolName          string             `json:"tool_name,omitempty"`
-	Arguments         json.RawMessage    `json:"arguments,omitempty"`
-	Result            json.RawMessage    `json:"result,omitempty"`
-	DerivedSource     *DerivedTextSource `json:"derived_source,omitempty"`
-	ResolvedImage     *ResolvedImage     `json:"-"`
+	Type               PartType           `json:"type"`
+	Text               string             `json:"text,omitempty"`
+	ImageAttachmentID  string             `json:"image_attachment_id,omitempty"`
+	AttachmentRevision string             `json:"attachment_revision,omitempty"`
+	ImageDetail        ImageDetail        `json:"detail,omitempty"`
+	ToolCallID         string             `json:"tool_call_id,omitempty"`
+	ToolName           string             `json:"tool_name,omitempty"`
+	Arguments          json.RawMessage    `json:"arguments,omitempty"`
+	Result             json.RawMessage    `json:"result,omitempty"`
+	DerivedSource      *DerivedTextSource `json:"derived_source,omitempty"`
+	ResolvedImage      *ResolvedImage     `json:"-"`
 }
 
 func (p *ContentPart) UnmarshalJSON(data []byte) error {
@@ -85,7 +86,7 @@ func (p *ContentPart) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &fields); err != nil {
 		return err
 	}
-	allowed := map[string]bool{"type": true, "text": true, "image_attachment_id": true, "detail": true, "tool_call_id": true, "tool_name": true, "arguments": true, "result": true, "derived_source": true}
+	allowed := map[string]bool{"type": true, "text": true, "image_attachment_id": true, "attachment_revision": true, "detail": true, "tool_call_id": true, "tool_name": true, "arguments": true, "result": true, "derived_source": true}
 	for key := range fields {
 		if !allowed[key] {
 			return fmt.Errorf("unsupported content part field: %s", key)
@@ -240,6 +241,19 @@ func (r GenerateRequest) Validate(context.Context) error {
 func validRole(v Role) bool {
 	return v == RoleSystem || v == RoleDeveloper || v == RoleUser || v == RoleAssistant || v == RoleTool
 }
+
+// ValidateMessage validates a canonical message without requiring a model request.
+func ValidateMessage(m Message) error {
+	if !validRole(m.Role) || len(m.Content) == 0 {
+		return fmt.Errorf("invalid message")
+	}
+	for _, part := range m.Content {
+		if err := validatePart(m.Role, part); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 func validatePart(role Role, p ContentPart) error {
 	switch p.Type {
 	case PartInputText:
@@ -254,7 +268,7 @@ func validatePart(role Role, p ContentPart) error {
 			return fmt.Errorf("input_image requires attachment id")
 		}
 		if p.Text != "" || p.ToolCallID != "" || p.ToolName != "" || len(p.Arguments) > 0 || len(p.Result) > 0 || p.DerivedSource != nil {
-			return fmt.Errorf("input_image only accepts image_attachment_id and detail")
+			return fmt.Errorf("input_image only accepts attachment reference and detail")
 		}
 		if role != RoleUser {
 			return fmt.Errorf("input_image is only allowed for user messages")

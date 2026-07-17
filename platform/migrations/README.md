@@ -12,3 +12,4 @@
 - `0014_ai_provider_encrypted_credentials.sql` 将 Provider 凭证改为数据库密文；旧引用不兼容，升级时停用并要求管理员重新录入。
 - `0015_ai_model_invocations.sql` 创建最小模型调用事实台账，只保存安全元数据、状态、时延和供应商明确报告的 Usage。
 - `0016_ai_tool_runtime.sql` 创建工具目录投影、ToolScope、单次确认与安全调用事实台账，不写初始化业务数据。
+- `0019_ai_conversations.sql` 创建租户会话、不可变追加消息与 ContextSnapshot，只保存会话事实，不执行模型或压缩。
