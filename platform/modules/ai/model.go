@@ -85,6 +85,11 @@ type ModelInvocation struct {
 	InputModalitiesJSON  json.RawMessage `gorm:"type:jsonb;not null;default:'[]'" json:"input_modalities"`
 	InputAttachmentCount int             `gorm:"not null;default:0" json:"input_attachment_count"`
 	InputAttachmentBytes int64           `gorm:"not null;default:0" json:"input_attachment_bytes"`
+	EmbeddingPurpose     string          `gorm:"size:32" json:"embedding_purpose,omitempty"`
+	EmbeddingItemCount   int             `gorm:"not null;default:0" json:"embedding_item_count"`
+	EmbeddingTextBytes   int64           `gorm:"not null;default:0" json:"embedding_text_bytes"`
+	EmbeddingDimensions  *int            `json:"embedding_dimensions,omitempty"`
+	EmbeddingSubBatches  *int            `json:"embedding_sub_batches,omitempty"`
 	CreatedAt            time.Time       `json:"created_at"`
 	UpdatedAt            time.Time       `json:"updated_at"`
 }

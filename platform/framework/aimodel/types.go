@@ -56,6 +56,10 @@ type Capabilities struct {
 type Limits struct {
 	ContextWindow   int64 `json:"context_window,omitempty"`
 	MaxOutputTokens int64 `json:"max_output_tokens,omitempty"`
+	// Dimensions is the declared default/native embedding output size.
+	Dimensions int64 `json:"dimensions,omitempty"`
+	// MaxDimensions caps optional request-time dimensions overrides.
+	MaxDimensions int64 `json:"max_dimensions,omitempty"`
 }
 
 func (c Capabilities) Validate() error {
@@ -77,8 +81,11 @@ func (c Capabilities) Validate() error {
 	return nil
 }
 func (l Limits) Validate() error {
-	if l.ContextWindow < 0 || l.MaxOutputTokens < 0 {
+	if l.ContextWindow < 0 || l.MaxOutputTokens < 0 || l.Dimensions < 0 || l.MaxDimensions < 0 {
 		return fmt.Errorf("limits must be non-negative")
+	}
+	if l.MaxDimensions > 0 && l.Dimensions > l.MaxDimensions {
+		return fmt.Errorf("dimensions cannot exceed max_dimensions")
 	}
 	return nil
 }

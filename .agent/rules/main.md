@@ -38,6 +38,7 @@
 - 统一通知协议见 `notifications`（业务禁止直连渠道 SDK；必须注册 Definition/变量 Schema/渠道模板；可靠通知走 Outbox → Orchestrator → Job；模板安全限制；站内通知与 toast 分离）。
 - AI 模型治理见 `ai-model-providers`（业务只引用 Alias；Provider Type/能力交集/Secret/Discovery 均 fail-closed）。
 - AI 模型调用见 `ai-model-runtime`（统一 Generate/Stream、Adapter Registry、Invocation 与敏感信息边界）。
+- AI Embedding 调用见 `ai-embedding-runtime`（统一 Embed、批量向量协议、Invocation 与禁止旁路供应商）。
 - AI 多模态输入见 `ai-multimodal`（Content Parts、附件安全解析、媒体预算与不可信派生文本）。
 - AI 工具运行时见 `tool-runtime`（常驻 search/load、动态 Schema 投影、Handle、确认与调用事实）。
 - AI 智能体管理见 `agent-management`（Contract/Definition/不可变 Version、ownership、Alias 与 Tool Binding 边界）。
@@ -62,6 +63,7 @@
 - `notifications` → `docs/development/notifications.md`（Agent 要点见 `.agent/rules/notifications.md`）
 - `ai-model-providers` → `docs/development/ai-model-providers.md`
 - `ai-model-runtime` → `docs/development/ai-model-runtime.md`
+- `ai-embedding-runtime` → `docs/development/ai-embedding-runtime.md`
 - `ai-multimodal` → `docs/development/ai-multimodal.md`
 - `tool-runtime` → `docs/development/tool-runtime.md`
 - `agent-management` → `docs/development/agent-management.md`

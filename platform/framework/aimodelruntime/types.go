@@ -64,6 +64,11 @@ const (
 	ErrorTimeout                ErrorCategory = "timeout"
 	ErrorCancelled              ErrorCategory = "cancelled"
 	ErrorStreamProtocol         ErrorCategory = "stream_protocol_error"
+	ErrorInputTooLarge          ErrorCategory = "input_too_large"
+	ErrorBatchTooLarge          ErrorCategory = "batch_too_large"
+	ErrorDimensionsUnsupported  ErrorCategory = "dimensions_unsupported"
+	ErrorInvalidVector          ErrorCategory = "invalid_vector"
+	ErrorResponseMismatch       ErrorCategory = "response_mismatch"
 )
 
 type ContentPart struct {

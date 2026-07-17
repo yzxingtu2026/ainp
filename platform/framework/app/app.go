@@ -60,6 +60,7 @@ type App struct {
 	AgentTenantInitializer func(context.Context, *gorm.DB, string, string) error
 	ModelResolver          aimodel.Resolver
 	AIAssetResolver        aimodelruntime.AssetResolver
+	EmbeddingRuntime       aimodelruntime.EmbeddingRuntime
 	ToolRegistry           *aitool.Registry
 	Storage                storage.ObjectStore
 	AttachmentPolicies     *attachment.PolicyRegistry

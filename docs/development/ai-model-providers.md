@@ -6,7 +6,7 @@
 
 `Alias -> ModelResolver -> Deployment -> Provider -> ProviderTypeRegistry / CredentialCipher`
 
-本阶段只允许模型列表发现请求，不提供 Generate、Stream、Embedding、图片、音频、Tool Calling、RAG 或 Agent Runtime。
+模型列表发现、Generate/Stream 与 Embedding Runtime 已纳入平台能力；图片/音频生成、RAG 业务检索与完整 Workspace 仍按各自 Issue 交付。业务只能引用 Alias，不得旁路 Resolver。
 
 ## Provider Type
 
@@ -35,7 +35,7 @@ Deployment 是管理员确认后的本地模型资产。远端发现结果只是
 
 `Provider Adapter 已实现能力 ∩ Deployment 声明能力`
 
-Resolver 再验证调用方 `CapabilityRequirements` 是否为有效能力的子集。非法 modality、feature 或负数 limit 拒绝保存。
+Resolver 再验证调用方 `CapabilityRequirements` 是否为有效能力的子集。非法 modality、feature 或负数 limit 拒绝保存。Embedding Deployment 可通过 `limits.dimensions` / `limits.max_dimensions` 声明默认维度与可覆盖上限；Runtime 在调用前强制校验。
 
 ## Alias 与解析
 
@@ -52,4 +52,4 @@ resolved, err := app.ModelResolver.Resolve(ctx, "general-chat", aimodel.Capabili
 })
 ```
 
-下一 Issue 才能基于 `ResolvedModel` 实现统一模型请求和流式事件协议。
+统一 Generate/Stream 见 `docs/development/ai-model-runtime.md`；统一 Embedding 见 `docs/development/ai-embedding-runtime.md`。
