@@ -601,6 +601,10 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 			_ = s.finishStep(ctx, run, finalStep, "completed", map[string]any{"message_committed": true}, "")
 			return s.complete(ctx, run)
 		}
+		// Provider 要求 tool_result 前必须有配对的 assistant tool_call；先落库再执行工具。
+		if e := s.appendAssistantToolCalls(ctx, run, step, text, toolCalls); e != nil {
+			return s.fail(ctx, run, "assistant_tool_call_persist_failed")
+		}
 		for _, call := range toolCalls {
 			if run.ToolCalls >= budget.MaxToolCalls {
 				return s.fail(ctx, run, "tool_budget_exhausted")
@@ -837,6 +841,37 @@ func (s *AgentRuntimeService) executeToolCall(ctx context.Context, run *AgentRun
 		return true, nil
 	}
 	return s.appendToolResult(ctx, run, step, call, result, nil)
+}
+
+func (s *AgentRuntimeService) appendAssistantToolCalls(ctx context.Context, run *AgentRun, step *AgentStep, text string, toolCalls []aimodelruntime.OutputItem) error {
+	parts := make([]aimodelruntime.ContentPart, 0, len(toolCalls)+1)
+	if strings.TrimSpace(text) != "" {
+		parts = append(parts, aimodelruntime.ContentPart{Type: aimodelruntime.PartOutputText, Text: text})
+	}
+	for _, call := range toolCalls {
+		args := call.Arguments
+		if len(args) == 0 || !json.Valid(args) {
+			args = json.RawMessage(`{}`)
+		}
+		parts = append(parts, aimodelruntime.ContentPart{
+			Type:       aimodelruntime.PartToolCall,
+			ToolCallID: call.ToolCallID,
+			ToolName:   call.ToolName,
+			Arguments:  args,
+		})
+	}
+	if len(parts) == 0 {
+		return fmt.Errorf("empty assistant tool call message")
+	}
+	_, err := s.conversations.AppendRuntimeMessage(
+		ctx,
+		run.ConversationID,
+		run.ID,
+		"assistant",
+		fmt.Sprintf("run:%s:assistant-tools:%s", run.ID, step.ID),
+		parts,
+	)
+	return err
 }
 
 func (s *AgentRuntimeService) appendToolResult(ctx context.Context, run *AgentRun, step *AgentStep, call aimodelruntime.OutputItem, value any, err error) (bool, error) {

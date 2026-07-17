@@ -8,5 +8,5 @@
 - `purpose=builder_preview` 才允许 draft agent 执行；workspace 禁止 preview Version；非 builder 路径不得放宽 enabled。
 - 模型只经统一 Model Runtime，工具只经 Tool Runtime，压缩只经 ContextCompactor。
 - ToolConfirmation 暂停时释放 lease；恢复必须校验 auth、permission、Agent/Tool/Schema、参数 hash、会话 revision 与 Snapshot。
-- assistant/tool 消息只经 ConversationService 追加；失败/取消禁止伪造完成消息。
+- assistant/tool 消息只经 ConversationService 追加；模型 tool_call 必须先落 assistant 再落 tool_result，二者成对；失败/取消禁止伪造完成消息。
 - 事件 cursor 单调且 tenant/run 隔离；日志、Outbox、Step/Event 禁止 Secret、Handle、完整敏感参数、压缩摘要与供应商原始响应。

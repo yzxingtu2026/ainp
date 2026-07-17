@@ -22,7 +22,7 @@ Builder 预览约束：
 - Provider context overflow 只允许受预算限制的压缩重试；step/model/tool/compaction/Token/时长均有硬上限。
 - ToolScope 只允许 Agent bindings 与 meta search/load。Handle 只在服务端内存使用，不写 Message/Event。
 - 敏感工具复用 ToolConfirmation。Run 保存 confirmation/invocation 引用并释放 lease；恢复前校验 actor、auth version、会话 revision、Agent/Tool/Schema 和已持久化调用结果。
-- 最终 assistant 与 tool result 通过 ConversationService 幂等追加；失败或取消不伪造 assistant 完成消息。
+- 模型返回 tool_call 后，必须先幂等追加 assistant（含 `tool_call`）消息，再追加 tool result；二者成对出现，禁止只落 tool_result。最终无工具回复经 finalize 提交；失败或取消不伪造 assistant 完成消息。
 
 ## 事件与敏感信息
 

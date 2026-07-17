@@ -332,7 +332,7 @@ func (s *ConversationService) AppendRuntimeMessage(ctx context.Context, conversa
 		return nil, errs.New(errs.CodeConflict, "conversation is archived")
 	}
 	runtimeRole := aimodelruntime.Role(role)
-	if runtimeRole != aimodelruntime.RoleTool && runtimeRole != aimodelruntime.RoleSystem {
+	if runtimeRole != aimodelruntime.RoleTool && runtimeRole != aimodelruntime.RoleSystem && runtimeRole != aimodelruntime.RoleAssistant {
 		return nil, errs.New(errs.CodeValidation, "invalid runtime message role")
 	}
 	if err = aimodelruntime.ValidateMessage(aimodelruntime.Message{Role: runtimeRole, Content: content}); err != nil {

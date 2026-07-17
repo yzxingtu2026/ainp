@@ -62,6 +62,8 @@ func openAIInput(messages []Message) []any {
 	out := make([]any, 0, len(messages))
 	for _, m := range messages {
 		content := make([]any, 0, len(m.Content))
+		var functionCalls []any
+		var functionOutputs []any
 		for _, part := range m.Content {
 			switch part.Type {
 			case PartInputText:
@@ -76,15 +78,27 @@ func openAIInput(messages []Message) []any {
 				}
 			case PartOutputText:
 				content = append(content, map[string]any{"type": "output_text", "text": part.Text})
+			case PartToolCall:
+				args := string(part.Arguments)
+				if args == "" {
+					args = "{}"
+				}
+				functionCalls = append(functionCalls, map[string]any{
+					"type": "function_call", "call_id": part.ToolCallID, "name": part.ToolName, "arguments": args,
+				})
 			case PartToolResult:
 				var value any
 				_ = json.Unmarshal(part.Result, &value)
-				out = append(out, map[string]any{"type": "function_call_output", "call_id": part.ToolCallID, "output": value})
+				functionOutputs = append(functionOutputs, map[string]any{
+					"type": "function_call_output", "call_id": part.ToolCallID, "output": value,
+				})
 			}
 		}
 		if len(content) > 0 {
 			out = append(out, map[string]any{"role": m.Role, "content": content})
 		}
+		out = append(out, functionCalls...)
+		out = append(out, functionOutputs...)
 	}
 	return out
 }
