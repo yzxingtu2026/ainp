@@ -4,7 +4,7 @@ import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { markdown } from '@codemirror/lang-markdown';
 import { defaultHighlightStyle, syntaxHighlighting } from '@codemirror/language';
 import { Compartment, EditorState } from '@codemirror/state';
-import { EditorView, keymap, lineNumbers, placeholder as cmPlaceholder } from '@codemirror/view';
+import { EditorView, keymap, placeholder as cmPlaceholder } from '@codemirror/view';
 import { useThemeStore } from '@/store/modules/theme';
 
 defineOptions({ name: 'MarkdownPromptEditor' });
@@ -60,18 +60,9 @@ function editorTheme(dark: boolean) {
         lineHeight: '1.55'
       },
       '.cm-content': {
-        padding: '10px 0',
+        padding: '10px 12px',
         caretColor: dark ? '#e6edf3' : '#1f2328',
         minHeight: '100%'
-      },
-      '.cm-gutters': {
-        backgroundColor: dark ? 'rgba(255,255,255,0.03)' : '#f6f8fa',
-        color: dark ? '#8b949e' : '#656d76',
-        borderRight: `1px solid ${dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'}`,
-        minHeight: '100%'
-      },
-      '.cm-activeLineGutter': {
-        backgroundColor: dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'
       },
       '.cm-activeLine': {
         backgroundColor: dark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)'
@@ -95,7 +86,6 @@ function createState(doc: string) {
     doc,
     extensions: [
       history(),
-      lineNumbers(),
       EditorView.lineWrapping,
       keymap.of([...defaultKeymap, ...historyKeymap]),
       markdown(),
