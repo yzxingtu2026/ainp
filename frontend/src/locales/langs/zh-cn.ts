@@ -228,6 +228,16 @@ const local: App.I18n.Schema = {
       resetSuccessMsg: '重置成功'
     }
   },
+  menu: {
+    ai: {
+      root: { title: 'AI 中心' },
+      providers: { title: '模型供应商' },
+      models: { title: '模型目录' },
+      runtime: { title: '模型调试' },
+      agents: { title: '智能体' },
+      agent_builder: { title: '智能体编排工作台' }
+    }
+  },
   route: {
     ai: 'AI 中心',
     ai_agents: '智能体',

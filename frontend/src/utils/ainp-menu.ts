@@ -21,10 +21,20 @@ export function toFirstLevelName(id: string, path?: string): string {
   return head.replace(/_/g, '');
 }
 
+/** 后端 i18n 缺失时 Title 会回退成 title_key；此时改走前端 $t(title_key)。 */
+function menuTitleMeta(item: Api.Route.AinPMenu): { title: string; i18nKey: string | null } {
+  const titleKey = item.title_key?.trim() || '';
+  const title = item.title?.trim() || titleKey || item.id;
+  if (titleKey && title === titleKey) {
+    return { title, i18nKey: titleKey };
+  }
+  return { title, i18nKey: null };
+}
+
 /**
  * 将 AINP 扁平菜单（directory/menu）转为 Soybean ElegantConstRoute 树。
  * button 不进路由，仅用于权限码。
- * 不设置 i18nKey，侧栏直接使用后端 title，避免出现 route.xxx 键名。
+ * 默认不设置 i18nKey，侧栏直接使用后端已本地化 title；仅当 title 回退为 title_key 时启用前端键。
  */
 export function transformAinPMenusToRoutes(items: Api.Route.AinPMenu[]): ElegantConstRoute[] {
   const nodes = items.filter(m => m.type === 'directory' || m.type === 'menu');
@@ -52,14 +62,15 @@ export function transformAinPMenusToRoutes(items: Api.Route.AinPMenu[]): Elegant
             ? `/${firstChildPath.split('/').filter(Boolean)[0]}`
             : `/${toFirstLevelName(item.id)}`);
         const name = toFirstLevelName(item.id, path);
+        const titles = menuTitleMeta(item);
 
         return {
           name,
           path,
           component: 'layout.base',
           meta: {
-            title: item.title,
-            i18nKey: null,
+            title: titles.title,
+            i18nKey: titles.i18nKey as App.I18n.I18nKey | null,
             icon: item.icon || import.meta.env.VITE_MENU_ICON,
             order: item.order,
             hideInMenu: Boolean(item.hide_in_menu)
@@ -73,6 +84,7 @@ export function transformAinPMenusToRoutes(items: Api.Route.AinPMenu[]): Elegant
       const path = item.path || `/${viewKey.replace(/_/g, '/')}`;
       const firstLevel = parentFirstLevel || toFirstLevelName(item.id, path);
       const name = viewKey.includes('_') ? viewKey : `${firstLevel}_${viewKey}`;
+      const titles = menuTitleMeta(item);
 
       if (childRoutes.length === 0 && !item.parent_id) {
         // 无父级的单级菜单：layout.base$view.xxx，name 仍须无 `_` 才是 single-level
@@ -83,8 +95,8 @@ export function transformAinPMenusToRoutes(items: Api.Route.AinPMenu[]): Elegant
             path,
             component: `layout.base$view.${viewKey}`,
             meta: {
-              title: item.title,
-              i18nKey: null,
+              title: titles.title,
+              i18nKey: titles.i18nKey as App.I18n.I18nKey | null,
               icon: item.icon || import.meta.env.VITE_MENU_ICON,
               order: item.order,
               hideInMenu: Boolean(item.hide_in_menu),
@@ -98,8 +110,8 @@ export function transformAinPMenusToRoutes(items: Api.Route.AinPMenu[]): Elegant
           path: `/${firstLevel}`,
           component: 'layout.base',
           meta: {
-            title: item.title,
-            i18nKey: null,
+            title: titles.title,
+            i18nKey: titles.i18nKey as App.I18n.I18nKey | null,
             icon: item.icon || import.meta.env.VITE_MENU_ICON,
             order: item.order,
             hideInMenu: Boolean(item.hide_in_menu)
@@ -110,8 +122,8 @@ export function transformAinPMenusToRoutes(items: Api.Route.AinPMenu[]): Elegant
               path,
               component: `view.${viewKey}`,
               meta: {
-                title: item.title,
-                i18nKey: null,
+                title: titles.title,
+                i18nKey: titles.i18nKey as App.I18n.I18nKey | null,
                 icon: item.icon || import.meta.env.VITE_MENU_ICON,
                 order: item.order,
                 hideInMenu: Boolean(item.hide_in_menu),
@@ -127,8 +139,8 @@ export function transformAinPMenusToRoutes(items: Api.Route.AinPMenu[]): Elegant
         path,
         component: `view.${viewKey}`,
         meta: {
-          title: item.title,
-          i18nKey: null,
+          title: titles.title,
+          i18nKey: titles.i18nKey as App.I18n.I18nKey | null,
           icon: item.icon || import.meta.env.VITE_MENU_ICON,
           order: item.order,
           hideInMenu: Boolean(item.hide_in_menu),

@@ -54,7 +54,21 @@ function mergeAuthRoutes(localRoutes: ElegantConstRoute[], dynamicRoutes: Elegan
     }
     const children = [...(existing.children || [])];
     for (const child of local.children || []) {
-      if (!children.some(item => String(item.name) === String(child.name))) {
+      const idx = children.findIndex(item => String(item.name) === String(child.name));
+      if (idx >= 0) {
+        // 本地静态路由带前端 i18nKey；覆盖后端未翻译时把 title_key 原样当 title 的情况
+        const current = children[idx];
+        children[idx] = {
+          ...current,
+          ...cloneRoute(child),
+          meta: {
+            ...current.meta,
+            ...child.meta,
+            title: child.meta?.title || current.meta?.title || String(child.name),
+            icon: current.meta?.icon || child.meta?.icon
+          }
+        };
+      } else {
         children.push(cloneRoute(child));
       }
     }

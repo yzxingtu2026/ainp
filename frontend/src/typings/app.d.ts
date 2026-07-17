@@ -488,6 +488,16 @@ declare namespace App {
           resetSuccessMsg: string;
         };
       };
+      menu: {
+        ai: {
+          root: { title: string };
+          providers: { title: string };
+          models: { title: string };
+          runtime: { title: string };
+          agents: { title: string };
+          agent_builder: { title: string };
+        };
+      };
       route: Record<I18nRouteKey, string>;
       page: {
         aiAgents: {

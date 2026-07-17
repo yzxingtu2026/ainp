@@ -232,6 +232,16 @@ const local: App.I18n.Schema = {
       resetSuccessMsg: 'Reset Success'
     }
   },
+  menu: {
+    ai: {
+      root: { title: 'AI Center' },
+      providers: { title: 'Model Providers' },
+      models: { title: 'Model Catalog' },
+      runtime: { title: 'Model Debugger' },
+      agents: { title: 'Agents' },
+      agent_builder: { title: 'Agent Builder' }
+    }
+  },
   route: {
     ai: 'AI Center',
     ai_agents: 'Agents',
