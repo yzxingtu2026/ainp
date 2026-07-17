@@ -209,5 +209,5 @@ func AutoMigrate(db *gorm.DB) error {
 			return err
 		}
 	}
-	return db.AutoMigrate(&Provider{}, &Deployment{}, &Alias{}, &ModelInvocation{}, &ToolCatalog{}, &ToolSearchDocument{}, &ToolScope{}, &ToolConfirmation{}, &ToolInvocation{})
+	return db.AutoMigrate(&Provider{}, &Deployment{}, &Alias{}, &ModelInvocation{}, &ToolCatalog{}, &ToolSearchDocument{}, &ToolScope{}, &ToolConfirmation{}, &ToolInvocation{}, &Agent{}, &AgentVersion{}, &AgentToolBinding{})
 }

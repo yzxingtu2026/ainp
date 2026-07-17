@@ -12,7 +12,9 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/logging"
 	"github.com/yzxingtu2026/ainp/platform/framework/state"
 	"github.com/yzxingtu2026/ainp/platform/internal/boot"
+	"github.com/yzxingtu2026/ainp/platform/modules/ai"
 	"github.com/yzxingtu2026/ainp/platform/modules/system"
+	"gorm.io/gorm"
 )
 
 func main() {
@@ -77,6 +79,18 @@ func runSetupMode(ctx context.Context, cfg *config.Config, st *state.State) {
 	application.Installed = false
 	setupSvc := system.NewSetupService(cfg.Database.DSN, cfg.StateFile, st, func() {
 		application.Installed = true
+	})
+	contracts, err := ai.NewBuiltinAgentContractRegistry()
+	if err != nil {
+		logging.Error(ctx, "register builtin agent contracts failed", err)
+		os.Exit(1)
+	}
+	agents := ai.NewAgentService(nil, contracts, nil, nil)
+	setupSvc.SetInitialDataHook(func(ctx context.Context, db *gorm.DB, tenantID, userID string) error {
+		if err := ai.AutoMigrateAgents(db); err != nil {
+			return err
+		}
+		return agents.ReconcileBuiltinForTenant(ctx, db, tenantID, userID)
 	})
 	if err := system.RegisterSetupActions(application, setupSvc); err != nil {
 		logging.Error(ctx, "register setup failed", err)

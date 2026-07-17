@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/yzxingtu2026/ainp/platform/framework/action"
+	"github.com/yzxingtu2026/ainp/platform/framework/aiagent"
 	"github.com/yzxingtu2026/ainp/platform/framework/aimodel"
 	"github.com/yzxingtu2026/ainp/platform/framework/aimodelruntime"
 	"github.com/yzxingtu2026/ainp/platform/framework/aitool"
@@ -43,6 +44,22 @@ const (
 	ActionToolConfirmationList    = "ai.tool_confirmation_list"
 	ActionToolConfirmationApprove = "ai.tool_confirmation_approve"
 	ActionToolConfirmationReject  = "ai.tool_confirmation_reject"
+	ActionAgentList               = "ai.agent_list"
+	ActionAgentGet                = "ai.agent_get"
+	ActionAgentCreate             = "ai.agent_create"
+	ActionAgentUpdate             = "ai.agent_update"
+	ActionAgentDuplicate          = "ai.agent_duplicate"
+	ActionAgentStatus             = "ai.agent_status_update"
+	ActionAgentVersionList        = "ai.agent_version_list"
+	ActionAgentVersionGet         = "ai.agent_version_get"
+	ActionAgentVersionCreate      = "ai.agent_version_create"
+	ActionAgentVersionPublish     = "ai.agent_version_publish"
+	ActionAgentToolSearch         = "ai.agent_tool_search"
+	ActionAgentToolList           = "ai.agent_tool_list"
+	ActionAgentToolBind           = "ai.agent_tool_bind"
+	ActionAgentToolUnbind         = "ai.agent_tool_unbind"
+	ActionAgentDiagnostics        = "ai.agent_diagnostics_get"
+	ActionAgentBuiltinReconcile   = "ai.agent_builtin_reconcile"
 )
 
 func Register(a *app.App) error {
@@ -92,6 +109,13 @@ func Register(a *app.App) error {
 	tools := NewToolService(a.DB, toolRegistry, handleSigner, writer)
 	invocations.SetToolProjector(tools)
 	a.ToolRegistry = toolRegistry
+	contracts, err := NewBuiltinAgentContractRegistry()
+	if err != nil {
+		return err
+	}
+	a.AgentContracts = contracts
+	agents := NewAgentService(a.DB, contracts, svc, toolRegistry)
+	a.AgentTenantInitializer = agents.ReconcileBuiltinForTenant
 	auditOn := true
 	type def struct {
 		id, path, name, group, groupName string
@@ -110,6 +134,22 @@ func Register(a *app.App) error {
 		{ActionToolConfirmationList, "/api/v1/ai/tool-confirmations/list", "待确认工具列表", "ai.tool_runtime", "工具运行时", action.JSON(tools.ListConfirmations)},
 		{ActionToolConfirmationApprove, "/api/v1/ai/tool-confirmations/approve", "批准本次工具执行", "ai.tool_runtime", "工具运行时", action.JSON(tools.Approve)},
 		{ActionToolConfirmationReject, "/api/v1/ai/tool-confirmations/reject", "拒绝本次工具执行", "ai.tool_runtime", "工具运行时", action.JSON(tools.Reject)},
+		{ActionAgentList, "/api/v1/ai/agents/list", "智能体列表", "ai.agent_management", "智能体", action.JSON(agents.List)},
+		{ActionAgentGet, "/api/v1/ai/agents/get", "智能体详情", "ai.agent_management", "智能体", action.JSON(agents.Get)},
+		{ActionAgentCreate, "/api/v1/ai/agents/create", "创建智能体", "ai.agent_management", "智能体", action.JSON(agents.Create)},
+		{ActionAgentUpdate, "/api/v1/ai/agents/update", "更新智能体", "ai.agent_management", "智能体", action.JSON(agents.Update)},
+		{ActionAgentDuplicate, "/api/v1/ai/agents/duplicate", "复制智能体", "ai.agent_management", "智能体", action.JSON(agents.Duplicate)},
+		{ActionAgentStatus, "/api/v1/ai/agents/status/update", "更新智能体状态", "ai.agent_management", "智能体", action.JSON(agents.Status)},
+		{ActionAgentVersionList, "/api/v1/ai/agent-versions/list", "智能体版本列表", "ai.agent_management", "智能体", action.JSON(agents.ListVersions)},
+		{ActionAgentVersionGet, "/api/v1/ai/agent-versions/get", "智能体版本详情", "ai.agent_management", "智能体", action.JSON(agents.GetVersion)},
+		{ActionAgentVersionCreate, "/api/v1/ai/agent-versions/create", "创建智能体版本", "ai.agent_management", "智能体", action.JSON(agents.CreateVersion)},
+		{ActionAgentVersionPublish, "/api/v1/ai/agent-versions/publish", "发布智能体版本", "ai.agent_management", "智能体", action.JSON(agents.PublishVersion)},
+		{ActionAgentToolSearch, "/api/v1/ai/agent-tools/search", "搜索可绑定工具", "ai.agent_management", "智能体", action.JSON(agents.SearchTools)},
+		{ActionAgentToolList, "/api/v1/ai/agent-tools/list", "智能体工具列表", "ai.agent_management", "智能体", action.JSON(agents.ListTools)},
+		{ActionAgentToolBind, "/api/v1/ai/agent-tools/bind", "绑定智能体工具", "ai.agent_management", "智能体", action.JSON(agents.BindTool)},
+		{ActionAgentToolUnbind, "/api/v1/ai/agent-tools/unbind", "解绑智能体工具", "ai.agent_management", "智能体", action.JSON(agents.UnbindTool)},
+		{ActionAgentDiagnostics, "/api/v1/ai/agents/diagnostics", "智能体诊断", "ai.agent_management", "智能体", action.JSON(agents.Diagnostics)},
+		{ActionAgentBuiltinReconcile, "/api/v1/ai/agents/builtin/reconcile", "同步内置智能体", "ai.agent_management", "智能体", action.JSON(agents.ReconcileBuiltin)},
 	}
 	for _, d := range defs {
 		access := action.AccessMode("")
@@ -158,10 +198,16 @@ func Register(a *app.App) error {
 	if err := toolRegistry.Refresh(context.Background()); err != nil {
 		return err
 	}
-	for _, m := range []menu.Menu{{ID: "ai.root", Title: "AI 中心", TitleKey: "menu.ai.root.title", Icon: "mdi:creation-outline", Type: menu.TypeDirectory, Module: "ai", Order: 20}, {ID: "ai.providers", ParentID: "ai.root", Title: "模型供应商", TitleKey: "menu.ai.providers.title", Icon: "mdi:server-network", Type: menu.TypeMenu, Path: "/ai/providers", Component: "ai/providers", Permission: ActionProviderList, BindAction: ActionProviderList, Module: "ai", Order: 1}, {ID: "ai.models", ParentID: "ai.root", Title: "模型目录", TitleKey: "menu.ai.models.title", Icon: "mdi:database-search-outline", Type: menu.TypeMenu, Path: "/ai/models", Component: "ai/models", Permission: ActionDeploymentList, BindAction: ActionDeploymentList, Module: "ai", Order: 2}, {ID: "ai.runtime", ParentID: "ai.root", Title: "模型调试", TitleKey: "menu.ai.runtime.title", Icon: "mdi:message-text-fast-outline", Type: menu.TypeMenu, Path: "/ai/runtime", Component: "ai/runtime", Permission: ActionModelGenerate, BindAction: ActionModelGenerate, Module: "ai", Order: 3}} {
+	for _, m := range []menu.Menu{{ID: "ai.root", Title: "AI 中心", TitleKey: "menu.ai.root.title", Icon: "mdi:creation-outline", Type: menu.TypeDirectory, Module: "ai", Order: 20}, {ID: "ai.providers", ParentID: "ai.root", Title: "模型供应商", TitleKey: "menu.ai.providers.title", Icon: "mdi:server-network", Type: menu.TypeMenu, Path: "/ai/providers", Component: "ai/providers", Permission: ActionProviderList, BindAction: ActionProviderList, Module: "ai", Order: 1}, {ID: "ai.models", ParentID: "ai.root", Title: "模型目录", TitleKey: "menu.ai.models.title", Icon: "mdi:database-search-outline", Type: menu.TypeMenu, Path: "/ai/models", Component: "ai/models", Permission: ActionDeploymentList, BindAction: ActionDeploymentList, Module: "ai", Order: 2}, {ID: "ai.runtime", ParentID: "ai.root", Title: "模型调试", TitleKey: "menu.ai.runtime.title", Icon: "mdi:message-text-fast-outline", Type: menu.TypeMenu, Path: "/ai/runtime", Component: "ai/runtime", Permission: ActionModelGenerate, BindAction: ActionModelGenerate, Module: "ai", Order: 3}, {ID: "ai.agents", ParentID: "ai.root", Title: "智能体", TitleKey: "menu.ai.agents.title", Icon: "mdi:robot-outline", Type: menu.TypeMenu, Path: "/ai/agents", Component: "ai/agents", Permission: ActionAgentList, BindAction: ActionAgentList, Module: "ai", Order: 4}} {
 		if err := a.RegisterMenu(m); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func NewBuiltinAgentContractRegistry() (*aiagent.Registry, error) {
+	contracts := aiagent.NewRegistry()
+	err := contracts.Register(aiagent.Contract{Key: "system.operations", Version: "1.0.0", Name: "系统运营助手", Description: "通过当前用户权限安全操作后台系统", BaseInstructions: "始终继承当前用户的租户、身份和权限。不得绕过鉴权、工具确认、租户隔离或数据安全策略。先搜索并加载必要工具，只执行完成当前任务所需的最少操作。", RequiredModelCapabilities: []string{"chat", "tools"}, RequiredToolSelectors: []string{"meta:tool.search", "meta:tool.load"}, ConfigSchema: json.RawMessage(`{"type":"object","additionalProperties":false}`), SingletonScope: aiagent.SingletonTenant, ManagedFields: []string{"code", "source", "contract_key", "contract_version", "base_instructions", "visibility"}, UpgradePolicy: "managed-fields"})
+	return contracts, err
 }

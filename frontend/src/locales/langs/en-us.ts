@@ -234,6 +234,7 @@ const local: App.I18n.Schema = {
   },
   route: {
     ai: 'AI Center',
+    ai_agents: 'Agents',
     ai_models: 'Model Catalog',
     ai_providers: 'Model Providers',
     ai_runtime: 'Model Debugger',

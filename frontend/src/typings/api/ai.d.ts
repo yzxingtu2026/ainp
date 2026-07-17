@@ -1,4 +1,11 @@
 declare namespace Api.AI {
+  type AgentSource = 'builtin' | 'tenant' | 'personal';
+  type AgentVisibility = 'private' | 'tenant';
+  interface Agent { id:string; code:string; name:string; description:string; owner_user_id?:string; contract_key?:string; contract_version?:string; source:AgentSource; visibility:AgentVisibility; status:'draft'|'enabled'|'disabled'; current_version:number; revision:number; created_at:string; updated_at:string }
+  interface AgentVersion { id:string; agent_id:string; version:number; model_alias:string; tenant_instructions?:string; user_instructions?:string; generation_config:Record<string,unknown>; tool_policy:Record<string,unknown>; created_by:string; created_at:string }
+  interface AgentToolBinding { id:string; agent_id:string; tool_id:string; source:string; status:string; created_by:string; created_at:string }
+  interface AgentDiagnosticIssue { code:string; resource?:string; message:string }
+  interface AgentDiagnostics { healthy:boolean; issues:AgentDiagnosticIssue[] }
   type Status='enabled'|'disabled';
   interface Provider { id:string;code:string;name:string;protocol:string;base_url:string;credential_configured:boolean;status:Status;config_json:Record<string,unknown>;created_at:string;updated_at:string }
   interface Deployment { id:string;provider_id:string;code:string;remote_model_id:string;display_name:string;model_type:string;capabilities_json:{input_modalities:string[];output_modalities:string[];features:string[]};limits_json:{context_window?:number;max_output_tokens?:number};status:Status;created_at:string;updated_at:string }

@@ -23,10 +23,15 @@ import (
 
 // SetupService 安装向导核心服务。
 type SetupService struct {
-	cfgDSN      string       // 配置/环境变量提供的 DSN
-	statePath   string       // state.yaml 路径
-	st          *state.State // 当前状态
-	onInstalled func()       // 安装完成后的回调（用于更新内存状态）
+	cfgDSN          string       // 配置/环境变量提供的 DSN
+	statePath       string       // state.yaml 路径
+	st              *state.State // 当前状态
+	onInstalled     func()       // 安装完成后的回调（用于更新内存状态）
+	initialDataHook func(context.Context, *gorm.DB, string, string) error
+}
+
+func (s *SetupService) SetInitialDataHook(hook func(context.Context, *gorm.DB, string, string) error) {
+	s.initialDataHook = hook
 }
 
 func NewSetupService(cfgDSN, statePath string, st *state.State, onInstalled func()) *SetupService {
@@ -258,6 +263,11 @@ func (s *SetupService) createInitialData(ctx context.Context, db *gorm.DB, tenan
 			RoleID:   roleID,
 		}).Error; err != nil {
 			return fmt.Errorf("create user_role: %w", err)
+		}
+		if s.initialDataHook != nil {
+			if err := s.initialDataHook(ctx, tx, tenantID, userID); err != nil {
+				return fmt.Errorf("initialize tenant modules: %w", err)
+			}
 		}
 
 		// 分配权限
