@@ -43,6 +43,7 @@ import {
 } from '@/service/api';
 import { useAuthStore } from '@/store/modules/auth';
 import { createDemoMockPreview, createIdleMockPreview, type MockPreviewState } from './mock-preview';
+import MarkdownPromptEditor from '@/components/common/markdown-prompt-editor.vue';
 import AgentToolPickerModal from './modules/agent-tool-picker-modal.vue';
 
 defineOptions({ name: 'AIAgentBuilder' });
@@ -449,13 +450,9 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
           <div class="shrink-0 border-b px-12px py-8px font-600">{{ $t('page.agentBuilder.panePrompt') }}</div>
           <div class="min-h-0 flex flex-1 flex-col gap-8px overflow-hidden px-12px py-10px">
             <NAlert v-if="instructionError" type="error" class="shrink-0">{{ instructionError }}</NAlert>
-            <NInput
-              v-model:value="draft.tenant_instructions"
-              type="textarea"
-              class="agent-builder-prompt-input min-h-0 flex-1"
-              :resizable="false"
+            <MarkdownPromptEditor
+              v-model="draft.tenant_instructions"
               :maxlength="instructionLimit"
-              show-count
               :placeholder="$t('page.agentBuilder.tenantPlaceholder')"
             />
           </div>
@@ -653,15 +650,13 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
         </NTabs>
         <div class="min-h-0 flex-1 overflow-y-auto px-12px py-10px">
           <template v-if="mobileTab === 'prompt'">
-            <NInput
-              v-model:value="draft.tenant_instructions"
-              type="textarea"
-              class="min-h-360px"
-              :resizable="false"
-              :maxlength="instructionLimit"
-              show-count
-              :placeholder="$t('page.agentBuilder.tenantPlaceholder')"
-            />
+            <div class="h-360px flex flex-col">
+              <MarkdownPromptEditor
+                v-model="draft.tenant_instructions"
+                :maxlength="instructionLimit"
+                :placeholder="$t('page.agentBuilder.tenantPlaceholder')"
+              />
+            </div>
           </template>
           <template v-else-if="mobileTab === 'config'">
             <NForm label-placement="top">
@@ -733,31 +728,3 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
     />
   </div>
 </template>
-
-<style scoped>
-.agent-builder-prompt-input {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-}
-
-.agent-builder-prompt-input :deep(.n-input) {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-}
-
-.agent-builder-prompt-input :deep(.n-input-wrapper) {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-}
-
-.agent-builder-prompt-input :deep(.n-input__textarea-el) {
-  flex: 1;
-  height: 100% !important;
-  min-height: 0;
-  resize: none;
-}
-</style>
