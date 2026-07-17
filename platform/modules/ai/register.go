@@ -153,7 +153,7 @@ func Register(a *app.App) error {
 	}
 	for _, d := range defs {
 		access := action.AccessMode("")
-		if strings.HasPrefix(d.id, "ai.tool_") || strings.HasPrefix(d.id, "ai.agent_") {
+		if strings.HasPrefix(d.id, "ai.tool_") {
 			access = action.AccessAuthenticated
 		}
 		if err := a.RegisterAction(action.Action{ID: d.id, Handler: d.handler, Meta: action.Metadata{Capability: "ai", Access: access, Name: d.name, NameKey: "action." + d.id + ".name", Description: d.name, DescriptionKey: "action." + d.id + ".description", PermissionGroup: d.group, PermissionGroupName: d.groupName, PermissionGroupNameKey: "permission_group." + d.group, Audit: &auditOn, HTTP: &action.HTTPMeta{Method: "POST", Path: d.path}}}); err != nil {
@@ -198,7 +198,7 @@ func Register(a *app.App) error {
 	if err := toolRegistry.Refresh(context.Background()); err != nil {
 		return err
 	}
-	for _, m := range []menu.Menu{{ID: "ai.root", Title: "AI 中心", TitleKey: "menu.ai.root.title", Icon: "mdi:creation-outline", Type: menu.TypeDirectory, Module: "ai", Order: 20}, {ID: "ai.providers", ParentID: "ai.root", Title: "模型供应商", TitleKey: "menu.ai.providers.title", Icon: "mdi:server-network", Type: menu.TypeMenu, Path: "/ai/providers", Component: "ai/providers", Permission: ActionProviderList, BindAction: ActionProviderList, Module: "ai", Order: 1}, {ID: "ai.models", ParentID: "ai.root", Title: "模型目录", TitleKey: "menu.ai.models.title", Icon: "mdi:database-search-outline", Type: menu.TypeMenu, Path: "/ai/models", Component: "ai/models", Permission: ActionDeploymentList, BindAction: ActionDeploymentList, Module: "ai", Order: 2}, {ID: "ai.runtime", ParentID: "ai.root", Title: "模型调试", TitleKey: "menu.ai.runtime.title", Icon: "mdi:message-text-fast-outline", Type: menu.TypeMenu, Path: "/ai/runtime", Component: "ai/runtime", Permission: ActionModelGenerate, BindAction: ActionModelGenerate, Module: "ai", Order: 3}, {ID: "ai.agents", ParentID: "ai.root", Title: "智能体", TitleKey: "menu.ai.agents.title", Icon: "mdi:robot-outline", Type: menu.TypeMenu, Path: "/ai/agents", Component: "ai/agents", BindAction: ActionAgentList, Module: "ai", Order: 4}} {
+	for _, m := range []menu.Menu{{ID: "ai.root", Title: "AI 中心", TitleKey: "menu.ai.root.title", Icon: "mdi:creation-outline", Type: menu.TypeDirectory, Module: "ai", Order: 20}, {ID: "ai.providers", ParentID: "ai.root", Title: "模型供应商", TitleKey: "menu.ai.providers.title", Icon: "mdi:server-network", Type: menu.TypeMenu, Path: "/ai/providers", Component: "ai/providers", Permission: ActionProviderList, BindAction: ActionProviderList, Module: "ai", Order: 1}, {ID: "ai.models", ParentID: "ai.root", Title: "模型目录", TitleKey: "menu.ai.models.title", Icon: "mdi:database-search-outline", Type: menu.TypeMenu, Path: "/ai/models", Component: "ai/models", Permission: ActionDeploymentList, BindAction: ActionDeploymentList, Module: "ai", Order: 2}, {ID: "ai.runtime", ParentID: "ai.root", Title: "模型调试", TitleKey: "menu.ai.runtime.title", Icon: "mdi:message-text-fast-outline", Type: menu.TypeMenu, Path: "/ai/runtime", Component: "ai/runtime", Permission: ActionModelGenerate, BindAction: ActionModelGenerate, Module: "ai", Order: 3}, {ID: "ai.agents", ParentID: "ai.root", Title: "智能体", TitleKey: "menu.ai.agents.title", Icon: "mdi:robot-outline", Type: menu.TypeMenu, Path: "/ai/agents", Component: "ai/agents", Permission: ActionAgentList, BindAction: ActionAgentList, Module: "ai", Order: 4}} {
 		if err := a.RegisterMenu(m); err != nil {
 			return err
 		}

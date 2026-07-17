@@ -78,7 +78,16 @@ func agentActor(ctx context.Context) (*auth.Context, error) {
 	return ac, nil
 }
 func canManageTenant(ac *auth.Context) bool {
-	return ac.HasPermission(ActionAgentCreate) || ac.HasPermission(ActionAgentUpdate) || ac.HasPermission(ActionAgentBuiltinReconcile)
+	for _, permission := range []string{
+		ActionAgentCreate, ActionAgentUpdate, ActionAgentDuplicate, ActionAgentStatus,
+		ActionAgentVersionCreate, ActionAgentVersionPublish,
+		ActionAgentToolBind, ActionAgentToolUnbind, ActionAgentBuiltinReconcile,
+	} {
+		if ac.HasPermission(permission) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *AgentService) validateAvatar(ctx context.Context, ac *auth.Context, id *string) error {

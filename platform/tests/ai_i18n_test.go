@@ -13,8 +13,8 @@ func TestAIRegistrationTranslationKeysExist(t *testing.T) {
 	}
 	keys := []string{
 		"capability.ai.name", "capability.ai.description",
-		"permission_group.ai.provider_management", "permission_group.ai.model_catalog",
-		"menu.ai.root.title", "menu.ai.providers.title", "menu.ai.models.title",
+		"permission_group.ai.provider_management", "permission_group.ai.model_catalog", "permission_group.ai.agent_management",
+		"menu.ai.root.title", "menu.ai.providers.title", "menu.ai.models.title", "menu.ai.agents.title",
 		"ai.model.streaming_not_supported", "ai.model.vision_not_supported", "ai.model.capability_not_supported",
 	}
 	actions := []string{
@@ -23,6 +23,10 @@ func TestAIRegistrationTranslationKeysExist(t *testing.T) {
 		"deployment_create", "deployment_import", "deployment_update", "deployment_status_update",
 		"deployment_delete",
 		"alias_list", "alias_upsert", "alias_delete",
+		"agent_list", "agent_get", "agent_create", "agent_update", "agent_duplicate", "agent_status_update",
+		"agent_version_list", "agent_version_get", "agent_version_create", "agent_version_publish",
+		"agent_tool_search", "agent_tool_list", "agent_tool_bind", "agent_tool_unbind",
+		"agent_diagnostics_get", "agent_builtin_reconcile",
 	}
 	for _, actionID := range actions {
 		keys = append(keys, "action.ai."+actionID+".name", "action.ai."+actionID+".description")
