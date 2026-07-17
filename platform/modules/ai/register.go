@@ -102,6 +102,13 @@ func Register(a *app.App) error {
 	if err := adapters.Register(aimodel.ProtocolAnthropic, aimodelruntime.NewAnthropicAdapter(nil)); err != nil {
 		return err
 	}
+	embeddingAdapters := aimodelruntime.NewEmbeddingAdapterRegistry()
+	if err := embeddingAdapters.Register(aimodel.ProtocolOpenAI, aimodelruntime.NewOpenAIEmbeddingAdapter(nil)); err != nil {
+		return err
+	}
+	if err := embeddingAdapters.Register(aimodel.ProtocolOpenAICompatible, aimodelruntime.NewOpenAICompatibleEmbeddingAdapter(nil)); err != nil {
+		return err
+	}
 	var writer outbox.Writer
 	if a.Outbox != nil {
 		if err := a.Outbox.RegisterDefinition(outbox.Definition{EventType: invocationFinishedEvent, SchemaVersion: 1}); err != nil {
@@ -115,7 +122,9 @@ func Register(a *app.App) error {
 		}
 	}
 	invocations := NewInvocationService(a.DB, svc, adapters, writer)
+	invocations.SetEmbeddingAdapters(embeddingAdapters)
 	invocations.SetAssetResolver(a.AIAssetResolver)
+	a.EmbeddingRuntime = invocations
 	if err := invocations.RecoverStale(context.Background(), 10*time.Minute); err != nil {
 		return err
 	}

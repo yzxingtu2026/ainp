@@ -482,6 +482,23 @@
       }
     },
     {
+      "id": "ai-embedding-runtime",
+      "source": ".agent/rules/ai-embedding-runtime.md",
+      "qoder": {
+        "path": ".qoder/rules/ai-embedding-runtime.md",
+        "frontmatter": {
+          "trigger": "always_on"
+        }
+      },
+      "cursor": {
+        "path": ".cursor/rules/ai-embedding-runtime.mdc",
+        "frontmatter": {
+          "description": "统一 EmbeddingRuntime、批量向量协议、Invocation 与禁止旁路供应商",
+          "alwaysApply": true
+        }
+      }
+    },
+    {
       "id": "ai-multimodal",
       "source": ".agent/rules/ai-multimodal.md",
       "qoder": {
