@@ -854,14 +854,15 @@ declare namespace App {
         output: string;
         emptyOutput: string;
         requestFailed: string;
-		images: string;
-		chooseImages: string;
-		removeImage: string;
-		imagesOnly: string;
-		visionUnsupported: string;
-		detailAuto: string;
-		detailLow: string;
-		detailHigh: string;
+        images: string;
+        chooseImages: string;
+        removeImage: string;
+        imagesOnly: string;
+        visionUnsupported: string;
+        streamingUnsupported: string;
+        detailAuto: string;
+        detailLow: string;
+        detailHigh: string;
       };
       toolConfirmation: {
         title: string;

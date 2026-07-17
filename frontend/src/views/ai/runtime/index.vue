@@ -38,6 +38,9 @@ const supportsVision = computed(() =>
     selectedDeployment.value?.capabilities_json.features?.includes('vision')
   )
 );
+const supportsStreaming = computed(() =>
+  Boolean(selectedDeployment.value?.capabilities_json.features?.includes('streaming'))
+);
 const disabled = computed(
   () =>
     loading.value ||
@@ -118,7 +121,15 @@ async function stream() {
       },
       body: JSON.stringify(requestBody())
     });
-    if (!response.ok || !response.body) throw new Error($t('aiRuntime.requestFailed'));
+    const contentType = response.headers.get('content-type') || '';
+    if (!response.ok || !response.body || !contentType.includes('text/event-stream')) {
+      let message = $t('aiRuntime.requestFailed');
+      try {
+        const envelope = await response.json();
+        if (typeof envelope?.message === 'string' && envelope.message) message = envelope.message;
+      } catch {}
+      throw new Error(message);
+    }
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
@@ -169,6 +180,11 @@ onMounted(loadAliases);
           <NFormItem :label="$t('aiRuntime.images')">
             <div class="w-full flex-col-stretch gap-10px">
               <NAlert v-if="modelAlias && !supportsVision" type="warning" :title="$t('aiRuntime.visionUnsupported')" />
+              <NAlert
+                v-if="modelAlias && !supportsStreaming"
+                type="warning"
+                :title="$t('aiRuntime.streamingUnsupported')"
+              />
               <div v-if="images.length" class="grid grid-cols-4 gap-10px lt-sm:grid-cols-2">
                 <div
                   v-for="item in images"
@@ -222,7 +238,9 @@ onMounted(loadAliases);
             <NButton type="primary" :loading="loading && !streaming" :disabled="disabled" @click="generate">
               {{ $t('aiRuntime.generate') }}
             </NButton>
-            <NButton :loading="streaming" :disabled="disabled" @click="stream">{{ $t('aiRuntime.stream') }}</NButton>
+            <NButton :loading="streaming" :disabled="disabled || !supportsStreaming" @click="stream">
+              {{ $t('aiRuntime.stream') }}
+            </NButton>
             <NButton v-if="streaming" type="error" @click="cancel">{{ $t('common.cancel') }}</NButton>
           </NSpace>
         </NForm>

@@ -440,6 +440,9 @@ notification.system.notification_test.description: "Test notification to verify 
 # ── AI Model Governance ──
 capability.ai.name: "AI Center"
 capability.ai.description: "Model assets and foundational AI capabilities"
+ai.model.streaming_not_supported: "The current model does not support streaming. Enable streaming in the model catalog or choose another model"
+ai.model.vision_not_supported: "The current model does not support image input. Enable vision in the model catalog or choose another model"
+ai.model.capability_not_supported: "The current model does not support the capabilities required by this request"
 permission_group.ai.provider_management: "Model Providers"
 permission_group.ai.model_catalog: "Model Catalog"
 permission_group.ai.model_runtime: "Model Runtime"

@@ -666,10 +666,40 @@ const local: App.I18n.Schema = {
     }
   },
   aiRuntime: {
-    title: 'Model Debugger', modelAlias: 'Model Alias', prompt: 'Prompt', promptPlaceholder: 'Enter a test message', generate: 'Generate', stream: 'Stream', output: 'Output', emptyOutput: 'No output', requestFailed: 'Model request failed', images: 'Image input', chooseImages: 'Choose or upload images', removeImage: 'Remove image', imagesOnly: 'Only ready image attachments are supported', visionUnsupported: 'The selected model alias does not support image input', detailAuto: 'Auto detail', detailLow: 'Low detail', detailHigh: 'High detail'
+    title: 'Model Debugger',
+    modelAlias: 'Model Alias',
+    prompt: 'Prompt',
+    promptPlaceholder: 'Enter a test message',
+    generate: 'Generate',
+    stream: 'Stream',
+    output: 'Output',
+    emptyOutput: 'No output',
+    requestFailed: 'Model request failed',
+    images: 'Image input',
+    chooseImages: 'Choose or upload images',
+    removeImage: 'Remove image',
+    imagesOnly: 'Only ready image attachments are supported',
+    visionUnsupported: 'The selected model alias does not support image input',
+    streamingUnsupported: 'Streaming is not enabled for the selected model alias',
+    detailAuto: 'Auto detail',
+    detailLow: 'Low detail',
+    detailHigh: 'High detail'
   },
   toolConfirmation: {
-    title:'Sensitive Tool Confirmation',tool:'Tool',arguments:'Argument Summary',reject:'Reject',approveOnce:'Allow Once',risk:{low:'Low Risk',medium:'Medium Risk',high:'High Risk',critical:'Critical Risk'},sideEffect:{none:'None',read:'Read',write:'Write',external:'External',paid:'Paid',destructive:'Destructive'}
+    title: 'Sensitive Tool Confirmation',
+    tool: 'Tool',
+    arguments: 'Argument Summary',
+    reject: 'Reject',
+    approveOnce: 'Allow Once',
+    risk: { low: 'Low Risk', medium: 'Medium Risk', high: 'High Risk', critical: 'Critical Risk' },
+    sideEffect: {
+      none: 'None',
+      read: 'Read',
+      write: 'Write',
+      external: 'External',
+      paid: 'Paid',
+      destructive: 'Destructive'
+    }
   },
   notificationAdmin: {
     templateTitle: 'Notification Template Management',
