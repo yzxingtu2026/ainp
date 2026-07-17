@@ -5,5 +5,12 @@ declare namespace Api.AI {
   interface Alias { id:string;code:string;deployment_id:string;created_at:string;updated_at:string }
   interface RemoteModel { id:string;display_name:string;suggested_type?:string;suggested_capabilities:{input_modalities:string[];output_modalities:string[];features:string[]};metadata_confirmed:boolean;imported:boolean }
   interface GenerateResponse { id:string;model:{alias:string;deployment_id:string;protocol:string;remote_model_id:string};output:Array<{id:string;type:string;text?:string;tool_name?:string;tool_call_id?:string;arguments?:unknown}>;finish_reason:string;usage:Record<string,number|null|boolean> }
+  interface ToolCandidate { id:string;name:string;summary:string;source:string;capability:string;risk:string;side_effect:string;input_hints:string[];score:number }
+  interface ToolDefinition { id:string;source:string;name:string;description_for_llm:string;description_for_human:string;capability:string;tags?:string[];input_schema:Record<string,unknown>;output_schema?:Record<string,unknown>;risk:string;side_effect:string;requires_confirmation:boolean;schema_version:number;schema_hash:string;status:string }
+  interface LoadedTool { definition:ToolDefinition;handle:string;expires_at:number }
+  interface ToolSearchResponse { scope_id:string;items:ToolCandidate[] }
+  interface ToolLoadResponse { scope_id:string;tools:LoadedTool[] }
+  interface ToolResult { call_id:string;status:string;summary:string;data?:unknown;resource_refs?:string[];truncated:boolean;error_category?:string }
+  interface ToolConfirmation { id:string;scope_id:string;invocation_id:string;tool_call_id:string;tool_id:string;arguments_summary:Record<string,unknown>;risk:string;side_effect:string;status:string;expires_at:string;created_at:string }
   interface Page<T>{items:T[];total:number;page:number;page_size:number}
 }

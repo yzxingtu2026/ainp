@@ -87,6 +87,8 @@ type StructuredOutput struct {
 }
 type GenerateRequest struct {
 	ModelAlias       string                     `json:"model_alias" validate:"required"`
+	ToolScopeID      string                     `json:"tool_scope_id,omitempty"`
+	EnableTools      bool                       `json:"enable_tools,omitempty"`
 	Instructions     string                     `json:"instructions,omitempty"`
 	Messages         []Message                  `json:"messages" validate:"required,min=1,dive"`
 	Tools            []ToolDefinition           `json:"tools,omitempty" validate:"max=64,dive"`
@@ -196,6 +198,7 @@ type ModelSummary struct {
 	DeploymentID  string `json:"deployment_id"`
 	Protocol      string `json:"protocol"`
 	RemoteModelID string `json:"remote_model_id"`
+	ToolScopeID   string `json:"tool_scope_id,omitempty"`
 }
 type GenerateResponse struct {
 	ID                string       `json:"id"`

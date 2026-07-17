@@ -855,6 +855,15 @@ declare namespace App {
         emptyOutput: string;
         requestFailed: string;
       };
+      toolConfirmation: {
+        title: string;
+        tool: string;
+        arguments: string;
+        reject: string;
+        approveOnce: string;
+        risk: Record<'low' | 'medium' | 'high' | 'critical', string>;
+        sideEffect: Record<'none' | 'read' | 'write' | 'external' | 'paid' | 'destructive', string>;
+      };
       notificationAdmin: {
         templateTitle: string;
         deliveryTitle: string;

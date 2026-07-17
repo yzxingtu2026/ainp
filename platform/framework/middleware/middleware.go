@@ -163,6 +163,7 @@ func Auth(opts AuthOptions) gin.HandlerFunc {
 			ac.Realm = claims.Realm
 			ac.UserID = snapshot.UserID
 			ac.SessionID = snapshot.SessionID
+			ac.AuthVersion = snapshot.AuthVersion
 			ac.OrgID = snapshot.OrgID
 			ac.DeptID = snapshot.DeptID
 			ac.Roles = append([]string(nil), snapshot.Roles...)

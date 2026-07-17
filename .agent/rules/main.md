@@ -38,6 +38,7 @@
 - 统一通知协议见 `notifications`（业务禁止直连渠道 SDK；必须注册 Definition/变量 Schema/渠道模板；可靠通知走 Outbox → Orchestrator → Job；模板安全限制；站内通知与 toast 分离）。
 - AI 模型治理见 `ai-model-providers`（业务只引用 Alias；Provider Type/能力交集/Secret/Discovery 均 fail-closed）。
 - AI 模型调用见 `ai-model-runtime`（统一 Generate/Stream、Adapter Registry、Invocation 与敏感信息边界）。
+- AI 工具运行时见 `tool-runtime`（常驻 search/load、动态 Schema 投影、Handle、确认与调用事实）。
 - 前端栈、图标协议见关联规则。
 - Copilot PR 语义审查见 `copilot-code-review`；它只负责中文语义反馈，不替代合并门禁与人工审批。
 
@@ -56,6 +57,7 @@
 - `notifications` → `docs/development/notifications.md`（Agent 要点见 `.agent/rules/notifications.md`）
 - `ai-model-providers` → `docs/development/ai-model-providers.md`
 - `ai-model-runtime` → `docs/development/ai-model-runtime.md`
+- `tool-runtime` → `docs/development/tool-runtime.md`
 - `icon-library` → `docs/development/icon-library.md`
 - `logging` → `docs/development/logging.md`
 - `api-response` → `docs/development/api-response.md`

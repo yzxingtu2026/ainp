@@ -31,6 +31,7 @@ type Context struct {
 	Roles             []string
 	Permissions       []string
 	SessionID         string
+	AuthVersion       uint64
 	Client            string
 	Language          string // 由 Accept-Language 中间件协商；空表示未设置
 	IsSystemOperator  bool

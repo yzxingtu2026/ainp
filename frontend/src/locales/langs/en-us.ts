@@ -668,6 +668,9 @@ const local: App.I18n.Schema = {
   aiRuntime: {
     title: 'Model Debugger', modelAlias: 'Model Alias', prompt: 'Prompt', promptPlaceholder: 'Enter a test message', generate: 'Generate', stream: 'Stream', output: 'Output', emptyOutput: 'No output', requestFailed: 'Model request failed'
   },
+  toolConfirmation: {
+    title:'Sensitive Tool Confirmation',tool:'Tool',arguments:'Argument Summary',reject:'Reject',approveOnce:'Allow Once',risk:{low:'Low Risk',medium:'Medium Risk',high:'High Risk',critical:'Critical Risk'},sideEffect:{none:'None',read:'Read',write:'Write',external:'External',paid:'Paid',destructive:'Destructive'}
+  },
   notificationAdmin: {
     templateTitle: 'Notification Template Management',
     deliveryTitle: 'Delivery Records',

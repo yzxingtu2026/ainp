@@ -24,7 +24,14 @@ type InvocationService struct {
 	resolver aimodel.Resolver
 	adapters *aimodelruntime.AdapterRegistry
 	writer   outbox.Writer
+	tools    ToolProjector
 }
+
+type ToolProjector interface {
+	ProjectModelTools(context.Context, string) (string, []aimodelruntime.ToolDefinition, error)
+}
+
+func (s *InvocationService) SetToolProjector(v ToolProjector) { s.tools = v }
 
 type invocationFinishedPayload struct {
 	InvocationID        string `json:"invocation_id"`
@@ -90,6 +97,19 @@ func (s *InvocationService) prepare(ctx context.Context, req aimodelruntime.Gene
 	req.Normalize()
 	if err := req.Validate(ctx); err != nil {
 		return nil, &aimodelruntime.RuntimeError{Category: aimodelruntime.ErrorInvalidRequest, Message: err.Error()}
+	}
+	if s.tools != nil {
+		if len(req.Tools) > 0 {
+			return nil, &aimodelruntime.RuntimeError{Category: aimodelruntime.ErrorInvalidRequest, Message: "tools must be loaded through tool_scope_id"}
+		}
+		if req.EnableTools || req.ToolScopeID != "" {
+			scopeID, definitions, err := s.tools.ProjectModelTools(ctx, req.ToolScopeID)
+			if err != nil {
+				return nil, err
+			}
+			req.ToolScopeID = scopeID
+			req.Tools = definitions
+		}
 	}
 	for _, message := range req.Messages {
 		for _, part := range message.Content {
