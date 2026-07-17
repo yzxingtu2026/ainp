@@ -463,6 +463,23 @@
           "alwaysApply": true
         }
       }
+    },
+    {
+      "id": "ai-model-runtime",
+      "source": ".agent/rules/ai-model-runtime.md",
+      "qoder": {
+        "path": ".qoder/rules/ai-model-runtime.md",
+        "frontmatter": {
+          "trigger": "always_on"
+        }
+      },
+      "cursor": {
+        "path": ".cursor/rules/ai-model-runtime.mdc",
+        "frontmatter": {
+          "description": "统一 Generate/Stream、模型 Adapter、Invocation 账本与敏感信息边界",
+          "alwaysApply": true
+        }
+      }
     }
   ]
 }

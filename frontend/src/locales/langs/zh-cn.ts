@@ -232,6 +232,7 @@ const local: App.I18n.Schema = {
     ai: 'AI 中心',
     ai_models: '模型目录',
     ai_providers: '模型供应商',
+    ai_runtime: '模型调试',
     login: '登录',
     403: '无权限',
     404: '页面不存在',
@@ -657,6 +658,9 @@ const local: App.I18n.Schema = {
       audio_input: '音频输入',
       audio_output: '音频输出'
     }
+  },
+  aiRuntime: {
+    title: '模型调试', modelAlias: '模型别名', prompt: '提示词', promptPlaceholder: '输入一条测试消息', generate: '生成', stream: '流式生成', output: '输出', emptyOutput: '暂无输出', requestFailed: '模型调用失败'
   },
   notificationAdmin: {
     templateTitle: '通知模板管理',

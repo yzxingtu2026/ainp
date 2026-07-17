@@ -169,6 +169,7 @@ const routeMap: RouteMap = {
   "ai": "/ai",
   "ai_models": "/ai/models",
   "ai_providers": "/ai/providers",
+  "ai_runtime": "/ai/runtime",
   "demo": "/demo",
   "demo_attachments": "/demo/attachments",
   "demo_hello": "/demo/hello",

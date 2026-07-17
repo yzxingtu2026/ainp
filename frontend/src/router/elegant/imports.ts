@@ -23,6 +23,7 @@ export const views: Record<LastLevelRouteKey, RouteComponent | (() => Promise<Ro
   setup: () => import("@/views/_builtin/setup/index.vue"),
   ai_models: () => import("@/views/ai/models/index.vue"),
   ai_providers: () => import("@/views/ai/providers/index.vue"),
+  ai_runtime: () => import("@/views/ai/runtime/index.vue"),
   demo_attachments: () => import("@/views/demo/attachments/index.vue"),
   demo_hello: () => import("@/views/demo/hello/index.vue"),
   home: () => import("@/views/home/index.vue"),
