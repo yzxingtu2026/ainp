@@ -564,9 +564,11 @@ declare namespace App {
           topP: string;
           maxOutputTokens: string;
           tools: string;
+          openToolPicker: string;
+          toolPickerTitle: string;
+          toolPickerHint: string;
           toolSearchPlaceholder: string;
           boundTools: string;
-          candidateTools: string;
           noBoundTools: string;
           noToolCandidates: string;
           requiredTool: string;

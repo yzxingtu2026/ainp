@@ -96,7 +96,7 @@ type AgentToolSearchRequest struct {
 	Query      string        `json:"query" validate:"max=512"`
 	Capability string        `json:"capability"`
 	Source     aitool.Source `json:"source"`
-	Limit      int           `json:"limit" validate:"omitempty,min=1,max=10"`
+	Limit      int           `json:"limit" validate:"omitempty,min=1,max=100"`
 }
 type AgentEmptyRequest struct{}
 
@@ -480,7 +480,8 @@ func (s *AgentService) SearchTools(ctx context.Context, r AgentToolSearchRequest
 	if _, e := agentActor(ctx); e != nil {
 		return nil, e
 	}
-	return aitool.Search(ctx, s.tools.List(), r.Query, r.Capability, r.Source, r.Limit, func(d aitool.Definition) bool { return d.Status == "enabled" }, nil)
+	// 管理端绑定弹窗走 Browse；模型侧 meta:tool.search 仍使用硬顶 10 的 Search。
+	return aitool.Browse(ctx, s.tools.List(), r.Query, r.Capability, r.Source, r.Limit, func(d aitool.Definition) bool { return d.Status == "enabled" })
 }
 func (s *AgentService) requiredTools(row *Agent) []string {
 	if row.ContractKey == "" {

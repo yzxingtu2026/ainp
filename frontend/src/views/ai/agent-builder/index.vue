@@ -38,12 +38,12 @@ import {
   fetchAIAliases,
   fetchAIDeployments,
   publishAIAgentVersion,
-  searchAIAgentTools,
   unbindAIAgentTool,
   updateAIAgent
 } from '@/service/api';
 import { useAuthStore } from '@/store/modules/auth';
 import { createDemoMockPreview, createIdleMockPreview, type MockPreviewState } from './mock-preview';
+import AgentToolPickerModal from './modules/agent-tool-picker-modal.vue';
 
 defineOptions({ name: 'AIAgentBuilder' });
 
@@ -60,10 +60,10 @@ const loading = ref(false);
 const hydrating = ref(false);
 const savingMeta = ref(false);
 const publishing = ref(false);
-const toolsLoading = ref(false);
 const dirty = ref(false);
 const mobileTab = ref<'prompt' | 'config' | 'preview'>('prompt');
 const versionsVisible = ref(false);
+const toolPickerVisible = ref(false);
 /** 中间栏折叠分组：默认只展开基本信息 */
 const configExpandedNames = ref<Array<string | number>>(['basic']);
 const collapsed = reactive({ left: false, right: false });
@@ -74,10 +74,8 @@ const agent = ref<Api.AI.AgentDetail | null>(null);
 const versions = ref<Api.AI.AgentVersion[]>([]);
 const diagnostics = ref<Api.AI.AgentDiagnostics | null>(null);
 const boundTools = ref<Api.AI.AgentToolBinding[]>([]);
-const toolCandidates = ref<Api.AI.ToolCandidate[]>([]);
 const aliases = ref<Api.AI.Alias[]>([]);
 const deployments = ref<Api.AI.Deployment[]>([]);
-const toolKeyword = ref('');
 const runInstructions = ref('');
 const previewInput = ref('');
 const preview = ref<MockPreviewState>(createIdleMockPreview(key => $t(key as App.I18n.I18nKey)));
@@ -100,7 +98,7 @@ const isCreate = computed(() => !agent.value);
 const managedFields = computed(() => new Set(agent.value?.managed_fields || []));
 const requiredTools = computed(() => new Set(agent.value?.required_tool_selectors || []));
 const isManaged = (field: string) => managedFields.value.has(field);
-const boundToolIDs = computed(() => new Set(boundTools.value.map(item => item.tool_id)));
+const boundToolIDs = computed(() => boundTools.value.map(item => item.tool_id));
 const canPublish = computed(
   () =>
     Boolean(draft.name && draft.code && draft.model_alias) &&
@@ -192,24 +190,13 @@ async function refreshDiagnostics() {
   diagnostics.value = data || null;
 }
 
-async function searchTools() {
-  toolsLoading.value = true;
-  try {
-    const { data } = await searchAIAgentTools({ query: toolKeyword.value, limit: 10 });
-    toolCandidates.value = data || [];
-  } finally {
-    toolsLoading.value = false;
-  }
-}
-
 async function bindTool(toolID: string) {
   if (!agent.value || !can(AI_ACTIONS.agentToolBind)) return;
   const { error } = await bindAIAgentTool(agent.value.id, toolID);
-  if (!error) {
-    const { data } = await fetchAIAgentTools(agent.value.id);
-    boundTools.value = data || [];
-    await refreshDiagnostics();
-  }
+  if (error) return;
+  const { data } = await fetchAIAgentTools(agent.value.id);
+  boundTools.value = data || [];
+  await refreshDiagnostics();
 }
 
 async function unbindTool(toolID: string) {
@@ -370,7 +357,6 @@ watch(
     await loadModels();
     if (typeof id === 'string' && id) {
       await loadAgent(id);
-      await searchTools();
     } else {
       agent.value = null;
       versions.value = [];
@@ -566,19 +552,21 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
 
                 <NCollapseItem :title="$t('page.agentBuilder.tools')" name="tools">
                   <template v-if="agent">
-                    <NSpace class="mb-12px">
-                      <NInput
-                        v-model:value="toolKeyword"
-                        clearable
-                        class="w-280px"
-                        :placeholder="$t('page.agentBuilder.toolSearchPlaceholder')"
-                        @keyup.enter="searchTools"
-                      />
-                      <NButton :loading="toolsLoading" @click="searchTools">{{ $t('common.search') }}</NButton>
+                    <NSpace class="mb-12px" justify="space-between">
+                      <div class="text-12px text-gray-500">
+                        {{ $t('page.agentBuilder.boundTools') }}（{{ boundTools.length }}）
+                      </div>
+                      <NButton
+                        type="primary"
+                        size="small"
+                        :disabled="!can(AI_ACTIONS.agentToolBind)"
+                        @click="toolPickerVisible = true"
+                      >
+                        {{ $t('page.agentBuilder.openToolPicker') }}
+                      </NButton>
                     </NSpace>
-                    <div class="mb-8px text-12px text-gray-500">{{ $t('page.agentBuilder.boundTools') }}</div>
                     <NEmpty v-if="boundTools.length === 0" :description="$t('page.agentBuilder.noBoundTools')" />
-                    <NList v-else bordered class="mb-12px max-h-180px overflow-auto">
+                    <NList v-else bordered class="max-h-280px overflow-auto">
                       <NListItem v-for="binding in boundTools" :key="binding.id">
                         <NSpace justify="space-between" class="w-full">
                           <NSpace>
@@ -599,44 +587,6 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
                         </NSpace>
                       </NListItem>
                     </NList>
-                    <div class="mb-8px text-12px text-gray-500">{{ $t('page.agentBuilder.candidateTools') }}</div>
-                    <NSpin :show="toolsLoading">
-                      <NEmpty v-if="toolCandidates.length === 0" :description="$t('page.agentBuilder.noToolCandidates')" />
-                      <NList v-else bordered class="max-h-240px overflow-auto">
-                        <NListItem v-for="tool in toolCandidates" :key="tool.id">
-                          <NThing :title="tool.name" :description="tool.summary">
-                            <template #header-extra>
-                              <NSpace>
-                                <NTag size="small">{{ tool.source }}</NTag>
-                                <NTag
-                                  size="small"
-                                  :type="
-                                    tool.risk === 'high' || tool.risk === 'critical'
-                                      ? 'error'
-                                      : tool.risk === 'medium'
-                                        ? 'warning'
-                                        : 'success'
-                                  "
-                                >
-                                  {{ $t(`toolConfirmation.risk.${tool.risk}` as App.I18n.I18nKey) }}
-                                </NTag>
-                                <NTag size="small">
-                                  {{ $t(`toolConfirmation.sideEffect.${tool.side_effect}` as App.I18n.I18nKey) }}
-                                </NTag>
-                                <NButton
-                                  size="small"
-                                  type="primary"
-                                  :disabled="boundToolIDs.has(tool.id) || !can(AI_ACTIONS.agentToolBind)"
-                                  @click="bindTool(tool.id)"
-                                >
-                                  {{ boundToolIDs.has(tool.id) ? $t('page.agentBuilder.bound') : $t('page.agentBuilder.bind') }}
-                                </NButton>
-                              </NSpace>
-                            </template>
-                          </NThing>
-                        </NListItem>
-                      </NList>
-                    </NSpin>
                   </template>
                   <NAlert v-else type="info">{{ $t('page.agentBuilder.toolsAfterCreate') }}</NAlert>
                 </NCollapseItem>
@@ -793,5 +743,12 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
         </NList>
       </NDrawerContent>
     </NDrawer>
+
+    <AgentToolPickerModal
+      v-model:show="toolPickerVisible"
+      :bound-tool-ids="boundToolIDs"
+      :can-bind="can(AI_ACTIONS.agentToolBind)"
+      :bind-tool="bindTool"
+    />
   </div>
 </template>
