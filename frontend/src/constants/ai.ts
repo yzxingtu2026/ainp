@@ -15,12 +15,18 @@ export const AI_ACTIONS = {
   aliasDelete: 'ai.alias_delete',
   modelGenerate: 'ai.model_generate',
   modelStream: 'ai.model_stream',
+  agentList: 'ai.agent_list',
+  agentGet: 'ai.agent_get',
   agentCreate: 'ai.agent_create',
   agentUpdate: 'ai.agent_update',
   agentDuplicate: 'ai.agent_duplicate',
   agentStatus: 'ai.agent_status_update',
+  agentVersionCreate: 'ai.agent_version_create',
+  agentVersionPublish: 'ai.agent_version_publish',
   agentToolBind: 'ai.agent_tool_bind',
   agentToolUnbind: 'ai.agent_tool_unbind',
+  agentToolSearch: 'ai.agent_tool_search',
+  agentDiagnostics: 'ai.agent_diagnostics_get',
   agentBuiltinReconcile: 'ai.agent_builtin_reconcile'
 } as const;
 export const MODEL_TYPES = ['chat', 'embedding', 'rerank', 'image', 'speech', 'transcription'] as const;

@@ -23,12 +23,14 @@ export const fetchAIToolConfirmations=(scopeId?:string)=>post<Api.AI.ToolConfirm
 export const approveAIToolConfirmation=(id:string)=>post<Api.AI.ToolResult>('tool-confirmations/approve',{id});
 export const rejectAIToolConfirmation=(id:string)=>post<{id:string;status:string}>('tool-confirmations/reject',{id});
 export const fetchAIAgents=(params:Record<string,unknown>)=>post<Api.AI.Page<Api.AI.Agent>>('agents/list',params);
-export const fetchAIAgent=(id:string)=>post<Api.AI.Agent>('agents/get',{id});
+export const fetchAIAgent=(id:string)=>post<Api.AI.AgentDetail>('agents/get',{id});
 export const createAIAgent=(data:Record<string,unknown>)=>post<Api.AI.Agent>('agents/create',data);
 export const updateAIAgent=(data:Record<string,unknown>)=>post<Api.AI.Agent>('agents/update',data);
 export const duplicateAIAgent=(data:Record<string,unknown>)=>post<Api.AI.Agent>('agents/duplicate',data);
 export const updateAIAgentStatus=(id:string,status:string,revision:number)=>post<Api.AI.Agent>('agents/status/update',{id,status,revision});
 export const fetchAIAgentVersions=(id:string)=>post<Api.AI.AgentVersion[]>('agent-versions/list',{id});
+export const fetchAIAgentVersion=(id:string)=>post<Api.AI.AgentVersion>('agent-versions/get',{id});
+export const createAIAgentVersion=(data:Record<string,unknown>)=>post<Api.AI.AgentVersion>('agent-versions/create',data);
 export const publishAIAgentVersion=(data:Record<string,unknown>)=>post<Api.AI.AgentVersion>('agent-versions/publish',data);
 export const searchAIAgentTools=(data:Record<string,unknown>)=>post<Api.AI.ToolCandidate[]>('agent-tools/search',data);
 export const fetchAIAgentTools=(id:string)=>post<Api.AI.AgentToolBinding[]>('agent-tools/list',{id});

@@ -1,9 +1,49 @@
 declare namespace Api.AI {
   type AgentSource = 'builtin' | 'tenant' | 'personal';
   type AgentVisibility = 'private' | 'tenant';
-  interface Agent { id:string; code:string; name:string; description:string; owner_user_id?:string; contract_key?:string; contract_version?:string; source:AgentSource; visibility:AgentVisibility; status:'draft'|'enabled'|'disabled'; current_version:number; revision:number; created_at:string; updated_at:string }
-  interface AgentVersion { id:string; agent_id:string; version:number; model_alias:string; tenant_instructions?:string; user_instructions?:string; generation_config:Record<string,unknown>; tool_policy:Record<string,unknown>; created_by:string; created_at:string }
-  interface AgentToolBinding { id:string; agent_id:string; tool_id:string; source:string; status:string; created_by:string; created_at:string }
+  interface Agent {
+    id:string;
+    code:string;
+    name:string;
+    description:string;
+    avatar_attachment_id?:string|null;
+    owner_user_id?:string;
+    contract_key?:string;
+    contract_version?:string;
+    source:AgentSource;
+    visibility:AgentVisibility;
+    status:'draft'|'enabled'|'disabled';
+    current_version:number;
+    revision:number;
+    created_at:string;
+    updated_at:string;
+  }
+  interface AgentDetail extends Agent {
+    base_instructions?:string;
+    managed_fields?:string[];
+    required_tool_selectors?:string[];
+  }
+  interface AgentVersion {
+    id:string;
+    agent_id:string;
+    version:number;
+    model_alias:string;
+    tenant_instructions?:string;
+    user_instructions?:string;
+    generation_config:Record<string,unknown>;
+    tool_policy:Record<string,unknown>;
+    created_by:string;
+    created_at:string;
+  }
+  interface AgentToolBinding {
+    id:string;
+    agent_id:string;
+    tool_id:string;
+    source:string;
+    status:string;
+    created_by:string;
+    created_at:string;
+  }
   interface AgentDiagnosticIssue { code:string; resource?:string; message:string }
   interface AgentDiagnostics { healthy:boolean; issues:AgentDiagnosticIssue[] }
   type ConversationVisibility = 'private' | 'tenant';
