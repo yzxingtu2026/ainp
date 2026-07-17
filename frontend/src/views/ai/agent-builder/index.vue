@@ -104,6 +104,10 @@ const {
   busy: previewBusy,
   canSend: previewCanSend,
   runSummary: previewRunSummary,
+  streamingText: previewStreamingText,
+  streaming: previewStreaming,
+  currentStepType: previewStepType,
+  messageListEl: previewMessageListEl,
   messageText: previewMessageText,
   send: sendPreview,
   stop: stopPreview,
@@ -251,25 +255,105 @@ function generationConfig() {
   };
 }
 
+function currentReleaseVersion() {
+  return versions.value.find(item => item.version === agent.value?.current_version);
+}
+
+function isMetaDirty() {
+  if (!agent.value) return false;
+  return draft.name !== agent.value.name || draft.description !== (agent.value.description || '');
+}
+
+function isVersionContentDirty() {
+  const current = currentReleaseVersion();
+  if (!current) return Boolean(draft.model_alias || draft.tenant_instructions);
+  const gen = current.generation_config || {};
+  return (
+    draft.tenant_instructions !== (current.tenant_instructions || '') ||
+    draft.model_alias !== (current.model_alias || '') ||
+    Number(draft.temperature) !== Number(gen.temperature ?? 0.7) ||
+    Number(draft.top_p) !== Number(gen.top_p ?? 1) ||
+    Number(draft.max_output_tokens) !== Number(gen.max_output_tokens ?? 2048)
+  );
+}
+
+/** 仅更新 Agent 元数据（名称/描述/头像），不碰版本内容 */
+async function persistAgentMeta(): Promise<boolean> {
+  if (!agent.value || !canEditMeta.value) return false;
+  const { data, error } = await updateAIAgent({
+    id: agent.value.id,
+    name: draft.name,
+    description: draft.description,
+    avatar_attachment_id: agent.value.avatar_attachment_id ?? null,
+    revision: draft.revision
+  });
+  if (error || !data) {
+    if (String(error).includes('revision') || String(error).includes('conflict')) {
+      message.error($t('page.agentBuilder.revisionConflict'));
+    }
+    return false;
+  }
+  agent.value = { ...agent.value, ...data };
+  draft.revision = data.revision;
+  return true;
+}
+
+/** 发布 release 版本（提示词 / 模型 / 生成参数） */
+async function persistVersion(): Promise<Api.AI.AgentVersion | null> {
+  if (!agent.value) return null;
+  const { data, error } = await publishAIAgentVersion({
+    agent_id: agent.value.id,
+    model_alias: draft.model_alias,
+    tenant_instructions: draft.tenant_instructions,
+    generation_config: generationConfig(),
+    tool_policy: {},
+    revision: draft.revision
+  });
+  if (error || !data) {
+    message.error($t('page.agentBuilder.publishFailed'));
+    return null;
+  }
+  // CreateVersion 会同步递增 Agent.revision，返回体是 Version 不含 revision。
+  draft.revision += 1;
+  return data;
+}
+
 async function saveMetadata() {
   if (!agent.value || !canEditMeta.value) return;
+  if (instructionError.value) {
+    message.error(instructionError.value);
+    return;
+  }
+  const needMeta = isMetaDirty();
+  const needVersion = isVersionContentDirty();
+  if (!needMeta && !needVersion) {
+    dirty.value = false;
+    return;
+  }
+  if (needVersion && !can(AI_ACTIONS.agentVersionPublish)) {
+    message.error($t('page.agentBuilder.promptSaveNeedPublish'));
+    return;
+  }
   savingMeta.value = true;
   try {
-    const { data, error } = await updateAIAgent({
-      id: agent.value.id,
-      name: draft.name,
-      description: draft.description,
-      avatar_attachment_id: agent.value.avatar_attachment_id ?? null,
-      revision: draft.revision
-    });
-    if (error || !data) {
-      if (String(error).includes('revision') || String(error).includes('conflict')) {
-        message.error($t('page.agentBuilder.revisionConflict'));
-      }
+    if (needMeta) {
+      const ok = await persistAgentMeta();
+      if (!ok) return;
+    }
+    if (needVersion) {
+      const version = await persistVersion();
+      if (!version) return;
+      dirty.value = false;
+      message.success(
+        needMeta
+          ? $t('page.agentBuilder.metaAndPromptSaved')
+          : $t('page.agentBuilder.promptSaved', { version: version.version })
+      );
+      resetPreviewBinding();
+      await loadAgent(agent.value.id);
       return;
     }
-    agent.value = { ...agent.value, ...data };
-    draft.revision = data.revision;
+    dirty.value = false;
     message.success($t('page.agentBuilder.metaSaved'));
   } finally {
     savingMeta.value = false;
@@ -302,21 +386,12 @@ async function publishVersion() {
       await loadAgent(data.id);
       return;
     }
-    if (dirty.value && canEditMeta.value) {
-      await saveMetadata();
+    if (isMetaDirty() && canEditMeta.value) {
+      const ok = await persistAgentMeta();
+      if (!ok) return;
     }
-    const { data, error } = await publishAIAgentVersion({
-      agent_id: agent.value!.id,
-      model_alias: draft.model_alias,
-      tenant_instructions: draft.tenant_instructions,
-      generation_config: generationConfig(),
-      tool_policy: {},
-      revision: draft.revision
-    });
-    if (error || !data) {
-      message.error($t('page.agentBuilder.publishFailed'));
-      return;
-    }
+    const data = await persistVersion();
+    if (!data) return;
     dirty.value = false;
     message.success($t('page.agentBuilder.publishSuccess', { version: data.version }));
     resetPreviewBinding();
@@ -656,7 +731,7 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
                 @resolved="onConfirmationResolved()"
               />
             </div>
-            <div class="min-h-0 flex-1 overflow-y-auto">
+            <div ref="previewMessageListEl" class="min-h-0 flex-1 overflow-y-auto">
               <div
                 v-for="item in previewMessages"
                 :key="item.id"
@@ -666,8 +741,23 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
                 <div class="mb-4px text-12px text-gray-500">{{ item.role }}</div>
                 <div class="whitespace-pre-wrap break-words">{{ previewMessageText(item) }}</div>
               </div>
+              <div
+                v-if="previewStreaming || previewStreamingText"
+                class="mb-8px rounded-8px bg-gray-500/10 px-10px py-8px"
+              >
+                <div class="mb-4px flex items-center gap-6px text-12px text-gray-500">
+                  <span>assistant</span>
+                  <NTag v-if="previewStreaming" size="small" type="info" :bordered="false">
+                    {{ previewStepType || 'streaming' }}
+                  </NTag>
+                </div>
+                <div class="whitespace-pre-wrap break-words">
+                  {{ previewStreamingText || '…' }}
+                  <span v-if="previewStreaming" class="preview-caret">▍</span>
+                </div>
+              </div>
               <NEmpty
-                v-if="previewMessages.length === 0"
+                v-if="previewMessages.length === 0 && !previewStreaming && !previewStreamingText"
                 class="py-24px"
                 :description="$t('page.agentBuilder.previewIdleSummary')"
               />
@@ -762,6 +852,16 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
               <div class="text-12px text-gray-500">{{ item.role }}</div>
               <div class="whitespace-pre-wrap break-words">{{ previewMessageText(item) }}</div>
             </div>
+            <div
+              v-if="previewStreaming || previewStreamingText"
+              class="mb-8px rounded-8px bg-gray-500/10 px-10px py-8px"
+            >
+              <div class="mb-4px text-12px text-gray-500">assistant</div>
+              <div class="whitespace-pre-wrap break-words">
+                {{ previewStreamingText || '…' }}
+                <span v-if="previewStreaming" class="preview-caret">▍</span>
+              </div>
+            </div>
             <PreviewComposer
               v-model="previewInput"
               class="mt-12px"
@@ -798,3 +898,23 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
     />
   </div>
 </template>
+
+<style scoped>
+.preview-caret {
+  display: inline-block;
+  margin-left: 1px;
+  animation: preview-caret-blink 1s steps(1) infinite;
+  color: rgb(var(--primary-color));
+}
+
+@keyframes preview-caret-blink {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+</style>

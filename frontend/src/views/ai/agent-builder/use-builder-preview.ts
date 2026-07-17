@@ -1,4 +1,4 @@
-import { computed, onBeforeUnmount, ref, type Ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, ref, type Ref } from 'vue';
 import { $t } from '@/locales';
 import {
   archiveAIConversation,
@@ -39,6 +39,13 @@ function messageText(msg: Api.AI.ConversationMessage): string {
     })
     .filter(Boolean)
     .join('\n');
+}
+
+function eventDeltaText(event: Api.AI.AgentRunEvent): string {
+  const payload = event.payload || {};
+  if (typeof payload.delta === 'string') return payload.delta;
+  if (typeof payload.text === 'string') return payload.text;
+  return '';
 }
 
 async function subscribeAgentRun(
@@ -114,13 +121,17 @@ export function useBuilderPreview(options: {
   const run = ref<Api.AI.AgentRun | null>(null);
   const previewVersionId = ref('');
   const busy = ref(false);
+  /** 流式助手正文（来自 run.delta，尚未落库消息时展示） */
+  const streamingText = ref('');
+  const streaming = ref(false);
+  const currentStepType = ref('');
+  const messageListEl = ref<HTMLElement | null>(null);
 
   let abort: AbortController | null = null;
   let eventCursor = 0;
+  let snapshotTimer: number | null = null;
 
   const canSend = computed(() => {
-    // 预览走 materialize，不依赖已发布 current version 的 diagnostics；
-    // 模型可用性由 materialize 校验，diagnostics 仅作发送前软提示。
     if (!options.agent.value) return false;
     if (busy.value) return false;
     if (!options.draft.model_alias.trim()) return false;
@@ -131,20 +142,46 @@ export function useBuilderPreview(options: {
 
   const runSummary = computed(() => {
     if (error.value) return error.value;
+    if (streaming.value && streamingText.value) {
+      return `${run.value?.status || 'running'} · streaming`;
+    }
+    if (currentStepType.value && status.value === 'running') {
+      return `${run.value?.status || 'running'} · ${currentStepType.value}`;
+    }
     if (run.value) return `${run.value.status} · steps ${run.value.current_step}`;
     if (status.value === 'idle') return $t('page.agentBuilder.previewIdleSummary');
     return status.value;
   });
 
+  async function scrollMessagesToBottom() {
+    await nextTick();
+    const el = messageListEl.value;
+    if (el) el.scrollTop = el.scrollHeight;
+  }
+
   async function refreshMessages() {
     if (!conversation.value) return;
     const { data } = await fetchAIMessages(conversation.value.id, 0, 100);
     messages.value = data?.items || [];
+    await scrollMessagesToBottom();
   }
 
   async function refreshConfirmations() {
     const { data } = await fetchAIToolConfirmations();
     confirmations.value = (data || []).filter(item => item.status === 'pending');
+  }
+
+  function clearStreaming() {
+    streamingText.value = '';
+    streaming.value = false;
+    currentStepType.value = '';
+  }
+
+  function appendStreamDelta(delta: string) {
+    if (!delta) return;
+    streaming.value = true;
+    streamingText.value += delta;
+    void scrollMessagesToBottom();
   }
 
   async function ensureConversation(versionId: string) {
@@ -159,6 +196,7 @@ export function useBuilderPreview(options: {
       }
       conversation.value = null;
       messages.value = [];
+      clearStreaming();
     }
     const { data, error: createError } = await createAIConversation({
       agent_id: options.agent.value!.id,
@@ -190,7 +228,6 @@ export function useBuilderPreview(options: {
     });
     if (matError || !data) throw matError || new Error($t('page.agentBuilder.previewMaterializeFailed'));
     if (previewVersionId.value && previewVersionId.value !== data.id && conversation.value) {
-      // 配置变化产生新 preview version：换新调试会话
       try {
         await archiveAIConversation(conversation.value.id, conversation.value.revision);
       } catch {
@@ -198,12 +235,13 @@ export function useBuilderPreview(options: {
       }
       conversation.value = null;
       messages.value = [];
+      clearStreaming();
     }
     previewVersionId.value = data.id;
     return data.id;
   }
 
-  async function applyRunSnapshot(runId: string) {
+  async function applyRunSnapshot(runId: string, opts: { refreshMsgs?: boolean } = {}) {
     const { data } = await fetchAIAgentRun(runId);
     if (!data?.run) return null;
     run.value = data.run;
@@ -215,8 +253,84 @@ export function useBuilderPreview(options: {
     else if (data.run.status === 'cancelled') status.value = 'cancelled';
     else if (data.run.status === 'queued') status.value = 'running';
     else status.value = 'running';
-    await refreshMessages();
+
+    const terminal =
+      data.run.status === 'completed' ||
+      data.run.status === 'failed' ||
+      data.run.status === 'cancelled' ||
+      data.run.status === 'waiting_confirmation' ||
+      data.run.status === 'paused';
+    if (opts.refreshMsgs || terminal) {
+      await refreshMessages();
+      if (terminal && data.run.status !== 'waiting_confirmation' && data.run.status !== 'paused') {
+        clearStreaming();
+      }
+    }
     return data.run;
+  }
+
+  function scheduleSnapshot(runId: string, refreshMsgs = false) {
+    if (snapshotTimer != null) window.clearTimeout(snapshotTimer);
+    snapshotTimer = window.setTimeout(() => {
+      snapshotTimer = null;
+      void applyRunSnapshot(runId, { refreshMsgs });
+    }, 200);
+  }
+
+  function handleRunEvent(runId: string, event: Api.AI.AgentRunEvent) {
+    if (typeof event.sequence === 'number') {
+      eventCursor = Math.max(eventCursor, event.sequence);
+    }
+    switch (event.type) {
+      case 'run.queued':
+      case 'run.started':
+        status.value = 'running';
+        if (run.value) run.value = { ...run.value, status: event.type === 'run.queued' ? 'queued' : 'running' };
+        scheduleSnapshot(runId);
+        break;
+      case 'step.started': {
+        status.value = 'running';
+        const stepType = typeof event.payload?.type === 'string' ? event.payload.type : '';
+        currentStepType.value = stepType;
+        if (stepType === 'model' || stepType === 'finalize') {
+          streaming.value = true;
+        }
+        scheduleSnapshot(runId);
+        break;
+      }
+      case 'step.completed':
+        currentStepType.value = typeof event.payload?.type === 'string' ? String(event.payload.type) : currentStepType.value;
+        // 不在 finalize 时提前拉消息，避免与 streaming 气泡重复；终态再刷新。
+        scheduleSnapshot(runId, false);
+        break;
+      case 'step.failed':
+      case 'step.waiting':
+        currentStepType.value = typeof event.payload?.type === 'string' ? String(event.payload.type) : currentStepType.value;
+        scheduleSnapshot(runId, true);
+        break;
+      case 'run.delta':
+        appendStreamDelta(eventDeltaText(event));
+        break;
+      case 'run.waiting_confirmation':
+      case 'run.paused':
+        status.value = 'waiting_confirmation';
+        void applyRunSnapshot(runId, { refreshMsgs: true });
+        break;
+      case 'run.completed':
+        status.value = 'completed';
+        void applyRunSnapshot(runId, { refreshMsgs: true }).then(() => clearStreaming());
+        break;
+      case 'run.failed':
+        status.value = 'failed';
+        void applyRunSnapshot(runId, { refreshMsgs: true }).then(() => clearStreaming());
+        break;
+      case 'run.cancelled':
+        status.value = 'cancelled';
+        void applyRunSnapshot(runId, { refreshMsgs: true }).then(() => clearStreaming());
+        break;
+      default:
+        scheduleSnapshot(runId);
+    }
   }
 
   async function watchRun(runId: string) {
@@ -224,13 +338,13 @@ export function useBuilderPreview(options: {
     abort = new AbortController();
     eventCursor = 0;
     status.value = 'running';
+    clearStreaming();
     const poll = window.setInterval(() => {
       void applyRunSnapshot(runId);
-    }, 1500);
+    }, 2500);
     try {
       await subscribeAgentRun(runId, eventCursor, abort.signal, event => {
-        if (typeof event.sequence === 'number') eventCursor = Math.max(eventCursor, event.sequence);
-        void applyRunSnapshot(runId);
+        handleRunEvent(runId, event);
       });
     } catch (cause) {
       if (!(cause instanceof DOMException && cause.name === 'AbortError')) {
@@ -239,8 +353,12 @@ export function useBuilderPreview(options: {
       return;
     } finally {
       window.clearInterval(poll);
+      if (snapshotTimer != null) {
+        window.clearTimeout(snapshotTimer);
+        snapshotTimer = null;
+      }
     }
-    await applyRunSnapshot(runId);
+    await applyRunSnapshot(runId, { refreshMsgs: true });
   }
 
   async function send() {
@@ -249,6 +367,7 @@ export function useBuilderPreview(options: {
     if (!text) return;
     busy.value = true;
     error.value = '';
+    clearStreaming();
     try {
       const versionId = await materializeIfNeeded();
       const conv = await ensureConversation(versionId);
@@ -270,15 +389,14 @@ export function useBuilderPreview(options: {
       if (runError || !started) throw runError || new Error($t('page.agentBuilder.previewRunFailed'));
       run.value = started;
       await watchRun(started.id);
-      // confirmation pause: stop here; caller can resubscribe after approve
       if (status.value === 'waiting_confirmation') return;
       if (status.value === 'running') {
-        // still running after stream end without terminal — poll once more
         await watchRun(started.id);
       }
     } catch (cause) {
       status.value = 'failed';
       error.value = cause instanceof Error ? cause.message : $t('page.agentBuilder.previewFailed');
+      clearStreaming();
     } finally {
       busy.value = false;
     }
@@ -307,6 +425,7 @@ export function useBuilderPreview(options: {
     }
     status.value = 'stopped';
     busy.value = false;
+    clearStreaming();
   }
 
   async function clear() {
@@ -326,7 +445,7 @@ export function useBuilderPreview(options: {
     input.value = '';
     error.value = '';
     status.value = 'idle';
-    // keep previewVersionId for reuse until dirty
+    clearStreaming();
   }
 
   function resetPreviewBinding() {
@@ -336,6 +455,7 @@ export function useBuilderPreview(options: {
 
   onBeforeUnmount(() => {
     abort?.abort();
+    if (snapshotTimer != null) window.clearTimeout(snapshotTimer);
   });
 
   return {
@@ -349,6 +469,10 @@ export function useBuilderPreview(options: {
     busy,
     canSend,
     runSummary,
+    streamingText,
+    streaming,
+    currentStepType,
+    messageListEl,
     messageText,
     send,
     stop,

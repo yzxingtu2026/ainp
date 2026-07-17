@@ -901,14 +901,17 @@ func (s *AgentRuntimeService) currentConversationRevision(ctx context.Context, r
 	return c.Revision
 }
 func (s *AgentRuntimeService) emitDeltas(ctx context.Context, run *AgentRun, text string) error {
-	const size = 1024
-	for offset := 0; offset < len(text); offset += size {
+	// 按 rune 分片，避免截断多字节字符；小分片便于前端流式渲染。
+	const size = 24
+	runes := []rune(text)
+	for offset := 0; offset < len(runes); offset += size {
 		end := offset + size
-		if end > len(text) {
-			end = len(text)
+		if end > len(runes) {
+			end = len(runes)
 		}
+		chunk := string(runes[offset:end])
 		if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			return s.appendEvent(ctx, tx, run, "run.delta", nil, map[string]any{"delta": text[offset:end]})
+			return s.appendEvent(ctx, tx, run, "run.delta", nil, map[string]any{"delta": chunk})
 		}); err != nil {
 			return err
 		}

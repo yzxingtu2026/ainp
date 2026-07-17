@@ -601,6 +601,9 @@ declare namespace App {
           leaveConfirm: string;
           loadFailed: string;
           metaSaved: string;
+          metaAndPromptSaved: string;
+          promptSaved: string;
+          promptSaveNeedPublish: string;
           createSuccess: string;
           publishSuccess: string;
           publishFailed: string;
