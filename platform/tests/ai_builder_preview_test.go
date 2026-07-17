@@ -96,6 +96,68 @@ func TestConversationPurposeDefaultsAndIsolationContract(t *testing.T) {
 	}
 }
 
+func TestAgentDraftConfigMigration(t *testing.T) {
+	body, err := os.ReadFile("../migrations/0024_agent_draft_config.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := string(body)
+	for _, expected := range []string{
+		"draft_tenant_instructions",
+		"draft_model_alias",
+		"draft_generation_config",
+		"draft_tool_policy",
+		"has_draft",
+		"idx_ai_agents_tenant_has_draft",
+	} {
+		if !strings.Contains(sql, expected) {
+			t.Fatalf("migration missing %q", expected)
+		}
+	}
+}
+
+func TestAgentUpdateRequestAcceptsDraftConfig(t *testing.T) {
+	handler := action.JSON(func(_ context.Context, request ai.AgentUpdateRequest) (any, error) {
+		return request, nil
+	})
+	value, err := handler(context.Background(), json.RawMessage(`{
+		"id":"a1",
+		"name":"Demo",
+		"description":"d",
+		"save_draft_config":true,
+		"model_alias":"chat-main",
+		"tenant_instructions":"hello draft",
+		"generation_config":{"temperature":0.3},
+		"tool_policy":{},
+		"revision":4
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := value.(ai.AgentUpdateRequest)
+	if !req.SaveDraftConfig || req.ModelAlias != "chat-main" || req.TenantInstructions != "hello draft" || req.Revision != 4 {
+		t.Fatalf("unexpected update request: %#v", req)
+	}
+}
+
+func TestAgentJSONExposesDraftFields(t *testing.T) {
+	row := ai.Agent{
+		ID: "a1", Code: "demo", Name: "Demo", Status: "enabled", Revision: 2,
+		HasDraft: true, DraftTenantInstructions: "draft prompt", DraftModelAlias: "chat-main",
+		DraftGenerationConfig: json.RawMessage(`{"temperature":0.2}`), DraftToolPolicy: json.RawMessage(`{}`),
+	}
+	encoded, err := json.Marshal(row)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(encoded)
+	for _, want := range []string{`"has_draft":true`, `"draft_tenant_instructions":"draft prompt"`, `"draft_model_alias":"chat-main"`} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("missing %s in %s", want, text)
+		}
+	}
+}
+
 func TestAgentVersionJSONExposesKindAndContentHash(t *testing.T) {
 	version := ai.AgentVersion{
 		ID: "v1", AgentID: "a1", Version: 2, Kind: ai.AgentVersionKindPreview,

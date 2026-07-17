@@ -34,6 +34,8 @@ Agent Contract（代码注册的能力与安全契约）
 
 智能体编排工作台（Agent Builder）是面向创建者与租户管理员的配置/调试入口，路由为 `/ai/agent-builder`（列表 `/ai/agents` 负责入口跳转）。Builder 复用本层 Action：创建、元数据更新、版本发布、工具绑定与 diagnostics；`agent_get` 额外返回只读 Contract 覆盖字段：`base_instructions`、`managed_fields`、`required_tool_selectors`。编排页左栏整栏为租户指令（人设提示词）编辑区，使用 Markdown 语法高亮编辑器（CodeMirror）；**不展示** Contract `base_instructions`（由代码契约托管，运行时自动合成），也不提供用户指令或 Run 指令字段。工具绑定在中间栏仅展示已绑定摘要；搜索/浏览已注册工具并选择绑定通过独立弹窗（`AgentToolPickerModal`）完成，管理端 Browse 上限 100，与模型侧 `tool.search` 硬顶 10 分离。
 
+「保存基本信息」经 `ai.agent_update` 同时写入名称/描述与 Builder 草稿运行配置（`has_draft` + `draft_tenant_instructions` / `draft_model_alias` / `draft_generation_config` / `draft_tool_policy`），**不**创建 release Version、**不**晋升 `current_version`。Workspace 与正式 Run 仍只消费 current Version；草稿仅供 Builder 回填编辑器与预览物化。点「发布新版本」创建 `kind=release` 并清空草稿后，新配置才对正式会话生效。
+
 动态路由模式下，Builder 通过后端 `HideInMenu` 菜单 `ai.agent_builder` 注册；前端同时把静态隐藏子路由 `ai_agent-builder` 合并进用户路由树，避免仅有列表菜单时 `router.push({ name: 'ai_agent-builder' })` 找不到匹配。
 
 右栏实时预览走正规 Conversation + Agent Runtime，**不得**旁路 Generate 或追随未落库的编辑器状态：

@@ -67,11 +67,17 @@ type AgentCreateRequest struct {
 	ToolPolicy         map[string]any `json:"tool_policy"`
 }
 type AgentUpdateRequest struct {
-	ID                 string  `json:"id" validate:"required"`
-	Name               string  `json:"name" validate:"required"`
-	Description        string  `json:"description"`
-	AvatarAttachmentID *string `json:"avatar_attachment_id"`
-	Revision           uint64  `json:"revision" validate:"required"`
+	ID                 string         `json:"id" validate:"required"`
+	Name               string         `json:"name" validate:"required"`
+	Description        string         `json:"description"`
+	AvatarAttachmentID *string        `json:"avatar_attachment_id"`
+	// 以下为 Builder 草稿运行配置；写入 Agent 草稿列，不创建 Version、不晋升 current。
+	ModelAlias         string         `json:"model_alias"`
+	TenantInstructions string         `json:"tenant_instructions"`
+	GenerationConfig   map[string]any `json:"generation_config"`
+	ToolPolicy         map[string]any `json:"tool_policy"`
+	SaveDraftConfig    bool           `json:"save_draft_config"`
+	Revision           uint64         `json:"revision" validate:"required"`
 }
 type AgentVersionCreateRequest struct {
 	AgentID            string         `json:"agent_id" validate:"required"`
@@ -353,7 +359,28 @@ func (s *AgentService) Update(ctx context.Context, r AgentUpdateRequest) (any, e
 	if e = s.validateAvatar(ctx, ac, r.AvatarAttachmentID); e != nil {
 		return nil, e
 	}
-	result := s.db.WithContext(ctx).Model(&Agent{}).Where("id=? AND tenant_id=? AND revision=?", row.ID, row.TenantID, r.Revision).Updates(map[string]any{"name": r.Name, "description": r.Description, "avatar_attachment_id": r.AvatarAttachmentID, "revision": gorm.Expr("revision + 1")})
+	updates := map[string]any{
+		"name":                 r.Name,
+		"description":          r.Description,
+		"avatar_attachment_id": r.AvatarAttachmentID,
+		"revision":             gorm.Expr("revision + 1"),
+	}
+	if r.SaveDraftConfig {
+		if len(r.TenantInstructions) > 12000 {
+			return nil, errs.New(errs.CodeValidation, "instructions exceed limit")
+		}
+		if strings.TrimSpace(r.ModelAlias) != "" {
+			if _, err := s.models.Resolve(ctx, r.ModelAlias, aimodel.CapabilityRequirements{ModelType: aimodel.ModelTypeChat}); err != nil {
+				return nil, err
+			}
+		}
+		updates["has_draft"] = true
+		updates["draft_tenant_instructions"] = r.TenantInstructions
+		updates["draft_model_alias"] = strings.TrimSpace(r.ModelAlias)
+		updates["draft_generation_config"] = marshal(r.GenerationConfig)
+		updates["draft_tool_policy"] = marshal(r.ToolPolicy)
+	}
+	result := s.db.WithContext(ctx).Model(&Agent{}).Where("id=? AND tenant_id=? AND revision=?", row.ID, row.TenantID, r.Revision).Updates(updates)
 	if result.Error != nil {
 		return nil, dbError(result.Error, "update agent")
 	}
@@ -410,7 +437,15 @@ func (s *AgentService) CreateVersion(ctx context.Context, r AgentVersionCreateRe
 		if e := tx.Create(&version).Error; e != nil {
 			return e
 		}
-		res := tx.Model(&Agent{}).Where("id=? AND tenant_id=? AND revision=?", row.ID, row.TenantID, r.Revision).Updates(map[string]any{"current_version": next, "revision": gorm.Expr("revision + 1")})
+		res := tx.Model(&Agent{}).Where("id=? AND tenant_id=? AND revision=?", row.ID, row.TenantID, r.Revision).Updates(map[string]any{
+			"current_version":            next,
+			"revision":                   gorm.Expr("revision + 1"),
+			"has_draft":                  false,
+			"draft_tenant_instructions":  "",
+			"draft_model_alias":          "",
+			"draft_generation_config":    marshal(map[string]any{}),
+			"draft_tool_policy":          marshal(map[string]any{}),
+		})
 		if res.Error != nil {
 			return res.Error
 		}

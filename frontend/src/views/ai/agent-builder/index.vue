@@ -195,17 +195,23 @@ async function loadAgent(id: string) {
     boundTools.value = toolResult.data || [];
     diagnostics.value = diagnosticResult.data || null;
     const current = versions.value.find(item => item.version === agent.value?.current_version);
+    const useDraft = Boolean(agent.value.has_draft);
+    const gen = useDraft
+      ? agent.value.draft_generation_config || {}
+      : current?.generation_config || {};
     Object.assign(draft, {
       code: agent.value.code,
       name: agent.value.name,
       description: agent.value.description,
       source: agent.value.source,
       visibility: agent.value.visibility,
-      model_alias: current?.model_alias || '',
-      tenant_instructions: current?.tenant_instructions || '',
-      temperature: Number(current?.generation_config?.temperature ?? 0.7),
-      top_p: Number(current?.generation_config?.top_p ?? 1),
-      max_output_tokens: Number(current?.generation_config?.max_output_tokens ?? 2048),
+      model_alias: useDraft ? agent.value.draft_model_alias || '' : current?.model_alias || '',
+      tenant_instructions: useDraft
+        ? agent.value.draft_tenant_instructions || ''
+        : current?.tenant_instructions || '',
+      temperature: Number(gen.temperature ?? 0.7),
+      top_p: Number(gen.top_p ?? 1),
+      max_output_tokens: Number(gen.max_output_tokens ?? 2048),
       revision: agent.value.revision
     });
     dirty.value = false;
@@ -255,29 +261,12 @@ function generationConfig() {
   };
 }
 
-function currentReleaseVersion() {
-  return versions.value.find(item => item.version === agent.value?.current_version);
-}
-
 function isMetaDirty() {
   if (!agent.value) return false;
   return draft.name !== agent.value.name || draft.description !== (agent.value.description || '');
 }
 
-function isVersionContentDirty() {
-  const current = currentReleaseVersion();
-  if (!current) return Boolean(draft.model_alias || draft.tenant_instructions);
-  const gen = current.generation_config || {};
-  return (
-    draft.tenant_instructions !== (current.tenant_instructions || '') ||
-    draft.model_alias !== (current.model_alias || '') ||
-    Number(draft.temperature) !== Number(gen.temperature ?? 0.7) ||
-    Number(draft.top_p) !== Number(gen.top_p ?? 1) ||
-    Number(draft.max_output_tokens) !== Number(gen.max_output_tokens ?? 2048)
-  );
-}
-
-/** 仅更新 Agent 元数据（名称/描述/头像），不碰版本内容 */
+/** 仅更新名称/描述/头像，不写草稿、不发布版本 */
 async function persistAgentMeta(): Promise<boolean> {
   if (!agent.value || !canEditMeta.value) return false;
   const { data, error } = await updateAIAgent({
@@ -298,63 +287,37 @@ async function persistAgentMeta(): Promise<boolean> {
   return true;
 }
 
-/** 发布 release 版本（提示词 / 模型 / 生成参数） */
-async function persistVersion(): Promise<Api.AI.AgentVersion | null> {
-  if (!agent.value) return null;
-  const { data, error } = await publishAIAgentVersion({
-    agent_id: agent.value.id,
-    model_alias: draft.model_alias,
-    tenant_instructions: draft.tenant_instructions,
-    generation_config: generationConfig(),
-    tool_policy: {},
-    revision: draft.revision
-  });
-  if (error || !data) {
-    message.error($t('page.agentBuilder.publishFailed'));
-    return null;
-  }
-  // CreateVersion 会同步递增 Agent.revision，返回体是 Version 不含 revision。
-  draft.revision += 1;
-  return data;
-}
-
+/** 元数据 + 提示词/模型草稿一并保存；不晋升 current_version */
 async function saveMetadata() {
   if (!agent.value || !canEditMeta.value) return;
   if (instructionError.value) {
     message.error(instructionError.value);
     return;
   }
-  const needMeta = isMetaDirty();
-  const needVersion = isVersionContentDirty();
-  if (!needMeta && !needVersion) {
-    dirty.value = false;
-    return;
-  }
-  if (needVersion && !can(AI_ACTIONS.agentVersionPublish)) {
-    message.error($t('page.agentBuilder.promptSaveNeedPublish'));
-    return;
-  }
+  if (!dirty.value) return;
   savingMeta.value = true;
   try {
-    if (needMeta) {
-      const ok = await persistAgentMeta();
-      if (!ok) return;
-    }
-    if (needVersion) {
-      const version = await persistVersion();
-      if (!version) return;
-      dirty.value = false;
-      message.success(
-        needMeta
-          ? $t('page.agentBuilder.metaAndPromptSaved')
-          : $t('page.agentBuilder.promptSaved', { version: version.version })
-      );
-      resetPreviewBinding();
-      await loadAgent(agent.value.id);
+    const { data, error } = await updateAIAgent({
+      id: agent.value.id,
+      name: draft.name,
+      description: draft.description,
+      avatar_attachment_id: agent.value.avatar_attachment_id ?? null,
+      save_draft_config: true,
+      model_alias: draft.model_alias,
+      tenant_instructions: draft.tenant_instructions,
+      generation_config: generationConfig(),
+      tool_policy: {},
+      revision: draft.revision
+    });
+    if (error || !data) {
+      if (String(error).includes('revision') || String(error).includes('conflict')) {
+        message.error($t('page.agentBuilder.revisionConflict'));
+      }
       return;
     }
     dirty.value = false;
-    message.success($t('page.agentBuilder.metaSaved'));
+    message.success($t('page.agentBuilder.metaAndPromptSaved'));
+    await loadAgent(agent.value.id);
   } finally {
     savingMeta.value = false;
   }
@@ -390,8 +353,18 @@ async function publishVersion() {
       const ok = await persistAgentMeta();
       if (!ok) return;
     }
-    const data = await persistVersion();
-    if (!data) return;
+    const { data, error } = await publishAIAgentVersion({
+      agent_id: agent.value!.id,
+      model_alias: draft.model_alias,
+      tenant_instructions: draft.tenant_instructions,
+      generation_config: generationConfig(),
+      tool_policy: {},
+      revision: draft.revision
+    });
+    if (error || !data) {
+      message.error($t('page.agentBuilder.publishFailed'));
+      return;
+    }
     dirty.value = false;
     message.success($t('page.agentBuilder.publishSuccess', { version: data.version }));
     resetPreviewBinding();
@@ -516,6 +489,7 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
           </div>
           <div class="text-12px text-gray-500">
             <span v-if="dirty">{{ $t('page.agentBuilder.dirty') }}</span>
+            <span v-else-if="agent?.has_draft">{{ $t('page.agentBuilder.draftSavedHint') }}</span>
             <span v-else>{{ $t('page.agentBuilder.clean') }}</span>
             <span v-if="agent"> · v{{ agent.current_version }} · rev {{ draft.revision }}</span>
           </div>

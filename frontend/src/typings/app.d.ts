@@ -529,6 +529,7 @@ declare namespace App {
           editTitle: string;
           dirty: string;
           clean: string;
+          draftSavedHint: string;
           showLeft: string;
           hideLeft: string;
           showRight: string;
@@ -602,8 +603,6 @@ declare namespace App {
           loadFailed: string;
           metaSaved: string;
           metaAndPromptSaved: string;
-          promptSaved: string;
-          promptSaveNeedPublish: string;
           createSuccess: string;
           publishSuccess: string;
           publishFailed: string;

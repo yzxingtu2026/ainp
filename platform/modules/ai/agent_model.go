@@ -7,22 +7,28 @@ import (
 )
 
 type Agent struct {
-	ID                 string    `gorm:"primaryKey;size:64" json:"id"`
-	TenantID           string    `gorm:"size:64;not null;uniqueIndex:ux_ai_agents_tenant_code" json:"-"`
-	OwnerUserID        *string   `gorm:"size:64;index" json:"owner_user_id,omitempty"`
-	ContractKey        string    `gorm:"size:128;index" json:"contract_key,omitempty"`
-	ContractVersion    string    `gorm:"size:32" json:"contract_version,omitempty"`
-	Code               string    `gorm:"size:64;not null;uniqueIndex:ux_ai_agents_tenant_code" json:"code"`
-	Name               string    `gorm:"size:128;not null" json:"name"`
-	Description        string    `gorm:"size:512" json:"description"`
-	AvatarAttachmentID *string   `gorm:"size:64" json:"avatar_attachment_id,omitempty"`
-	Source             string    `gorm:"size:16;not null;index" json:"source"`
-	Visibility         string    `gorm:"size:16;not null;index" json:"visibility"`
-	Status             string    `gorm:"size:16;not null;index" json:"status"`
-	CurrentVersion     int       `gorm:"not null;default:0" json:"current_version"`
-	Revision           uint64    `gorm:"not null;default:1" json:"revision"`
-	CreatedAt          time.Time `json:"created_at"`
-	UpdatedAt          time.Time `json:"updated_at"`
+	ID                       string          `gorm:"primaryKey;size:64" json:"id"`
+	TenantID                 string          `gorm:"size:64;not null;uniqueIndex:ux_ai_agents_tenant_code" json:"-"`
+	OwnerUserID              *string         `gorm:"size:64;index" json:"owner_user_id,omitempty"`
+	ContractKey              string          `gorm:"size:128;index" json:"contract_key,omitempty"`
+	ContractVersion          string          `gorm:"size:32" json:"contract_version,omitempty"`
+	Code                     string          `gorm:"size:64;not null;uniqueIndex:ux_ai_agents_tenant_code" json:"code"`
+	Name                     string          `gorm:"size:128;not null" json:"name"`
+	Description              string          `gorm:"size:512" json:"description"`
+	AvatarAttachmentID       *string         `gorm:"size:64" json:"avatar_attachment_id,omitempty"`
+	Source                   string          `gorm:"size:16;not null;index" json:"source"`
+	Visibility               string          `gorm:"size:16;not null;index" json:"visibility"`
+	Status                   string          `gorm:"size:16;not null;index" json:"status"`
+	CurrentVersion           int             `gorm:"not null;default:0" json:"current_version"`
+	// Builder 草稿：与元数据一同保存；Workspace/正式 Run 仍只消费 current Version。
+	HasDraft                 bool            `gorm:"not null;default:false" json:"has_draft"`
+	DraftTenantInstructions  string          `gorm:"type:text" json:"draft_tenant_instructions,omitempty"`
+	DraftModelAlias          string          `gorm:"size:64" json:"draft_model_alias,omitempty"`
+	DraftGenerationConfig    json.RawMessage `gorm:"type:jsonb;not null;default:'{}'" json:"draft_generation_config,omitempty"`
+	DraftToolPolicy          json.RawMessage `gorm:"type:jsonb;not null;default:'{}'" json:"draft_tool_policy,omitempty"`
+	Revision                 uint64          `gorm:"not null;default:1" json:"revision"`
+	CreatedAt                time.Time       `json:"created_at"`
+	UpdatedAt                time.Time       `json:"updated_at"`
 }
 
 func (Agent) TableName() string { return "ai_agents" }

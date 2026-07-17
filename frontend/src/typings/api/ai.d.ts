@@ -14,6 +14,12 @@ declare namespace Api.AI {
     visibility:AgentVisibility;
     status:'draft'|'enabled'|'disabled';
     current_version:number;
+    /** Builder 草稿：与元数据一同保存，正式发布后清空；Workspace 不消费 */
+    has_draft?:boolean;
+    draft_tenant_instructions?:string;
+    draft_model_alias?:string;
+    draft_generation_config?:Record<string,unknown>;
+    draft_tool_policy?:Record<string,unknown>;
     revision:number;
     created_at:string;
     updated_at:string;
