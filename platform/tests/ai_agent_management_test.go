@@ -3,12 +3,21 @@ package tests
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/yzxingtu2026/ainp/platform/framework/action"
 	"github.com/yzxingtu2026/ainp/platform/framework/aiagent"
+	"github.com/yzxingtu2026/ainp/platform/framework/aitool"
+	"github.com/yzxingtu2026/ainp/platform/framework/auth"
+	"github.com/yzxingtu2026/ainp/platform/framework/database"
+	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 	"github.com/yzxingtu2026/ainp/platform/modules/ai"
+	"gorm.io/gorm"
 )
 
 func validAgentContract() aiagent.Contract {
@@ -94,5 +103,62 @@ func TestAgentContractRegistryFailClosed(t *testing.T) {
 	}
 	if got, ok := r.Get(c.Key, c.Version); !ok || got.Name != c.Name {
 		t.Fatalf("registered contract missing: %#v", got)
+	}
+}
+
+func openAgentManagementTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	dsn := os.Getenv("AINP_TEST_DATABASE_DSN")
+	if dsn == "" {
+		t.Skip("AINP_TEST_DATABASE_DSN is not set")
+	}
+	admin, err := database.Open(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	schema := "agent_management_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	if err = admin.Exec("CREATE SCHEMA " + schema).Error; err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = admin.Exec("DROP SCHEMA " + schema + " CASCADE").Error })
+	db, err := database.Open(fmt.Sprintf("%s search_path=%s", dsn, schema))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = ai.AutoMigrateAgents(db); err != nil {
+		t.Fatal(err)
+	}
+	return db
+}
+
+func TestAgentEnableRequiresFirstPublishedVersion(t *testing.T) {
+	db := openAgentManagementTestDB(t)
+	owner := "user-a"
+	row := ai.Agent{
+		ID: "agent-without-release", TenantID: "tenant-a", OwnerUserID: &owner,
+		Code: "draft-agent", Name: "Draft Agent", Source: "personal", Visibility: "private",
+		Status: "draft", CurrentVersion: 0, Revision: 1,
+	}
+	if err := db.Create(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	service := ai.NewAgentService(db, aiagent.NewRegistry(), nil, aitool.NewRegistry())
+	ctx := auth.WithContext(context.Background(), &auth.Context{
+		Authenticated: true, TenantID: "tenant-a", UserID: "user-a", Realm: auth.RealmTenant,
+	})
+
+	_, err := service.Status(ctx, ai.AgentStatusRequest{ID: row.ID, Status: "enabled", Revision: row.Revision})
+	var appErr *errs.AppError
+	if !errors.As(err, &appErr) || appErr.Code != errs.CodeConflict || appErr.Key() != "ai.agent.publish_required" {
+		t.Fatalf("expected publish-required conflict, got %#v", err)
+	}
+
+	value, err := service.Diagnostics(ctx, ai.IDRequest{ID: row.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	diagnostics := value.(ai.AgentDiagnostics)
+	if diagnostics.Healthy || len(diagnostics.Issues) != 1 || diagnostics.Issues[0].Code != "version.missing" {
+		t.Fatalf("unexpected diagnostics: %#v", diagnostics)
 	}
 }

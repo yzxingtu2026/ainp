@@ -18,8 +18,7 @@ import { useAuthStore } from '@/store/modules/auth';
 defineOptions({ name: 'AIAgents' });
 const auth = useAuthStore();
 const { routerPushByKey } = useRouterPush();
-const can = (permission: string) =>
-  auth.userInfo.buttons.includes(permission) || auth.userInfo.buttons.includes('*');
+const can = (permission: string) => auth.userInfo.buttons.includes(permission) || auth.userInfo.buttons.includes('*');
 
 const rows = ref<Api.AI.Agent[]>([]);
 const total = ref(0);
@@ -55,7 +54,11 @@ function openBuilder(agent?: Api.AI.Agent) {
 }
 
 async function toggle(agent: Api.AI.Agent) {
-  const { error } = await updateAIAgentStatus(agent.id, agent.status === 'enabled' ? 'disabled' : 'enabled', agent.revision);
+  const { error } = await updateAIAgentStatus(
+    agent.id,
+    agent.status === 'enabled' ? 'disabled' : 'enabled',
+    agent.revision
+  );
   if (!error) await load();
 }
 
@@ -68,6 +71,12 @@ async function inspect(agent: Api.AI.Agent) {
   ]);
   diagnostics.value = diagnosticResult.data || null;
   versions.value = versionResult.data || [];
+}
+
+function openDetailBuilder() {
+  if (!detail.value) return;
+  detailVisible.value = false;
+  openBuilder(detail.value);
 }
 
 function openDuplicate(agent: Api.AI.Agent) {
@@ -96,20 +105,29 @@ const columns: DataTableColumns<Api.AI.Agent> = [
     title: () => $t('page.aiAgents.colName'),
     key: 'name',
     render: agent =>
-      h(NSpace, { vertical: true, size: 2 }, {
-        default: () => [
-          h('span', agent.name),
-          agent.contract_key
-            ? h(NTag, { size: 'small', bordered: false }, { default: () => `${$t('page.aiAgents.managed')}: ${agent.contract_key}@${agent.contract_version}` })
-            : null
-        ]
-      })
+      h(
+        NSpace,
+        { vertical: true, size: 2 },
+        {
+          default: () => [
+            h('span', agent.name),
+            agent.contract_key
+              ? h(
+                  NTag,
+                  { size: 'small', bordered: false },
+                  { default: () => `${$t('page.aiAgents.managed')}: ${agent.contract_key}@${agent.contract_version}` }
+                )
+              : null
+          ]
+        }
+      )
   },
   { title: () => $t('page.aiAgents.colCode'), key: 'code' },
   {
     title: () => $t('page.aiAgents.colSource'),
     key: 'source',
-    render: agent => h(NTag, { size: 'small' }, { default: () => $t(`page.aiAgents.source.${agent.source}` as App.I18n.I18nKey) })
+    render: agent =>
+      h(NTag, { size: 'small' }, { default: () => $t(`page.aiAgents.source.${agent.source}` as App.I18n.I18nKey) })
   },
   {
     title: () => $t('page.aiAgents.colVisibility'),
@@ -136,23 +154,49 @@ const columns: DataTableColumns<Api.AI.Agent> = [
         default: () => [
           h(NButton, { size: 'small', onClick: () => inspect(agent) }, { default: () => $t('common.detail') }),
           can(AI_ACTIONS.agentUpdate)
-            ? h(NButton, { size: 'small', onClick: () => openBuilder(agent) }, { default: () => $t('page.aiAgents.openBuilder') })
+            ? h(
+                NButton,
+                { size: 'small', onClick: () => openBuilder(agent) },
+                { default: () => $t('page.aiAgents.openBuilder') }
+              )
             : null,
           can(AI_ACTIONS.agentDuplicate)
-            ? h(NButton, { size: 'small', onClick: () => openDuplicate(agent) }, { default: () => $t('page.aiAgents.duplicate') })
-            : null,
-          can(AI_ACTIONS.agentStatus)
             ? h(
-                NPopconfirm,
-                { onPositiveClick: () => toggle(agent) },
-                {
-                  trigger: () =>
-                    h(NButton, { size: 'small' }, {
-                      default: () => (agent.status === 'enabled' ? $t('page.aiAgents.disable') : $t('page.aiAgents.enable'))
-                    }),
-                  default: () => $t('page.aiAgents.statusConfirm')
-                }
+                NButton,
+                { size: 'small', onClick: () => openDuplicate(agent) },
+                { default: () => $t('page.aiAgents.duplicate') }
               )
+            : null,
+          can(AI_ACTIONS.agentStatus) || can(AI_ACTIONS.agentVersionPublish)
+            ? agent.status !== 'enabled' && agent.current_version <= 0
+              ? h(
+                  NButton,
+                  {
+                    size: 'small',
+                    type: 'warning',
+                    disabled: !can(AI_ACTIONS.agentVersionPublish),
+                    onClick: () => openBuilder(agent)
+                  },
+                  { default: () => $t('page.aiAgents.publishFirstVersion') }
+                )
+              : can(AI_ACTIONS.agentStatus)
+                ? h(
+                    NPopconfirm,
+                    { onPositiveClick: () => toggle(agent) },
+                    {
+                      trigger: () =>
+                        h(
+                          NButton,
+                          { size: 'small' },
+                          {
+                            default: () =>
+                              agent.status === 'enabled' ? $t('page.aiAgents.disable') : $t('page.aiAgents.enable')
+                          }
+                        ),
+                      default: () => $t('page.aiAgents.statusConfirm')
+                    }
+                  )
+                : null
             : null
         ]
       })
@@ -176,7 +220,12 @@ onMounted(() => load());
         </NSpace>
       </template>
       <NSpace class="mb-16px">
-        <NInput v-model:value="query.keyword" clearable :placeholder="$t('page.aiAgents.keyword')" @keyup.enter="load" />
+        <NInput
+          v-model:value="query.keyword"
+          clearable
+          :placeholder="$t('page.aiAgents.keyword')"
+          @keyup.enter="load"
+        />
         <NSelect
           v-model:value="query.source"
           class="w-140px"
@@ -219,7 +268,12 @@ onMounted(() => load());
       />
     </NCard>
 
-    <NModal v-model:show="duplicateVisible" preset="card" :title="$t('page.aiAgents.duplicate')" class="w-520px max-w-94vw">
+    <NModal
+      v-model:show="duplicateVisible"
+      preset="card"
+      :title="$t('page.aiAgents.duplicate')"
+      class="w-520px max-w-94vw"
+    >
       <NForm label-placement="left" label-width="90">
         <NFormItem :label="$t('page.aiAgents.colName')"><NInput v-model:value="duplicateForm.name" /></NFormItem>
         <NFormItem :label="$t('page.aiAgents.colCode')"><NInput v-model:value="duplicateForm.code" /></NFormItem>
@@ -238,12 +292,24 @@ onMounted(() => load());
       <NDrawerContent :title="detail?.name" closable>
         <NAlert
           :type="diagnostics?.healthy ? 'success' : 'warning'"
-          :title="diagnostics?.healthy ? $t('page.agentBuilder.diagnosticsHealthy') : $t('page.agentBuilder.diagnosticsUnhealthy')"
+          :title="
+            diagnostics?.healthy
+              ? $t('page.agentBuilder.diagnosticsHealthy')
+              : $t('page.agentBuilder.diagnosticsUnhealthy')
+          "
         >
           <div v-for="issue in diagnostics?.issues" :key="`${issue.code}-${issue.resource || ''}`">
             {{ issue.code }}：{{ issue.message }}
           </div>
         </NAlert>
+        <NButton
+          v-if="detail && detail.current_version <= 0 && can(AI_ACTIONS.agentVersionPublish)"
+          class="mt-12px"
+          type="warning"
+          @click="openDetailBuilder"
+        >
+          {{ $t('page.aiAgents.publishFirstVersion') }}
+        </NButton>
         <NDivider>{{ $t('page.agentBuilder.versions') }}</NDivider>
         <NList bordered>
           <NListItem v-for="version in versions" :key="version.id">

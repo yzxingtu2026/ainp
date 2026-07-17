@@ -351,6 +351,7 @@ const local: App.I18n.Schema = {
       managed: '托管',
       enable: '启用',
       disable: '停用',
+      publishFirstVersion: '发布首个版本',
       statusConfirm: '确认更新状态？',
       sourceAll: '全部来源',
       statusAll: '全部状态',

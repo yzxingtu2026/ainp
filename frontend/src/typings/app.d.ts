@@ -510,6 +510,7 @@ declare namespace App {
           managed: string;
           enable: string;
           disable: string;
+          publishFirstVersion: string;
           statusConfirm: string;
           sourceAll: string;
           statusAll: string;

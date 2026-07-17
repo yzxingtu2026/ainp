@@ -110,6 +110,15 @@ type AgentStatusRequest struct {
 	Status   string `json:"status" validate:"required"`
 	Revision uint64 `json:"revision" validate:"required"`
 }
+type AgentDiagnosticIssue struct {
+	Code     string `json:"code"`
+	Resource string `json:"resource,omitempty"`
+	Message  string `json:"message"`
+}
+type AgentDiagnostics struct {
+	Healthy bool                   `json:"healthy"`
+	Issues  []AgentDiagnosticIssue `json:"issues"`
+}
 type AgentToolSearchRequest struct {
 	Query      string        `json:"query" validate:"max=512"`
 	Capability string        `json:"capability"`
@@ -399,9 +408,12 @@ func (s *AgentService) Status(ctx context.Context, r AgentStatusRequest) (any, e
 		return nil, errs.New(errs.CodeValidation, "invalid status")
 	}
 	if r.Status == "enabled" {
-		d, _ := s.Diagnostics(ctx, IDRequest{ID: r.ID})
-		if !d.(map[string]any)["healthy"].(bool) {
-			return nil, errs.New(errs.CodeConflict, "agent diagnostics failed")
+		if row.CurrentVersion <= 0 {
+			return nil, errs.NewKey(errs.CodeConflict, "ai.agent.publish_required", "publish the first agent version before enabling")
+		}
+		d := s.agentDiagnostics(ctx, row)
+		if !d.Healthy {
+			return nil, errs.NewKey(errs.CodeConflict, "ai.agent.diagnostics_failed", "agent diagnostics failed")
 		}
 	}
 	result := s.db.WithContext(ctx).Model(&Agent{}).Where("id=? AND tenant_id=? AND revision=?", row.ID, row.TenantID, r.Revision).Updates(map[string]any{"status": r.Status, "revision": gorm.Expr("revision + 1")})
@@ -618,19 +630,27 @@ func (s *AgentService) Diagnostics(ctx context.Context, r IDRequest) (any, error
 	if e != nil {
 		return nil, e
 	}
-	issues := []map[string]string{}
-	var v AgentVersion
-	if e = s.db.WithContext(ctx).Where("tenant_id=? AND agent_id=? AND version=?", row.TenantID, row.ID, row.CurrentVersion).First(&v).Error; e != nil {
-		issues = append(issues, map[string]string{"code": "version.missing", "message": "current version is missing"})
-	} else if _, x := s.models.Resolve(ctx, v.ModelAlias, agentRuntimeModelRequirements()); x != nil {
-		issues = append(issues, map[string]string{"code": "model.unavailable", "message": x.Error()})
+	return s.agentDiagnostics(ctx, row), nil
+}
+
+func (s *AgentService) agentDiagnostics(ctx context.Context, row *Agent) AgentDiagnostics {
+	issues := []AgentDiagnosticIssue{}
+	if row.CurrentVersion <= 0 {
+		issues = append(issues, AgentDiagnosticIssue{Code: "version.missing", Message: "publish the first version before enabling"})
+	} else {
+		var v AgentVersion
+		if err := s.db.WithContext(ctx).Where("tenant_id=? AND agent_id=? AND version=?", row.TenantID, row.ID, row.CurrentVersion).First(&v).Error; err != nil {
+			issues = append(issues, AgentDiagnosticIssue{Code: "version.missing", Message: "current version is missing"})
+		} else if _, err = s.models.Resolve(ctx, v.ModelAlias, agentRuntimeModelRequirements()); err != nil {
+			issues = append(issues, AgentDiagnosticIssue{Code: "model.unavailable", Message: err.Error()})
+		}
 	}
 	for _, id := range s.requiredTools(row) {
 		if t, ok := s.tools.Get(id); !ok || t.Status != "enabled" {
-			issues = append(issues, map[string]string{"code": "tool.unavailable", "resource": id, "message": "required tool is unavailable"})
+			issues = append(issues, AgentDiagnosticIssue{Code: "tool.unavailable", Resource: id, Message: "required tool is unavailable"})
 		}
 	}
-	return map[string]any{"healthy": len(issues) == 0, "issues": issues}, nil
+	return AgentDiagnostics{Healthy: len(issues) == 0, Issues: issues}
 }
 
 func (s *AgentService) ReconcileBuiltin(ctx context.Context, _ AgentEmptyRequest) (any, error) {

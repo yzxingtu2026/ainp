@@ -28,13 +28,15 @@ Agent Contract（代码注册的能力与安全契约）
 
 ## Setup 与 reconcile
 
-数据库 migration 只建 schema。Setup 通过租户初始化 hook 幂等创建 `system.operations`；存量租户由显式 `ai.agent_builtin_reconcile` Action 同步。reconcile 只创建缺失实例或升级托管字段，不覆盖租户可编辑字段，不删除历史版本。
+数据库 migration 只建 schema。Setup 通过租户初始化 hook 幂等创建 `system.operations`；存量租户由显式 `ai.agent_builtin_reconcile` Action 同步。reconcile 只创建缺失实例或升级托管字段，不覆盖租户可编辑字段，不删除历史版本。由于内置 Contract 不绑定租户 Model Alias，新创建的 builtin 保持 `draft + current_version=0`；管理员必须先在 Builder 选择模型并发布首个 release，列表才允许启用。后端启用入口同样 fail-closed，并返回稳定的 `ai.agent.publish_required`，不得用不存在的 version 0 继续诊断或运行。
 
 ## Agent Builder
 
 智能体编排工作台（Agent Builder）是面向创建者与租户管理员的配置/调试入口，路由为 `/ai/agent-builder`（列表 `/ai/agents` 负责入口跳转）。Builder 复用本层 Action：创建、元数据更新、版本发布、工具绑定与 diagnostics；`agent_get` 额外返回只读 Contract 覆盖字段：`base_instructions`、`managed_fields`、`required_tool_selectors`。编排页左栏整栏为租户指令（人设提示词）编辑区，使用 Markdown 语法高亮编辑器（CodeMirror）；**不展示** Contract `base_instructions`（由代码契约托管，运行时自动合成），也不提供用户指令或 Run 指令字段。工具绑定在中间栏仅展示已绑定摘要；搜索/浏览已注册工具并选择绑定通过独立弹窗（`AgentToolPickerModal`）完成，管理端 Browse 上限 100，与模型侧 `tool.search` 硬顶 10 分离。
 
 「保存基本信息」经 `ai.agent_update` 同时写入名称/描述与 Builder 草稿运行配置（`has_draft` + `draft_tenant_instructions` / `draft_model_alias` / `draft_generation_config` / `draft_tool_policy`），**不**创建 release Version、**不**晋升 `current_version`。Workspace 与正式 Run 仍只消费 current Version；草稿仅供 Builder 回填编辑器与预览物化。点「发布新版本」创建 `kind=release` 并清空草稿后，新配置才对正式会话生效。
+
+发布候选配置不得被旧 `current_version` 的 diagnostics 反向阻断：首版缺失或旧模型失效正是需要发布修复的状态，候选 Model Alias 与输入由 `ai.agent_version_publish` 重新校验；启用仍必须检查发布后的完整 diagnostics。
 
 动态路由模式下，Builder 通过后端 `HideInMenu` 菜单 `ai.agent_builder` 注册；前端同时把静态隐藏子路由 `ai_agent-builder` 合并进用户路由树，避免仅有列表菜单时 `router.push({ name: 'ai_agent-builder' })` 找不到匹配。
 

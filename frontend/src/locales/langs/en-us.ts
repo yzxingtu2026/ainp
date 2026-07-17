@@ -355,6 +355,7 @@ const local: App.I18n.Schema = {
       managed: 'Managed',
       enable: 'Enable',
       disable: 'Disable',
+      publishFirstVersion: 'Publish first version',
       statusConfirm: 'Update status?',
       sourceAll: 'All sources',
       statusAll: 'All statuses',

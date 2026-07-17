@@ -220,8 +220,7 @@ const previewActive = computed(
 const canPublish = computed(
   () =>
     Boolean(draft.name && draft.code && draft.model_alias) &&
-    (isCreate.value ? can(AI_ACTIONS.agentCreate) : can(AI_ACTIONS.agentVersionPublish)) &&
-    (!diagnostics.value || diagnostics.value.healthy || isCreate.value)
+    (isCreate.value ? can(AI_ACTIONS.agentCreate) : can(AI_ACTIONS.agentVersionPublish))
 );
 const canEditMeta = computed(() => isCreate.value || can(AI_ACTIONS.agentUpdate));
 const instructionLimit = 12000;
@@ -464,14 +463,15 @@ async function runPreview() {
     return;
   }
   if (diagnostics.value && !diagnostics.value.healthy) {
-    // 预览会物化当前编辑配置，不依赖已发布 current；仅「缺 current version」不拦截。
-    const blocking = (diagnostics.value.issues || []).some(item => item.code !== 'version.missing');
+    // 预览会物化当前编辑配置，不依赖旧 current；草稿模型由 materialize 再校验。
+    const recoverable = new Set(['version.missing', 'model.unavailable']);
+    const blocking = (diagnostics.value.issues || []).some(item => !recoverable.has(item.code));
     if (blocking) {
       message.warning($t('page.agentBuilder.previewBlocked'));
       return;
     }
   }
-  if (!previewInput.value.trim()) {
+  if (!previewInput.value.trim() && previewImages.value.length === 0) {
     message.warning($t('page.agentBuilder.previewNeedInput'));
     return;
   }
