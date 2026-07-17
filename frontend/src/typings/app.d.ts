@@ -542,10 +542,6 @@ declare namespace App {
           panePrompt: string;
           paneConfig: string;
           panePreview: string;
-          contractBase: string;
-          noContractBase: string;
-          managed: string;
-          managedHint: string;
           tenantInstructions: string;
           tenantPlaceholder: string;
           userInstructions: string;

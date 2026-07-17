@@ -113,7 +113,7 @@ const instructionError = computed(() => {
   if (tenantLen.value > instructionLimit || userLen.value > instructionLimit) {
     return $t('page.agentBuilder.instructionTooLong');
   }
-  if (!isCreate.value && !draft.tenant_instructions.trim() && !draft.user_instructions.trim() && !agent.value?.base_instructions) {
+  if (!isCreate.value && !draft.tenant_instructions.trim() && !draft.user_instructions.trim()) {
     return $t('page.agentBuilder.instructionEmpty');
   }
   return '';
@@ -471,18 +471,6 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
           <div class="border-b px-12px py-8px font-600">{{ $t('page.agentBuilder.panePrompt') }}</div>
           <div class="min-h-0 flex-1 overflow-auto px-12px py-10px">
             <NForm label-placement="top">
-              <NFormItem :label="$t('page.agentBuilder.contractBase')">
-                <NInput
-                  type="textarea"
-                  :value="agent?.base_instructions || $t('page.agentBuilder.noContractBase')"
-                  readonly
-                  :rows="6"
-                  :placeholder="$t('page.agentBuilder.managedHint')"
-                />
-                <template #feedback>
-                  <NTag size="small" type="warning">{{ $t('page.agentBuilder.managed') }}</NTag>
-                </template>
-              </NFormItem>
               <NFormItem :label="$t('page.agentBuilder.tenantInstructions')">
                 <NInput
                   v-model:value="draft.tenant_instructions"
@@ -722,9 +710,6 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
         <div class="min-h-0 flex-1 overflow-auto px-12px py-10px">
           <template v-if="mobileTab === 'prompt'">
             <NForm label-placement="top">
-              <NFormItem :label="$t('page.agentBuilder.contractBase')">
-                <NInput type="textarea" :value="agent?.base_instructions || $t('page.agentBuilder.noContractBase')" readonly :rows="5" />
-              </NFormItem>
               <NFormItem :label="$t('page.agentBuilder.tenantInstructions')">
                 <NInput v-model:value="draft.tenant_instructions" type="textarea" :rows="6" :maxlength="instructionLimit" show-count />
               </NFormItem>
