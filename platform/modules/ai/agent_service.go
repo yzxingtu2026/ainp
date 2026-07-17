@@ -94,6 +94,12 @@ type AgentStatusRequest struct {
 	Status   string `json:"status" validate:"required"`
 	Revision uint64 `json:"revision" validate:"required"`
 }
+type AgentToolSearchRequest struct {
+	Query      string        `json:"query" validate:"max=512"`
+	Capability string        `json:"capability"`
+	Source     aitool.Source `json:"source"`
+	Limit      int           `json:"limit" validate:"omitempty,min=1,max=10"`
+}
 type AgentEmptyRequest struct{}
 
 func agentActor(ctx context.Context) (*auth.Context, error) {
@@ -443,7 +449,7 @@ func (s *AgentService) ListTools(ctx context.Context, r IDRequest) (any, error) 
 	e = s.db.WithContext(ctx).Where("tenant_id=? AND agent_id=?", row.TenantID, row.ID).Order("tool_id").Find(&rows).Error
 	return rows, e
 }
-func (s *AgentService) SearchTools(ctx context.Context, r aitool.MetaSearchInput) (any, error) {
+func (s *AgentService) SearchTools(ctx context.Context, r AgentToolSearchRequest) (any, error) {
 	if _, e := agentActor(ctx); e != nil {
 		return nil, e
 	}

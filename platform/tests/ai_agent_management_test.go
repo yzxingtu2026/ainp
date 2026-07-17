@@ -33,6 +33,14 @@ func TestAgentActionRequestsAcceptSnakeCaseJSON(t *testing.T) {
 	if _, err := status(context.Background(), json.RawMessage(`{"id":"agent-1","status":"enabled","revision":2}`)); err != nil {
 		t.Fatalf("decode status request: %v", err)
 	}
+	search := action.JSON(func(_ context.Context, request ai.AgentToolSearchRequest) (any, error) { return request, nil })
+	result, err = search(context.Background(), json.RawMessage(`{"query":"","limit":10}`))
+	if err != nil {
+		t.Fatalf("empty agent tool query must list available tools: %v", err)
+	}
+	if result.(ai.AgentToolSearchRequest).Limit != 10 {
+		t.Fatalf("tool search limit was not decoded: %#v", result)
+	}
 }
 
 func TestAgentContractRegistryFailClosed(t *testing.T) {
