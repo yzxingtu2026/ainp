@@ -842,6 +842,11 @@ declare namespace App {
         createTitle: string;
         deleteConfirm: string;
         aliasReferenced: string;
+        inputModalities: string;
+        outputModalities: string;
+        capabilities: string;
+        visionNeedsImage: string;
+        modalities: Record<(typeof import('@/constants/ai').MODEL_MODALITIES)[number], string>;
         features: Record<(typeof import('@/constants/ai').MODEL_FEATURES)[number], string>;
       };
       aiRuntime: {

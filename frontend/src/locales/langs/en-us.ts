@@ -653,6 +653,11 @@ const local: App.I18n.Schema = {
     createTitle: 'Create Model',
     deleteConfirm: 'Delete this model? This action cannot be undone.',
     aliasReferenced: 'Remove all Alias bindings before deleting this model',
+    inputModalities: 'Input modalities',
+    outputModalities: 'Output modalities',
+    capabilities: 'Capabilities',
+    visionNeedsImage: 'Vision requires the Image input modality to be selected',
+    modalities: { text: 'Text', image: 'Image', audio: 'Audio', file: 'File' },
     features: {
       streaming: 'Streaming',
       tool_calling: 'Tool Calling',

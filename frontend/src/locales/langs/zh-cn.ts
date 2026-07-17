@@ -647,6 +647,11 @@ const local: App.I18n.Schema = {
     createTitle: '新增模型',
     deleteConfirm: '确定删除该模型？删除后无法恢复。',
     aliasReferenced: '请先解除该模型绑定的别名',
+    inputModalities: '输入模态',
+    outputModalities: '输出模态',
+    capabilities: '能力',
+    visionNeedsImage: '启用视觉理解时必须同时勾选“图片”输入模态',
+    modalities: { text: '文本', image: '图片', audio: '音频', file: '文件' },
     features: {
       streaming: '流式输出',
       tool_calling: '工具调用',
