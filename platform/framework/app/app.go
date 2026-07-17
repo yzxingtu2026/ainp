@@ -13,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/yzxingtu2026/ainp/platform/framework/action"
 	"github.com/yzxingtu2026/ainp/platform/framework/aimodel"
+	"github.com/yzxingtu2026/ainp/platform/framework/aitool"
 	"github.com/yzxingtu2026/ainp/platform/framework/asynqadapter"
 	"github.com/yzxingtu2026/ainp/platform/framework/attachment"
 	"github.com/yzxingtu2026/ainp/platform/framework/audit"
@@ -52,6 +53,7 @@ type App struct {
 	StateMachines        *statemachine.Registry
 	AIProviderTypes      *aimodel.ProviderTypeRegistry
 	ModelResolver        aimodel.Resolver
+	ToolRegistry         *aitool.Registry
 	Storage              storage.ObjectStore
 	AttachmentPolicies   *attachment.PolicyRegistry
 	TransferTokens       *attachment.TransferTokenService

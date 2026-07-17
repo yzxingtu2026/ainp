@@ -40,9 +40,14 @@ func (h *HTTPMeta) IsEnabled() bool {
 }
 
 type AIMeta struct {
-	ExposeTool bool
-	Risk       string
-	Summary    string
+	ExposeTool           bool
+	Risk                 string
+	SideEffect           string
+	RequiresConfirmation bool
+	Summary              string
+	HumanDescription     string
+	InputSchema          json.RawMessage
+	OutputSchema         json.RawMessage
 }
 
 // IdempotencyMeta 控制 Action 的幂等策略。
@@ -176,10 +181,38 @@ func (r *Registry) Register(a Action) error {
 	if err := validateIdempotency(a.Meta.Idempotency); err != nil {
 		return fmt.Errorf("action %s: %w", a.ID, err)
 	}
+	if a.Meta.AI != nil && a.Meta.AI.ExposeTool {
+		if err := validateAIMeta(a.ID, a.Meta.AI); err != nil {
+			return err
+		}
+	}
 	if _, exists := r.items[a.ID]; exists {
 		return fmt.Errorf("action already registered: %s", a.ID)
 	}
 	r.items[a.ID] = a
+	return nil
+}
+
+func validateAIMeta(actionID string, meta *AIMeta) error {
+	if meta.Summary == "" || meta.HumanDescription == "" {
+		return fmt.Errorf("action %s: AI summary and human description are required", actionID)
+	}
+	switch meta.Risk {
+	case "low", "medium", "high", "critical":
+	default:
+		return fmt.Errorf("action %s: invalid AI risk", actionID)
+	}
+	switch meta.SideEffect {
+	case "none", "read", "write", "external", "paid", "destructive":
+	default:
+		return fmt.Errorf("action %s: invalid AI side effect", actionID)
+	}
+	if len(meta.InputSchema) == 0 || !json.Valid(meta.InputSchema) {
+		return fmt.Errorf("action %s: valid AI input schema is required", actionID)
+	}
+	if len(meta.OutputSchema) > 0 && !json.Valid(meta.OutputSchema) {
+		return fmt.Errorf("action %s: AI output schema is invalid", actionID)
+	}
 	return nil
 }
 

@@ -480,6 +480,12 @@
           "alwaysApply": true
         }
       }
+    },
+    {
+      "id": "tool-runtime",
+      "source": ".agent/rules/tool-runtime.md",
+      "qoder": {"path": ".qoder/rules/tool-runtime.md", "frontmatter": {"trigger": "always_on"}},
+      "cursor": {"path": ".cursor/rules/tool-runtime.mdc", "frontmatter": {"description": "渐进式工具发现、动态 Schema、Handle、确认与执行边界", "alwaysApply": true}}
     }
   ]
 }

@@ -143,7 +143,7 @@ func (a *OpenAIAdapter) Generate(ctx context.Context, in AdapterRequest) (*Gener
 	return out, nil
 }
 func modelSummary(in AdapterRequest) ModelSummary {
-	return ModelSummary{Alias: in.Request.ModelAlias, DeploymentID: in.Model.DeploymentID, Protocol: in.Model.Protocol, RemoteModelID: in.Model.RemoteModelID}
+	return ModelSummary{Alias: in.Request.ModelAlias, DeploymentID: in.Model.DeploymentID, Protocol: in.Model.Protocol, RemoteModelID: in.Model.RemoteModelID, ToolScopeID: in.Request.ToolScopeID}
 }
 func (a *OpenAIAdapter) Stream(ctx context.Context, in AdapterRequest) (EventStream, error) {
 	resp, err := postJSON(ctx, a.Client, endpoint(defaultBaseURL(in.Model.BaseURL, "https://api.openai.com"), "/v1/responses"), a.headers(in.Model.Credential), a.payload(in, true))

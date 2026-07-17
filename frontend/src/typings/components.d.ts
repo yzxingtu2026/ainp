@@ -102,6 +102,7 @@ declare module 'vue' {
     TableColumnSetting: typeof import('./../components/advanced/table-column-setting.vue')['default']
     TableHeaderOperation: typeof import('./../components/advanced/table-header-operation.vue')['default']
     ThemeSchemaSwitch: typeof import('./../components/common/theme-schema-switch.vue')['default']
+    ToolConfirmationCard: typeof import('./../components/ai/tool-confirmation-card.vue')['default']
     WaveBg: typeof import('./../components/custom/wave-bg.vue')['default']
   }
 }
@@ -198,5 +199,6 @@ declare global {
   const TableColumnSetting: typeof import('./../components/advanced/table-column-setting.vue')['default']
   const TableHeaderOperation: typeof import('./../components/advanced/table-header-operation.vue')['default']
   const ThemeSchemaSwitch: typeof import('./../components/common/theme-schema-switch.vue')['default']
+  const ToolConfirmationCard: typeof import('./../components/ai/tool-confirmation-card.vue')['default']
   const WaveBg: typeof import('./../components/custom/wave-bg.vue')['default']
 }
