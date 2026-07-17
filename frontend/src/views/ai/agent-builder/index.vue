@@ -76,7 +76,6 @@ const diagnostics = ref<Api.AI.AgentDiagnostics | null>(null);
 const boundTools = ref<Api.AI.AgentToolBinding[]>([]);
 const aliases = ref<Api.AI.Alias[]>([]);
 const deployments = ref<Api.AI.Deployment[]>([]);
-const runInstructions = ref('');
 const previewInput = ref('');
 const preview = ref<MockPreviewState>(createIdleMockPreview(key => $t(key as App.I18n.I18nKey)));
 
@@ -300,7 +299,7 @@ function runMockPreview() {
     message.warning($t('page.agentBuilder.previewBlocked'));
     return;
   }
-  const text = previewInput.value.trim() || runInstructions.value.trim();
+  const text = previewInput.value.trim();
   if (!text) {
     message.warning($t('page.agentBuilder.previewNeedInput'));
     return;
@@ -344,7 +343,7 @@ function onBeforeUnload(event: BeforeUnloadEvent) {
 }
 
 watch(
-  () => ({ ...draft, runInstructions: runInstructions.value }),
+  () => ({ ...draft }),
   () => {
     if (!loading.value) markDirty();
   },
@@ -448,29 +447,17 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
           :style="{ width: `${leftWidth}px` }"
         >
           <div class="shrink-0 border-b px-12px py-8px font-600">{{ $t('page.agentBuilder.panePrompt') }}</div>
-          <div class="min-h-0 flex-1 overflow-y-auto px-12px py-10px">
-            <NForm label-placement="top">
-              <NFormItem :show-label="false">
-                <NInput
-                  v-model:value="draft.tenant_instructions"
-                  type="textarea"
-                  :rows="10"
-                  :maxlength="instructionLimit"
-                  show-count
-                  :placeholder="$t('page.agentBuilder.tenantPlaceholder')"
-                />
-              </NFormItem>
-              <NFormItem :label="$t('page.agentBuilder.runInstructions')">
-                <NInput
-                  v-model:value="runInstructions"
-                  type="textarea"
-                  :rows="4"
-                  :placeholder="$t('page.agentBuilder.runPlaceholder')"
-                />
-                <template #feedback>{{ $t('page.agentBuilder.runHint') }}</template>
-              </NFormItem>
-              <NAlert v-if="instructionError" type="error" class="mb-12px">{{ instructionError }}</NAlert>
-            </NForm>
+          <div class="min-h-0 flex flex-1 flex-col gap-8px overflow-hidden px-12px py-10px">
+            <NAlert v-if="instructionError" type="error" class="shrink-0">{{ instructionError }}</NAlert>
+            <NInput
+              v-model:value="draft.tenant_instructions"
+              type="textarea"
+              class="agent-builder-prompt-input min-h-0 flex-1"
+              :resizable="false"
+              :maxlength="instructionLimit"
+              show-count
+              :placeholder="$t('page.agentBuilder.tenantPlaceholder')"
+            />
           </div>
         </section>
         <div
@@ -666,21 +653,15 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
         </NTabs>
         <div class="min-h-0 flex-1 overflow-y-auto px-12px py-10px">
           <template v-if="mobileTab === 'prompt'">
-            <NForm label-placement="top">
-              <NFormItem :show-label="false">
-                <NInput
-                  v-model:value="draft.tenant_instructions"
-                  type="textarea"
-                  :rows="8"
-                  :maxlength="instructionLimit"
-                  show-count
-                  :placeholder="$t('page.agentBuilder.tenantPlaceholder')"
-                />
-              </NFormItem>
-              <NFormItem :label="$t('page.agentBuilder.runInstructions')">
-                <NInput v-model:value="runInstructions" type="textarea" :rows="3" />
-              </NFormItem>
-            </NForm>
+            <NInput
+              v-model:value="draft.tenant_instructions"
+              type="textarea"
+              class="min-h-360px"
+              :resizable="false"
+              :maxlength="instructionLimit"
+              show-count
+              :placeholder="$t('page.agentBuilder.tenantPlaceholder')"
+            />
           </template>
           <template v-else-if="mobileTab === 'config'">
             <NForm label-placement="top">
@@ -752,3 +733,31 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
     />
   </div>
 </template>
+
+<style scoped>
+.agent-builder-prompt-input {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.agent-builder-prompt-input :deep(.n-input) {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.agent-builder-prompt-input :deep(.n-input-wrapper) {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.agent-builder-prompt-input :deep(.n-input__textarea-el) {
+  flex: 1;
+  height: 100% !important;
+  min-height: 0;
+  resize: none;
+}
+</style>
