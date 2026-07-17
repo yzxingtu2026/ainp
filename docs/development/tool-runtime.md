@@ -1,5 +1,7 @@
 # 统一 Tool Runtime
 
+新增工具的代码示例、风险选择、测试模板和交付检查清单见 [AI 工具开发指南](./ai-tool-development.md)。
+
 ## 渐进式披露
 
 `ToolRegistry` 是完整工具定义的服务端事实源，不等于模型 Prompt。启用工具的模型调用只固定注入 `tool.search`、`tool.load`；`tool.search` 返回最多 10 个不含完整 Schema 的安全候选，`tool.load` 受单次数量、Scope 总量和 32 KiB Schema 预算限制。后续模型请求只投影当前 ToolScope 已加载的真实 Tool Definition。

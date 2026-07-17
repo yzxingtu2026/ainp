@@ -9,3 +9,4 @@
 - 写/外部/付费/破坏性/high 必须单次确认，critical 默认禁止；批准后重新鉴权，不支持始终允许。
 - Invocation 终态与 Outbox 同事务，日志/Outbox/审计禁止完整参数、结果、Secret 和原始第三方响应。
 - 测试统一放在 `platform/tests`。详见 `docs/development/tool-runtime.md`。
+- 新增 Action Tool 或 Provider/Executor 时同时遵循 `docs/development/ai-tool-development.md`。
