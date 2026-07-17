@@ -1,6 +1,7 @@
 export const CODESET_KEYS = {
   activationStatus: 'common.activation_status',
-  attachmentStatus: 'system.attachment_status'
+  attachmentStatus: 'system.attachment_status',
+  agentRunStatus: 'ai.agent_run_status'
 } as const;
 
 export const ACTIVATION_STATUS = {

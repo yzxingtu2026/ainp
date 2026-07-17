@@ -490,6 +490,13 @@ declare namespace App {
       };
       route: Record<I18nRouteKey, string>;
       page: {
+        aiRun: {
+          progress: string;
+          cancel: string;
+          resume: string;
+          retry: string;
+          status: Record<Api.AI.AgentRunStatus, string>;
+        };
         setting: {
           title: string;
           empty: string;

@@ -70,6 +70,14 @@ const (
 	ActionMessageGet                   = "ai.message_get"
 	ActionMessageCreate                = "ai.message_create"
 	ActionContextCompactionDiagnostics = "ai.context_compaction_diagnostics"
+	ActionAgentRunStart                = "ai.agent_run_start"
+	ActionAgentRunGet                  = "ai.agent_run_get"
+	ActionAgentRunList                 = "ai.agent_run_list"
+	ActionAgentRunCancel               = "ai.agent_run_cancel"
+	ActionAgentRunResume               = "ai.agent_run_resume"
+	ActionAgentRunRetry                = "ai.agent_run_retry"
+	ActionAgentRunEvents               = "ai.agent_run_events"
+	ActionAgentRunSubscribe            = "ai.agent_run_subscribe"
 )
 
 func Register(a *app.App) error {
@@ -128,6 +136,11 @@ func Register(a *app.App) error {
 	conversations := NewConversationService(a.DB, a.AIAssetResolver)
 	compactions := NewContextCompactionService(a.DB, conversations, svc, invocations, toolRegistry)
 	a.ContextCompactor = compactions
+	agentRuntime := NewAgentRuntimeService(a.DB, conversations, invocations, tools, compactions, writer, a.Authorization)
+	tools.SetConfirmationHooks(agentRuntime.OnConfirmationPending, agentRuntime.OnConfirmationDecided)
+	if err := RegisterAgentRuntime(a, agentRuntime); err != nil {
+		return err
+	}
 	a.AgentTenantInitializer = agents.ReconcileBuiltinForTenant
 	auditOn := true
 	type def struct {

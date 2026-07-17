@@ -169,27 +169,28 @@ type ToolConfirmation struct {
 func (ToolConfirmation) TableName() string { return "ai_tool_confirmations" }
 
 type ToolInvocation struct {
-	ID             string     `gorm:"primaryKey;size:64" json:"id"`
-	TenantID       string     `gorm:"size:64;not null;index" json:"-"`
-	UserID         string     `gorm:"size:64;not null;index" json:"-"`
-	ScopeID        string     `gorm:"size:64;not null;index" json:"scope_id"`
-	AgentRunID     *string    `gorm:"size:64" json:"agent_run_id,omitempty"`
-	ToolCallID     string     `gorm:"size:128;not null" json:"tool_call_id"`
-	ToolID         string     `gorm:"size:255;not null" json:"tool_id"`
-	Source         string     `gorm:"size:32;not null" json:"source"`
-	TargetAction   string     `gorm:"size:255" json:"target_action,omitempty"`
-	Risk           string     `gorm:"size:16;not null" json:"risk"`
-	SideEffect     string     `gorm:"size:16;not null" json:"side_effect"`
-	Status         string     `gorm:"size:24;not null;index" json:"status"`
-	StartedAt      time.Time  `gorm:"not null" json:"started_at"`
-	FinishedAt     *time.Time `json:"finished_at,omitempty"`
-	DurationMS     *int64     `json:"duration_ms,omitempty"`
-	ConfirmationID *string    `gorm:"size:64" json:"confirmation_id,omitempty"`
-	ErrorCategory  string     `gorm:"size:64" json:"error_category,omitempty"`
-	RequestID      string     `gorm:"size:64;index" json:"request_id,omitempty"`
-	TraceID        string     `gorm:"size:64;index" json:"trace_id,omitempty"`
-	CreatedAt      time.Time  `json:"created_at"`
-	UpdatedAt      time.Time  `json:"updated_at"`
+	ID             string          `gorm:"primaryKey;size:64" json:"id"`
+	TenantID       string          `gorm:"size:64;not null;index" json:"-"`
+	UserID         string          `gorm:"size:64;not null;index" json:"-"`
+	ScopeID        string          `gorm:"size:64;not null;index" json:"scope_id"`
+	AgentRunID     *string         `gorm:"size:64" json:"agent_run_id,omitempty"`
+	ToolCallID     string          `gorm:"size:128;not null" json:"tool_call_id"`
+	ToolID         string          `gorm:"size:255;not null" json:"tool_id"`
+	Source         string          `gorm:"size:32;not null" json:"source"`
+	TargetAction   string          `gorm:"size:255" json:"target_action,omitempty"`
+	Risk           string          `gorm:"size:16;not null" json:"risk"`
+	SideEffect     string          `gorm:"size:16;not null" json:"side_effect"`
+	Status         string          `gorm:"size:24;not null;index" json:"status"`
+	StartedAt      time.Time       `gorm:"not null" json:"started_at"`
+	FinishedAt     *time.Time      `json:"finished_at,omitempty"`
+	DurationMS     *int64          `json:"duration_ms,omitempty"`
+	ConfirmationID *string         `gorm:"size:64" json:"confirmation_id,omitempty"`
+	ErrorCategory  string          `gorm:"size:64" json:"error_category,omitempty"`
+	ResultJSON     json.RawMessage `gorm:"type:jsonb;not null;default:'{}'" json:"-"`
+	RequestID      string          `gorm:"size:64;index" json:"request_id,omitempty"`
+	TraceID        string          `gorm:"size:64;index" json:"trace_id,omitempty"`
+	CreatedAt      time.Time       `json:"created_at"`
+	UpdatedAt      time.Time       `json:"updated_at"`
 }
 
 func (ToolInvocation) TableName() string { return "ai_tool_invocations" }
@@ -209,5 +210,5 @@ func AutoMigrate(db *gorm.DB) error {
 			return err
 		}
 	}
-	return db.AutoMigrate(&Provider{}, &Deployment{}, &Alias{}, &ModelInvocation{}, &ToolCatalog{}, &ToolSearchDocument{}, &ToolScope{}, &ToolConfirmation{}, &ToolInvocation{}, &Agent{}, &AgentVersion{}, &AgentToolBinding{}, &Conversation{}, &ConversationMessage{}, &AssistantStream{}, &AssistantStreamDelta{}, &ContextSnapshot{})
+	return db.AutoMigrate(&Provider{}, &Deployment{}, &Alias{}, &ModelInvocation{}, &ToolCatalog{}, &ToolSearchDocument{}, &ToolScope{}, &ToolConfirmation{}, &ToolInvocation{}, &Agent{}, &AgentVersion{}, &AgentToolBinding{}, &Conversation{}, &ConversationMessage{}, &AssistantStream{}, &AssistantStreamDelta{}, &ContextSnapshot{}, &AgentRun{}, &AgentStep{}, &AgentRunEvent{})
 }

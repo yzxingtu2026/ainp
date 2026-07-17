@@ -291,6 +291,51 @@ func (s *ConversationService) CreateMessage(ctx context.Context, r MessageCreate
 	return result, nil
 }
 
+func (s *ConversationService) AppendRuntimeMessage(ctx context.Context, conversationID, runID, role, idempotencyKey string, content []aimodelruntime.ContentPart) (*ConversationMessage, error) {
+	row, ac, err := s.get(ctx, conversationID, true)
+	if err != nil {
+		return nil, err
+	}
+	if row.Status != "active" {
+		return nil, errs.New(errs.CodeConflict, "conversation is archived")
+	}
+	runtimeRole := aimodelruntime.Role(role)
+	if runtimeRole != aimodelruntime.RoleTool && runtimeRole != aimodelruntime.RoleSystem {
+		return nil, errs.New(errs.CodeValidation, "invalid runtime message role")
+	}
+	if err = aimodelruntime.ValidateMessage(aimodelruntime.Message{Role: runtimeRole, Content: content}); err != nil {
+		return nil, errs.New(errs.CodeValidation, err.Error())
+	}
+	payload, _ := json.Marshal(content)
+	var result ConversationMessage
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var locked Conversation
+		if e := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("tenant_id=? AND id=?", ac.TenantID, row.ID).First(&locked).Error; e != nil {
+			return e
+		}
+		if e := tx.Where("tenant_id=? AND conversation_id=? AND idempotency_key=?", ac.TenantID, row.ID, idempotencyKey).First(&result).Error; e == nil {
+			return nil
+		} else if !errors.Is(e, gorm.ErrRecordNotFound) {
+			return e
+		}
+		var last uint64
+		if e := tx.Model(&ConversationMessage{}).Where("tenant_id=? AND conversation_id=?", ac.TenantID, row.ID).Select("COALESCE(MAX(sequence),0)").Scan(&last).Error; e != nil {
+			return e
+		}
+		now := time.Now().UTC()
+		rid := runID
+		result = ConversationMessage{ID: uuid.NewString(), TenantID: ac.TenantID, ConversationID: row.ID, Role: role, Status: "committed", Sequence: last + 1, RunID: &rid, Content: payload, IdempotencyKey: idempotencyKey, CommittedAt: &now}
+		if e := tx.Create(&result).Error; e != nil {
+			return e
+		}
+		return tx.Model(&Conversation{}).Where("tenant_id=? AND id=?", ac.TenantID, row.ID).Updates(map[string]any{"last_message_at": now, "revision": gorm.Expr("revision + 1")}).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
 func (s *ConversationService) ListMessages(ctx context.Context, r MessageListRequest) (any, error) {
 	row, _, err := s.get(ctx, r.ConversationID, false)
 	if err != nil {

@@ -330,6 +330,11 @@ const local: App.I18n.Schema = {
     attributes: '结构化属性'
   },
   page: {
+    aiRun: {
+      progress: '步骤 {step} · 模型 {model} · 工具 {tool}',
+      cancel: '取消', resume: '恢复', retry: '重试',
+      status: { queued: '排队中', running: '运行中', waiting_confirmation: '等待确认', paused: '已暂停', completed: '已完成', failed: '失败', cancelled: '已取消' }
+    },
     setting: {
       title: '系统设置',
       empty: '暂无可用设置',

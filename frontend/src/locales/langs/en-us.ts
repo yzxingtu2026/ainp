@@ -334,6 +334,11 @@ const local: App.I18n.Schema = {
     attributes: 'Attributes'
   },
   page: {
+    aiRun: {
+      progress: 'Step {step} · Models {model} · Tools {tool}',
+      cancel: 'Cancel', resume: 'Resume', retry: 'Retry',
+      status: { queued: 'Queued', running: 'Running', waiting_confirmation: 'Waiting for confirmation', paused: 'Paused', completed: 'Completed', failed: 'Failed', cancelled: 'Cancelled' }
+    },
     setting: {
       title: 'Settings',
       empty: 'No settings available',

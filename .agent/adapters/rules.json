@@ -519,6 +519,12 @@
       "source": ".agent/rules/ai-context-compaction.md",
       "qoder": {"path": ".qoder/rules/ai-context-compaction.md", "frontmatter": {"trigger": "always_on"}},
       "cursor": {"path": ".cursor/rules/ai-context-compaction.mdc", "frontmatter": {"description": "模型预算、确定性缩减、结构化摘要与版本化 ContextSnapshot 边界", "alwaysApply": true}}
+    },
+    {
+      "id": "ai-agent-runtime",
+      "source": ".agent/rules/ai-agent-runtime.md",
+      "qoder": {"path": ".qoder/rules/ai-agent-runtime.md", "frontmatter": {"trigger": "always_on"}},
+      "cursor": {"path": ".cursor/rules/ai-agent-runtime.mdc", "frontmatter": {"description": "Agent Run/Step 状态机、lease、Outbox Job、工具确认与可靠恢复", "alwaysApply": true}}
     }
   ]
 }

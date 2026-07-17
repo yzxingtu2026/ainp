@@ -45,3 +45,10 @@ export const restoreAIConversation=(id:string,revision:number)=>post<Api.AI.Conv
 export const fetchAIMessages=(conversationId:string,afterSequence=0,limit=50)=>post<Api.AI.MessageCursorPage>('messages/list',{conversation_id:conversationId,after_sequence:afterSequence,limit});
 export const fetchAIMessage=(id:string)=>post<Api.AI.ConversationMessage>('messages/get',{id});
 export const createAIMessage=(data:Record<string,unknown>,idempotencyKey:string)=>request<Api.AI.ConversationMessage>({url:'/api/v1/ai/messages/create',method:'post',data,_idempotencyKey:idempotencyKey} as any);
+export const startAIAgentRun=(data:Record<string,unknown>,idempotencyKey:string)=>request<Api.AI.AgentRun>({url:'/api/v1/ai/agent-runs/start',method:'post',data,_idempotencyKey:idempotencyKey} as any);
+export const fetchAIAgentRun=(id:string)=>post<Api.AI.AgentRunDetail>('agent-runs/get',{id});
+export const fetchAIAgentRuns=(params:Record<string,unknown>={})=>post<Api.AI.Page<Api.AI.AgentRun>>('agent-runs/list',params);
+export const cancelAIAgentRun=(id:string,revision:number)=>post<Api.AI.AgentRunDetail>('agent-runs/cancel',{id,revision});
+export const resumeAIAgentRun=(id:string,revision:number)=>post<Api.AI.AgentRunDetail>('agent-runs/resume',{id,revision});
+export const retryAIAgentRun=(id:string,revision:number)=>post<Api.AI.AgentRunDetail>('agent-runs/retry',{id,revision});
+export const fetchAIAgentRunEvents=(id:string,afterSequence=0,limit=200)=>post<Api.AI.AgentRunEventPage>('agent-runs/events',{id,after_sequence:afterSequence,limit});
