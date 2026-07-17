@@ -507,6 +507,12 @@
       "source": ".agent/rules/agent-management.md",
       "qoder": {"path": ".qoder/rules/agent-management.md", "frontmatter": {"trigger": "always_on"}},
       "cursor": {"path": ".cursor/rules/agent-management.mdc", "frontmatter": {"description": "智能体 Contract、不可变 Version、ownership 与资源绑定边界", "alwaysApply": true}}
+    },
+    {
+      "id": "ai-conversations",
+      "source": ".agent/rules/ai-conversations.md",
+      "qoder": {"path": ".qoder/rules/ai-conversations.md", "frontmatter": {"trigger": "always_on"}},
+      "cursor": {"path": ".cursor/rules/ai-conversations.mdc", "frontmatter": {"description": "AI 会话事实、固定 Agent Version、追加消息、幂等与上下文装配边界", "alwaysApply": true}}
     }
   ]
 }

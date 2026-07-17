@@ -36,3 +36,12 @@ export const bindAIAgentTool=(agentId:string,toolId:string)=>post<Api.AI.AgentTo
 export const unbindAIAgentTool=(agentId:string,toolId:string)=>post<{deleted:boolean}>('agent-tools/unbind',{agent_id:agentId,tool_id:toolId});
 export const fetchAIAgentDiagnostics=(id:string)=>post<Api.AI.AgentDiagnostics>('agents/diagnostics',{id});
 export const reconcileBuiltinAIAgent=()=>post<{created:boolean;agent:Api.AI.Agent}>('agents/builtin/reconcile');
+export const fetchAIConversations=(params:Record<string,unknown>={})=>post<Api.AI.Page<Api.AI.Conversation>>('conversations/list',params);
+export const fetchAIConversation=(id:string)=>post<Api.AI.Conversation>('conversations/get',{id});
+export const createAIConversation=(data:Record<string,unknown>)=>post<Api.AI.Conversation>('conversations/create',data);
+export const updateAIConversation=(id:string,title:string,revision:number)=>post<Api.AI.Conversation>('conversations/update',{id,title,revision});
+export const archiveAIConversation=(id:string,revision:number)=>post<Api.AI.Conversation>('conversations/archive',{id,revision});
+export const restoreAIConversation=(id:string,revision:number)=>post<Api.AI.Conversation>('conversations/restore',{id,revision});
+export const fetchAIMessages=(conversationId:string,afterSequence=0,limit=50)=>post<Api.AI.MessageCursorPage>('messages/list',{conversation_id:conversationId,after_sequence:afterSequence,limit});
+export const fetchAIMessage=(id:string)=>post<Api.AI.ConversationMessage>('messages/get',{id});
+export const createAIMessage=(data:Record<string,unknown>,idempotencyKey:string)=>request<Api.AI.ConversationMessage>({url:'/api/v1/ai/messages/create',method:'post',data,_idempotencyKey:idempotencyKey} as any);

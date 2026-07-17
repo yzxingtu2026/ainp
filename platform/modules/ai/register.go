@@ -60,6 +60,15 @@ const (
 	ActionAgentToolUnbind         = "ai.agent_tool_unbind"
 	ActionAgentDiagnostics        = "ai.agent_diagnostics_get"
 	ActionAgentBuiltinReconcile   = "ai.agent_builtin_reconcile"
+	ActionConversationList        = "ai.conversation_list"
+	ActionConversationGet         = "ai.conversation_get"
+	ActionConversationCreate      = "ai.conversation_create"
+	ActionConversationUpdate      = "ai.conversation_update"
+	ActionConversationArchive     = "ai.conversation_archive"
+	ActionConversationRestore     = "ai.conversation_restore"
+	ActionMessageList             = "ai.message_list"
+	ActionMessageGet              = "ai.message_get"
+	ActionMessageCreate           = "ai.message_create"
 )
 
 func Register(a *app.App) error {
@@ -115,6 +124,7 @@ func Register(a *app.App) error {
 	}
 	a.AgentContracts = contracts
 	agents := NewAgentService(a.DB, contracts, svc, toolRegistry)
+	conversations := NewConversationService(a.DB, a.AIAssetResolver)
 	a.AgentTenantInitializer = agents.ReconcileBuiltinForTenant
 	auditOn := true
 	type def struct {
@@ -150,6 +160,17 @@ func Register(a *app.App) error {
 		{ActionAgentToolUnbind, "/api/v1/ai/agent-tools/unbind", "解绑智能体工具", "ai.agent_management", "智能体", action.JSON(agents.UnbindTool)},
 		{ActionAgentDiagnostics, "/api/v1/ai/agents/diagnostics", "智能体诊断", "ai.agent_management", "智能体", action.JSON(agents.Diagnostics)},
 		{ActionAgentBuiltinReconcile, "/api/v1/ai/agents/builtin/reconcile", "同步内置智能体", "ai.agent_management", "智能体", action.JSON(agents.ReconcileBuiltin)},
+		{ActionConversationList, "/api/v1/ai/conversations/list", "会话列表", "ai.conversation", "AI 会话", action.JSON(conversations.List)},
+		{ActionConversationGet, "/api/v1/ai/conversations/get", "会话详情", "ai.conversation", "AI 会话", action.JSON(conversations.Get)},
+		{ActionConversationCreate, "/api/v1/ai/conversations/create", "创建会话", "ai.conversation", "AI 会话", action.JSON(conversations.Create)},
+		{ActionConversationUpdate, "/api/v1/ai/conversations/update", "更新会话", "ai.conversation", "AI 会话", action.JSON(conversations.Update)},
+		{ActionConversationArchive, "/api/v1/ai/conversations/archive", "归档会话", "ai.conversation", "AI 会话", action.JSON(conversations.Archive)},
+		{ActionConversationRestore, "/api/v1/ai/conversations/restore", "恢复会话", "ai.conversation", "AI 会话", action.JSON(conversations.Restore)},
+		{ActionMessageList, "/api/v1/ai/messages/list", "消息列表", "ai.conversation", "AI 会话", action.JSON(conversations.ListMessages)},
+		{ActionMessageGet, "/api/v1/ai/messages/get", "消息详情", "ai.conversation", "AI 会话", action.JSON(conversations.GetMessage)},
+	}
+	if err := a.RegisterAction(action.Action{ID: ActionMessageCreate, Handler: action.JSON(conversations.CreateMessage), Meta: action.Metadata{Capability: "ai", Name: "提交用户消息", NameKey: "action." + ActionMessageCreate + ".name", Description: "向会话幂等追加用户消息", DescriptionKey: "action." + ActionMessageCreate + ".description", PermissionGroup: "ai.conversation", PermissionGroupName: "AI 会话", PermissionGroupNameKey: "permission_group.ai.conversation", Audit: &auditOn, Idempotency: &action.IdempotencyMeta{Mode: "required"}, HTTP: &action.HTTPMeta{Method: "POST", Path: "/api/v1/ai/messages/create"}}}); err != nil {
+		return err
 	}
 	for _, d := range defs {
 		access := action.AccessMode("")
