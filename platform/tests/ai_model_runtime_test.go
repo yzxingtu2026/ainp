@@ -122,6 +122,10 @@ func TestOpenAIInputPairsFunctionCallWithOutput(t *testing.T) {
 	if callIdx < 0 || outIdx < 0 || callIdx > outIdx {
 		t.Fatalf("function_call must precede function_call_output: %s", joined)
 	}
+	output, ok := gotInput[outIdx].(map[string]any)["output"].(string)
+	if !ok || output != `{"items":[]}` {
+		t.Fatalf("function_call_output.output must be a JSON string, got %#v", gotInput[outIdx])
+	}
 }
 
 func TestOpenAIResponsesFixtureMapping(t *testing.T) {

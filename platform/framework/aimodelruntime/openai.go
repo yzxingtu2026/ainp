@@ -87,10 +87,12 @@ func openAIInput(messages []Message) []any {
 					"type": "function_call", "call_id": part.ToolCallID, "name": part.ToolName, "arguments": args,
 				})
 			case PartToolResult:
-				var value any
-				_ = json.Unmarshal(part.Result, &value)
+				output := string(part.Result)
+				if output == "" {
+					output = "{}"
+				}
 				functionOutputs = append(functionOutputs, map[string]any{
-					"type": "function_call_output", "call_id": part.ToolCallID, "output": value,
+					"type": "function_call_output", "call_id": part.ToolCallID, "output": output,
 				})
 			}
 		}
