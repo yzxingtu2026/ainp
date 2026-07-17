@@ -677,7 +677,14 @@ func (s *AgentRuntimeService) runtimeMessages(ctx context.Context, run *AgentRun
 		}
 		result, err := s.compactor.Compact(ctx, aiconversation.CompactionRequest{ConversationID: run.ConversationID, ModelAlias: modelAlias, IdempotencyKey: fmt.Sprintf("run:%s:compact:%d", run.ID, run.Compactions), ParentSnapshotID: run.ContextSnapshotID})
 		if err != nil || result == nil || result.Status == "failed" || result.Status == "cannot_fit" {
-			_ = s.finishStep(ctx, run, compactStep, "failed", map[string]any{"status": resultStatus(result)}, "context_compaction_failed")
+			detail := map[string]any{"status": resultStatus(result)}
+			if result != nil && result.Reason != "" {
+				detail["reason"] = result.Reason
+			}
+			if err != nil {
+				detail["error"] = err.Error()
+			}
+			_ = s.finishStep(ctx, run, compactStep, "failed", detail, "context_compaction_failed")
 			return nil, nil, fmt.Errorf("context compaction failed")
 		}
 		_ = s.finishStep(ctx, run, compactStep, "completed", map[string]any{"status": result.Status, "snapshot_id": result.SnapshotID, "input_tokens": result.InputTokens, "output_tokens": result.OutputTokens}, "")

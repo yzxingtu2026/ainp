@@ -77,7 +77,12 @@ func (s *ContextCompactionService) Compact(ctx context.Context, r aiconversation
 	if err != nil {
 		return nil, err
 	}
-	resolved, err := s.models.Resolve(ctx, r.ModelAlias, aimodel.CapabilityRequirements{ModelType: aimodel.ModelTypeChat, InputModalities: []aimodel.Modality{aimodel.ModalityText}, OutputModalities: []aimodel.Modality{aimodel.ModalityText}, Features: []aimodel.Feature{aimodel.FeatureStructuredOutput}})
+	// 预算判断只需 chat + 上下文窗口；structured_output 仅在真正摘要时由摘要调用再校验。
+	resolved, err := s.models.Resolve(ctx, r.ModelAlias, aimodel.CapabilityRequirements{
+		ModelType:        aimodel.ModelTypeChat,
+		InputModalities:  []aimodel.Modality{aimodel.ModalityText},
+		OutputModalities: []aimodel.Modality{aimodel.ModalityText},
+	})
 	if err != nil {
 		return nil, err
 	}
