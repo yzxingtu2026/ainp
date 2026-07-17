@@ -1,0 +1,10 @@
+ALTER TABLE ai_context_snapshots DROP CONSTRAINT IF EXISTS ck_ai_snapshot_kind;
+ALTER TABLE ai_context_snapshots ADD CONSTRAINT ck_ai_snapshot_kind CHECK (kind IN ('raw','assembled','compacted'));
+ALTER TABLE ai_context_snapshots ADD COLUMN IF NOT EXISTS schema_version varchar(32) NOT NULL DEFAULT '';
+ALTER TABLE ai_context_snapshots ADD COLUMN IF NOT EXISTS prompt_version varchar(32) NOT NULL DEFAULT '';
+ALTER TABLE ai_context_snapshots ADD COLUMN IF NOT EXISTS summarizer_deployment_id varchar(64) NOT NULL DEFAULT '';
+ALTER TABLE ai_context_snapshots ADD COLUMN IF NOT EXISTS compaction_depth integer NOT NULL DEFAULT 0;
+ALTER TABLE ai_context_snapshots ADD COLUMN IF NOT EXISTS reason varchar(64) NOT NULL DEFAULT '';
+ALTER TABLE ai_context_snapshots ADD COLUMN IF NOT EXISTS quality_status varchar(16) NOT NULL DEFAULT 'valid';
+ALTER TABLE ai_context_snapshots ADD CONSTRAINT ck_ai_snapshot_quality CHECK (quality_status IN ('valid','invalid'));
+ALTER TABLE ai_context_snapshots ADD CONSTRAINT ck_ai_snapshot_depth CHECK (compaction_depth >= 0 AND compaction_depth <= 3);

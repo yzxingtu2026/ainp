@@ -68,23 +68,29 @@ type AssistantStreamDelta struct {
 func (AssistantStreamDelta) TableName() string { return "ai_assistant_stream_deltas" }
 
 type ContextSnapshot struct {
-	ID                   string          `gorm:"primaryKey;size:64" json:"id"`
-	TenantID             string          `gorm:"size:64;not null;uniqueIndex:ux_ai_snapshot_idem,priority:1" json:"-"`
-	ConversationID       string          `gorm:"size:64;not null;uniqueIndex:ux_ai_snapshot_idem,priority:2;index" json:"conversation_id"`
-	ConversationRevision uint64          `gorm:"not null" json:"conversation_revision"`
-	AgentVersionID       string          `gorm:"size:64;not null" json:"agent_version_id"`
-	ModelDeploymentID    string          `gorm:"size:64;not null" json:"model_deployment_id"`
-	SourceSequenceFrom   uint64          `gorm:"not null" json:"source_sequence_from"`
-	SourceSequenceTo     uint64          `gorm:"not null;check:ck_ai_snapshot_range,source_sequence_from <= source_sequence_to" json:"source_sequence_to"`
-	ParentSnapshotID     *string         `gorm:"size:64;index" json:"parent_snapshot_id,omitempty"`
-	Kind                 string          `gorm:"size:16;not null;check:ck_ai_snapshot_kind,kind IN ('raw','assembled')" json:"kind"`
-	PolicyVersion        string          `gorm:"size:32;not null" json:"policy_version"`
-	TokenEstimate        int             `gorm:"not null" json:"token_estimate"`
-	Status               string          `gorm:"size:16;not null;check:ck_ai_snapshot_status,status IN ('ready','invalid')" json:"status"`
-	Payload              json.RawMessage `gorm:"type:jsonb;not null" json:"payload"`
-	IdempotencyKey       string          `gorm:"size:191;not null;uniqueIndex:ux_ai_snapshot_idem,priority:3" json:"-"`
-	CreatedAt            time.Time       `json:"created_at"`
-	Current              bool            `gorm:"-" json:"is_current"`
+	ID                     string          `gorm:"primaryKey;size:64" json:"id"`
+	TenantID               string          `gorm:"size:64;not null;uniqueIndex:ux_ai_snapshot_idem,priority:1" json:"-"`
+	ConversationID         string          `gorm:"size:64;not null;uniqueIndex:ux_ai_snapshot_idem,priority:2;index" json:"conversation_id"`
+	ConversationRevision   uint64          `gorm:"not null" json:"conversation_revision"`
+	AgentVersionID         string          `gorm:"size:64;not null" json:"agent_version_id"`
+	ModelDeploymentID      string          `gorm:"size:64;not null" json:"model_deployment_id"`
+	SourceSequenceFrom     uint64          `gorm:"not null" json:"source_sequence_from"`
+	SourceSequenceTo       uint64          `gorm:"not null;check:ck_ai_snapshot_range,source_sequence_from <= source_sequence_to" json:"source_sequence_to"`
+	ParentSnapshotID       *string         `gorm:"size:64;index" json:"parent_snapshot_id,omitempty"`
+	Kind                   string          `gorm:"size:16;not null;check:ck_ai_snapshot_kind,kind IN ('raw','assembled','compacted')" json:"kind"`
+	PolicyVersion          string          `gorm:"size:32;not null" json:"policy_version"`
+	SchemaVersion          string          `gorm:"size:32;not null;default:''" json:"schema_version"`
+	PromptVersion          string          `gorm:"size:32;not null;default:''" json:"prompt_version"`
+	SummarizerDeploymentID string          `gorm:"size:64;not null;default:''" json:"summarizer_deployment_id,omitempty"`
+	CompactionDepth        int             `gorm:"not null;default:0;check:ck_ai_snapshot_depth,compaction_depth >= 0 AND compaction_depth <= 3" json:"compaction_depth"`
+	Reason                 string          `gorm:"size:64;not null;default:''" json:"reason"`
+	QualityStatus          string          `gorm:"size:16;not null;default:'valid';check:ck_ai_snapshot_quality,quality_status IN ('valid','invalid')" json:"quality_status"`
+	TokenEstimate          int             `gorm:"not null" json:"token_estimate"`
+	Status                 string          `gorm:"size:16;not null;check:ck_ai_snapshot_status,status IN ('ready','invalid')" json:"status"`
+	Payload                json.RawMessage `gorm:"type:jsonb;not null" json:"payload"`
+	IdempotencyKey         string          `gorm:"size:191;not null;uniqueIndex:ux_ai_snapshot_idem,priority:3" json:"-"`
+	CreatedAt              time.Time       `json:"created_at"`
+	Current                bool            `gorm:"-" json:"is_current"`
 }
 
 func (ContextSnapshot) TableName() string { return "ai_context_snapshots" }

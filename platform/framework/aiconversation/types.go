@@ -41,7 +41,29 @@ type ContextAssembler interface {
 	Assemble(context.Context, AssemblyRequest) (*AssemblyResult, error)
 }
 type ContextCompactor interface {
-	Compact(context.Context, AssemblyResult) (snapshotID string, err error)
+	Compact(context.Context, CompactionRequest) (*CompactionResult, error)
+}
+
+type CompactionRequest struct {
+	ConversationID       string  `json:"conversation_id"`
+	ModelAlias           string  `json:"model_alias"`
+	ReservedOutputTokens int     `json:"reserved_output_tokens"`
+	SafetyMarginTokens   int     `json:"safety_margin_tokens"`
+	ToolSchemaBytes      int     `json:"tool_schema_bytes"`
+	AttachmentTokens     int     `json:"attachment_tokens"`
+	IdempotencyKey       string  `json:"idempotency_key"`
+	ParentSnapshotID     *string `json:"parent_snapshot_id,omitempty"`
+}
+
+type CompactionResult struct {
+	Status          string `json:"status"`
+	SnapshotID      string `json:"snapshot_id,omitempty"`
+	Reason          string `json:"reason,omitempty"`
+	InputTokens     int    `json:"input_tokens"`
+	OutputTokens    int    `json:"output_tokens"`
+	RetainedFrom    uint64 `json:"retained_from,omitempty"`
+	RetainedTo      uint64 `json:"retained_to,omitempty"`
+	CompactionDepth int    `json:"compaction_depth"`
 }
 
 type StreamDelta struct {
