@@ -21,13 +21,13 @@ import (
 const invocationFinishedEvent = "ai.model_invocation.finished.v1"
 
 type InvocationService struct {
-	db                 *gorm.DB
-	resolver           aimodel.Resolver
-	adapters           *aimodelruntime.AdapterRegistry
-	embeddingAdapters  *aimodelruntime.EmbeddingAdapterRegistry
-	writer             outbox.Writer
-	tools              ToolProjector
-	assets             aimodelruntime.AssetResolver
+	db                *gorm.DB
+	resolver          aimodel.Resolver
+	adapters          *aimodelruntime.AdapterRegistry
+	embeddingAdapters *aimodelruntime.EmbeddingAdapterRegistry
+	writer            outbox.Writer
+	tools             ToolProjector
+	assets            aimodelruntime.AssetResolver
 }
 
 type ToolProjector interface {
@@ -41,23 +41,23 @@ func (s *InvocationService) SetEmbeddingAdapters(v *aimodelruntime.EmbeddingAdap
 }
 
 type invocationFinishedPayload struct {
-	InvocationID         string `json:"invocation_id"`
-	Status               string `json:"status"`
-	ModelAlias           string `json:"model_alias"`
-	Mode                 string `json:"mode"`
-	LatencyMS            int64  `json:"latency_ms"`
-	FirstTokenLatencyMS  *int64 `json:"first_token_latency_ms,omitempty"`
-	InputTokens          *int64 `json:"input_tokens,omitempty"`
-	OutputTokens         *int64 `json:"output_tokens,omitempty"`
-	TotalTokens          *int64 `json:"total_tokens,omitempty"`
-	UsageReported        bool   `json:"usage_reported"`
-	FinishReason         string `json:"finish_reason,omitempty"`
-	ErrorCategory        string `json:"error_category,omitempty"`
-	EmbeddingPurpose     string `json:"embedding_purpose,omitempty"`
-	EmbeddingItemCount   int    `json:"embedding_item_count,omitempty"`
-	EmbeddingTextBytes   int64  `json:"embedding_text_bytes,omitempty"`
-	EmbeddingDimensions  *int   `json:"embedding_dimensions,omitempty"`
-	EmbeddingSubBatches  *int   `json:"embedding_sub_batches,omitempty"`
+	InvocationID        string `json:"invocation_id"`
+	Status              string `json:"status"`
+	ModelAlias          string `json:"model_alias"`
+	Mode                string `json:"mode"`
+	LatencyMS           int64  `json:"latency_ms"`
+	FirstTokenLatencyMS *int64 `json:"first_token_latency_ms,omitempty"`
+	InputTokens         *int64 `json:"input_tokens,omitempty"`
+	OutputTokens        *int64 `json:"output_tokens,omitempty"`
+	TotalTokens         *int64 `json:"total_tokens,omitempty"`
+	UsageReported       bool   `json:"usage_reported"`
+	FinishReason        string `json:"finish_reason,omitempty"`
+	ErrorCategory       string `json:"error_category,omitempty"`
+	EmbeddingPurpose    string `json:"embedding_purpose,omitempty"`
+	EmbeddingItemCount  int    `json:"embedding_item_count,omitempty"`
+	EmbeddingTextBytes  int64  `json:"embedding_text_bytes,omitempty"`
+	EmbeddingDimensions *int   `json:"embedding_dimensions,omitempty"`
+	EmbeddingSubBatches *int   `json:"embedding_sub_batches,omitempty"`
 }
 
 func NewInvocationService(db *gorm.DB, resolver aimodel.Resolver, adapters *aimodelruntime.AdapterRegistry, writer outbox.Writer) *InvocationService {
@@ -76,10 +76,15 @@ func (s *InvocationService) Generate(ctx context.Context, req aimodelruntime.Gen
 		_ = s.finish(ctx, prepared.row, nil, aimodelruntime.FinishError, runtimeErrorCategory(err), "")
 		return nil, err
 	}
+	if resp == nil {
+		_ = s.finish(ctx, prepared.row, nil, aimodelruntime.FinishError, aimodelruntime.ErrorProviderUnavailable, "")
+		return nil, &aimodelruntime.RuntimeError{Category: aimodelruntime.ErrorProviderUnavailable, Message: "empty model response"}
+	}
 	if err := s.finish(ctx, prepared.row, &resp.Usage, resp.FinishReason, "", resp.ProviderRequestID); err != nil {
 		return nil, err
 	}
-	return resp, nil
+	// 返回值类型，避免 Action/Runtime 对 *GenerateResponse 断言失败。
+	return *resp, nil
 }
 
 func (s *InvocationService) Stream(ctx context.Context, req aimodelruntime.GenerateRequest) (any, error) {
@@ -185,7 +190,7 @@ func (s *InvocationService) prepareEmbedding(ctx context.Context, req aimodelrun
 	return &preparedEmbedding{
 		ctx: runCtx, cancel: cancel, adapter: adapter,
 		request: aimodelruntime.EmbeddingAdapterRequest{Request: req, Model: resolved},
-		row: row,
+		row:     row,
 	}, nil
 }
 

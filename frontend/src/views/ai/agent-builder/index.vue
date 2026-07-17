@@ -42,9 +42,15 @@ import {
   updateAIAgent
 } from '@/service/api';
 import { useAuthStore } from '@/store/modules/auth';
-import { createDemoMockPreview, createIdleMockPreview, type MockPreviewState } from './mock-preview';
 import MarkdownPromptEditor from '@/components/common/markdown-prompt-editor.vue';
 import AgentToolPickerModal from './modules/agent-tool-picker-modal.vue';
+import PreviewComposer from './modules/preview-composer.vue';
+import PreviewMarkdown from './modules/preview-markdown.vue';
+import PreviewMessageImages from './modules/preview-message-images.vue';
+import PreviewToolCallCard from './modules/preview-tool-call-card.vue';
+import { useBuilderPreview } from './use-builder-preview';
+import AgentRunStatus from '@/components/ai/agent-run-status.vue';
+import ToolConfirmationCard from '@/components/ai/tool-confirmation-card.vue';
 
 defineOptions({ name: 'AIAgentBuilder' });
 
@@ -54,8 +60,7 @@ const auth = useAuthStore();
 const message = useMessage();
 const dialog = useDialog();
 
-const can = (permission: string) =>
-  auth.userInfo.buttons.includes(permission) || auth.userInfo.buttons.includes('*');
+const can = (permission: string) => auth.userInfo.buttons.includes(permission) || auth.userInfo.buttons.includes('*');
 
 const loading = ref(false);
 const hydrating = ref(false);
@@ -77,9 +82,6 @@ const diagnostics = ref<Api.AI.AgentDiagnostics | null>(null);
 const boundTools = ref<Api.AI.AgentToolBinding[]>([]);
 const aliases = ref<Api.AI.Alias[]>([]);
 const deployments = ref<Api.AI.Deployment[]>([]);
-const previewInput = ref('');
-const preview = ref<MockPreviewState>(createIdleMockPreview(key => $t(key as App.I18n.I18nKey)));
-
 const draft = reactive({
   code: '',
   name: '',
@@ -93,17 +95,132 @@ const draft = reactive({
   max_output_tokens: 2048,
   revision: 0
 });
+const selectedAlias = computed(() => aliases.value.find(item => item.code === draft.model_alias));
+const selectedDeployment = computed(() =>
+  deployments.value.find(item => item.id === selectedAlias.value?.deployment_id)
+);
+const previewSupportsVision = computed(() =>
+  Boolean(
+    selectedDeployment.value?.capabilities_json.input_modalities?.includes('image') &&
+    selectedDeployment.value?.capabilities_json.features?.includes('vision')
+  )
+);
+
+const {
+  status: previewStatus,
+  error: previewError,
+  input: previewInput,
+  images: previewImages,
+  messages: previewMessages,
+  confirmations: previewConfirmations,
+  run: previewRun,
+  busy: previewBusy,
+  canSend: previewCanSend,
+  runSummary: previewRunSummary,
+  streamingText: previewStreamingText,
+  streaming: previewStreaming,
+  currentStepType: previewStepType,
+  messageListEl: previewMessageListEl,
+  messageText: previewMessageText,
+  send: sendPreview,
+  stop: stopPreview,
+  clear: clearPreview,
+  onConfirmationResolved,
+  resetPreviewBinding
+} = useBuilderPreview({
+  agent,
+  draft,
+  diagnostics,
+  dirty,
+  supportsVision: previewSupportsVision
+});
 
 const isCreate = computed(() => !agent.value);
 const managedFields = computed(() => new Set(agent.value?.managed_fields || []));
 const requiredTools = computed(() => new Set(agent.value?.required_tool_selectors || []));
 const isManaged = (field: string) => managedFields.value.has(field);
 const boundToolIDs = computed(() => boundTools.value.map(item => item.tool_id));
+type PreviewTimelineEntry =
+  | {
+      kind: 'message';
+      key: string;
+      role: Api.AI.ConversationMessage['role'];
+      text: string;
+      images: Api.AI.ConversationContentPart[];
+    }
+  | {
+      kind: 'tool';
+      key: string;
+      toolName: string;
+      toolCallId: string;
+      request: unknown;
+      response: unknown;
+      hasResponse: boolean;
+    };
+const previewTimeline = computed<PreviewTimelineEntry[]>(() => {
+  const results = new Map<string, unknown>();
+  const toolCallIds = new Set<string>();
+
+  for (const conversationMessage of previewMessages.value) {
+    for (const part of conversationMessage.content || []) {
+      if (part.type === 'tool_call' && part.tool_call_id) toolCallIds.add(part.tool_call_id);
+      if (part.type === 'tool_result' && part.tool_call_id) results.set(part.tool_call_id, part.result);
+    }
+  }
+
+  const entries: PreviewTimelineEntry[] = [];
+  for (const conversationMessage of previewMessages.value) {
+    const text = previewMessageText(conversationMessage);
+    const images = (conversationMessage.content || []).filter(part => part.type === 'input_image');
+    if (text || images.length > 0) {
+      entries.push({
+        kind: 'message',
+        key: `message:${conversationMessage.id}`,
+        role: conversationMessage.role,
+        text,
+        images
+      });
+    }
+
+    for (const part of conversationMessage.content || []) {
+      if (part.type === 'tool_call') {
+        const callId = part.tool_call_id || '';
+        entries.push({
+          kind: 'tool',
+          key: `tool-call:${conversationMessage.id}:${callId}`,
+          toolName: part.tool_name || '',
+          toolCallId: callId,
+          request: part.arguments,
+          response: results.get(callId),
+          hasResponse: results.has(callId)
+        });
+      } else if (part.type === 'tool_result' && part.tool_call_id && !toolCallIds.has(part.tool_call_id)) {
+        entries.push({
+          kind: 'tool',
+          key: `tool-result:${conversationMessage.id}:${part.tool_call_id}`,
+          toolName: '',
+          toolCallId: part.tool_call_id,
+          request: undefined,
+          response: part.result,
+          hasResponse: true
+        });
+      }
+    }
+  }
+
+  return entries;
+});
+const previewActive = computed(
+  () =>
+    previewBusy.value ||
+    previewStatus.value === 'materializing' ||
+    previewStatus.value === 'running' ||
+    previewStatus.value === 'waiting_confirmation'
+);
 const canPublish = computed(
   () =>
     Boolean(draft.name && draft.code && draft.model_alias) &&
-    (isCreate.value ? can(AI_ACTIONS.agentCreate) : can(AI_ACTIONS.agentVersionPublish)) &&
-    (!diagnostics.value || diagnostics.value.healthy || isCreate.value)
+    (isCreate.value ? can(AI_ACTIONS.agentCreate) : can(AI_ACTIONS.agentVersionPublish))
 );
 const canEditMeta = computed(() => isCreate.value || can(AI_ACTIONS.agentUpdate));
 const instructionLimit = 12000;
@@ -161,21 +278,23 @@ async function loadAgent(id: string) {
     boundTools.value = toolResult.data || [];
     diagnostics.value = diagnosticResult.data || null;
     const current = versions.value.find(item => item.version === agent.value?.current_version);
+    const useDraft = Boolean(agent.value.has_draft);
+    const gen = useDraft ? agent.value.draft_generation_config || {} : current?.generation_config || {};
     Object.assign(draft, {
       code: agent.value.code,
       name: agent.value.name,
       description: agent.value.description,
       source: agent.value.source,
       visibility: agent.value.visibility,
-      model_alias: current?.model_alias || '',
-      tenant_instructions: current?.tenant_instructions || '',
-      temperature: Number(current?.generation_config?.temperature ?? 0.7),
-      top_p: Number(current?.generation_config?.top_p ?? 1),
-      max_output_tokens: Number(current?.generation_config?.max_output_tokens ?? 2048),
+      model_alias: useDraft ? agent.value.draft_model_alias || '' : current?.model_alias || '',
+      tenant_instructions: useDraft ? agent.value.draft_tenant_instructions || '' : current?.tenant_instructions || '',
+      temperature: Number(gen.temperature ?? 0.7),
+      top_p: Number(gen.top_p ?? 1),
+      max_output_tokens: Number(gen.max_output_tokens ?? 2048),
       revision: agent.value.revision
     });
     dirty.value = false;
-    preview.value = createIdleMockPreview(key => $t(key as App.I18n.I18nKey));
+    resetPreviewBinding();
   } finally {
     loading.value = false;
     queueMicrotask(() => {
@@ -221,8 +340,40 @@ function generationConfig() {
   };
 }
 
+function isMetaDirty() {
+  if (!agent.value) return false;
+  return draft.name !== agent.value.name || draft.description !== (agent.value.description || '');
+}
+
+/** 仅更新名称/描述/头像，不写草稿、不发布版本 */
+async function persistAgentMeta(): Promise<boolean> {
+  if (!agent.value || !canEditMeta.value) return false;
+  const { data, error } = await updateAIAgent({
+    id: agent.value.id,
+    name: draft.name,
+    description: draft.description,
+    avatar_attachment_id: agent.value.avatar_attachment_id ?? null,
+    revision: draft.revision
+  });
+  if (error || !data) {
+    if (String(error).includes('revision') || String(error).includes('conflict')) {
+      message.error($t('page.agentBuilder.revisionConflict'));
+    }
+    return false;
+  }
+  agent.value = { ...agent.value, ...data };
+  draft.revision = data.revision;
+  return true;
+}
+
+/** 元数据 + 提示词/模型草稿一并保存；不晋升 current_version */
 async function saveMetadata() {
   if (!agent.value || !canEditMeta.value) return;
+  if (instructionError.value) {
+    message.error(instructionError.value);
+    return;
+  }
+  if (!dirty.value) return;
   savingMeta.value = true;
   try {
     const { data, error } = await updateAIAgent({
@@ -230,6 +381,11 @@ async function saveMetadata() {
       name: draft.name,
       description: draft.description,
       avatar_attachment_id: agent.value.avatar_attachment_id ?? null,
+      save_draft_config: true,
+      model_alias: draft.model_alias,
+      tenant_instructions: draft.tenant_instructions,
+      generation_config: generationConfig(),
+      tool_policy: {},
       revision: draft.revision
     });
     if (error || !data) {
@@ -238,9 +394,9 @@ async function saveMetadata() {
       }
       return;
     }
-    agent.value = { ...agent.value, ...data };
-    draft.revision = data.revision;
-    message.success($t('page.agentBuilder.metaSaved'));
+    dirty.value = false;
+    message.success($t('page.agentBuilder.metaAndPromptSaved'));
+    await loadAgent(agent.value.id);
   } finally {
     savingMeta.value = false;
   }
@@ -272,8 +428,9 @@ async function publishVersion() {
       await loadAgent(data.id);
       return;
     }
-    if (dirty.value && canEditMeta.value) {
-      await saveMetadata();
+    if (isMetaDirty() && canEditMeta.value) {
+      const ok = await persistAgentMeta();
+      if (!ok) return;
     }
     const { data, error } = await publishAIAgentVersion({
       agent_id: agent.value!.id,
@@ -289,38 +446,37 @@ async function publishVersion() {
     }
     dirty.value = false;
     message.success($t('page.agentBuilder.publishSuccess', { version: data.version }));
+    resetPreviewBinding();
     await loadAgent(agent.value!.id);
   } finally {
     publishing.value = false;
   }
 }
 
-function runMockPreview() {
-  if (!diagnostics.value?.healthy && agent.value) {
-    message.warning($t('page.agentBuilder.previewBlocked'));
+async function runPreview() {
+  if (!agent.value) {
+    message.warning($t('page.agentBuilder.previewNeedAgent'));
     return;
   }
-  const text = previewInput.value.trim();
-  if (!text) {
+  if (agent.value.status === 'disabled') {
+    message.warning($t('page.agentBuilder.previewAgentDisabled'));
+    return;
+  }
+  if (diagnostics.value && !diagnostics.value.healthy) {
+    // 预览会物化当前编辑配置，不依赖旧 current；草稿模型由 materialize 再校验。
+    const recoverable = new Set(['version.missing', 'model.unavailable']);
+    const blocking = (diagnostics.value.issues || []).some(item => !recoverable.has(item.code));
+    if (blocking) {
+      message.warning($t('page.agentBuilder.previewBlocked'));
+      return;
+    }
+  }
+  if (!previewInput.value.trim() && previewImages.value.length === 0) {
     message.warning($t('page.agentBuilder.previewNeedInput'));
     return;
   }
-  preview.value = createDemoMockPreview(text, key => $t(key as App.I18n.I18nKey));
-  preview.value.status = 'streaming';
-  window.setTimeout(() => {
-    if (preview.value.status === 'streaming') preview.value.status = 'completed';
-  }, 600);
-}
-
-function stopMockPreview() {
-  if (preview.value.status === 'streaming') {
-    preview.value = { ...preview.value, status: 'stopped', runSummary: $t('page.agentBuilder.mockStoppedSummary') };
-  }
-}
-
-function clearMockPreview() {
-  previewInput.value = '';
-  preview.value = createIdleMockPreview(key => $t(key as App.I18n.I18nKey));
+  await sendPreview();
+  if (previewError.value) message.error(previewError.value);
 }
 
 function leaveBuilder() {
@@ -376,7 +532,7 @@ watch(
         revision: 0
       });
       dirty.value = false;
-      preview.value = createIdleMockPreview(key => $t(key as App.I18n.I18nKey));
+      resetPreviewBinding();
     }
   },
   { immediate: true }
@@ -413,8 +569,9 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
           </div>
           <div class="text-12px text-gray-500">
             <span v-if="dirty">{{ $t('page.agentBuilder.dirty') }}</span>
+            <span v-else-if="agent?.has_draft">{{ $t('page.agentBuilder.draftSavedHint') }}</span>
             <span v-else>{{ $t('page.agentBuilder.clean') }}</span>
-            <span v-if="agent"> · v{{ agent.current_version }} · rev {{ draft.revision }}</span>
+            <span v-if="agent">· v{{ agent.current_version }} · rev {{ draft.revision }}</span>
           </div>
         </div>
       </NSpace>
@@ -426,21 +583,24 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
           {{ collapsed.right ? $t('page.agentBuilder.showRight') : $t('page.agentBuilder.hideRight') }}
         </NButton>
         <NButton v-if="agent" @click="versionsVisible = true">{{ $t('page.agentBuilder.versions') }}</NButton>
-        <NButton
-          v-if="agent && canEditMeta"
-          :loading="savingMeta"
-          :disabled="!dirty"
-          @click="saveMetadata"
-        >
+        <NButton v-if="agent && canEditMeta" :loading="savingMeta" :disabled="!dirty" @click="saveMetadata">
           {{ $t('page.agentBuilder.saveMeta') }}
         </NButton>
-        <NButton type="primary" :loading="publishing" :disabled="!canPublish || Boolean(instructionError)" @click="publishVersion">
+        <NButton
+          type="primary"
+          :loading="publishing"
+          :disabled="!canPublish || Boolean(instructionError)"
+          @click="publishVersion"
+        >
           {{ isCreate ? $t('page.agentBuilder.createPublish') : $t('page.agentBuilder.publishVersion') }}
         </NButton>
       </NSpace>
     </header>
 
-    <NSpin :show="loading" class="min-h-0 flex-1 overflow-hidden [&_.n-spin-content]:h-full [&_.n-spin-content]:min-h-0">
+    <NSpin
+      :show="loading"
+      class="min-h-0 flex-1 overflow-hidden [&_.n-spin-content]:h-full [&_.n-spin-content]:min-h-0"
+    >
       <div class="hidden h-full min-h-0 md:flex">
         <section
           v-show="!collapsed.left"
@@ -608,36 +768,78 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
         >
           <div class="shrink-0 border-b px-12px py-8px font-600">
             {{ $t('page.agentBuilder.panePreview') }}
-            <NTag size="small" type="warning" class="ml-8px">{{ $t('page.agentBuilder.mockTag') }}</NTag>
+            <NTag size="small" type="info" class="ml-8px">{{ $t('page.agentBuilder.previewLiveTag') }}</NTag>
           </div>
-          <div class="min-h-0 flex-1 overflow-y-auto px-12px py-10px">
-            <NAlert type="warning" class="mb-12px">{{ $t('page.agentBuilder.mockBanner') }}</NAlert>
-            <div class="mb-8px text-12px text-gray-500">{{ preview.runSummary }} · {{ preview.status }}</div>
-            <div class="mb-12px flex-col gap-8px">
-              <div
-                v-for="item in preview.messages"
-                :key="item.id"
-                class="rounded-8px px-10px py-8px"
-                :class="item.role === 'user' ? 'bg-primary/10' : 'bg-gray-500/10'"
-              >
-                <div class="mb-4px text-12px text-gray-500">{{ item.role }}{{ item.kind ? ` / ${item.kind}` : '' }}</div>
-                <div class="whitespace-pre-wrap break-words">{{ item.text }}</div>
-              </div>
-            </div>
-            <NInput
-              v-model:value="previewInput"
-              type="textarea"
-              :rows="3"
-              :placeholder="$t('page.agentBuilder.previewPlaceholder')"
-              class="mb-8px"
+          <div class="min-h-0 flex flex-1 flex-col overflow-hidden px-12px py-10px">
+            <div class="mb-8px shrink-0 text-12px text-gray-500">{{ previewRunSummary }}</div>
+            <AgentRunStatus
+              v-if="previewRun"
+              class="mb-8px shrink-0"
+              :run="previewRun"
+              @cancel="stopPreview()"
+              @resume="onConfirmationResolved()"
             />
-            <NSpace>
-              <NButton type="primary" :disabled="Boolean(agent && diagnostics && !diagnostics.healthy)" @click="runMockPreview">
-                {{ $t('page.agentBuilder.runMock') }}
-              </NButton>
-              <NButton @click="stopMockPreview">{{ $t('page.agentBuilder.stopMock') }}</NButton>
-              <NButton @click="clearMockPreview">{{ $t('page.agentBuilder.clearMock') }}</NButton>
-            </NSpace>
+            <div v-if="previewConfirmations.length" class="mb-12px flex shrink-0 flex-col gap-8px">
+              <ToolConfirmationCard
+                v-for="item in previewConfirmations"
+                :key="item.id"
+                :confirmation="item"
+                @resolved="onConfirmationResolved()"
+              />
+            </div>
+            <div ref="previewMessageListEl" class="min-h-0 flex-1 overflow-y-auto">
+              <template v-for="item in previewTimeline" :key="item.key">
+                <div
+                  v-if="item.kind === 'message'"
+                  class="mb-8px rounded-8px px-10px py-8px"
+                  :class="item.role === 'user' ? 'bg-primary/10' : 'bg-gray-500/10'"
+                >
+                  <div class="mb-4px text-12px text-gray-500">{{ item.role }}</div>
+                  <PreviewMarkdown v-if="item.role === 'assistant' && item.text" :content="item.text" />
+                  <div v-else-if="item.text" class="whitespace-pre-wrap break-words">{{ item.text }}</div>
+                  <PreviewMessageImages v-if="item.images.length" :parts="item.images" />
+                </div>
+                <PreviewToolCallCard
+                  v-else
+                  class="mb-8px"
+                  :tool-name="item.toolName"
+                  :tool-call-id="item.toolCallId"
+                  :request="item.request"
+                  :response="item.response"
+                  :has-response="item.hasResponse"
+                />
+              </template>
+              <div
+                v-if="previewStreaming || previewStreamingText"
+                class="mb-8px rounded-8px bg-gray-500/10 px-10px py-8px"
+              >
+                <div class="mb-4px flex items-center gap-6px text-12px text-gray-500">
+                  <span>assistant</span>
+                  <NTag v-if="previewStreaming" size="small" type="info" :bordered="false">
+                    {{ previewStepType || 'streaming' }}
+                  </NTag>
+                </div>
+                <PreviewMarkdown :content="previewStreamingText || '…'" />
+                <span v-if="previewStreaming" class="preview-caret">▍</span>
+              </div>
+              <NEmpty
+                v-if="previewTimeline.length === 0 && !previewStreaming && !previewStreamingText"
+                class="py-24px"
+                :description="$t('page.agentBuilder.previewIdleSummary')"
+              />
+            </div>
+            <div class="mt-8px shrink-0 border-t pt-10px">
+              <PreviewComposer
+                v-model="previewInput"
+                v-model:images="previewImages"
+                :can-send="previewCanSend"
+                :active="previewActive"
+                :supports-vision="previewSupportsVision"
+                @send="runPreview"
+                @stop="stopPreview()"
+                @clear="clearPreview()"
+              />
+            </div>
           </div>
         </section>
       </div>
@@ -663,7 +865,9 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
               <NCollapse v-model:expanded-names="configExpandedNames" display-directive="show">
                 <NCollapseItem :title="$t('page.agentBuilder.groupBasic')" name="basic">
                   <NFormItem :label="$t('page.agentBuilder.name')"><NInput v-model:value="draft.name" /></NFormItem>
-                  <NFormItem :label="$t('page.agentBuilder.code')"><NInput v-model:value="draft.code" :disabled="!isCreate" /></NFormItem>
+                  <NFormItem :label="$t('page.agentBuilder.code')">
+                    <NInput v-model:value="draft.code" :disabled="!isCreate" />
+                  </NFormItem>
                   <NFormItem :label="$t('page.agentBuilder.modelAlias')">
                     <NSelect v-model:value="draft.model_alias" filterable :options="modelOptions" />
                   </NFormItem>
@@ -694,13 +898,61 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
             </NForm>
           </template>
           <template v-else>
-            <NAlert type="warning" class="mb-12px">{{ $t('page.agentBuilder.mockBanner') }}</NAlert>
-            <div v-for="item in preview.messages" :key="item.id" class="mb-8px rounded-8px bg-gray-500/10 px-10px py-8px">
-              <div class="text-12px text-gray-500">{{ item.role }}</div>
-              <div class="whitespace-pre-wrap break-words">{{ item.text }}</div>
+            <div class="mb-8px text-12px text-gray-500">{{ previewRunSummary }}</div>
+            <AgentRunStatus
+              v-if="previewRun"
+              class="mb-8px"
+              :run="previewRun"
+              @cancel="stopPreview()"
+              @resume="onConfirmationResolved()"
+            />
+            <ToolConfirmationCard
+              v-for="item in previewConfirmations"
+              :key="item.id"
+              class="mb-8px"
+              :confirmation="item"
+              @resolved="onConfirmationResolved()"
+            />
+            <template v-for="item in previewTimeline" :key="item.key">
+              <div
+                v-if="item.kind === 'message'"
+                class="mb-8px rounded-8px px-10px py-8px"
+                :class="item.role === 'user' ? 'bg-primary/10' : 'bg-gray-500/10'"
+              >
+                <div class="text-12px text-gray-500">{{ item.role }}</div>
+                <PreviewMarkdown v-if="item.role === 'assistant' && item.text" :content="item.text" />
+                <div v-else-if="item.text" class="whitespace-pre-wrap break-words">{{ item.text }}</div>
+                <PreviewMessageImages v-if="item.images.length" :parts="item.images" />
+              </div>
+              <PreviewToolCallCard
+                v-else
+                class="mb-8px"
+                :tool-name="item.toolName"
+                :tool-call-id="item.toolCallId"
+                :request="item.request"
+                :response="item.response"
+                :has-response="item.hasResponse"
+              />
+            </template>
+            <div
+              v-if="previewStreaming || previewStreamingText"
+              class="mb-8px rounded-8px bg-gray-500/10 px-10px py-8px"
+            >
+              <div class="mb-4px text-12px text-gray-500">assistant</div>
+              <PreviewMarkdown :content="previewStreamingText || '…'" />
+              <span v-if="previewStreaming" class="preview-caret">▍</span>
             </div>
-            <NInput v-model:value="previewInput" type="textarea" :rows="3" class="mb-8px" />
-            <NButton type="primary" @click="runMockPreview">{{ $t('page.agentBuilder.runMock') }}</NButton>
+            <PreviewComposer
+              v-model="previewInput"
+              v-model:images="previewImages"
+              class="mt-12px"
+              :can-send="previewCanSend"
+              :active="previewActive"
+              :supports-vision="previewSupportsVision"
+              @send="runPreview"
+              @stop="stopPreview()"
+              @clear="clearPreview()"
+            />
           </template>
         </div>
       </div>
@@ -728,3 +980,23 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
     />
   </div>
 </template>
+
+<style scoped>
+.preview-caret {
+  display: inline-block;
+  margin-left: 1px;
+  animation: preview-caret-blink 1s steps(1) infinite;
+  color: rgb(var(--primary-color));
+}
+
+@keyframes preview-caret-blink {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+</style>

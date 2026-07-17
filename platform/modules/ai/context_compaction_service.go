@@ -44,9 +44,9 @@ func (p runtimeCompactionProvider) Summarize(ctx context.Context, r aiconversati
 	if err != nil {
 		return nil, err
 	}
-	response, ok := value.(aimodelruntime.GenerateResponse)
+	response, ok := asGenerateResponse(value)
 	if !ok {
-		return nil, fmt.Errorf("invalid compaction response")
+		return nil, fmt.Errorf("invalid compaction response: %T", value)
 	}
 	var text string
 	for _, item := range response.Output {
@@ -77,7 +77,12 @@ func (s *ContextCompactionService) Compact(ctx context.Context, r aiconversation
 	if err != nil {
 		return nil, err
 	}
-	resolved, err := s.models.Resolve(ctx, r.ModelAlias, aimodel.CapabilityRequirements{ModelType: aimodel.ModelTypeChat, InputModalities: []aimodel.Modality{aimodel.ModalityText}, OutputModalities: []aimodel.Modality{aimodel.ModalityText}, Features: []aimodel.Feature{aimodel.FeatureStructuredOutput}})
+	// 预算判断只需 chat + 上下文窗口；structured_output 仅在真正摘要时由摘要调用再校验。
+	resolved, err := s.models.Resolve(ctx, r.ModelAlias, aimodel.CapabilityRequirements{
+		ModelType:        aimodel.ModelTypeChat,
+		InputModalities:  []aimodel.Modality{aimodel.ModalityText},
+		OutputModalities: []aimodel.Modality{aimodel.ModalityText},
+	})
 	if err != nil {
 		return nil, err
 	}

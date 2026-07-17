@@ -63,6 +63,71 @@ func TestGenerateRequestValidation(t *testing.T) {
 	}
 }
 
+func TestOpenAIInputPairsFunctionCallWithOutput(t *testing.T) {
+	var gotInput []any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		raw, _ := json.Marshal(body["input"])
+		if err := json.Unmarshal(raw, &gotInput); err != nil {
+			t.Fatal(err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":"resp_2","status":"completed","output":[{"id":"msg_2","type":"message","content":[{"type":"output_text","text":"done"}]}],"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}`)
+	}))
+	defer server.Close()
+
+	req := fixtureAdapterRequest(server.URL, aimodel.ProtocolOpenAI)
+	req.Request.Messages = []aimodelruntime.Message{
+		{Role: aimodelruntime.RoleUser, Content: []aimodelruntime.ContentPart{{Type: aimodelruntime.PartInputText, Text: "list users"}}},
+		{Role: aimodelruntime.RoleAssistant, Content: []aimodelruntime.ContentPart{{
+			Type: aimodelruntime.PartToolCall, ToolCallID: "fc_1", ToolName: "tool_search", Arguments: json.RawMessage(`{"query":"user"}`),
+		}}},
+		{Role: aimodelruntime.RoleTool, Content: []aimodelruntime.ContentPart{{
+			Type: aimodelruntime.PartToolResult, ToolCallID: "fc_1", Result: json.RawMessage(`{"items":[]}`),
+		}}},
+	}
+	if _, err := aimodelruntime.NewOpenAIAdapter(server.Client()).Generate(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	if len(gotInput) < 3 {
+		t.Fatalf("expected paired tool turn input, got %#v", gotInput)
+	}
+	types := make([]string, 0, len(gotInput))
+	for _, item := range gotInput {
+		m, _ := item.(map[string]any)
+		if typ, ok := m["type"].(string); ok {
+			types = append(types, typ)
+			continue
+		}
+		if role, ok := m["role"].(string); ok {
+			types = append(types, "role:"+role)
+		}
+	}
+	joined := strings.Join(types, ",")
+	if !strings.Contains(joined, "function_call") || !strings.Contains(joined, "function_call_output") {
+		t.Fatalf("missing function_call pair in input types %s (%#v)", joined, gotInput)
+	}
+	callIdx, outIdx := -1, -1
+	for i, typ := range types {
+		if typ == "function_call" {
+			callIdx = i
+		}
+		if typ == "function_call_output" {
+			outIdx = i
+		}
+	}
+	if callIdx < 0 || outIdx < 0 || callIdx > outIdx {
+		t.Fatalf("function_call must precede function_call_output: %s", joined)
+	}
+	output, ok := gotInput[outIdx].(map[string]any)["output"].(string)
+	if !ok || output != `{"items":[]}` {
+		t.Fatalf("function_call_output.output must be a JSON string, got %#v", gotInput[outIdx])
+	}
+}
+
 func TestOpenAIResponsesFixtureMapping(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/responses" {

@@ -5,6 +5,11 @@ import (
 	"time"
 )
 
+const (
+	ConversationPurposeWorkspace      = "workspace"
+	ConversationPurposeBuilderPreview = "builder_preview"
+)
+
 type Conversation struct {
 	ID             string     `gorm:"primaryKey;size:64" json:"id"`
 	TenantID       string     `gorm:"size:64;not null;index:idx_ai_conversation_list,priority:1" json:"-"`
@@ -12,6 +17,7 @@ type Conversation struct {
 	Title          string     `gorm:"size:256;not null" json:"title"`
 	AgentID        string     `gorm:"size:64;not null;index" json:"agent_id"`
 	AgentVersionID string     `gorm:"size:64;not null;index" json:"agent_version_id"`
+	Purpose        string     `gorm:"size:32;not null;default:workspace;index" json:"purpose"`
 	Visibility     string     `gorm:"size:16;not null;index;check:ck_ai_conversations_visibility,visibility IN ('private','tenant')" json:"visibility"`
 	Status         string     `gorm:"size:16;not null;index:idx_ai_conversation_list,priority:3;check:ck_ai_conversations_status,status IN ('active','archived')" json:"status"`
 	LastMessageAt  *time.Time `gorm:"index:idx_ai_conversation_list,priority:4" json:"last_message_at,omitempty"`

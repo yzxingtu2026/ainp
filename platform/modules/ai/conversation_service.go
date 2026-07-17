@@ -29,13 +29,16 @@ func NewConversationService(db *gorm.DB, assets aimodelruntime.AssetResolver) *C
 
 type ConversationListRequest struct {
 	pagination.Request
-	Status, Visibility string
+	Status     string `json:"status"`
+	Visibility string `json:"visibility"`
+	Purpose    string `json:"purpose"`
 }
 type ConversationCreateRequest struct {
 	AgentID        string `json:"agent_id" validate:"required"`
 	AgentVersionID string `json:"agent_version_id" validate:"required"`
 	Title          string `json:"title"`
 	Visibility     string `json:"visibility"`
+	Purpose        string `json:"purpose"`
 }
 type ConversationGetRequest struct {
 	ID string `json:"id" validate:"required"`
@@ -122,6 +125,14 @@ func (s *ConversationService) List(ctx context.Context, r ConversationListReques
 	if r.Visibility != "" {
 		q = q.Where("visibility = ?", r.Visibility)
 	}
+	purpose := strings.TrimSpace(r.Purpose)
+	if purpose == "" {
+		purpose = ConversationPurposeWorkspace
+	}
+	if purpose != ConversationPurposeWorkspace && purpose != ConversationPurposeBuilderPreview {
+		return nil, errs.New(errs.CodeValidation, "invalid conversation purpose")
+	}
+	q = q.Where("purpose = ?", purpose)
 	var total int64
 	if err = q.Model(&Conversation{}).Count(&total).Error; err != nil {
 		return nil, err
@@ -158,14 +169,35 @@ func (s *ConversationService) Create(ctx context.Context, r ConversationCreateRe
 	if err = s.db.WithContext(ctx).Where("tenant_id=? AND id=? AND agent_id=?", ac.TenantID, r.AgentVersionID, r.AgentID).First(&version).Error; err != nil {
 		return nil, errs.New(errs.CodeNotFound, "agent version not found")
 	}
+	purpose := strings.TrimSpace(r.Purpose)
+	if purpose == "" {
+		purpose = ConversationPurposeWorkspace
+	}
+	if purpose != ConversationPurposeWorkspace && purpose != ConversationPurposeBuilderPreview {
+		return nil, errs.New(errs.CodeValidation, "invalid conversation purpose")
+	}
+	if purpose == ConversationPurposeWorkspace && version.Kind == AgentVersionKindPreview {
+		return nil, errs.New(errs.CodeValidation, "preview agent version cannot be used in workspace conversations")
+	}
+	if purpose == ConversationPurposeBuilderPreview && version.Kind != AgentVersionKindPreview && version.Kind != AgentVersionKindRelease {
+		return nil, errs.New(errs.CodeValidation, "invalid agent version kind")
+	}
 	title := strings.TrimSpace(r.Title)
 	if title == "" {
-		title = "新会话"
+		if purpose == ConversationPurposeBuilderPreview {
+			title = "Builder 预览"
+		} else {
+			title = "新会话"
+		}
 	}
 	if utf8.RuneCountInString(title) > 256 {
 		return nil, errs.New(errs.CodeValidation, "title too long")
 	}
-	row := Conversation{ID: uuid.NewString(), TenantID: ac.TenantID, OwnerUserID: ac.UserID, Title: title, AgentID: r.AgentID, AgentVersionID: r.AgentVersionID, Visibility: r.Visibility, Status: "active", Revision: 1}
+	row := Conversation{
+		ID: uuid.NewString(), TenantID: ac.TenantID, OwnerUserID: ac.UserID, Title: title,
+		AgentID: r.AgentID, AgentVersionID: r.AgentVersionID, Purpose: purpose,
+		Visibility: r.Visibility, Status: "active", Revision: 1,
+	}
 	if err = s.db.WithContext(ctx).Create(&row).Error; err != nil {
 		return nil, dbError(err, "create conversation")
 	}
@@ -300,7 +332,7 @@ func (s *ConversationService) AppendRuntimeMessage(ctx context.Context, conversa
 		return nil, errs.New(errs.CodeConflict, "conversation is archived")
 	}
 	runtimeRole := aimodelruntime.Role(role)
-	if runtimeRole != aimodelruntime.RoleTool && runtimeRole != aimodelruntime.RoleSystem {
+	if runtimeRole != aimodelruntime.RoleTool && runtimeRole != aimodelruntime.RoleSystem && runtimeRole != aimodelruntime.RoleAssistant {
 		return nil, errs.New(errs.CodeValidation, "invalid runtime message role")
 	}
 	if err = aimodelruntime.ValidateMessage(aimodelruntime.Message{Role: runtimeRole, Content: content}); err != nil {

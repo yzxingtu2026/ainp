@@ -4,6 +4,8 @@
 
 Conversation 是租户内、供应商无关的会话事实边界。它固定一个明确的 `agent_version_id`；Agent 发布新版本不会改变已有会话语义。Message 是不可变追加事实，模型运行、压缩和 Workspace 都只能引用或追加，不能覆盖已提交消息。
 
+会话必须声明 `purpose`：`workspace`（默认）或 `builder_preview`。列表缺省只返回 `workspace`，Builder 调试会话不得混入 Workspace；`purpose=workspace` 禁止钉 `kind=preview` 的 Agent Version。
+
 本层不调用模型、不执行工具、不压缩上下文。`ContextAssembler` 只按授权和顺序读取 canonical Message，计算字节与 Token 估算并返回 `within_budget` 或 `compaction_required`。后续 `ContextCompactor` 和 Agent Runtime 负责压缩及执行。
 
 ## 权限与可见性

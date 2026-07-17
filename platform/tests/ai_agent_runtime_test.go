@@ -56,3 +56,22 @@ func TestAgentRuntimeMigrationHasRecoveryConstraints(t *testing.T) {
 		}
 	}
 }
+
+func TestAgentRunOutboxEnqueueInjectsAuthFromEnvelope(t *testing.T) {
+	body, err := os.ReadFile("../modules/ai/agent_runtime_register.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(body)
+	for _, expected := range []string{
+		`HandlerName: "ai.enqueue_agent_run"`,
+		`auth.WithContext(ctx, &auth.Context{`,
+		`TenantID:      env.TenantID`,
+		`Client:        "outbox"`,
+		`a.Jobs.Enqueuer.Enqueue(ctx,`,
+	} {
+		if !strings.Contains(src, expected) {
+			t.Fatalf("agent run outbox handler missing %q", expected)
+		}
+	}
+}

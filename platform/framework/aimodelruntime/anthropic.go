@@ -48,9 +48,18 @@ func (a *AnthropicAdapter) payload(in AdapterRequest, stream bool) (map[string]a
 				}
 			case PartOutputText:
 				content = append(content, map[string]any{"type": "text", "text": p.Text})
+			case PartToolCall:
+				var input any
+				_ = json.Unmarshal(p.Arguments, &input)
+				if input == nil {
+					input = map[string]any{}
+				}
+				content = append(content, map[string]any{"type": "tool_use", "id": p.ToolCallID, "name": p.ToolName, "input": input})
 			case PartToolResult:
-				var result any
-				_ = json.Unmarshal(p.Result, &result)
+				result := string(p.Result)
+				if result == "" {
+					result = "{}"
+				}
 				content = append(content, map[string]any{"type": "tool_result", "tool_use_id": p.ToolCallID, "content": result})
 			}
 		}
