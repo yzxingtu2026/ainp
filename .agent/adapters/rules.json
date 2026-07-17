@@ -482,6 +482,21 @@
       }
     },
     {
+      "id": "ai-multimodal",
+      "source": ".agent/rules/ai-multimodal.md",
+      "qoder": {
+        "path": ".qoder/rules/ai-multimodal.md",
+        "frontmatter": { "trigger": "always_on" }
+      },
+      "cursor": {
+        "path": ".cursor/rules/ai-multimodal.mdc",
+        "frontmatter": {
+          "description": "AI 多模态 Content Parts、附件安全解析、媒体预算与不可信派生文本边界",
+          "alwaysApply": true
+        }
+      }
+    },
+    {
       "id": "tool-runtime",
       "source": ".agent/rules/tool-runtime.md",
       "qoder": {"path": ".qoder/rules/tool-runtime.md", "frontmatter": {"trigger": "always_on"}},

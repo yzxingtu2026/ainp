@@ -501,7 +501,7 @@ func (s *Service) Resolve(ctx context.Context, code string, req aimodel.Capabili
 	}
 	effective := aimodel.Intersect(pt.Capabilities, declared)
 	if !aimodel.Satisfies(effective, req) {
-		return nil, errs.New(errs.CodeValidation, "model capability requirement is not satisfied")
+		return nil, modelCapabilityError(effective, req)
 	}
 	credential, err := s.credentials.Decrypt(ctx, p.CredentialCiphertext, credentialAAD(tid, p.ID))
 	if err != nil {
@@ -509,6 +509,25 @@ func (s *Service) Resolve(ctx context.Context, code string, req aimodel.Capabili
 	}
 	_ = json.Unmarshal(d.ConfigJSON, &config)
 	return &aimodel.ResolvedModel{ProviderID: p.ID, Protocol: p.Protocol, BaseURL: p.BaseURL, Credential: credential, DeploymentID: d.ID, RemoteModelID: d.RemoteModelID, ModelType: aimodel.ModelType(d.ModelType), Capabilities: effective, Limits: limits, Config: config}, nil
+}
+
+func modelCapabilityError(have aimodel.Capabilities, req aimodel.CapabilityRequirements) error {
+	if containsFeature(req.Features, aimodel.FeatureStreaming) && !containsFeature(have.Features, aimodel.FeatureStreaming) {
+		return errs.ValidationKey("ai.model.streaming_not_supported", "model does not support streaming")
+	}
+	if containsFeature(req.Features, aimodel.FeatureVision) && !containsFeature(have.Features, aimodel.FeatureVision) {
+		return errs.ValidationKey("ai.model.vision_not_supported", "model does not support vision")
+	}
+	return errs.ValidationKey("ai.model.capability_not_supported", "model capability requirement is not satisfied")
+}
+
+func containsFeature(items []aimodel.Feature, target aimodel.Feature) bool {
+	for _, item := range items {
+		if item == target {
+			return true
+		}
+	}
+	return false
 }
 
 var _ aimodel.Resolver = (*Service)(nil)

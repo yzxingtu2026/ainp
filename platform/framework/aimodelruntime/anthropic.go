@@ -2,6 +2,7 @@ package aimodelruntime
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -17,7 +18,10 @@ func NewAnthropicAdapter(client HTTPClient) *AnthropicAdapter {
 	}
 	return &AnthropicAdapter{Client: client}
 }
-func (a *AnthropicAdapter) payload(in AdapterRequest, stream bool) map[string]any {
+func (a *AnthropicAdapter) payload(in AdapterRequest, stream bool) (map[string]any, error) {
+	if err := validateAdapterImages(in, 5*1024*1024); err != nil {
+		return nil, err
+	}
 	r := in.Request
 	system := []string{}
 	if r.Instructions != "" {
@@ -37,6 +41,12 @@ func (a *AnthropicAdapter) payload(in AdapterRequest, stream bool) map[string]an
 		for _, p := range m.Content {
 			switch p.Type {
 			case PartInputText:
+				content = append(content, map[string]any{"type": "text", "text": p.Text})
+			case PartInputImage:
+				if p.ResolvedImage != nil {
+					content = append(content, map[string]any{"type": "image", "source": map[string]any{"type": "base64", "media_type": p.ResolvedImage.MIME, "data": base64.StdEncoding.EncodeToString(p.ResolvedImage.Data)}})
+				}
+			case PartOutputText:
 				content = append(content, map[string]any{"type": "text", "text": p.Text})
 			case PartToolResult:
 				var result any
@@ -72,7 +82,7 @@ func (a *AnthropicAdapter) payload(in AdapterRequest, stream bool) map[string]an
 		}
 		p["tool_choice"] = choice
 	}
-	return p
+	return p, nil
 }
 
 type anthropicResponse struct {
@@ -94,7 +104,11 @@ type anthropicResponse struct {
 
 func (a *AnthropicAdapter) Generate(ctx context.Context, in AdapterRequest) (*GenerateResponse, error) {
 	headers := map[string]string{"x-api-key": in.Model.Credential, "anthropic-version": "2023-06-01"}
-	resp, err := postJSON(ctx, a.Client, endpoint(defaultBaseURL(in.Model.BaseURL, "https://api.anthropic.com"), "/v1/messages"), headers, a.payload(in, false))
+	payload, err := a.payload(in, false)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := postJSON(ctx, a.Client, endpoint(defaultBaseURL(in.Model.BaseURL, "https://api.anthropic.com"), "/v1/messages"), headers, payload)
 	if err != nil {
 		return nil, err
 	}
@@ -127,7 +141,11 @@ func anthropicFinish(v string) FinishReason {
 }
 func (a *AnthropicAdapter) Stream(ctx context.Context, in AdapterRequest) (EventStream, error) {
 	headers := map[string]string{"x-api-key": in.Model.Credential, "anthropic-version": "2023-06-01"}
-	resp, err := postJSON(ctx, a.Client, endpoint(defaultBaseURL(in.Model.BaseURL, "https://api.anthropic.com"), "/v1/messages"), headers, a.payload(in, true))
+	payload, err := a.payload(in, true)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := postJSON(ctx, a.Client, endpoint(defaultBaseURL(in.Model.BaseURL, "https://api.anthropic.com"), "/v1/messages"), headers, payload)
 	if err != nil {
 		return nil, err
 	}

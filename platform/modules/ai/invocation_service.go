@@ -2,6 +2,7 @@ package ai
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -25,13 +26,15 @@ type InvocationService struct {
 	adapters *aimodelruntime.AdapterRegistry
 	writer   outbox.Writer
 	tools    ToolProjector
+	assets   aimodelruntime.AssetResolver
 }
 
 type ToolProjector interface {
 	ProjectModelTools(context.Context, string) (string, []aimodelruntime.ToolDefinition, error)
 }
 
-func (s *InvocationService) SetToolProjector(v ToolProjector) { s.tools = v }
+func (s *InvocationService) SetToolProjector(v ToolProjector)                { s.tools = v }
+func (s *InvocationService) SetAssetResolver(v aimodelruntime.AssetResolver) { s.assets = v }
 
 type invocationFinishedPayload struct {
 	InvocationID        string `json:"invocation_id"`
@@ -57,6 +60,7 @@ func (s *InvocationService) Generate(ctx context.Context, req aimodelruntime.Gen
 	if err != nil {
 		return nil, err
 	}
+	defer prepared.releaseImages()
 	resp, err := prepared.adapter.Generate(prepared.ctx, prepared.request)
 	prepared.cancel()
 	if err != nil {
@@ -77,6 +81,7 @@ func (s *InvocationService) Stream(ctx context.Context, req aimodelruntime.Gener
 	source, err := prepared.adapter.Stream(prepared.ctx, prepared.request)
 	if err != nil {
 		prepared.cancel()
+		prepared.releaseImages()
 		_ = s.finish(ctx, prepared.row, nil, aimodelruntime.FinishError, runtimeErrorCategory(err), "")
 		return nil, err
 	}
@@ -86,11 +91,12 @@ func (s *InvocationService) Stream(ctx context.Context, req aimodelruntime.Gener
 }
 
 type preparedInvocation struct {
-	ctx     context.Context
-	cancel  context.CancelFunc
-	adapter aimodelruntime.ModelAdapter
-	request aimodelruntime.AdapterRequest
-	row     *ModelInvocation
+	ctx       context.Context
+	cancel    context.CancelFunc
+	adapter   aimodelruntime.ModelAdapter
+	request   aimodelruntime.AdapterRequest
+	row       *ModelInvocation
+	imageData [][]byte
 }
 
 func (s *InvocationService) prepare(ctx context.Context, req aimodelruntime.GenerateRequest, mode string) (*preparedInvocation, error) {
@@ -111,13 +117,6 @@ func (s *InvocationService) prepare(ctx context.Context, req aimodelruntime.Gene
 			req.Tools = definitions
 		}
 	}
-	for _, message := range req.Messages {
-		for _, part := range message.Content {
-			if part.Type == aimodelruntime.PartInputImage {
-				return nil, &aimodelruntime.RuntimeError{Category: aimodelruntime.ErrorCapabilityNotSupported, Message: "image attachment input is not available yet"}
-			}
-		}
-	}
 	requirements := requirementsFor(req, mode == "stream")
 	resolved, err := s.resolver.Resolve(ctx, req.ModelAlias, requirements)
 	if err != nil {
@@ -127,12 +126,17 @@ func (s *InvocationService) prepare(ctx context.Context, req aimodelruntime.Gene
 	if !ok {
 		return nil, &aimodelruntime.RuntimeError{Category: aimodelruntime.ErrorCapabilityNotSupported, Message: "model provider protocol is not supported"}
 	}
+	imageCount, imageBytes, imageData, err := s.resolveImages(ctx, &req)
+	if err != nil {
+		return nil, err
+	}
 	ac := auth.MustFromContext(ctx)
 	if !ac.Authenticated || ac.TenantID == "" || ac.UserID == "" {
 		return nil, fmt.Errorf("authenticated tenant context is required")
 	}
 	now := time.Now().UTC()
-	row := &ModelInvocation{ID: uuid.NewString(), TenantID: ac.TenantID, UserID: ac.UserID, SessionID: ac.SessionID, ModelAlias: req.ModelAlias, ProviderID: resolved.ProviderID, DeploymentID: resolved.DeploymentID, RemoteModelID: resolved.RemoteModelID, Mode: mode, Status: "running", StartedAt: now, RequestID: ac.RequestID, TraceID: ac.TraceID}
+	modalities, _ := json.Marshal(requirements.InputModalities)
+	row := &ModelInvocation{ID: uuid.NewString(), TenantID: ac.TenantID, UserID: ac.UserID, SessionID: ac.SessionID, ModelAlias: req.ModelAlias, ProviderID: resolved.ProviderID, DeploymentID: resolved.DeploymentID, RemoteModelID: resolved.RemoteModelID, Mode: mode, Status: "running", StartedAt: now, RequestID: ac.RequestID, TraceID: ac.TraceID, InputModalitiesJSON: modalities, InputAttachmentCount: imageCount, InputAttachmentBytes: imageBytes}
 	if v := strings.TrimSpace(req.Metadata["agent_id"]); v != "" {
 		row.AgentID = &v
 	}
@@ -143,7 +147,50 @@ func (s *InvocationService) prepare(ctx context.Context, req aimodelruntime.Gene
 		return nil, err
 	}
 	runCtx, cancel := context.WithTimeout(ctx, time.Duration(req.TimeoutMS)*time.Millisecond)
-	return &preparedInvocation{ctx: runCtx, cancel: cancel, adapter: adapter, request: aimodelruntime.AdapterRequest{Request: req, Model: resolved}, row: row}, nil
+	return &preparedInvocation{ctx: runCtx, cancel: cancel, adapter: adapter, request: aimodelruntime.AdapterRequest{Request: req, Model: resolved}, row: row, imageData: imageData}, nil
+}
+
+func (s *InvocationService) resolveImages(ctx context.Context, req *aimodelruntime.GenerateRequest) (int, int64, [][]byte, error) {
+	count := 0
+	total := int64(0)
+	data := [][]byte{}
+	for mi := range req.Messages {
+		for pi := range req.Messages[mi].Content {
+			part := &req.Messages[mi].Content[pi]
+			if part.Type != aimodelruntime.PartInputImage {
+				continue
+			}
+			count++
+			if count > 4 {
+				releaseResolvedImageData(data)
+				return 0, 0, nil, &aimodelruntime.RuntimeError{Category: aimodelruntime.ErrorInvalidRequest, Message: "at most 4 images are allowed"}
+			}
+			if s.assets == nil {
+				releaseResolvedImageData(data)
+				return 0, 0, nil, &aimodelruntime.RuntimeError{Category: aimodelruntime.ErrorCapabilityNotSupported, Message: "image asset resolver is not configured"}
+			}
+			asset, err := s.assets.Resolve(ctx, aimodelruntime.AssetResolveRequest{AttachmentID: part.ImageAttachmentID, Purpose: "model_input"})
+			if err != nil {
+				releaseResolvedImageData(data)
+				return 0, 0, nil, &aimodelruntime.RuntimeError{Category: aimodelruntime.ErrorInvalidRequest, Message: "image attachment is unavailable", Cause: err}
+			}
+			total += asset.Size
+			if total > 20*1024*1024 {
+				clear(asset.Data)
+				releaseResolvedImageData(data)
+				return 0, 0, nil, &aimodelruntime.RuntimeError{Category: aimodelruntime.ErrorInvalidRequest, Message: "total image size exceeds model input limit"}
+			}
+			part.ResolvedImage = asset
+			data = append(data, asset.Data)
+		}
+	}
+	return count, total, data, nil
+}
+
+func releaseResolvedImageData(items [][]byte) {
+	for _, data := range items {
+		clear(data)
+	}
 }
 
 func requirementsFor(req aimodelruntime.GenerateRequest, stream bool) aimodel.CapabilityRequirements {
@@ -175,6 +222,7 @@ func (s *InvocationService) forwardStream(parent context.Context, p *preparedInv
 	defer close(out)
 	defer p.cancel()
 	defer source.Close()
+	defer p.releaseImages()
 	var usage *aimodelruntime.Usage
 	finishReason := aimodelruntime.FinishError
 	errorCategory := aimodelruntime.ErrorStreamProtocol
@@ -251,6 +299,16 @@ func (s *InvocationService) forwardStream(parent context.Context, p *preparedInv
 	finishCtx, cancel := context.WithTimeout(context.WithoutCancel(parent), 5*time.Second)
 	defer cancel()
 	_ = s.finish(finishCtx, p.row, usage, finishReason, errorCategory, providerRequestID, status)
+}
+
+func (p *preparedInvocation) releaseImages() {
+	releaseResolvedImageData(p.imageData)
+	p.imageData = nil
+	for mi := range p.request.Request.Messages {
+		for pi := range p.request.Request.Messages[mi].Content {
+			p.request.Request.Messages[mi].Content[pi].ResolvedImage = nil
+		}
+	}
 }
 
 func runtimeErrorCategory(err error) aimodelruntime.ErrorCategory {

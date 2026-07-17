@@ -647,6 +647,11 @@ const local: App.I18n.Schema = {
     createTitle: '新增模型',
     deleteConfirm: '确定删除该模型？删除后无法恢复。',
     aliasReferenced: '请先解除该模型绑定的别名',
+    inputModalities: '输入模态',
+    outputModalities: '输出模态',
+    capabilities: '能力',
+    visionNeedsImage: '启用视觉理解时必须同时勾选“图片”输入模态',
+    modalities: { text: '文本', image: '图片', audio: '音频', file: '文件' },
     features: {
       streaming: '流式输出',
       tool_calling: '工具调用',
@@ -660,10 +665,40 @@ const local: App.I18n.Schema = {
     }
   },
   aiRuntime: {
-    title: '模型调试', modelAlias: '模型别名', prompt: '提示词', promptPlaceholder: '输入一条测试消息', generate: '生成', stream: '流式生成', output: '输出', emptyOutput: '暂无输出', requestFailed: '模型调用失败'
+    title: '模型调试',
+    modelAlias: '模型别名',
+    prompt: '提示词',
+    promptPlaceholder: '输入一条测试消息',
+    generate: '生成',
+    stream: '流式生成',
+    output: '输出',
+    emptyOutput: '暂无输出',
+    requestFailed: '模型调用失败',
+    images: '图片输入',
+    chooseImages: '选择或上传图片',
+    removeImage: '移除图片',
+    imagesOnly: '仅支持选择已就绪的图片附件',
+    visionUnsupported: '当前模型别名不支持图片输入',
+    streamingUnsupported: '当前模型别名未启用流式输出能力',
+    detailAuto: '自动细节',
+    detailLow: '低细节',
+    detailHigh: '高细节'
   },
   toolConfirmation: {
-    title:'敏感工具执行确认',tool:'工具',arguments:'参数摘要',reject:'拒绝',approveOnce:'允许本次执行',risk:{low:'低风险',medium:'中风险',high:'高风险',critical:'严重风险'},sideEffect:{none:'无副作用',read:'读取',write:'写入',external:'外部操作',paid:'付费操作',destructive:'破坏性操作'}
+    title: '敏感工具执行确认',
+    tool: '工具',
+    arguments: '参数摘要',
+    reject: '拒绝',
+    approveOnce: '允许本次执行',
+    risk: { low: '低风险', medium: '中风险', high: '高风险', critical: '严重风险' },
+    sideEffect: {
+      none: '无副作用',
+      read: '读取',
+      write: '写入',
+      external: '外部操作',
+      paid: '付费操作',
+      destructive: '破坏性操作'
+    }
   },
   notificationAdmin: {
     templateTitle: '通知模板管理',

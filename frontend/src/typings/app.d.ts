@@ -842,6 +842,11 @@ declare namespace App {
         createTitle: string;
         deleteConfirm: string;
         aliasReferenced: string;
+        inputModalities: string;
+        outputModalities: string;
+        capabilities: string;
+        visionNeedsImage: string;
+        modalities: Record<(typeof import('@/constants/ai').MODEL_MODALITIES)[number], string>;
         features: Record<(typeof import('@/constants/ai').MODEL_FEATURES)[number], string>;
       };
       aiRuntime: {
@@ -854,6 +859,15 @@ declare namespace App {
         output: string;
         emptyOutput: string;
         requestFailed: string;
+        images: string;
+        chooseImages: string;
+        removeImage: string;
+        imagesOnly: string;
+        visionUnsupported: string;
+        streamingUnsupported: string;
+        detailAuto: string;
+        detailLow: string;
+        detailHigh: string;
       };
       toolConfirmation: {
         title: string;

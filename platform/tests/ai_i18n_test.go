@@ -15,6 +15,7 @@ func TestAIRegistrationTranslationKeysExist(t *testing.T) {
 		"capability.ai.name", "capability.ai.description",
 		"permission_group.ai.provider_management", "permission_group.ai.model_catalog",
 		"menu.ai.root.title", "menu.ai.providers.title", "menu.ai.models.title",
+		"ai.model.streaming_not_supported", "ai.model.vision_not_supported", "ai.model.capability_not_supported",
 	}
 	actions := []string{
 		"provider_type_list", "provider_list", "provider_get", "provider_create", "provider_update",
