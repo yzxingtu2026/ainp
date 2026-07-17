@@ -660,7 +660,7 @@ const local: App.I18n.Schema = {
     }
   },
   aiRuntime: {
-    title: '模型调试', modelAlias: '模型别名', prompt: '提示词', promptPlaceholder: '输入一条测试消息', generate: '生成', stream: '流式生成', output: '输出', emptyOutput: '暂无输出', requestFailed: '模型调用失败'
+    title: '模型调试', modelAlias: '模型别名', prompt: '提示词', promptPlaceholder: '输入一条测试消息', generate: '生成', stream: '流式生成', output: '输出', emptyOutput: '暂无输出', requestFailed: '模型调用失败', images: '图片输入', chooseImages: '选择或上传图片', removeImage: '移除图片', imagesOnly: '仅支持选择已就绪的图片附件', visionUnsupported: '当前模型别名不支持图片输入', detailAuto: '自动细节', detailLow: '低细节', detailHigh: '高细节'
   },
   toolConfirmation: {
     title:'敏感工具执行确认',tool:'工具',arguments:'参数摘要',reject:'拒绝',approveOnce:'允许本次执行',risk:{low:'低风险',medium:'中风险',high:'高风险',critical:'严重风险'},sideEffect:{none:'无副作用',read:'读取',write:'写入',external:'外部操作',paid:'付费操作',destructive:'破坏性操作'}

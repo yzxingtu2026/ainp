@@ -54,36 +54,39 @@ type Alias struct {
 func (Alias) TableName() string { return "ai_model_aliases" }
 
 type ModelInvocation struct {
-	ID                  string     `gorm:"primaryKey;size:64" json:"id"`
-	TenantID            string     `gorm:"size:64;not null;index" json:"-"`
-	UserID              string     `gorm:"size:64;not null;index" json:"user_id"`
-	SessionID           string     `gorm:"size:64" json:"session_id,omitempty"`
-	AgentID             *string    `gorm:"size:64" json:"agent_id,omitempty"`
-	AgentRunID          *string    `gorm:"size:64" json:"agent_run_id,omitempty"`
-	ModelAlias          string     `gorm:"size:64;not null" json:"model_alias"`
-	ProviderID          string     `gorm:"size:64;not null" json:"provider_id"`
-	DeploymentID        string     `gorm:"size:64;not null" json:"deployment_id"`
-	RemoteModelID       string     `gorm:"size:255;not null" json:"remote_model_id"`
-	Mode                string     `gorm:"size:16;not null" json:"mode"`
-	Status              string     `gorm:"size:16;not null;index" json:"status"`
-	StartedAt           time.Time  `gorm:"not null" json:"started_at"`
-	FirstTokenAt        *time.Time `json:"first_token_at,omitempty"`
-	FinishedAt          *time.Time `json:"finished_at,omitempty"`
-	LatencyMS           *int64     `json:"latency_ms,omitempty"`
-	FirstTokenLatencyMS *int64     `json:"first_token_latency_ms,omitempty"`
-	InputTokens         *int64     `json:"input_tokens,omitempty"`
-	OutputTokens        *int64     `json:"output_tokens,omitempty"`
-	TotalTokens         *int64     `json:"total_tokens,omitempty"`
-	CachedInputTokens   *int64     `json:"cached_input_tokens,omitempty"`
-	ReasoningTokens     *int64     `json:"reasoning_tokens,omitempty"`
-	UsageReported       bool       `gorm:"not null;default:false" json:"usage_reported"`
-	FinishReason        string     `gorm:"size:32" json:"finish_reason,omitempty"`
-	ErrorCategory       string     `gorm:"size:64" json:"error_category,omitempty"`
-	ProviderRequestID   string     `gorm:"size:255" json:"provider_request_id,omitempty"`
-	RequestID           string     `gorm:"size:64;index" json:"request_id,omitempty"`
-	TraceID             string     `gorm:"size:64;index" json:"trace_id,omitempty"`
-	CreatedAt           time.Time  `json:"created_at"`
-	UpdatedAt           time.Time  `json:"updated_at"`
+	ID                   string          `gorm:"primaryKey;size:64" json:"id"`
+	TenantID             string          `gorm:"size:64;not null;index" json:"-"`
+	UserID               string          `gorm:"size:64;not null;index" json:"user_id"`
+	SessionID            string          `gorm:"size:64" json:"session_id,omitempty"`
+	AgentID              *string         `gorm:"size:64" json:"agent_id,omitempty"`
+	AgentRunID           *string         `gorm:"size:64" json:"agent_run_id,omitempty"`
+	ModelAlias           string          `gorm:"size:64;not null" json:"model_alias"`
+	ProviderID           string          `gorm:"size:64;not null" json:"provider_id"`
+	DeploymentID         string          `gorm:"size:64;not null" json:"deployment_id"`
+	RemoteModelID        string          `gorm:"size:255;not null" json:"remote_model_id"`
+	Mode                 string          `gorm:"size:16;not null" json:"mode"`
+	Status               string          `gorm:"size:16;not null;index" json:"status"`
+	StartedAt            time.Time       `gorm:"not null" json:"started_at"`
+	FirstTokenAt         *time.Time      `json:"first_token_at,omitempty"`
+	FinishedAt           *time.Time      `json:"finished_at,omitempty"`
+	LatencyMS            *int64          `json:"latency_ms,omitempty"`
+	FirstTokenLatencyMS  *int64          `json:"first_token_latency_ms,omitempty"`
+	InputTokens          *int64          `json:"input_tokens,omitempty"`
+	OutputTokens         *int64          `json:"output_tokens,omitempty"`
+	TotalTokens          *int64          `json:"total_tokens,omitempty"`
+	CachedInputTokens    *int64          `json:"cached_input_tokens,omitempty"`
+	ReasoningTokens      *int64          `json:"reasoning_tokens,omitempty"`
+	UsageReported        bool            `gorm:"not null;default:false" json:"usage_reported"`
+	FinishReason         string          `gorm:"size:32" json:"finish_reason,omitempty"`
+	ErrorCategory        string          `gorm:"size:64" json:"error_category,omitempty"`
+	ProviderRequestID    string          `gorm:"size:255" json:"provider_request_id,omitempty"`
+	RequestID            string          `gorm:"size:64;index" json:"request_id,omitempty"`
+	TraceID              string          `gorm:"size:64;index" json:"trace_id,omitempty"`
+	InputModalitiesJSON  json.RawMessage `gorm:"type:jsonb;not null;default:'[]'" json:"input_modalities"`
+	InputAttachmentCount int             `gorm:"not null;default:0" json:"input_attachment_count"`
+	InputAttachmentBytes int64           `gorm:"not null;default:0" json:"input_attachment_bytes"`
+	CreatedAt            time.Time       `json:"created_at"`
+	UpdatedAt            time.Time       `json:"updated_at"`
 }
 
 func (ModelInvocation) TableName() string { return "ai_model_invocations" }

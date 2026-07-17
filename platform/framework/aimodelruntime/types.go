@@ -15,6 +15,8 @@ type FinishReason string
 type EventType string
 type ErrorCategory string
 
+type ImageDetail string
+
 const (
 	RoleSystem                  Role          = "system"
 	RoleDeveloper               Role          = "developer"
@@ -27,6 +29,13 @@ const (
 	PartToolCall                PartType      = "tool_call"
 	PartToolResult              PartType      = "tool_result"
 	PartRefusal                 PartType      = "refusal"
+	PartDerivedText             PartType      = "derived_text"
+	PartInputAudio              PartType      = "input_audio"
+	PartOutputAudio             PartType      = "output_audio"
+	PartInputFile               PartType      = "input_file"
+	ImageDetailAuto             ImageDetail   = "auto"
+	ImageDetailLow              ImageDetail   = "low"
+	ImageDetailHigh             ImageDetail   = "high"
 	FinishCompleted             FinishReason  = "completed"
 	FinishLength                FinishReason  = "length"
 	FinishToolCall              FinishReason  = "tool_call"
@@ -58,13 +67,80 @@ const (
 )
 
 type ContentPart struct {
-	Type              PartType        `json:"type"`
-	Text              string          `json:"text,omitempty"`
-	ImageAttachmentID string          `json:"image_attachment_id,omitempty"`
-	ToolCallID        string          `json:"tool_call_id,omitempty"`
-	ToolName          string          `json:"tool_name,omitempty"`
-	Arguments         json.RawMessage `json:"arguments,omitempty"`
-	Result            json.RawMessage `json:"result,omitempty"`
+	Type              PartType           `json:"type"`
+	Text              string             `json:"text,omitempty"`
+	ImageAttachmentID string             `json:"image_attachment_id,omitempty"`
+	ImageDetail       ImageDetail        `json:"detail,omitempty"`
+	ToolCallID        string             `json:"tool_call_id,omitempty"`
+	ToolName          string             `json:"tool_name,omitempty"`
+	Arguments         json.RawMessage    `json:"arguments,omitempty"`
+	Result            json.RawMessage    `json:"result,omitempty"`
+	DerivedSource     *DerivedTextSource `json:"derived_source,omitempty"`
+	ResolvedImage     *ResolvedImage     `json:"-"`
+}
+
+func (p *ContentPart) UnmarshalJSON(data []byte) error {
+	type alias ContentPart
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	allowed := map[string]bool{"type": true, "text": true, "image_attachment_id": true, "detail": true, "tool_call_id": true, "tool_name": true, "arguments": true, "result": true, "derived_source": true}
+	for key := range fields {
+		if !allowed[key] {
+			return fmt.Errorf("unsupported content part field: %s", key)
+		}
+	}
+	var value alias
+	if err := json.Unmarshal(data, &value); err != nil {
+		return err
+	}
+	*p = ContentPart(value)
+	return nil
+}
+
+type DerivedTextSource struct {
+	AttachmentID       string    `json:"attachment_id"`
+	Revision           string    `json:"revision"`
+	DerivationType     string    `json:"derivation_type"`
+	VisionModelAlias   string    `json:"vision_model_alias"`
+	VisionDeploymentID string    `json:"vision_deployment_id"`
+	PromptVersion      string    `json:"prompt_version"`
+	SchemaVersion      string    `json:"schema_version"`
+	GeneratedAt        time.Time `json:"generated_at"`
+	Untrusted          bool      `json:"untrusted"`
+}
+
+type ResolvedImage struct {
+	AttachmentID string `json:"-"`
+	Revision     string `json:"-"`
+	MIME         string `json:"-"`
+	Size         int64  `json:"-"`
+	Width        int    `json:"-"`
+	Height       int    `json:"-"`
+	SHA256       string `json:"-"`
+	Data         []byte `json:"-"`
+}
+
+type AssetResolveRequest struct {
+	AttachmentID string
+	Purpose      string
+}
+type AssetResolver interface {
+	Resolve(context.Context, AssetResolveRequest) (*ResolvedImage, error)
+}
+
+type MediaPolicy string
+
+const (
+	MediaPolicyNativeOnly                    MediaPolicy = "native_only"
+	MediaPolicyAllowDerivation               MediaPolicy = "allow_derivation"
+	MediaPolicyRequireDerivationConfirmation MediaPolicy = "require_derivation_confirmation"
+)
+
+type MediaUnderstandingRequest struct{ SourceAttachmentID, SourceRevision, VisionModelAlias, VisionDeploymentID, PromptVersion, SchemaVersion, Locale string }
+type MediaUnderstandingService interface {
+	DeriveText(context.Context, MediaUnderstandingRequest) (ContentPart, error)
 }
 type Message struct {
 	Role    Role          `json:"role"`
@@ -100,11 +176,15 @@ type GenerateRequest struct {
 	TimeoutMS        int64                      `json:"timeout_ms,omitempty"`
 	Metadata         map[string]string          `json:"metadata,omitempty"`
 	Extensions       map[string]json.RawMessage `json:"extensions,omitempty"`
+	MediaPolicy      MediaPolicy                `json:"media_policy,omitempty"`
 }
 
 func (r *GenerateRequest) Normalize() {
 	if r.TimeoutMS == 0 {
 		r.TimeoutMS = 60000
+	}
+	if r.MediaPolicy == "" {
+		r.MediaPolicy = MediaPolicyNativeOnly
 	}
 	if r.MaxOutputTokens == nil {
 		v := int64(2048)
@@ -114,6 +194,9 @@ func (r *GenerateRequest) Normalize() {
 func (r GenerateRequest) Validate(context.Context) error {
 	if len(r.Extensions) > 0 {
 		return fmt.Errorf("adapter extensions are not enabled")
+	}
+	if r.MediaPolicy != MediaPolicyNativeOnly {
+		return fmt.Errorf("media policy is not implemented: %s", r.MediaPolicy)
 	}
 	if r.TimeoutMS < 1000 || r.TimeoutMS > 300000 {
 		return fmt.Errorf("timeout_ms must be between 1000 and 300000")
@@ -129,7 +212,7 @@ func (r GenerateRequest) Validate(context.Context) error {
 			return fmt.Errorf("invalid role: %s", m.Role)
 		}
 		for _, p := range m.Content {
-			if err := validatePart(p); err != nil {
+			if err := validatePart(m.Role, p); err != nil {
 				return err
 			}
 		}
@@ -157,20 +240,46 @@ func (r GenerateRequest) Validate(context.Context) error {
 func validRole(v Role) bool {
 	return v == RoleSystem || v == RoleDeveloper || v == RoleUser || v == RoleAssistant || v == RoleTool
 }
-func validatePart(p ContentPart) error {
+func validatePart(role Role, p ContentPart) error {
 	switch p.Type {
 	case PartInputText:
 		if p.Text == "" {
 			return fmt.Errorf("input_text requires text")
 		}
+		if role != RoleUser && role != RoleSystem && role != RoleDeveloper {
+			return fmt.Errorf("input_text is invalid for role %s", role)
+		}
 	case PartInputImage:
 		if p.ImageAttachmentID == "" {
 			return fmt.Errorf("input_image requires attachment id")
 		}
+		if p.Text != "" || p.ToolCallID != "" || p.ToolName != "" || len(p.Arguments) > 0 || len(p.Result) > 0 || p.DerivedSource != nil {
+			return fmt.Errorf("input_image only accepts image_attachment_id and detail")
+		}
+		if role != RoleUser {
+			return fmt.Errorf("input_image is only allowed for user messages")
+		}
+		if p.ImageDetail != "" && p.ImageDetail != ImageDetailAuto && p.ImageDetail != ImageDetailLow && p.ImageDetail != ImageDetailHigh {
+			return fmt.Errorf("invalid image detail")
+		}
+	case PartOutputText, PartRefusal:
+		if role != RoleAssistant || p.Text == "" {
+			return fmt.Errorf("%s is only allowed for assistant messages", p.Type)
+		}
+	case PartToolCall:
+		if role != RoleAssistant || p.ToolCallID == "" || p.ToolName == "" || !json.Valid(p.Arguments) {
+			return fmt.Errorf("invalid tool_call")
+		}
 	case PartToolResult:
-		if p.ToolCallID == "" || !json.Valid(p.Result) {
+		if role != RoleTool || p.ToolCallID == "" || !json.Valid(p.Result) {
 			return fmt.Errorf("invalid tool_result")
 		}
+	case PartDerivedText:
+		if role != RoleUser || p.Text == "" || p.DerivedSource == nil || !p.DerivedSource.Untrusted || p.DerivedSource.AttachmentID == "" || p.DerivedSource.Revision == "" {
+			return fmt.Errorf("invalid derived_text")
+		}
+	case PartInputAudio, PartOutputAudio, PartInputFile:
+		return fmt.Errorf("content part is not implemented: %s", p.Type)
 	default:
 		return fmt.Errorf("unsupported input part: %s", p.Type)
 	}

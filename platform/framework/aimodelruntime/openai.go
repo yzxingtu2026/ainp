@@ -2,6 +2,7 @@ package aimodelruntime
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -19,7 +20,10 @@ func NewOpenAIAdapter(client HTTPClient) *OpenAIAdapter {
 func (a *OpenAIAdapter) headers(key string) map[string]string {
 	return map[string]string{"Authorization": "Bearer " + key}
 }
-func (a *OpenAIAdapter) payload(in AdapterRequest, stream bool) map[string]any {
+func (a *OpenAIAdapter) payload(in AdapterRequest, stream bool) (map[string]any, error) {
+	if err := validateAdapterImages(in, 20*1024*1024); err != nil {
+		return nil, err
+	}
 	r := in.Request
 	p := map[string]any{"model": in.Model.RemoteModelID, "input": openAIInput(r.Messages), "stream": stream}
 	if r.Instructions != "" {
@@ -52,7 +56,7 @@ func (a *OpenAIAdapter) payload(in AdapterRequest, stream bool) map[string]any {
 		_ = json.Unmarshal(r.StructuredOutput.Schema, &schema)
 		p["text"] = map[string]any{"format": map[string]any{"type": "json_schema", "name": r.StructuredOutput.Name, "description": r.StructuredOutput.Description, "schema": schema, "strict": r.StructuredOutput.Strict}}
 	}
-	return p
+	return p, nil
 }
 func openAIInput(messages []Message) []any {
 	out := make([]any, 0, len(messages))
@@ -62,6 +66,16 @@ func openAIInput(messages []Message) []any {
 			switch part.Type {
 			case PartInputText:
 				content = append(content, map[string]any{"type": "input_text", "text": part.Text})
+			case PartInputImage:
+				if part.ResolvedImage != nil {
+					detail := part.ImageDetail
+					if detail == "" {
+						detail = ImageDetailAuto
+					}
+					content = append(content, map[string]any{"type": "input_image", "image_url": "data:" + part.ResolvedImage.MIME + ";base64," + base64.StdEncoding.EncodeToString(part.ResolvedImage.Data), "detail": detail})
+				}
+			case PartOutputText:
+				content = append(content, map[string]any{"type": "output_text", "text": part.Text})
 			case PartToolResult:
 				var value any
 				_ = json.Unmarshal(part.Result, &value)
@@ -101,7 +115,11 @@ type openAIResponse struct {
 }
 
 func (a *OpenAIAdapter) Generate(ctx context.Context, in AdapterRequest) (*GenerateResponse, error) {
-	resp, err := postJSON(ctx, a.Client, endpoint(defaultBaseURL(in.Model.BaseURL, "https://api.openai.com"), "/v1/responses"), a.headers(in.Model.Credential), a.payload(in, false))
+	payload, err := a.payload(in, false)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := postJSON(ctx, a.Client, endpoint(defaultBaseURL(in.Model.BaseURL, "https://api.openai.com"), "/v1/responses"), a.headers(in.Model.Credential), payload)
 	if err != nil {
 		return nil, err
 	}
@@ -146,7 +164,11 @@ func modelSummary(in AdapterRequest) ModelSummary {
 	return ModelSummary{Alias: in.Request.ModelAlias, DeploymentID: in.Model.DeploymentID, Protocol: in.Model.Protocol, RemoteModelID: in.Model.RemoteModelID, ToolScopeID: in.Request.ToolScopeID}
 }
 func (a *OpenAIAdapter) Stream(ctx context.Context, in AdapterRequest) (EventStream, error) {
-	resp, err := postJSON(ctx, a.Client, endpoint(defaultBaseURL(in.Model.BaseURL, "https://api.openai.com"), "/v1/responses"), a.headers(in.Model.Credential), a.payload(in, true))
+	payload, err := a.payload(in, true)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := postJSON(ctx, a.Client, endpoint(defaultBaseURL(in.Model.BaseURL, "https://api.openai.com"), "/v1/responses"), a.headers(in.Model.Credential), payload)
 	if err != nil {
 		return nil, err
 	}

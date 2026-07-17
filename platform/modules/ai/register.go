@@ -80,6 +80,7 @@ func Register(a *app.App) error {
 		}
 	}
 	invocations := NewInvocationService(a.DB, svc, adapters, writer)
+	invocations.SetAssetResolver(a.AIAssetResolver)
 	if err := invocations.RecoverStale(context.Background(), 10*time.Minute); err != nil {
 		return err
 	}
