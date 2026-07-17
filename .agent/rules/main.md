@@ -42,6 +42,7 @@
 - AI 工具运行时见 `tool-runtime`（常驻 search/load、动态 Schema 投影、Handle、确认与调用事实）。
 - AI 智能体管理见 `agent-management`（Contract/Definition/不可变 Version、ownership、Alias 与 Tool Binding 边界）。
 - AI 会话事实层见 `ai-conversations`（固定 Agent Version、追加消息、幂等、ContextAssembler 与 Snapshot 边界）。
+- AI 上下文压缩见 `ai-context-compaction`（模型预算、确定性缩减、结构化摘要、质量校验与压缩深度）。
 - 前端栈、图标协议见关联规则。
 - Copilot PR 语义审查见 `copilot-code-review`；它只负责中文语义反馈，不替代合并门禁与人工审批。
 
@@ -64,6 +65,7 @@
 - `tool-runtime` → `docs/development/tool-runtime.md`
 - `agent-management` → `docs/development/agent-management.md`
 - `ai-conversations` → `docs/development/ai-conversations.md`
+- `ai-context-compaction` → `docs/development/ai-context-compaction.md`
 - `icon-library` → `docs/development/icon-library.md`
 - `logging` → `docs/development/logging.md`
 - `api-response` → `docs/development/api-response.md`

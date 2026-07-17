@@ -64,11 +64,13 @@ type MessageCreateRequest struct {
 	ReplyToMessageID *string                      `json:"reply_to_message_id"`
 }
 type SnapshotCreateRequest struct {
-	ConversationID, ModelDeploymentID, Kind, PolicyVersion, IdempotencyKey string
-	ParentSnapshotID                                                       *string
-	Payload                                                                json.RawMessage
-	TokenEstimate                                                          int
-	SourceSequenceFrom, SourceSequenceTo                                   uint64
+	ConversationID, ModelDeploymentID, Kind, PolicyVersion, IdempotencyKey      string
+	SchemaVersion, PromptVersion, SummarizerDeploymentID, Reason, QualityStatus string
+	CompactionDepth                                                             int
+	ParentSnapshotID                                                            *string
+	Payload                                                                     json.RawMessage
+	TokenEstimate                                                               int
+	SourceSequenceFrom, SourceSequenceTo                                        uint64
 }
 
 func conversationActor(ctx context.Context) (*auth.Context, error) {
@@ -377,7 +379,7 @@ func (s *ConversationService) CreateSnapshot(ctx context.Context, r SnapshotCrea
 	if err != nil {
 		return nil, err
 	}
-	if r.Kind != "raw" && r.Kind != "assembled" {
+	if r.Kind != "raw" && r.Kind != "assembled" && r.Kind != "compacted" {
 		return nil, errs.New(errs.CodeValidation, "unsupported snapshot kind")
 	}
 	if r.IdempotencyKey == "" || r.ModelDeploymentID == "" || r.PolicyVersion == "" || !json.Valid(r.Payload) {
@@ -396,7 +398,10 @@ func (s *ConversationService) CreateSnapshot(ctx context.Context, r SnapshotCrea
 			return nil, errs.New(errs.CodeNotFound, "parent snapshot not found")
 		}
 	}
-	snap := ContextSnapshot{ID: uuid.NewString(), TenantID: row.TenantID, ConversationID: row.ID, ConversationRevision: row.Revision, AgentVersionID: row.AgentVersionID, ModelDeploymentID: r.ModelDeploymentID, SourceSequenceFrom: r.SourceSequenceFrom, SourceSequenceTo: r.SourceSequenceTo, ParentSnapshotID: r.ParentSnapshotID, Kind: r.Kind, PolicyVersion: r.PolicyVersion, TokenEstimate: r.TokenEstimate, Status: "ready", Payload: r.Payload, IdempotencyKey: r.IdempotencyKey}
+	if r.QualityStatus == "" {
+		r.QualityStatus = "valid"
+	}
+	snap := ContextSnapshot{ID: uuid.NewString(), TenantID: row.TenantID, ConversationID: row.ID, ConversationRevision: row.Revision, AgentVersionID: row.AgentVersionID, ModelDeploymentID: r.ModelDeploymentID, SourceSequenceFrom: r.SourceSequenceFrom, SourceSequenceTo: r.SourceSequenceTo, ParentSnapshotID: r.ParentSnapshotID, Kind: r.Kind, PolicyVersion: r.PolicyVersion, SchemaVersion: r.SchemaVersion, PromptVersion: r.PromptVersion, SummarizerDeploymentID: r.SummarizerDeploymentID, CompactionDepth: r.CompactionDepth, Reason: r.Reason, QualityStatus: r.QualityStatus, TokenEstimate: r.TokenEstimate, Status: "ready", Payload: r.Payload, IdempotencyKey: r.IdempotencyKey}
 	if err = s.db.WithContext(ctx).Create(&snap).Error; err != nil {
 		if e := s.db.WithContext(ctx).Where("tenant_id=? AND conversation_id=? AND idempotency_key=?", row.TenantID, row.ID, r.IdempotencyKey).First(&snap).Error; e == nil {
 			if snap.ConversationRevision != row.Revision || snap.ModelDeploymentID != r.ModelDeploymentID || snap.Kind != r.Kind || string(snap.Payload) != string(r.Payload) {

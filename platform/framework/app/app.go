@@ -13,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/yzxingtu2026/ainp/platform/framework/action"
 	"github.com/yzxingtu2026/ainp/platform/framework/aiagent"
+	"github.com/yzxingtu2026/ainp/platform/framework/aiconversation"
 	"github.com/yzxingtu2026/ainp/platform/framework/aimodel"
 	"github.com/yzxingtu2026/ainp/platform/framework/aimodelruntime"
 	"github.com/yzxingtu2026/ainp/platform/framework/aitool"
@@ -55,6 +56,7 @@ type App struct {
 	StateMachines          *statemachine.Registry
 	AIProviderTypes        *aimodel.ProviderTypeRegistry
 	AgentContracts         *aiagent.Registry
+	ContextCompactor       aiconversation.ContextCompactor
 	AgentTenantInitializer func(context.Context, *gorm.DB, string, string) error
 	ModelResolver          aimodel.Resolver
 	AIAssetResolver        aimodelruntime.AssetResolver

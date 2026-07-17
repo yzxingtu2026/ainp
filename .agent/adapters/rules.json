@@ -513,6 +513,12 @@
       "source": ".agent/rules/ai-conversations.md",
       "qoder": {"path": ".qoder/rules/ai-conversations.md", "frontmatter": {"trigger": "always_on"}},
       "cursor": {"path": ".cursor/rules/ai-conversations.mdc", "frontmatter": {"description": "AI 会话事实、固定 Agent Version、追加消息、幂等与上下文装配边界", "alwaysApply": true}}
+    },
+    {
+      "id": "ai-context-compaction",
+      "source": ".agent/rules/ai-context-compaction.md",
+      "qoder": {"path": ".qoder/rules/ai-context-compaction.md", "frontmatter": {"trigger": "always_on"}},
+      "cursor": {"path": ".cursor/rules/ai-context-compaction.mdc", "frontmatter": {"description": "模型预算、确定性缩减、结构化摘要与版本化 ContextSnapshot 边界", "alwaysApply": true}}
     }
   ]
 }
