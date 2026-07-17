@@ -33,8 +33,6 @@ function messageText(msg: Api.AI.ConversationMessage): string {
   return (msg.content || [])
     .map(part => {
       if (part.type === 'input_text' || part.type === 'output_text') return part.text || '';
-      if (part.type === 'tool_call') return `[tool:${part.tool_name || ''}]`;
-      if (part.type === 'tool_result') return `[tool_result:${part.tool_call_id || ''}]`;
       return '';
     })
     .filter(Boolean)
@@ -111,10 +109,12 @@ export function useBuilderPreview(options: {
   };
   diagnostics: Ref<Api.AI.AgentDiagnostics | null>;
   dirty: Ref<boolean>;
+  supportsVision: Ref<boolean>;
 }) {
   const status = ref<BuilderPreviewStatus>('idle');
   const error = ref('');
   const input = ref('');
+  const images = ref<Api.Attachment.Item[]>([]);
   const messages = ref<Api.AI.ConversationMessage[]>([]);
   const confirmations = ref<Api.AI.ToolConfirmation[]>([]);
   const conversation = ref<Api.AI.Conversation | null>(null);
@@ -136,7 +136,9 @@ export function useBuilderPreview(options: {
     if (busy.value) return false;
     if (!options.draft.model_alias.trim()) return false;
     if (options.agent.value.status === 'disabled') return false;
-    if (!input.value.trim()) return false;
+    if (!input.value.trim() && images.value.length === 0) return false;
+    if (images.value.length > 0 && !options.supportsVision.value) return false;
+    if (images.value.some(item => !item.sha256)) return false;
     return true;
   });
 
@@ -185,7 +187,11 @@ export function useBuilderPreview(options: {
   }
 
   async function ensureConversation(versionId: string) {
-    if (conversation.value && conversation.value.agent_version_id === versionId && conversation.value.status === 'active') {
+    if (
+      conversation.value &&
+      conversation.value.agent_version_id === versionId &&
+      conversation.value.status === 'active'
+    ) {
       return conversation.value;
     }
     if (conversation.value) {
@@ -294,18 +300,24 @@ export function useBuilderPreview(options: {
         currentStepType.value = stepType;
         if (stepType === 'model' || stepType === 'finalize') {
           streaming.value = true;
+        } else {
+          streaming.value = false;
+          streamingText.value = '';
         }
-        scheduleSnapshot(runId);
+        scheduleSnapshot(runId, stepType !== 'model' && stepType !== 'finalize');
         break;
       }
-      case 'step.completed':
-        currentStepType.value = typeof event.payload?.type === 'string' ? String(event.payload.type) : currentStepType.value;
-        // 不在 finalize 时提前拉消息，避免与 streaming 气泡重复；终态再刷新。
-        scheduleSnapshot(runId, false);
+      case 'step.completed': {
+        const stepType = typeof event.payload?.type === 'string' ? String(event.payload.type) : currentStepType.value;
+        currentStepType.value = stepType;
+        // 模型正文仍由 run.delta 展示；工具步骤完成后立即刷新配对响应。
+        scheduleSnapshot(runId, stepType !== 'model' && stepType !== 'finalize');
         break;
+      }
       case 'step.failed':
       case 'step.waiting':
-        currentStepType.value = typeof event.payload?.type === 'string' ? String(event.payload.type) : currentStepType.value;
+        currentStepType.value =
+          typeof event.payload?.type === 'string' ? String(event.payload.type) : currentStepType.value;
         scheduleSnapshot(runId, true);
         break;
       case 'run.delta':
@@ -364,23 +376,35 @@ export function useBuilderPreview(options: {
   async function send() {
     if (!canSend.value) return;
     const text = input.value.trim();
-    if (!text) return;
+    const selectedImages = [...images.value];
+    if (!text && selectedImages.length === 0) return;
     busy.value = true;
     error.value = '';
     clearStreaming();
     try {
       const versionId = await materializeIfNeeded();
       const conv = await ensureConversation(versionId);
+      const content: Api.AI.ConversationContentPart[] = [];
+      if (text) content.push({ type: 'input_text', text });
+      for (const image of selectedImages) {
+        content.push({
+          type: 'input_image',
+          image_attachment_id: image.id,
+          attachment_revision: image.sha256,
+          detail: 'auto'
+        });
+      }
       const { data: userMsg, error: msgError } = await createAIMessage(
         {
           conversation_id: conv.id,
           role: 'user',
-          content: [{ type: 'input_text', text }]
+          content
         },
         newIdempotencyKey('builder-msg')
       );
       if (msgError || !userMsg) throw msgError || new Error($t('page.agentBuilder.previewSendFailed'));
       input.value = '';
+      images.value = [];
       await refreshMessages();
       const { data: started, error: runError } = await startAIAgentRun(
         { conversation_id: conv.id, trigger_message_id: userMsg.id, budget: {} },
@@ -419,7 +443,10 @@ export function useBuilderPreview(options: {
   async function stop() {
     abort?.abort();
     abort = null;
-    if (run.value && (run.value.status === 'queued' || run.value.status === 'running' || run.value.status === 'waiting_confirmation')) {
+    if (
+      run.value &&
+      (run.value.status === 'queued' || run.value.status === 'running' || run.value.status === 'waiting_confirmation')
+    ) {
       const { data } = await cancelAIAgentRun(run.value.id, run.value.revision);
       if (data?.run) run.value = data.run;
     }
@@ -443,6 +470,7 @@ export function useBuilderPreview(options: {
     messages.value = [];
     confirmations.value = [];
     input.value = '';
+    images.value = [];
     error.value = '';
     status.value = 'idle';
     clearStreaming();
@@ -462,6 +490,7 @@ export function useBuilderPreview(options: {
     status,
     error,
     input,
+    images,
     messages,
     confirmations,
     conversation,

@@ -45,6 +45,8 @@
 | `AttachmentList` | 列表、图片预览、下载、解绑/删除确认 |
 | `AttachmentField` | 打开选择器并绑定到 resource；无 resourceId 时临时 pending |
 
+AI Builder 的预览消息复用 `AttachmentPicker` 与上传队列，但不伪造业务 `resource_type`：只允许当前上传者有权访问、状态 ready 且符合 #73 图片限制的附件，并将 attachment ID + revision + detail 作为 `input_image` Content Part 提交。当前不支持通用文件、音视频或 PDF 作为模型输入。
+
 有效上传策略：`POST .../attachments/policy`（设置覆盖 + 代码默认）。附件中心：`/system/attachments`（状态用 `CodeSelect` / `CodeTag` + CodeSet `system.attachment_status`；上传者展示 `uploader_name`）。
 
 选择器「我的上传」为**宫格预览** + **滚动加载更多**（首屏 24 条，触底追加，软顶 200；搜索重置第 1 页）。图/视在 `thumb_status=ready` 时经 `variant=thumb` 加载；`pending` 显示 Spin；否则类型图标。缩略图并发受限（默认 3）并在关闭时 `revokeObjectURL`。token 不进持久存储与日志。

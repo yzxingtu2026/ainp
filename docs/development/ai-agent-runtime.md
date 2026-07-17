@@ -13,6 +13,7 @@ Builder 预览约束：
 - Conversation `purpose=builder_preview` 时允许 agent 为 `draft` 或 `enabled` 执行；`disabled` 仍 fail-closed。
 - `purpose=workspace` 不得执行 `kind=preview` 的 Agent Version。
 - 非 builder_preview 路径不得放宽 agent.enabled 要求。
+- Builder 消息附件必须复用统一 `AttachmentPicker` / 上传队列；当前仅允许最多 4 张图片，以 attachment ID + revision + 受控 detail 构造 `input_image`，并按当前 Alias 的 vision 能力 fail-closed。禁止另建上传协议或提交 URL、Object Key、base64、tenant_id、短时 Token。
 
 ## 执行与恢复
 

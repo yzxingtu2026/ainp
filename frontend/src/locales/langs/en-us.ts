@@ -425,13 +425,23 @@ const local: App.I18n.Schema = {
       diagnosticsUnhealthy: 'Runtime issues detected',
       diagnosticsAfterCreate: 'Diagnostics appear after create and publish',
       previewLiveTag: 'Live',
-      previewLiveBanner:
-        'Preview materializes the current editor config into a non-current preview version and runs a real Conversation/Run. Workspace chats are unaffected.',
       previewIdleSummary: 'Enter a message to start a live preview',
       previewPlaceholder: 'Enter a preview user message',
       runPreview: 'Send preview',
       stopPreview: 'Stop',
       clearPreview: 'Clear session',
+      chooseImages: 'Choose or upload images',
+      removeImage: 'Remove image',
+      previewImageLimits: 'Only ready JPG, PNG, GIF, or WebP images are supported: up to 4, 10 MiB each, 20 MiB total',
+      previewVisionUnsupported: 'The current model does not support image input. Select a Vision-capable model first',
+      toolCall: 'Tool call',
+      unknownTool: 'Unknown tool',
+      toolCallId: 'Call ID',
+      toolRequest: 'Request',
+      noToolRequest: 'Request unavailable',
+      toolResponse: 'Response',
+      toolResponseReceived: 'Responded',
+      waitingToolResponse: 'Waiting for response',
       previewBlocked: 'Diagnostics unhealthy; preview is blocked',
       previewNeedInput: 'Enter a preview message',
       previewNeedAgent: 'Create or open an agent first',
@@ -456,8 +466,18 @@ const local: App.I18n.Schema = {
     },
     aiRun: {
       progress: 'Step {step} · Models {model} · Tools {tool}',
-      cancel: 'Cancel', resume: 'Resume', retry: 'Retry',
-      status: { queued: 'Queued', running: 'Running', waiting_confirmation: 'Waiting for confirmation', paused: 'Paused', completed: 'Completed', failed: 'Failed', cancelled: 'Cancelled' }
+      cancel: 'Cancel',
+      resume: 'Resume',
+      retry: 'Retry',
+      status: {
+        queued: 'Queued',
+        running: 'Running',
+        waiting_confirmation: 'Waiting for confirmation',
+        paused: 'Paused',
+        completed: 'Completed',
+        failed: 'Failed',
+        cancelled: 'Cancelled'
+      }
     },
     setting: {
       title: 'Settings',
