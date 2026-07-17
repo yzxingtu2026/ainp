@@ -24,7 +24,7 @@ Agent Contract（代码注册的能力与安全契约）
 
 ## 指令与诊断
 
-指令固定按 Contract Base、Tenant、User、未来 Run 的顺序合成。Tenant/User 指令是补充内容，不能改写 Contract 安全边界。当前版本、Model Alias、Contract 必需模型能力和必需工具任何一项不可用时，保留配置并返回结构化 diagnostics；不得静默降级为健康。
+指令固定按 Contract Base、Tenant、未来 Run 的顺序合成。Tenant 指令是 Agent Version 上唯一可配置的补充人设/业务约束，不能改写 Contract 安全边界。不提供 `user_instructions`：会话态任务交给 Workspace 对话，跨会话偏好交给记忆系统，禁止写入不可变 Version 快照。当前版本、Model Alias、Contract 必需模型能力和必需工具任何一项不可用时，保留配置并返回结构化 diagnostics；不得静默降级为健康。
 
 ## Setup 与 reconcile
 
@@ -32,7 +32,7 @@ Agent Contract（代码注册的能力与安全契约）
 
 ## Agent Builder
 
-智能体编排工作台（Agent Builder）是面向创建者与租户管理员的配置/调试入口，路由为 `/ai/agent-builder`（列表 `/ai/agents` 负责入口跳转）。Builder 复用本层 Action：创建、元数据更新、版本发布、工具绑定与 diagnostics；`agent_get` 额外返回只读 Contract 覆盖字段：`base_instructions`、`managed_fields`、`required_tool_selectors`。编排页只展示并编辑租户指令、用户指令与预览用 Run 指令；**不展示** Contract `base_instructions`（由代码契约托管，运行时自动合成）。
+智能体编排工作台（Agent Builder）是面向创建者与租户管理员的配置/调试入口，路由为 `/ai/agent-builder`（列表 `/ai/agents` 负责入口跳转）。Builder 复用本层 Action：创建、元数据更新、版本发布、工具绑定与 diagnostics；`agent_get` 额外返回只读 Contract 覆盖字段：`base_instructions`、`managed_fields`、`required_tool_selectors`。编排页只展示并编辑租户指令与预览用 Run 指令；**不展示** Contract `base_instructions`（由代码契约托管，运行时自动合成），也不提供用户指令字段。
 
 动态路由模式下，Builder 通过后端 `HideInMenu` 菜单 `ai.agent_builder` 注册；前端同时把静态隐藏子路由 `ai_agent-builder` 合并进用户路由树，避免仅有列表菜单时 `router.push({ name: 'ai_agent-builder' })` 找不到匹配。
 

@@ -544,13 +544,10 @@ declare namespace App {
           panePreview: string;
           tenantInstructions: string;
           tenantPlaceholder: string;
-          userInstructions: string;
-          userPlaceholder: string;
           runInstructions: string;
           runPlaceholder: string;
           runHint: string;
           instructionTooLong: string;
-          instructionEmpty: string;
           name: string;
           code: string;
           description: string;

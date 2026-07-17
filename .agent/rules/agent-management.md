@@ -7,4 +7,5 @@
 - personal 默认 private 且只能由 owner 管理；tenant/builtin 变更必须检查租户管理权限。
 - 资源不可用时保留配置并返回 diagnostics，所有 tenant/owner 查询 fail-closed。
 - Agent Builder 是配置/调试入口，不得复制 Runtime/Conversation；Phase A 预览只能是可识别 Mock。
+- Agent Version 不提供 `user_instructions`；可配置补充指令只有租户指令，用户偏好交给 Workspace/记忆。
 - 详细扩展方式见 `docs/development/agent-management.md`。

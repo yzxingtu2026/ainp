@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/yzxingtu2026/ainp/platform/framework/aiconversation"
 	"github.com/yzxingtu2026/ainp/platform/framework/aimodel"
@@ -89,7 +88,7 @@ func (s *ContextCompactionService) Compact(ctx context.Context, r aiconversation
 	if err = s.db.WithContext(ctx).Where("tenant_id=? AND id=?", ac.TenantID, visible.AgentVersionID).First(&version).Error; err != nil {
 		return nil, errs.New(errs.CodeNotFound, "agent version not found")
 	}
-	fixedTokens, _ := s.tokenizer.Count(ctx, strings.Join([]string{version.TenantInstructions, version.UserInstructions}, "\n"))
+	fixedTokens, _ := s.tokenizer.Count(ctx, version.TenantInstructions)
 	toolSchemaBytes := r.ToolSchemaBytes
 	var bindings []AgentToolBinding
 	if err = s.db.WithContext(ctx).Where("tenant_id=? AND agent_id=? AND status=?", ac.TenantID, visible.AgentID, "enabled").Find(&bindings).Error; err != nil {

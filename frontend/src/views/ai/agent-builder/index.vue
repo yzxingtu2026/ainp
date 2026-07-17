@@ -87,7 +87,6 @@ const draft = reactive({
   visibility: 'private' as Api.AI.AgentVisibility,
   model_alias: '',
   tenant_instructions: '',
-  user_instructions: '',
   temperature: 0.7,
   top_p: 1,
   max_output_tokens: 2048,
@@ -107,14 +106,9 @@ const canPublish = computed(
 );
 const canEditMeta = computed(() => isCreate.value || can(AI_ACTIONS.agentUpdate));
 const instructionLimit = 12000;
-const tenantLen = computed(() => draft.tenant_instructions.length);
-const userLen = computed(() => draft.user_instructions.length);
 const instructionError = computed(() => {
-  if (tenantLen.value > instructionLimit || userLen.value > instructionLimit) {
+  if (draft.tenant_instructions.length > instructionLimit) {
     return $t('page.agentBuilder.instructionTooLong');
-  }
-  if (!isCreate.value && !draft.tenant_instructions.trim() && !draft.user_instructions.trim()) {
-    return $t('page.agentBuilder.instructionEmpty');
   }
   return '';
 });
@@ -174,7 +168,6 @@ async function loadAgent(id: string) {
       visibility: agent.value.visibility,
       model_alias: current?.model_alias || '',
       tenant_instructions: current?.tenant_instructions || '',
-      user_instructions: current?.user_instructions || '',
       temperature: Number(current?.generation_config?.temperature ?? 0.7),
       top_p: Number(current?.generation_config?.top_p ?? 1),
       max_output_tokens: Number(current?.generation_config?.max_output_tokens ?? 2048),
@@ -279,7 +272,6 @@ async function publishVersion() {
         visibility: draft.visibility,
         model_alias: draft.model_alias,
         tenant_instructions: draft.tenant_instructions,
-        user_instructions: draft.user_instructions,
         generation_config: generationConfig(),
         tool_policy: {}
       });
@@ -297,7 +289,6 @@ async function publishVersion() {
       agent_id: agent.value!.id,
       model_alias: draft.model_alias,
       tenant_instructions: draft.tenant_instructions,
-      user_instructions: draft.user_instructions,
       generation_config: generationConfig(),
       tool_policy: {},
       revision: draft.revision
@@ -390,7 +381,6 @@ watch(
         visibility: 'private',
         model_alias: '',
         tenant_instructions: '',
-        user_instructions: '',
         temperature: 0.7,
         top_p: 1,
         max_output_tokens: 2048,
@@ -475,20 +465,10 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
                 <NInput
                   v-model:value="draft.tenant_instructions"
                   type="textarea"
-                  :rows="8"
+                  :rows="10"
                   :maxlength="instructionLimit"
                   show-count
                   :placeholder="$t('page.agentBuilder.tenantPlaceholder')"
-                />
-              </NFormItem>
-              <NFormItem :label="$t('page.agentBuilder.userInstructions')">
-                <NInput
-                  v-model:value="draft.user_instructions"
-                  type="textarea"
-                  :rows="8"
-                  :maxlength="instructionLimit"
-                  show-count
-                  :placeholder="$t('page.agentBuilder.userPlaceholder')"
                 />
               </NFormItem>
               <NFormItem :label="$t('page.agentBuilder.runInstructions')">
@@ -711,10 +691,7 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
           <template v-if="mobileTab === 'prompt'">
             <NForm label-placement="top">
               <NFormItem :label="$t('page.agentBuilder.tenantInstructions')">
-                <NInput v-model:value="draft.tenant_instructions" type="textarea" :rows="6" :maxlength="instructionLimit" show-count />
-              </NFormItem>
-              <NFormItem :label="$t('page.agentBuilder.userInstructions')">
-                <NInput v-model:value="draft.user_instructions" type="textarea" :rows="6" :maxlength="instructionLimit" show-count />
+                <NInput v-model:value="draft.tenant_instructions" type="textarea" :rows="8" :maxlength="instructionLimit" show-count />
               </NFormItem>
               <NFormItem :label="$t('page.agentBuilder.runInstructions')">
                 <NInput v-model:value="runInstructions" type="textarea" :rows="3" />
