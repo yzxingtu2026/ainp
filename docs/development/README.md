@@ -4,6 +4,7 @@
 - [AI 模型统一调用协议](./ai-model-runtime.md)：Generate/Stream、Adapter、调用账本与安全边界。
 - [AI Conversation 与上下文装配](./ai-conversations.md)：固定 Agent Version、追加式消息、幂等、预算装配与 Snapshot 边界。
 - [AI 上下文压缩](./ai-context-compaction.md)：模型感知预算、确定性缩减、结构化摘要、质量校验与版本化 Snapshot。
+- [AI Agent Runtime](./ai-agent-runtime.md)：Run/Step 状态机、lease、Outbox→Job、工具确认暂停与可靠恢复。
 - [统一 Tool Runtime](./tool-runtime.md)：渐进式工具发现、Scope、Handle、确认与执行安全边界。
 - [AI 工具开发指南](./ai-tool-development.md)：新增 Action Tool、Builtin/Plugin/MCP/HTTP Provider 与 Executor 的操作手册。
 

@@ -12,6 +12,7 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    AgentRunStatus: typeof import('./../components/ai/agent-run-status.vue')['default']
     AppProvider: typeof import('./../components/common/app-provider.vue')['default']
     AttachmentField: typeof import('./../components/common/attachment-field.vue')['default']
     AttachmentList: typeof import('./../components/common/attachment-list.vue')['default']
@@ -110,6 +111,7 @@ declare module 'vue' {
 
 // For TSX support
 declare global {
+  const AgentRunStatus: typeof import('./../components/ai/agent-run-status.vue')['default']
   const AppProvider: typeof import('./../components/common/app-provider.vue')['default']
   const AttachmentField: typeof import('./../components/common/attachment-field.vue')['default']
   const AttachmentList: typeof import('./../components/common/attachment-list.vue')['default']

@@ -11,6 +11,13 @@ declare namespace Api.AI {
   interface ConversationContentPart { type:string; text?:string; image_attachment_id?:string; attachment_revision?:string; detail?:string; tool_call_id?:string; tool_name?:string; arguments?:unknown; result?:unknown }
   interface ConversationMessage { id:string; conversation_id:string; role:'user'|'assistant'|'system'|'tool'; status:'pending'|'committed'|'failed'|'cancelled'; sequence:number; reply_to_message_id?:string; run_id?:string; author_user_id?:string; content:ConversationContentPart[]; created_at:string; committed_at?:string }
   interface MessageCursorPage { items:ConversationMessage[]; next_sequence:number; has_more:boolean }
+  type AgentRunStatus='queued'|'running'|'waiting_confirmation'|'paused'|'completed'|'failed'|'cancelled';
+  interface AgentRunBudget { max_steps:number; max_model_calls:number; max_tool_calls:number; max_compactions:number; max_duration_seconds:number; max_tokens:number }
+  interface AgentRun { id:string; user_id:string; conversation_id:string; conversation_revision:number; trigger_message_id:string; agent_version_id:string; context_snapshot_id?:string; status:AgentRunStatus; budget:AgentRunBudget; current_step:number; model_calls:number; tool_calls:number; compactions:number; input_tokens:number; output_tokens:number; error_category?:string; revision:number; created_at:string; updated_at:string; started_at?:string; finished_at?:string }
+  interface AgentStep { id:string; run_id:string; step_index:number; type:string; status:string; parent_step_id?:string; model_invocation_id?:string; tool_invocation_id?:string; confirmation_id?:string; context_snapshot_id?:string; input_summary:Record<string,unknown>; output_summary:Record<string,unknown>; error_category?:string; created_at:string; started_at?:string; finished_at?:string }
+  interface AgentRunDetail { run:AgentRun; steps:AgentStep[] }
+  interface AgentRunEvent { id:string; run_id:string; sequence:number; type:string; step_id?:string; payload:Record<string,unknown>; created_at:string }
+  interface AgentRunEventPage { items:AgentRunEvent[]; next_sequence:number; has_more:boolean }
   type Status='enabled'|'disabled';
   interface Provider { id:string;code:string;name:string;protocol:string;base_url:string;credential_configured:boolean;status:Status;config_json:Record<string,unknown>;created_at:string;updated_at:string }
   interface Deployment { id:string;provider_id:string;code:string;remote_model_id:string;display_name:string;model_type:string;capabilities_json:{input_modalities:string[];output_modalities:string[];features:string[]};limits_json:{context_window?:number;max_output_tokens?:number};status:Status;created_at:string;updated_at:string }

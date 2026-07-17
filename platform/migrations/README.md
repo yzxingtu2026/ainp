@@ -14,3 +14,4 @@
 - `0016_ai_tool_runtime.sql` 创建工具目录投影、ToolScope、单次确认与安全调用事实台账，不写初始化业务数据。
 - `0019_ai_conversations.sql` 创建租户会话、不可变追加消息与 ContextSnapshot，只保存会话事实，不执行模型或压缩。
 - `0020_ai_context_compaction.sql` 扩展版本化压缩 Snapshot 的策略、Schema、Prompt、摘要模型、深度与质量字段。
+- `0021_ai_agent_runtime.sql` 创建 Agent Run、追加式 Step、可续传事件和 lease/预算状态，不写业务初始化数据。

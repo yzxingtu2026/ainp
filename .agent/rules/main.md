@@ -43,6 +43,7 @@
 - AI 智能体管理见 `agent-management`（Contract/Definition/不可变 Version、ownership、Alias 与 Tool Binding 边界）。
 - AI 会话事实层见 `ai-conversations`（固定 Agent Version、追加消息、幂等、ContextAssembler 与 Snapshot 边界）。
 - AI 上下文压缩见 `ai-context-compaction`（模型预算、确定性缩减、结构化摘要、质量校验与压缩深度）。
+- AI Agent Runtime 见 `ai-agent-runtime`（Run/Step 状态机、lease、Outbox→Job、确认暂停与可靠恢复）。
 - 前端栈、图标协议见关联规则。
 - Copilot PR 语义审查见 `copilot-code-review`；它只负责中文语义反馈，不替代合并门禁与人工审批。
 
@@ -66,6 +67,7 @@
 - `agent-management` → `docs/development/agent-management.md`
 - `ai-conversations` → `docs/development/ai-conversations.md`
 - `ai-context-compaction` → `docs/development/ai-context-compaction.md`
+- `ai-agent-runtime` → `docs/development/ai-agent-runtime.md`
 - `icon-library` → `docs/development/icon-library.md`
 - `logging` → `docs/development/logging.md`
 - `api-response` → `docs/development/api-response.md`

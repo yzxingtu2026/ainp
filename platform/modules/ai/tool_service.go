@@ -26,17 +26,22 @@ const toolScopeTTL = 30 * time.Minute
 const toolHandleTTL = 10 * time.Minute
 
 type ToolService struct {
-	db         *gorm.DB
-	registry   *aitool.Registry
-	signer     *aitool.HandleSigner
-	writer     outbox.Writer
-	embeddings aitool.EmbeddingService
+	db                    *gorm.DB
+	registry              *aitool.Registry
+	signer                *aitool.HandleSigner
+	writer                outbox.Writer
+	embeddings            aitool.EmbeddingService
+	onConfirmationPending func(context.Context, *gorm.DB, *ToolConfirmation) error
+	onConfirmationDecided func(context.Context, *ToolConfirmation) error
 }
 
 func NewToolService(db *gorm.DB, r *aitool.Registry, signer *aitool.HandleSigner, w outbox.Writer) *ToolService {
 	return &ToolService{db: db, registry: r, signer: signer, writer: w}
 }
 func (s *ToolService) SetEmbeddingService(v aitool.EmbeddingService) { s.embeddings = v }
+func (s *ToolService) SetConfirmationHooks(pending func(context.Context, *gorm.DB, *ToolConfirmation) error, decided func(context.Context, *ToolConfirmation) error) {
+	s.onConfirmationPending, s.onConfirmationDecided = pending, decided
+}
 
 func (s *ToolService) ProjectModelTools(ctx context.Context, scopeID string) (string, []aimodelruntime.ToolDefinition, error) {
 	if err := s.registry.Refresh(ctx); err != nil {
@@ -254,6 +259,14 @@ func (s *ToolService) Approve(ctx context.Context, r ToolConfirmationRequest) (a
 	if err != nil {
 		return nil, err
 	}
+	if s.onConfirmationDecided != nil {
+		var latest ToolConfirmation
+		if s.db.WithContext(ctx).Where("id=?", c.ID).First(&latest).Error == nil {
+			if err := s.onConfirmationDecided(ctx, &latest); err != nil {
+				return nil, err
+			}
+		}
+	}
 	return result, nil
 }
 func (s *ToolService) Reject(ctx context.Context, r ToolConfirmationRequest) (any, error) {
@@ -276,6 +289,13 @@ func (s *ToolService) Reject(ctx context.Context, r ToolConfirmationRequest) (an
 	var inv ToolInvocation
 	if err := s.db.WithContext(ctx).Where("id=?", c.InvocationID).First(&inv).Error; err == nil {
 		_ = s.finishInvocation(ctx, &inv, nil, "failed", "confirmation_rejected", nil)
+	}
+	c.Status = "rejected"
+	c.DecidedAt = &now
+	if s.onConfirmationDecided != nil {
+		if err := s.onConfirmationDecided(ctx, &c); err != nil {
+			return nil, err
+		}
 	}
 	return map[string]any{"id": r.ID, "status": "rejected"}, nil
 }
@@ -313,7 +333,13 @@ func (s *ToolService) execute(ctx context.Context, ac *auth.Context, scope *Tool
 			if err := tx.Create(&inv).Error; err != nil {
 				return err
 			}
-			return tx.Create(&c).Error
+			if err := tx.Create(&c).Error; err != nil {
+				return err
+			}
+			if s.onConfirmationPending != nil {
+				return s.onConfirmationPending(ctx, tx, &c)
+			}
+			return nil
 		}); err != nil {
 			return nil, err
 		}
@@ -355,6 +381,9 @@ func (s *ToolService) finishInvocation(ctx context.Context, inv *ToolInvocation,
 	now := time.Now().UTC()
 	duration := now.Sub(inv.StartedAt).Milliseconds()
 	updates := map[string]any{"status": status, "finished_at": now, "duration_ms": duration, "error_category": category}
+	if result != nil {
+		updates["result_json"] = jsonBytes(aitool.Result{CallID: result.CallID, Status: result.Status, Summary: result.Summary, ResourceRefs: append([]string(nil), result.ResourceRefs...), Truncated: result.Truncated, ErrorCategory: result.ErrorCategory})
+	}
 	payload := map[string]any{"invocation_id": inv.ID, "tool_id": inv.ToolID, "source": inv.Source, "status": status, "duration_ms": duration, "error_category": category}
 	if s.writer == nil {
 		return s.db.WithContext(ctx).Model(&ToolInvocation{}).Where("id=? AND status IN ?", inv.ID, []string{"running", "waiting_confirmation"}).Updates(updates).Error
