@@ -44,9 +44,9 @@ func (p runtimeCompactionProvider) Summarize(ctx context.Context, r aiconversati
 	if err != nil {
 		return nil, err
 	}
-	response, ok := value.(aimodelruntime.GenerateResponse)
+	response, ok := asGenerateResponse(value)
 	if !ok {
-		return nil, fmt.Errorf("invalid compaction response")
+		return nil, fmt.Errorf("invalid compaction response: %T", value)
 	}
 	var text string
 	for _, item := range response.Output {

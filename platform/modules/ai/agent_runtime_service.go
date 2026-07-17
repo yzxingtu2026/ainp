@@ -545,9 +545,9 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 			_ = s.finishStep(ctx, run, step, "failed", map[string]any{}, "model_failed")
 			return s.fail(ctx, run, "model_failed")
 		}
-		response, ok := value.(aimodelruntime.GenerateResponse)
+		response, ok := asGenerateResponse(value)
 		if !ok {
-			_ = s.finishStep(ctx, run, step, "failed", map[string]any{}, "invalid_model_response")
+			_ = s.finishStep(ctx, run, step, "failed", map[string]any{"value_type": fmt.Sprintf("%T", value)}, "invalid_model_response")
 			return s.fail(ctx, run, "invalid_model_response")
 		}
 		var invocation ModelInvocation
@@ -722,6 +722,20 @@ func resultStatus(result *aiconversation.CompactionResult) string {
 		return "failed"
 	}
 	return result.Status
+}
+
+func asGenerateResponse(value any) (aimodelruntime.GenerateResponse, bool) {
+	switch v := value.(type) {
+	case aimodelruntime.GenerateResponse:
+		return v, true
+	case *aimodelruntime.GenerateResponse:
+		if v == nil {
+			return aimodelruntime.GenerateResponse{}, false
+		}
+		return *v, true
+	default:
+		return aimodelruntime.GenerateResponse{}, false
+	}
 }
 
 func (s *AgentRuntimeService) ensureToolScope(ctx context.Context, run *AgentRun, agent *Agent) (string, error) {
