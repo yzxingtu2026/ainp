@@ -60,7 +60,6 @@ type AgentCreateRequest struct {
 	Visibility         string         `json:"visibility"`
 	ModelAlias         string         `json:"model_alias" validate:"required"`
 	TenantInstructions string         `json:"tenant_instructions"`
-	UserInstructions   string         `json:"user_instructions"`
 	AvatarAttachmentID *string        `json:"avatar_attachment_id"`
 	GenerationConfig   map[string]any `json:"generation_config"`
 	ToolPolicy         map[string]any `json:"tool_policy"`
@@ -76,7 +75,6 @@ type AgentVersionCreateRequest struct {
 	AgentID            string         `json:"agent_id" validate:"required"`
 	ModelAlias         string         `json:"model_alias" validate:"required"`
 	TenantInstructions string         `json:"tenant_instructions"`
-	UserInstructions   string         `json:"user_instructions"`
 	GenerationConfig   map[string]any `json:"generation_config"`
 	ToolPolicy         map[string]any `json:"tool_policy"`
 	Revision           uint64         `json:"revision" validate:"required"`
@@ -98,7 +96,7 @@ type AgentToolSearchRequest struct {
 	Query      string        `json:"query" validate:"max=512"`
 	Capability string        `json:"capability"`
 	Source     aitool.Source `json:"source"`
-	Limit      int           `json:"limit" validate:"omitempty,min=1,max=10"`
+	Limit      int           `json:"limit" validate:"omitempty,min=1,max=100"`
 }
 type AgentEmptyRequest struct{}
 
@@ -239,7 +237,7 @@ func (s *AgentService) Create(ctx context.Context, r AgentCreateRequest) (any, e
 	if !codePattern.MatchString(r.Code) || strings.TrimSpace(r.Name) == "" || strings.TrimSpace(r.ModelAlias) == "" {
 		return nil, errs.New(errs.CodeValidation, "invalid agent")
 	}
-	if len(r.TenantInstructions) > 12000 || len(r.UserInstructions) > 12000 {
+	if len(r.TenantInstructions) > 12000 {
 		return nil, errs.New(errs.CodeValidation, "instructions exceed limit")
 	}
 	if err := s.validateAvatar(ctx, ac, r.AvatarAttachmentID); err != nil {
@@ -269,7 +267,7 @@ func (s *AgentService) Create(ctx context.Context, r AgentCreateRequest) (any, e
 		if e := tx.Create(&row).Error; e != nil {
 			return dbError(e, "create agent")
 		}
-		v := AgentVersion{ID: uuid.NewString(), TenantID: ac.TenantID, AgentID: row.ID, Version: 1, ModelAlias: r.ModelAlias, TenantInstructions: r.TenantInstructions, UserInstructions: r.UserInstructions, GenerationConfig: marshal(r.GenerationConfig), ToolPolicy: marshal(r.ToolPolicy), CreatedBy: ac.UserID}
+		v := AgentVersion{ID: uuid.NewString(), TenantID: ac.TenantID, AgentID: row.ID, Version: 1, ModelAlias: r.ModelAlias, TenantInstructions: r.TenantInstructions, GenerationConfig: marshal(r.GenerationConfig), ToolPolicy: marshal(r.ToolPolicy), CreatedBy: ac.UserID}
 		if e := tx.Create(&v).Error; e != nil {
 			return e
 		}
@@ -300,7 +298,7 @@ func (s *AgentService) Duplicate(ctx context.Context, r AgentDuplicateRequest) (
 	if err = s.db.WithContext(ctx).Where("tenant_id=? AND agent_id=? AND version=?", row.TenantID, row.ID, row.CurrentVersion).First(&version).Error; err != nil {
 		return nil, errs.New(errs.CodeConflict, "source agent has no current version")
 	}
-	request := AgentCreateRequest{Code: r.Code, Name: r.Name, Description: row.Description, Source: "personal", Visibility: "private", ModelAlias: version.ModelAlias, TenantInstructions: version.TenantInstructions, UserInstructions: version.UserInstructions}
+	request := AgentCreateRequest{Code: r.Code, Name: r.Name, Description: row.Description, Source: "personal", Visibility: "private", ModelAlias: version.ModelAlias, TenantInstructions: version.TenantInstructions}
 	if canManageTenant(ac) && row.Source != "personal" {
 		request.Source = "tenant"
 		request.Visibility = "tenant"
@@ -391,10 +389,13 @@ func (s *AgentService) CreateVersion(ctx context.Context, r AgentVersionCreateRe
 	if _, e = s.models.Resolve(ctx, r.ModelAlias, req); e != nil {
 		return nil, e
 	}
+	if len(r.TenantInstructions) > 12000 {
+		return nil, errs.New(errs.CodeValidation, "instructions exceed limit")
+	}
 	var version AgentVersion
 	e = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		next := row.CurrentVersion + 1
-		version = AgentVersion{ID: uuid.NewString(), TenantID: row.TenantID, AgentID: row.ID, Version: next, ModelAlias: r.ModelAlias, TenantInstructions: r.TenantInstructions, UserInstructions: r.UserInstructions, GenerationConfig: marshal(r.GenerationConfig), ToolPolicy: marshal(r.ToolPolicy), CreatedBy: ac.UserID}
+		version = AgentVersion{ID: uuid.NewString(), TenantID: row.TenantID, AgentID: row.ID, Version: next, ModelAlias: r.ModelAlias, TenantInstructions: r.TenantInstructions, GenerationConfig: marshal(r.GenerationConfig), ToolPolicy: marshal(r.ToolPolicy), CreatedBy: ac.UserID}
 		if e := tx.Create(&version).Error; e != nil {
 			return e
 		}
@@ -479,7 +480,8 @@ func (s *AgentService) SearchTools(ctx context.Context, r AgentToolSearchRequest
 	if _, e := agentActor(ctx); e != nil {
 		return nil, e
 	}
-	return aitool.Search(ctx, s.tools.List(), r.Query, r.Capability, r.Source, r.Limit, func(d aitool.Definition) bool { return d.Status == "enabled" }, nil)
+	// 管理端绑定弹窗走 Browse；模型侧 meta:tool.search 仍使用硬顶 10 的 Search。
+	return aitool.Browse(ctx, s.tools.List(), r.Query, r.Capability, r.Source, r.Limit, func(d aitool.Definition) bool { return d.Status == "enabled" })
 }
 func (s *AgentService) requiredTools(row *Agent) []string {
 	if row.ContractKey == "" {

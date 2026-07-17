@@ -4,7 +4,8 @@ import { useRoute } from 'vue-router';
 import {
   NAlert,
   NButton,
-  NDivider,
+  NCollapse,
+  NCollapseItem,
   NDrawer,
   NDrawerContent,
   NEmpty,
@@ -37,12 +38,13 @@ import {
   fetchAIAliases,
   fetchAIDeployments,
   publishAIAgentVersion,
-  searchAIAgentTools,
   unbindAIAgentTool,
   updateAIAgent
 } from '@/service/api';
 import { useAuthStore } from '@/store/modules/auth';
 import { createDemoMockPreview, createIdleMockPreview, type MockPreviewState } from './mock-preview';
+import MarkdownPromptEditor from '@/components/common/markdown-prompt-editor.vue';
+import AgentToolPickerModal from './modules/agent-tool-picker-modal.vue';
 
 defineOptions({ name: 'AIAgentBuilder' });
 
@@ -59,10 +61,12 @@ const loading = ref(false);
 const hydrating = ref(false);
 const savingMeta = ref(false);
 const publishing = ref(false);
-const toolsLoading = ref(false);
 const dirty = ref(false);
 const mobileTab = ref<'prompt' | 'config' | 'preview'>('prompt');
 const versionsVisible = ref(false);
+const toolPickerVisible = ref(false);
+/** 中间栏折叠分组：默认只展开基本信息 */
+const configExpandedNames = ref<Array<string | number>>(['basic']);
 const collapsed = reactive({ left: false, right: false });
 const leftWidth = ref(360);
 const rightWidth = ref(360);
@@ -71,11 +75,8 @@ const agent = ref<Api.AI.AgentDetail | null>(null);
 const versions = ref<Api.AI.AgentVersion[]>([]);
 const diagnostics = ref<Api.AI.AgentDiagnostics | null>(null);
 const boundTools = ref<Api.AI.AgentToolBinding[]>([]);
-const toolCandidates = ref<Api.AI.ToolCandidate[]>([]);
 const aliases = ref<Api.AI.Alias[]>([]);
 const deployments = ref<Api.AI.Deployment[]>([]);
-const toolKeyword = ref('');
-const runInstructions = ref('');
 const previewInput = ref('');
 const preview = ref<MockPreviewState>(createIdleMockPreview(key => $t(key as App.I18n.I18nKey)));
 
@@ -87,7 +88,6 @@ const draft = reactive({
   visibility: 'private' as Api.AI.AgentVisibility,
   model_alias: '',
   tenant_instructions: '',
-  user_instructions: '',
   temperature: 0.7,
   top_p: 1,
   max_output_tokens: 2048,
@@ -98,7 +98,7 @@ const isCreate = computed(() => !agent.value);
 const managedFields = computed(() => new Set(agent.value?.managed_fields || []));
 const requiredTools = computed(() => new Set(agent.value?.required_tool_selectors || []));
 const isManaged = (field: string) => managedFields.value.has(field);
-const boundToolIDs = computed(() => new Set(boundTools.value.map(item => item.tool_id)));
+const boundToolIDs = computed(() => boundTools.value.map(item => item.tool_id));
 const canPublish = computed(
   () =>
     Boolean(draft.name && draft.code && draft.model_alias) &&
@@ -107,14 +107,9 @@ const canPublish = computed(
 );
 const canEditMeta = computed(() => isCreate.value || can(AI_ACTIONS.agentUpdate));
 const instructionLimit = 12000;
-const tenantLen = computed(() => draft.tenant_instructions.length);
-const userLen = computed(() => draft.user_instructions.length);
 const instructionError = computed(() => {
-  if (tenantLen.value > instructionLimit || userLen.value > instructionLimit) {
+  if (draft.tenant_instructions.length > instructionLimit) {
     return $t('page.agentBuilder.instructionTooLong');
-  }
-  if (!isCreate.value && !draft.tenant_instructions.trim() && !draft.user_instructions.trim() && !agent.value?.base_instructions) {
-    return $t('page.agentBuilder.instructionEmpty');
   }
   return '';
 });
@@ -174,7 +169,6 @@ async function loadAgent(id: string) {
       visibility: agent.value.visibility,
       model_alias: current?.model_alias || '',
       tenant_instructions: current?.tenant_instructions || '',
-      user_instructions: current?.user_instructions || '',
       temperature: Number(current?.generation_config?.temperature ?? 0.7),
       top_p: Number(current?.generation_config?.top_p ?? 1),
       max_output_tokens: Number(current?.generation_config?.max_output_tokens ?? 2048),
@@ -196,24 +190,13 @@ async function refreshDiagnostics() {
   diagnostics.value = data || null;
 }
 
-async function searchTools() {
-  toolsLoading.value = true;
-  try {
-    const { data } = await searchAIAgentTools({ query: toolKeyword.value, limit: 10 });
-    toolCandidates.value = data || [];
-  } finally {
-    toolsLoading.value = false;
-  }
-}
-
 async function bindTool(toolID: string) {
   if (!agent.value || !can(AI_ACTIONS.agentToolBind)) return;
   const { error } = await bindAIAgentTool(agent.value.id, toolID);
-  if (!error) {
-    const { data } = await fetchAIAgentTools(agent.value.id);
-    boundTools.value = data || [];
-    await refreshDiagnostics();
-  }
+  if (error) return;
+  const { data } = await fetchAIAgentTools(agent.value.id);
+  boundTools.value = data || [];
+  await refreshDiagnostics();
 }
 
 async function unbindTool(toolID: string) {
@@ -279,7 +262,6 @@ async function publishVersion() {
         visibility: draft.visibility,
         model_alias: draft.model_alias,
         tenant_instructions: draft.tenant_instructions,
-        user_instructions: draft.user_instructions,
         generation_config: generationConfig(),
         tool_policy: {}
       });
@@ -297,7 +279,6 @@ async function publishVersion() {
       agent_id: agent.value!.id,
       model_alias: draft.model_alias,
       tenant_instructions: draft.tenant_instructions,
-      user_instructions: draft.user_instructions,
       generation_config: generationConfig(),
       tool_policy: {},
       revision: draft.revision
@@ -319,7 +300,7 @@ function runMockPreview() {
     message.warning($t('page.agentBuilder.previewBlocked'));
     return;
   }
-  const text = previewInput.value.trim() || runInstructions.value.trim();
+  const text = previewInput.value.trim();
   if (!text) {
     message.warning($t('page.agentBuilder.previewNeedInput'));
     return;
@@ -363,7 +344,7 @@ function onBeforeUnload(event: BeforeUnloadEvent) {
 }
 
 watch(
-  () => ({ ...draft, runInstructions: runInstructions.value }),
+  () => ({ ...draft }),
   () => {
     if (!loading.value) markDirty();
   },
@@ -376,7 +357,6 @@ watch(
     await loadModels();
     if (typeof id === 'string' && id) {
       await loadAgent(id);
-      await searchTools();
     } else {
       agent.value = null;
       versions.value = [];
@@ -390,7 +370,6 @@ watch(
         visibility: 'private',
         model_alias: '',
         tenant_instructions: '',
-        user_instructions: '',
         temperature: 0.7,
         top_p: 1,
         max_output_tokens: 2048,
@@ -424,8 +403,8 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
 </script>
 
 <template>
-  <div class="h-screen flex-col overflow-hidden bg-[var(--n-color)] text-14px">
-    <header class="flex items-center justify-between gap-12px border-b px-16px py-10px">
+  <div class="h-screen flex flex-col overflow-hidden bg-[var(--n-color)] text-14px">
+    <header class="flex shrink-0 items-center justify-between gap-12px border-b px-16px py-10px">
       <NSpace align="center">
         <NButton quaternary @click="leaveBuilder">{{ $t('page.agentBuilder.back') }}</NButton>
         <div class="min-w-0">
@@ -461,59 +440,21 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
       </NSpace>
     </header>
 
-    <NSpin :show="loading" class="min-h-0 flex-1">
+    <NSpin :show="loading" class="min-h-0 flex-1 overflow-hidden [&_.n-spin-content]:h-full [&_.n-spin-content]:min-h-0">
       <div class="hidden h-full min-h-0 md:flex">
         <section
           v-show="!collapsed.left"
-          class="min-h-0 flex-col overflow-hidden border-r"
+          class="min-h-0 flex flex-col overflow-hidden border-r"
           :style="{ width: `${leftWidth}px` }"
         >
-          <div class="border-b px-12px py-8px font-600">{{ $t('page.agentBuilder.panePrompt') }}</div>
-          <div class="min-h-0 flex-1 overflow-auto px-12px py-10px">
-            <NForm label-placement="top">
-              <NFormItem :label="$t('page.agentBuilder.contractBase')">
-                <NInput
-                  type="textarea"
-                  :value="agent?.base_instructions || $t('page.agentBuilder.noContractBase')"
-                  readonly
-                  :rows="6"
-                  :placeholder="$t('page.agentBuilder.managedHint')"
-                />
-                <template #feedback>
-                  <NTag size="small" type="warning">{{ $t('page.agentBuilder.managed') }}</NTag>
-                </template>
-              </NFormItem>
-              <NFormItem :label="$t('page.agentBuilder.tenantInstructions')">
-                <NInput
-                  v-model:value="draft.tenant_instructions"
-                  type="textarea"
-                  :rows="8"
-                  :maxlength="instructionLimit"
-                  show-count
-                  :placeholder="$t('page.agentBuilder.tenantPlaceholder')"
-                />
-              </NFormItem>
-              <NFormItem :label="$t('page.agentBuilder.userInstructions')">
-                <NInput
-                  v-model:value="draft.user_instructions"
-                  type="textarea"
-                  :rows="8"
-                  :maxlength="instructionLimit"
-                  show-count
-                  :placeholder="$t('page.agentBuilder.userPlaceholder')"
-                />
-              </NFormItem>
-              <NFormItem :label="$t('page.agentBuilder.runInstructions')">
-                <NInput
-                  v-model:value="runInstructions"
-                  type="textarea"
-                  :rows="4"
-                  :placeholder="$t('page.agentBuilder.runPlaceholder')"
-                />
-                <template #feedback>{{ $t('page.agentBuilder.runHint') }}</template>
-              </NFormItem>
-              <NAlert v-if="instructionError" type="error" class="mb-12px">{{ instructionError }}</NAlert>
-            </NForm>
+          <div class="shrink-0 border-b px-12px py-8px font-600">{{ $t('page.agentBuilder.panePrompt') }}</div>
+          <div class="min-h-0 flex flex-1 flex-col gap-8px overflow-hidden px-12px py-10px">
+            <NAlert v-if="instructionError" type="error" class="shrink-0">{{ instructionError }}</NAlert>
+            <MarkdownPromptEditor
+              v-model="draft.tenant_instructions"
+              :maxlength="instructionLimit"
+              :placeholder="$t('page.agentBuilder.tenantPlaceholder')"
+            />
           </div>
         </section>
         <div
@@ -522,147 +463,135 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
           @mousedown="startResize('left', $event)"
         />
 
-        <section class="min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          <div class="border-b px-12px py-8px font-600">{{ $t('page.agentBuilder.paneConfig') }}</div>
-          <div class="min-h-0 flex-1 overflow-auto px-12px py-10px">
+        <section class="min-h-0 min-w-0 flex flex-1 flex-col overflow-hidden">
+          <div class="shrink-0 border-b px-12px py-8px font-600">{{ $t('page.agentBuilder.paneConfig') }}</div>
+          <div class="min-h-0 flex-1 overflow-y-auto px-12px py-10px">
             <NForm label-placement="top">
-              <div class="grid grid-cols-2 gap-12px">
-                <NFormItem :label="$t('page.agentBuilder.name')">
-                  <NInput v-model:value="draft.name" :disabled="!canEditMeta" />
-                </NFormItem>
-                <NFormItem :label="$t('page.agentBuilder.code')">
-                  <NInput v-model:value="draft.code" :disabled="!isCreate || isManaged('code')" />
-                </NFormItem>
-              </div>
-              <NFormItem :label="$t('page.agentBuilder.description')">
-                <NInput v-model:value="draft.description" type="textarea" :rows="2" :maxlength="512" :disabled="!canEditMeta" />
-              </NFormItem>
-              <div class="grid grid-cols-2 gap-12px">
-                <NFormItem :label="$t('page.agentBuilder.source')">
-                  <NSelect
-                    v-model:value="draft.source"
-                    :disabled="!isCreate || isManaged('source')"
-                    :options="[
-                      { label: $t('page.agentBuilder.sourcePersonal'), value: 'personal' },
-                      { label: $t('page.agentBuilder.sourceTenant'), value: 'tenant' }
-                    ]"
-                    @update:value="value => (draft.visibility = value === 'tenant' ? 'tenant' : 'private')"
-                  />
-                </NFormItem>
-                <NFormItem :label="$t('page.agentBuilder.visibility')">
-                  <NSelect
-                    v-model:value="draft.visibility"
-                    :disabled="!isCreate || isManaged('visibility')"
-                    :options="[
-                      { label: $t('page.agentBuilder.visibilityPrivate'), value: 'private' },
-                      { label: $t('page.agentBuilder.visibilityTenant'), value: 'tenant' }
-                    ]"
-                  />
-                </NFormItem>
-              </div>
-              <NFormItem :label="$t('page.agentBuilder.modelAlias')">
-                <NSelect
-                  v-model:value="draft.model_alias"
-                  filterable
-                  clearable
-                  :options="modelOptions"
-                  :placeholder="$t('page.agentBuilder.modelAliasPlaceholder')"
-                />
-              </NFormItem>
-              <NDivider>{{ $t('page.agentBuilder.generationParams') }}</NDivider>
-              <div class="grid grid-cols-3 gap-12px">
-                <NFormItem label="temperature">
-                  <NInputNumber v-model:value="draft.temperature" :min="0" :max="2" :step="0.1" class="w-full" />
-                </NFormItem>
-                <NFormItem label="top_p">
-                  <NInputNumber v-model:value="draft.top_p" :min="0" :max="1" :step="0.05" class="w-full" />
-                </NFormItem>
-                <NFormItem label="max_output_tokens">
-                  <NInputNumber v-model:value="draft.max_output_tokens" :min="1" :max="1000000" class="w-full" />
-                </NFormItem>
-              </div>
+              <NCollapse v-model:expanded-names="configExpandedNames" display-directive="show">
+                <NCollapseItem :title="$t('page.agentBuilder.groupBasic')" name="basic">
+                  <div class="grid grid-cols-2 gap-12px">
+                    <NFormItem :label="$t('page.agentBuilder.name')">
+                      <NInput v-model:value="draft.name" :disabled="!canEditMeta" />
+                    </NFormItem>
+                    <NFormItem :label="$t('page.agentBuilder.code')">
+                      <NInput v-model:value="draft.code" :disabled="!isCreate || isManaged('code')" />
+                    </NFormItem>
+                  </div>
+                  <NFormItem :label="$t('page.agentBuilder.description')">
+                    <NInput
+                      v-model:value="draft.description"
+                      type="textarea"
+                      :rows="2"
+                      :maxlength="512"
+                      :disabled="!canEditMeta"
+                    />
+                  </NFormItem>
+                  <div class="grid grid-cols-2 gap-12px">
+                    <NFormItem :label="$t('page.agentBuilder.source')">
+                      <NSelect
+                        v-model:value="draft.source"
+                        :disabled="!isCreate || isManaged('source')"
+                        :options="[
+                          { label: $t('page.agentBuilder.sourcePersonal'), value: 'personal' },
+                          { label: $t('page.agentBuilder.sourceTenant'), value: 'tenant' }
+                        ]"
+                        @update:value="value => (draft.visibility = value === 'tenant' ? 'tenant' : 'private')"
+                      />
+                    </NFormItem>
+                    <NFormItem :label="$t('page.agentBuilder.visibility')">
+                      <NSelect
+                        v-model:value="draft.visibility"
+                        :disabled="!isCreate || isManaged('visibility')"
+                        :options="[
+                          { label: $t('page.agentBuilder.visibilityPrivate'), value: 'private' },
+                          { label: $t('page.agentBuilder.visibilityTenant'), value: 'tenant' }
+                        ]"
+                      />
+                    </NFormItem>
+                  </div>
+                  <NFormItem :label="$t('page.agentBuilder.modelAlias')">
+                    <NSelect
+                      v-model:value="draft.model_alias"
+                      filterable
+                      clearable
+                      :options="modelOptions"
+                      :placeholder="$t('page.agentBuilder.modelAliasPlaceholder')"
+                    />
+                  </NFormItem>
+                </NCollapseItem>
 
-              <NDivider>{{ $t('page.agentBuilder.tools') }}</NDivider>
-              <template v-if="agent">
-                <NSpace class="mb-12px">
-                  <NInput
-                    v-model:value="toolKeyword"
-                    clearable
-                    class="w-280px"
-                    :placeholder="$t('page.agentBuilder.toolSearchPlaceholder')"
-                    @keyup.enter="searchTools"
-                  />
-                  <NButton :loading="toolsLoading" @click="searchTools">{{ $t('common.search') }}</NButton>
-                </NSpace>
-                <div class="mb-8px text-12px text-gray-500">{{ $t('page.agentBuilder.boundTools') }}</div>
-                <NEmpty v-if="boundTools.length === 0" :description="$t('page.agentBuilder.noBoundTools')" />
-                <NList v-else bordered class="mb-12px max-h-180px overflow-auto">
-                  <NListItem v-for="binding in boundTools" :key="binding.id">
-                    <NSpace justify="space-between" class="w-full">
-                      <NSpace>
-                        <span>{{ binding.tool_id }}</span>
-                        <NTag v-if="requiredTools.has(binding.tool_id)" size="small" type="warning">
-                          {{ $t('page.agentBuilder.requiredTool') }}
-                        </NTag>
-                      </NSpace>
+                <NCollapseItem :title="$t('page.agentBuilder.generationParams')" name="generation">
+                  <div class="grid grid-cols-3 gap-12px">
+                    <NFormItem :label="$t('page.agentBuilder.temperature')">
+                      <NInputNumber v-model:value="draft.temperature" :min="0" :max="2" :step="0.1" class="w-full" />
+                    </NFormItem>
+                    <NFormItem :label="$t('page.agentBuilder.topP')">
+                      <NInputNumber v-model:value="draft.top_p" :min="0" :max="1" :step="0.05" class="w-full" />
+                    </NFormItem>
+                    <NFormItem :label="$t('page.agentBuilder.maxOutputTokens')">
+                      <NInputNumber v-model:value="draft.max_output_tokens" :min="1" :max="1000000" class="w-full" />
+                    </NFormItem>
+                  </div>
+                </NCollapseItem>
+
+                <NCollapseItem :title="$t('page.agentBuilder.tools')" name="tools">
+                  <template v-if="agent">
+                    <NSpace class="mb-12px" justify="space-between">
+                      <div class="text-12px text-gray-500">
+                        {{ $t('page.agentBuilder.boundTools') }}（{{ boundTools.length }}）
+                      </div>
                       <NButton
-                        v-if="can(AI_ACTIONS.agentToolUnbind) && !requiredTools.has(binding.tool_id)"
+                        type="primary"
                         size="small"
-                        type="error"
-                        ghost
-                        @click="unbindTool(binding.tool_id)"
+                        :disabled="!can(AI_ACTIONS.agentToolBind)"
+                        @click="toolPickerVisible = true"
                       >
-                        {{ $t('page.agentBuilder.unbind') }}
+                        {{ $t('page.agentBuilder.openToolPicker') }}
                       </NButton>
                     </NSpace>
-                  </NListItem>
-                </NList>
-                <div class="mb-8px text-12px text-gray-500">{{ $t('page.agentBuilder.candidateTools') }}</div>
-                <NSpin :show="toolsLoading">
-                  <NEmpty v-if="toolCandidates.length === 0" :description="$t('page.agentBuilder.noToolCandidates')" />
-                  <NList v-else bordered class="max-h-240px overflow-auto">
-                    <NListItem v-for="tool in toolCandidates" :key="tool.id">
-                      <NThing :title="tool.name" :description="tool.summary">
-                        <template #header-extra>
+                    <NEmpty v-if="boundTools.length === 0" :description="$t('page.agentBuilder.noBoundTools')" />
+                    <NList v-else bordered class="max-h-280px overflow-auto">
+                      <NListItem v-for="binding in boundTools" :key="binding.id">
+                        <NSpace justify="space-between" class="w-full">
                           <NSpace>
-                            <NTag size="small">{{ tool.source }}</NTag>
-                            <NTag
-                              size="small"
-                              :type="tool.risk === 'high' || tool.risk === 'critical' ? 'error' : tool.risk === 'medium' ? 'warning' : 'success'"
-                            >
-                              {{ $t(`toolConfirmation.risk.${tool.risk}` as App.I18n.I18nKey) }}
+                            <span>{{ binding.tool_id }}</span>
+                            <NTag v-if="requiredTools.has(binding.tool_id)" size="small" type="warning">
+                              {{ $t('page.agentBuilder.requiredTool') }}
                             </NTag>
-                            <NTag size="small">
-                              {{ $t(`toolConfirmation.sideEffect.${tool.side_effect}` as App.I18n.I18nKey) }}
-                            </NTag>
-                            <NButton
-                              size="small"
-                              type="primary"
-                              :disabled="boundToolIDs.has(tool.id) || !can(AI_ACTIONS.agentToolBind)"
-                              @click="bindTool(tool.id)"
-                            >
-                              {{ boundToolIDs.has(tool.id) ? $t('page.agentBuilder.bound') : $t('page.agentBuilder.bind') }}
-                            </NButton>
                           </NSpace>
-                        </template>
-                      </NThing>
-                    </NListItem>
-                  </NList>
-                </NSpin>
-              </template>
-              <NAlert v-else type="info">{{ $t('page.agentBuilder.toolsAfterCreate') }}</NAlert>
+                          <NButton
+                            v-if="can(AI_ACTIONS.agentToolUnbind) && !requiredTools.has(binding.tool_id)"
+                            size="small"
+                            type="error"
+                            ghost
+                            @click="unbindTool(binding.tool_id)"
+                          >
+                            {{ $t('page.agentBuilder.unbind') }}
+                          </NButton>
+                        </NSpace>
+                      </NListItem>
+                    </NList>
+                  </template>
+                  <NAlert v-else type="info">{{ $t('page.agentBuilder.toolsAfterCreate') }}</NAlert>
+                </NCollapseItem>
 
-              <NDivider>{{ $t('page.agentBuilder.diagnostics') }}</NDivider>
-              <NAlert
-                v-if="diagnostics"
-                :type="diagnostics.healthy ? 'success' : 'warning'"
-                :title="diagnostics.healthy ? $t('page.agentBuilder.diagnosticsHealthy') : $t('page.agentBuilder.diagnosticsUnhealthy')"
-              >
-                <div v-for="issue in diagnostics.issues" :key="`${issue.code}-${issue.resource || ''}`">
-                  {{ issue.code }}：{{ issue.message }}
-                </div>
-              </NAlert>
-              <NAlert v-else-if="isCreate" type="info">{{ $t('page.agentBuilder.diagnosticsAfterCreate') }}</NAlert>
+                <NCollapseItem :title="$t('page.agentBuilder.diagnostics')" name="diagnostics">
+                  <NAlert
+                    v-if="diagnostics"
+                    :type="diagnostics.healthy ? 'success' : 'warning'"
+                    :title="
+                      diagnostics.healthy
+                        ? $t('page.agentBuilder.diagnosticsHealthy')
+                        : $t('page.agentBuilder.diagnosticsUnhealthy')
+                    "
+                  >
+                    <div v-for="issue in diagnostics.issues" :key="`${issue.code}-${issue.resource || ''}`">
+                      {{ issue.code }}：{{ issue.message }}
+                    </div>
+                  </NAlert>
+                  <NAlert v-else-if="isCreate" type="info">{{ $t('page.agentBuilder.diagnosticsAfterCreate') }}</NAlert>
+                </NCollapseItem>
+              </NCollapse>
             </NForm>
           </div>
         </section>
@@ -674,14 +603,14 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
         />
         <section
           v-show="!collapsed.right"
-          class="min-h-0 flex-col overflow-hidden border-l"
+          class="min-h-0 flex flex-col overflow-hidden border-l"
           :style="{ width: `${rightWidth}px` }"
         >
-          <div class="border-b px-12px py-8px font-600">
+          <div class="shrink-0 border-b px-12px py-8px font-600">
             {{ $t('page.agentBuilder.panePreview') }}
             <NTag size="small" type="warning" class="ml-8px">{{ $t('page.agentBuilder.mockTag') }}</NTag>
           </div>
-          <div class="min-h-0 flex-1 overflow-auto px-12px py-10px">
+          <div class="min-h-0 flex-1 overflow-y-auto px-12px py-10px">
             <NAlert type="warning" class="mb-12px">{{ $t('page.agentBuilder.mockBanner') }}</NAlert>
             <div class="mb-8px text-12px text-gray-500">{{ preview.runSummary }} · {{ preview.status }}</div>
             <div class="mb-12px flex-col gap-8px">
@@ -713,43 +642,55 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
         </section>
       </div>
 
-      <div class="h-full min-h-0 flex-col md:hidden">
-        <NTabs v-model:value="mobileTab" type="segment" class="px-12px pt-8px">
+      <div class="h-full min-h-0 flex flex-col md:hidden">
+        <NTabs v-model:value="mobileTab" type="segment" class="shrink-0 px-12px pt-8px">
           <NTabPane name="prompt" :tab="$t('page.agentBuilder.panePrompt')" />
           <NTabPane name="config" :tab="$t('page.agentBuilder.paneConfig')" />
           <NTabPane name="preview" :tab="$t('page.agentBuilder.panePreview')" />
         </NTabs>
-        <div class="min-h-0 flex-1 overflow-auto px-12px py-10px">
+        <div class="min-h-0 flex-1 overflow-y-auto px-12px py-10px">
           <template v-if="mobileTab === 'prompt'">
-            <NForm label-placement="top">
-              <NFormItem :label="$t('page.agentBuilder.contractBase')">
-                <NInput type="textarea" :value="agent?.base_instructions || $t('page.agentBuilder.noContractBase')" readonly :rows="5" />
-              </NFormItem>
-              <NFormItem :label="$t('page.agentBuilder.tenantInstructions')">
-                <NInput v-model:value="draft.tenant_instructions" type="textarea" :rows="6" :maxlength="instructionLimit" show-count />
-              </NFormItem>
-              <NFormItem :label="$t('page.agentBuilder.userInstructions')">
-                <NInput v-model:value="draft.user_instructions" type="textarea" :rows="6" :maxlength="instructionLimit" show-count />
-              </NFormItem>
-              <NFormItem :label="$t('page.agentBuilder.runInstructions')">
-                <NInput v-model:value="runInstructions" type="textarea" :rows="3" />
-              </NFormItem>
-            </NForm>
+            <div class="h-360px flex flex-col">
+              <MarkdownPromptEditor
+                v-model="draft.tenant_instructions"
+                :maxlength="instructionLimit"
+                :placeholder="$t('page.agentBuilder.tenantPlaceholder')"
+              />
+            </div>
           </template>
           <template v-else-if="mobileTab === 'config'">
             <NForm label-placement="top">
-              <NFormItem :label="$t('page.agentBuilder.name')"><NInput v-model:value="draft.name" /></NFormItem>
-              <NFormItem :label="$t('page.agentBuilder.code')"><NInput v-model:value="draft.code" :disabled="!isCreate" /></NFormItem>
-              <NFormItem :label="$t('page.agentBuilder.modelAlias')">
-                <NSelect v-model:value="draft.model_alias" filterable :options="modelOptions" />
-              </NFormItem>
-              <NFormItem label="temperature"><NInputNumber v-model:value="draft.temperature" :min="0" :max="2" :step="0.1" class="w-full" /></NFormItem>
-              <NAlert
-                v-if="diagnostics"
-                class="mb-12px"
-                :type="diagnostics.healthy ? 'success' : 'warning'"
-                :title="diagnostics.healthy ? $t('page.agentBuilder.diagnosticsHealthy') : $t('page.agentBuilder.diagnosticsUnhealthy')"
-              />
+              <NCollapse v-model:expanded-names="configExpandedNames" display-directive="show">
+                <NCollapseItem :title="$t('page.agentBuilder.groupBasic')" name="basic">
+                  <NFormItem :label="$t('page.agentBuilder.name')"><NInput v-model:value="draft.name" /></NFormItem>
+                  <NFormItem :label="$t('page.agentBuilder.code')"><NInput v-model:value="draft.code" :disabled="!isCreate" /></NFormItem>
+                  <NFormItem :label="$t('page.agentBuilder.modelAlias')">
+                    <NSelect v-model:value="draft.model_alias" filterable :options="modelOptions" />
+                  </NFormItem>
+                </NCollapseItem>
+                <NCollapseItem :title="$t('page.agentBuilder.generationParams')" name="generation">
+                  <NFormItem :label="$t('page.agentBuilder.temperature')">
+                    <NInputNumber v-model:value="draft.temperature" :min="0" :max="2" :step="0.1" class="w-full" />
+                  </NFormItem>
+                  <NFormItem :label="$t('page.agentBuilder.topP')">
+                    <NInputNumber v-model:value="draft.top_p" :min="0" :max="1" :step="0.05" class="w-full" />
+                  </NFormItem>
+                  <NFormItem :label="$t('page.agentBuilder.maxOutputTokens')">
+                    <NInputNumber v-model:value="draft.max_output_tokens" :min="1" :max="1000000" class="w-full" />
+                  </NFormItem>
+                </NCollapseItem>
+                <NCollapseItem :title="$t('page.agentBuilder.diagnostics')" name="diagnostics">
+                  <NAlert
+                    v-if="diagnostics"
+                    :type="diagnostics.healthy ? 'success' : 'warning'"
+                    :title="
+                      diagnostics.healthy
+                        ? $t('page.agentBuilder.diagnosticsHealthy')
+                        : $t('page.agentBuilder.diagnosticsUnhealthy')
+                    "
+                  />
+                </NCollapseItem>
+              </NCollapse>
             </NForm>
           </template>
           <template v-else>
@@ -778,5 +719,12 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
         </NList>
       </NDrawerContent>
     </NDrawer>
+
+    <AgentToolPickerModal
+      v-model:show="toolPickerVisible"
+      :bound-tool-ids="boundToolIDs"
+      :can-bind="can(AI_ACTIONS.agentToolBind)"
+      :bind-tool="bindTool"
+    />
   </div>
 </template>

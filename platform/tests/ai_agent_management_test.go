@@ -17,7 +17,7 @@ func validAgentContract() aiagent.Contract {
 
 func TestAgentActionRequestsAcceptSnakeCaseJSON(t *testing.T) {
 	create := action.JSON(func(_ context.Context, request ai.AgentCreateRequest) (any, error) { return request, nil })
-	input := json.RawMessage(`{"code":"test","name":"测试","description":"","source":"personal","visibility":"private","model_alias":"test","user_instructions":"hhh","generation_config":{},"tool_policy":{}}`)
+	input := json.RawMessage(`{"code":"test","name":"测试","description":"","source":"personal","visibility":"private","model_alias":"test","tenant_instructions":"hhh","generation_config":{},"tool_policy":{}}`)
 	result, err := create(context.Background(), input)
 	if err != nil {
 		t.Fatalf("decode create request: %v", err)

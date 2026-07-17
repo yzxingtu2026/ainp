@@ -488,6 +488,16 @@ declare namespace App {
           resetSuccessMsg: string;
         };
       };
+      menu: {
+        ai: {
+          root: { title: string };
+          providers: { title: string };
+          models: { title: string };
+          runtime: { title: string };
+          agents: { title: string };
+          agent_builder: { title: string };
+        };
+      };
       route: Record<I18nRouteKey, string>;
       page: {
         aiAgents: {
@@ -532,19 +542,9 @@ declare namespace App {
           panePrompt: string;
           paneConfig: string;
           panePreview: string;
-          contractBase: string;
-          noContractBase: string;
-          managed: string;
-          managedHint: string;
-          tenantInstructions: string;
+          groupBasic: string;
           tenantPlaceholder: string;
-          userInstructions: string;
-          userPlaceholder: string;
-          runInstructions: string;
-          runPlaceholder: string;
-          runHint: string;
           instructionTooLong: string;
-          instructionEmpty: string;
           name: string;
           code: string;
           description: string;
@@ -557,10 +557,15 @@ declare namespace App {
           modelAlias: string;
           modelAliasPlaceholder: string;
           generationParams: string;
+          temperature: string;
+          topP: string;
+          maxOutputTokens: string;
           tools: string;
+          openToolPicker: string;
+          toolPickerTitle: string;
+          toolPickerHint: string;
           toolSearchPlaceholder: string;
           boundTools: string;
-          candidateTools: string;
           noBoundTools: string;
           noToolCandidates: string;
           requiredTool: string;

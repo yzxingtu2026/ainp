@@ -514,7 +514,7 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 		if err != nil {
 			return err
 		}
-		request := aimodelruntime.GenerateRequest{ModelAlias: version.ModelAlias, ToolScopeID: scopeID, EnableTools: true, Instructions: strings.Join([]string{version.TenantInstructions, version.UserInstructions}, "\n"), Messages: messages, Metadata: map[string]string{"agent_id": agent.ID, "agent_run_id": run.ID}}
+		request := aimodelruntime.GenerateRequest{ModelAlias: version.ModelAlias, ToolScopeID: scopeID, EnableTools: true, Instructions: version.TenantInstructions, Messages: messages, Metadata: map[string]string{"agent_id": agent.ID, "agent_run_id": run.ID}}
 		value, callErr := s.invocations.Generate(ctx, request)
 		run.ModelCalls++
 		if e := s.persistCounters(ctx, run); e != nil {

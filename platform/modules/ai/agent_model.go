@@ -34,7 +34,6 @@ type AgentVersion struct {
 	Version            int             `gorm:"not null;uniqueIndex:ux_ai_agent_version" json:"version"`
 	ModelAlias         string          `gorm:"size:64;not null" json:"model_alias"`
 	TenantInstructions string          `gorm:"type:text" json:"tenant_instructions,omitempty"`
-	UserInstructions   string          `gorm:"type:text" json:"user_instructions,omitempty"`
 	GenerationConfig   json.RawMessage `gorm:"type:jsonb;not null;default:'{}'" json:"generation_config"`
 	ToolPolicy         json.RawMessage `gorm:"type:jsonb;not null;default:'{}'" json:"tool_policy"`
 	CreatedBy          string          `gorm:"size:64;not null" json:"created_by"`

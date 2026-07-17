@@ -29,7 +29,6 @@ declare namespace Api.AI {
     version:number;
     model_alias:string;
     tenant_instructions?:string;
-    user_instructions?:string;
     generation_config:Record<string,unknown>;
     tool_policy:Record<string,unknown>;
     created_by:string;

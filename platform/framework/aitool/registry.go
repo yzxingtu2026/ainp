@@ -97,12 +97,22 @@ func schemaHash(d Definition) string {
 	return hex.EncodeToString(v[:])
 }
 
+// Search 面向模型常驻 tool.search：默认 5、硬顶 10，避免把全量目录塞进上下文。
 func Search(ctx context.Context, definitions []Definition, query, capability string, source Source, limit int, visible func(Definition) bool, embeddings EmbeddingService) ([]Candidate, error) {
+	return search(ctx, definitions, query, capability, source, limit, 5, 10, visible, embeddings)
+}
+
+// Browse 面向管理端工具选择器：默认 50、硬顶 100，便于在弹窗中浏览已注册工具。
+func Browse(ctx context.Context, definitions []Definition, query, capability string, source Source, limit int, visible func(Definition) bool) ([]Candidate, error) {
+	return search(ctx, definitions, query, capability, source, limit, 50, 100, visible, nil)
+}
+
+func search(ctx context.Context, definitions []Definition, query, capability string, source Source, limit, defaultLimit, maxLimit int, visible func(Definition) bool, embeddings EmbeddingService) ([]Candidate, error) {
 	if limit <= 0 {
-		limit = 5
+		limit = defaultLimit
 	}
-	if limit > 10 {
-		limit = 10
+	if limit > maxLimit {
+		limit = maxLimit
 	}
 	q := strings.ToLower(strings.TrimSpace(query))
 	eligible := []Definition{}
