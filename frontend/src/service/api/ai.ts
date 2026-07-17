@@ -32,6 +32,7 @@ export const fetchAIAgentVersions=(id:string)=>post<Api.AI.AgentVersion[]>('agen
 export const fetchAIAgentVersion=(id:string)=>post<Api.AI.AgentVersion>('agent-versions/get',{id});
 export const createAIAgentVersion=(data:Record<string,unknown>)=>post<Api.AI.AgentVersion>('agent-versions/create',data);
 export const publishAIAgentVersion=(data:Record<string,unknown>)=>post<Api.AI.AgentVersion>('agent-versions/publish',data);
+export const materializeAIAgentPreview=(data:Record<string,unknown>)=>post<Api.AI.AgentVersion>('agents/preview/materialize',data);
 export const searchAIAgentTools=(data:Record<string,unknown>)=>post<Api.AI.ToolCandidate[]>('agent-tools/search',data);
 export const fetchAIAgentTools=(id:string)=>post<Api.AI.AgentToolBinding[]>('agent-tools/list',{id});
 export const bindAIAgentTool=(agentId:string,toolId:string)=>post<Api.AI.AgentToolBinding>('agent-tools/bind',{agent_id:agentId,tool_id:toolId});

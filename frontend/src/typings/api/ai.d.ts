@@ -23,10 +23,13 @@ declare namespace Api.AI {
     managed_fields?:string[];
     required_tool_selectors?:string[];
   }
+  type AgentVersionKind = 'release' | 'preview';
   interface AgentVersion {
     id:string;
     agent_id:string;
     version:number;
+    kind?:AgentVersionKind;
+    content_hash?:string;
     model_alias:string;
     tenant_instructions?:string;
     generation_config:Record<string,unknown>;
@@ -46,7 +49,8 @@ declare namespace Api.AI {
   interface AgentDiagnosticIssue { code:string; resource?:string; message:string }
   interface AgentDiagnostics { healthy:boolean; issues:AgentDiagnosticIssue[] }
   type ConversationVisibility = 'private' | 'tenant';
-  interface Conversation { id:string; owner_user_id:string; title:string; agent_id:string; agent_version_id:string; visibility:ConversationVisibility; status:'active'|'archived'; last_message_at?:string; revision:number; created_at:string; updated_at:string }
+  type ConversationPurpose = 'workspace' | 'builder_preview';
+  interface Conversation { id:string; owner_user_id:string; title:string; agent_id:string; agent_version_id:string; purpose?:ConversationPurpose; visibility:ConversationVisibility; status:'active'|'archived'; last_message_at?:string; revision:number; created_at:string; updated_at:string }
   interface ConversationContentPart { type:string; text?:string; image_attachment_id?:string; attachment_revision?:string; detail?:string; tool_call_id?:string; tool_name?:string; arguments?:unknown; result?:unknown }
   interface ConversationMessage { id:string; conversation_id:string; role:'user'|'assistant'|'system'|'tool'; status:'pending'|'committed'|'failed'|'cancelled'; sequence:number; reply_to_message_id?:string; run_id?:string; author_user_id?:string; content:ConversationContentPart[]; created_at:string; committed_at?:string }
   interface MessageCursorPage { items:ConversationMessage[]; next_sequence:number; has_more:boolean }

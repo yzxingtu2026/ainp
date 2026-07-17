@@ -490,8 +490,24 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 	if err = s.db.WithContext(ctx).Where("tenant_id=? AND id=?", run.TenantID, run.AgentVersionID).First(&version).Error; err != nil {
 		return s.fail(ctx, run, "agent_version_unavailable")
 	}
+	var conversation Conversation
+	if err = s.db.WithContext(ctx).Where("tenant_id=? AND id=?", run.TenantID, run.ConversationID).First(&conversation).Error; err != nil {
+		return s.fail(ctx, run, "conversation_unavailable")
+	}
+	if conversation.Purpose == ConversationPurposeWorkspace && version.Kind == AgentVersionKindPreview {
+		return s.fail(ctx, run, "preview_version_forbidden")
+	}
 	var agent Agent
-	if err = s.db.WithContext(ctx).Where("tenant_id=? AND id=? AND status=?", run.TenantID, version.AgentID, "enabled").First(&agent).Error; err != nil {
+	agentQuery := s.db.WithContext(ctx).Where("tenant_id=? AND id=?", run.TenantID, version.AgentID)
+	if conversation.Purpose == ConversationPurposeBuilderPreview {
+		agentQuery = agentQuery.Where("status IN ?", []string{"enabled", "draft"})
+	} else {
+		agentQuery = agentQuery.Where("status = ?", "enabled")
+	}
+	if err = agentQuery.First(&agent).Error; err != nil {
+		return s.fail(ctx, run, "agent_unavailable")
+	}
+	if agent.Status == "disabled" {
 		return s.fail(ctx, run, "agent_unavailable")
 	}
 	scopeID, err := s.ensureToolScope(ctx, run, &agent)

@@ -23,6 +23,7 @@ export const AI_ACTIONS = {
   agentStatus: 'ai.agent_status_update',
   agentVersionCreate: 'ai.agent_version_create',
   agentVersionPublish: 'ai.agent_version_publish',
+  agentPreviewMaterialize: 'ai.agent_preview_materialize',
   agentToolBind: 'ai.agent_tool_bind',
   agentToolUnbind: 'ai.agent_tool_unbind',
   agentToolSearch: 'ai.agent_tool_search',

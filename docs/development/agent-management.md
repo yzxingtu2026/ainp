@@ -36,6 +36,12 @@ Agent Contract（代码注册的能力与安全契约）
 
 动态路由模式下，Builder 通过后端 `HideInMenu` 菜单 `ai.agent_builder` 注册；前端同时把静态隐藏子路由 `ai_agent-builder` 合并进用户路由树，避免仅有列表菜单时 `router.push({ name: 'ai_agent-builder' })` 找不到匹配。
 
-Phase A 右栏预览仅为可识别 Mock，不得调用 Generate、不得创建正式 Conversation/Run。真实预览必须走 Conversation + Agent Runtime，且与 #80 AI Workspace 正式会话隔离。
+右栏实时预览走正规 Conversation + Agent Runtime，**不得**旁路 Generate 或追随未落库的编辑器状态：
 
-本层不实现 Conversation、Agent Run/Step、Workspace、知识库或长期记忆。这些运行对象后续只能引用明确的 `agent_version_id`。
+1. `ai.agent_preview_materialize` 将当前编辑器字段（tenant_instructions / model_alias / generation_config / tool_policy）物化为不可变 `AgentVersion`，`kind=preview`，按 `content_hash` 复用，**不晋升** `agents.current_version`。
+2. 预览会话强制 `purpose=builder_preview`，并钉死上述 preview（或等价）`agent_version_id`；配置变化产生新 preview version 时开启新调试会话。
+3. 正式 `ai.agent_version_publish` 仍创建 `kind=release` 并更新 `current_version`；版本历史列表只返回 release。
+4. Workspace（#80）默认只列 `purpose=workspace`，禁止把 `kind=preview` 用于 workspace 会话。
+5. Builder 预览可对 `draft|enabled` agent 启动 Run；`disabled` 仍禁止。工具绑定挂在 `agent_id` 上，绑/解绑即时生效，无需为纯工具变更强制新 preview version。
+
+本层不实现 Workspace 产品页、知识库或长期记忆；运行对象只能引用明确的 `agent_version_id`。

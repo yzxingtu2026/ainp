@@ -2,6 +2,8 @@ package ai
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"strings"
 
@@ -79,6 +81,16 @@ type AgentVersionCreateRequest struct {
 	ToolPolicy         map[string]any `json:"tool_policy"`
 	Revision           uint64         `json:"revision" validate:"required"`
 }
+
+// AgentPreviewMaterializeRequest 将 Builder 当前编辑状态物化为 preview Version，不晋升 current_version。
+type AgentPreviewMaterializeRequest struct {
+	AgentID            string         `json:"agent_id" validate:"required"`
+	ModelAlias         string         `json:"model_alias" validate:"required"`
+	TenantInstructions string         `json:"tenant_instructions"`
+	GenerationConfig   map[string]any `json:"generation_config"`
+	ToolPolicy         map[string]any `json:"tool_policy"`
+	Revision           uint64         `json:"revision" validate:"required"`
+}
 type AgentBindRequest struct {
 	AgentID string `json:"agent_id" validate:"required"`
 	ToolID  string `json:"tool_id" validate:"required"`
@@ -110,7 +122,7 @@ func agentActor(ctx context.Context) (*auth.Context, error) {
 func canManageTenant(ac *auth.Context) bool {
 	for _, permission := range []string{
 		ActionAgentCreate, ActionAgentUpdate, ActionAgentDuplicate, ActionAgentStatus,
-		ActionAgentVersionCreate, ActionAgentVersionPublish,
+		ActionAgentVersionCreate, ActionAgentVersionPublish, ActionAgentPreviewMaterialize,
 		ActionAgentToolBind, ActionAgentToolUnbind, ActionAgentBuiltinReconcile,
 	} {
 		if ac.HasPermission(permission) {
@@ -267,7 +279,13 @@ func (s *AgentService) Create(ctx context.Context, r AgentCreateRequest) (any, e
 		if e := tx.Create(&row).Error; e != nil {
 			return dbError(e, "create agent")
 		}
-		v := AgentVersion{ID: uuid.NewString(), TenantID: ac.TenantID, AgentID: row.ID, Version: 1, ModelAlias: r.ModelAlias, TenantInstructions: r.TenantInstructions, GenerationConfig: marshal(r.GenerationConfig), ToolPolicy: marshal(r.ToolPolicy), CreatedBy: ac.UserID}
+		genCfg, toolPolicy := marshal(r.GenerationConfig), marshal(r.ToolPolicy)
+		hash := versionContentHash(r.ModelAlias, r.TenantInstructions, genCfg, toolPolicy)
+		v := AgentVersion{
+			ID: uuid.NewString(), TenantID: ac.TenantID, AgentID: row.ID, Version: 1,
+			Kind: AgentVersionKindRelease, ContentHash: hash, ModelAlias: r.ModelAlias,
+			TenantInstructions: r.TenantInstructions, GenerationConfig: genCfg, ToolPolicy: toolPolicy, CreatedBy: ac.UserID,
+		}
 		if e := tx.Create(&v).Error; e != nil {
 			return e
 		}
@@ -373,29 +391,22 @@ func (s *AgentService) CreateVersion(ctx context.Context, r AgentVersionCreateRe
 	if e != nil {
 		return nil, e
 	}
-	req := aimodel.CapabilityRequirements{ModelType: aimodel.ModelTypeChat}
-	if row.ContractKey != "" {
-		if c, ok := s.contracts.Get(row.ContractKey, row.ContractVersion); ok {
-			for _, v := range c.RequiredModelCapabilities {
-				if v == "streaming" {
-					req.Features = append(req.Features, aimodel.FeatureStreaming)
-				}
-				if v == "tools" {
-					req.Features = append(req.Features, aimodel.FeatureToolCalling)
-				}
-			}
-		}
-	}
-	if _, e = s.models.Resolve(ctx, r.ModelAlias, req); e != nil {
+	if e = s.validateVersionInputs(ctx, row, r.ModelAlias, r.TenantInstructions); e != nil {
 		return nil, e
 	}
-	if len(r.TenantInstructions) > 12000 {
-		return nil, errs.New(errs.CodeValidation, "instructions exceed limit")
-	}
+	genCfg, toolPolicy := marshal(r.GenerationConfig), marshal(r.ToolPolicy)
+	hash := versionContentHash(r.ModelAlias, r.TenantInstructions, genCfg, toolPolicy)
 	var version AgentVersion
 	e = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		next := row.CurrentVersion + 1
-		version = AgentVersion{ID: uuid.NewString(), TenantID: row.TenantID, AgentID: row.ID, Version: next, ModelAlias: r.ModelAlias, TenantInstructions: r.TenantInstructions, GenerationConfig: marshal(r.GenerationConfig), ToolPolicy: marshal(r.ToolPolicy), CreatedBy: ac.UserID}
+		next, err := nextAgentVersionNumber(ctx, tx, row.TenantID, row.ID)
+		if err != nil {
+			return err
+		}
+		version = AgentVersion{
+			ID: uuid.NewString(), TenantID: row.TenantID, AgentID: row.ID, Version: next,
+			Kind: AgentVersionKindRelease, ContentHash: hash, ModelAlias: r.ModelAlias,
+			TenantInstructions: r.TenantInstructions, GenerationConfig: genCfg, ToolPolicy: toolPolicy, CreatedBy: ac.UserID,
+		}
 		if e := tx.Create(&version).Error; e != nil {
 			return e
 		}
@@ -410,13 +421,83 @@ func (s *AgentService) CreateVersion(ctx context.Context, r AgentVersionCreateRe
 	})
 	return version, e
 }
+
+func (s *AgentService) MaterializePreview(ctx context.Context, r AgentPreviewMaterializeRequest) (any, error) {
+	row, ac, e := s.get(ctx, r.AgentID, true)
+	if e != nil {
+		return nil, e
+	}
+	if row.Revision != r.Revision {
+		return nil, errs.New(errs.CodeConflict, "agent revision conflict")
+	}
+	if e = s.validateVersionInputs(ctx, row, r.ModelAlias, r.TenantInstructions); e != nil {
+		return nil, e
+	}
+	genCfg, toolPolicy := marshal(r.GenerationConfig), marshal(r.ToolPolicy)
+	hash := versionContentHash(r.ModelAlias, r.TenantInstructions, genCfg, toolPolicy)
+	var existing AgentVersion
+	if e = s.db.WithContext(ctx).Where("tenant_id=? AND agent_id=? AND kind=? AND content_hash=?", row.TenantID, row.ID, AgentVersionKindPreview, hash).Order("version desc").First(&existing).Error; e == nil {
+		return existing, nil
+	}
+	var version AgentVersion
+	e = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		next, err := nextAgentVersionNumber(ctx, tx, row.TenantID, row.ID)
+		if err != nil {
+			return err
+		}
+		version = AgentVersion{
+			ID: uuid.NewString(), TenantID: row.TenantID, AgentID: row.ID, Version: next,
+			Kind: AgentVersionKindPreview, ContentHash: hash, ModelAlias: r.ModelAlias,
+			TenantInstructions: r.TenantInstructions, GenerationConfig: genCfg, ToolPolicy: toolPolicy, CreatedBy: ac.UserID,
+		}
+		return tx.Create(&version).Error
+	})
+	return version, e
+}
+
+func (s *AgentService) validateVersionInputs(ctx context.Context, row *Agent, modelAlias, tenantInstructions string) error {
+	req := aimodel.CapabilityRequirements{ModelType: aimodel.ModelTypeChat}
+	if row.ContractKey != "" {
+		if c, ok := s.contracts.Get(row.ContractKey, row.ContractVersion); ok {
+			for _, v := range c.RequiredModelCapabilities {
+				if v == "streaming" {
+					req.Features = append(req.Features, aimodel.FeatureStreaming)
+				}
+				if v == "tools" {
+					req.Features = append(req.Features, aimodel.FeatureToolCalling)
+				}
+			}
+		}
+	}
+	if _, err := s.models.Resolve(ctx, modelAlias, req); err != nil {
+		return err
+	}
+	if len(tenantInstructions) > 12000 {
+		return errs.New(errs.CodeValidation, "instructions exceed limit")
+	}
+	return nil
+}
+
+func nextAgentVersionNumber(ctx context.Context, tx *gorm.DB, tenantID, agentID string) (int, error) {
+	var max int
+	if err := tx.WithContext(ctx).Model(&AgentVersion{}).Where("tenant_id=? AND agent_id=?", tenantID, agentID).Select("COALESCE(MAX(version),0)").Scan(&max).Error; err != nil {
+		return 0, err
+	}
+	return max + 1, nil
+}
+
+func versionContentHash(modelAlias, tenantInstructions string, generationConfig, toolPolicy json.RawMessage) string {
+	sum := sha256.Sum256([]byte(modelAlias + "\n" + tenantInstructions + "\n" + string(generationConfig) + "\n" + string(toolPolicy)))
+	return hex.EncodeToString(sum[:])
+}
+
 func (s *AgentService) ListVersions(ctx context.Context, r IDRequest) (any, error) {
 	row, _, e := s.get(ctx, r.ID, false)
 	if e != nil {
 		return nil, e
 	}
 	var rows []AgentVersion
-	e = s.db.WithContext(ctx).Where("tenant_id=? AND agent_id=?", row.TenantID, row.ID).Order("version desc").Find(&rows).Error
+	e = s.db.WithContext(ctx).Where("tenant_id=? AND agent_id=? AND kind=?", row.TenantID, row.ID, AgentVersionKindRelease).Order("version desc").Find(&rows).Error
 	return rows, e
 }
 func (s *AgentService) GetVersion(ctx context.Context, r IDRequest) (any, error) {

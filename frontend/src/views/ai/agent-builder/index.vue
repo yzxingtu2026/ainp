@@ -42,9 +42,12 @@ import {
   updateAIAgent
 } from '@/service/api';
 import { useAuthStore } from '@/store/modules/auth';
-import { createDemoMockPreview, createIdleMockPreview, type MockPreviewState } from './mock-preview';
 import MarkdownPromptEditor from '@/components/common/markdown-prompt-editor.vue';
 import AgentToolPickerModal from './modules/agent-tool-picker-modal.vue';
+import PreviewComposer from './modules/preview-composer.vue';
+import { useBuilderPreview } from './use-builder-preview';
+import AgentRunStatus from '@/components/ai/agent-run-status.vue';
+import ToolConfirmationCard from '@/components/ai/tool-confirmation-card.vue';
 
 defineOptions({ name: 'AIAgentBuilder' });
 
@@ -77,9 +80,6 @@ const diagnostics = ref<Api.AI.AgentDiagnostics | null>(null);
 const boundTools = ref<Api.AI.AgentToolBinding[]>([]);
 const aliases = ref<Api.AI.Alias[]>([]);
 const deployments = ref<Api.AI.Deployment[]>([]);
-const previewInput = ref('');
-const preview = ref<MockPreviewState>(createIdleMockPreview(key => $t(key as App.I18n.I18nKey)));
-
 const draft = reactive({
   code: '',
   name: '',
@@ -94,11 +94,41 @@ const draft = reactive({
   revision: 0
 });
 
+const {
+  status: previewStatus,
+  error: previewError,
+  input: previewInput,
+  messages: previewMessages,
+  confirmations: previewConfirmations,
+  run: previewRun,
+  busy: previewBusy,
+  canSend: previewCanSend,
+  runSummary: previewRunSummary,
+  messageText: previewMessageText,
+  send: sendPreview,
+  stop: stopPreview,
+  clear: clearPreview,
+  onConfirmationResolved,
+  resetPreviewBinding
+} = useBuilderPreview({
+  agent,
+  draft,
+  diagnostics,
+  dirty
+});
+
 const isCreate = computed(() => !agent.value);
 const managedFields = computed(() => new Set(agent.value?.managed_fields || []));
 const requiredTools = computed(() => new Set(agent.value?.required_tool_selectors || []));
 const isManaged = (field: string) => managedFields.value.has(field);
 const boundToolIDs = computed(() => boundTools.value.map(item => item.tool_id));
+const previewActive = computed(
+  () =>
+    previewBusy.value ||
+    previewStatus.value === 'materializing' ||
+    previewStatus.value === 'running' ||
+    previewStatus.value === 'waiting_confirmation'
+);
 const canPublish = computed(
   () =>
     Boolean(draft.name && draft.code && draft.model_alias) &&
@@ -175,7 +205,7 @@ async function loadAgent(id: string) {
       revision: agent.value.revision
     });
     dirty.value = false;
-    preview.value = createIdleMockPreview(key => $t(key as App.I18n.I18nKey));
+    resetPreviewBinding();
   } finally {
     loading.value = false;
     queueMicrotask(() => {
@@ -289,38 +319,36 @@ async function publishVersion() {
     }
     dirty.value = false;
     message.success($t('page.agentBuilder.publishSuccess', { version: data.version }));
+    resetPreviewBinding();
     await loadAgent(agent.value!.id);
   } finally {
     publishing.value = false;
   }
 }
 
-function runMockPreview() {
-  if (!diagnostics.value?.healthy && agent.value) {
-    message.warning($t('page.agentBuilder.previewBlocked'));
+async function runPreview() {
+  if (!agent.value) {
+    message.warning($t('page.agentBuilder.previewNeedAgent'));
     return;
   }
-  const text = previewInput.value.trim();
-  if (!text) {
+  if (agent.value.status === 'disabled') {
+    message.warning($t('page.agentBuilder.previewAgentDisabled'));
+    return;
+  }
+  if (diagnostics.value && !diagnostics.value.healthy) {
+    // 预览会物化当前编辑配置，不依赖已发布 current；仅「缺 current version」不拦截。
+    const blocking = (diagnostics.value.issues || []).some(item => item.code !== 'version.missing');
+    if (blocking) {
+      message.warning($t('page.agentBuilder.previewBlocked'));
+      return;
+    }
+  }
+  if (!previewInput.value.trim()) {
     message.warning($t('page.agentBuilder.previewNeedInput'));
     return;
   }
-  preview.value = createDemoMockPreview(text, key => $t(key as App.I18n.I18nKey));
-  preview.value.status = 'streaming';
-  window.setTimeout(() => {
-    if (preview.value.status === 'streaming') preview.value.status = 'completed';
-  }, 600);
-}
-
-function stopMockPreview() {
-  if (preview.value.status === 'streaming') {
-    preview.value = { ...preview.value, status: 'stopped', runSummary: $t('page.agentBuilder.mockStoppedSummary') };
-  }
-}
-
-function clearMockPreview() {
-  previewInput.value = '';
-  preview.value = createIdleMockPreview(key => $t(key as App.I18n.I18nKey));
+  await sendPreview();
+  if (previewError.value) message.error(previewError.value);
 }
 
 function leaveBuilder() {
@@ -376,7 +404,7 @@ watch(
         revision: 0
       });
       dirty.value = false;
-      preview.value = createIdleMockPreview(key => $t(key as App.I18n.I18nKey));
+      resetPreviewBinding();
     }
   },
   { immediate: true }
@@ -608,36 +636,52 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
         >
           <div class="shrink-0 border-b px-12px py-8px font-600">
             {{ $t('page.agentBuilder.panePreview') }}
-            <NTag size="small" type="warning" class="ml-8px">{{ $t('page.agentBuilder.mockTag') }}</NTag>
+            <NTag size="small" type="info" class="ml-8px">{{ $t('page.agentBuilder.previewLiveTag') }}</NTag>
           </div>
-          <div class="min-h-0 flex-1 overflow-y-auto px-12px py-10px">
-            <NAlert type="warning" class="mb-12px">{{ $t('page.agentBuilder.mockBanner') }}</NAlert>
-            <div class="mb-8px text-12px text-gray-500">{{ preview.runSummary }} · {{ preview.status }}</div>
-            <div class="mb-12px flex-col gap-8px">
-              <div
-                v-for="item in preview.messages"
+          <div class="min-h-0 flex flex-1 flex-col overflow-hidden px-12px py-10px">
+            <NAlert type="info" class="mb-12px shrink-0">{{ $t('page.agentBuilder.previewLiveBanner') }}</NAlert>
+            <div class="mb-8px shrink-0 text-12px text-gray-500">{{ previewRunSummary }}</div>
+            <AgentRunStatus
+              v-if="previewRun"
+              class="mb-8px shrink-0"
+              :run="previewRun"
+              @cancel="stopPreview()"
+              @resume="onConfirmationResolved()"
+            />
+            <div v-if="previewConfirmations.length" class="mb-12px flex shrink-0 flex-col gap-8px">
+              <ToolConfirmationCard
+                v-for="item in previewConfirmations"
                 :key="item.id"
-                class="rounded-8px px-10px py-8px"
+                :confirmation="item"
+                @resolved="onConfirmationResolved()"
+              />
+            </div>
+            <div class="min-h-0 flex-1 overflow-y-auto">
+              <div
+                v-for="item in previewMessages"
+                :key="item.id"
+                class="mb-8px rounded-8px px-10px py-8px"
                 :class="item.role === 'user' ? 'bg-primary/10' : 'bg-gray-500/10'"
               >
-                <div class="mb-4px text-12px text-gray-500">{{ item.role }}{{ item.kind ? ` / ${item.kind}` : '' }}</div>
-                <div class="whitespace-pre-wrap break-words">{{ item.text }}</div>
+                <div class="mb-4px text-12px text-gray-500">{{ item.role }}</div>
+                <div class="whitespace-pre-wrap break-words">{{ previewMessageText(item) }}</div>
               </div>
+              <NEmpty
+                v-if="previewMessages.length === 0"
+                class="py-24px"
+                :description="$t('page.agentBuilder.previewIdleSummary')"
+              />
             </div>
-            <NInput
-              v-model:value="previewInput"
-              type="textarea"
-              :rows="3"
-              :placeholder="$t('page.agentBuilder.previewPlaceholder')"
-              class="mb-8px"
-            />
-            <NSpace>
-              <NButton type="primary" :disabled="Boolean(agent && diagnostics && !diagnostics.healthy)" @click="runMockPreview">
-                {{ $t('page.agentBuilder.runMock') }}
-              </NButton>
-              <NButton @click="stopMockPreview">{{ $t('page.agentBuilder.stopMock') }}</NButton>
-              <NButton @click="clearMockPreview">{{ $t('page.agentBuilder.clearMock') }}</NButton>
-            </NSpace>
+            <div class="mt-8px shrink-0 border-t pt-10px">
+              <PreviewComposer
+                v-model="previewInput"
+                :can-send="previewCanSend"
+                :active="previewActive"
+                @send="runPreview"
+                @stop="stopPreview()"
+                @clear="clearPreview()"
+              />
+            </div>
           </div>
         </section>
       </div>
@@ -694,13 +738,39 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
             </NForm>
           </template>
           <template v-else>
-            <NAlert type="warning" class="mb-12px">{{ $t('page.agentBuilder.mockBanner') }}</NAlert>
-            <div v-for="item in preview.messages" :key="item.id" class="mb-8px rounded-8px bg-gray-500/10 px-10px py-8px">
+            <NAlert type="info" class="mb-12px">{{ $t('page.agentBuilder.previewLiveBanner') }}</NAlert>
+            <div class="mb-8px text-12px text-gray-500">{{ previewRunSummary }}</div>
+            <AgentRunStatus
+              v-if="previewRun"
+              class="mb-8px"
+              :run="previewRun"
+              @cancel="stopPreview()"
+              @resume="onConfirmationResolved()"
+            />
+            <ToolConfirmationCard
+              v-for="item in previewConfirmations"
+              :key="item.id"
+              class="mb-8px"
+              :confirmation="item"
+              @resolved="onConfirmationResolved()"
+            />
+            <div
+              v-for="item in previewMessages"
+              :key="item.id"
+              class="mb-8px rounded-8px bg-gray-500/10 px-10px py-8px"
+            >
               <div class="text-12px text-gray-500">{{ item.role }}</div>
-              <div class="whitespace-pre-wrap break-words">{{ item.text }}</div>
+              <div class="whitespace-pre-wrap break-words">{{ previewMessageText(item) }}</div>
             </div>
-            <NInput v-model:value="previewInput" type="textarea" :rows="3" class="mb-8px" />
-            <NButton type="primary" @click="runMockPreview">{{ $t('page.agentBuilder.runMock') }}</NButton>
+            <PreviewComposer
+              v-model="previewInput"
+              class="mt-12px"
+              :can-send="previewCanSend"
+              :active="previewActive"
+              @send="runPreview"
+              @stop="stopPreview()"
+              @clear="clearPreview()"
+            />
           </template>
         </div>
       </div>

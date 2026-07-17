@@ -16,3 +16,4 @@
 - `0020_ai_context_compaction.sql` 扩展版本化压缩 Snapshot 的策略、Schema、Prompt、摘要模型、深度与质量字段。
 - `0021_ai_agent_runtime.sql` 创建 Agent Run、追加式 Step、可续传事件和 lease/预算状态，不写业务初始化数据。
 - `0022_drop_agent_user_instructions.sql` 删除 `ai_agent_versions.user_instructions`；Agent 配置只保留租户指令，用户偏好改由 Workspace/记忆承担。
+- `0023_builder_preview.sql` 为 Agent Version 增加 `kind`/`content_hash`（preview 不晋升 current），为 Conversation 增加 `purpose`（builder_preview 与 Workspace 隔离）。

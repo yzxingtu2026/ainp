@@ -54,6 +54,7 @@ const (
 	ActionAgentVersionGet              = "ai.agent_version_get"
 	ActionAgentVersionCreate           = "ai.agent_version_create"
 	ActionAgentVersionPublish          = "ai.agent_version_publish"
+	ActionAgentPreviewMaterialize      = "ai.agent_preview_materialize"
 	ActionAgentToolSearch              = "ai.agent_tool_search"
 	ActionAgentToolList                = "ai.agent_tool_list"
 	ActionAgentToolBind                = "ai.agent_tool_bind"
@@ -179,6 +180,7 @@ func Register(a *app.App) error {
 		{ActionAgentVersionGet, "/api/v1/ai/agent-versions/get", "智能体版本详情", "ai.agent_management", "智能体", action.JSON(agents.GetVersion)},
 		{ActionAgentVersionCreate, "/api/v1/ai/agent-versions/create", "创建智能体版本", "ai.agent_management", "智能体", action.JSON(agents.CreateVersion)},
 		{ActionAgentVersionPublish, "/api/v1/ai/agent-versions/publish", "发布智能体版本", "ai.agent_management", "智能体", action.JSON(agents.PublishVersion)},
+		{ActionAgentPreviewMaterialize, "/api/v1/ai/agents/preview/materialize", "物化智能体预览版本", "ai.agent_management", "智能体", action.JSON(agents.MaterializePreview)},
 		{ActionAgentToolSearch, "/api/v1/ai/agent-tools/search", "搜索可绑定工具", "ai.agent_management", "智能体", action.JSON(agents.SearchTools)},
 		{ActionAgentToolList, "/api/v1/ai/agent-tools/list", "智能体工具列表", "ai.agent_management", "智能体", action.JSON(agents.ListTools)},
 		{ActionAgentToolBind, "/api/v1/ai/agent-tools/bind", "绑定智能体工具", "ai.agent_management", "智能体", action.JSON(agents.BindTool)},

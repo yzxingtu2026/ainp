@@ -5,6 +5,7 @@
 - Run/Step 状态迁移 fail-closed；重复 Job/事件/Step/工具副作用/最终消息必须幂等。
 - Worker 必须使用行锁 + lease；有效 lease 和终态重复投递 no-op，只有过期 lease 可接管。
 - 每次执行/恢复重新加载当前用户授权；禁止平台管理员身份、长期全权限 token 或跳过 confirmation。
+- `purpose=builder_preview` 才允许 draft agent 执行；workspace 禁止 preview Version；非 builder 路径不得放宽 enabled。
 - 模型只经统一 Model Runtime，工具只经 Tool Runtime，压缩只经 ContextCompactor。
 - ToolConfirmation 暂停时释放 lease；恢复必须校验 auth、permission、Agent/Tool/Schema、参数 hash、会话 revision 与 Snapshot。
 - assistant/tool 消息只经 ConversationService 追加；失败/取消禁止伪造完成消息。

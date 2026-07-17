@@ -27,11 +27,18 @@ type Agent struct {
 
 func (Agent) TableName() string { return "ai_agents" }
 
+const (
+	AgentVersionKindRelease = "release"
+	AgentVersionKindPreview = "preview"
+)
+
 type AgentVersion struct {
 	ID                 string          `gorm:"primaryKey;size:64" json:"id"`
 	TenantID           string          `gorm:"size:64;not null;uniqueIndex:ux_ai_agent_version" json:"-"`
 	AgentID            string          `gorm:"size:64;not null;uniqueIndex:ux_ai_agent_version;index" json:"agent_id"`
 	Version            int             `gorm:"not null;uniqueIndex:ux_ai_agent_version" json:"version"`
+	Kind               string          `gorm:"size:16;not null;default:release;index" json:"kind"`
+	ContentHash        string          `gorm:"size:64;not null;default:''" json:"content_hash,omitempty"`
 	ModelAlias         string          `gorm:"size:64;not null" json:"model_alias"`
 	TenantInstructions string          `gorm:"type:text" json:"tenant_instructions,omitempty"`
 	GenerationConfig   json.RawMessage `gorm:"type:jsonb;not null;default:'{}'" json:"generation_config"`

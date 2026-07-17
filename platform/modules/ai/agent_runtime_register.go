@@ -8,6 +8,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/action"
 	"github.com/yzxingtu2026/ainp/platform/framework/aiagentruntime"
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
+	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/codeset"
 	"github.com/yzxingtu2026/ainp/platform/framework/job"
 	"github.com/yzxingtu2026/ainp/platform/framework/logging"
@@ -70,6 +71,15 @@ func RegisterAgentRuntime(a *app.App, runtime *AgentRuntimeService) error {
 				logging.Warn(ctx, "jobs disabled; Agent Run remains queued", "run_id", env.AggregateID)
 				return nil
 			}
+			// Outbox Dispatcher 无 HTTP AuthContext；入队 Job 必须从 Envelope 注入租户身份。
+			ctx = auth.WithContext(ctx, &auth.Context{
+				TenantID:      env.TenantID,
+				Realm:         auth.NormalizeRealm(auth.Realm(env.Realm)),
+				UserID:        env.ActorID,
+				RequestID:     env.CorrelationID,
+				Authenticated: true,
+				Client:        "outbox",
+			})
 			mode := ""
 			delay := time.Duration(0)
 			if env.EventType == agentRunConfirmationTimeoutEvent {

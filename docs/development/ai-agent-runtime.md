@@ -8,6 +8,12 @@ Run 固定 tenant、actor、session/auth version、conversation、trigger messag
 
 Run 状态为 queued/running/waiting_confirmation/paused/completed/failed/cancelled；Step 为 pending/running/waiting/completed/failed/skipped/cancelled。非法迁移 fail-closed，completed/cancelled 不可恢复；failed 只能显式 retry。
 
+Builder 预览约束：
+
+- Conversation `purpose=builder_preview` 时允许 agent 为 `draft` 或 `enabled` 执行；`disabled` 仍 fail-closed。
+- `purpose=workspace` 不得执行 `kind=preview` 的 Agent Version。
+- 非 builder_preview 路径不得放宽 agent.enabled 要求。
+
 ## 执行与恢复
 
 - Worker 使用行锁和短 lease 抢占。同一 Run 的重复 Job、有主 lease 或终态均幂等 no-op；过期 lease 才允许接管。
