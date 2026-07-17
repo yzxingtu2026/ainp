@@ -21,6 +21,7 @@ declare module "@elegant-router/types" {
     "404": "/404";
     "500": "/500";
     "ai": "/ai";
+    "ai_agents": "/ai/agents";
     "ai_models": "/ai/models";
     "ai_providers": "/ai/providers";
     "ai_runtime": "/ai/runtime";
@@ -111,6 +112,7 @@ declare module "@elegant-router/types" {
     | "iframe-page"
     | "login"
     | "setup"
+    | "ai_agents"
     | "ai_models"
     | "ai_providers"
     | "ai_runtime"

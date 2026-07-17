@@ -1,0 +1,9 @@
+# 智能体管理硬约束
+
+- 内置能力必须注册 Agent Contract；数据库记录不得伪造或覆盖 Contract 安全字段。
+- Agent 只引用 Model Alias；Tool Binding 只引用 namespaced Tool ID，绝不授予权限、Credential 或降低确认要求。
+- Agent Version 创建后不可变；未来 Run 必须引用 `agent_version_id`。
+- builtin 不可物理删除；Setup/reconcile 创建租户业务数据，migration 禁止 seed。
+- personal 默认 private 且只能由 owner 管理；tenant/builtin 变更必须检查租户管理权限。
+- 资源不可用时保留配置并返回 diagnostics，所有 tenant/owner 查询 fail-closed。
+- 详细扩展方式见 `docs/development/agent-management.md`。

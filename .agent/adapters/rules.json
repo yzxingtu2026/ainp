@@ -501,6 +501,12 @@
       "source": ".agent/rules/tool-runtime.md",
       "qoder": {"path": ".qoder/rules/tool-runtime.md", "frontmatter": {"trigger": "always_on"}},
       "cursor": {"path": ".cursor/rules/tool-runtime.mdc", "frontmatter": {"description": "渐进式工具发现、动态 Schema、Handle、确认与执行边界", "alwaysApply": true}}
+    },
+    {
+      "id": "agent-management",
+      "source": ".agent/rules/agent-management.md",
+      "qoder": {"path": ".qoder/rules/agent-management.md", "frontmatter": {"trigger": "always_on"}},
+      "cursor": {"path": ".cursor/rules/agent-management.mdc", "frontmatter": {"description": "智能体 Contract、不可变 Version、ownership 与资源绑定边界", "alwaysApply": true}}
     }
   ]
 }

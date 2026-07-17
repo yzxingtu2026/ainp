@@ -230,6 +230,7 @@ const local: App.I18n.Schema = {
   },
   route: {
     ai: 'AI 中心',
+    ai_agents: '智能体',
     ai_models: '模型目录',
     ai_providers: '模型供应商',
     ai_runtime: '模型调试',

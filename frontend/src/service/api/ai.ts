@@ -22,3 +22,9 @@ export const executeAITool=(data:Record<string,unknown>)=>post<Api.AI.ToolResult
 export const fetchAIToolConfirmations=(scopeId?:string)=>post<Api.AI.ToolConfirmation[]>('tool-confirmations/list',{scope_id:scopeId||''});
 export const approveAIToolConfirmation=(id:string)=>post<Api.AI.ToolResult>('tool-confirmations/approve',{id});
 export const rejectAIToolConfirmation=(id:string)=>post<{id:string;status:string}>('tool-confirmations/reject',{id});
+export const fetchAIAgents=(params:Record<string,unknown>)=>post<Api.AI.Page<Api.AI.Agent>>('agents/list',params);
+export const createAIAgent=(data:Record<string,unknown>)=>post<Api.AI.Agent>('agents/create',data);
+export const updateAIAgentStatus=(id:string,status:string)=>post<Api.AI.Agent>('agents/status/update',{id,status});
+export const fetchAIAgentVersions=(id:string)=>post<Api.AI.AgentVersion[]>('agent-versions/list',{id});
+export const fetchAIAgentDiagnostics=(id:string)=>post<Api.AI.AgentDiagnostics>('agents/diagnostics',{id});
+export const reconcileBuiltinAIAgent=()=>post<{created:boolean;agent:Api.AI.Agent}>('agents/builtin/reconcile');
