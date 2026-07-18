@@ -229,6 +229,21 @@ type KnowledgeRetriever interface {
 	Retrieve(context.Context, RetrievalRequest) ([]RetrievedChunk, error)
 }
 
+type RetrievalMetadata struct {
+	CandidateCount int    `json:"candidate_count"`
+	Degraded       bool   `json:"degraded"`
+	DegradeReason  string `json:"degrade_reason,omitempty"`
+}
+
+type RetrievalResponse struct {
+	Items    []RetrievedChunk  `json:"items"`
+	Metadata RetrievalMetadata `json:"metadata"`
+}
+
+type KnowledgeRetrieverWithMetadata interface {
+	RetrieveWithMetadata(context.Context, RetrievalRequest) (RetrievalResponse, error)
+}
+
 // Fake is deterministic and configurable for contract and consumer tests.
 type Fake struct {
 	mu             sync.RWMutex

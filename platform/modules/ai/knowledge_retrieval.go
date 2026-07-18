@@ -32,28 +32,34 @@ type knowledgeCandidate struct {
 }
 
 func (s *KnowledgeRetrievalService) Retrieve(ctx context.Context, request aiknowledge.RetrievalRequest) ([]aiknowledge.RetrievedChunk, error) {
+	response, err := s.RetrieveWithMetadata(ctx, request)
+	return response.Items, err
+}
+
+func (s *KnowledgeRetrievalService) RetrieveWithMetadata(ctx context.Context, request aiknowledge.RetrievalRequest) (aiknowledge.RetrievalResponse, error) {
+	var response aiknowledge.RetrievalResponse
 	if s.db == nil || s.access == nil {
-		return nil, errors.New("knowledge retrieval dependencies unavailable")
+		return response, errors.New("knowledge retrieval dependencies unavailable")
 	}
 	ac, ok := auth.FromContext(ctx)
 	if !ok || !ac.Authenticated || ac.TenantID == "" {
-		return nil, errors.New("knowledge retrieval requires authenticated tenant context")
+		return response, errors.New("knowledge retrieval requires authenticated tenant context")
 	}
 	request.Config.Normalize()
 	if err := request.Config.Validate(); err != nil {
-		return nil, err
+		return response, err
 	}
 	query := strings.TrimSpace(request.Query)
 	if query == "" || len(query) > 4096 {
-		return nil, errors.New("knowledge query is invalid")
+		return response, errors.New("knowledge query is invalid")
 	}
 	baseIDs := stableUnique(request.KnowledgeBaseIDs)
 	if len(baseIDs) == 0 || len(baseIDs) > maxKnowledgeRetrievalScope {
-		return nil, errors.New("knowledge base scope is invalid")
+		return response, errors.New("knowledge base scope is invalid")
 	}
 	documentIDs := stableUnique(request.DocumentIDs)
 	if len(documentIDs) > 100 {
-		return nil, errors.New("document filter is too large")
+		return response, errors.New("document filter is too large")
 	}
 	candidates := map[string]knowledgeCandidate{}
 	candidateLimit := request.Config.TopK * 4
@@ -77,23 +83,24 @@ func (s *KnowledgeRetrievalService) Retrieve(ctx context.Context, request aiknow
 		}
 		rows, err := s.lexicalCandidates(ctx, ac.TenantID, base, version, query, documentIDs, candidateLimit)
 		if err != nil {
-			return nil, err
+			return response, err
 		}
 		for _, row := range rows {
 			candidates[row.ChunkID] = row
 		}
-		if s.embeddings != nil && version.EmbeddingDimensions > 0 && version.EmbeddingDeploymentID != "" && version.EmbeddingAlias != "" {
-			response, embedErr := s.embeddings.Embed(ctx, aimodelruntime.EmbeddingRequest{ModelAlias: version.EmbeddingAlias, Inputs: []aimodelruntime.EmbeddingItem{{ID: "query", Text: query}}, Dimensions: &version.EmbeddingDimensions, Purpose: aimodelruntime.EmbeddingPurposeKnowledgeQuery})
+		vectorConfigured := version.EmbeddingDimensions > 0 && version.EmbeddingDeploymentID != "" && version.EmbeddingAlias != ""
+		if s.embeddings != nil && vectorConfigured {
+			embeddingResponse, embedErr := s.embeddings.Embed(ctx, aimodelruntime.EmbeddingRequest{ModelAlias: version.EmbeddingAlias, Inputs: []aimodelruntime.EmbeddingItem{{ID: "query", Text: query}}, Dimensions: &version.EmbeddingDimensions, Purpose: aimodelruntime.EmbeddingPurposeKnowledgeQuery})
 			if embedErr == nil {
-				if response == nil {
-					return nil, errors.New("knowledge embedding response unavailable")
+				if embeddingResponse == nil {
+					return aiknowledge.RetrievalResponse{}, errors.New("knowledge embedding response unavailable")
 				}
-				if response.Dimensions != version.EmbeddingDimensions || response.Model.DeploymentID != version.EmbeddingDeploymentID || len(response.Vectors) != 1 || len(response.Vectors[0].Vector) != version.EmbeddingDimensions {
-					return nil, errors.New("knowledge embedding provenance mismatch")
+				if embeddingResponse.Dimensions != version.EmbeddingDimensions || embeddingResponse.Model.DeploymentID != version.EmbeddingDeploymentID || len(embeddingResponse.Vectors) != 1 || len(embeddingResponse.Vectors[0].Vector) != version.EmbeddingDimensions {
+					return aiknowledge.RetrievalResponse{}, errors.New("knowledge embedding provenance mismatch")
 				}
-				vectors, vectorErr := s.vectorCandidates(ctx, ac.TenantID, base, version, PGVector(response.Vectors[0].Vector), documentIDs, candidateLimit)
+				vectors, vectorErr := s.vectorCandidates(ctx, ac.TenantID, base, version, PGVector(embeddingResponse.Vectors[0].Vector), documentIDs, candidateLimit)
 				if vectorErr != nil {
-					return nil, vectorErr
+					return aiknowledge.RetrievalResponse{}, vectorErr
 				}
 				for _, row := range vectors {
 					existing := candidates[row.ChunkID]
@@ -103,7 +110,13 @@ func (s *KnowledgeRetrievalService) Retrieve(ctx context.Context, request aiknow
 					existing.VectorScore = row.VectorScore
 					candidates[row.ChunkID] = existing
 				}
+			} else {
+				response.Metadata.Degraded = true
+				response.Metadata.DegradeReason = "embedding_runtime"
 			}
+		} else if vectorConfigured {
+			response.Metadata.Degraded = true
+			response.Metadata.DegradeReason = "embedding_runtime"
 		}
 	}
 	items := make([]aiknowledge.RetrievedChunk, 0, len(candidates))
@@ -162,7 +175,9 @@ func (s *KnowledgeRetrievalService) Retrieve(ctx context.Context, request aiknow
 		tokens += count
 		out = append(out, item)
 	}
-	return out, nil
+	response.Items = out
+	response.Metadata.CandidateCount = len(candidates)
+	return response, nil
 }
 
 func (s *KnowledgeRetrievalService) lexicalCandidates(ctx context.Context, tenantID string, base KnowledgeBase, version KnowledgeIndexVersion, query string, documents []string, limit int) ([]knowledgeCandidate, error) {
@@ -251,4 +266,5 @@ func estimateKnowledgeTokens(text string) int {
 }
 
 var _ aiknowledge.KnowledgeRetriever = (*KnowledgeRetrievalService)(nil)
+var _ aiknowledge.KnowledgeRetrieverWithMetadata = (*KnowledgeRetrievalService)(nil)
 var _ aiknowledge.CitationResolver = (*KnowledgeRetrievalService)(nil)
