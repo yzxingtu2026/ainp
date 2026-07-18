@@ -129,6 +129,21 @@ func TestOutboxListFiltersAndKeepsTenantScope(t *testing.T) {
 	if _, exposed := payload.Items[0]["TenantID"]; exposed {
 		t.Fatalf("outbox JSON must use explicit public fields: %s", encoded)
 	}
+	ctxB := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t2", Realm: auth.RealmTenant})
+	if err := outbox.RetryTenantEvent(ctxB, db, "t1-a"); err == nil {
+		t.Fatal("cross-tenant retry must fail closed")
+	}
+	if err := outbox.RetryTenantEvent(ctx, db, "t1-a"); err != nil {
+		t.Fatal(err)
+	}
+	retried, err := operations.NewOutboxService(db).List(ctx, json.RawMessage(`{"status":"pending","page":1,"page_size":10}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	retriedData := retried.(pagination.Result[outbox.Event])
+	if retriedData.Total != 1 || len(retriedData.Items) != 1 || retriedData.Items[0].ID != "t1-a" {
+		t.Fatalf("unexpected retried tenant event: %#v", retriedData)
+	}
 }
 
 func TestNotificationDeliveryListDefaultsToAllStatuses(t *testing.T) {
