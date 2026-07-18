@@ -183,6 +183,12 @@ func AutoMigrateKnowledge(db *gorm.DB) error {
 	if db.Dialector.Name() != "postgres" {
 		return nil
 	}
+	if err := db.Exec("ALTER TABLE ai_knowledge_chunk_payloads ADD COLUMN IF NOT EXISTS search_vector tsvector GENERATED ALWAYS AS (to_tsvector('simple', text)) STORED").Error; err != nil {
+		return err
+	}
+	if err := db.Exec("CREATE INDEX IF NOT EXISTS idx_ai_knowledge_chunk_payload_fts ON ai_knowledge_chunk_payloads USING gin (search_vector)").Error; err != nil {
+		return err
+	}
 	for _, item := range []struct {
 		table, name, definition string
 	}{

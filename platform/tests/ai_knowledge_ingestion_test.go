@@ -36,7 +36,11 @@ func (f ingestionEmbedding) Embed(_ context.Context, request aimodelruntime.Embe
 		size = f.dimensions
 	}
 	for i, input := range request.Inputs {
-		vectors[i] = aimodelruntime.EmbeddingVector{ID: input.ID, Index: i, Vector: make([]float32, size)}
+		vector := make([]float32, size)
+		if size > 0 {
+			vector[0] = 1
+		}
+		vectors[i] = aimodelruntime.EmbeddingVector{ID: input.ID, Index: i, Vector: vector}
 	}
 	return &aimodelruntime.EmbeddingResponse{Model: aimodelruntime.ModelSummary{Alias: request.ModelAlias, DeploymentID: "deployment-v1"}, Vectors: vectors, Dimensions: f.dimensions, PreprocessingVersion: aimodelruntime.EmbeddingPreprocessingVersionNone}, nil
 }

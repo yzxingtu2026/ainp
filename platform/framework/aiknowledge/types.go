@@ -203,14 +203,26 @@ type Chunker interface {
 
 type RetrievalRequest struct {
 	KnowledgeBaseIDs []string        `json:"knowledge_base_ids"`
+	DocumentIDs      []string        `json:"document_ids,omitempty"`
 	Query            string          `json:"query"`
 	Config           RetrievalConfig `json:"config"`
 }
 
+type CitationLookup struct {
+	Citation  Citation `json:"citation"`
+	Available bool     `json:"available"`
+	Stale     bool     `json:"stale"`
+}
+
+type CitationResolver interface {
+	ResolveCitation(context.Context, Citation) (CitationLookup, error)
+}
+
 type RetrievedChunk struct {
-	Citation Citation
-	Score    float64
-	Text     string
+	Citation  Citation
+	Score     float64
+	Text      string
+	Untrusted bool
 }
 
 type KnowledgeRetriever interface {
@@ -297,6 +309,10 @@ func (f *Fake) Retrieve(_ context.Context, request RetrievalRequest) ([]Retrieve
 	if f.Err != nil {
 		return nil, f.Err
 	}
+	request.Config.Normalize()
+	if err := request.Config.Validate(); err != nil {
+		return nil, err
+	}
 	if len(request.KnowledgeBaseIDs) == 0 {
 		return nil, fmt.Errorf("at least one knowledge base is required")
 	}
@@ -304,9 +320,16 @@ func (f *Fake) Retrieve(_ context.Context, request RetrievalRequest) ([]Retrieve
 	for _, id := range request.KnowledgeBaseIDs {
 		allowed[id] = true
 	}
+	documents := make(map[string]bool, len(request.DocumentIDs))
+	for _, id := range request.DocumentIDs {
+		documents[id] = true
+	}
 	out := make([]RetrievedChunk, 0, len(f.Retrieval))
 	for _, item := range f.Retrieval {
 		if !allowed[item.Citation.KnowledgeBaseID] {
+			continue
+		}
+		if len(documents) > 0 && !documents[item.Citation.DocumentID] {
 			continue
 		}
 		if item.Score < request.Config.MinScore {
@@ -324,7 +347,35 @@ func (f *Fake) Retrieve(_ context.Context, request RetrievalRequest) ([]Retrieve
 	if limit <= 0 || limit > len(out) {
 		limit = len(out)
 	}
-	return append([]RetrievedChunk(nil), out[:limit]...), nil
+	bounded := make([]RetrievedChunk, 0, limit)
+	tokens := 0
+	for _, item := range out {
+		item.Untrusted = true
+		if len(bounded) >= limit {
+			break
+		}
+		count := (len([]rune(item.Text)) + 3) / 4
+		if tokens+count > request.Config.MaxContextTokens {
+			continue
+		}
+		tokens += count
+		bounded = append(bounded, item)
+	}
+	return bounded, nil
+}
+
+func (f *Fake) ResolveCitation(_ context.Context, citation Citation) (CitationLookup, error) {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	lookup := CitationLookup{Citation: citation, Stale: true}
+	if f.Err != nil {
+		return lookup, f.Err
+	}
+	document, ok := f.Documents[citation.DocumentID]
+	lookup.Available = ok && f.ReadableDocs[citation.DocumentID] && document.SourceRevision == citation.SourceRevision
+	lookup.Stale = !lookup.Available
+	lookup.Citation.Stale = lookup.Stale
+	return lookup, nil
 }
 
 func (f *Fake) Parse(_ context.Context, _ DocumentRef, _ io.Reader) ([]ParsedSection, error) {
@@ -354,3 +405,4 @@ var _ Service = (*Fake)(nil)
 var _ DocumentParser = (*Fake)(nil)
 var _ Chunker = (*Fake)(nil)
 var _ KnowledgeRetriever = (*Fake)(nil)
+var _ CitationResolver = (*Fake)(nil)

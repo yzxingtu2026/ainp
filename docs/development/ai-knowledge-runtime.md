@@ -53,6 +53,15 @@ Knowledge Runtime 管理租户知识库、附件来源、不可变索引版本�
 - 失败、取消或维度/模型版本漂移只标记候选版本失败，保留旧指针；错误只存稳定安全分类，不保存供应商原始响应。
 - Document 更新立即清空其当前索引指针；删除后软删除事实立即阻止检索，并通过独立清理 Job 最终删除 Chunk、正文和向量。
 
+## 混合检索与 Citation
+
+- `KnowledgeRetriever` 的候选 Knowledge Base 由调用方限定，但每次召回前仍按当前 AuthContext 重验 Base；每条结果返回前再次重验 Document 权限和 source revision。
+- 只读取 Base 与所有活动 Document 同时指向的 `ready` IndexVersion；旧版本、过期 revision、软删除或指针不一致均不可返回正文。
+- exact/FTS 与 pgvector 分路受限召回，按固定权重融合并以 Chunk ID 稳定打破同分；`top_k`、候选倍数、Document filter 与上下文 token 总量都有硬上限。
+- Query Embedding 必须经统一 Embedding Runtime，deployment、dimensions 与 IndexVersion 完全匹配；Runtime 不可用时可降级 FTS，返回的模型事实异常则 fail-closed。
+- Citation 只包含稳定 Base/Document/Chunk/Index、source revision、来源位置、标题与 attachment ID；回查重新鉴权并复核当前指针，不返回正文，来源变化后标记 stale。
+- Agent 绑定仅提供候选 Base ID。Agent Run 使用当前 actor 调 Retriever，并把结果包装为 `user` 级 `UNTRUSTED KNOWLEDGE REFERENCES`；禁止拼入 system/developer instructions。
+
 ## 测试
 
 后端测试统一放在 `platform/tests/`，至少覆盖：
