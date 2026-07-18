@@ -472,7 +472,16 @@ func TestKnowledgeTenantAttachmentRevisionAndBindingBoundaries(t *testing.T) {
 		ID: "agent-other", TenantID: "tenant-a", OwnerUserID: &otherOwner, Code: "agent-other",
 		Name: "Other agent", Source: "personal", Visibility: "private", Status: "draft", Revision: 1,
 	}
-	if err = db.Create(&agent).Error; err != nil {
+	systemSeedCtx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, Realm: auth.RealmPlatform, IsSystemOperator: true})
+	systemDB, systemErr := tenant.SystemDB(systemSeedCtx, db)
+	if systemErr != nil {
+		t.Fatal(systemErr)
+	}
+	agentRepo, systemErr := tenant.NewSystemRepository[ai.Agent](systemDB)
+	if systemErr != nil {
+		t.Fatal(systemErr)
+	}
+	if err = agentRepo.Create(&agent); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = service.BindAgentKnowledge(mutationCtx, ai.AgentKnowledgeBindRequest{AgentID: agent.ID, KnowledgeBaseID: tenantKB.ID}); err != nil {

@@ -89,14 +89,18 @@ func (s *ContextCompactionService) Compact(ctx context.Context, r aiconversation
 	if resolved.Limits.ContextWindow <= 0 {
 		return &aiconversation.CompactionResult{Status: "failed", Reason: "model_context_window_unavailable"}, nil
 	}
-	var version AgentVersion
-	if err = s.db.WithContext(ctx).Where("tenant_id=? AND id=?", ac.TenantID, visible.AgentVersionID).First(&version).Error; err != nil {
+	repos, repoErr := newAgentRepositories(ctx, s.db)
+	if repoErr != nil {
+		return nil, repoErr
+	}
+	version, err := repos.versions.GetByID(visible.AgentVersionID)
+	if err != nil {
 		return nil, errs.New(errs.CodeNotFound, "agent version not found")
 	}
 	fixedTokens, _ := s.tokenizer.Count(ctx, version.TenantInstructions)
 	toolSchemaBytes := r.ToolSchemaBytes
-	var bindings []AgentToolBinding
-	if err = s.db.WithContext(ctx).Where("tenant_id=? AND agent_id=? AND status=?", ac.TenantID, visible.AgentID, "enabled").Find(&bindings).Error; err != nil {
+	bindings, err := repos.tools.Find("agent_id=? AND status=?", visible.AgentID, "enabled")
+	if err != nil {
 		return nil, err
 	}
 	if s.tools != nil {

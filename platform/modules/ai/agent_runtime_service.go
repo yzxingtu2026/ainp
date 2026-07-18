@@ -486,8 +486,12 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 	}
 	budget = budget.Normalize()
 	deadline := s.now().Add(time.Duration(budget.MaxDurationSeconds) * time.Second)
-	var version AgentVersion
-	if err = s.db.WithContext(ctx).Where("tenant_id=? AND id=?", run.TenantID, run.AgentVersionID).First(&version).Error; err != nil {
+	repos, repoErr := newAgentRepositories(ctx, s.db)
+	if repoErr != nil {
+		return s.fail(ctx, run, "tenant_repository_unavailable")
+	}
+	version, err := repos.versions.GetByID(run.AgentVersionID)
+	if err != nil {
 		return s.fail(ctx, run, "agent_version_unavailable")
 	}
 	var conversation Conversation
@@ -497,14 +501,14 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 	if conversation.Purpose == ConversationPurposeWorkspace && version.Kind == AgentVersionKindPreview {
 		return s.fail(ctx, run, "preview_version_forbidden")
 	}
-	var agent Agent
-	agentQuery := s.db.WithContext(ctx).Where("tenant_id=? AND id=?", run.TenantID, version.AgentID)
+	agentQuery := repos.agents.Where("id=?", version.AgentID)
 	if conversation.Purpose == ConversationPurposeBuilderPreview {
 		agentQuery = agentQuery.Where("status IN ?", []string{"enabled", "draft"})
 	} else {
 		agentQuery = agentQuery.Where("status = ?", "enabled")
 	}
-	if err = agentQuery.First(&agent).Error; err != nil {
+	agent, err := agentQuery.First("1=1")
+	if err != nil {
 		return s.fail(ctx, run, "agent_unavailable")
 	}
 	if agent.Status == "disabled" {
@@ -870,8 +874,12 @@ func (s *AgentRuntimeService) ensureToolScope(ctx context.Context, run *AgentRun
 	if err := s.db.WithContext(ctx).Where("tenant_id=? AND user_id=? AND agent_run_id=? AND expires_at>?", run.TenantID, run.UserID, run.ID, s.now()).First(&existing).Error; err == nil {
 		return existing.ID, nil
 	}
-	var bindings []AgentToolBinding
-	if err := s.db.WithContext(ctx).Where("tenant_id=? AND agent_id=? AND status=?", run.TenantID, agent.ID, "enabled").Find(&bindings).Error; err != nil {
+	repos, repoErr := newAgentRepositories(ctx, s.db)
+	if repoErr != nil {
+		return "", repoErr
+	}
+	bindings, err := repos.tools.Find("agent_id=? AND status=?", agent.ID, "enabled")
+	if err != nil {
 		return "", err
 	}
 	allowed := []string{"meta:tool.search", "meta:tool.load"}

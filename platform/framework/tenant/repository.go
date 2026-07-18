@@ -8,25 +8,40 @@ import (
 
 type Repository[T any] struct{ db *gorm.DB }
 
+type Result struct {
+	RowsAffected int64
+	Error        error
+}
+
 func (r *Repository[T]) query() *gorm.DB {
-	q := r.db.Session(&gorm.Session{NewDB: true})
-	if mode, ok := r.db.Get(accessModeKey); ok {
+	return r.db.Session(&gorm.Session{})
+}
+
+func cleanRepositoryDB(db *gorm.DB) *gorm.DB {
+	q := db.Session(&gorm.Session{NewDB: true})
+	if mode, ok := db.Get(accessModeKey); ok {
 		q = q.Set(accessModeKey, mode)
 	}
 	return q
 }
 
+func (r *Repository[T]) clone(db *gorm.DB) *Repository[T] { return &Repository[T]{db: db} }
+func (r *Repository[T]) Where(query any, args ...any) *Repository[T] {
+	return r.clone(r.query().Where(query, args...))
+}
+func (r *Repository[T]) Order(value any) *Repository[T] { return r.clone(r.query().Order(value)) }
+
 func NewTenantRepository[T any](db TenantDatabase) (*Repository[T], error) {
 	if db.db == nil {
 		return nil, ErrTenantDBRequired
 	}
-	return &Repository[T]{db: db.db}, nil
+	return &Repository[T]{db: cleanRepositoryDB(db.db)}, nil
 }
 func NewSystemRepository[T any](db SystemDatabase) (*Repository[T], error) {
 	if db.db == nil {
 		return nil, ErrSystemDBRequired
 	}
-	return &Repository[T]{db: db.db}, nil
+	return &Repository[T]{db: cleanRepositoryDB(db.db)}, nil
 }
 func (r *Repository[T]) First(where any, args ...any) (T, error) {
 	var v T
@@ -76,6 +91,14 @@ func (r *Repository[T]) UpdateRevision(id any, revision uint64, values map[strin
 		return gorm.ErrRecordNotFound
 	}
 	return nil
+}
+func (r *Repository[T]) Updates(values map[string]any) Result {
+	res := r.query().Model(new(T)).Updates(values)
+	return Result{RowsAffected: res.RowsAffected, Error: res.Error}
+}
+func (r *Repository[T]) DeleteWhere(where any, args ...any) Result {
+	res := r.query().Where(where, args...).Delete(new(T))
+	return Result{RowsAffected: res.RowsAffected, Error: res.Error}
 }
 func (r *Repository[T]) Delete(v *T) error { return r.query().Delete(v).Error }
 func IsNotFound(err error) bool            { return errors.Is(err, gorm.ErrRecordNotFound) }

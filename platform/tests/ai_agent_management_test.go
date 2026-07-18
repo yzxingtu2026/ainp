@@ -16,6 +16,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/database"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
+	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"github.com/yzxingtu2026/ainp/platform/modules/ai"
 	"gorm.io/gorm"
 )
@@ -160,5 +161,73 @@ func TestAgentEnableRequiresFirstPublishedVersion(t *testing.T) {
 	diagnostics := value.(ai.AgentDiagnostics)
 	if diagnostics.Healthy || len(diagnostics.Issues) != 1 || diagnostics.Issues[0].Code != "version.missing" {
 		t.Fatalf("unexpected diagnostics: %#v", diagnostics)
+	}
+}
+
+func TestAgentServiceTenantRepositoryIsolation(t *testing.T) {
+	db := openAgentManagementTestDB(t)
+	service := ai.NewAgentService(db, aiagent.NewRegistry(), nil, aitool.NewRegistry())
+	platform := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, Realm: auth.RealmPlatform, IsSystemOperator: true})
+	sdb, err := tenantdata.SystemDB(platform, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo, err := tenantdata.NewSystemRepository[ai.Agent](sdb)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ownerA, ownerB := "user-a", "user-b"
+	for _, row := range []ai.Agent{{ID: "agent-a", TenantID: "tenant-a", OwnerUserID: &ownerA, Code: "a", Name: "A", Source: "personal", Visibility: "private", Status: "draft", Revision: 1}, {ID: "agent-b", TenantID: "tenant-b", OwnerUserID: &ownerB, Code: "b", Name: "B", Source: "personal", Visibility: "private", Status: "draft", Revision: 1}} {
+		current := row
+		if err = repo.Create(&current); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ctxA := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "tenant-a", UserID: "user-a", Realm: auth.RealmTenant})
+	if _, err = service.Get(ctxA, ai.IDRequest{ID: "agent-b"}); err == nil {
+		t.Fatal("tenant A read tenant B agent")
+	}
+	if got, err := service.Get(ctxA, ai.IDRequest{ID: "agent-a"}); err != nil || got.(ai.AgentDetail).ID != "agent-a" {
+		t.Fatalf("same tenant get failed: %#v %v", got, err)
+	}
+	if err = db.First(&ai.Agent{}, "id=?", "agent-a").Error; !errors.Is(err, tenantdata.ErrTenantDBRequired) {
+		t.Fatalf("naked Agent query did not fail closed: %v", err)
+	}
+}
+
+func TestBuilderPreviewConversationUsesAgentTenantRepository(t *testing.T) {
+	db := openAgentManagementTestDB(t)
+	_ = ai.NewAgentService(db, aiagent.NewRegistry(), nil, aitool.NewRegistry())
+	if err := db.AutoMigrate(&ai.Conversation{}); err != nil {
+		t.Fatal(err)
+	}
+	platform := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, Realm: auth.RealmPlatform, IsSystemOperator: true})
+	sdb, err := tenantdata.SystemDB(platform, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	agents, _ := tenantdata.NewSystemRepository[ai.Agent](sdb)
+	versions, _ := tenantdata.NewSystemRepository[ai.AgentVersion](sdb)
+	owner := "user-a"
+	agent := ai.Agent{ID: "preview-agent", TenantID: "tenant-a", OwnerUserID: &owner, Code: "preview", Name: "Preview", Source: "personal", Visibility: "private", Status: "draft", Revision: 1}
+	version := ai.AgentVersion{ID: "preview-v1", TenantID: "tenant-a", AgentID: agent.ID, Version: 1, Kind: ai.AgentVersionKindPreview, ModelAlias: "mock", CreatedBy: owner}
+	if err = agents.Create(&agent); err != nil {
+		t.Fatal(err)
+	}
+	if err = versions.Create(&version); err != nil {
+		t.Fatal(err)
+	}
+	service := ai.NewConversationService(db, nil)
+	ctxA := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "tenant-a", UserID: owner, Realm: auth.RealmTenant})
+	value, err := service.Create(ctxA, ai.ConversationCreateRequest{AgentID: agent.ID, AgentVersionID: version.ID, Purpose: ai.ConversationPurposeBuilderPreview, Visibility: "private"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value.(ai.Conversation).Purpose != ai.ConversationPurposeBuilderPreview {
+		t.Fatalf("unexpected conversation: %#v", value)
+	}
+	ctxB := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "tenant-b", UserID: "user-b", Realm: auth.RealmTenant})
+	if _, err = service.Create(ctxB, ai.ConversationCreateRequest{AgentID: agent.ID, AgentVersionID: version.ID, Purpose: ai.ConversationPurposeBuilderPreview}); err == nil {
+		t.Fatal("tenant B created preview for tenant A agent")
 	}
 }
