@@ -518,6 +518,9 @@ declare namespace App {
           private: string;
           tenant: string;
           embeddingAlias: string;
+          embeddingAliasPlaceholder: string;
+          embeddingAliasLoadFailed: string;
+          currentAliasUnavailable: string;
           chunking: string;
           chunkSize: string;
           chunkOverlap: string;

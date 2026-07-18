@@ -13,6 +13,8 @@ import {
   createKnowledgeDocument,
   deleteKnowledgeBase,
   deleteKnowledgeDocument,
+  fetchAIAliases,
+  fetchAIDeployments,
   fetchKnowledgeBase,
   fetchKnowledgeBases,
   fetchKnowledgeDocuments,
@@ -45,6 +47,9 @@ const retrievalLoading = ref(false);
 const retrievalQuery = ref('');
 const retrievalResults = ref<Api.AI.RetrievalResult[]>([]);
 const citationLookups = ref<Record<string, Api.AI.CitationLookup>>({});
+const aliases = ref<Api.AI.Alias[]>([]);
+const deployments = ref<Api.AI.Deployment[]>([]);
+const embeddingAliasesLoading = ref(false);
 
 const defaultForm = (): Api.AI.KnowledgeBaseCreate & { id?: string; revision?: number } => ({
   code: '',
@@ -57,6 +62,31 @@ const defaultForm = (): Api.AI.KnowledgeBaseCreate & { id?: string; revision?: n
 });
 const form = reactive(defaultForm());
 const editing = computed(() => Boolean(form.id));
+const embeddingAliasOptions = computed(() => {
+  const enabledEmbeddingDeployments = new Map(
+    deployments.value
+      .filter(item => item.status === 'enabled' && item.model_type === 'embedding')
+      .map(item => [item.id, item])
+  );
+  const options = aliases.value.flatMap(alias => {
+    const deployment = enabledEmbeddingDeployments.get(alias.deployment_id);
+    if (!deployment) return [];
+    return [{ label: `${alias.code} · ${deployment.display_name}`, value: alias.code }];
+  });
+  if (form.embedding_alias && !options.some(item => item.value === form.embedding_alias)) {
+    options.unshift({
+      label: `${form.embedding_alias} · ${$t('page.knowledge.currentAliasUnavailable')}`,
+      value: form.embedding_alias
+    });
+  }
+  return options;
+});
+const embeddingAliasValue = computed<string | null>({
+  get: () => form.embedding_alias || null,
+  set: value => {
+    form.embedding_alias = value || '';
+  }
+});
 const rules: FormRules = {
   code: { required: true, message: () => $t('page.knowledge.validation.code'), trigger: 'blur' },
   name: { required: true, message: () => $t('page.knowledge.validation.name'), trigger: 'blur' }
@@ -169,6 +199,24 @@ async function loadBases() {
     if (selected.value && !bases.value.some(item => item.id === selected.value?.id)) selected.value = null;
   } finally {
     loadingBases.value = false;
+  }
+}
+
+async function loadEmbeddingAliases() {
+  if (!can(AI_ACTIONS.aliasList) || !can(AI_ACTIONS.deploymentList)) return;
+  embeddingAliasesLoading.value = true;
+  try {
+    const [aliasResult, deploymentResult] = await Promise.all([
+      fetchAIAliases(),
+      fetchAIDeployments({ page: 1, page_size: 100, status: 'enabled' })
+    ]);
+    aliases.value = aliasResult.data || [];
+    deployments.value = deploymentResult.data?.items || [];
+    if (aliasResult.error || deploymentResult.error) {
+      window.$message?.warning($t('page.knowledge.embeddingAliasLoadFailed'));
+    }
+  } finally {
+    embeddingAliasesLoading.value = false;
   }
 }
 
@@ -368,7 +416,10 @@ async function resolveCitation(item: Api.AI.RetrievalResult) {
 
 watch(() => [baseQuery.page, baseQuery.page_size], loadBases);
 watch(() => [documentQuery.page, documentQuery.page_size, documentQuery.status], loadDocuments);
-onMounted(loadBases);
+onMounted(() => {
+  loadBases();
+  loadEmbeddingAliases();
+});
 </script>
 
 <template>
@@ -633,7 +684,15 @@ onMounted(loadBases);
             />
           </NFormItemGi>
           <NFormItemGi :label="$t('page.knowledge.embeddingAlias')">
-            <NInput v-model:value="form.embedding_alias" clearable />
+            <NSelect
+              v-model:value="embeddingAliasValue"
+              :options="embeddingAliasOptions"
+              :loading="embeddingAliasesLoading"
+              :placeholder="$t('page.knowledge.embeddingAliasPlaceholder')"
+              :disabled="!can(AI_ACTIONS.aliasList) || !can(AI_ACTIONS.deploymentList)"
+              clearable
+              filterable
+            />
           </NFormItemGi>
         </NGrid>
         <NDivider title-placement="left">{{ $t('page.knowledge.chunking') }}</NDivider>
