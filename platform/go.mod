@@ -13,9 +13,19 @@ require (
 	gorm.io/gorm v1.31.2
 )
 
-require github.com/gen2brain/go-fitz v1.28.2
+require (
+	github.com/gen2brain/go-fitz v1.28.2
+	github.com/xuri/excelize/v2 v2.10.1
+)
 
-require github.com/ebitengine/purego v0.10.1 // indirect
+require (
+	github.com/ebitengine/purego v0.10.1 // indirect
+	github.com/richardlehane/mscfb v1.0.6 // indirect
+	github.com/richardlehane/msoleps v1.0.6 // indirect
+	github.com/tiendc/go-deepcopy v1.7.2 // indirect
+	github.com/xuri/efp v0.0.1 // indirect
+	github.com/xuri/nfp v0.0.2-0.20250530014748-2ddeb826f9a9 // indirect
+)
 
 require (
 	github.com/bytedance/gopkg v0.1.3 // indirect

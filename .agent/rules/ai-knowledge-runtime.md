@@ -7,6 +7,7 @@
 - 修改 embedding alias 或 chunking config 必须使当前索引失效；Index/Chunk 固定 deployment、dimensions、处理版本、source revision 与位置元数据。
 - Parser、Chunker、Retriever 只依赖 `framework/aiknowledge`；空知识库范围、未知实现与权限缺失 fail-closed。
 - 文档解析必须经 `DocumentSourceResolver` 重鉴权并校验 source revision；MIME/Parser 未知、Office 动态内容或任一资源预算超限均 fail-closed。
+- XLSX 解析必须还原共享字符串、工作表与表头/数据行关系，按行生成可检索 Section；禁止把 worksheet XML 索引值当正文。
 - PDF 必须通过字体与字符映射提取文本，禁止把内容流字形码直接写入 Chunk；Parser Version 变化后需重新摄取。
 - Chunk 必须记录来源位置、token count 与 parser/chunking/preprocessing version；派生文本始终按不可信参考处理。
 - Parser/Chunker 必须移除 NUL、替换无效 UTF-8 并清理非空白控制字符，向量输入与入库正文必须使用同一规范化文本。

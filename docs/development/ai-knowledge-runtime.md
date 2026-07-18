@@ -41,6 +41,7 @@ Knowledge Runtime 管理租户知识库、附件来源、不可变索引版本�
 - Parser Registry 仅注册明确支持的 MIME，声明类型必须与内容嗅探一致，未知类型和未知 Parser 一律 fail-closed。
 - 首期只处理 UTF-8 文本、Markdown、PDF 及 OOXML（DOCX/XLSX/PPTX）；Office 宏、公式/字段指令、嵌入对象、外部关系和脚本一律拒绝，不执行外部程序或联网请求。
 - PDF 文本提取必须解析嵌入字体及字符映射，禁止直接把内容流字形码作为正文；解析器版本变化后，历史文档必须重新摄取才能生成新索引。
+- XLSX 必须解析工作表顺序、名称、共享字符串与单元格显示值；按非空行生成带工作表、行号和表头映射的独立 Section，禁止直接向量化 worksheet XML 中的共享字符串索引。
 - 文件字节、页数/工作表/幻灯片数、字符数、压缩条目和展开字节都必须受限；读取与解析过程必须传播 context 取消和超时。
 - 规范化和固定 token 切块使用稳定版本号；每个 Chunk 必须携带 source revision、页码或位置、token count、内容摘要及 parser/chunking/preprocessing version。
 - 文本规范化必须在 Parser 和 Chunker 边界移除 NUL、替换无效 UTF-8，并清理非空白控制字符；向量输入与 PostgreSQL 正文必须使用同一份规范化文本。

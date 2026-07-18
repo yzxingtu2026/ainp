@@ -78,8 +78,50 @@ func TestKnowledgeSafeParserDecodesPDFToUnicodeMapping(t *testing.T) {
 	)
 
 	sections, err := aiknowledge.NewSafeParser(aiknowledge.DefaultParseLimits()).Parse(context.Background(), parsingDoc("application/pdf", "knowledge.pdf"), bytes.NewReader(pdfData))
-	if err != nil || len(sections) != 1 || sections[0].Text != "知识库" || sections[0].ParserVersion != "safe-parser-v3" {
+	if err != nil || len(sections) != 1 || sections[0].Text != "知识库" || sections[0].ParserVersion != "safe-parser-v4" {
 		t.Fatalf("unexpected PDF text extraction: %#v %v", sections, err)
+	}
+}
+
+func TestKnowledgeSafeParserParsesSpreadsheetRowsWithSharedStrings(t *testing.T) {
+	p := aiknowledge.NewSafeParser(aiknowledge.DefaultParseLimits())
+	doc := parsingDoc("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "records.xlsx")
+	fixture := zipFixture(t, map[string]string{
+		"[Content_Types].xml":        `<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/></Types>`,
+		"_rels/.rels":                `<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`,
+		"xl/workbook.xml":            `<?xml version="1.0"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="代理记录" sheetId="1" r:id="rId1"/></sheets></workbook>`,
+		"xl/_rels/workbook.xml.rels": `<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/></Relationships>`,
+		"xl/sharedStrings.xml":       `<?xml version="1.0"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="4" uniqueCount="4"><si><t>线路ID</t></si><si><t>IP</t></si><si><t>端口</t></si><si><t>46.21.150.162</t></si></sst>`,
+		"xl/worksheets/sheet1.xml":   `<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c><c r="C1" t="s"><v>2</v></c></row><row r="2"><c r="A2"><v>8230723</v></c><c r="B2" t="s"><v>3</v></c><c r="C2"><v>20460</v></c></row></sheetData></worksheet>`,
+	})
+	sections, err := p.Parse(context.Background(), doc, bytes.NewReader(fixture))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sections) != 2 {
+		t.Fatalf("expected header and data row sections, got %#v", sections)
+	}
+	if sections[0].Text != "工作表: 代理记录 | 行: 1 | 表头: 线路ID | IP | 端口" {
+		t.Fatalf("unexpected spreadsheet header: %q", sections[0].Text)
+	}
+	want := "工作表: 代理记录 | 行: 2 | 线路ID: 8230723 | IP: 46.21.150.162 | 端口: 20460"
+	if sections[1].Text != want || sections[1].HeadingPath != "代理记录" || sections[1].PageNumber == nil || *sections[1].PageNumber != 1 {
+		t.Fatalf("unexpected spreadsheet row: %#v", sections[1])
+	}
+	chunks, err := aiknowledge.NewFixedTokenChunker().Chunk(context.Background(), aiknowledge.ChunkInput{
+		Document: doc, Sections: sections,
+		Config: aiknowledge.ChunkingConfig{Strategy: aiknowledge.ChunkingFixedTokens, ChunkSize: 100, ChunkOverlap: 10},
+	})
+	if err != nil || len(chunks) != 2 || !strings.Contains(chunks[1].Text, "IP: 46.21.150.162") {
+		t.Fatalf("spreadsheet rows must remain independently retrievable: %#v %v", chunks, err)
+	}
+
+	formula := zipFixture(t, map[string]string{
+		"xl/workbook.xml":          `<workbook/>`,
+		"xl/worksheets/sheet1.xml": `<worksheet><sheetData><row r="1"><c r="A1"><f>WEBSERVICE("https://example.com")</f><v>0</v></c></row></sheetData></worksheet>`,
+	})
+	if _, err = p.Parse(context.Background(), doc, bytes.NewReader(formula)); !errors.Is(err, aiknowledge.ErrUnsafeContent) {
+		t.Fatalf("spreadsheet formulas must fail closed: %v", err)
 	}
 }
 
@@ -159,7 +201,7 @@ func TestKnowledgeFixedTokenChunkerIsDeterministicAndTraceable(t *testing.T) {
 		t.Fatalf("chunks are not deterministic: %#v", first)
 	}
 	for _, chunk := range first {
-		if chunk.SourceRevision != doc.SourceRevision || chunk.ParserVersion != "safe-parser-v3" || chunk.ChunkingVersion != "fixed-tokens-v1" || chunk.PreprocessingVersion != "normalize-text-v2" {
+		if chunk.SourceRevision != doc.SourceRevision || chunk.ParserVersion != "safe-parser-v4" || chunk.ChunkingVersion != "fixed-tokens-v1" || chunk.PreprocessingVersion != "normalize-text-v2" {
 			t.Fatalf("missing provenance: %#v", chunk)
 		}
 	}
