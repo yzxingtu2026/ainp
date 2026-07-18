@@ -173,12 +173,16 @@ func (t *KnowledgeTool) candidates(ctx context.Context, scope *ToolScope) ([]kno
 	if err := t.db.WithContext(ctx).Where("tenant_id=? AND user_id=? AND id=?", scope.TenantID, scope.UserID, *scope.AgentRunID).First(&run).Error; err != nil {
 		return nil, err
 	}
-	var version AgentVersion
-	if err := t.db.WithContext(ctx).Where("tenant_id=? AND id=?", scope.TenantID, run.AgentVersionID).First(&version).Error; err != nil {
+	repos, repoErr := newAgentRepositories(ctx, t.db)
+	if repoErr != nil {
+		return nil, repoErr
+	}
+	version, err := repos.versions.GetByID(run.AgentVersionID)
+	if err != nil {
 		return nil, err
 	}
 	var rows []knowledgeToolCandidate
-	err := t.db.WithContext(ctx).Table("ai_agent_knowledge_bindings b").
+	err = t.db.WithContext(ctx).Table("ai_agent_knowledge_bindings b").
 		Select("kb.id,kb.name,kb.description,iv.id AS index_version_id").
 		Joins("JOIN ai_knowledge_bases kb ON kb.tenant_id=b.tenant_id AND kb.id=b.knowledge_base_id AND kb.deleted_at IS NULL").
 		Joins("JOIN ai_knowledge_index_versions iv ON iv.tenant_id=kb.tenant_id AND iv.id=kb.current_index_version_id AND iv.knowledge_base_id=kb.id").
