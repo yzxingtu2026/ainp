@@ -32,6 +32,7 @@ const (
 	MaxEmbeddingVectorElements = 16 * 1024 * 1024
 	DefaultEmbeddingTimeoutMS  = 60_000
 	OpenAIEmbeddingBatchItems  = 2048
+	OpenAICompatibleBatchItems = 10
 )
 
 type EmbeddingItem struct {

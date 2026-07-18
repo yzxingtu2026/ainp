@@ -37,6 +37,8 @@ Runtime 只负责批量文本 → 向量与 Usage；pgvector 表、切块、检�
 - 不提供 Anthropic Embedding Adapter
 - 平台硬限制：单批 item 数、单项/总字节、预计 Token、返回向量总元素数
 - Adapter 可拆子批，但必须恢复原始顺序并形成一次逻辑 invocation；任一子批失败则整次失败
+- 官方 OpenAI Endpoint 可使用协议上限；自定义或 OpenAI-Compatible Endpoint 默认按最多 10 个 input 拆分 Provider 子批，兼容常见供应商限制。
+- 调用方必须尊重 `RuntimeError.Retryable`：400 等确定性请求错误不可盲目重试，429、超时与 5xx 才进入可靠重试。
 
 ## 调用账本
 

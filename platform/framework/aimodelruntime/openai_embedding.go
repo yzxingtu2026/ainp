@@ -20,7 +20,9 @@ func NewOpenAIEmbeddingAdapter(client HTTPClient) *OpenAIEmbeddingAdapter {
 }
 
 func NewOpenAICompatibleEmbeddingAdapter(client HTTPClient) *OpenAIEmbeddingAdapter {
-	return newOpenAIFamilyEmbeddingAdapter(client, "")
+	adapter := newOpenAIFamilyEmbeddingAdapter(client, "")
+	adapter.MaxBatchItems = OpenAICompatibleBatchItems
+	return adapter
 }
 
 func newOpenAIFamilyEmbeddingAdapter(client HTTPClient, defaultBase string) *OpenAIEmbeddingAdapter {
@@ -47,6 +49,13 @@ func (a *OpenAIEmbeddingAdapter) Embed(ctx context.Context, in EmbeddingAdapterR
 	batchSize := a.MaxBatchItems
 	if batchSize <= 0 {
 		batchSize = OpenAIEmbeddingBatchItems
+	}
+	// Custom OpenAI-compatible endpoints commonly cap input arrays at 10 items.
+	// Keep official OpenAI throughput while using the conservative interoperable limit for proxies.
+	if a.DefaultBaseURL == "" || !strings.EqualFold(strings.TrimRight(base, "/"), strings.TrimRight(a.DefaultBaseURL, "/")) {
+		if batchSize > OpenAICompatibleBatchItems {
+			batchSize = OpenAICompatibleBatchItems
+		}
 	}
 	inputs := in.Request.Inputs
 	out := &EmbeddingResponse{
@@ -155,8 +164,8 @@ func (a *OpenAIEmbeddingAdapter) embedBatch(ctx context.Context, in EmbeddingAda
 }
 
 type openAIEmbeddingResponse struct {
-	ID   string                 `json:"id"`
-	Data []openAIEmbeddingDatum `json:"data"`
+	ID    string                 `json:"id"`
+	Data  []openAIEmbeddingDatum `json:"data"`
 	Usage *struct {
 		PromptTokens int64 `json:"prompt_tokens"`
 		TotalTokens  int64 `json:"total_tokens"`

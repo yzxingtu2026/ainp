@@ -197,6 +197,10 @@ func (s *KnowledgeIngestionService) Process(ctx context.Context, payload Knowled
 		}
 		response, embedErr := s.embeddings.Embed(ctx, aimodelruntime.EmbeddingRequest{ModelAlias: base.EmbeddingAlias, Inputs: inputs, Purpose: aimodelruntime.EmbeddingPurposeKnowledgeIngestion})
 		if embedErr != nil {
+			var runtimeErr *aimodelruntime.RuntimeError
+			if errors.As(embedErr, &runtimeErr) && !runtimeErr.Retryable {
+				return job.Permanent(errors.New("embedding runtime failed"))
+			}
 			return job.Retryable(errors.New("embedding runtime failed"))
 		}
 		if dimensions == 0 {

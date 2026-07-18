@@ -28,9 +28,13 @@ func (s ingestionSource) OpenSource(context.Context, aiknowledge.SourceOpenReque
 type ingestionEmbedding struct {
 	dimensions int
 	vectorSize int
+	err        error
 }
 
 func (f ingestionEmbedding) Embed(_ context.Context, request aimodelruntime.EmbeddingRequest) (*aimodelruntime.EmbeddingResponse, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
 	vectors := make([]aimodelruntime.EmbeddingVector, len(request.Inputs))
 	size := f.vectorSize
 	if size == 0 {
@@ -209,6 +213,21 @@ func TestKnowledgeIngestionResolutionFailureMarksDocumentFailed(t *testing.T) {
 	}
 	if failed.IngestionStatus != aiknowledge.DocumentFailed {
 		t.Fatalf("resolver failure left document in %q", failed.IngestionStatus)
+	}
+}
+
+func TestKnowledgeIngestionNonRetryableEmbeddingFailureIsPermanent(t *testing.T) {
+	db := openKnowledgeTestDB(t)
+	_, document := seedIngestion(t, db)
+	registry, err := aiknowledge.NewDefaultParserRegistry(aiknowledge.DefaultParseLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	providerError := &aimodelruntime.RuntimeError{Category: aimodelruntime.ErrorInvalidRequest, Message: "provider rejected batch", Retryable: false}
+	service := ai.NewKnowledgeIngestionService(db, ingestionSource{text: "stable text"}, registry, aiknowledge.NewFixedTokenChunker(), knowledgeResolver{}, ingestionEmbedding{err: providerError})
+	err = service.Process(ingestionContext(), ai.KnowledgeIngestionJobPayload{DocumentID: document.ID, SourceRevision: document.SourceRevision, Revision: document.Revision})
+	if err == nil || !job.IsPermanent(err) {
+		t.Fatalf("non-retryable provider failure must be permanent: %v", err)
 	}
 }
 
