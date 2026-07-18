@@ -271,16 +271,26 @@ func TestAttachmentExpiredPendingCleanup(t *testing.T) {
 	}
 	id := prepared.(system.TransferPrepareView).Attachment.ID
 	past := time.Now().UTC().Add(-time.Hour)
-	if err := testDB.Model(&model.Attachment{}).Where("id = ?", id).Update("expires_at", past).Error; err != nil {
+	tenantDB, err := tenant.TenantDB(ctx, testDB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attachments, _ := tenant.NewTenantRepository[model.Attachment](tenantDB)
+	if err := attachments.Where("id = ?", id).Updates(map[string]any{"expires_at": past}).Error; err != nil {
 		t.Fatal(err)
 	}
 	cleaned, err := svc.CleanupExpired(ctx, 10)
 	if err != nil || cleaned != 1 {
 		t.Fatalf("cleanup = %d %v", cleaned, err)
 	}
-	var count int64
-	if err := testDB.Unscoped().Model(&model.Attachment{}).Where("id = ? AND deleted_at IS NOT NULL", id).Count(&count).Error; err != nil || count != 1 {
-		t.Fatalf("soft-deleted count=%d err=%v", count, err)
+	platformCtx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, Realm: auth.RealmPlatform, IsSystemOperator: true})
+	systemDB, err := tenant.SystemDB(platformCtx, testDB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	counts, err := tenant.SystemRaw[struct{ Count int64 }](systemDB, "SELECT COUNT(*) AS count FROM attachments WHERE id = ? AND deleted_at IS NOT NULL", id)
+	if err != nil || len(counts) != 1 || counts[0].Count != 1 {
+		t.Fatalf("soft-deleted counts=%v err=%v", counts, err)
 	}
 }
 

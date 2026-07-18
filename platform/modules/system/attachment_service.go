@@ -46,6 +46,7 @@ func NewAttachmentService(
 	policies *attachment.PolicyRegistry,
 	policy attachment.PolicyProvider,
 ) *AttachmentService {
+	registerAttachmentTenantModels()
 	if policy == nil {
 		policy = attachment.StaticPolicyProvider{Policy: attachment.DefaultUploadPolicy()}
 	}
@@ -157,7 +158,7 @@ func (s *AttachmentService) UploadPrepare(ctx context.Context, input json.RawMes
 	provider := storage.ProviderLocal
 
 	row := model.Attachment{
-		ID: id, TenantID: tenantID, Provider: provider, ObjectKey: objectKey,
+		ID: id, Provider: provider, ObjectKey: objectKey,
 		OriginalName: req.OriginalName, ContentType: req.ContentType,
 		Size: 0, Status: status.AttachmentPending, UploaderID: userID,
 		ExpectedSize: req.Size, ExpiresAt: &exp,
@@ -171,7 +172,11 @@ func (s *AttachmentService) UploadPrepare(ctx context.Context, input json.RawMes
 	}
 	row.UploadJTI = jti
 
-	if err := s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Create(&row).Error; err != nil {
+	repos, repoErr := newAttachmentRepositories(ctx, s.db)
+	if repoErr != nil {
+		return nil, repoErr
+	}
+	if err := repos.attachments.Create(&row); err != nil {
 		return nil, mapAttachmentError(err)
 	}
 	setAttachmentAudit(ctx, id, "attachment upload prepare")
@@ -421,12 +426,17 @@ func (s *AttachmentService) Delete(ctx context.Context, input json.RawMessage) (
 			if lockErr := dblock.LockForTenant(tx, "attachments", tenantID, req.ID); lockErr != nil {
 				return errs.NewKey(errs.CodeNotFound, "attachment.not_found", "attachment not found")
 			}
-			if queryErr := tx.Where("tenant_id=? AND id=?", tenantID, req.ID).First(&row).Error; queryErr != nil {
+			repos, repoErr := newAttachmentRepositories(lockCtx, tx)
+			if repoErr != nil {
+				return repoErr
+			}
+			loaded, queryErr := repos.attachments.GetByID(req.ID)
+			if queryErr != nil {
 				return errs.NewKey(errs.CodeNotFound, "attachment.not_found", "attachment not found")
 			}
-			var linkCount int64
-			if countErr := tx.Model(&model.AttachmentLink{}).
-				Where("tenant_id=? AND attachment_id=?", tenantID, row.ID).Count(&linkCount).Error; countErr != nil {
+			row = loaded
+			linkCount, countErr := repos.links.Where("attachment_id=?", row.ID).Count()
+			if countErr != nil {
 				return mapAttachmentError(countErr)
 			}
 			if linkCount > 0 {
@@ -437,7 +447,7 @@ func (s *AttachmentService) Delete(ctx context.Context, input json.RawMessage) (
 				return errs.NewKey(errs.CodeForbidden, "common.forbidden", "forbidden")
 			}
 			updates := map[string]any{"status": status.AttachmentDeleting, "upload_jti": "", "updated_at": now}
-			if updateErr := tx.Model(&model.Attachment{}).Where("tenant_id=? AND id=?", tenantID, row.ID).Updates(updates).Error; updateErr != nil {
+			if updateErr := repos.attachments.Where("id=?", row.ID).Updates(updates).Error; updateErr != nil {
 				return mapAttachmentError(updateErr)
 			}
 			return nil
@@ -464,10 +474,11 @@ func (s *AttachmentService) Delete(ctx context.Context, input json.RawMessage) (
 		setAttachmentAudit(ctx, row.ID, "attachment delete")
 		return map[string]any{"deleted": true, "object_pending": true}, nil
 	}
-	_ = s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Model(&model.Attachment{}).Where("id = ?", row.ID).Updates(map[string]any{
+	repos, _ := newAttachmentRepositories(ctx, s.db)
+	_ = repos.attachments.Where("id = ?", row.ID).Updates(map[string]any{
 		"status": status.AttachmentDeleted, "thumb_object_key": "", "updated_at": time.Now().UTC(),
 	}).Error
-	_ = s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Delete(&model.Attachment{}, "id = ?", row.ID).Error
+	_ = repos.attachments.Delete(&row)
 	setAttachmentAudit(ctx, row.ID, "attachment delete")
 	return map[string]any{"deleted": true, "object_pending": objectPending}, nil
 }
@@ -483,15 +494,19 @@ func (s *AttachmentService) CleanupExpired(ctx context.Context, limit int) (int,
 		return 0, err
 	}
 	now := time.Now().UTC()
-	var rows []model.Attachment
-	q := s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Where(
+	repos, repoErr := newAttachmentRepositories(ctx, s.db)
+	if repoErr != nil {
+		return 0, repoErr
+	}
+	q := repos.attachments.Where(
 		"(status IN ? AND expires_at IS NOT NULL AND expires_at < ?) OR status = ?",
 		[]status.AttachmentStatus{status.AttachmentPending, status.AttachmentFailed},
 		now,
 		status.AttachmentDeleting,
-	).Limit(limit)
-	if err := q.Find(&rows).Error; err != nil {
-		return 0, mapAttachmentError(err)
+	)
+	rows, repoErr := q.List(0, limit)
+	if repoErr != nil {
+		return 0, mapAttachmentError(repoErr)
 	}
 	cleaned := 0
 	for i := range rows {
@@ -502,7 +517,7 @@ func (s *AttachmentService) CleanupExpired(ctx context.Context, limit int) (int,
 		if row.ThumbObjectKey != "" {
 			if err := s.store.Delete(ctx, row.ThumbObjectKey); err != nil {
 				logging.Error(ctx, "attachment cleanup thumb delete failed", err, "attachment_id", row.ID, "key_digest", storage.KeyDigest(row.ThumbObjectKey))
-				_ = s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Model(&model.Attachment{}).Where("id = ?", row.ID).Updates(map[string]any{
+				_ = repos.attachments.Where("id = ?", row.ID).Updates(map[string]any{
 					"status": status.AttachmentDeleting, "upload_jti": "", "updated_at": time.Now().UTC(),
 				}).Error
 				continue
@@ -510,15 +525,15 @@ func (s *AttachmentService) CleanupExpired(ctx context.Context, limit int) (int,
 		}
 		if err := s.store.Delete(ctx, row.ObjectKey); err != nil {
 			logging.Error(ctx, "attachment cleanup object delete failed", err, "attachment_id", row.ID, "key_digest", storage.KeyDigest(row.ObjectKey))
-			_ = s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Model(&model.Attachment{}).Where("id = ?", row.ID).Updates(map[string]any{
+			_ = repos.attachments.Where("id = ?", row.ID).Updates(map[string]any{
 				"status": status.AttachmentDeleting, "upload_jti": "", "updated_at": time.Now().UTC(),
 			}).Error
 			continue
 		}
-		_ = s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Model(&model.Attachment{}).Where("id = ?", row.ID).Updates(map[string]any{
+		_ = repos.attachments.Where("id = ?", row.ID).Updates(map[string]any{
 			"status": status.AttachmentDeleted, "upload_jti": "", "thumb_object_key": "", "updated_at": time.Now().UTC(),
 		}).Error
-		_ = s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Delete(&model.Attachment{}, "id = ?", row.ID).Error
+		_ = repos.attachments.Delete(row)
 		cleaned++
 	}
 	return cleaned, nil
@@ -598,8 +613,11 @@ func (s *AttachmentService) CompleteUpload(ctx context.Context, claims *attachme
 	}
 
 	applyReady := func(tx *gorm.DB) error {
-		res := tx.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Model(&model.Attachment{}).
-			Where("id = ? AND status = ?", row.ID, status.AttachmentPending).Updates(updates)
+		repos, repoErr := newAttachmentRepositories(ctx, tx)
+		if repoErr != nil {
+			return repoErr
+		}
+		res := repos.attachments.Where("id = ? AND status = ?", row.ID, status.AttachmentPending).Updates(updates)
 		if res.Error != nil {
 			return res.Error
 		}

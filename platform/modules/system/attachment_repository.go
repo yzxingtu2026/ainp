@@ -2,11 +2,29 @@ package system
 
 import (
 	"context"
+	"sync"
 
 	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"github.com/yzxingtu2026/ainp/platform/modules/system/model"
 	"gorm.io/gorm"
 )
+
+var attachmentModelRegistration sync.Once
+
+func registerAttachmentTenantModels() {
+	attachmentModelRegistration.Do(func() {
+		if err := tenant.DefaultRegistry.Register(model.Attachment{}, tenant.ModelOptions{
+			Kind: tenant.TenantOwned, InjectOnCreate: true, SystemAccess: true, SoftDelete: true,
+		}); err != nil {
+			panic(err)
+		}
+		if err := tenant.DefaultRegistry.Register(model.AttachmentLink{}, tenant.ModelOptions{
+			Kind: tenant.TenantOwned, InjectOnCreate: true, SystemAccess: true,
+		}); err != nil {
+			panic(err)
+		}
+	})
+}
 
 type attachmentRepositories struct {
 	db          tenant.TenantDatabase
@@ -15,6 +33,7 @@ type attachmentRepositories struct {
 }
 
 func newAttachmentRepositories(ctx context.Context, db *gorm.DB) (*attachmentRepositories, error) {
+	registerAttachmentTenantModels()
 	tdb, err := tenant.TenantDB(ctx, db)
 	if err != nil {
 		return nil, err

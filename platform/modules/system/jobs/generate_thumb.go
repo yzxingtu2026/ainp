@@ -107,9 +107,13 @@ func makeGenerateThumbHandler(a *app.App) func(ctx context.Context, env job.Enve
 			UserID: env.ActorID, RequestID: env.CorrelationID,
 			Authenticated: true, Client: "job",
 		})
+		tdb, err := tenant.TenantDB(ctx, a.DB)
+		if err != nil {
+			return job.Permanent(err)
+		}
+		attachments, _ := tenant.NewTenantRepository[model.Attachment](tdb)
 
-		var row model.Attachment
-		err := a.DB.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Where("id = ?", p.AttachmentID).First(&row).Error
+		row, err := attachments.GetByID(p.AttachmentID)
 		if err != nil {
 			return job.Retryable(err)
 		}
@@ -127,7 +131,7 @@ func makeGenerateThumbHandler(a *app.App) func(ctx context.Context, env job.Enve
 
 		if !attachment.IsThumbMediaMIME(row.ContentType) {
 			now := time.Now().UTC()
-			_ = a.DB.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Model(&model.Attachment{}).Where("id = ?", row.ID).Updates(map[string]any{
+			_ = attachments.Where("id = ?", row.ID).Updates(map[string]any{
 				"thumb_status": status.AttachmentThumbSkipped, "thumb_error": "", "thumb_updated_at": now, "updated_at": now,
 			}).Error
 			return nil
@@ -147,7 +151,7 @@ func makeGenerateThumbHandler(a *app.App) func(ctx context.Context, env job.Enve
 		case attachment.IsVideoMIME(row.ContentType):
 			if !attachment.FFmpegAvailable() {
 				now := time.Now().UTC()
-				_ = a.DB.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Model(&model.Attachment{}).Where("id = ?", row.ID).Updates(map[string]any{
+				_ = attachments.Where("id = ?", row.ID).Updates(map[string]any{
 					"thumb_status": status.AttachmentThumbSkipped, "thumb_error": "ffmpeg unavailable",
 					"thumb_updated_at": now, "updated_at": now,
 				}).Error
@@ -159,7 +163,7 @@ func makeGenerateThumbHandler(a *app.App) func(ctx context.Context, env job.Enve
 			thumb, err = attachment.GenerateVideoThumb(vctx, rc, path.Ext(row.OriginalName))
 			if errors.Is(err, attachment.ErrFFmpegUnavailable) {
 				now := time.Now().UTC()
-				_ = a.DB.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Model(&model.Attachment{}).Where("id = ?", row.ID).Updates(map[string]any{
+				_ = attachments.Where("id = ?", row.ID).Updates(map[string]any{
 					"thumb_status": status.AttachmentThumbSkipped, "thumb_error": "ffmpeg unavailable",
 					"thumb_updated_at": now, "updated_at": now,
 				}).Error
@@ -167,7 +171,7 @@ func makeGenerateThumbHandler(a *app.App) func(ctx context.Context, env job.Enve
 			}
 		default:
 			now := time.Now().UTC()
-			_ = a.DB.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Model(&model.Attachment{}).Where("id = ?", row.ID).Updates(map[string]any{
+			_ = attachments.Where("id = ?", row.ID).Updates(map[string]any{
 				"thumb_status": status.AttachmentThumbSkipped, "thumb_updated_at": now, "updated_at": now,
 			}).Error
 			return nil
@@ -196,7 +200,7 @@ func makeGenerateThumbHandler(a *app.App) func(ctx context.Context, env job.Enve
 		// Replace previous thumb object if any (retry after partial success).
 		oldKey := row.ThumbObjectKey
 		now := time.Now().UTC()
-		if err := a.DB.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Model(&model.Attachment{}).Where("id = ?", row.ID).Updates(map[string]any{
+		if err := attachments.Where("id = ?", row.ID).Updates(map[string]any{
 			"thumb_status": status.AttachmentThumbReady, "thumb_object_key": info.Key,
 			"thumb_content_type": "image/jpeg", "thumb_size": info.Size, "thumb_error": "",
 			"thumb_updated_at": now, "updated_at": now,
@@ -219,9 +223,12 @@ func markThumbFailed(ctx context.Context, a *app.App, attachmentID string, cause
 		msg = msg[:500]
 	}
 	now := time.Now().UTC()
-	_ = a.DB.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Model(&model.Attachment{}).Where("id = ?", attachmentID).Updates(map[string]any{
-		"thumb_status": status.AttachmentThumbFailed, "thumb_error": msg, "thumb_updated_at": now, "updated_at": now,
-	}).Error
+	if tdb, err := tenant.TenantDB(ctx, a.DB); err == nil {
+		attachments, _ := tenant.NewTenantRepository[model.Attachment](tdb)
+		_ = attachments.Where("id = ?", attachmentID).Updates(map[string]any{
+			"thumb_status": status.AttachmentThumbFailed, "thumb_error": msg, "thumb_updated_at": now, "updated_at": now,
+		}).Error
+	}
 	logging.Info(ctx, "attachment thumb failed", "attachment_id", attachmentID, "error", msg)
 	if ctx.Err() != nil {
 		return job.Cancelled(ctx.Err())
@@ -242,12 +249,16 @@ func RequeuePendingThumbs(ctx context.Context, a *app.App, limit int) (int, erro
 	if ac.TenantID == "" {
 		return 0, fmt.Errorf("tenant context required")
 	}
-	var rows []model.Attachment
-	err := a.DB.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).
+	tdb, err := tenant.TenantDB(ctx, a.DB)
+	if err != nil {
+		return 0, err
+	}
+	attachments, _ := tenant.NewTenantRepository[model.Attachment](tdb)
+	rows, err := attachments.
 		Where("status = ? AND thumb_status IN ?", status.AttachmentReady, []status.AttachmentThumbStatus{
 			status.AttachmentThumbPending, status.AttachmentThumbFailed,
 		}).
-		Order("updated_at ASC").Limit(limit).Find(&rows).Error
+		Order("updated_at ASC").List(0, limit)
 	if err != nil {
 		return 0, err
 	}

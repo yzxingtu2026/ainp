@@ -41,10 +41,15 @@ func AutoMigrate(db *gorm.DB) error {
 		&model.Role{},
 		&model.RolePermission{},
 		&model.UserRole{},
-		&model.TenantSettingValue{},
-		&model.Attachment{},
-		&model.AttachmentLink{},
 	); err != nil {
+		return err
+	}
+	// Registered tenant-owned models require an explicit schema-installation exit.
+	migrationDB, err := tenant.MigrationDB(db)
+	if err != nil {
+		return err
+	}
+	if err := migrationDB.AutoMigrate(&model.TenantSettingValue{}, &model.Attachment{}, &model.AttachmentLink{}); err != nil {
 		return err
 	}
 	if err := outbox.AutoMigrate(db); err != nil {
@@ -62,10 +67,10 @@ func AutoMigrate(db *gorm.DB) error {
 	if err := ensureAuthVersionConstraint(db); err != nil {
 		return err
 	}
-	if err := ensureAttachmentStatusConstraint(db); err != nil {
+	if err := ensureAttachmentStatusConstraint(migrationDB); err != nil {
 		return err
 	}
-	if err := ensureAttachmentThumbStatusConstraint(db); err != nil {
+	if err := ensureAttachmentThumbStatusConstraint(migrationDB); err != nil {
 		return err
 	}
 	return nil
