@@ -34,7 +34,7 @@
 
 - Notification OverrideProvider 原接口缺少 `context.Context`，已升级为上下文透传并迁移到 TenantDB；禁止恢复仅凭 tenantID 的 context-free 查询。
 - AuthSession refresh-token lookup 与 Idempotency cleanup 发生在 tenant 身份建立前或跨租户维护阶段，需要独立的受控 pre-auth/maintenance capability，不能伪造 platform AuthContext。
-- Notification Delivery 两个 PostgreSQL 测试对“空 status 的默认筛选”存在相反期望；在迁移 Delivery 前必须先拍板产品语义并统一测试。
+- Notification Delivery 已拍板：空 `status` 表示当前租户全部投递状态；异常队列使用显式 `failed`/`dead` 筛选，重试仍只允许这两种状态。旧测试期望已统一。
 
 ## 当前边界
 

@@ -97,8 +97,8 @@ func TestNotificationDeliveryAdminFiltersRetryAndTenantIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if total := defaultResult.(pagination.Result[map[string]any]).Total; total != 2 {
-		t.Fatalf("default list total = %d, want failed/dead records only", total)
+	if total := defaultResult.(pagination.Result[map[string]any]).Total; total != 3 {
+		t.Fatalf("default list total = %d, want all tenant delivery statuses", total)
 	}
 	filtered, err := service.List(ctx, json.RawMessage(`{"page":1,"page_size":20,"status":"failed","channel":"email"}`))
 	if err != nil {
