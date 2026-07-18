@@ -34,6 +34,15 @@ Knowledge Runtime 管理租户知识库、附件来源、不可变索引版本�
 - 原文、向量、Object Key、路径、模型凭证和供应商原始响应禁止进入日志、审计与 Outbox。
 - 用户可见 Action、CodeSet 与错误信息统一使用 i18n key。
 
+## 文档解析与切块
+
+- 解析入口必须经 `DocumentSourceResolver` 重新校验当前 actor、tenant、Document 权限、附件绑定和 source revision；禁止业务直接使用 Object Key。
+- Parser Registry 仅注册明确支持的 MIME，声明类型必须与内容嗅探一致，未知类型和未知 Parser 一律 fail-closed。
+- 首期只处理 UTF-8 文本、Markdown、PDF 及 OOXML（DOCX/XLSX/PPTX）；Office 宏、公式/字段指令、嵌入对象、外部关系和脚本一律拒绝，不执行外部程序或联网请求。
+- 文件字节、页数/工作表/幻灯片数、字符数、压缩条目和展开字节都必须受限；读取与解析过程必须传播 context 取消和超时。
+- 规范化和固定 token 切块使用稳定版本号；每个 Chunk 必须携带 source revision、页码或位置、token count、内容摘要及 parser/chunking/preprocessing version。
+- 解析结果始终是不可信参考文本，不得解释为 system/developer instruction；原文、路径和 Object Key 禁止进入日志、审计或 Outbox。
+
 ## 测试
 
 后端测试统一放在 `platform/tests/`，至少覆盖：

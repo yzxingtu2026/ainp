@@ -60,6 +60,9 @@ type App struct {
 	ContextCompactor         aiconversation.ContextCompactor
 	KnowledgeService         aiknowledge.Service
 	KnowledgeAccessPolicy    aiknowledge.AccessPolicy
+	KnowledgeSourceResolver  aiknowledge.DocumentSourceResolver
+	KnowledgeParser          aiknowledge.DocumentParser
+	KnowledgeChunker         aiknowledge.Chunker
 	AgentTenantInitializer   func(context.Context, *gorm.DB, string, string) error
 	ModelResolver            aimodel.Resolver
 	AIAssetResolver          aimodelruntime.AssetResolver
