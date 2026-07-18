@@ -16,7 +16,7 @@
 |---|---|---|---|
 | #111 样板 | Agent、AgentVersion、AgentToolBinding 及直接 Runtime 消费方 | 已完成 | Agent/Builder Preview/PostgreSQL |
 | Demo 模板 | RevisionDoc | 已完成 | 默认测试链与跨租户 Callback |
-| System/Framework | Setting、Notification Request/Delivery/TemplateOverride/UserNotification、Attachment/AttachmentLink（含 Service、管理查询与 Thumb Job）、Idempotency Record 已完成；Audit 与 Outbox tenant 管理查询已迁移；User/Role/Auth/Job 与 Outbox dispatcher 待迁移 | 迁移中 | 各模块 PostgreSQL 集成测试 |
+| System/Framework | Setting、Notification Request/Delivery/TemplateOverride/UserNotification、Attachment/AttachmentLink（含 Service、管理查询与 Thumb Job）、Idempotency Record 已完成；Audit、Outbox、Job Run tenant 管理查询已迁移；User/Role/Auth 与 Job Worker/Outbox dispatcher 待迁移 | 迁移中 | 各模块 PostgreSQL 集成测试 |
 | AI 治理与 Tool | Provider/Deployment/Alias/Invocation/Tool/Scope/Confirmation | 待迁移 | AI Model/Tool Runtime 测试 |
 | AI 会话与 Runtime | Conversation/Message/Stream/Snapshot/Run/Step/Event | 迁移中 | Conversation/Agent Runtime 测试 |
 | Knowledge | Base/Document/Index/Chunk/Payload/Binding 及 Raw JOIN | 待迁移 | Knowledge 全链路测试 |
@@ -31,6 +31,7 @@
 | `framework/revision`、`framework/dblock` | Table/Exec | 通用并发基础设施 | 调用方必须来自 scoped transaction；本 Issue 后续迁移 |
 | `framework/audit.GormRecorder` | mixed-realm write | `audit_logs` 同时记录 tenant 与 platform realm | tenant 管理查询只走 TenantRaw；写入 tenant/realm 来自已认证 Action AuthContext |
 | `framework/outbox.Dispatcher` | trusted dispatcher | Dispatcher 在请求 AuthContext 外跨租户 claim/publish | tenant 管理查询与手动重试走 TenantRaw；dispatcher 能力在后续批次独立收敛 |
+| `framework/job.GetTrusted`、`RunStore.UpdateFields/ListPendingEnqueue` | trusted worker | Worker 首次加载 JobRun 时尚未恢复业务 AuthContext，并需跨租户恢复 pending enqueue | tenant 列表/详情/取消走 TenantRaw；worker 能力在后续批次独立收敛 |
 
 ## 已识别契约风险
 
