@@ -133,13 +133,15 @@ func TestKnowledgeMigrationModelsActionsAndI18n(t *testing.T) {
 	for _, id := range []string{
 		ai.ActionKnowledgeBaseList, ai.ActionKnowledgeBaseCreate,
 		ai.ActionKnowledgeDocumentList, ai.ActionKnowledgeDocumentCreate,
+		ai.ActionKnowledgeRetrievalTest, ai.ActionKnowledgeCitationResolve,
 		ai.ActionAgentKnowledgeList, ai.ActionAgentKnowledgeBind,
 	} {
 		registered, ok := application.Actions.Get(id)
 		if !ok || registered.Meta.PermissionGroup != "ai.knowledge_management" {
 			t.Fatalf("knowledge action not registered correctly: %s", id)
 		}
-		wantAudit := !strings.HasSuffix(id, "_list") && !strings.HasSuffix(id, "_get")
+		wantAudit := !strings.HasSuffix(id, "_list") && !strings.HasSuffix(id, "_get") &&
+			id != ai.ActionKnowledgeRetrievalTest && id != ai.ActionKnowledgeCitationResolve
 		if registered.Meta.Audit == nil || *registered.Meta.Audit != wantAudit {
 			t.Fatalf("unexpected audit metadata for %s", id)
 		}
@@ -154,6 +156,8 @@ func TestKnowledgeMigrationModelsActionsAndI18n(t *testing.T) {
 		"permission_group.ai.knowledge_management",
 		"codeset.ai.knowledge_base_status.draft",
 		"action.ai.knowledge_base_create.name",
+		"action.ai.knowledge_retrieval_test.name",
+		"action.ai.knowledge_citation_resolve.name",
 		"ai.knowledge.embedding_required",
 	} {
 		if i18n.T("en", key) == key || i18n.T("zh-CN", key) == key {

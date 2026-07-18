@@ -155,6 +155,7 @@ func Register(a *app.App) error {
 	a.KnowledgeChunker = aiknowledge.NewFixedTokenChunker()
 	ingestion := NewKnowledgeIngestionService(a.DB, a.KnowledgeSourceResolver, a.KnowledgeParser, a.KnowledgeChunker, a.EmbeddingRuntime)
 	retriever := NewKnowledgeRetrievalService(a.DB, knowledge, a.EmbeddingRuntime)
+	knowledge.SetRetrievalServices(retriever, retriever)
 	a.KnowledgeRetriever = retriever
 	conversations := NewConversationService(a.DB, a.AIAssetResolver)
 	compactions := NewContextCompactionService(a.DB, conversations, svc, invocations, toolRegistry)
@@ -273,8 +274,9 @@ func Register(a *app.App) error {
 		{ID: "ai.models", ParentID: "ai.root", Title: "模型目录", TitleKey: "menu.ai.models.title", Icon: "mdi:database-search-outline", Type: menu.TypeMenu, Path: "/ai/models", Component: "ai/models", Permission: ActionDeploymentList, BindAction: ActionDeploymentList, Module: "ai", Order: 2},
 		{ID: "ai.runtime", ParentID: "ai.root", Title: "模型调试", TitleKey: "menu.ai.runtime.title", Icon: "mdi:message-text-fast-outline", Type: menu.TypeMenu, Path: "/ai/runtime", Component: "ai/runtime", Permission: ActionModelGenerate, BindAction: ActionModelGenerate, Module: "ai", Order: 3},
 		{ID: "ai.agents", ParentID: "ai.root", Title: "智能体", TitleKey: "menu.ai.agents.title", Icon: "mdi:robot-outline", Type: menu.TypeMenu, Path: "/ai/agents", Component: "ai/agents", Permission: ActionAgentList, BindAction: ActionAgentList, Module: "ai", Order: 4},
+		{ID: "ai.knowledge", ParentID: "ai.root", Title: "知识库", TitleKey: "menu.ai.knowledge.title", Icon: "mdi:bookshelf", Type: menu.TypeMenu, Path: "/ai/knowledge", Component: "ai/knowledge", Permission: ActionKnowledgeBaseList, BindAction: ActionKnowledgeBaseList, Module: "ai", Order: 5},
 		// HideInMenu：不进侧栏，但必须出现在 /menus 结果中，供动态路由注册 Agent Builder
-		{ID: "ai.agent_builder", ParentID: "ai.root", Title: "智能体编排工作台", TitleKey: "menu.ai.agent_builder.title", Icon: "mdi:application-edit-outline", Type: menu.TypeMenu, Path: "/ai/agent-builder", Component: "ai/agent-builder", Permission: ActionAgentList, BindAction: ActionAgentList, Module: "ai", Order: 5, HideInMenu: true},
+		{ID: "ai.agent_builder", ParentID: "ai.root", Title: "智能体编排工作台", TitleKey: "menu.ai.agent_builder.title", Icon: "mdi:application-edit-outline", Type: menu.TypeMenu, Path: "/ai/agent-builder", Component: "ai/agent-builder", Permission: ActionAgentList, BindAction: ActionAgentList, Module: "ai", Order: 6, HideInMenu: true},
 	} {
 		if err := a.RegisterMenu(m); err != nil {
 			return err

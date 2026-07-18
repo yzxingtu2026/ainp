@@ -71,6 +71,16 @@ export const generatedRoutes: GeneratedRoute[] = [
         }
       },
       {
+        name: 'ai_knowledge',
+        path: '/ai/knowledge',
+        component: 'view.ai_knowledge',
+        meta: {
+          title: 'ai_knowledge',
+          i18nKey: 'route.ai_knowledge',
+          hideInMenu: true
+        }
+      },
+      {
         name: 'ai_models',
         path: '/ai/models',
         component: 'view.ai_models',

@@ -657,3 +657,9 @@ action.ai.agent_knowledge_unbind.name: "解绑智能体知识库"
 action.ai.agent_knowledge_unbind.description: "移除智能体候选知识库绑定"
 action.ai.knowledge_document_ingestion_retry.name: 重试知识文档摄取
 action.ai.knowledge_document_ingestion_retry.description: 通过可靠任务重新解析并索引知识文档
+action.ai.knowledge_retrieval_test.name: 测试知识库检索
+action.ai.knowledge_retrieval_test.description: 使用知识库持久化策略验证检索结果
+action.ai.knowledge_citation_resolve.name: 验证知识引用
+action.ai.knowledge_citation_resolve.description: 重新鉴权并验证引用是否可用
+ai.knowledge.retrieval_unavailable: 知识检索服务不可用
+menu.ai.knowledge.title: 知识库

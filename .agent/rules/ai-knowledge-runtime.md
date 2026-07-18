@@ -12,5 +12,6 @@
 - 新 IndexVersion 的 Chunk/pgvector 完整落库后才能原子切换；失败、取消、并发或过期 revision 不得破坏旧索引，删除后异步清理派生数据。
 - Retriever 只读 Base/Document 同时指向的 ready 版本，召回前后都按当前 actor 重鉴权并复核 source revision；Embedding 不可用才降级 FTS，模型/维度事实不匹配必须 fail-closed。
 - Citation 回查不得返回正文；Agent 绑定不扩权，知识片段只能作为带明确边界的 user 级不可信参考，禁止进入 system/developer instructions。
+- 管理端只调用知识 Action；附件必须复用 AttachmentField/AttachmentPicker 且只传 attachment ID；检索测试使用持久化策略，Citation 预览每次重鉴权并只展示稳定标识与 available/stale。
 - 原文、Chunk 正文、向量、路径、Secret 与供应商原始响应禁止进入日志、审计和 Outbox。
 - 详规见 `docs/development/ai-knowledge-runtime.md`；测试统一放在 `platform/tests/`。

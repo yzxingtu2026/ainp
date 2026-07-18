@@ -38,14 +38,21 @@ const (
 var sha256Pattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
 type KnowledgeService struct {
-	db     *gorm.DB
-	models aimodel.Resolver
-	agents *AgentService
-	links  attachment.ResourceLinker
-	events outbox.Writer
+	db        *gorm.DB
+	models    aimodel.Resolver
+	agents    *AgentService
+	links     attachment.ResourceLinker
+	events    outbox.Writer
+	retriever aiknowledge.KnowledgeRetriever
+	citations aiknowledge.CitationResolver
 }
 
 func (s *KnowledgeService) SetEventWriter(writer outbox.Writer) { s.events = writer }
+
+func (s *KnowledgeService) SetRetrievalServices(retriever aiknowledge.KnowledgeRetriever, citations aiknowledge.CitationResolver) {
+	s.retriever = retriever
+	s.citations = citations
+}
 
 func NewKnowledgeService(db *gorm.DB, models aimodel.Resolver, agents *AgentService, links attachment.ResourceLinker) *KnowledgeService {
 	return &KnowledgeService{db: db, models: models, agents: agents, links: links}
@@ -161,6 +168,31 @@ type KnowledgeDocumentUpdateRequest struct {
 type KnowledgeDocumentDeleteRequest struct {
 	ID       string `json:"id" validate:"required"`
 	Revision uint64 `json:"revision" validate:"required"`
+}
+
+type KnowledgeRetrievalTestRequest struct {
+	KnowledgeBaseID string   `json:"knowledge_base_id" validate:"required"`
+	DocumentIDs     []string `json:"document_ids" validate:"max=100,dive,required"`
+	Query           string   `json:"query" validate:"required,max=4096"`
+}
+
+func (r *KnowledgeRetrievalTestRequest) Normalize() {
+	r.KnowledgeBaseID = strings.TrimSpace(r.KnowledgeBaseID)
+	r.Query = strings.TrimSpace(r.Query)
+	for index := range r.DocumentIDs {
+		r.DocumentIDs[index] = strings.TrimSpace(r.DocumentIDs[index])
+	}
+}
+
+type KnowledgeCitationResolveRequest struct {
+	Citation aiknowledge.Citation `json:"citation" validate:"required"`
+}
+
+type KnowledgeRetrievalTestItem struct {
+	Citation  aiknowledge.Citation `json:"citation"`
+	Score     float64              `json:"score"`
+	Text      string               `json:"text"`
+	Untrusted bool                 `json:"untrusted"`
 }
 
 type AgentKnowledgeListRequest struct {
@@ -444,6 +476,41 @@ func (s *KnowledgeService) ListDocuments(ctx context.Context, request KnowledgeD
 func (s *KnowledgeService) GetDocument(ctx context.Context, request KnowledgeDocumentIDRequest) (any, error) {
 	document, _, _, err := s.getDocument(ctx, request.ID, false)
 	return document, err
+}
+
+func (s *KnowledgeService) TestRetrieval(ctx context.Context, request KnowledgeRetrievalTestRequest) (any, error) {
+	if s.retriever == nil {
+		return nil, errs.NewKey(errs.CodeInternal, "ai.knowledge.retrieval_unavailable", "knowledge retrieval service is unavailable")
+	}
+	knowledgeBase, _, err := s.getKnowledgeBase(ctx, request.KnowledgeBaseID, false)
+	if err != nil {
+		return nil, err
+	}
+	items, err := s.retriever.Retrieve(ctx, aiknowledge.RetrievalRequest{
+		KnowledgeBaseIDs: []string{knowledgeBase.ID},
+		DocumentIDs:      request.DocumentIDs,
+		Query:            request.Query,
+		Config:           knowledgeBase.RetrievalConfig,
+	})
+	if err != nil {
+		return nil, err
+	}
+	result := make([]KnowledgeRetrievalTestItem, 0, len(items))
+	for _, item := range items {
+		result = append(result, KnowledgeRetrievalTestItem{
+			Citation: item.Citation, Score: item.Score, Text: item.Text, Untrusted: item.Untrusted,
+		})
+	}
+	return map[string]any{"items": result}, nil
+}
+
+func (s *KnowledgeService) ResolveCitation(ctx context.Context, request KnowledgeCitationResolveRequest) (any, error) {
+	if s.citations == nil {
+		return nil, errs.NewKey(errs.CodeInternal, "ai.knowledge.retrieval_unavailable", "knowledge citation service is unavailable")
+	}
+	// The resolver reauthorizes both the base and document. Its lookup deliberately
+	// contains no chunk body or attachment access capability.
+	return s.citations.ResolveCitation(ctx, request.Citation)
 }
 
 func (s *KnowledgeService) CreateDocument(ctx context.Context, request KnowledgeDocumentCreateRequest) (any, error) {

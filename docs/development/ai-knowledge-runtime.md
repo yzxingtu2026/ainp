@@ -62,6 +62,15 @@ Knowledge Runtime 管理租户知识库、附件来源、不可变索引版本�
 - Citation 只包含稳定 Base/Document/Chunk/Index、source revision、来源位置、标题与 attachment ID；回查重新鉴权并复核当前指针，不返回正文，来源变化后标记 stale。
 - Agent 绑定仅提供候选 Base ID。Agent Run 使用当前 actor 调 Retriever，并把结果包装为 `user` 级 `UNTRUSTED KNOWLEDGE REFERENCES`；禁止拼入 system/developer instructions。
 
+## 管理端页面
+
+- 知识库管理页只调用已注册 Action，不在前端实现权限判断、检索排序、解析或索引状态机。
+- 状态使用知识库 CodeSet/`CodeTag`/`CodeSelect`，时间使用 `DateTimeText`，列表接入统一分页语义。
+- 文档来源必须通过 `AttachmentPicker`/`AttachmentField` 选择并只提交 `attachment_id`；禁止拼 Object Key、缓存 transfer token 或自行生成附件下载地址。
+- 检索测试固定使用知识库持久化 `RetrievalConfig`；无 Embedding 时明确展示降级状态，不在浏览器侧模拟向量结果。
+- Citation 预览每次调用回查 Action 重新鉴权，只展示稳定标识、位置与 available/stale；撤权或 stale 后不得保留或展示受限正文与附件访问能力。
+- 页面必须覆盖 loading、empty、error、permission revoked、failed/retry、stale 与移动端布局，并在交付验收中验证主流程和安全退化。
+
 ## 测试
 
 后端测试统一放在 `platform/tests/`，至少覆盖：
@@ -72,3 +81,4 @@ Knowledge Runtime 管理租户知识库、附件来源、不可变索引版本�
 - Agent 绑定不扩权；
 - SQL migration 的复合租户外键与 CHECK；
 - 契约 Fake 的确定性与空范围 fail-closed。
+- 管理端 CRUD、附件关联、失败重试、检索测试、Citation stale/撤权和无 Embedding 退化。

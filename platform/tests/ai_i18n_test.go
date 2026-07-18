@@ -14,7 +14,7 @@ func TestAIRegistrationTranslationKeysExist(t *testing.T) {
 	keys := []string{
 		"capability.ai.name", "capability.ai.description",
 		"permission_group.ai.provider_management", "permission_group.ai.model_catalog", "permission_group.ai.agent_management",
-		"menu.ai.root.title", "menu.ai.providers.title", "menu.ai.models.title", "menu.ai.agents.title",
+		"menu.ai.root.title", "menu.ai.providers.title", "menu.ai.models.title", "menu.ai.agents.title", "menu.ai.knowledge.title",
 		"ai.model.streaming_not_supported", "ai.model.vision_not_supported", "ai.model.capability_not_supported",
 	}
 	actions := []string{
