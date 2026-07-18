@@ -16,7 +16,8 @@
 - IndexVersion 预留前必须解析并冻结真实 Embedding Deployment ID，禁止使用 `pending` 占位；Embedding 响应的 Deployment 必须与预留版本一致。
 - Worker 接管当前 revision 后必须进入 processing，模型解析、版本预留或后续失败必须收口 failed；管理端需允许 pending/failed 重试及 ready 重新索引，Parser/Chunker 版本过期不得幂等跳过。
 - Retriever 只读 Base/Document 同时指向的 ready 版本，召回前后都按当前 actor 重鉴权并复核 source revision；Embedding 不可用才降级 FTS，模型/维度事实不匹配必须 fail-closed。
-- Citation 回查不得返回正文；Agent 绑定不扩权，知识片段只能作为带明确边界的 user 级不可信参考，禁止进入 system/developer instructions。
+- Citation 回查不得返回正文；Agent 绑定不扩权，知识片段只能作为 `knowledge.search` Tool Result 中带明确边界的不可信参考，禁止进入 system/developer instructions。
+- Agent Run 默认 `tool_only`，禁止每个 Model Step 固定召回；知识工具每次重鉴权，限定全局 TopK/Token/检索次数，并仅按 actor、绑定、索引版本、query 和 filters 复用 Run 内结果。
 - 管理端只调用知识 Action；附件必须复用 AttachmentField/AttachmentPicker 且只传 attachment ID；检索测试使用持久化策略，Citation 预览每次重鉴权并只展示稳定标识与 available/stale。
 - Agent Builder 知识库绑定必须调用 `agent_knowledge_*` Action，候选仅显示当前可见、enabled 且索引 ready 的 Base；绑定不得成为授权事实。
 - 管理端检索测试必须校验 Base enabled 且当前 IndexVersion ready，未就绪返回明确冲突错误，不得静默伪装为空结果。

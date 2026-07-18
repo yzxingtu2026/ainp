@@ -155,13 +155,14 @@ func Register(a *app.App) error {
 	a.KnowledgeChunker = aiknowledge.NewFixedTokenChunker()
 	ingestion := NewKnowledgeIngestionService(a.DB, a.KnowledgeSourceResolver, a.KnowledgeParser, a.KnowledgeChunker, svc, a.EmbeddingRuntime)
 	retriever := NewKnowledgeRetrievalService(a.DB, knowledge, a.EmbeddingRuntime)
+	knowledgeTool := NewKnowledgeTool(a.DB, knowledge, retriever)
 	knowledge.SetRetrievalServices(retriever, retriever)
 	a.KnowledgeRetriever = retriever
 	conversations := NewConversationService(a.DB, a.AIAssetResolver)
 	compactions := NewContextCompactionService(a.DB, conversations, svc, invocations, toolRegistry)
 	a.ContextCompactor = compactions
 	agentRuntime := NewAgentRuntimeService(a.DB, conversations, invocations, tools, compactions, writer, a.Authorization)
-	agentRuntime.SetKnowledgeRetriever(retriever)
+	tools.SetDefinitionProjector(knowledgeTool.Project)
 	tools.SetConfirmationHooks(agentRuntime.OnConfirmationPending, agentRuntime.OnConfirmationDecided)
 	if err := RegisterAgentRuntime(a, agentRuntime); err != nil {
 		return err
@@ -231,6 +232,9 @@ func Register(a *app.App) error {
 		return err
 	}
 	if err := toolRegistry.RegisterProvider(&aitool.ActionProvider{Actions: a.Actions}, &aitool.ActionExecutor{Actions: a.Actions}); err != nil {
+		return err
+	}
+	if err := toolRegistry.RegisterProvider(&aitool.StaticProvider{ProviderSource: aitool.SourceBuiltin, Definitions: []aitool.Definition{knowledgeTool.Definition()}}, knowledgeTool); err != nil {
 		return err
 	}
 	meta := []aitool.Definition{{ID: "meta:tool.search", Source: aitool.SourceMeta, Name: "tool.search", DescriptionForLLM: "Search visible tools by intent and return compact candidates", DescriptionForHuman: "搜索当前用户可用的工具", Capability: "ai", InputSchema: action.SchemaFor[aitool.MetaSearchInput](), Risk: aitool.RiskLow, SideEffect: aitool.SideEffectRead, RuntimeRef: "tool.search", SchemaVersion: 1, Status: "enabled"}, {ID: "meta:tool.load", Source: aitool.SourceMeta, Name: "tool.load", DescriptionForLLM: "Load a small number of candidate tools into the current scope", DescriptionForHuman: "将候选工具加载到当前调用范围", Capability: "ai", InputSchema: action.SchemaFor[aitool.MetaLoadInput](), Risk: aitool.RiskLow, SideEffect: aitool.SideEffectRead, RuntimeRef: "tool.load", SchemaVersion: 1, Status: "enabled"}}

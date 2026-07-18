@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -33,6 +34,11 @@ type ToolService struct {
 	embeddings            aitool.EmbeddingService
 	onConfirmationPending func(context.Context, *gorm.DB, *ToolConfirmation) error
 	onConfirmationDecided func(context.Context, *ToolConfirmation) error
+	projectDefinition     func(context.Context, *ToolScope, aitool.Definition) (aitool.Definition, bool, error)
+}
+
+func (s *ToolService) SetDefinitionProjector(projector func(context.Context, *ToolScope, aitool.Definition) (aitool.Definition, bool, error)) {
+	s.projectDefinition = projector
 }
 
 func NewToolService(db *gorm.DB, r *aitool.Registry, signer *aitool.HandleSigner, w outbox.Writer) *ToolService {
@@ -55,7 +61,7 @@ func (s *ToolService) ProjectModelTools(ctx context.Context, scopeID string) (st
 	if err != nil {
 		return "", nil, err
 	}
-	ids := append([]string{"meta:tool.search", "meta:tool.load"}, decodeStrings(scope.LoadedToolsJSON)...)
+	ids := append([]string{"meta:tool.search", "meta:tool.load", knowledgeSearchToolID}, decodeStrings(scope.LoadedToolsJSON)...)
 	out := make([]aimodelruntime.ToolDefinition, 0, len(ids))
 	seen := map[string]bool{}
 	for _, id := range ids {
@@ -66,6 +72,15 @@ func (s *ToolService) ProjectModelTools(ctx context.Context, scopeID string) (st
 		d, ok := s.registry.Get(id)
 		if !ok || d.Status != "enabled" || !scopeAllows(scope, d) || !toolVisible(ac, d) {
 			continue
+		}
+		if s.projectDefinition != nil {
+			d, ok, err = s.projectDefinition(ctx, scope, d)
+			if err != nil {
+				return "", nil, err
+			}
+			if !ok {
+				continue
+			}
 		}
 		out = append(out, aimodelruntime.ToolDefinition{Name: modelToolName(d.ID), Description: d.DescriptionForLLM, Parameters: d.InputSchema})
 	}
@@ -143,11 +158,29 @@ func (s *ToolService) Search(ctx context.Context, r ToolSearchRequest) (any, err
 	if err = s.syncCatalog(ctx, ac.TenantID); err != nil {
 		return nil, err
 	}
-	items, err := aitool.Search(ctx, s.registry.List(), r.Query, r.Capability, r.Source, r.Limit, func(d aitool.Definition) bool { return scopeAllows(scope, d) && toolVisible(ac, d) }, s.embeddings)
+	definitions := s.registry.List()
+	projected := make([]aitool.Definition, 0, len(definitions))
+	visibleIDs := make(map[string]bool, len(definitions))
+	for _, definition := range definitions {
+		if s.projectDefinition != nil {
+			var visible bool
+			definition, visible, err = s.projectDefinition(ctx, scope, definition)
+			if err != nil {
+				return nil, err
+			}
+			if !visible {
+				continue
+			}
+		}
+		projected = append(projected, definition)
+		visibleIDs[definition.ID] = true
+	}
+	items, err := aitool.Search(ctx, projected, r.Query, r.Capability, r.Source, r.Limit, func(d aitool.Definition) bool { return scopeAllows(scope, d) && toolVisible(ac, d) }, s.embeddings)
 	if err != nil {
 		return nil, err
 	}
 	items = s.mergeFTS(ctx, ac, scope, r, items)
+	items = slices.DeleteFunc(items, func(item aitool.Candidate) bool { return !visibleIDs[item.ID] })
 	return ToolSearchResponse{ScopeID: scope.ID, Items: items}, nil
 }
 func (s *ToolService) Load(ctx context.Context, r ToolLoadRequest) (any, error) {
@@ -174,6 +207,15 @@ func (s *ToolService) Load(ctx context.Context, r ToolLoadRequest) (any, error) 
 		d, ok := s.registry.Get(id)
 		if !ok || d.Status != "enabled" || !scopeAllows(scope, d) || !toolVisible(ac, d) {
 			return nil, errs.New(errs.CodeForbidden, "tool is not visible")
+		}
+		if s.projectDefinition != nil {
+			d, ok, err = s.projectDefinition(ctx, scope, d)
+			if err != nil {
+				return nil, err
+			}
+			if !ok {
+				return nil, errs.New(errs.CodeForbidden, "tool is not visible")
+			}
 		}
 		if !set[id] {
 			if len(loaded) >= 8 {
@@ -360,14 +402,18 @@ func (s *ToolService) execute(ctx context.Context, ac *auth.Context, scope *Tool
 		return nil, s.finishInvocation(ctx, &inv, nil, "failed", "execution_failed", fmt.Errorf("tool executor unavailable"))
 	}
 	loaded.Handle = ""
-	result, execErr := executor.Execute(ctx, loaded, args)
+	result, execErr := executor.Execute(aitool.WithScopeID(ctx, scope.ID), loaded, args)
 	if execErr != nil {
 		_ = s.finishInvocation(ctx, &inv, nil, "failed", "execution_failed", execErr)
 		return nil, execErr
 	}
 	result.CallID = callID
 	result.Data, result.Truncated = sanitizeToolData(result.Data, 0, 64<<10)
-	if err := s.finishInvocation(ctx, &inv, result, "completed", "", nil); err != nil {
+	invocationStatus, category := "completed", ""
+	if result.Status == "failed" {
+		invocationStatus, category = "failed", result.ErrorCategory
+	}
+	if err := s.finishInvocation(ctx, &inv, result, invocationStatus, category, nil); err != nil {
 		return nil, err
 	}
 	if approved != nil {

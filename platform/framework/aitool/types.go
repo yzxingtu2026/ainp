@@ -124,6 +124,13 @@ type MetaLoadInput struct {
 	ToolIDs []string `json:"tool_ids" validate:"required,min=1,max=3"`
 }
 
+type KnowledgeSearchInput struct {
+	Query            string   `json:"query" validate:"required,max=4096"`
+	KnowledgeBaseIDs []string `json:"knowledge_base_ids,omitempty" validate:"omitempty,max=16"`
+	DocumentIDs      []string `json:"document_ids,omitempty" validate:"omitempty,max=100"`
+	Limit            int      `json:"limit,omitempty"`
+}
+
 type scopeContextKey struct{}
 
 func WithScopeID(ctx context.Context, id string) context.Context {

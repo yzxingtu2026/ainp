@@ -53,9 +53,9 @@ func TestKnowledgeHybridRetrievalFTSFallbackAndBudgets(t *testing.T) {
 		}
 	}
 	fts := ai.NewKnowledgeRetrievalService(db, fake, nil)
-	fallback, err := fts.Retrieve(ingestionContext(), request)
-	if err != nil || len(fallback) != 4 {
-		t.Fatalf("FTS fallback failed: %#v %v", fallback, err)
+	fallbackResponse, err := fts.RetrieveWithMetadata(ingestionContext(), request)
+	if err != nil || len(fallbackResponse.Items) != 4 || !fallbackResponse.Metadata.Degraded || fallbackResponse.Metadata.DegradeReason != "embedding_runtime" {
+		t.Fatalf("FTS fallback failed: %#v %v", fallbackResponse, err)
 	}
 	request.Config.MaxContextTokens = 1
 	limited, err := retriever.Retrieve(ingestionContext(), request)

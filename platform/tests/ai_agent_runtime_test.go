@@ -76,20 +76,43 @@ func TestAgentRunOutboxEnqueueInjectsAuthFromEnvelope(t *testing.T) {
 	}
 }
 
-func TestAgentRuntimeKnowledgeUsesBindingsAndUserLevelUntrustedContext(t *testing.T) {
+func TestAgentRuntimeUsesKnowledgeToolWithoutAutomaticRetrieval(t *testing.T) {
 	body, err := os.ReadFile("../modules/ai/agent_runtime_service.go")
 	if err != nil {
 		t.Fatal(err)
 	}
 	src := string(body)
-	for _, expected := range []string{"Model(&AgentKnowledgeBinding{})", "s.knowledge.Retrieve(ctx", "aiknowledge.FormatUntrustedReferences(items)", "Role: aimodelruntime.RoleUser"} {
+	for _, expected := range []string{"knowledgeSearchToolID", "modelToolName(knowledgeSearchToolID)", `"citation_count"`} {
 		if !strings.Contains(src, expected) {
 			t.Fatalf("agent knowledge integration missing %q", expected)
 		}
 	}
-	for _, forbidden := range []string{"Instructions: aiknowledge.FormatUntrustedReferences", "Role: aimodelruntime.RoleDeveloper, Content: []aimodelruntime.ContentPart{{Type: aimodelruntime.PartInputText, Text: body"} {
+	for _, forbidden := range []string{"knowledgeMessages(", "s.knowledge.Retrieve(ctx", "Instructions: aiknowledge.FormatUntrustedReferences"} {
 		if strings.Contains(src, forbidden) {
-			t.Fatalf("knowledge was promoted to a trusted instruction channel: %q", forbidden)
+			t.Fatalf("automatic or trusted knowledge injection remains: %q", forbidden)
 		}
+	}
+}
+
+func TestKnowledgeToolIsRegisteredAndKeepsChunkTextOutOfFacts(t *testing.T) {
+	body, err := os.ReadFile("../modules/ai/knowledge_tool.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(body)
+	for _, expected := range []string{`knowledgeSearchToolID`, `"builtin:knowledge.search"`, `FormatUntrustedReferences`, `maxKnowledgeSearchesPerRun`, `cacheKey`, `CanReadKnowledgeBase`} {
+		if !strings.Contains(src, expected) {
+			t.Fatalf("knowledge tool missing %q", expected)
+		}
+	}
+	toolService, err := os.ReadFile("../modules/ai/tool_service.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(toolService), `result_json`) || !strings.Contains(string(toolService), `Summary: result.Summary`) {
+		t.Fatal("tool invocation must persist a redacted result summary")
+	}
+	if !strings.Contains(string(toolService), `"meta:tool.search", "meta:tool.load", knowledgeSearchToolID`) {
+		t.Fatal("knowledge search must be a direct core tool projection candidate")
 	}
 }
