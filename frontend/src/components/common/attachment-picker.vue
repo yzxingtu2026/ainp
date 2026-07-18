@@ -46,6 +46,8 @@ const keyword = ref('');
 const records = ref<Api.Attachment.Item[]>([]);
 const checked = ref<string[]>([]);
 const policy = ref<Api.Attachment.UploadPolicy | null>(null);
+const policyLoading = ref(false);
+const policyLoadFailed = ref(false);
 const page = ref(1);
 const total = ref(0);
 const scrollEl = ref<HTMLElement | null>(null);
@@ -53,7 +55,9 @@ const scrollEl = ref<HTMLElement | null>(null);
 const pendingSelectIds = ref<string[]>([]);
 
 const gridEnabled = computed(() => props.show && tab.value === 'mine');
-const limit = computed(() => props.maxCount || policy.value?.max_uploads_once || DEFAULT_ATTACHMENT_UPLOAD_POLICY.maxUploadsOnce);
+const limit = computed(() =>
+  Math.min(props.maxCount, policy.value?.max_uploads_once ?? DEFAULT_ATTACHMENT_UPLOAD_POLICY.maxUploadsOnce)
+);
 const hasMore = computed(() => records.value.length < total.value && records.value.length < MAX_LOADED);
 const reachedCap = computed(() => records.value.length >= MAX_LOADED && total.value > MAX_LOADED);
 
@@ -71,13 +75,29 @@ watch(
     tab.value = 'mine';
     keyword.value = '';
     pendingSelectIds.value = [];
+    policy.value = null;
+    policyLoadFailed.value = false;
     await Promise.all([loadPolicy(), resetAndLoadMine()]);
   }
 );
 
 async function loadPolicy() {
-  const { data } = await fetchAttachmentPolicy();
-  if (data) policy.value = data;
+  policyLoading.value = true;
+  policyLoadFailed.value = false;
+  try {
+    const { data, error } = await fetchAttachmentPolicy();
+    if (error || !data) {
+      policy.value = null;
+      policyLoadFailed.value = true;
+      return;
+    }
+    policy.value = data;
+  } catch {
+    policy.value = null;
+    policyLoadFailed.value = true;
+  } finally {
+    policyLoading.value = false;
+  }
 }
 
 async function resetAndLoadMine() {
@@ -243,10 +263,7 @@ function confirm() {
                       class="h-full w-full object-cover"
                     />
                     <div v-else class="h-full w-full flex-col-center gap-6px text-gray-400">
-                      <NSpin
-                        v-if="thumbs.loadingIds[item.id] || item.thumb_status === 'pending'"
-                        :size="18"
-                      />
+                      <NSpin v-if="thumbs.loadingIds[item.id] || item.thumb_status === 'pending'" :size="18" />
                       <template v-else>
                         <Icon :icon="attachmentTypeIcon(item.content_type)" class="text-28px" />
                         <NButton
@@ -271,7 +288,9 @@ function confirm() {
                     </div>
                   </div>
                   <div class="min-w-0 px-10px py-8px">
-                    <div class="truncate text-12px font-medium" :title="item.original_name">{{ item.original_name }}</div>
+                    <div class="truncate text-12px font-medium" :title="item.original_name">
+                      {{ item.original_name }}
+                    </div>
                     <div class="mt-2px text-11px text-gray-500">{{ formatFileSize(item.size) }}</div>
                   </div>
                 </button>
@@ -286,15 +305,24 @@ function confirm() {
         </NSpace>
       </NTabPane>
       <NTabPane name="upload" :tab="$t('page.attachment.pickerUpload')" display-directive="show">
-        <AttachmentUpload
-          :multiple="multiple"
-          :max-count="limit"
-          :max-size-bytes="policy?.max_size_bytes"
-          :allowed-ext="policy?.allowed_ext"
-          :allowed-mime="policy?.allowed_mime"
-          @success="onUploaded"
-          @idle="onUploadIdle"
-        />
+        <NSpin :show="policyLoading">
+          <AttachmentUpload
+            v-if="policy"
+            :multiple="multiple"
+            :max-count="limit"
+            :max-size-bytes="policy.max_size_bytes"
+            :allowed-ext="policy.allowed_ext"
+            :allowed-mime="policy.allowed_mime"
+            @success="onUploaded"
+            @idle="onUploadIdle"
+          />
+          <NEmpty v-else-if="policyLoadFailed" :description="$t('page.attachment.loadFailed')">
+            <template #extra>
+              <NButton size="small" @click="loadPolicy">{{ $t('page.attachment.retry') }}</NButton>
+            </template>
+          </NEmpty>
+          <div v-else class="h-120px" />
+        </NSpin>
       </NTabPane>
     </NTabs>
     <template #footer>

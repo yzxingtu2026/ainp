@@ -41,10 +41,10 @@ const {
   maxSizeBytes,
   allowedExt
 } = useAttachmentUploadQueue({
-  maxCount: props.maxCount,
-  maxSizeBytes: props.maxSizeBytes,
-  allowedExt: props.allowedExt,
-  allowedMime: props.allowedMime,
+  maxCount: () => props.maxCount,
+  maxSizeBytes: () => props.maxSizeBytes,
+  allowedExt: () => props.allowedExt,
+  allowedMime: () => props.allowedMime,
   onSuccess: async item => {
     if (item.attachment) {
       emit('success', item.attachment);
@@ -58,11 +58,11 @@ watch(busy, (isBusy, wasBusy) => {
   }
 });
 
-const accept = computed(() => allowedExt.join(','));
+const accept = computed(() => allowedExt.value.join(','));
 const hint = computed(() =>
   $t('page.attachment.uploadHint', {
-    size: formatFileSize(maxSizeBytes),
-    ext: allowedExt.join(', ')
+    size: formatFileSize(maxSizeBytes.value),
+    ext: allowedExt.value.join(', ')
   })
 );
 
@@ -156,7 +156,7 @@ function errorLabel(code: string) {
           <div class="truncate text-13px font-medium">{{ item.file.name }}</div>
           <div class="text-12px text-gray-500">
             {{ formatFileSize(item.file.size) }} · {{ statusLabel(item.status) }}
-            <span v-if="item.error"> · {{ errorLabel(item.error) }}</span>
+            <span v-if="item.error">&nbsp;· {{ errorLabel(item.error) }}</span>
           </div>
           <NProgress
             v-if="item.status === 'uploading' || item.status === 'preparing' || item.status === 'completing'"
