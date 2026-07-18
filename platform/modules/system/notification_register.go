@@ -383,7 +383,7 @@ func (s *NotificationTemplateService) Preview(ctx context.Context, input json.Ra
 	}
 
 	resolver := notification.NewTemplateResolver(s.renderer, s.override)
-	resolved, err := resolver.Resolve(ac.TenantID, def, notification.Channel(req.Channel), req.Locale)
+	resolved, err := resolver.Resolve(ctx, ac.TenantID, def, notification.Channel(req.Channel), req.Locale)
 	if err != nil {
 		return nil, errs.NewKey(errs.CodeNotificationTemplateMissing, "notification.template_missing", err.Error())
 	}

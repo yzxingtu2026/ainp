@@ -1,6 +1,7 @@
 package notification
 
 import (
+	"context"
 	"fmt"
 	"strings"
 )
@@ -23,7 +24,7 @@ type TemplateOverride struct {
 type OverrideProvider interface {
 	// GetOverride returns the override for the given tenant/definition/channel/locale.
 	// Returns nil if no override exists.
-	GetOverride(tenantID, definitionKey, channel, locale string) (*TemplateOverride, error)
+	GetOverride(ctx context.Context, tenantID, definitionKey, channel, locale string) (*TemplateOverride, error)
 }
 
 // TemplateResolver resolves templates using three-tier priority:
@@ -61,10 +62,10 @@ type ResolveResult struct {
 }
 
 // Resolve finds the best template for the given definition, channel, locale, and tenant.
-func (r *TemplateResolver) Resolve(tenantID string, def Definition, ch Channel, locale string) (*ResolveResult, error) {
+func (r *TemplateResolver) Resolve(ctx context.Context, tenantID string, def Definition, ch Channel, locale string) (*ResolveResult, error) {
 	// 1. Try tenant override
 	if r.overrides != nil && tenantID != "" {
-		override, err := r.overrides.GetOverride(tenantID, def.Key, string(ch), locale)
+		override, err := r.overrides.GetOverride(ctx, tenantID, def.Key, string(ch), locale)
 		if err != nil {
 			return nil, fmt.Errorf("notification: override lookup failed: %w", err)
 		}

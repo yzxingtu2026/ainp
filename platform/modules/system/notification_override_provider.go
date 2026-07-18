@@ -1,7 +1,12 @@
 package system
 
 import (
+	"context"
+	"errors"
+	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/notification"
+	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
+	"gorm.io/gorm"
 )
 
 // GormOverrideProvider bridges notification.OverrideProvider to the repository.
@@ -14,17 +19,21 @@ func NewGormOverrideProvider(repo *NotificationRepository) *GormOverrideProvider
 }
 
 // GetOverride implements notification.OverrideProvider.
-func (p *GormOverrideProvider) GetOverride(tenantID, definitionKey, channel, locale string) (*notification.TemplateOverride, error) {
-	// We need a context-free lookup; the repository methods use tenant scope from context,
-	// so we do a direct query here for the override provider contract.
-	var row NotificationTemplateOverride
-	err := p.repo.db.
-		Where("tenant_id = ? AND definition_key = ? AND channel = ? AND locale = ?",
-			tenantID, definitionKey, channel, locale).
-		First(&row).Error
+func (p *GormOverrideProvider) GetOverride(ctx context.Context, tenantID, definitionKey, channel, locale string) (*notification.TemplateOverride, error) {
+	ac, ok := auth.FromContext(ctx)
+	if !ok || ac == nil || ac.TenantID != tenantID {
+		return nil, tenant.ErrTenantConflict
+	}
+	repo, err := p.repo.overrideRepository(ctx)
 	if err != nil {
-		// Not found is expected, return nil
+		return nil, err
+	}
+	row, err := repo.First("definition_key = ? AND channel = ? AND locale = ?", definitionKey, channel, locale)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
+	}
+	if err != nil {
+		return nil, err
 	}
 	return &notification.TemplateOverride{
 		TenantID:      row.TenantID,

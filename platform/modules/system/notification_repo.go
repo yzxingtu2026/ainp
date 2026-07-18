@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -19,8 +20,23 @@ type NotificationRepository struct {
 	db *gorm.DB
 }
 
+var notificationOverrideRegistration sync.Once
+
 func NewNotificationRepository(db *gorm.DB) *NotificationRepository {
+	notificationOverrideRegistration.Do(func() {
+		if err := tenant.DefaultRegistry.Register(NotificationTemplateOverride{}, tenant.ModelOptions{Kind: tenant.TenantOwned, InjectOnCreate: true, SystemAccess: true}); err != nil {
+			panic(err)
+		}
+	})
 	return &NotificationRepository{db: db}
+}
+
+func (r *NotificationRepository) overrideRepository(ctx context.Context) (*tenant.Repository[NotificationTemplateOverride], error) {
+	tdb, err := tenant.TenantDB(ctx, r.db)
+	if err != nil {
+		return nil, err
+	}
+	return tenant.NewTenantRepository[NotificationTemplateOverride](tdb)
 }
 
 // AutoMigrate runs GORM auto-migration for notification tables.
@@ -281,18 +297,21 @@ func (r *NotificationRepository) GetDeliveryDetail(ctx context.Context, delivery
 
 // ListTemplateOverrides returns all overrides for a tenant.
 func (r *NotificationRepository) ListTemplateOverrides(ctx context.Context) ([]NotificationTemplateOverride, error) {
-	var overrides []NotificationTemplateOverride
-	err := r.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).
-		Order("definition_key, channel, locale").Find(&overrides).Error
+	repo, err := r.overrideRepository(ctx)
+	if err != nil {
+		return nil, err
+	}
+	overrides, err := repo.Order("definition_key, channel, locale").Find("1=1")
 	return overrides, err
 }
 
 // GetTemplateOverride returns a specific override.
 func (r *NotificationRepository) GetTemplateOverride(ctx context.Context, definitionKey, channel, locale string) (*NotificationTemplateOverride, error) {
-	var o NotificationTemplateOverride
-	err := r.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).
-		Where("definition_key = ? AND channel = ? AND locale = ?", definitionKey, channel, locale).
-		First(&o).Error
+	repo, err := r.overrideRepository(ctx)
+	if err != nil {
+		return nil, err
+	}
+	o, err := repo.First("definition_key = ? AND channel = ? AND locale = ?", definitionKey, channel, locale)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
@@ -319,28 +338,36 @@ func (r *NotificationRepository) UpsertTemplateOverride(ctx context.Context, o *
 		return err
 	}
 	if existing != nil {
-		// Update existing
-		return r.db.WithContext(ctx).
-			Model(existing).
-			Updates(map[string]any{
-				"version":     o.Version,
-				"subject":     o.Subject,
-				"body":        o.Body,
-				"config_json": o.ConfigJSON,
-				"enabled":     o.Enabled,
-				"updated_by":  o.UpdatedBy,
-				"updated_at":  now,
-			}).Error
+		repo, repoErr := r.overrideRepository(ctx)
+		if repoErr != nil {
+			return repoErr
+		}
+		result := repo.Where("id = ?", existing.ID).Updates(map[string]any{
+			"version":     o.Version,
+			"subject":     o.Subject,
+			"body":        o.Body,
+			"config_json": o.ConfigJSON,
+			"enabled":     o.Enabled,
+			"updated_by":  o.UpdatedBy,
+			"updated_at":  now,
+		})
+		return result.Error
 	}
-	// Create new
-	return r.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Create(o).Error
+	repo, err := r.overrideRepository(ctx)
+	if err != nil {
+		return err
+	}
+	return repo.Create(o)
 }
 
 // DeleteTemplateOverride removes a template override (reset to code default).
 func (r *NotificationRepository) DeleteTemplateOverride(ctx context.Context, definitionKey, channel, locale string) error {
-	return r.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).
-		Where("definition_key = ? AND channel = ? AND locale = ?", definitionKey, channel, locale).
-		Delete(&NotificationTemplateOverride{}).Error
+	repo, err := r.overrideRepository(ctx)
+	if err != nil {
+		return err
+	}
+	result := repo.DeleteWhere("definition_key = ? AND channel = ? AND locale = ?", definitionKey, channel, locale)
+	return result.Error
 }
 
 // --- User notification operations ---

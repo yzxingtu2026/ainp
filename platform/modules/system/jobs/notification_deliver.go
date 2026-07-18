@@ -103,7 +103,7 @@ func (h *NotificationDeliverHandler) Handle(ctx context.Context, env job.Envelop
 	}
 
 	// Resolve template
-	resolveResult, err := h.resolver.Resolve(dc.TenantID, def, ch, dc.Locale)
+	resolveResult, err := h.resolver.Resolve(ctx, dc.TenantID, def, ch, dc.Locale)
 	if err != nil {
 		return job.Permanent(fmt.Errorf("notification.deliver: template resolve: %w", err))
 	}
