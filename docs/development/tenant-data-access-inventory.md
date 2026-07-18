@@ -16,7 +16,7 @@
 |---|---|---|---|
 | #111 样板 | Agent、AgentVersion、AgentToolBinding 及直接 Runtime 消费方 | 已完成 | Agent/Builder Preview/PostgreSQL |
 | Demo 模板 | RevisionDoc | 已完成 | 默认测试链与跨租户 Callback |
-| System/Framework | Setting、Notification Request/Delivery/TemplateOverride/UserNotification、Attachment/AttachmentLink（含 Service、管理查询与 Thumb Job）、Idempotency Record 已完成；User/Role/Auth/Audit/Job/Outbox 待迁移 | 迁移中 | 各模块 PostgreSQL 集成测试 |
+| System/Framework | Setting、Notification Request/Delivery/TemplateOverride/UserNotification、Attachment/AttachmentLink（含 Service、管理查询与 Thumb Job）、Idempotency Record 已完成；Audit tenant 管理查询已迁移；User/Role/Auth/Job/Outbox 待迁移 | 迁移中 | 各模块 PostgreSQL 集成测试 |
 | AI 治理与 Tool | Provider/Deployment/Alias/Invocation/Tool/Scope/Confirmation | 待迁移 | AI Model/Tool Runtime 测试 |
 | AI 会话与 Runtime | Conversation/Message/Stream/Snapshot/Run/Step/Event | 迁移中 | Conversation/Agent Runtime 测试 |
 | Knowledge | Base/Document/Index/Chunk/Payload/Binding 及 Raw JOIN | 待迁移 | Knowledge 全链路测试 |
@@ -29,6 +29,7 @@
 | `*/migrate.go`、`modules/*/model.go`、`system/seed.go` | Exec/DDL | schema migration、约束和索引维护 | 只在启动/安装阶段；不得接受请求 tenant |
 | `RevisionDocService.AutoMigrate` | AutoMigrate | Demo 表启动建表 | 不执行 tenant-owned 业务 CRUD |
 | `framework/revision`、`framework/dblock` | Table/Exec | 通用并发基础设施 | 调用方必须来自 scoped transaction；本 Issue 后续迁移 |
+| `framework/audit.GormRecorder` | mixed-realm write | `audit_logs` 同时记录 tenant 与 platform realm | tenant 管理查询只走 TenantRaw；写入 tenant/realm 来自已认证 Action AuthContext |
 
 ## 已识别契约风险
 

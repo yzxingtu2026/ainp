@@ -68,7 +68,7 @@ func TestAuditLogActionsFilterAndEnforceTenantScope(t *testing.T) {
 	if err := db.Model(&audit.Record{}).Where("tenant_id = ? AND action_id = ?", "t1", operations.ActionAuditLogList).Count(&queryAuditCount).Error; err != nil {
 		t.Fatal(err)
 	}
-	if queryAuditCount != 2 {
+	if queryAuditCount != 3 {
 		t.Fatalf("audit query must be audited, count=%d", queryAuditCount)
 	}
 }
