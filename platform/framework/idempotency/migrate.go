@@ -3,6 +3,7 @@ package idempotency
 import (
 	"fmt"
 
+	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"gorm.io/gorm"
 )
 
@@ -11,10 +12,14 @@ func AutoMigrate(db *gorm.DB) error {
 	if db == nil {
 		return fmt.Errorf("idempotency: db is required")
 	}
-	if err := db.AutoMigrate(&Record{}); err != nil {
+	migrationDB, err := tenant.MigrationDB(db)
+	if err != nil {
 		return err
 	}
-	return ensureConstraints(db)
+	if err := migrationDB.AutoMigrate(&Record{}); err != nil {
+		return err
+	}
+	return ensureConstraints(migrationDB)
 }
 
 func ensureConstraints(db *gorm.DB) error {
