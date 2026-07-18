@@ -123,6 +123,13 @@ System
 - 平台超管 / 运维入口：必须是已认证 platform realm，并通过显式 System Scope/Repository，设 `is_system_operator`，**强制审计**，禁止复用普通业务 Action 做全租户扫描。
 - 多租户批处理：按租户循环 `WithTenant`，禁止无租户上下文写库。
 
+## 数据访问基础协议
+
+- tenant-owned 与 global/system Model 必须显式登记到 `tenant.Registry`；tenant-owned Model 必须具有字符串 `TenantID`，重复、错误分类和已知 Model 漏注册在启动校验时失败。
+- 业务仓储只能由 `tenant.TenantDB(ctx, db)` 构造；租户身份仅来自已认证 tenant realm 的 `AuthContext`。平台查询必须显式使用 `tenant.SystemDB`，且要求已认证 platform realm 与 system operator。
+- 已注册 tenant-owned Model 的 GORM Query/Create/Update/Delete 在裸 DB、缺失上下文时 fail-closed；Create 自动注入可信 tenant 并拒绝冲突值。事务必须通过强类型包装器传播。
+- `Raw`、`Exec`、动态 `Table` 与复杂 JOIN 不承诺由 Model Callback 自动隔离，只能走命名明确的受控出口；Tenant 出口要求 SQL 首个绑定参数为 `tenant_id` 并由包装器自动注入可信租户，调用方不得传 tenant ID。领域权限、owner/visibility 与状态机仍由业务服务负责。
+
 ## 租户自定义域名（预留）
 
 Phase 1 可不实现解析与证书，但 Tenant 模型预留例如：

@@ -2,6 +2,7 @@ package database
 
 import (
 	"fmt"
+	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"log"
 	"os"
 	"time"
@@ -26,6 +27,9 @@ func Open(dsn string) (*gorm.DB, error) {
 	})
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
+	}
+	if err := tenant.InstallCallbacks(db, tenant.DefaultRegistry); err != nil {
+		return nil, fmt.Errorf("install tenant callbacks: %w", err)
 	}
 	sqlDB, err := db.DB()
 	if err != nil {

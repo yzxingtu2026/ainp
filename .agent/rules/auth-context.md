@@ -12,5 +12,6 @@
 - Realm 仅 `tenant` / `platform`；当前登录固定 tenant。普通 Scope 缺 tenant 必须报错，跨租户只走经 platform realm 校验的显式 System 入口。
 - 预留租户绑定自定义域名（Phase 1 可不实现）。
 - tenant 日志查询只使用声明可信 tenant filter 的 Provider，tenant_id 由 AuthContext 注入；混合租户或数据库原始日志必须 fail-closed。
+- tenant-owned/global Model 必须显式登记；已登记 tenant-owned Model 只允许经 `TenantDB` Repository 访问，平台跨租户只允许经 `SystemDB`。裸 DB、缺失上下文、冲突 TenantID 必须 fail-closed；Raw/Exec 只走受控参数化出口。
 
 详规：`docs/development/auth-context.md`
