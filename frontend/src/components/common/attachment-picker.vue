@@ -317,11 +317,16 @@ function confirm() {
                       {{ $t('page.attachment.alreadyAssociated') }}
                     </NTag>
                   </div>
-                  <div class="min-w-0 px-10px py-8px">
-                    <div class="truncate text-12px font-medium" :title="item.original_name">
+                  <div class="min-w-0 bg-white px-10px py-8px dark:bg-gray-900">
+                    <div
+                      class="truncate text-12px text-gray-900 font-medium dark:text-gray-100"
+                      :title="item.original_name"
+                    >
                       {{ item.original_name }}
                     </div>
-                    <div class="mt-2px text-11px text-gray-500">{{ formatFileSize(item.size) }}</div>
+                    <div class="mt-2px text-11px text-gray-600 dark:text-gray-400">
+                      {{ formatFileSize(item.size) }}
+                    </div>
                   </div>
                 </button>
               </div>
