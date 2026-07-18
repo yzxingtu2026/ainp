@@ -327,7 +327,6 @@ declare namespace Api.AI {
     updated_at: string;
   }
   interface KnowledgeBaseCreate {
-    code: string;
     name: string;
     description: string;
     visibility: KnowledgeVisibility;
@@ -335,7 +334,7 @@ declare namespace Api.AI {
     chunking_config: ChunkingConfig;
     retrieval_config: RetrievalConfig;
   }
-  interface KnowledgeBaseUpdate extends Omit<KnowledgeBaseCreate, 'code'> {
+  interface KnowledgeBaseUpdate extends KnowledgeBaseCreate {
     id: string;
     revision: number;
   }

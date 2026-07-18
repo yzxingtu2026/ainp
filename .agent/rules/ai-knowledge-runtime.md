@@ -3,7 +3,7 @@
 - Knowledge Base、Document、Index、Chunk 与 Agent Binding 必须从 AuthContext 强制 tenant/user/tenant realm；跨租户和无权 private 资源 fail-closed。
 - `private` 仅 owner 可读写；`tenant` 同租户可读、仍仅 owner 可写；Agent 绑定只限制候选范围，任何读取/检索必须按当前 actor 重新鉴权。
 - Document 只保存 attachment ID、source revision、MIME 与展示名；附件经 `ResourceLinker` 同事务 Bind/Unbind，禁止直写链接表、保存 Object Key/路径或绕过 AccessPolicy。
-- Knowledge Base code 不可改；并发更新必须使用 revision；Base/Document 软删除，删除后立即从默认读取与检索范围消失。
+- Knowledge Base code 只能由后端基于资源 UUID 生成且不可改，客户端不得提交；并发更新必须使用 revision；Base/Document 软删除，删除后立即从默认读取与检索范围消失。
 - 修改 embedding alias 或 chunking config 必须使当前索引失效；Index/Chunk 固定 deployment、dimensions、处理版本、source revision 与位置元数据。
 - Parser、Chunker、Retriever 只依赖 `framework/aiknowledge`；空知识库范围、未知实现与权限缺失 fail-closed。
 - 文档解析必须经 `DocumentSourceResolver` 重鉴权并校验 source revision；MIME/Parser 未知、Office 动态内容或任一资源预算超限均 fail-closed。

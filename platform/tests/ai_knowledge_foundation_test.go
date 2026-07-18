@@ -273,9 +273,9 @@ func TestKnowledgeTenantAttachmentRevisionAndBindingBoundaries(t *testing.T) {
 	otherCtx := knowledgeContext("tenant-a", "other")
 	mutationCtx := knowledgeContext("tenant-a", "other", ai.ActionKnowledgeBaseUpdate, ai.ActionAgentKnowledgeBind)
 
-	create := func(ctx context.Context, code, visibility string) ai.KnowledgeBase {
+	create := func(ctx context.Context, name, visibility string) ai.KnowledgeBase {
 		value, err := service.CreateKnowledgeBase(ctx, ai.KnowledgeBaseCreateRequest{
-			Code: code, Name: code, Visibility: visibility, EmbeddingAlias: "embed",
+			Name: name, Visibility: visibility, EmbeddingAlias: "embed",
 			ChunkingConfig:  aiknowledge.ChunkingConfig{Strategy: aiknowledge.ChunkingFixedTokens, ChunkSize: 800, ChunkOverlap: 100},
 			RetrievalConfig: aiknowledge.RetrievalConfig{TopK: 5, MaxContextTokens: 4000},
 		})
@@ -286,6 +286,9 @@ func TestKnowledgeTenantAttachmentRevisionAndBindingBoundaries(t *testing.T) {
 	}
 	privateKB := create(ownerCtx, "private-kb", aiknowledge.VisibilityPrivate)
 	tenantKB := create(ownerCtx, "tenant-kb", aiknowledge.VisibilityTenant)
+	if privateKB.Code == tenantKB.Code || !strings.HasPrefix(privateKB.Code, "kb_") || len(privateKB.Code) != 35 {
+		t.Fatalf("knowledge base codes must be generated and unique: %q %q", privateKB.Code, tenantKB.Code)
+	}
 	indexID := "index-current"
 	if err := db.Create(&ai.KnowledgeIndexVersion{
 		ID: indexID, TenantID: tenantKB.TenantID, KnowledgeBaseID: tenantKB.ID, Version: 1,

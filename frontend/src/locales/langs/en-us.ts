@@ -404,7 +404,7 @@ const local: App.I18n.Schema = {
       citationFailed: 'Citation verification failed',
       confirmDeleteBase: 'Delete this knowledge base? Bases referenced by documents or agents cannot be deleted.',
       confirmDeleteDocument: 'Delete this document and its derived index?',
-      validation: { code: 'Enter a valid code', name: 'Enter a name' }
+      validation: { name: 'Enter a name' }
     },
     aiAgents: {
       title: 'Agents',

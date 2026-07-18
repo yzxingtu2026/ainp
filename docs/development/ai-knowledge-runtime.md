@@ -21,7 +21,7 @@ Knowledge Runtime 管理租户知识库、附件来源、不可变索引版本�
 
 ## 模型与生命周期
 
-- Knowledge Base code 创建后不可修改；可并发更新字段必须携带 revision。
+- Knowledge Base code 由后端基于资源 UUID 统一生成，客户端不得提交；创建后不可修改，可并发更新字段必须携带 revision。
 - Knowledge Base 和 Document 使用软删除，活动记录唯一约束使用 partial unique index。
 - 修改 embedding alias 或 chunking config 必须使当前索引指针失效；只修改 retrieval config 不使索引失效。
 - Index Version 固定 deployment、dimensions、预处理、解析器与切块版本；Chunk 固定 source revision、页码/位置、token count 和内容摘要。

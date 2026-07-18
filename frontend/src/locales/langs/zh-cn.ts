@@ -400,7 +400,7 @@ const local: App.I18n.Schema = {
       citationFailed: '引用验证失败',
       confirmDeleteBase: '确认删除此知识库？知识库仍有关联文档或智能体时无法删除。',
       confirmDeleteDocument: '确认删除此知识文档及其派生索引？',
-      validation: { code: '请输入合法代码', name: '请输入名称' }
+      validation: { name: '请输入名称' }
     },
     aiAgents: {
       title: '智能体',

@@ -557,7 +557,7 @@ declare namespace App {
           citationFailed: string;
           confirmDeleteBase: string;
           confirmDeleteDocument: string;
-          validation: { code: string; name: string };
+          validation: { name: string };
         };
         aiAgents: {
           title: string;

@@ -52,7 +52,6 @@ const deployments = ref<Api.AI.Deployment[]>([]);
 const embeddingAliasesLoading = ref(false);
 
 const defaultForm = (): Api.AI.KnowledgeBaseCreate & { id?: string; revision?: number } => ({
-  code: '',
   name: '',
   description: '',
   visibility: 'private',
@@ -88,7 +87,6 @@ const embeddingAliasValue = computed<string | null>({
   }
 });
 const rules: FormRules = {
-  code: { required: true, message: () => $t('page.knowledge.validation.code'), trigger: 'blur' },
   name: { required: true, message: () => $t('page.knowledge.validation.name'), trigger: 'blur' }
 };
 
@@ -289,7 +287,6 @@ async function saveBase() {
           retrieval_config: form.retrieval_config
         })
       : createKnowledgeBase({
-          code: form.code,
           name: form.name,
           description: form.description,
           visibility: form.visibility,
@@ -657,12 +654,7 @@ onMounted(() => {
       class="w-680px max-w-[calc(100vw-24px)]"
     >
       <NForm ref="editorRef" :model="form" :rules="rules" label-placement="top">
-        <NGrid responsive="screen" cols="1 s:2" :x-gap="16">
-          <NFormItemGi path="code" :label="$t('page.knowledge.code')">
-            <NInput v-model:value="form.code" :disabled="editing" />
-          </NFormItemGi>
-          <NFormItemGi path="name" :label="$t('page.knowledge.name')"><NInput v-model:value="form.name" /></NFormItemGi>
-        </NGrid>
+        <NFormItem path="name" :label="$t('page.knowledge.name')"><NInput v-model:value="form.name" /></NFormItem>
         <NFormItem :label="$t('page.knowledge.description')">
           <NInput v-model:value="form.description" type="textarea" :maxlength="1024" show-count />
         </NFormItem>

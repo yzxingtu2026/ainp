@@ -70,7 +70,6 @@ type KnowledgeBaseIDRequest struct {
 }
 
 type KnowledgeBaseCreateRequest struct {
-	Code            string                      `json:"code" validate:"required,max=64"`
 	Name            string                      `json:"name" validate:"required,max=128"`
 	Description     string                      `json:"description" validate:"max=1024"`
 	Visibility      string                      `json:"visibility" validate:"required,oneof=private tenant"`
@@ -80,7 +79,6 @@ type KnowledgeBaseCreateRequest struct {
 }
 
 func (r *KnowledgeBaseCreateRequest) Normalize() {
-	r.Code = strings.TrimSpace(r.Code)
 	r.Name = strings.TrimSpace(r.Name)
 	r.Description = strings.TrimSpace(r.Description)
 	r.Visibility = strings.TrimSpace(r.Visibility)
@@ -90,9 +88,6 @@ func (r *KnowledgeBaseCreateRequest) Normalize() {
 }
 
 func (r KnowledgeBaseCreateRequest) Validate(context.Context) error {
-	if !codePattern.MatchString(r.Code) {
-		return fieldValidation("code", "knowledge.validation.invalid_code", "knowledge base code is invalid")
-	}
 	if err := r.ChunkingConfig.Validate(); err != nil {
 		return fieldValidation("chunking_config", "knowledge.validation.invalid_chunking_config", err.Error())
 	}
@@ -309,9 +304,10 @@ func (s *KnowledgeService) CreateKnowledgeBase(ctx context.Context, request Know
 			return nil, err
 		}
 	}
+	identifier := uuid.New()
 	row := KnowledgeBase{
-		ID: uuid.NewString(), TenantID: ac.TenantID, OwnerUserID: ac.UserID,
-		Code: request.Code, Name: request.Name, Description: request.Description,
+		ID: identifier.String(), TenantID: ac.TenantID, OwnerUserID: ac.UserID,
+		Code: "kb_" + strings.ReplaceAll(identifier.String(), "-", ""), Name: request.Name, Description: request.Description,
 		Visibility: request.Visibility, Status: aiknowledge.KnowledgeBaseDraft,
 		EmbeddingAlias: request.EmbeddingAlias, ChunkingConfig: request.ChunkingConfig,
 		RetrievalConfig: request.RetrievalConfig, Revision: 1,
