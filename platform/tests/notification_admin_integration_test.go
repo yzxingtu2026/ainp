@@ -81,8 +81,17 @@ func TestNotificationDeliveryAdminFiltersRetryAndTenantIsolation(t *testing.T) {
 		{ID: "a-delivered", TenantID: "tenant-a", RequestID: "req-a", RecipientID: "user-a", Channel: "email", Status: "delivered"},
 		{ID: "b-failed-email", TenantID: "tenant-b", RequestID: "req-b", RecipientID: "user-b", Channel: "email", Status: "failed"},
 	}
+	platformCtx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, Realm: auth.RealmPlatform, IsSystemOperator: true})
+	systemDB, err := tenant.SystemDB(platformCtx, testDB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deliveryRepo, err := tenant.NewSystemRepository[system.NotificationDelivery](systemDB)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for i := range deliveries {
-		if err := testDB.Create(&deliveries[i]).Error; err != nil {
+		if err := deliveryRepo.Create(&deliveries[i]); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -128,8 +137,8 @@ func TestNotificationDeliveryAdminFiltersRetryAndTenantIsolation(t *testing.T) {
 	if !strings.HasPrefix(enqueuer.inputs[0].IdempotencyKey, "notification-retry:a-failed-email:") {
 		t.Fatalf("retry idempotency key = %q", enqueuer.inputs[0].IdempotencyKey)
 	}
-	var retried system.NotificationDelivery
-	if err := testDB.First(&retried, "id = ?", "a-failed-email").Error; err != nil {
+	retried, err := deliveryRepo.GetByID("a-failed-email")
+	if err != nil {
 		t.Fatal(err)
 	}
 	if retried.Status != "pending" {
@@ -140,8 +149,8 @@ func TestNotificationDeliveryAdminFiltersRetryAndTenantIsolation(t *testing.T) {
 	if _, err := service.Retry(ctx, json.RawMessage(`{"id":"a-dead-inapp"}`)); err == nil {
 		t.Fatal("retry should fail when enqueue fails")
 	}
-	var notRetried system.NotificationDelivery
-	if err := testDB.First(&notRetried, "id = ?", "a-dead-inapp").Error; err != nil {
+	notRetried, err := deliveryRepo.GetByID("a-dead-inapp")
+	if err != nil {
 		t.Fatal(err)
 	}
 	if notRetried.Status != "dead" {

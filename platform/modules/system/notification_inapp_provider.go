@@ -8,7 +8,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/yzxingtu2026/ainp/platform/framework/logging"
 	"github.com/yzxingtu2026/ainp/platform/framework/notification"
-	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"github.com/yzxingtu2026/ainp/platform/modules/system/jobs"
 	"gorm.io/gorm"
 )
@@ -46,7 +45,6 @@ func (p *InAppProvider) Send(ctx context.Context, input notification.ProviderInp
 	// Create user_notification (idempotent via delivery_id + user_id unique constraint)
 	n := UserNotification{
 		ID:         uuid.NewString(),
-		TenantID:   input.DeliveryID[:0], // will be set by tenant scope below
 		UserID:     input.RecipientID,
 		RequestID:  input.RequestID,
 		DeliveryID: input.DeliveryID,
@@ -59,14 +57,10 @@ func (p *InAppProvider) Send(ctx context.Context, input notification.ProviderInp
 		CreatedAt:  time.Now().UTC(),
 	}
 
-	// We need tenant_id; extract from context
-	ac := tenantIDFromCtx(ctx)
-	if ac == "" {
+	if tenantIDFromCtx(ctx) == "" {
 		return nil, notification.NewPermanentError("no_tenant", "tenant context required for in-app notification")
 	}
-	n.TenantID = ac
-
-	err := p.repo.db.WithContext(ctx).Create(&n).Error
+	err := p.repo.CreateUserNotification(ctx, &n)
 	if err != nil {
 		if isUniqueViolation(err) {
 			// Already created (idempotent), return success
@@ -168,9 +162,4 @@ func (s *InAppProviderStore) LoadDelivery(ctx context.Context, deliveryID string
 
 func (s *InAppProviderStore) UpdateDeliveryStatus(ctx context.Context, deliveryID string, status notification.NotificationDeliveryStatus, externalID, lastError string) error {
 	return s.repo.UpdateDeliveryStatus(ctx, deliveryID, status, externalID, lastError)
-}
-
-// Helper to get tenant scope without importing auth in this file.
-func (s *InAppProviderStore) tenantScope(ctx context.Context) func(db *gorm.DB) *gorm.DB {
-	return tenant.ScopeByTenant(ctx)
 }

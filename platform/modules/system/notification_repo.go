@@ -20,15 +20,34 @@ type NotificationRepository struct {
 	db *gorm.DB
 }
 
-var notificationOverrideRegistration sync.Once
+var notificationModelRegistration sync.Once
 
 func NewNotificationRepository(db *gorm.DB) *NotificationRepository {
-	notificationOverrideRegistration.Do(func() {
-		if err := tenant.DefaultRegistry.Register(NotificationTemplateOverride{}, tenant.ModelOptions{Kind: tenant.TenantOwned, InjectOnCreate: true, SystemAccess: true}); err != nil {
-			panic(err)
+	notificationModelRegistration.Do(func() {
+		for _, m := range []any{NotificationRequest{}, NotificationDelivery{}, NotificationTemplateOverride{}, UserNotification{}} {
+			if err := tenant.DefaultRegistry.Register(m, tenant.ModelOptions{Kind: tenant.TenantOwned, InjectOnCreate: true, SystemAccess: true}); err != nil {
+				panic(err)
+			}
 		}
 	})
 	return &NotificationRepository{db: db}
+}
+
+func tenantRepository[T any](ctx context.Context, db *gorm.DB) (*tenant.Repository[T], error) {
+	tdb, err := tenant.TenantDB(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+	return tenant.NewTenantRepository[T](tdb)
+}
+func (r *NotificationRepository) requestRepository(ctx context.Context) (*tenant.Repository[NotificationRequest], error) {
+	return tenantRepository[NotificationRequest](ctx, r.db)
+}
+func (r *NotificationRepository) deliveryRepository(ctx context.Context) (*tenant.Repository[NotificationDelivery], error) {
+	return tenantRepository[NotificationDelivery](ctx, r.db)
+}
+func (r *NotificationRepository) userNotificationRepository(ctx context.Context) (*tenant.Repository[UserNotification], error) {
+	return tenantRepository[UserNotification](ctx, r.db)
 }
 
 func (r *NotificationRepository) overrideRepository(ctx context.Context) (*tenant.Repository[NotificationTemplateOverride], error) {
@@ -59,14 +78,20 @@ func (r *NotificationRepository) CreateRequest(ctx context.Context, req *Notific
 	if req.CreatedAt.IsZero() {
 		req.CreatedAt = time.Now().UTC()
 	}
-	return r.db.WithContext(ctx).Create(req).Error
+	repo, err := r.requestRepository(ctx)
+	if err != nil {
+		return err
+	}
+	return repo.Create(req)
 }
 
 // GetRequest retrieves a request by ID within a tenant.
 func (r *NotificationRepository) GetRequest(ctx context.Context, id string) (*NotificationRequest, error) {
-	var req NotificationRequest
-	err := r.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).
-		Where("id = ?", id).First(&req).Error
+	repo, err := r.requestRepository(ctx)
+	if err != nil {
+		return nil, err
+	}
+	req, err := repo.GetByID(id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
@@ -81,10 +106,11 @@ func (r *NotificationRepository) GetRequestByIdempotencyKey(ctx context.Context,
 	if idempotencyKey == "" {
 		return nil, nil
 	}
-	var req NotificationRequest
-	err := r.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).
-		Where("definition_key = ? AND idempotency_key = ?", definitionKey, idempotencyKey).
-		First(&req).Error
+	repo, err := r.requestRepository(ctx)
+	if err != nil {
+		return nil, err
+	}
+	req, err := repo.First("definition_key = ? AND idempotency_key = ?", definitionKey, idempotencyKey)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
@@ -108,14 +134,20 @@ func (r *NotificationRepository) CreateDelivery(ctx context.Context, del *Notifi
 	if del.UpdatedAt.IsZero() {
 		del.UpdatedAt = now
 	}
-	return r.db.WithContext(ctx).Create(del).Error
+	repo, err := r.deliveryRepository(ctx)
+	if err != nil {
+		return err
+	}
+	return repo.Create(del)
 }
 
 // GetDelivery retrieves a delivery by ID within a tenant.
 func (r *NotificationRepository) GetDelivery(ctx context.Context, id string) (*NotificationDelivery, error) {
-	var del NotificationDelivery
-	err := r.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).
-		Where("id = ?", id).First(&del).Error
+	repo, err := r.deliveryRepository(ctx)
+	if err != nil {
+		return nil, err
+	}
+	del, err := repo.GetByID(id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
@@ -127,9 +159,11 @@ func (r *NotificationRepository) GetDelivery(ctx context.Context, id string) (*N
 
 // ListDeliveriesByRequest returns all deliveries for a given request.
 func (r *NotificationRepository) ListDeliveriesByRequest(ctx context.Context, requestID string) ([]NotificationDelivery, error) {
-	var deliveries []NotificationDelivery
-	err := r.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).
-		Where("request_id = ?", requestID).Order("created_at ASC").Find(&deliveries).Error
+	repo, err := r.deliveryRepository(ctx)
+	if err != nil {
+		return nil, err
+	}
+	deliveries, err := repo.Where("request_id = ?", requestID).Order("created_at ASC").Find("1=1")
 	return deliveries, err
 }
 
@@ -154,48 +188,58 @@ func (r *NotificationRepository) UpdateDeliveryStatus(ctx context.Context, id st
 	case notification.DeliveryFailed, notification.DeliveryDead:
 		updates["failed_at"] = time.Now().UTC()
 	}
-	return r.db.WithContext(ctx).Model(&NotificationDelivery{}).
-		Where("id = ?", id).Updates(updates).Error
+	repo, err := r.deliveryRepository(ctx)
+	if err != nil {
+		return err
+	}
+	return repo.Where("id = ?", id).Updates(updates).Error
 }
 
 // ListFailedDeliveries returns failed/dead deliveries for admin retry.
 func (r *NotificationRepository) ListFailedDeliveries(ctx context.Context, page, pageSize int) ([]NotificationDelivery, int64, error) {
-	var total int64
-	q := r.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).
-		Where("status IN ?", []string{string(notification.DeliveryFailed), string(notification.DeliveryDead)})
-	q.Model(&NotificationDelivery{}).Count(&total)
-
-	var deliveries []NotificationDelivery
+	repo, err := r.deliveryRepository(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	q := repo.Where("status IN ?", []string{string(notification.DeliveryFailed), string(notification.DeliveryDead)})
+	total, err := q.Count()
+	if err != nil {
+		return nil, 0, err
+	}
 	if page < 1 {
 		page = 1
 	}
 	if pageSize < 1 || pageSize > 100 {
 		pageSize = 20
 	}
-	err := q.Order("created_at DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&deliveries).Error
+	deliveries, err := q.Order("created_at DESC").List((page-1)*pageSize, pageSize)
 	return deliveries, total, err
 }
 
 // ListDeliveries returns filtered, paginated delivery records for the tenant.
 func (r *NotificationRepository) ListDeliveries(ctx context.Context, page, pageSize int, status, channel string) ([]NotificationDelivery, int64, error) {
-	var total int64
-	q := r.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx))
+	repo, err := r.deliveryRepository(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	q := repo
 	if status != "" {
 		q = q.Where("status = ?", status)
 	}
 	if channel != "" {
 		q = q.Where("channel = ?", channel)
 	}
-	q.Model(&NotificationDelivery{}).Count(&total)
-
-	var deliveries []NotificationDelivery
+	total, err := q.Count()
+	if err != nil {
+		return nil, 0, err
+	}
 	if page < 1 {
 		page = 1
 	}
 	if pageSize < 1 || pageSize > 100 {
 		pageSize = 20
 	}
-	err := q.Order("created_at DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&deliveries).Error
+	deliveries, err := q.Order("created_at DESC").List((page-1)*pageSize, pageSize)
 	return deliveries, total, err
 }
 
@@ -380,50 +424,57 @@ func (r *NotificationRepository) CreateUserNotification(ctx context.Context, n *
 	if n.CreatedAt.IsZero() {
 		n.CreatedAt = time.Now().UTC()
 	}
-	return r.db.WithContext(ctx).Create(n).Error
+	repo, err := r.userNotificationRepository(ctx)
+	if err != nil {
+		return err
+	}
+	return repo.Create(n)
 }
 
 // ListUserNotifications returns paginated notifications for a user.
 func (r *NotificationRepository) ListUserNotifications(ctx context.Context, userID string, unreadOnly, excludeArchived bool, page, pageSize int) ([]UserNotification, int64, error) {
-	var total int64
-	q := r.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).
-		Where("user_id = ?", userID)
+	repo, err := r.userNotificationRepository(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	q := repo.Where("user_id = ?", userID)
 	if unreadOnly {
 		q = q.Where("read_at IS NULL")
 	}
 	if excludeArchived {
 		q = q.Where("archived_at IS NULL")
 	}
-	q.Model(&UserNotification{}).Count(&total)
-
-	var notifications []UserNotification
+	total, err := q.Count()
+	if err != nil {
+		return nil, 0, err
+	}
 	if page < 1 {
 		page = 1
 	}
 	if pageSize < 1 || pageSize > 100 {
 		pageSize = 20
 	}
-	err := q.Order("created_at DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&notifications).Error
+	notifications, err := q.Order("created_at DESC").List((page-1)*pageSize, pageSize)
 	return notifications, total, err
 }
 
 // CountUnread returns the unread notification count for a user.
 func (r *NotificationRepository) CountUnread(ctx context.Context, userID string) (int64, error) {
-	var count int64
-	err := r.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).
-		Model(&UserNotification{}).
-		Where("user_id = ? AND read_at IS NULL AND archived_at IS NULL", userID).
-		Count(&count).Error
+	repo, err := r.userNotificationRepository(ctx)
+	if err != nil {
+		return 0, err
+	}
+	count, err := repo.Where("user_id = ? AND read_at IS NULL AND archived_at IS NULL", userID).Count()
 	return count, err
 }
 
 // MarkRead marks a single notification as read (only if currently unread).
 func (r *NotificationRepository) MarkRead(ctx context.Context, userID, notificationID string) error {
-	result := r.db.WithContext(ctx).
-		Scopes(tenant.ScopeByTenant(ctx)).
-		Model(&UserNotification{}).
-		Where("id = ? AND user_id = ? AND read_at IS NULL", notificationID, userID).
-		Update("read_at", time.Now().UTC())
+	repo, err := r.userNotificationRepository(ctx)
+	if err != nil {
+		return err
+	}
+	result := repo.Where("id = ? AND user_id = ? AND read_at IS NULL", notificationID, userID).Updates(map[string]any{"read_at": time.Now().UTC()})
 	if result.Error != nil {
 		return result.Error
 	}
@@ -432,45 +483,45 @@ func (r *NotificationRepository) MarkRead(ctx context.Context, userID, notificat
 
 // MarkAllRead marks all unread notifications as read for a user.
 func (r *NotificationRepository) MarkAllRead(ctx context.Context, userID string) (int64, error) {
-	result := r.db.WithContext(ctx).
-		Model(&UserNotification{}).
-		Scopes(tenant.ScopeByTenant(ctx)).
-		Where("user_id = ? AND read_at IS NULL", userID).
-		Update("read_at", time.Now().UTC())
+	repo, err := r.userNotificationRepository(ctx)
+	if err != nil {
+		return 0, err
+	}
+	result := repo.Where("user_id = ? AND read_at IS NULL", userID).Updates(map[string]any{"read_at": time.Now().UTC()})
 	return result.RowsAffected, result.Error
 }
 
 // Archive marks a notification as archived.
 func (r *NotificationRepository) Archive(ctx context.Context, userID, notificationID string) error {
-	return r.db.WithContext(ctx).
-		Scopes(tenant.ScopeByTenant(ctx)).
-		Model(&UserNotification{}).
-		Where("id = ? AND user_id = ? AND archived_at IS NULL", notificationID, userID).
-		Update("archived_at", time.Now().UTC()).Error
+	repo, err := r.userNotificationRepository(ctx)
+	if err != nil {
+		return err
+	}
+	return repo.Where("id = ? AND user_id = ? AND archived_at IS NULL", notificationID, userID).Updates(map[string]any{"archived_at": time.Now().UTC()}).Error
 }
 
 // Unarchive removes the archive mark from a notification.
 func (r *NotificationRepository) Unarchive(ctx context.Context, userID, notificationID string) error {
-	return r.db.WithContext(ctx).
-		Scopes(tenant.ScopeByTenant(ctx)).
-		Model(&UserNotification{}).
-		Where("id = ? AND user_id = ? AND archived_at IS NOT NULL", notificationID, userID).
-		Update("archived_at", sql.NullTime{}).Error
+	repo, err := r.userNotificationRepository(ctx)
+	if err != nil {
+		return err
+	}
+	return repo.Where("id = ? AND user_id = ? AND archived_at IS NOT NULL", notificationID, userID).Updates(map[string]any{"archived_at": sql.NullTime{}}).Error
 }
 
 // RetryDelivery resets a failed/dead delivery back to pending for retry.
 func (r *NotificationRepository) RetryDelivery(ctx context.Context, deliveryID string) error {
-	result := r.db.WithContext(ctx).
-		Scopes(tenant.ScopeByTenant(ctx)).
-		Model(&NotificationDelivery{}).
-		Where("id = ? AND status IN ?", deliveryID, []string{string(notification.DeliveryFailed), string(notification.DeliveryDead)}).
-		Updates(map[string]any{
-			"status":     string(notification.DeliveryPending),
-			"attempts":   0,
-			"last_error": "",
-			"failed_at":  sql.NullTime{},
-			"updated_at": time.Now().UTC(),
-		})
+	repo, err := r.deliveryRepository(ctx)
+	if err != nil {
+		return err
+	}
+	result := repo.Where("id = ? AND status IN ?", deliveryID, []string{string(notification.DeliveryFailed), string(notification.DeliveryDead)}).Updates(map[string]any{
+		"status":     string(notification.DeliveryPending),
+		"attempts":   0,
+		"last_error": "",
+		"failed_at":  sql.NullTime{},
+		"updated_at": time.Now().UTC(),
+	})
 	if result.Error != nil {
 		return result.Error
 	}
