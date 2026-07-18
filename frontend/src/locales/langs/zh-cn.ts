@@ -376,6 +376,7 @@ const local: App.I18n.Schema = {
       contentType: '内容类型',
       ingestionStatus: '摄取状态',
       retry: '重试',
+      reindex: '重新索引',
       retryRequested: '已提交重试',
       retrievalTest: '检索测试',
       retrievalRequiresEnabled: '请先启用知识库再进行检索测试',

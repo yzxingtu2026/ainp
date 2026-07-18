@@ -380,6 +380,7 @@ const local: App.I18n.Schema = {
       contentType: 'Content type',
       ingestionStatus: 'Ingestion',
       retry: 'Retry',
+      reindex: 'Reindex',
       retryRequested: 'Retry requested',
       retrievalTest: 'Retrieval test',
       retrievalRequiresEnabled: 'Enable the knowledge base before testing retrieval',

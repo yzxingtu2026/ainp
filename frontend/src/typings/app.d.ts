@@ -534,6 +534,7 @@ declare namespace App {
           contentType: string;
           ingestionStatus: string;
           retry: string;
+          reindex: string;
           retryRequested: string;
           retrievalTest: string;
           retrievalRequiresEnabled: string;

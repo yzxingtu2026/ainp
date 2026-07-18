@@ -40,6 +40,7 @@ Knowledge Runtime 管理租户知识库、附件来源、不可变索引版本�
 - 解析入口必须经 `DocumentSourceResolver` 重新校验当前 actor、tenant、Document 权限、附件绑定和 source revision；禁止业务直接使用 Object Key。
 - Parser Registry 仅注册明确支持的 MIME，声明类型必须与内容嗅探一致，未知类型和未知 Parser 一律 fail-closed。
 - 首期只处理 UTF-8 文本、Markdown、PDF 及 OOXML（DOCX/XLSX/PPTX）；Office 宏、公式/字段指令、嵌入对象、外部关系和脚本一律拒绝，不执行外部程序或联网请求。
+- PDF 文本提取必须解析嵌入字体及字符映射，禁止直接把内容流字形码作为正文；解析器版本变化后，历史文档必须重新摄取才能生成新索引。
 - 文件字节、页数/工作表/幻灯片数、字符数、压缩条目和展开字节都必须受限；读取与解析过程必须传播 context 取消和超时。
 - 规范化和固定 token 切块使用稳定版本号；每个 Chunk 必须携带 source revision、页码或位置、token count、内容摘要及 parser/chunking/preprocessing version。
 - 文本规范化必须在 Parser 和 Chunker 边界移除 NUL、替换无效 UTF-8，并清理非空白控制字符；向量输入与 PostgreSQL 正文必须使用同一份规范化文本。
@@ -54,7 +55,7 @@ Knowledge Runtime 管理租户知识库、附件来源、不可变索引版本�
 - 预留 IndexVersion 前必须通过统一模型 Resolver 解析 Embedding Alias，并写入真实 Deployment ID；禁止使用 `pending` 等不满足模型部署外键的占位值，Embedding 响应必须与预留 Deployment 一致。
 - 重复事件、重复 Job 和并发 Worker 通过 source revision 唯一约束及行锁幂等；过期 revision 静默退出，不得覆盖新索引。
 - 失败、取消或维度/模型版本漂移只标记候选版本失败，保留旧指针；错误只存稳定安全分类，不保存供应商原始响应。
-- Worker 接管当前 revision 后先将 Document 标记为 processing；模型解析、版本预留或后续处理任一失败都必须收口为 failed，禁止遗留不可重试的 pending/processing。管理端对历史 pending 和 failed 都允许手动重试。
+- Worker 接管当前 revision 后先将 Document 标记为 processing；模型解析、版本预留或后续处理任一失败都必须收口为 failed，禁止遗留不可重试的 pending/processing。管理端对历史 pending 和 failed 允许手动重试，对 ready 文档允许主动重新索引；同 source revision 仅在 Parser/Chunker 版本一致时幂等跳过。
 - Document 更新立即清空其当前索引指针；删除后软删除事实立即阻止检索，并通过独立清理 Job 最终删除 Chunk、正文和向量。
 
 ## 混合检索与 Citation

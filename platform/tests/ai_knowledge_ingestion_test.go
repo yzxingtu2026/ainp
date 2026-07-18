@@ -131,6 +131,22 @@ func TestKnowledgeIngestionPublishesAtomicallyAndIsIdempotent(t *testing.T) {
 	if versions != 1 {
 		t.Fatalf("duplicate delivery created %d versions", versions)
 	}
+	if err = db.Model(&version).Update("parser_version", "safe-parser-v2").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err = service.Process(ingestionContext(), payload); err != nil {
+		t.Fatal(err)
+	}
+	if err = db.First(&version, "id=?", version.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if version.ParserVersion != aiknowledge.ParserVersion || version.Status != aiknowledge.IndexReady {
+		t.Fatalf("stale parser version was not rebuilt: %#v", version)
+	}
+	db.Model(&ai.KnowledgeIndexVersion{}).Count(&versions)
+	if versions != 1 {
+		t.Fatalf("parser upgrade created %d versions for the same source revision", versions)
+	}
 }
 
 func TestKnowledgeIngestionReservesVersionWithResolvedDeployment(t *testing.T) {

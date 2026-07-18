@@ -7,12 +7,13 @@
 - 修改 embedding alias 或 chunking config 必须使当前索引失效；Index/Chunk 固定 deployment、dimensions、处理版本、source revision 与位置元数据。
 - Parser、Chunker、Retriever 只依赖 `framework/aiknowledge`；空知识库范围、未知实现与权限缺失 fail-closed。
 - 文档解析必须经 `DocumentSourceResolver` 重鉴权并校验 source revision；MIME/Parser 未知、Office 动态内容或任一资源预算超限均 fail-closed。
+- PDF 必须通过字体与字符映射提取文本，禁止把内容流字形码直接写入 Chunk；Parser Version 变化后需重新摄取。
 - Chunk 必须记录来源位置、token count 与 parser/chunking/preprocessing version；派生文本始终按不可信参考处理。
 - Parser/Chunker 必须移除 NUL、替换无效 UTF-8 并清理非空白控制字符，向量输入与入库正文必须使用同一规范化文本。
 - 摄取必须走业务事务 Outbox → 幂等 JobRun → Worker；Job 重新加载可信身份和 revision，禁止信任队列 tenant/resource payload。
 - 新 IndexVersion 的 Chunk/pgvector 完整落库后才能原子切换；失败、取消、并发或过期 revision 不得破坏旧索引，删除后异步清理派生数据。
 - IndexVersion 预留前必须解析并冻结真实 Embedding Deployment ID，禁止使用 `pending` 占位；Embedding 响应的 Deployment 必须与预留版本一致。
-- Worker 接管当前 revision 后必须进入 processing，模型解析、版本预留或后续失败必须收口 failed；管理端需允许历史 pending/failed 手动重试。
+- Worker 接管当前 revision 后必须进入 processing，模型解析、版本预留或后续失败必须收口 failed；管理端需允许 pending/failed 重试及 ready 重新索引，Parser/Chunker 版本过期不得幂等跳过。
 - Retriever 只读 Base/Document 同时指向的 ready 版本，召回前后都按当前 actor 重鉴权并复核 source revision；Embedding 不可用才降级 FTS，模型/维度事实不匹配必须 fail-closed。
 - Citation 回查不得返回正文；Agent 绑定不扩权，知识片段只能作为带明确边界的 user 级不可信参考，禁止进入 system/developer instructions。
 - 管理端只调用知识 Action；附件必须复用 AttachmentField/AttachmentPicker 且只传 attachment ID；检索测试使用持久化策略，Citation 预览每次重鉴权并只展示稳定标识与 available/stale。

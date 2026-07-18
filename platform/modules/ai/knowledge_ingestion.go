@@ -239,7 +239,7 @@ func (s *KnowledgeIngestionService) beginVersion(ctx context.Context, base Knowl
 		}
 		err := tx.Where("tenant_id=? AND knowledge_base_id=? AND source_document_id=? AND source_revision=?", base.TenantID, base.ID, document.ID, document.SourceRevision).First(&version).Error
 		if err == nil {
-			if version.Status == aiknowledge.IndexReady {
+			if version.Status == aiknowledge.IndexReady && version.ParserVersion == aiknowledge.ParserVersion && version.ChunkingVersion == aiknowledge.ChunkingVersion {
 				done = true
 				return nil
 			}

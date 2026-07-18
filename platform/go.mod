@@ -13,7 +13,9 @@ require (
 	gorm.io/gorm v1.31.2
 )
 
-require rsc.io/pdf v0.1.1
+require github.com/gen2brain/go-fitz v1.28.2
+
+require github.com/ebitengine/purego v0.10.1 // indirect
 
 require (
 	github.com/bytedance/gopkg v0.1.3 // indirect

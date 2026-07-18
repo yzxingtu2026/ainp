@@ -149,7 +149,7 @@ const documentColumns = computed<DataTableColumns<Api.AI.KnowledgeDocument>>(() 
         {
           default: () =>
             [
-              ['pending', 'failed'].includes(row.ingestion_status) && can(AI_ACTIONS.knowledgeDocumentRetry)
+              ['pending', 'failed', 'ready'].includes(row.ingestion_status) && can(AI_ACTIONS.knowledgeDocumentRetry)
                 ? h(
                     NButton,
                     {
@@ -159,7 +159,7 @@ const documentColumns = computed<DataTableColumns<Api.AI.KnowledgeDocument>>(() 
                       loading: loadingDocuments.value,
                       onClick: () => retryDocument(row)
                     },
-                    { default: () => $t('page.knowledge.retry') }
+                    { default: () => $t(row.ingestion_status === 'ready' ? 'page.knowledge.reindex' : 'page.knowledge.retry') }
                   )
                 : null,
               can(AI_ACTIONS.knowledgeDocumentDelete)

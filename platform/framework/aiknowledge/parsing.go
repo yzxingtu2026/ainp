@@ -20,11 +20,11 @@ import (
 	"unicode/utf8"
 
 	"github.com/gabriel-vasile/mimetype"
-	"rsc.io/pdf"
+	"github.com/gen2brain/go-fitz"
 )
 
 const (
-	ParserVersion        = "safe-parser-v2"
+	ParserVersion        = "safe-parser-v3"
 	ChunkingVersion      = "fixed-tokens-v1"
 	PreprocessingVersion = "normalize-text-v2"
 )
@@ -231,26 +231,25 @@ func openXMLType(data []byte) string {
 }
 
 func (p *SafeParser) parsePDF(ctx context.Context, data []byte, revision string) ([]ParsedSection, error) {
-	r, err := pdf.NewReader(bytes.NewReader(data), int64(len(data)))
+	doc, err := fitz.NewFromMemory(data)
 	if err != nil {
 		return nil, ErrCorruptDocument
 	}
-	if r.NumPage() > p.Limits.MaxPages {
+	defer doc.Close()
+	if doc.NumPage() > p.Limits.MaxPages {
 		return nil, ErrLimitExceeded
 	}
-	out := make([]ParsedSection, 0, r.NumPage())
-	for page := 1; page <= r.NumPage(); page++ {
+	out := make([]ParsedSection, 0, doc.NumPage())
+	for page := 0; page < doc.NumPage(); page++ {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		content := r.Page(page).Content()
-		var b strings.Builder
-		for _, text := range content.Text {
-			b.WriteString(text.S)
-			b.WriteByte(' ')
+		text, textErr := doc.Text(page)
+		if textErr != nil {
+			return nil, ErrCorruptDocument
 		}
-		n := page
-		out = append(out, ParsedSection{Text: b.String(), PageNumber: &n, SourceRevision: revision})
+		n := page + 1
+		out = append(out, ParsedSection{Text: text, PageNumber: &n, SourceRevision: revision})
 	}
 	return out, nil
 }
