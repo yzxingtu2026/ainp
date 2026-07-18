@@ -15,6 +15,7 @@
 - Category / Definition key 全局唯一；Definition 必须引用已注册 Category
 - Phase 1 仅启用 `tenant` scope / surface
 - 字段类型：`text` / `textarea` / `number` / `boolean` / `select` / `multi_select` / `color`
+- `multi_select` 默认只接受注册选项；确有业务需要时可显式启用 `allow_custom_values`，并用 `custom_value_pattern` 限制自定义值格式
 - 图标：Iconify `collection:name`，默认 `mdi`
 - 启动期拒绝：重复 key、未知分类、非法类型、重复字段、无效默认值、非法 surface、非法 `visible_when`
 
@@ -67,6 +68,7 @@ VisibleWhen: &setting.VisibleWhen{Field: "mode", In: []any{"a", "b"}}
 
 - 页面：`/system/settings` 按 Category 导航 + Definition 动态表单
 - 禁止后端下发组件路径/脚本；特殊控件仅通过前端白名单 Renderer 扩展
+- 动态表单仅在字段声明 `allow_custom_values` 时开放多选自定义项；其他多选仍保持注册选项白名单
 
 ## 检查清单
 

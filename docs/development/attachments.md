@@ -8,7 +8,7 @@
 |------|------|--------|
 | ObjectStore（#17） | 二进制 Put/Open/Range/Delete、key | 租户权限、文件名、业务归属 |
 | 附件系统（本 Issue） | 元数据、prepare + transfer token、绑定、策略、删除补偿、审计、**派生对象（thumb）** | 直接拼路径 / 厂商 SDK / 前端组件 |
-| 租户设置（#13） | 未来覆盖大小/MIME/保留策略 | 第二套附件配置表 |
+| 租户设置（#13） | 覆盖大小、扩展名/MIME 白名单与保留策略 | 第二套附件配置表 |
 
 前端上传/预览组件见 `docs/development/frontend-attachments.md`（#19 / #36）。
 
@@ -79,8 +79,8 @@ Local Provider 返回本服务流式 URL；未来 S3/OSS 可换预签名 URL，�
 
 ## 策略与设置
 
-- 代码默认：`attachment.DefaultUploadPolicy()`（含常见图片与 `mp4`/`webm`/`mov`）。
-- 租户覆盖：设置组 `attachment.upload_policy`；`PolicyProvider`（`NewSettingUploadPolicyProvider`）读取有效值。
+- 代码默认：`attachment.DefaultUploadPolicy()`（含常见图片、视频、PDF、纯文本、Markdown 与 Office Open XML 文档）。
+- 租户覆盖：设置组 `attachment.upload_policy`；`PolicyProvider`（`NewSettingUploadPolicyProvider`）读取有效值。租户管理员可在扩展名与 MIME 多选中添加自定义值，服务端按字段 Schema 校验并统一规范化。
 - 前端预校验：`system.attachment_policy_get`，禁止硬编码为唯一来源。
 
 ## 删除与补偿
