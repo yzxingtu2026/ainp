@@ -609,7 +609,10 @@ onMounted(() => {
                     class="py-48px"
                     :description="$t('page.knowledge.noResults')"
                   />
-                  <div v-else class="mt-16px flex-col gap-12px">
+                  <div
+                    v-else
+                    class="mt-16px max-h-[min(60vh,640px)] flex-col gap-12px overflow-y-auto pr-8px"
+                  >
                     <article
                       v-for="item in retrievalResults"
                       :key="item.citation.chunk_id"
