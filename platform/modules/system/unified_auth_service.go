@@ -16,7 +16,6 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"github.com/yzxingtu2026/ainp/platform/modules/system/model"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 type AuthenticateRequest struct {
@@ -48,10 +47,11 @@ type UnifiedAuthService struct {
 	auth     *AuthService
 	sessions *SessionService
 	limiter  authentication.RateLimiter
+	preAuth  *preAuthStore
 }
 
 func NewUnifiedAuthService(db *gorm.DB, registry *authentication.Registry, authService *AuthService, sessions *SessionService, limiter authentication.RateLimiter) *UnifiedAuthService {
-	return &UnifiedAuthService{db: db, registry: registry, auth: authService, sessions: sessions, limiter: limiter}
+	return &UnifiedAuthService{db: db, registry: registry, auth: authService, sessions: sessions, limiter: limiter, preAuth: newPreAuthStore(db)}
 }
 
 func (s *UnifiedAuthService) allow(ctx context.Context, key string) error {
@@ -132,17 +132,18 @@ func (s *UnifiedAuthService) resolveIdentity(ctx context.Context, identity *auth
 	if identity == nil || identity.Provider == "" || identity.Subject == "" || identity.TenantID == "" {
 		return nil, errs.NewKey(errs.CodeInvalidCredentials, "auth.invalid_credentials", "invalid credentials")
 	}
-	var user model.User
+	var user *model.User
 	if identity.Provider == passwordMethod {
-		if err := s.db.WithContext(ctx).Where("tenant_id = ? AND username = ?", identity.TenantID, identity.Subject).First(&user).Error; err != nil {
+		var err error
+		if user, err = s.preAuth.findUserByUsername(ctx, identity.TenantID, identity.Subject); err != nil {
 			return nil, errs.NewKey(errs.CodeInvalidCredentials, "auth.invalid_credentials", "invalid credentials")
 		}
 	} else {
-		var row model.AuthIdentity
-		if err := s.db.WithContext(ctx).Where("tenant_id = ? AND provider = ? AND subject = ? AND status = ?", identity.TenantID, identity.Provider, identity.Subject, status.ActivationEnabled).First(&row).Error; err != nil {
+		row, err := s.preAuth.findIdentity(ctx, identity.TenantID, identity.Provider, identity.Subject)
+		if err != nil {
 			return nil, errs.NewKey(errs.CodeInvalidCredentials, "auth.invalid_credentials", "invalid credentials")
 		}
-		if err := s.db.WithContext(ctx).Where("id = ? AND tenant_id = ?", row.UserID, row.TenantID).First(&user).Error; err != nil {
+		if user, err = s.preAuth.findUserByID(ctx, s.db, row.TenantID, row.UserID); err != nil {
 			return nil, errs.NewKey(errs.CodeInvalidCredentials, "auth.invalid_credentials", "invalid credentials")
 		}
 	}
@@ -157,10 +158,10 @@ func (s *UnifiedAuthService) resolveIdentity(ctx context.Context, identity *auth
 		ID: uuid.NewString(), TenantID: user.TenantID, UserID: user.ID, Provider: identity.Provider,
 		Subject: identity.Subject, NormalizedIdentifier: identity.NormalizedIdentifier, Status: status.ActivationEnabled, VerifiedAt: time.Now().UTC(),
 	}
-	if err := s.db.WithContext(ctx).Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "tenant_id"}, {Name: "provider"}, {Name: "subject"}}, DoUpdates: clause.Assignments(map[string]any{"verified_at": row.VerifiedAt, "normalized_identifier": row.NormalizedIdentifier})}).Create(&row).Error; err != nil {
+	if err := s.preAuth.upsertIdentity(ctx, &row); err != nil {
 		return nil, errs.Wrap(errs.CodeInternal, "persist verified identity failed", err)
 	}
-	return &user, nil
+	return user, nil
 }
 
 func (s *UnifiedAuthService) Refresh(ctx context.Context, req RefreshRequest) (any, error) {

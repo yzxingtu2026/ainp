@@ -14,11 +14,12 @@ import (
 )
 
 type AuthService struct {
-	db *gorm.DB
+	db      *gorm.DB
+	preAuth *preAuthStore
 }
 
 func NewAuthService(db *gorm.DB) *AuthService {
-	return &AuthService{db: db}
+	return &AuthService{db: db, preAuth: newPreAuthStore(db)}
 }
 
 type UserProfile struct {
@@ -35,27 +36,15 @@ type UserProfile struct {
 }
 
 func (s *AuthService) FindUserByUsername(ctx context.Context, tenantID, username string) (*model.User, error) {
-	var u model.User
-	err := s.db.WithContext(ctx).Where("tenant_id = ? AND username = ?", tenantID, username).First(&u).Error
-	if err != nil {
-		return nil, err
-	}
-	return &u, nil
+	return s.preAuth.findUserByUsername(ctx, tenantID, username)
 }
 
 func (s *AuthService) FindDefaultTenant(ctx context.Context) (*tenant.Tenant, error) {
-	var t tenant.Tenant
-	err := s.db.WithContext(ctx).Where("status = ?", status.ActivationEnabled).Order("created_at ASC, id ASC").First(&t).Error
-	return &t, err
+	return s.preAuth.findDefaultTenant(ctx)
 }
 
 func (s *AuthService) FindTenant(ctx context.Context, tenantID string) (*tenant.Tenant, error) {
-	var t tenant.Tenant
-	err := s.db.WithContext(ctx).Where("id = ?", tenantID).First(&t).Error
-	if err != nil {
-		return nil, err
-	}
-	return &t, nil
+	return s.preAuth.findTenant(ctx, tenantID)
 }
 
 func (s *AuthService) LoadRolesAndPermissions(ctx context.Context, userID, tenantID string) (roles []string, perms []string, err error) {

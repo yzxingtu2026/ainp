@@ -19,7 +19,6 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/modules/system/model"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 const (
@@ -66,7 +65,7 @@ func (p *PasswordAuthenticator) Complete(ctx context.Context, req authentication
 }
 
 type SessionService struct {
-	db         *gorm.DB
+	preAuth    *preAuthStore
 	tokens     *auth.TokenService
 	auth       *AuthService
 	refreshTTL time.Duration
@@ -77,7 +76,7 @@ func NewSessionService(db *gorm.DB, tokens *auth.TokenService, authService *Auth
 	if len(configuredTTL) > 0 && configuredTTL[0] > 0 {
 		ttl = configuredTTL[0]
 	}
-	return &SessionService{db: db, tokens: tokens, auth: authService, refreshTTL: ttl}
+	return &SessionService{preAuth: newPreAuthStore(db), tokens: tokens, auth: authService, refreshTTL: ttl}
 }
 
 type SessionTokens struct {
@@ -123,7 +122,7 @@ func (s *SessionService) Create(ctx context.Context, user *model.User, client, d
 		Client: normalizeClient(client), DeviceSummary: strings.TrimSpace(device), RefreshTokenHash: refreshHash,
 		AuthVersion: user.AuthVersion, ExpiresAt: now.Add(s.refreshTTL), LastSeenAt: now,
 	}
-	if err := s.db.WithContext(ctx).Create(&row).Error; err != nil {
+	if err := s.preAuth.createSession(ctx, &row); err != nil {
 		return nil, err
 	}
 	access, exp, err := s.tokens.Issue(user.TenantID, user.ID, sessionID, user.AuthVersion)
@@ -152,18 +151,14 @@ func (s *SessionService) Refresh(ctx context.Context, token string) (*SessionTok
 	providedHash := hashRefreshToken(token)
 	var output *SessionTokens
 	replayed := false
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var session model.AuthSession
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", sessionID).First(&session).Error; err != nil {
-			return err
-		}
+	err := s.preAuth.rotateSession(ctx, sessionID, func(tx *gorm.DB, session *model.AuthSession) error {
 		now := time.Now().UTC()
 		if session.RevokedAt != nil || !session.ExpiresAt.After(now) {
 			return auth.ErrAuthorizationInvalid
 		}
 		if session.PreviousRefreshTokenHash == providedHash {
 			session.RevokedAt = &now
-			if err := tx.Model(&session).Update("revoked_at", now).Error; err != nil {
+			if err := tx.Model(session).Update("revoked_at", now).Error; err != nil {
 				return err
 			}
 			replayed = true
@@ -184,7 +179,7 @@ func (s *SessionService) Refresh(ctx context.Context, token string) (*SessionTok
 		if err != nil {
 			return err
 		}
-		result := tx.Model(&session).Where("refresh_token_hash = ? AND revoked_at IS NULL", providedHash).Updates(map[string]any{
+		result := tx.Model(session).Where("refresh_token_hash = ? AND revoked_at IS NULL", providedHash).Updates(map[string]any{
 			"previous_refresh_token_hash": providedHash, "refresh_token_hash": refreshHash, "last_seen_at": now,
 		})
 		if result.Error != nil {
@@ -209,8 +204,11 @@ func (s *SessionService) Refresh(ctx context.Context, token string) (*SessionTok
 }
 
 func (s *SessionService) loadActiveUser(ctx context.Context, db *gorm.DB, tenantID, userID string) (*model.User, error) {
-	var user model.User
-	if err := db.WithContext(ctx).Where("id = ? AND tenant_id = ? AND status = ?", userID, tenantID, status.ActivationEnabled).First(&user).Error; err != nil {
+	user, err := s.preAuth.findUserByID(ctx, db, tenantID, userID)
+	if err != nil || user.Status != status.ActivationEnabled {
+		if err == nil {
+			err = auth.ErrAuthorizationInvalid
+		}
 		return nil, err
 	}
 	tenantRow, err := s.auth.FindTenant(ctx, tenantID)
@@ -220,5 +218,5 @@ func (s *SessionService) loadActiveUser(ctx context.Context, db *gorm.DB, tenant
 		}
 		return nil, err
 	}
-	return &user, nil
+	return user, nil
 }

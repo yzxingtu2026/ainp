@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -88,6 +89,13 @@ func TestSessionRefreshRotationReplayAndTenantScope(t *testing.T) {
 	sessionB, err := sessions.Create(context.Background(), &userB, "web", "B1")
 	if err != nil {
 		t.Fatal(err)
+	}
+	_, secretA, _ := strings.Cut(sessionA1.RefreshToken, ".")
+	if _, err := sessions.Refresh(context.Background(), sessionB.SessionID+"."+secretA); err == nil {
+		t.Fatal("refresh secret from another tenant session must fail")
+	}
+	if _, err := sessions.Refresh(context.Background(), sessionB.RefreshToken); err != nil {
+		t.Fatalf("forged refresh must not revoke target session: %v", err)
 	}
 	unified := system.NewUnifiedAuthService(testDB, nil, nil, nil, nil)
 	ctxA := auth.WithContext(context.Background(), &auth.Context{

@@ -16,7 +16,7 @@
 |---|---|---|---|
 | #111 样板 | Agent、AgentVersion、AgentToolBinding 及直接 Runtime 消费方 | 已完成 | Agent/Builder Preview/PostgreSQL |
 | Demo 模板 | RevisionDoc | 已完成 | 默认测试链与跨租户 Callback |
-| System/Framework | Setting、Notification Request/Delivery/TemplateOverride/UserNotification（含 User 展示名与详情 JOIN）、Attachment/AttachmentLink（含 Service、管理查询、User 展示名与 Thumb Job）、Idempotency Record 已完成；Audit、Outbox、Job Run、AuthSession 已认证用户查询已迁移；User/Role/Auth pre-auth 与 Job Worker/Outbox dispatcher 待迁移 | 迁移中 | 各模块 PostgreSQL 集成测试 |
+| System/Framework | Setting、Notification Request/Delivery/TemplateOverride/UserNotification（含 User 展示名与详情 JOIN）、Attachment/AttachmentLink（含 Service、管理查询、User 展示名与 Thumb Job）、Idempotency Record 已完成；Audit、Outbox、Job Run、AuthSession 已认证用户查询和 Auth pre-auth 固定查询已迁移；User/Role 与 Job Worker/Outbox dispatcher 待迁移 | 迁移中 | 各模块 PostgreSQL 集成测试 |
 | AI 治理与 Tool | Provider/Deployment/Alias/Invocation/Tool/Scope/Confirmation | 待迁移 | AI Model/Tool Runtime 测试 |
 | AI 会话与 Runtime | Conversation/Message/Stream/Snapshot/Run/Step/Event | 迁移中 | Conversation/Agent Runtime 测试 |
 | Knowledge | Base/Document/Index/Chunk/Payload/Binding 及 Raw JOIN | 待迁移 | Knowledge 全链路测试 |
@@ -36,7 +36,7 @@
 ## 已识别契约风险
 
 - Notification OverrideProvider 原接口缺少 `context.Context`，已升级为上下文透传并迁移到 TenantDB；禁止恢复仅凭 tenantID 的 context-free 查询。
-- AuthSession refresh-token lookup 发生在 tenant 身份建立前，需要独立的受控 pre-auth capability，不能伪造 platform AuthContext。
+- AuthSession refresh-token lookup 发生在 tenant 身份建立前，只能走 system 模块私有的 `preAuthStore` 固定查询；该能力不暴露通用 DB/SQL，也不能伪造 platform AuthContext。
 - Idempotency cleanup 已收敛为仅 platform operator 可获取的 SystemDB；普通请求 CRUD 只接受 AuthContext tenant scope，方法参数 tenant 仅做冲突校验。
 - Notification Delivery 已拍板：空 `status` 表示当前租户全部投递状态；异常队列使用显式 `failed`/`dead` 筛选，重试仍只允许这两种状态。旧测试期望已统一。
 
