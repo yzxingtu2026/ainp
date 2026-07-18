@@ -22,6 +22,7 @@ Builder 预览约束：
 - 模型调用只经统一 Model Runtime；Agent 执行使用 `Stream`，Provider 的 `output_text.delta` 到达后立即追加为 `run.delta`，禁止等待完整 `Generate` 响应后再人为切片伪造流式输出。调用前由 ContextCompactor 按目标模型判断预算并固定 Snapshot。
 - Provider context overflow 只允许受预算限制的压缩重试；step/model/tool/compaction/Token/时长均有硬上限。
 - ToolScope 只允许 Agent bindings 与 meta search/load。Handle 只在服务端内存使用，不写 Message/Event。
+- Knowledge binding 只限定候选 Knowledge Base；每次模型调用前由统一 `KnowledgeRetriever` 使用 Run 当前 actor 重鉴权并执行预算受控检索。结果只能作为 `user` 级不可信参考消息注入，禁止写入 Contract、system/developer instructions、Snapshot 或事件摘要。
 - 敏感工具复用 ToolConfirmation。Run 保存 confirmation/invocation 引用并释放 lease；恢复前校验 actor、auth version、会话 revision、Agent/Tool/Schema 和已持久化调用结果。
 - 模型返回 tool_call 后，必须先幂等追加 assistant（含 `tool_call`）消息，再追加 tool result；二者成对出现，禁止只落 tool_result。最终无工具回复经 finalize 提交；失败或取消不伪造 assistant 完成消息。
 

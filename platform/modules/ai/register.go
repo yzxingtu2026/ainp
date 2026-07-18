@@ -154,10 +154,13 @@ func Register(a *app.App) error {
 	a.KnowledgeParser = parserRegistry
 	a.KnowledgeChunker = aiknowledge.NewFixedTokenChunker()
 	ingestion := NewKnowledgeIngestionService(a.DB, a.KnowledgeSourceResolver, a.KnowledgeParser, a.KnowledgeChunker, a.EmbeddingRuntime)
+	retriever := NewKnowledgeRetrievalService(a.DB, knowledge, a.EmbeddingRuntime)
+	a.KnowledgeRetriever = retriever
 	conversations := NewConversationService(a.DB, a.AIAssetResolver)
 	compactions := NewContextCompactionService(a.DB, conversations, svc, invocations, toolRegistry)
 	a.ContextCompactor = compactions
 	agentRuntime := NewAgentRuntimeService(a.DB, conversations, invocations, tools, compactions, writer, a.Authorization)
+	agentRuntime.SetKnowledgeRetriever(retriever)
 	tools.SetConfirmationHooks(agentRuntime.OnConfirmationPending, agentRuntime.OnConfirmationDecided)
 	if err := RegisterAgentRuntime(a, agentRuntime); err != nil {
 		return err

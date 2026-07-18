@@ -10,5 +10,7 @@
 - Chunk 必须记录来源位置、token count 与 parser/chunking/preprocessing version；派生文本始终按不可信参考处理。
 - 摄取必须走业务事务 Outbox → 幂等 JobRun → Worker；Job 重新加载可信身份和 revision，禁止信任队列 tenant/resource payload。
 - 新 IndexVersion 的 Chunk/pgvector 完整落库后才能原子切换；失败、取消、并发或过期 revision 不得破坏旧索引，删除后异步清理派生数据。
+- Retriever 只读 Base/Document 同时指向的 ready 版本，召回前后都按当前 actor 重鉴权并复核 source revision；Embedding 不可用才降级 FTS，模型/维度事实不匹配必须 fail-closed。
+- Citation 回查不得返回正文；Agent 绑定不扩权，知识片段只能作为带明确边界的 user 级不可信参考，禁止进入 system/developer instructions。
 - 原文、Chunk 正文、向量、路径、Secret 与供应商原始响应禁止进入日志、审计和 Outbox。
 - 详规见 `docs/development/ai-knowledge-runtime.md`；测试统一放在 `platform/tests/`。

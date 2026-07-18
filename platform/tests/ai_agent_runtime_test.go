@@ -75,3 +75,21 @@ func TestAgentRunOutboxEnqueueInjectsAuthFromEnvelope(t *testing.T) {
 		}
 	}
 }
+
+func TestAgentRuntimeKnowledgeUsesBindingsAndUserLevelUntrustedContext(t *testing.T) {
+	body, err := os.ReadFile("../modules/ai/agent_runtime_service.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(body)
+	for _, expected := range []string{"Model(&AgentKnowledgeBinding{})", "s.knowledge.Retrieve(ctx", "aiknowledge.FormatUntrustedReferences(items)", "Role: aimodelruntime.RoleUser"} {
+		if !strings.Contains(src, expected) {
+			t.Fatalf("agent knowledge integration missing %q", expected)
+		}
+	}
+	for _, forbidden := range []string{"Instructions: aiknowledge.FormatUntrustedReferences", "Role: aimodelruntime.RoleDeveloper, Content: []aimodelruntime.ContentPart{{Type: aimodelruntime.PartInputText, Text: body"} {
+		if strings.Contains(src, forbidden) {
+			t.Fatalf("knowledge was promoted to a trusted instruction channel: %q", forbidden)
+		}
+	}
+}

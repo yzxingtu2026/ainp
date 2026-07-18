@@ -12,6 +12,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/action"
 	"github.com/yzxingtu2026/ainp/platform/framework/aiagentruntime"
 	"github.com/yzxingtu2026/ainp/platform/framework/aiconversation"
+	"github.com/yzxingtu2026/ainp/platform/framework/aiknowledge"
 	"github.com/yzxingtu2026/ainp/platform/framework/aimodelruntime"
 	"github.com/yzxingtu2026/ainp/platform/framework/aitool"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
@@ -37,8 +38,13 @@ type AgentRuntimeService struct {
 	compactor     aiconversation.ContextCompactor
 	writer        outbox.Writer
 	authorization auth.AuthorizationProvider
+	knowledge     aiknowledge.KnowledgeRetriever
 	leaseDuration time.Duration
 	now           func() time.Time
+}
+
+func (s *AgentRuntimeService) SetKnowledgeRetriever(retriever aiknowledge.KnowledgeRetriever) {
+	s.knowledge = retriever
 }
 
 func NewAgentRuntimeService(db *gorm.DB, c *ConversationService, i *InvocationService, t *ToolService, compactor aiconversation.ContextCompactor, w outbox.Writer, authorization auth.AuthorizationProvider) *AgentRuntimeService {
@@ -525,6 +531,11 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 		if err != nil {
 			return s.fail(ctx, run, "context_failed")
 		}
+		knowledgeMessages, knowledgeErr := s.knowledgeMessages(ctx, &agent, run, int(budget.MaxTokens)/4)
+		if knowledgeErr != nil {
+			return s.fail(ctx, run, "knowledge_retrieval_failed")
+		}
+		messages = append(messages, knowledgeMessages...)
 		run.ContextSnapshotID = snapshotID
 		step, err := s.newStep(ctx, run, aiagentruntime.StepModel, map[string]any{"message_count": len(messages), "context_snapshot_id": snapshotID})
 		if err != nil {
@@ -618,6 +629,52 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 		return s.fail(ctx, run, "timeout")
 	}
 	return s.fail(ctx, run, "step_budget_exhausted")
+}
+
+func (s *AgentRuntimeService) knowledgeMessages(ctx context.Context, agent *Agent, run *AgentRun, maxTokens int) ([]aimodelruntime.Message, error) {
+	if s.knowledge == nil || agent == nil {
+		return nil, nil
+	}
+	var baseIDs []string
+	if err := s.db.WithContext(ctx).Model(&AgentKnowledgeBinding{}).Where("tenant_id=? AND agent_id=?", run.TenantID, agent.ID).Order("knowledge_base_id").Pluck("knowledge_base_id", &baseIDs).Error; err != nil {
+		return nil, err
+	}
+	if len(baseIDs) == 0 {
+		return nil, nil
+	}
+	var trigger ConversationMessage
+	if err := s.db.WithContext(ctx).Where("tenant_id=? AND id=? AND conversation_id=? AND role=?", run.TenantID, run.TriggerMessageID, run.ConversationID, aimodelruntime.RoleUser).First(&trigger).Error; err != nil {
+		return nil, err
+	}
+	var parts []aimodelruntime.ContentPart
+	if err := json.Unmarshal(trigger.Content, &parts); err != nil {
+		return nil, err
+	}
+	var query strings.Builder
+	for _, part := range parts {
+		if part.Type == aimodelruntime.PartInputText {
+			query.WriteString(part.Text)
+			query.WriteByte(' ')
+		}
+	}
+	if strings.TrimSpace(query.String()) == "" {
+		return nil, nil
+	}
+	if maxTokens < 100 {
+		maxTokens = 100
+	}
+	if maxTokens > 4000 {
+		maxTokens = 4000
+	}
+	items, err := s.knowledge.Retrieve(ctx, aiknowledge.RetrievalRequest{KnowledgeBaseIDs: baseIDs, Query: strings.TrimSpace(query.String()), Config: aiknowledge.RetrievalConfig{TopK: 5, MinScore: 0.1, MaxContextTokens: maxTokens}})
+	if err != nil {
+		return nil, err
+	}
+	if len(items) == 0 {
+		return nil, nil
+	}
+	body := aiknowledge.FormatUntrustedReferences(items)
+	return []aimodelruntime.Message{{Role: aimodelruntime.RoleUser, Content: []aimodelruntime.ContentPart{{Type: aimodelruntime.PartInputText, Text: body}}}}, nil
 }
 
 func (s *AgentRuntimeService) persistCounters(ctx context.Context, run *AgentRun) error {
