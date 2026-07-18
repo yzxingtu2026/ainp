@@ -66,21 +66,23 @@ type VisibleWhen struct {
 }
 
 type Field struct {
-	Key            string        `json:"key"`
-	Type           FieldType     `json:"type"`
-	Label          string        `json:"label,omitempty"`
-	LabelKey       string        `json:"label_key,omitempty"`
-	Description    string        `json:"description,omitempty"`
-	DescriptionKey string        `json:"description_key,omitempty"`
-	Required       bool          `json:"required"`
-	Default        any           `json:"default,omitempty"`
-	MinLength      *int          `json:"min_length,omitempty"`
-	MaxLength      *int          `json:"max_length,omitempty"`
-	Min            *float64      `json:"min,omitempty"`
-	Max            *float64      `json:"max,omitempty"`
-	Step           *float64      `json:"step,omitempty"`
-	Options        []FieldOption `json:"options,omitempty"`
-	VisibleWhen    *VisibleWhen  `json:"visible_when,omitempty"`
+	Key                string        `json:"key"`
+	Type               FieldType     `json:"type"`
+	Label              string        `json:"label,omitempty"`
+	LabelKey           string        `json:"label_key,omitempty"`
+	Description        string        `json:"description,omitempty"`
+	DescriptionKey     string        `json:"description_key,omitempty"`
+	Required           bool          `json:"required"`
+	Default            any           `json:"default,omitempty"`
+	MinLength          *int          `json:"min_length,omitempty"`
+	MaxLength          *int          `json:"max_length,omitempty"`
+	Min                *float64      `json:"min,omitempty"`
+	Max                *float64      `json:"max,omitempty"`
+	Step               *float64      `json:"step,omitempty"`
+	Options            []FieldOption `json:"options,omitempty"`
+	AllowCustomValues  bool          `json:"allow_custom_values,omitempty"`
+	CustomValuePattern string        `json:"custom_value_pattern,omitempty"`
+	VisibleWhen        *VisibleWhen  `json:"visible_when,omitempty"`
 }
 
 type Category struct {
@@ -204,6 +206,17 @@ func validateField(defKey string, field *Field) error {
 	}
 	if field.Label == "" && field.LabelKey == "" {
 		return fmt.Errorf("field label or label_key required: %s.%s", defKey, field.Key)
+	}
+	if field.AllowCustomValues && field.Type != FieldMultiSelect {
+		return fmt.Errorf("allow_custom_values requires multi_select: %s.%s", defKey, field.Key)
+	}
+	if field.CustomValuePattern != "" {
+		if !field.AllowCustomValues {
+			return fmt.Errorf("custom_value_pattern requires allow_custom_values: %s.%s", defKey, field.Key)
+		}
+		if _, err := regexp.Compile(field.CustomValuePattern); err != nil {
+			return fmt.Errorf("invalid custom_value_pattern in %s.%s: %w", defKey, field.Key, err)
+		}
 	}
 	switch field.Type {
 	case FieldSelect, FieldMultiSelect:

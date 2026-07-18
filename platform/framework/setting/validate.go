@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"regexp"
 	"strings"
 )
 
@@ -113,8 +114,20 @@ func validateFieldValue(defKey string, field Field, raw any, asDefault bool) err
 			return fmt.Errorf("field required: %s", field.Key)
 		}
 		for _, item := range arr {
-			if !optionAllowed(field.Options, item) {
+			if strings.TrimSpace(item) == "" {
+				return fmt.Errorf("empty custom value")
+			}
+			if optionAllowed(field.Options, item) {
+				continue
+			}
+			if !field.AllowCustomValues {
 				return fmt.Errorf("invalid option %q", item)
+			}
+			if field.CustomValuePattern != "" {
+				pattern, err := regexp.Compile(field.CustomValuePattern)
+				if err != nil || !pattern.MatchString(item) {
+					return fmt.Errorf("invalid custom value %q", item)
+				}
 			}
 		}
 		return nil

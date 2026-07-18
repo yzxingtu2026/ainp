@@ -38,14 +38,21 @@ const (
 var sha256Pattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
 type KnowledgeService struct {
-	db     *gorm.DB
-	models aimodel.Resolver
-	agents *AgentService
-	links  attachment.ResourceLinker
-	events outbox.Writer
+	db        *gorm.DB
+	models    aimodel.Resolver
+	agents    *AgentService
+	links     attachment.ResourceLinker
+	events    outbox.Writer
+	retriever aiknowledge.KnowledgeRetriever
+	citations aiknowledge.CitationResolver
 }
 
 func (s *KnowledgeService) SetEventWriter(writer outbox.Writer) { s.events = writer }
+
+func (s *KnowledgeService) SetRetrievalServices(retriever aiknowledge.KnowledgeRetriever, citations aiknowledge.CitationResolver) {
+	s.retriever = retriever
+	s.citations = citations
+}
 
 func NewKnowledgeService(db *gorm.DB, models aimodel.Resolver, agents *AgentService, links attachment.ResourceLinker) *KnowledgeService {
 	return &KnowledgeService{db: db, models: models, agents: agents, links: links}
@@ -63,7 +70,6 @@ type KnowledgeBaseIDRequest struct {
 }
 
 type KnowledgeBaseCreateRequest struct {
-	Code            string                      `json:"code" validate:"required,max=64"`
 	Name            string                      `json:"name" validate:"required,max=128"`
 	Description     string                      `json:"description" validate:"max=1024"`
 	Visibility      string                      `json:"visibility" validate:"required,oneof=private tenant"`
@@ -73,7 +79,6 @@ type KnowledgeBaseCreateRequest struct {
 }
 
 func (r *KnowledgeBaseCreateRequest) Normalize() {
-	r.Code = strings.TrimSpace(r.Code)
 	r.Name = strings.TrimSpace(r.Name)
 	r.Description = strings.TrimSpace(r.Description)
 	r.Visibility = strings.TrimSpace(r.Visibility)
@@ -83,9 +88,6 @@ func (r *KnowledgeBaseCreateRequest) Normalize() {
 }
 
 func (r KnowledgeBaseCreateRequest) Validate(context.Context) error {
-	if !codePattern.MatchString(r.Code) {
-		return fieldValidation("code", "knowledge.validation.invalid_code", "knowledge base code is invalid")
-	}
 	if err := r.ChunkingConfig.Validate(); err != nil {
 		return fieldValidation("chunking_config", "knowledge.validation.invalid_chunking_config", err.Error())
 	}
@@ -161,6 +163,31 @@ type KnowledgeDocumentUpdateRequest struct {
 type KnowledgeDocumentDeleteRequest struct {
 	ID       string `json:"id" validate:"required"`
 	Revision uint64 `json:"revision" validate:"required"`
+}
+
+type KnowledgeRetrievalTestRequest struct {
+	KnowledgeBaseID string   `json:"knowledge_base_id" validate:"required"`
+	DocumentIDs     []string `json:"document_ids" validate:"max=100,dive,required"`
+	Query           string   `json:"query" validate:"required,max=4096"`
+}
+
+func (r *KnowledgeRetrievalTestRequest) Normalize() {
+	r.KnowledgeBaseID = strings.TrimSpace(r.KnowledgeBaseID)
+	r.Query = strings.TrimSpace(r.Query)
+	for index := range r.DocumentIDs {
+		r.DocumentIDs[index] = strings.TrimSpace(r.DocumentIDs[index])
+	}
+}
+
+type KnowledgeCitationResolveRequest struct {
+	Citation aiknowledge.Citation `json:"citation" validate:"required"`
+}
+
+type KnowledgeRetrievalTestItem struct {
+	Citation  aiknowledge.Citation `json:"citation"`
+	Score     float64              `json:"score"`
+	Text      string               `json:"text"`
+	Untrusted bool                 `json:"untrusted"`
 }
 
 type AgentKnowledgeListRequest struct {
@@ -277,9 +304,10 @@ func (s *KnowledgeService) CreateKnowledgeBase(ctx context.Context, request Know
 			return nil, err
 		}
 	}
+	identifier := uuid.New()
 	row := KnowledgeBase{
-		ID: uuid.NewString(), TenantID: ac.TenantID, OwnerUserID: ac.UserID,
-		Code: request.Code, Name: request.Name, Description: request.Description,
+		ID: identifier.String(), TenantID: ac.TenantID, OwnerUserID: ac.UserID,
+		Code: "kb_" + strings.ReplaceAll(identifier.String(), "-", ""), Name: request.Name, Description: request.Description,
 		Visibility: request.Visibility, Status: aiknowledge.KnowledgeBaseDraft,
 		EmbeddingAlias: request.EmbeddingAlias, ChunkingConfig: request.ChunkingConfig,
 		RetrievalConfig: request.RetrievalConfig, Revision: 1,
@@ -446,6 +474,56 @@ func (s *KnowledgeService) GetDocument(ctx context.Context, request KnowledgeDoc
 	return document, err
 }
 
+func (s *KnowledgeService) TestRetrieval(ctx context.Context, request KnowledgeRetrievalTestRequest) (any, error) {
+	knowledgeBase, ac, err := s.getKnowledgeBase(ctx, request.KnowledgeBaseID, false)
+	if err != nil {
+		return nil, err
+	}
+	if knowledgeBase.Status != aiknowledge.KnowledgeBaseEnabled {
+		return nil, errs.NewKey(errs.CodeConflict, "ai.knowledge.retrieval_requires_enabled", "knowledge base must be enabled before retrieval")
+	}
+	if knowledgeBase.CurrentIndexVersionID == nil {
+		return nil, errs.NewKey(errs.CodeConflict, "ai.knowledge.retrieval_index_not_ready", "knowledge index is not ready")
+	}
+	var readyVersions int64
+	if err = s.dbForContext(ctx).Model(&KnowledgeIndexVersion{}).
+		Where("tenant_id=? AND id=? AND knowledge_base_id=? AND status=?", ac.TenantID, *knowledgeBase.CurrentIndexVersionID, knowledgeBase.ID, aiknowledge.IndexReady).
+		Count(&readyVersions).Error; err != nil {
+		return nil, dbError(err, "check knowledge retrieval index")
+	}
+	if readyVersions != 1 {
+		return nil, errs.NewKey(errs.CodeConflict, "ai.knowledge.retrieval_index_not_ready", "knowledge index is not ready")
+	}
+	if s.retriever == nil {
+		return nil, errs.NewKey(errs.CodeInternal, "ai.knowledge.retrieval_unavailable", "knowledge retrieval service is unavailable")
+	}
+	items, err := s.retriever.Retrieve(ctx, aiknowledge.RetrievalRequest{
+		KnowledgeBaseIDs: []string{knowledgeBase.ID},
+		DocumentIDs:      request.DocumentIDs,
+		Query:            request.Query,
+		Config:           knowledgeBase.RetrievalConfig,
+	})
+	if err != nil {
+		return nil, err
+	}
+	result := make([]KnowledgeRetrievalTestItem, 0, len(items))
+	for _, item := range items {
+		result = append(result, KnowledgeRetrievalTestItem{
+			Citation: item.Citation, Score: item.Score, Text: item.Text, Untrusted: item.Untrusted,
+		})
+	}
+	return map[string]any{"items": result}, nil
+}
+
+func (s *KnowledgeService) ResolveCitation(ctx context.Context, request KnowledgeCitationResolveRequest) (any, error) {
+	if s.citations == nil {
+		return nil, errs.NewKey(errs.CodeInternal, "ai.knowledge.retrieval_unavailable", "knowledge citation service is unavailable")
+	}
+	// The resolver reauthorizes both the base and document. Its lookup deliberately
+	// contains no chunk body or attachment access capability.
+	return s.citations.ResolveCitation(ctx, request.Citation)
+}
+
 func (s *KnowledgeService) CreateDocument(ctx context.Context, request KnowledgeDocumentCreateRequest) (any, error) {
 	knowledgeBase, ac, err := s.getKnowledgeBase(ctx, request.KnowledgeBaseID, true)
 	if err != nil {
@@ -463,6 +541,7 @@ func (s *KnowledgeService) CreateDocument(ctx context.Context, request Knowledge
 	if s.links == nil {
 		return nil, errs.NewKey(errs.CodeInternal, "ai.knowledge.attachment_linker_unavailable", "attachment resource linker is unavailable")
 	}
+	created := false
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if lockErr := lockKnowledgeBase(ctx, tx, knowledgeBase.TenantID, knowledgeBase.ID); lockErr != nil {
 			return lockErr
@@ -471,6 +550,16 @@ func (s *KnowledgeService) CreateDocument(ctx context.Context, request Knowledge
 		if queryErr := tx.Where("tenant_id=? AND id=? AND owner_user_id=?",
 			knowledgeBase.TenantID, knowledgeBase.ID, ac.UserID).First(&current).Error; queryErr != nil {
 			return knowledgeNotFound()
+		}
+		var existing KnowledgeDocument
+		queryErr := tx.Where("tenant_id=? AND knowledge_base_id=? AND attachment_id=?",
+			ac.TenantID, knowledgeBase.ID, source.ID).First(&existing).Error
+		if queryErr == nil {
+			row = existing
+			return nil
+		}
+		if !errors.Is(queryErr, gorm.ErrRecordNotFound) {
+			return queryErr
 		}
 		if createErr := tx.Create(&row).Error; createErr != nil {
 			return knowledgeDBError(createErr, "ai.knowledge.document_exists", "attachment is already referenced by this knowledge base")
@@ -482,12 +571,15 @@ func (s *KnowledgeService) CreateDocument(ctx context.Context, request Knowledge
 		if linkErr != nil {
 			return linkErr
 		}
+		created = true
 		return appendKnowledgeIngestion(ctx, tx, s.events, row)
 	})
 	if err != nil {
 		return nil, knowledgeDBError(err, "ai.knowledge.document_exists", "attachment is already referenced by this knowledge base")
 	}
-	setKnowledgeAudit(ctx, "ai_knowledge_document", row.ID, auditKnowledgeDocumentCreated)
+	if created {
+		setKnowledgeAudit(ctx, "ai_knowledge_document", row.ID, auditKnowledgeDocumentCreated)
+	}
 	return row, nil
 }
 

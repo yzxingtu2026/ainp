@@ -16,11 +16,13 @@ const (
 	ActionKnowledgeBaseStatus = "ai.knowledge_base_status_update"
 	ActionKnowledgeBaseDelete = "ai.knowledge_base_delete"
 
-	ActionKnowledgeDocumentList   = "ai.knowledge_document_list"
-	ActionKnowledgeDocumentGet    = "ai.knowledge_document_get"
-	ActionKnowledgeDocumentCreate = "ai.knowledge_document_create"
-	ActionKnowledgeDocumentUpdate = "ai.knowledge_document_update"
-	ActionKnowledgeDocumentDelete = "ai.knowledge_document_delete"
+	ActionKnowledgeDocumentList    = "ai.knowledge_document_list"
+	ActionKnowledgeDocumentGet     = "ai.knowledge_document_get"
+	ActionKnowledgeDocumentCreate  = "ai.knowledge_document_create"
+	ActionKnowledgeDocumentUpdate  = "ai.knowledge_document_update"
+	ActionKnowledgeDocumentDelete  = "ai.knowledge_document_delete"
+	ActionKnowledgeRetrievalTest   = "ai.knowledge_retrieval_test"
+	ActionKnowledgeCitationResolve = "ai.knowledge_citation_resolve"
 
 	ActionAgentKnowledgeList   = "ai.agent_knowledge_list"
 	ActionAgentKnowledgeBind   = "ai.agent_knowledge_bind"
@@ -70,6 +72,8 @@ func RegisterKnowledge(a *app.App, service *KnowledgeService) error {
 		{ActionKnowledgeDocumentCreate, "/api/v1/ai/knowledge-documents/create", "Create knowledge document", "Reference a ready attachment as a knowledge document", &auditOn, action.JSON(service.CreateDocument)},
 		{ActionKnowledgeDocumentUpdate, "/api/v1/ai/knowledge-documents/update", "Update knowledge document", "Replace a knowledge document attachment snapshot", &auditOn, action.JSON(service.UpdateDocument)},
 		{ActionKnowledgeDocumentDelete, "/api/v1/ai/knowledge-documents/delete", "Delete knowledge document", "Delete knowledge document metadata", &auditOn, action.JSON(service.DeleteDocument)},
+		{ActionKnowledgeRetrievalTest, "/api/v1/ai/knowledge-retrieval/test", "Test knowledge retrieval", "Test retrieval with the persisted knowledge base policy", &auditOff, action.JSON(service.TestRetrieval)},
+		{ActionKnowledgeCitationResolve, "/api/v1/ai/knowledge-citations/resolve", "Resolve knowledge citation", "Reauthorize and resolve citation availability", &auditOff, action.JSON(service.ResolveCitation)},
 		{ActionAgentKnowledgeList, "/api/v1/ai/agent-knowledge/list", "Agent knowledge list", "List currently visible knowledge candidates bound to an agent", &auditOff, action.JSON(service.ListAgentKnowledge)},
 		{ActionAgentKnowledgeBind, "/api/v1/ai/agent-knowledge/bind", "Bind agent knowledge", "Bind a visible knowledge base as an agent candidate", &auditOn, action.JSON(service.BindAgentKnowledge)},
 		{ActionAgentKnowledgeUnbind, "/api/v1/ai/agent-knowledge/unbind", "Unbind agent knowledge", "Remove an agent knowledge candidate binding", &auditOn, action.JSON(service.UnbindAgentKnowledge)},

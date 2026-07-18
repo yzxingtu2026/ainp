@@ -28,7 +28,23 @@ export const AI_ACTIONS = {
   agentToolUnbind: 'ai.agent_tool_unbind',
   agentToolSearch: 'ai.agent_tool_search',
   agentDiagnostics: 'ai.agent_diagnostics_get',
-  agentBuiltinReconcile: 'ai.agent_builtin_reconcile'
+  agentBuiltinReconcile: 'ai.agent_builtin_reconcile',
+  knowledgeBaseList: 'ai.knowledge_base_list',
+  knowledgeBaseGet: 'ai.knowledge_base_get',
+  knowledgeBaseCreate: 'ai.knowledge_base_create',
+  knowledgeBaseUpdate: 'ai.knowledge_base_update',
+  knowledgeBaseStatus: 'ai.knowledge_base_status_update',
+  knowledgeBaseDelete: 'ai.knowledge_base_delete',
+  knowledgeDocumentList: 'ai.knowledge_document_list',
+  knowledgeDocumentCreate: 'ai.knowledge_document_create',
+  knowledgeDocumentUpdate: 'ai.knowledge_document_update',
+  knowledgeDocumentDelete: 'ai.knowledge_document_delete',
+  knowledgeDocumentRetry: 'ai.knowledge_document_ingestion_retry',
+  knowledgeRetrievalTest: 'ai.knowledge_retrieval_test',
+  knowledgeCitationResolve: 'ai.knowledge_citation_resolve',
+  agentKnowledgeList: 'ai.agent_knowledge_list',
+  agentKnowledgeBind: 'ai.agent_knowledge_bind',
+  agentKnowledgeUnbind: 'ai.agent_knowledge_unbind'
 } as const;
 export const MODEL_TYPES = ['chat', 'embedding', 'rerank', 'image', 'speech', 'transcription'] as const;
 export const MODEL_MODALITIES = ['text', 'image', 'audio', 'file'] as const;

@@ -45,6 +45,8 @@
 | `AttachmentList` | 列表、图片预览、下载、解绑/删除确认 |
 | `AttachmentField` | 打开选择器并绑定到 resource；无 resourceId 时临时 pending |
 
+`AttachmentPicker` 必须显式区分选择语义：默认 `replace` 返回最终选择集合；绑定型业务使用 `append` + `lockedSelectedIds`，已关联项显示锁定状态且确认事件只返回本次新增项。解除关联由业务列表独立操作，禁止把锁定项作为新增请求重复提交。
+
 AI Builder 的预览消息复用 `AttachmentPicker` 与上传队列，但不伪造业务 `resource_type`：只允许当前上传者有权访问、状态 ready 且符合 #73 图片限制的附件，并将 attachment ID + revision + detail 作为 `input_image` Content Part 提交。当前不支持通用文件、音视频或 PDF 作为模型输入。
 
 有效上传策略：`POST .../attachments/policy`（设置覆盖 + 代码默认）。附件中心：`/system/attachments`（状态用 `CodeSelect` / `CodeTag` + CodeSet `system.attachment_status`；上传者展示 `uploader_name`）。

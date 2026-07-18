@@ -20,13 +20,14 @@ import (
 	"unicode/utf8"
 
 	"github.com/gabriel-vasile/mimetype"
-	"rsc.io/pdf"
+	"github.com/gen2brain/go-fitz"
+	"github.com/xuri/excelize/v2"
 )
 
 const (
-	ParserVersion        = "safe-parser-v1"
+	ParserVersion        = "safe-parser-v4"
 	ChunkingVersion      = "fixed-tokens-v1"
-	PreprocessingVersion = "normalize-text-v1"
+	PreprocessingVersion = "normalize-text-v2"
 )
 
 var (
@@ -231,26 +232,25 @@ func openXMLType(data []byte) string {
 }
 
 func (p *SafeParser) parsePDF(ctx context.Context, data []byte, revision string) ([]ParsedSection, error) {
-	r, err := pdf.NewReader(bytes.NewReader(data), int64(len(data)))
+	doc, err := fitz.NewFromMemory(data)
 	if err != nil {
 		return nil, ErrCorruptDocument
 	}
-	if r.NumPage() > p.Limits.MaxPages {
+	defer doc.Close()
+	if doc.NumPage() > p.Limits.MaxPages {
 		return nil, ErrLimitExceeded
 	}
-	out := make([]ParsedSection, 0, r.NumPage())
-	for page := 1; page <= r.NumPage(); page++ {
+	out := make([]ParsedSection, 0, doc.NumPage())
+	for page := 0; page < doc.NumPage(); page++ {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		content := r.Page(page).Content()
-		var b strings.Builder
-		for _, text := range content.Text {
-			b.WriteString(text.S)
-			b.WriteByte(' ')
+		text, textErr := doc.Text(page)
+		if textErr != nil {
+			return nil, ErrCorruptDocument
 		}
-		n := page
-		out = append(out, ParsedSection{Text: b.String(), PageNumber: &n, SourceRevision: revision})
+		n := page + 1
+		out = append(out, ParsedSection{Text: text, PageNumber: &n, SourceRevision: revision})
 	}
 	return out, nil
 }
@@ -289,9 +289,12 @@ func (p *SafeParser) parseOpenXML(ctx context.Context, data []byte, contentType,
 	case "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
 		for name := range files {
 			if strings.HasPrefix(name, "xl/worksheets/sheet") && strings.HasSuffix(name, ".xml") {
-				names = append(names, name)
+				if _, err := extractXMLText(files[name], p.Limits.MaxExpandedBytes); err != nil {
+					return nil, err
+				}
 			}
 		}
+		return p.parseSpreadsheet(ctx, data, revision)
 	case "application/vnd.openxmlformats-officedocument.presentationml.presentation":
 		for name := range files {
 			if strings.HasPrefix(name, "ppt/slides/slide") && strings.HasSuffix(name, ".xml") {
@@ -322,6 +325,138 @@ func (p *SafeParser) parseOpenXML(ctx context.Context, data []byte, contentType,
 		out = append(out, ParsedSection{Text: text, PageNumber: &page, SourceRevision: revision})
 	}
 	return out, nil
+}
+
+func (p *SafeParser) parseSpreadsheet(ctx context.Context, data []byte, revision string) ([]ParsedSection, error) {
+	book, err := excelize.OpenReader(bytes.NewReader(data), excelize.Options{
+		UnzipSizeLimit:    p.Limits.MaxExpandedBytes,
+		UnzipXMLSizeLimit: p.Limits.MaxExpandedBytes,
+	})
+	if err != nil {
+		return nil, ErrCorruptDocument
+	}
+	defer book.Close()
+
+	sheets := book.GetSheetList()
+	if len(sheets) > p.Limits.MaxPages {
+		return nil, ErrLimitExceeded
+	}
+	var out []ParsedSection
+	totalCharacters := 0
+	for sheetIndex, sheetName := range sheets {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		rows, err := book.Rows(sheetName)
+		if err != nil {
+			return nil, ErrCorruptDocument
+		}
+		page := sheetIndex + 1
+		rowNumber := 0
+		var headers []string
+		for rows.Next() {
+			if err := ctx.Err(); err != nil {
+				_ = rows.Close()
+				return nil, err
+			}
+			rowNumber++
+			cells, err := rows.Columns()
+			if err != nil {
+				_ = rows.Close()
+				return nil, ErrCorruptDocument
+			}
+			cells = trimSpreadsheetRow(cells)
+			if len(cells) == 0 {
+				continue
+			}
+			var section ParsedSection
+			if headers == nil {
+				headers = spreadsheetHeaders(cells)
+				section = ParsedSection{
+					Text:           formatSpreadsheetHeader(sheetName, rowNumber, cells),
+					PageNumber:     &page,
+					HeadingPath:    sheetName,
+					SourceRevision: revision,
+				}
+			} else {
+				section = ParsedSection{
+					Text:           formatSpreadsheetRow(sheetName, rowNumber, headers, cells),
+					PageNumber:     &page,
+					HeadingPath:    sheetName,
+					SourceRevision: revision,
+				}
+			}
+			totalCharacters += utf8.RuneCountInString(section.Text)
+			if totalCharacters > p.Limits.MaxCharacters {
+				_ = rows.Close()
+				return nil, ErrLimitExceeded
+			}
+			out = append(out, section)
+		}
+		if err := rows.Error(); err != nil {
+			_ = rows.Close()
+			return nil, ErrCorruptDocument
+		}
+		if err := rows.Close(); err != nil {
+			return nil, ErrCorruptDocument
+		}
+	}
+	return out, nil
+}
+
+func trimSpreadsheetRow(cells []string) []string {
+	end := len(cells)
+	for end > 0 && strings.TrimSpace(cells[end-1]) == "" {
+		end--
+	}
+	if end == 0 {
+		return nil
+	}
+	out := make([]string, end)
+	for i := 0; i < end; i++ {
+		out[i] = strings.TrimSpace(cells[i])
+	}
+	return out
+}
+
+func spreadsheetHeaders(cells []string) []string {
+	headers := make([]string, len(cells))
+	seen := make(map[string]struct{}, len(cells))
+	for i, value := range cells {
+		column, _ := excelize.ColumnNumberToName(i + 1)
+		header := strings.TrimSpace(value)
+		if header == "" {
+			header = "列 " + column
+		}
+		if _, exists := seen[header]; exists {
+			header += " (" + column + ")"
+		}
+		seen[header] = struct{}{}
+		headers[i] = header
+	}
+	return headers
+}
+
+func formatSpreadsheetHeader(sheetName string, rowNumber int, cells []string) string {
+	return fmt.Sprintf("工作表: %s | 行: %d | 表头: %s", sheetName, rowNumber, strings.Join(cells, " | "))
+}
+
+func formatSpreadsheetRow(sheetName string, rowNumber int, headers, cells []string) string {
+	parts := []string{fmt.Sprintf("工作表: %s", sheetName), fmt.Sprintf("行: %d", rowNumber)}
+	for i, value := range cells {
+		if value == "" {
+			continue
+		}
+		header := ""
+		if i < len(headers) {
+			header = headers[i]
+		} else {
+			column, _ := excelize.ColumnNumberToName(i + 1)
+			header = "列 " + column
+		}
+		parts = append(parts, header+": "+value)
+	}
+	return strings.Join(parts, " | ")
 }
 
 func hasExternalRelationship(files map[string]*zip.File, max int64) bool {
@@ -384,6 +519,16 @@ func textSections(text, revision string) []ParsedSection {
 	return []ParsedSection{{Text: text, SourceRevision: revision}}
 }
 func normalizeText(value string) string {
+	value = strings.ToValidUTF8(value, "\uFFFD")
+	value = strings.Map(func(r rune) rune {
+		if r == 0 {
+			return -1
+		}
+		if unicode.IsControl(r) && r != '\n' && r != '\r' && r != '\t' {
+			return ' '
+		}
+		return r
+	}, value)
 	value = strings.ReplaceAll(value, "\r\n", "\n")
 	value = strings.ReplaceAll(value, "\r", "\n")
 	return strings.Join(strings.Fields(value), " ")
@@ -403,7 +548,7 @@ func (c *FixedTokenChunker) Chunk(ctx context.Context, input ChunkInput) ([]Chun
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		tokens := tokenize(section.Text)
+		tokens := tokenize(normalizeText(section.Text))
 		if len(tokens) == 0 {
 			continue
 		}

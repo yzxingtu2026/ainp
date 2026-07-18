@@ -31,14 +31,17 @@ import (
 	"gorm.io/gorm"
 )
 
-type knowledgeResolver struct{}
+type knowledgeResolver struct{ err error }
 
-func (knowledgeResolver) Resolve(_ context.Context, alias string, requirements aimodel.CapabilityRequirements) (*aimodel.ResolvedModel, error) {
+func (r knowledgeResolver) Resolve(_ context.Context, alias string, requirements aimodel.CapabilityRequirements) (*aimodel.ResolvedModel, error) {
+	if r.err != nil {
+		return nil, r.err
+	}
 	if alias != "embed" || requirements.ModelType != aimodel.ModelTypeEmbedding ||
 		len(requirements.Features) != 1 || requirements.Features[0] != aimodel.FeatureEmbeddings {
 		return nil, errs.New(errs.CodeValidation, "embedding requirements not satisfied")
 	}
-	return &aimodel.ResolvedModel{ModelType: aimodel.ModelTypeEmbedding}, nil
+	return &aimodel.ResolvedModel{DeploymentID: "deployment-v1", ModelType: aimodel.ModelTypeEmbedding}, nil
 }
 
 func TestKnowledgeContractsNormalizeValidateAndFakeDeterministically(t *testing.T) {
@@ -133,13 +136,15 @@ func TestKnowledgeMigrationModelsActionsAndI18n(t *testing.T) {
 	for _, id := range []string{
 		ai.ActionKnowledgeBaseList, ai.ActionKnowledgeBaseCreate,
 		ai.ActionKnowledgeDocumentList, ai.ActionKnowledgeDocumentCreate,
+		ai.ActionKnowledgeRetrievalTest, ai.ActionKnowledgeCitationResolve,
 		ai.ActionAgentKnowledgeList, ai.ActionAgentKnowledgeBind,
 	} {
 		registered, ok := application.Actions.Get(id)
 		if !ok || registered.Meta.PermissionGroup != "ai.knowledge_management" {
 			t.Fatalf("knowledge action not registered correctly: %s", id)
 		}
-		wantAudit := !strings.HasSuffix(id, "_list") && !strings.HasSuffix(id, "_get")
+		wantAudit := !strings.HasSuffix(id, "_list") && !strings.HasSuffix(id, "_get") &&
+			id != ai.ActionKnowledgeRetrievalTest && id != ai.ActionKnowledgeCitationResolve
 		if registered.Meta.Audit == nil || *registered.Meta.Audit != wantAudit {
 			t.Fatalf("unexpected audit metadata for %s", id)
 		}
@@ -154,7 +159,11 @@ func TestKnowledgeMigrationModelsActionsAndI18n(t *testing.T) {
 		"permission_group.ai.knowledge_management",
 		"codeset.ai.knowledge_base_status.draft",
 		"action.ai.knowledge_base_create.name",
+		"action.ai.knowledge_retrieval_test.name",
+		"action.ai.knowledge_citation_resolve.name",
 		"ai.knowledge.embedding_required",
+		"ai.knowledge.retrieval_requires_enabled",
+		"ai.knowledge.retrieval_index_not_ready",
 	} {
 		if i18n.T("en", key) == key || i18n.T("zh-CN", key) == key {
 			t.Fatalf("missing bilingual i18n key: %s", key)
@@ -269,9 +278,9 @@ func TestKnowledgeTenantAttachmentRevisionAndBindingBoundaries(t *testing.T) {
 	otherCtx := knowledgeContext("tenant-a", "other")
 	mutationCtx := knowledgeContext("tenant-a", "other", ai.ActionKnowledgeBaseUpdate, ai.ActionAgentKnowledgeBind)
 
-	create := func(ctx context.Context, code, visibility string) ai.KnowledgeBase {
+	create := func(ctx context.Context, name, visibility string) ai.KnowledgeBase {
 		value, err := service.CreateKnowledgeBase(ctx, ai.KnowledgeBaseCreateRequest{
-			Code: code, Name: code, Visibility: visibility, EmbeddingAlias: "embed",
+			Name: name, Visibility: visibility, EmbeddingAlias: "embed",
 			ChunkingConfig:  aiknowledge.ChunkingConfig{Strategy: aiknowledge.ChunkingFixedTokens, ChunkSize: 800, ChunkOverlap: 100},
 			RetrievalConfig: aiknowledge.RetrievalConfig{TopK: 5, MaxContextTokens: 4000},
 		})
@@ -282,6 +291,12 @@ func TestKnowledgeTenantAttachmentRevisionAndBindingBoundaries(t *testing.T) {
 	}
 	privateKB := create(ownerCtx, "private-kb", aiknowledge.VisibilityPrivate)
 	tenantKB := create(ownerCtx, "tenant-kb", aiknowledge.VisibilityTenant)
+	if privateKB.Code == tenantKB.Code || !strings.HasPrefix(privateKB.Code, "kb_") || len(privateKB.Code) != 35 {
+		t.Fatalf("knowledge base codes must be generated and unique: %q %q", privateKB.Code, tenantKB.Code)
+	}
+	if _, err := service.TestRetrieval(ownerCtx, ai.KnowledgeRetrievalTestRequest{KnowledgeBaseID: tenantKB.ID, Query: "test"}); !isCode(err, errs.CodeConflict) {
+		t.Fatalf("draft knowledge base retrieval must return a conflict: %v", err)
+	}
 	indexID := "index-current"
 	if err := db.Create(&ai.KnowledgeIndexVersion{
 		ID: indexID, TenantID: tenantKB.TenantID, KnowledgeBaseID: tenantKB.ID, Version: 1,
@@ -378,6 +393,17 @@ func TestKnowledgeTenantAttachmentRevisionAndBindingBoundaries(t *testing.T) {
 	document := documentValue.(ai.KnowledgeDocument)
 	if document.SourceRevision != hash || document.ContentType != "text/plain" || document.OriginalName != "owned.txt" {
 		t.Fatalf("attachment snapshot is incomplete: %#v", document)
+	}
+	duplicateValue, err := service.CreateDocument(ownerCtx, ai.KnowledgeDocumentCreateRequest{KnowledgeBaseID: privateKB.ID, AttachmentID: "owned"})
+	if err != nil {
+		t.Fatalf("duplicate knowledge document creation must be idempotent: %v", err)
+	}
+	if duplicate := duplicateValue.(ai.KnowledgeDocument); duplicate.ID != document.ID {
+		t.Fatalf("idempotent creation returned a different document: %#v", duplicate)
+	}
+	var activeDuplicates int64
+	if err = db.Model(&ai.KnowledgeDocument{}).Where("tenant_id=? AND knowledge_base_id=? AND attachment_id=?", "tenant-a", privateKB.ID, "owned").Count(&activeDuplicates).Error; err != nil || activeDuplicates != 1 {
+		t.Fatalf("duplicate creation changed active documents: count=%d err=%v", activeDuplicates, err)
 	}
 	var links []systemmodel.AttachmentLink
 	if err = db.Where("resource_type=? AND resource_id=?", ai.KnowledgeDocumentResourceType, document.ID).Find(&links).Error; err != nil {

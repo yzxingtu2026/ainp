@@ -62,6 +62,53 @@ func TestSettingRegistryRejectsInvalidDefinitions(t *testing.T) {
 	}
 }
 
+func TestSettingMultiSelectCustomValues(t *testing.T) {
+	options := []setting.FieldOption{{Value: ".pdf", Label: ".pdf"}}
+	strict := setting.Definition{
+		Key: "attachment.strict", Fields: []setting.Field{{
+			Key: "allowed_ext", Type: setting.FieldMultiSelect, Label: "Allowed", Options: options,
+		}},
+	}
+	if err := setting.ValidateValues(strict, map[string]any{"allowed_ext": []any{".custom"}}); err == nil {
+		t.Fatal("normal multi_select must reject custom values")
+	}
+
+	custom := strict
+	custom.Key = "attachment.custom"
+	custom.Fields[0].AllowCustomValues = true
+	custom.Fields[0].CustomValuePattern = `^\.?[A-Za-z0-9][A-Za-z0-9._+-]{0,31}$`
+	if err := setting.ValidateValues(custom, map[string]any{"allowed_ext": []any{"custom", ".pdf"}}); err != nil {
+		t.Fatalf("enabled multi_select should accept valid custom values: %v", err)
+	}
+	if err := setting.ValidateValues(custom, map[string]any{"allowed_ext": []any{"../invalid"}}); err == nil {
+		t.Fatal("custom value that does not match pattern must fail")
+	}
+}
+
+func TestSettingCustomValuesSchemaConstraints(t *testing.T) {
+	category := map[string]setting.Category{
+		"general": {Key: "general", Title: "General", Icon: "mdi:cog-outline", Surface: auth.RealmTenant},
+	}
+	base := setting.Definition{
+		Key: "general.preferences", CategoryKey: "general", Title: "Prefs",
+		Scope: setting.ScopeTenant, Surface: auth.RealmTenant, SchemaVersion: 1,
+	}
+	base.Fields = []setting.Field{{
+		Key: "name", Type: setting.FieldText, Label: "Name", Default: "x", AllowCustomValues: true,
+	}}
+	if err := setting.ValidateDefinition(base, category); err == nil {
+		t.Fatal("allow_custom_values on a non-multi_select field must fail")
+	}
+	base.Fields = []setting.Field{{
+		Key: "tags", Type: setting.FieldMultiSelect, Label: "Tags",
+		Options:            []setting.FieldOption{{Value: "a", Label: "A"}},
+		CustomValuePattern: "[",
+	}}
+	if err := setting.ValidateDefinition(base, category); err == nil {
+		t.Fatal("custom_value_pattern without allow_custom_values must fail")
+	}
+}
+
 func TestSettingVisibleWhenRegistrationAndValidation(t *testing.T) {
 	reg := setting.NewRegistry()
 	if err := reg.RegisterCategory(setting.Category{
@@ -124,7 +171,7 @@ func TestSettingVisibleWhenRegistrationAndValidation(t *testing.T) {
 		Fields: []setting.Field{
 			{Key: "enabled", Type: setting.FieldBoolean, Label: "Enabled", Default: false},
 			{Key: "mode", Type: setting.FieldSelect, Label: "Mode", Required: true, Default: "a",
-				Options: []setting.FieldOption{{Value: "a", Label: "A"}, {Value: "b", Label: "B"}},
+				Options:     []setting.FieldOption{{Value: "a", Label: "A"}, {Value: "b", Label: "B"}},
 				VisibleWhen: &setting.VisibleWhen{Field: "enabled", Eq: true}},
 			{Key: "note", Type: setting.FieldText, Label: "Note", Required: true, Default: "n",
 				VisibleWhen: &setting.VisibleWhen{Field: "mode", In: []any{"b"}}},
@@ -186,6 +233,25 @@ func TestSettingActionsAndMenuAreRegistered(t *testing.T) {
 	}
 	if _, ok := application.Settings.GetDefinition("general.visibility_demo"); !ok {
 		t.Fatal("visibility demo setting definition was not registered")
+	}
+	attachmentDef, ok := application.Settings.GetDefinition(system.SettingKeyAttachmentUploadPolicy)
+	if !ok {
+		t.Fatal("attachment upload policy setting definition was not registered")
+	}
+	for _, fieldKey := range []string{"allowed_ext", "allowed_mime"} {
+		found := false
+		for _, field := range attachmentDef.Fields {
+			if field.Key != fieldKey {
+				continue
+			}
+			found = true
+			if !field.AllowCustomValues || field.CustomValuePattern == "" {
+				t.Fatalf("attachment field %s must validate custom values", fieldKey)
+			}
+		}
+		if !found {
+			t.Fatalf("attachment field not registered: %s", fieldKey)
+		}
 	}
 	foundMenu := false
 	for _, registered := range application.Menus.List() {

@@ -29,20 +29,25 @@ import { AI_ACTIONS } from '@/constants/ai';
 import { useRouterPush } from '@/hooks/common/router';
 import { $t } from '@/locales';
 import {
+  bindAIAgentKnowledge,
   bindAIAgentTool,
   createAIAgent,
   fetchAIAgent,
   fetchAIAgentDiagnostics,
+  fetchAIAgentKnowledge,
   fetchAIAgentTools,
   fetchAIAgentVersions,
   fetchAIAliases,
   fetchAIDeployments,
+  fetchKnowledgeBases,
   publishAIAgentVersion,
+  unbindAIAgentKnowledge,
   unbindAIAgentTool,
   updateAIAgent
 } from '@/service/api';
 import { useAuthStore } from '@/store/modules/auth';
 import MarkdownPromptEditor from '@/components/common/markdown-prompt-editor.vue';
+import AgentKnowledgePickerModal from './modules/agent-knowledge-picker-modal.vue';
 import AgentToolPickerModal from './modules/agent-tool-picker-modal.vue';
 import PreviewComposer from './modules/preview-composer.vue';
 import PreviewMarkdown from './modules/preview-markdown.vue';
@@ -70,6 +75,7 @@ const dirty = ref(false);
 const mobileTab = ref<'prompt' | 'config' | 'preview'>('prompt');
 const versionsVisible = ref(false);
 const toolPickerVisible = ref(false);
+const knowledgePickerVisible = ref(false);
 /** 中间栏折叠分组：默认只展开基本信息 */
 const configExpandedNames = ref<Array<string | number>>(['basic']);
 const collapsed = reactive({ left: false, right: false });
@@ -80,6 +86,8 @@ const agent = ref<Api.AI.AgentDetail | null>(null);
 const versions = ref<Api.AI.AgentVersion[]>([]);
 const diagnostics = ref<Api.AI.AgentDiagnostics | null>(null);
 const boundTools = ref<Api.AI.AgentToolBinding[]>([]);
+const boundKnowledge = ref<Api.AI.AgentKnowledgeBinding[]>([]);
+const knowledgeBases = ref<Api.AI.KnowledgeBase[]>([]);
 const aliases = ref<Api.AI.Alias[]>([]);
 const deployments = ref<Api.AI.Deployment[]>([]);
 const draft = reactive({
@@ -140,6 +148,8 @@ const managedFields = computed(() => new Set(agent.value?.managed_fields || []))
 const requiredTools = computed(() => new Set(agent.value?.required_tool_selectors || []));
 const isManaged = (field: string) => managedFields.value.has(field);
 const boundToolIDs = computed(() => boundTools.value.map(item => item.tool_id));
+const boundKnowledgeBaseIDs = computed(() => boundKnowledge.value.map(item => item.knowledge_base_id));
+const knowledgeBaseByID = computed(() => new Map(knowledgeBases.value.map(item => [item.id, item])));
 type PreviewTimelineEntry =
   | {
       kind: 'message';
@@ -276,6 +286,7 @@ async function loadAgent(id: string) {
     agent.value = agentResult.data;
     versions.value = versionResult.data || [];
     boundTools.value = toolResult.data || [];
+    await loadAgentKnowledge(id);
     diagnostics.value = diagnosticResult.data || null;
     const current = versions.value.find(item => item.version === agent.value?.current_version);
     const useDraft = Boolean(agent.value.has_draft);
@@ -301,6 +312,27 @@ async function loadAgent(id: string) {
       hydrating.value = false;
     });
   }
+}
+
+async function loadAgentKnowledge(agentID: string) {
+  if (can(AI_ACTIONS.agentKnowledgeList)) {
+    const { data } = await fetchAIAgentKnowledge(agentID);
+    boundKnowledge.value = data?.items || [];
+  } else {
+    boundKnowledge.value = [];
+  }
+  if (can(AI_ACTIONS.knowledgeBaseList)) {
+    const { data } = await fetchKnowledgeBases({ page: 1, page_size: 100 });
+    knowledgeBases.value = data?.items || [];
+  } else {
+    knowledgeBases.value = [];
+  }
+}
+
+function mergeKnowledgeBases(items: Api.AI.KnowledgeBase[]) {
+  const merged = new Map(knowledgeBases.value.map(item => [item.id, item]));
+  for (const item of items) merged.set(item.id, item);
+  knowledgeBases.value = Array.from(merged.values());
 }
 
 async function refreshDiagnostics() {
@@ -330,6 +362,19 @@ async function unbindTool(toolID: string) {
     boundTools.value = data || [];
     await refreshDiagnostics();
   }
+}
+
+async function bindKnowledge(knowledgeBaseID: string) {
+  if (!agent.value || !can(AI_ACTIONS.agentKnowledgeBind)) return;
+  const { error } = await bindAIAgentKnowledge(agent.value.id, knowledgeBaseID);
+  if (error) return;
+  await loadAgentKnowledge(agent.value.id);
+}
+
+async function unbindKnowledge(knowledgeBaseID: string) {
+  if (!agent.value || !can(AI_ACTIONS.agentKnowledgeUnbind)) return;
+  const { error } = await unbindAIAgentKnowledge(agent.value.id, knowledgeBaseID);
+  if (!error) await loadAgentKnowledge(agent.value.id);
 }
 
 function generationConfig() {
@@ -517,6 +562,8 @@ watch(
       agent.value = null;
       versions.value = [];
       boundTools.value = [];
+      boundKnowledge.value = [];
+      knowledgeBases.value = [];
       diagnostics.value = null;
       Object.assign(draft, {
         code: '',
@@ -733,6 +780,59 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
                     </NList>
                   </template>
                   <NAlert v-else type="info">{{ $t('page.agentBuilder.toolsAfterCreate') }}</NAlert>
+                </NCollapseItem>
+
+                <NCollapseItem :title="$t('page.agentBuilder.knowledge')" name="knowledge">
+                  <template v-if="agent">
+                    <NSpace class="mb-12px" justify="space-between">
+                      <div class="text-12px text-gray-500">
+                        {{ $t('page.agentBuilder.boundKnowledge') }}（{{ boundKnowledge.length }}）
+                      </div>
+                      <NButton
+                        type="primary"
+                        size="small"
+                        :disabled="
+                          !can(AI_ACTIONS.agentKnowledgeBind) ||
+                          !can(AI_ACTIONS.agentKnowledgeList) ||
+                          !can(AI_ACTIONS.knowledgeBaseList)
+                        "
+                        @click="knowledgePickerVisible = true"
+                      >
+                        {{ $t('page.agentBuilder.openKnowledgePicker') }}
+                      </NButton>
+                    </NSpace>
+                    <NEmpty
+                      v-if="boundKnowledge.length === 0"
+                      :description="$t('page.agentBuilder.noBoundKnowledge')"
+                    />
+                    <NList v-else bordered class="max-h-280px overflow-auto">
+                      <NListItem v-for="binding in boundKnowledge" :key="binding.id">
+                        <NThing
+                          :title="knowledgeBaseByID.get(binding.knowledge_base_id)?.name || binding.knowledge_base_id"
+                          :description="
+                            knowledgeBaseByID.get(binding.knowledge_base_id)?.description ||
+                            $t('page.agentBuilder.noKnowledgeDescription')
+                          "
+                        >
+                          <template #header-extra>
+                            <NButton
+                              v-if="can(AI_ACTIONS.agentKnowledgeUnbind)"
+                              size="small"
+                              type="error"
+                              ghost
+                              @click="unbindKnowledge(binding.knowledge_base_id)"
+                            >
+                              {{ $t('page.agentBuilder.unbind') }}
+                            </NButton>
+                          </template>
+                        </NThing>
+                        <div class="mt-4px text-12px text-gray-400">
+                          {{ knowledgeBaseByID.get(binding.knowledge_base_id)?.code || binding.knowledge_base_id }}
+                        </div>
+                      </NListItem>
+                    </NList>
+                  </template>
+                  <NAlert v-else type="info">{{ $t('page.agentBuilder.knowledgeAfterCreate') }}</NAlert>
                 </NCollapseItem>
 
                 <NCollapseItem :title="$t('page.agentBuilder.diagnostics')" name="diagnostics">
@@ -977,6 +1077,13 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
       :bound-tool-ids="boundToolIDs"
       :can-bind="can(AI_ACTIONS.agentToolBind)"
       :bind-tool="bindTool"
+    />
+    <AgentKnowledgePickerModal
+      v-model:show="knowledgePickerVisible"
+      :bound-knowledge-base-ids="boundKnowledgeBaseIDs"
+      :can-bind="can(AI_ACTIONS.agentKnowledgeBind)"
+      :bind-knowledge="bindKnowledge"
+      @loaded="mergeKnowledgeBases"
     />
   </div>
 </template>

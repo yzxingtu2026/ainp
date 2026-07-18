@@ -87,13 +87,16 @@ func DefaultUploadPolicy() UploadPolicy {
 		AllowedMIME: []string{
 			"image/png", "image/jpeg", "image/gif", "image/webp",
 			"video/mp4", "video/webm", "video/quicktime",
-			"application/pdf", "text/plain",
+			"application/pdf", "text/plain", "text/markdown",
+			"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+			"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+			"application/vnd.openxmlformats-officedocument.presentationml.presentation",
 			"application/zip", "application/octet-stream",
 		},
 		AllowedExt: []string{
 			".png", ".jpg", ".jpeg", ".gif", ".webp",
 			".mp4", ".webm", ".mov",
-			".pdf", ".txt", ".zip",
+			".pdf", ".txt", ".md", ".docx", ".xlsx", ".pptx", ".zip",
 		},
 		TempRetain:     24 * time.Hour,
 		TransferTTL:    15 * time.Minute,

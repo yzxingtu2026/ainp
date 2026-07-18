@@ -3,6 +3,7 @@ package tests
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"strings"
@@ -27,9 +28,13 @@ func (s ingestionSource) OpenSource(context.Context, aiknowledge.SourceOpenReque
 type ingestionEmbedding struct {
 	dimensions int
 	vectorSize int
+	err        error
 }
 
 func (f ingestionEmbedding) Embed(_ context.Context, request aimodelruntime.EmbeddingRequest) (*aimodelruntime.EmbeddingResponse, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
 	vectors := make([]aimodelruntime.EmbeddingVector, len(request.Inputs))
 	size := f.vectorSize
 	if size == 0 {
@@ -81,7 +86,7 @@ func TestKnowledgeIngestionPublishesAtomicallyAndIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service := ai.NewKnowledgeIngestionService(db, ingestionSource{text: strings.Repeat("stable ", 220)}, registry, aiknowledge.NewFixedTokenChunker(), ingestionEmbedding{dimensions: 3})
+	service := ai.NewKnowledgeIngestionService(db, ingestionSource{text: strings.Repeat("stable ", 220)}, registry, aiknowledge.NewFixedTokenChunker(), knowledgeResolver{}, ingestionEmbedding{dimensions: 3})
 	payload := ai.KnowledgeIngestionJobPayload{DocumentID: doc.ID, SourceRevision: doc.SourceRevision, Revision: doc.Revision}
 	if err = service.Process(ingestionContext(), payload); err != nil {
 		t.Fatal(err)
@@ -126,13 +131,127 @@ func TestKnowledgeIngestionPublishesAtomicallyAndIsIdempotent(t *testing.T) {
 	if versions != 1 {
 		t.Fatalf("duplicate delivery created %d versions", versions)
 	}
+	if err = db.Model(&version).Update("parser_version", "safe-parser-v2").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err = service.Process(ingestionContext(), payload); err != nil {
+		t.Fatal(err)
+	}
+	if err = db.First(&version, "id=?", version.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if version.ParserVersion != aiknowledge.ParserVersion || version.Status != aiknowledge.IndexReady {
+		t.Fatalf("stale parser version was not rebuilt: %#v", version)
+	}
+	db.Model(&ai.KnowledgeIndexVersion{}).Count(&versions)
+	if versions != 1 {
+		t.Fatalf("parser upgrade created %d versions for the same source revision", versions)
+	}
+}
+
+func TestKnowledgeIngestionReservesVersionWithResolvedDeployment(t *testing.T) {
+	db := openKnowledgeTestDB(t)
+	if err := db.AutoMigrate(&ai.Deployment{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := ai.AutoMigrateKnowledge(db); err != nil {
+		t.Fatal(err)
+	}
+	deployment := ai.Deployment{
+		ID: "deployment-v1", TenantID: "tenant-a", ProviderID: "provider-a", Code: "embed-v1",
+		RemoteModelID: "embed-v1", DisplayName: "Embedding V1", ModelType: "embedding",
+		CapabilitiesJSON: json.RawMessage(`{"input_modalities":["text"],"output_modalities":[],"features":["embeddings"]}`),
+		LimitsJSON:       json.RawMessage(`{"dimensions":3}`), Status: "enabled", ConfigJSON: json.RawMessage(`{}`),
+	}
+	if err := db.Create(&deployment).Error; err != nil {
+		t.Fatal(err)
+	}
+	_, document := seedIngestion(t, db)
+	registry, err := aiknowledge.NewDefaultParserRegistry(aiknowledge.DefaultParseLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := ai.NewKnowledgeIngestionService(db, ingestionSource{text: "stable text"}, registry, aiknowledge.NewFixedTokenChunker(), knowledgeResolver{}, ingestionEmbedding{dimensions: 3})
+	if err = service.Process(ingestionContext(), ai.KnowledgeIngestionJobPayload{DocumentID: document.ID, SourceRevision: document.SourceRevision, Revision: document.Revision}); err != nil {
+		t.Fatal(err)
+	}
+	var version ai.KnowledgeIndexVersion
+	if err = db.First(&version, "knowledge_base_id=?", document.KnowledgeBaseID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if version.EmbeddingDeploymentID != deployment.ID {
+		t.Fatalf("reserved deployment = %q, want %q", version.EmbeddingDeploymentID, deployment.ID)
+	}
+}
+
+func TestKnowledgeIngestionReservationFailureMarksDocumentFailed(t *testing.T) {
+	db := openKnowledgeTestDB(t)
+	if err := db.AutoMigrate(&ai.Deployment{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := ai.AutoMigrateKnowledge(db); err != nil {
+		t.Fatal(err)
+	}
+	_, document := seedIngestion(t, db)
+	registry, err := aiknowledge.NewDefaultParserRegistry(aiknowledge.DefaultParseLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := ai.NewKnowledgeIngestionService(db, ingestionSource{text: "stable text"}, registry, aiknowledge.NewFixedTokenChunker(), knowledgeResolver{}, ingestionEmbedding{dimensions: 3})
+	err = service.Process(ingestionContext(), ai.KnowledgeIngestionJobPayload{DocumentID: document.ID, SourceRevision: document.SourceRevision, Revision: document.Revision})
+	if err == nil || !job.IsRetryable(err) {
+		t.Fatalf("foreign-key reservation failure must be retryable: %v", err)
+	}
+	var failed ai.KnowledgeDocument
+	if queryErr := db.First(&failed, "id=?", document.ID).Error; queryErr != nil {
+		t.Fatal(queryErr)
+	}
+	if failed.IngestionStatus != aiknowledge.DocumentFailed || failed.IngestionErrorCategory != "processing_failed" {
+		t.Fatalf("reservation failure did not close document state: %#v", failed)
+	}
+}
+
+func TestKnowledgeIngestionResolutionFailureMarksDocumentFailed(t *testing.T) {
+	db := openKnowledgeTestDB(t)
+	_, document := seedIngestion(t, db)
+	registry, err := aiknowledge.NewDefaultParserRegistry(aiknowledge.DefaultParseLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := ai.NewKnowledgeIngestionService(db, ingestionSource{text: "stable text"}, registry, aiknowledge.NewFixedTokenChunker(), knowledgeResolver{err: errors.New("resolver unavailable")}, ingestionEmbedding{dimensions: 3})
+	err = service.Process(ingestionContext(), ai.KnowledgeIngestionJobPayload{DocumentID: document.ID, SourceRevision: document.SourceRevision, Revision: document.Revision})
+	if err == nil || !job.IsRetryable(err) {
+		t.Fatalf("resolver failure must be retryable: %v", err)
+	}
+	var failed ai.KnowledgeDocument
+	if queryErr := db.First(&failed, "id=?", document.ID).Error; queryErr != nil {
+		t.Fatal(queryErr)
+	}
+	if failed.IngestionStatus != aiknowledge.DocumentFailed {
+		t.Fatalf("resolver failure left document in %q", failed.IngestionStatus)
+	}
+}
+
+func TestKnowledgeIngestionNonRetryableEmbeddingFailureIsPermanent(t *testing.T) {
+	db := openKnowledgeTestDB(t)
+	_, document := seedIngestion(t, db)
+	registry, err := aiknowledge.NewDefaultParserRegistry(aiknowledge.DefaultParseLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	providerError := &aimodelruntime.RuntimeError{Category: aimodelruntime.ErrorInvalidRequest, Message: "provider rejected batch", Retryable: false}
+	service := ai.NewKnowledgeIngestionService(db, ingestionSource{text: "stable text"}, registry, aiknowledge.NewFixedTokenChunker(), knowledgeResolver{}, ingestionEmbedding{err: providerError})
+	err = service.Process(ingestionContext(), ai.KnowledgeIngestionJobPayload{DocumentID: document.ID, SourceRevision: document.SourceRevision, Revision: document.Revision})
+	if err == nil || !job.IsPermanent(err) {
+		t.Fatalf("non-retryable provider failure must be permanent: %v", err)
+	}
 }
 
 func TestKnowledgeIngestionRejectsStaleRevisionAndPreservesPublishedVersionOnFailure(t *testing.T) {
 	db := openKnowledgeTestDB(t)
 	_, doc := seedIngestion(t, db)
 	registry, _ := aiknowledge.NewDefaultParserRegistry(aiknowledge.DefaultParseLimits())
-	good := ai.NewKnowledgeIngestionService(db, ingestionSource{text: "stable text"}, registry, aiknowledge.NewFixedTokenChunker(), ingestionEmbedding{dimensions: 2})
+	good := ai.NewKnowledgeIngestionService(db, ingestionSource{text: "stable text"}, registry, aiknowledge.NewFixedTokenChunker(), knowledgeResolver{}, ingestionEmbedding{dimensions: 2})
 	old := ai.KnowledgeIngestionJobPayload{DocumentID: doc.ID, SourceRevision: doc.SourceRevision, Revision: 1}
 	if err := good.Process(ingestionContext(), old); err != nil {
 		t.Fatal(err)
@@ -147,7 +266,7 @@ func TestKnowledgeIngestionRejectsStaleRevisionAndPreservesPublishedVersionOnFai
 	if err := good.Process(ingestionContext(), old); err != nil {
 		t.Fatalf("stale work should be ignored: %v", err)
 	}
-	bad := ai.NewKnowledgeIngestionService(db, ingestionSource{text: "changed text"}, registry, aiknowledge.NewFixedTokenChunker(), ingestionEmbedding{dimensions: 3, vectorSize: 2})
+	bad := ai.NewKnowledgeIngestionService(db, ingestionSource{text: "changed text"}, registry, aiknowledge.NewFixedTokenChunker(), knowledgeResolver{}, ingestionEmbedding{dimensions: 3, vectorSize: 2})
 	err := bad.Process(ingestionContext(), ai.KnowledgeIngestionJobPayload{DocumentID: doc.ID, SourceRevision: newRevision, Revision: 2})
 	if err == nil || !job.IsPermanent(err) {
 		t.Fatalf("dimension mismatch must fail permanently: %v", err)

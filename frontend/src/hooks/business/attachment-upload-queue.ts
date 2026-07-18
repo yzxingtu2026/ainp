@@ -1,8 +1,6 @@
-import { computed, onBeforeUnmount, reactive, ref } from 'vue';
-import {
-  DEFAULT_ATTACHMENT_UPLOAD_POLICY,
-  type AttachmentUploadItemStatus
-} from '@/constants/attachment';
+import { computed, onBeforeUnmount, reactive, ref, toValue } from 'vue';
+import type { MaybeRefOrGetter } from 'vue';
+import { DEFAULT_ATTACHMENT_UPLOAD_POLICY, type AttachmentUploadItemStatus } from '@/constants/attachment';
 import { prepareAttachmentUpload } from '@/service/api';
 import { putAttachmentTransfer } from '@/service/attachment/transfer';
 
@@ -18,10 +16,10 @@ export interface AttachmentQueueItem {
 
 export interface UseAttachmentUploadQueueOptions {
   concurrency?: number;
-  maxCount?: number;
-  maxSizeBytes?: number;
-  allowedExt?: readonly string[];
-  allowedMime?: readonly string[];
+  maxCount?: MaybeRefOrGetter<number | undefined>;
+  maxSizeBytes?: MaybeRefOrGetter<number | undefined>;
+  allowedExt?: MaybeRefOrGetter<readonly string[] | undefined>;
+  allowedMime?: MaybeRefOrGetter<readonly string[] | undefined>;
   onSuccess?: (item: AttachmentQueueItem) => void | Promise<void>;
 }
 
@@ -38,19 +36,21 @@ export function useAttachmentUploadQueue(options: UseAttachmentUploadQueueOption
   const items = ref<AttachmentQueueItem[]>([]);
   const running = ref(0);
   const concurrency = options.concurrency ?? DEFAULT_ATTACHMENT_UPLOAD_POLICY.concurrency;
-  const maxSizeBytes = options.maxSizeBytes ?? DEFAULT_ATTACHMENT_UPLOAD_POLICY.maxSizeBytes;
-  const allowedExt = options.allowedExt ?? DEFAULT_ATTACHMENT_UPLOAD_POLICY.allowedExt;
-  const allowedMime = options.allowedMime ?? DEFAULT_ATTACHMENT_UPLOAD_POLICY.allowedMime;
-  const maxCount = options.maxCount ?? DEFAULT_ATTACHMENT_UPLOAD_POLICY.maxUploadsOnce;
+  const maxSizeBytes = computed(() => toValue(options.maxSizeBytes) ?? DEFAULT_ATTACHMENT_UPLOAD_POLICY.maxSizeBytes);
+  const allowedExt = computed(() => toValue(options.allowedExt) ?? DEFAULT_ATTACHMENT_UPLOAD_POLICY.allowedExt);
+  const allowedMime = computed(() => toValue(options.allowedMime) ?? DEFAULT_ATTACHMENT_UPLOAD_POLICY.allowedMime);
+  const maxCount = computed(() => toValue(options.maxCount) ?? DEFAULT_ATTACHMENT_UPLOAD_POLICY.maxUploadsOnce);
 
-  const busy = computed(() => items.value.some(item => ['queued', 'preparing', 'uploading', 'completing'].includes(item.status)));
+  const busy = computed(() =>
+    items.value.some(item => ['queued', 'preparing', 'uploading', 'completing'].includes(item.status))
+  );
 
   function validateFile(file: File): string | null {
     if (file.size <= 0) return 'empty';
-    if (file.size > maxSizeBytes) return 'size';
+    if (file.size > maxSizeBytes.value) return 'size';
     const ext = extOf(file.name);
-    if (!allowedExt.map(v => v.toLowerCase()).includes(ext)) return 'ext';
-    if (file.type && !allowedMime.map(v => v.toLowerCase()).includes(file.type.toLowerCase())) {
+    if (!allowedExt.value.map(v => v.toLowerCase()).includes(ext)) return 'ext';
+    if (file.type && !allowedMime.value.map(v => v.toLowerCase()).includes(file.type.toLowerCase())) {
       // browser MIME 可能为空；有值时做预校验
       return 'mime';
     }
@@ -59,7 +59,7 @@ export function useAttachmentUploadQueue(options: UseAttachmentUploadQueueOption
 
   function enqueue(files: FileList | File[]) {
     const list = Array.from(files);
-    const remain = Math.max(0, maxCount - items.value.filter(i => i.status !== 'cancelled').length);
+    const remain = Math.max(0, maxCount.value - items.value.filter(i => i.status !== 'cancelled').length);
     const accepted = list.slice(0, remain);
     for (const file of accepted) {
       const reason = validateFile(file);
@@ -165,12 +165,13 @@ export function useAttachmentUploadQueue(options: UseAttachmentUploadQueueOption
     const item = items.value.find(i => i.localId === localId);
     if (!item || (item.status !== 'failed' && item.status !== 'cancelled')) return;
     // 必须重新 prepare，禁止重放一次性 token
-    item.status = 'queued';
+    const reason = validateFile(item.file);
+    item.status = reason ? 'failed' : 'queued';
     item.progress = 0;
-    item.error = '';
+    item.error = reason || '';
     item.attachment = null;
     item.abortController = null;
-    void pump();
+    if (!reason) void pump();
   }
 
   function clearFinished() {

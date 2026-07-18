@@ -295,6 +295,8 @@ onMounted(loadSettings);
                     v-else-if="field.type === 'multi_select'"
                     v-model:value="(formModel[field.key] as string[])"
                     multiple
+                    filterable
+                    :tag="field.allow_custom_values"
                     :options="selectOptions(field)"
                   />
                   <NColorPicker

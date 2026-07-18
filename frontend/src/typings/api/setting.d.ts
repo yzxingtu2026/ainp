@@ -30,6 +30,8 @@ declare namespace Api {
       max?: number;
       step?: number;
       options?: FieldOption[];
+      allow_custom_values?: boolean;
+      custom_value_pattern?: string;
       visible_when?: VisibleWhen;
     }
 

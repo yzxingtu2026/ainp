@@ -74,11 +74,14 @@ func registerAttachmentUploadPolicySetting(a *app.App) error {
 				Key: "allowed_ext", Type: setting.FieldMultiSelect,
 				Label: "允许扩展名", LabelKey: "setting.field.attachment.upload_policy.allowed_ext.label",
 				Required: true, Default: extDefaults, Options: extOpts,
+				AllowCustomValues: true, CustomValuePattern: `^\.?[A-Za-z0-9][A-Za-z0-9._+-]{0,31}$`,
 			},
 			{
 				Key: "allowed_mime", Type: setting.FieldMultiSelect,
 				Label: "允许 MIME", LabelKey: "setting.field.attachment.upload_policy.allowed_mime.label",
 				Required: true, Default: mimeDefaults, Options: mimeOpts,
+				AllowCustomValues:  true,
+				CustomValuePattern: `^[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]{0,63}/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]{0,127}$`,
 			},
 			{
 				Key: "temp_retain_hours", Type: setting.FieldNumber,
@@ -151,7 +154,7 @@ func registerPreferencesSetting(a *app.App) error {
 			{
 				Key: "brand_color", Type: setting.FieldColor,
 				Label: "品牌色", LabelKey: "setting.field.general.preferences.brand_color.label",
-				Default: "#18A058",
+				Default:     "#18A058",
 				VisibleWhen: &setting.VisibleWhen{Field: "dark_mode", Eq: true},
 			},
 			{

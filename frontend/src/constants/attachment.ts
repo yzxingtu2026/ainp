@@ -31,10 +31,30 @@ export const DEFAULT_ATTACHMENT_UPLOAD_POLICY = {
     'video/quicktime',
     'application/pdf',
     'text/plain',
+    'text/markdown',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
     'application/zip',
     'application/octet-stream'
   ],
-  allowedExt: ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.mp4', '.webm', '.mov', '.pdf', '.txt', '.zip'],
+  allowedExt: [
+    '.png',
+    '.jpg',
+    '.jpeg',
+    '.gif',
+    '.webp',
+    '.mp4',
+    '.webm',
+    '.mov',
+    '.pdf',
+    '.txt',
+    '.md',
+    '.docx',
+    '.xlsx',
+    '.pptx',
+    '.zip'
+  ],
   maxUploadsOnce: 10,
   concurrency: 2
 } as const;

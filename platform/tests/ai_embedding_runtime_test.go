@@ -149,6 +149,42 @@ func TestOpenAICompatibleEmbeddingRequiresEndpoint(t *testing.T) {
 	}
 }
 
+func TestOpenAICustomEndpointUsesCompatibleBatchLimit(t *testing.T) {
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		var body struct {
+			Input []string `json:"input"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if len(body.Input) > aimodelruntime.OpenAICompatibleBatchItems {
+			t.Fatalf("compatible batch contains %d items", len(body.Input))
+		}
+		items := make([]string, 0, len(body.Input))
+		for index := range body.Input {
+			items = append(items, fmt.Sprintf(`{"index":%d,"embedding":[%d]}`, index, (calls-1)*aimodelruntime.OpenAICompatibleBatchItems+index))
+		}
+		_, _ = io.WriteString(w, `{"data":[`+strings.Join(items, ",")+`]}`)
+	}))
+	defer server.Close()
+	inputs := make([]aimodelruntime.EmbeddingItem, aimodelruntime.OpenAICompatibleBatchItems+1)
+	for index := range inputs {
+		inputs[index] = aimodelruntime.EmbeddingItem{ID: fmt.Sprintf("item-%d", index), Text: "text"}
+	}
+	response, err := aimodelruntime.NewOpenAIEmbeddingAdapter(server.Client()).Embed(context.Background(), aimodelruntime.EmbeddingAdapterRequest{
+		Request: aimodelruntime.EmbeddingRequest{ModelAlias: "embed", Inputs: inputs},
+		Model:   &aimodel.ResolvedModel{BaseURL: server.URL, Credential: "secret", DeploymentID: "dep", RemoteModelID: "model"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 2 || response.SubBatchCount != 2 || response.Vectors[len(response.Vectors)-1].ID != "item-10" {
+		t.Fatalf("unexpected compatible sub-batches: calls=%d response=%#v", calls, response)
+	}
+}
+
 func TestOpenAIEmbeddingRejectsInvalidVectorsAndMismatch(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = io.WriteString(w, `{"data":[{"index":0,"embedding":[1,2]},{"index":1,"embedding":[3]}]}`)
@@ -323,10 +359,10 @@ func TestEmbeddingRuntimePostgresInvocationAndTenantIsolation(t *testing.T) {
 	provider := createdProvider.(ai.Provider)
 	createdDeployment, err := svc.CreateDeployment(ctx1, ai.DeploymentCreateRequest{
 		ProviderID: provider.ID, Code: "embed-small", RemoteModelID: "text-embedding-3-small", DisplayName: "Embed",
-		ModelType: aimodel.ModelTypeEmbedding,
+		ModelType:    aimodel.ModelTypeEmbedding,
 		Capabilities: aimodel.Capabilities{InputModalities: []aimodel.Modality{aimodel.ModalityText}, Features: []aimodel.Feature{aimodel.FeatureEmbeddings}},
-		Limits:    aimodel.Limits{Dimensions: 8, MaxDimensions: 16},
-		Status:    "enabled",
+		Limits:       aimodel.Limits{Dimensions: 8, MaxDimensions: 16},
+		Status:       "enabled",
 	})
 	if err != nil {
 		t.Fatal(err)
