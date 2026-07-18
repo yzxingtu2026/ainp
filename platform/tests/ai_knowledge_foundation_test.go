@@ -162,6 +162,8 @@ func TestKnowledgeMigrationModelsActionsAndI18n(t *testing.T) {
 		"action.ai.knowledge_retrieval_test.name",
 		"action.ai.knowledge_citation_resolve.name",
 		"ai.knowledge.embedding_required",
+		"ai.knowledge.retrieval_requires_enabled",
+		"ai.knowledge.retrieval_index_not_ready",
 	} {
 		if i18n.T("en", key) == key || i18n.T("zh-CN", key) == key {
 			t.Fatalf("missing bilingual i18n key: %s", key)
@@ -291,6 +293,9 @@ func TestKnowledgeTenantAttachmentRevisionAndBindingBoundaries(t *testing.T) {
 	tenantKB := create(ownerCtx, "tenant-kb", aiknowledge.VisibilityTenant)
 	if privateKB.Code == tenantKB.Code || !strings.HasPrefix(privateKB.Code, "kb_") || len(privateKB.Code) != 35 {
 		t.Fatalf("knowledge base codes must be generated and unique: %q %q", privateKB.Code, tenantKB.Code)
+	}
+	if _, err := service.TestRetrieval(ownerCtx, ai.KnowledgeRetrievalTestRequest{KnowledgeBaseID: tenantKB.ID, Query: "test"}); !isCode(err, errs.CodeConflict) {
+		t.Fatalf("draft knowledge base retrieval must return a conflict: %v", err)
 	}
 	indexID := "index-current"
 	if err := db.Create(&ai.KnowledgeIndexVersion{

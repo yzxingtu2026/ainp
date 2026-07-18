@@ -536,6 +536,8 @@ declare namespace App {
           retry: string;
           retryRequested: string;
           retrievalTest: string;
+          retrievalRequiresEnabled: string;
+          retrievalIndexNotReady: string;
           queryPlaceholder: string;
           run: string;
           noResults: string;

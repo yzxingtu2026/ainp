@@ -572,6 +572,18 @@ onMounted(() => {
               </NTabPane>
 
               <NTabPane name="retrieval" :tab="$t('page.knowledge.retrievalTest')">
+                <NAlert
+                  v-if="selected.status !== 'enabled'"
+                  class="mb-12px"
+                  type="warning"
+                  :title="$t('page.knowledge.retrievalRequiresEnabled')"
+                />
+                <NAlert
+                  v-else-if="!selected.current_index_version_id"
+                  class="mb-12px"
+                  type="warning"
+                  :title="$t('page.knowledge.retrievalIndexNotReady')"
+                />
                 <div class="flex gap-8px lt-sm:flex-col">
                   <NInput
                     v-model:value="retrievalQuery"
@@ -582,7 +594,9 @@ onMounted(() => {
                   <NButton
                     type="primary"
                     :loading="retrievalLoading"
-                    :disabled="!retrievalQuery.trim() || selected.status !== 'enabled'"
+                    :disabled="
+                      !retrievalQuery.trim() || selected.status !== 'enabled' || !selected.current_index_version_id
+                    "
                     @click="runRetrieval"
                   >
                     <template #icon><SvgIcon icon="mdi:database-search-outline" /></template>

@@ -662,4 +662,6 @@ action.ai.knowledge_retrieval_test.description: Verify retrieval using the persi
 action.ai.knowledge_citation_resolve.name: Resolve knowledge citation
 action.ai.knowledge_citation_resolve.description: Reauthorize and verify citation availability
 ai.knowledge.retrieval_unavailable: Knowledge retrieval service is unavailable
+ai.knowledge.retrieval_requires_enabled: Enable the knowledge base before testing retrieval
+ai.knowledge.retrieval_index_not_ready: The current knowledge index is not ready
 menu.ai.knowledge.title: Knowledge Bases

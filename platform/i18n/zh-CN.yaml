@@ -662,4 +662,6 @@ action.ai.knowledge_retrieval_test.description: 使用知识库持久化策略�
 action.ai.knowledge_citation_resolve.name: 验证知识引用
 action.ai.knowledge_citation_resolve.description: 重新鉴权并验证引用是否可用
 ai.knowledge.retrieval_unavailable: 知识检索服务不可用
+ai.knowledge.retrieval_requires_enabled: 请先启用知识库再进行检索测试
+ai.knowledge.retrieval_index_not_ready: 知识库当前索引尚未就绪
 menu.ai.knowledge.title: 知识库

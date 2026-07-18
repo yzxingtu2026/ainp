@@ -72,6 +72,7 @@ Knowledge Runtime 管理租户知识库、附件来源、不可变索引版本�
 - 状态使用知识库 CodeSet/`CodeTag`/`CodeSelect`，时间使用 `DateTimeText`，列表接入统一分页语义。
 - 文档来源必须通过 `AttachmentPicker`/`AttachmentField` 选择并只提交 `attachment_id`；禁止拼 Object Key、缓存 transfer token 或自行生成附件下载地址。
 - 检索测试固定使用知识库持久化 `RetrievalConfig`；无 Embedding 时明确展示降级状态，不在浏览器侧模拟向量结果。
+- 管理端检索测试必须显式校验 Base 已启用且当前 IndexVersion 为 ready；未就绪返回可翻译冲突错误，禁止静默返回空结果。
 - Citation 预览每次调用回查 Action 重新鉴权，只展示稳定标识、位置与 available/stale；撤权或 stale 后不得保留或展示受限正文与附件访问能力。
 - 页面必须覆盖 loading、empty、error、permission revoked、failed/retry、stale 与移动端布局，并在交付验收中验证主流程和安全退化。
 

@@ -378,6 +378,8 @@ const local: App.I18n.Schema = {
       retry: '重试',
       retryRequested: '已提交重试',
       retrievalTest: '检索测试',
+      retrievalRequiresEnabled: '请先启用知识库再进行检索测试',
+      retrievalIndexNotReady: '知识库当前索引尚未就绪，请等待文档摄取完成',
       queryPlaceholder: '输入用于验证知识库的查询',
       run: '运行检索',
       noResults: '暂无检索结果',

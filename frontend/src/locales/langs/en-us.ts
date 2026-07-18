@@ -382,6 +382,8 @@ const local: App.I18n.Schema = {
       retry: 'Retry',
       retryRequested: 'Retry requested',
       retrievalTest: 'Retrieval test',
+      retrievalRequiresEnabled: 'Enable the knowledge base before testing retrieval',
+      retrievalIndexNotReady: 'The current index is not ready. Wait for document ingestion to finish.',
       queryPlaceholder: 'Enter a query to verify this knowledge base',
       run: 'Run',
       noResults: 'No retrieval results',

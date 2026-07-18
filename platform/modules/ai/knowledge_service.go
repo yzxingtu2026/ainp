@@ -475,12 +475,27 @@ func (s *KnowledgeService) GetDocument(ctx context.Context, request KnowledgeDoc
 }
 
 func (s *KnowledgeService) TestRetrieval(ctx context.Context, request KnowledgeRetrievalTestRequest) (any, error) {
-	if s.retriever == nil {
-		return nil, errs.NewKey(errs.CodeInternal, "ai.knowledge.retrieval_unavailable", "knowledge retrieval service is unavailable")
-	}
-	knowledgeBase, _, err := s.getKnowledgeBase(ctx, request.KnowledgeBaseID, false)
+	knowledgeBase, ac, err := s.getKnowledgeBase(ctx, request.KnowledgeBaseID, false)
 	if err != nil {
 		return nil, err
+	}
+	if knowledgeBase.Status != aiknowledge.KnowledgeBaseEnabled {
+		return nil, errs.NewKey(errs.CodeConflict, "ai.knowledge.retrieval_requires_enabled", "knowledge base must be enabled before retrieval")
+	}
+	if knowledgeBase.CurrentIndexVersionID == nil {
+		return nil, errs.NewKey(errs.CodeConflict, "ai.knowledge.retrieval_index_not_ready", "knowledge index is not ready")
+	}
+	var readyVersions int64
+	if err = s.dbForContext(ctx).Model(&KnowledgeIndexVersion{}).
+		Where("tenant_id=? AND id=? AND knowledge_base_id=? AND status=?", ac.TenantID, *knowledgeBase.CurrentIndexVersionID, knowledgeBase.ID, aiknowledge.IndexReady).
+		Count(&readyVersions).Error; err != nil {
+		return nil, dbError(err, "check knowledge retrieval index")
+	}
+	if readyVersions != 1 {
+		return nil, errs.NewKey(errs.CodeConflict, "ai.knowledge.retrieval_index_not_ready", "knowledge index is not ready")
+	}
+	if s.retriever == nil {
+		return nil, errs.NewKey(errs.CodeInternal, "ai.knowledge.retrieval_unavailable", "knowledge retrieval service is unavailable")
 	}
 	items, err := s.retriever.Retrieve(ctx, aiknowledge.RetrievalRequest{
 		KnowledgeBaseIDs: []string{knowledgeBase.ID},
