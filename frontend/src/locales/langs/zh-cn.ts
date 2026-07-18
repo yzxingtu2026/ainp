@@ -588,6 +588,8 @@ const local: App.I18n.Schema = {
       pickerMine: '我的上传',
       pickerUpload: '上传新文件',
       pickerConfirm: '确认选择',
+      pickerAssociate: '关联所选',
+      alreadyAssociated: '已关联',
       searchName: '按文件名搜索',
       maxCountReached: '已达到可选数量上限',
       loadingMore: '加载更多…',

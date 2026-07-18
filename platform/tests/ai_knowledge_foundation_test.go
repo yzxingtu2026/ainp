@@ -394,6 +394,17 @@ func TestKnowledgeTenantAttachmentRevisionAndBindingBoundaries(t *testing.T) {
 	if document.SourceRevision != hash || document.ContentType != "text/plain" || document.OriginalName != "owned.txt" {
 		t.Fatalf("attachment snapshot is incomplete: %#v", document)
 	}
+	duplicateValue, err := service.CreateDocument(ownerCtx, ai.KnowledgeDocumentCreateRequest{KnowledgeBaseID: privateKB.ID, AttachmentID: "owned"})
+	if err != nil {
+		t.Fatalf("duplicate knowledge document creation must be idempotent: %v", err)
+	}
+	if duplicate := duplicateValue.(ai.KnowledgeDocument); duplicate.ID != document.ID {
+		t.Fatalf("idempotent creation returned a different document: %#v", duplicate)
+	}
+	var activeDuplicates int64
+	if err = db.Model(&ai.KnowledgeDocument{}).Where("tenant_id=? AND knowledge_base_id=? AND attachment_id=?", "tenant-a", privateKB.ID, "owned").Count(&activeDuplicates).Error; err != nil || activeDuplicates != 1 {
+		t.Fatalf("duplicate creation changed active documents: count=%d err=%v", activeDuplicates, err)
+	}
 	var links []systemmodel.AttachmentLink
 	if err = db.Where("resource_type=? AND resource_id=?", ai.KnowledgeDocumentResourceType, document.ID).Find(&links).Error; err != nil {
 		t.Fatal(err)

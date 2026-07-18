@@ -737,6 +737,8 @@ declare namespace App {
           pickerMine: string;
           pickerUpload: string;
           pickerConfirm: string;
+          pickerAssociate: string;
+          alreadyAssociated: string;
           searchName: string;
           maxCountReached: string;
           loadingMore: string;

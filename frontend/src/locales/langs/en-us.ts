@@ -488,7 +488,8 @@ const local: App.I18n.Schema = {
       knowledge: 'Knowledge bindings',
       openKnowledgePicker: 'Select knowledge bases',
       knowledgePickerTitle: 'Bind knowledge bases',
-      knowledgePickerHint: 'Only visible, enabled knowledge bases with a ready index are shown. Bindings limit candidates and never grant additional access.',
+      knowledgePickerHint:
+        'Only visible, enabled knowledge bases with a ready index are shown. Bindings limit candidates and never grant additional access.',
       knowledgeSearchPlaceholder: 'Search by knowledge base name or description',
       boundKnowledge: 'Bound knowledge bases',
       noBoundKnowledge: 'No knowledge bases bound yet',
@@ -592,6 +593,8 @@ const local: App.I18n.Schema = {
       pickerMine: 'My uploads',
       pickerUpload: 'Upload new',
       pickerConfirm: 'Confirm',
+      pickerAssociate: 'Associate selected',
+      alreadyAssociated: 'Associated',
       searchName: 'Search by file name',
       maxCountReached: 'Selection limit reached',
       loadingMore: 'Loading more…',

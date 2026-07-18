@@ -3,12 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import type { RegisteredAttachmentResourceType } from '@/constants/attachment';
 import { ATTACHMENT_ACTIONS } from '@/constants/attachment';
 import { useAuth } from '@/hooks/business/auth';
-import {
-  bindAttachment,
-  deleteAttachment,
-  listAttachmentsByResource,
-  unbindAttachment
-} from '@/service/api';
+import { bindAttachment, deleteAttachment, listAttachmentsByResource, unbindAttachment } from '@/service/api';
 import { $t } from '@/locales';
 
 defineOptions({ name: 'AttachmentField' });
@@ -186,9 +181,10 @@ watch(() => [props.resourceType, props.resourceId, props.field], refresh);
     />
     <AttachmentPicker
       v-model:show="pickerShow"
+      mode="append"
       :multiple="multiple"
       :max-count="maxCount"
-      :selected-ids="items.map(i => i.id)"
+      :locked-selected-ids="items.map(i => i.id)"
       @confirm="handlePicked"
     />
   </div>

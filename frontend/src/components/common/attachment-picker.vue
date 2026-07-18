@@ -25,12 +25,16 @@ const props = withDefaults(
     show: boolean;
     multiple?: boolean;
     maxCount?: number;
+    mode?: 'replace' | 'append';
     selectedIds?: string[];
+    lockedSelectedIds?: string[];
   }>(),
   {
     multiple: true,
     maxCount: 10,
-    selectedIds: () => []
+    mode: 'replace',
+    selectedIds: () => [],
+    lockedSelectedIds: () => []
   }
 );
 
@@ -60,6 +64,13 @@ const limit = computed(() =>
 );
 const hasMore = computed(() => records.value.length < total.value && records.value.length < MAX_LOADED);
 const reachedCap = computed(() => records.value.length >= MAX_LOADED && total.value > MAX_LOADED);
+const lockedIds = computed(() => (props.mode === 'append' ? new Set(props.lockedSelectedIds) : new Set<string>()));
+const lockedCount = computed(() => lockedIds.value.size);
+const selectedCount = computed(() => checked.value.length);
+const totalSelectedCount = computed(() => lockedCount.value + selectedCount.value);
+const confirmLabel = computed(() =>
+  $t(props.mode === 'append' ? 'page.attachment.pickerAssociate' : 'page.attachment.pickerConfirm')
+);
 
 const thumbs = useAttachmentGridThumbs(records, { concurrency: 3, enabled: gridEnabled });
 
@@ -71,7 +82,7 @@ watch(
       pendingSelectIds.value = [];
       return;
     }
-    checked.value = [...props.selectedIds];
+    checked.value = props.mode === 'append' ? [] : [...new Set(props.selectedIds)];
     tab.value = 'mine';
     keyword.value = '';
     pendingSelectIds.value = [];
@@ -157,19 +168,28 @@ function onGridScroll(event: Event) {
 }
 
 function toggle(id: string) {
+  if (lockedIds.value.has(id)) return;
   if (props.multiple) {
     if (checked.value.includes(id)) {
       checked.value = checked.value.filter(item => item !== id);
       return;
     }
-    if (checked.value.length >= limit.value) {
+    if (totalSelectedCount.value >= limit.value) {
       window.$message?.warning($t('page.attachment.maxCountReached'));
       return;
     }
     checked.value = [...checked.value, id];
     return;
   }
+  if (lockedCount.value >= limit.value) {
+    window.$message?.warning($t('page.attachment.maxCountReached'));
+    return;
+  }
   checked.value = [id];
+}
+
+function isSelected(id: string) {
+  return lockedIds.value.has(id) || checked.value.includes(id);
 }
 
 function onUploaded(attachment: Api.Attachment.Item) {
@@ -191,7 +211,7 @@ async function onUploadIdle() {
         checked.value = [id];
         break;
       }
-      if (checked.value.length >= limit.value) {
+      if (totalSelectedCount.value >= limit.value) {
         window.$message?.warning($t('page.attachment.maxCountReached'));
         break;
       }
@@ -248,11 +268,14 @@ function confirm() {
                   :key="item.id"
                   type="button"
                   class="relative flex-col items-stretch overflow-hidden rounded-8px border text-left transition-colors"
-                  :class="
-                    checked.includes(item.id)
-                      ? 'border-primary bg-primary/5 ring-1 ring-primary'
-                      : 'border-gray-200 hover:border-primary/40 dark:border-gray-700'
-                  "
+                  :class="[
+                    lockedIds.has(item.id)
+                      ? 'cursor-not-allowed border-gray-300 bg-gray-50 dark:border-gray-600 dark:bg-gray-800'
+                      : checked.includes(item.id)
+                        ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                        : 'border-gray-200 hover:border-primary/40 dark:border-gray-700'
+                  ]"
+                  :aria-disabled="lockedIds.has(item.id)"
                   @click="toggle(item.id)"
                 >
                   <div class="relative h-96px w-full bg-gray-50 dark:bg-gray-800">
@@ -284,8 +307,15 @@ function confirm() {
                       class="absolute left-8px top-8px rounded-4px bg-white/90 px-4px py-2px dark:bg-gray-900/80"
                       @click.stop
                     >
-                      <NCheckbox :checked="checked.includes(item.id)" @update:checked="() => toggle(item.id)" />
+                      <NCheckbox
+                        :checked="isSelected(item.id)"
+                        :disabled="lockedIds.has(item.id)"
+                        @update:checked="() => toggle(item.id)"
+                      />
                     </div>
+                    <NTag v-if="lockedIds.has(item.id)" class="absolute right-8px top-8px" size="small" type="success">
+                      {{ $t('page.attachment.alreadyAssociated') }}
+                    </NTag>
                   </div>
                   <div class="min-w-0 px-10px py-8px">
                     <div class="truncate text-12px font-medium" :title="item.original_name">
@@ -328,8 +358,8 @@ function confirm() {
     <template #footer>
       <NSpace justify="end">
         <NButton @click="close">{{ $t('common.cancel') }}</NButton>
-        <NButton type="primary" :disabled="!checked.length" @click="confirm">
-          {{ $t('page.attachment.pickerConfirm') }} ({{ checked.length }})
+        <NButton type="primary" :disabled="selectedCount === 0" @click="confirm">
+          {{ confirmLabel }} ({{ selectedCount }})
         </NButton>
       </NSpace>
     </template>

@@ -541,6 +541,7 @@ func (s *KnowledgeService) CreateDocument(ctx context.Context, request Knowledge
 	if s.links == nil {
 		return nil, errs.NewKey(errs.CodeInternal, "ai.knowledge.attachment_linker_unavailable", "attachment resource linker is unavailable")
 	}
+	created := false
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if lockErr := lockKnowledgeBase(ctx, tx, knowledgeBase.TenantID, knowledgeBase.ID); lockErr != nil {
 			return lockErr
@@ -549,6 +550,16 @@ func (s *KnowledgeService) CreateDocument(ctx context.Context, request Knowledge
 		if queryErr := tx.Where("tenant_id=? AND id=? AND owner_user_id=?",
 			knowledgeBase.TenantID, knowledgeBase.ID, ac.UserID).First(&current).Error; queryErr != nil {
 			return knowledgeNotFound()
+		}
+		var existing KnowledgeDocument
+		queryErr := tx.Where("tenant_id=? AND knowledge_base_id=? AND attachment_id=?",
+			ac.TenantID, knowledgeBase.ID, source.ID).First(&existing).Error
+		if queryErr == nil {
+			row = existing
+			return nil
+		}
+		if !errors.Is(queryErr, gorm.ErrRecordNotFound) {
+			return queryErr
 		}
 		if createErr := tx.Create(&row).Error; createErr != nil {
 			return knowledgeDBError(createErr, "ai.knowledge.document_exists", "attachment is already referenced by this knowledge base")
@@ -560,12 +571,15 @@ func (s *KnowledgeService) CreateDocument(ctx context.Context, request Knowledge
 		if linkErr != nil {
 			return linkErr
 		}
+		created = true
 		return appendKnowledgeIngestion(ctx, tx, s.events, row)
 	})
 	if err != nil {
 		return nil, knowledgeDBError(err, "ai.knowledge.document_exists", "attachment is already referenced by this knowledge base")
 	}
-	setKnowledgeAudit(ctx, "ai_knowledge_document", row.ID, auditKnowledgeDocumentCreated)
+	if created {
+		setKnowledgeAudit(ctx, "ai_knowledge_document", row.ID, auditKnowledgeDocumentCreated)
+	}
 	return row, nil
 }
 

@@ -159,7 +159,10 @@ const documentColumns = computed<DataTableColumns<Api.AI.KnowledgeDocument>>(() 
                       loading: loadingDocuments.value,
                       onClick: () => retryDocument(row)
                     },
-                    { default: () => $t(row.ingestion_status === 'ready' ? 'page.knowledge.reindex' : 'page.knowledge.retry') }
+                    {
+                      default: () =>
+                        $t(row.ingestion_status === 'ready' ? 'page.knowledge.reindex' : 'page.knowledge.retry')
+                    }
                   )
                 : null,
               can(AI_ACTIONS.knowledgeDocumentDelete)
@@ -609,10 +612,7 @@ onMounted(() => {
                     class="py-48px"
                     :description="$t('page.knowledge.noResults')"
                   />
-                  <div
-                    v-else
-                    class="mt-16px max-h-[min(60vh,640px)] flex-col gap-12px overflow-y-auto pr-8px"
-                  >
+                  <div v-else class="mt-16px max-h-[min(60vh,640px)] flex-col gap-12px overflow-y-auto pr-8px">
                     <article
                       v-for="item in retrievalResults"
                       :key="item.citation.chunk_id"
@@ -730,8 +730,9 @@ onMounted(() => {
     <AttachmentPicker
       v-model:show="pickerVisible"
       multiple
+      mode="append"
       :max-count="20"
-      :selected-ids="documents.map(item => item.attachment_id)"
+      :locked-selected-ids="documents.map(item => item.attachment_id)"
       @confirm="addDocuments"
     />
   </div>
