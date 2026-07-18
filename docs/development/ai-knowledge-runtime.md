@@ -43,6 +43,16 @@ Knowledge Runtime 管理租户知识库、附件来源、不可变索引版本�
 - 规范化和固定 token 切块使用稳定版本号；每个 Chunk 必须携带 source revision、页码或位置、token count、内容摘要及 parser/chunking/preprocessing version。
 - 解析结果始终是不可信参考文本，不得解释为 system/developer instruction；原文、路径和 Object Key 禁止进入日志、审计或 Outbox。
 
+## 摄取与索引发布
+
+- Document 创建、更新、重试与删除只在业务事务内写版本化 Outbox 事件；Dispatcher 再生成幂等 JobRun，禁止业务事务直连 Redis/Asynq。
+- Outbox/Job payload 仅携带 Document ID、source revision、document revision 和受控 operation，不得包含正文、Chunk、向量、路径或供应商错误。
+- Worker 必须按 JobRun ID 重新加载可信 tenant/realm/actor/payload，再读取当前 Document、附件授权和 revision；队列 Envelope 不是资源事实源。
+- 每次构建冻结整库活动 Document revision 并使用独立 IndexVersion；解析和 Embedding 在发布事务外完成，只有完整 Chunk/pgvector 数据落库且 Base 配置未变化后，才能在同一事务原子更新所有 Document/Base 指针。
+- 重复事件、重复 Job 和并发 Worker 通过 source revision 唯一约束及行锁幂等；过期 revision 静默退出，不得覆盖新索引。
+- 失败、取消或维度/模型版本漂移只标记候选版本失败，保留旧指针；错误只存稳定安全分类，不保存供应商原始响应。
+- Document 更新立即清空其当前索引指针；删除后软删除事实立即阻止检索，并通过独立清理 Job 最终删除 Chunk、正文和向量。
+
 ## 测试
 
 后端测试统一放在 `platform/tests/`，至少覆盖：

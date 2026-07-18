@@ -2,6 +2,7 @@ package ai
 
 import (
 	"context"
+	"errors"
 	"regexp"
 	"strings"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/dblock"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
+	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
 	"github.com/yzxingtu2026/ainp/platform/framework/pagination"
 	"github.com/yzxingtu2026/ainp/platform/framework/status"
 	systemmodel "github.com/yzxingtu2026/ainp/platform/modules/system/model"
@@ -40,7 +42,10 @@ type KnowledgeService struct {
 	models aimodel.Resolver
 	agents *AgentService
 	links  attachment.ResourceLinker
+	events outbox.Writer
 }
+
+func (s *KnowledgeService) SetEventWriter(writer outbox.Writer) { s.events = writer }
 
 func NewKnowledgeService(db *gorm.DB, models aimodel.Resolver, agents *AgentService, links attachment.ResourceLinker) *KnowledgeService {
 	return &KnowledgeService{db: db, models: models, agents: agents, links: links}
@@ -474,7 +479,10 @@ func (s *KnowledgeService) CreateDocument(ctx context.Context, request Knowledge
 			AttachmentID: row.AttachmentID, ResourceType: KnowledgeDocumentResourceType,
 			ResourceID: row.ID, Field: "source",
 		})
-		return linkErr
+		if linkErr != nil {
+			return linkErr
+		}
+		return appendKnowledgeIngestion(ctx, tx, s.events, row)
 	})
 	if err != nil {
 		return nil, knowledgeDBError(err, "ai.knowledge.document_exists", "attachment is already referenced by this knowledge base")
@@ -524,7 +532,13 @@ func (s *KnowledgeService) UpdateDocument(ctx context.Context, request Knowledge
 		if result.RowsAffected != 1 {
 			return revisionConflict()
 		}
-		return nil
+		next := *document
+		next.AttachmentID = source.ID
+		next.SourceRevision = source.SHA256
+		next.ContentType = source.ContentType
+		next.OriginalName = source.OriginalName
+		next.Revision = request.Revision + 1
+		return appendKnowledgeIngestion(ctx, tx, s.events, next)
 	})
 	if err != nil {
 		return nil, err
@@ -556,7 +570,18 @@ func (s *KnowledgeService) DeleteDocument(ctx context.Context, request Knowledge
 		if result.RowsAffected != 1 {
 			return revisionConflict()
 		}
-		return nil
+		if err := appendKnowledgeCleanup(ctx, tx, s.events, *document); err != nil {
+			return err
+		}
+		var remaining KnowledgeDocument
+		err := tx.Where("tenant_id=? AND knowledge_base_id=?", document.TenantID, document.KnowledgeBaseID).Order("id").First(&remaining).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		return appendKnowledgeIngestion(ctx, tx, s.events, remaining)
 	})
 	if err != nil {
 		return nil, err
