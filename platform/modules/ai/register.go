@@ -153,6 +153,7 @@ func Register(a *app.App) error {
 	a.KnowledgeSourceResolver = system.NewKnowledgeSourceResolver(a.DB, a.Storage, knowledge)
 	a.KnowledgeParser = parserRegistry
 	a.KnowledgeChunker = aiknowledge.NewFixedTokenChunker()
+	ingestion := NewKnowledgeIngestionService(a.DB, a.KnowledgeSourceResolver, a.KnowledgeParser, a.KnowledgeChunker, a.EmbeddingRuntime)
 	conversations := NewConversationService(a.DB, a.AIAssetResolver)
 	compactions := NewContextCompactionService(a.DB, conversations, svc, invocations, toolRegistry)
 	a.ContextCompactor = compactions
@@ -220,6 +221,9 @@ func Register(a *app.App) error {
 		}
 	}
 	if err := RegisterKnowledge(a, knowledge); err != nil {
+		return err
+	}
+	if err := RegisterKnowledgeIngestion(a, knowledge, ingestion); err != nil {
 		return err
 	}
 	if err := toolRegistry.RegisterProvider(&aitool.ActionProvider{Actions: a.Actions}, &aitool.ActionExecutor{Actions: a.Actions}); err != nil {

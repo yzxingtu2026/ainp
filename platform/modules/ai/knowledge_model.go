@@ -1,7 +1,10 @@
 package ai
 
 import (
+	"database/sql/driver"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/yzxingtu2026/ainp/platform/framework/aiknowledge"
@@ -50,8 +53,10 @@ func (KnowledgeDocument) TableName() string { return "ai_knowledge_documents" }
 
 type KnowledgeIndexVersion struct {
 	ID                    string     `gorm:"primaryKey;size:64;uniqueIndex:ux_ai_knowledge_index_versions_tenant_id,priority:2;uniqueIndex:ux_ai_knowledge_index_versions_base_id,priority:3" json:"id"`
-	TenantID              string     `gorm:"size:64;not null;index;uniqueIndex:ux_ai_knowledge_index_versions_tenant_id,priority:1;uniqueIndex:ux_ai_knowledge_index_versions_base_id,priority:1;uniqueIndex:ux_ai_knowledge_index_versions_base_version,priority:1" json:"-"`
-	KnowledgeBaseID       string     `gorm:"size:64;not null;index;uniqueIndex:ux_ai_knowledge_index_versions_base_id,priority:2;uniqueIndex:ux_ai_knowledge_index_versions_base_version,priority:2" json:"knowledge_base_id"`
+	TenantID              string     `gorm:"size:64;not null;index;uniqueIndex:ux_ai_knowledge_index_versions_tenant_id,priority:1;uniqueIndex:ux_ai_knowledge_index_versions_base_id,priority:1;uniqueIndex:ux_ai_knowledge_index_versions_base_version,priority:1;uniqueIndex:ux_ai_knowledge_index_source_revision,priority:1" json:"-"`
+	KnowledgeBaseID       string     `gorm:"size:64;not null;index;uniqueIndex:ux_ai_knowledge_index_versions_base_id,priority:2;uniqueIndex:ux_ai_knowledge_index_versions_base_version,priority:2;uniqueIndex:ux_ai_knowledge_index_source_revision,priority:2" json:"knowledge_base_id"`
+	SourceDocumentID      *string    `gorm:"size:64;index;uniqueIndex:ux_ai_knowledge_index_source_revision,priority:3" json:"source_document_id,omitempty"`
+	SourceRevision        *string    `gorm:"size:64;uniqueIndex:ux_ai_knowledge_index_source_revision,priority:4;check:ck_ai_knowledge_index_source_revision,source_revision IS NULL OR source_revision ~ '^[a-f0-9]{64}$'" json:"source_revision,omitempty"`
 	Version               int        `gorm:"not null;uniqueIndex:ux_ai_knowledge_index_versions_base_version,priority:3;check:ck_ai_knowledge_index_version,version > 0" json:"version"`
 	Status                string     `gorm:"size:24;not null;default:'pending';index;check:ck_ai_knowledge_index_status,status IN ('pending','building','ready','failed','superseded','aborted')" json:"status"`
 	EmbeddingAlias        string     `gorm:"size:64;not null" json:"embedding_alias"`
@@ -89,6 +94,65 @@ type KnowledgeChunk struct {
 
 func (KnowledgeChunk) TableName() string { return "ai_knowledge_chunks" }
 
+type KnowledgeChunkPayload struct {
+	ChunkID        string    `gorm:"primaryKey;size:64" json:"-"`
+	TenantID       string    `gorm:"size:64;not null;index" json:"-"`
+	IndexVersionID string    `gorm:"size:64;not null;index" json:"-"`
+	Text           string    `gorm:"type:text;not null" json:"-"`
+	Vector         PGVector  `gorm:"type:public.vector;not null" json:"-"`
+	Dimensions     int       `gorm:"not null" json:"-"`
+	CreatedAt      time.Time `json:"-"`
+}
+
+func (KnowledgeChunkPayload) TableName() string { return "ai_knowledge_chunk_payloads" }
+
+type PGVector []float32
+
+func (v PGVector) Value() (driver.Value, error) {
+	var b strings.Builder
+	b.WriteByte('[')
+	for i, value := range v {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteString(strconv.FormatFloat(float64(value), 'g', -1, 32))
+	}
+	b.WriteByte(']')
+	return b.String(), nil
+}
+
+func (v *PGVector) Scan(src any) error {
+	var raw string
+	switch value := src.(type) {
+	case string:
+		raw = value
+	case []byte:
+		raw = string(value)
+	default:
+		return fmt.Errorf("invalid pgvector payload type %T", src)
+	}
+	raw = strings.TrimSpace(raw)
+	if len(raw) < 2 || raw[0] != '[' || raw[len(raw)-1] != ']' {
+		return fmt.Errorf("invalid pgvector payload")
+	}
+	body := strings.TrimSpace(raw[1 : len(raw)-1])
+	if body == "" {
+		*v = PGVector{}
+		return nil
+	}
+	parts := strings.Split(body, ",")
+	out := make(PGVector, len(parts))
+	for i, part := range parts {
+		parsed, err := strconv.ParseFloat(strings.TrimSpace(part), 32)
+		if err != nil {
+			return fmt.Errorf("invalid pgvector element: %w", err)
+		}
+		out[i] = float32(parsed)
+	}
+	*v = out
+	return nil
+}
+
 type AgentKnowledgeBinding struct {
 	ID              string    `gorm:"primaryKey;size:64" json:"id"`
 	TenantID        string    `gorm:"size:64;not null;uniqueIndex:ux_ai_agent_knowledge_binding" json:"-"`
@@ -101,11 +165,17 @@ type AgentKnowledgeBinding struct {
 func (AgentKnowledgeBinding) TableName() string { return "ai_agent_knowledge_bindings" }
 
 func AutoMigrateKnowledge(db *gorm.DB) error {
+	if db.Dialector.Name() == "postgres" {
+		if err := db.Exec("CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public").Error; err != nil {
+			return fmt.Errorf("enable pgvector extension: %w", err)
+		}
+	}
 	if err := db.AutoMigrate(
 		&KnowledgeBase{},
 		&KnowledgeDocument{},
 		&KnowledgeIndexVersion{},
 		&KnowledgeChunk{},
+		&KnowledgeChunkPayload{},
 		&AgentKnowledgeBinding{},
 	); err != nil {
 		return err
@@ -143,6 +213,9 @@ func AutoMigrateKnowledge(db *gorm.DB) error {
 	}
 	if err := addKnowledgeConstraint(db, "ai_knowledge_index_versions", "fk_ai_knowledge_index_base_tenant",
 		"FOREIGN KEY (tenant_id, knowledge_base_id) REFERENCES ai_knowledge_bases(tenant_id, id) ON DELETE RESTRICT"); err != nil {
+		return err
+	}
+	if err := addKnowledgeConstraint(db, "ai_knowledge_index_versions", "fk_ai_knowledge_index_source_document_tenant", "FOREIGN KEY (tenant_id, knowledge_base_id, source_document_id) REFERENCES ai_knowledge_documents(tenant_id, knowledge_base_id, id) ON DELETE RESTRICT"); err != nil {
 		return err
 	}
 	for _, item := range []struct {

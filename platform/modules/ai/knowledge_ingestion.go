@@ -1,0 +1,331 @@
+package ai
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/yzxingtu2026/ainp/platform/framework/aiknowledge"
+	"github.com/yzxingtu2026/ainp/platform/framework/aimodelruntime"
+	"github.com/yzxingtu2026/ainp/platform/framework/auth"
+	"github.com/yzxingtu2026/ainp/platform/framework/job"
+	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
+)
+
+const (
+	KnowledgeIngestionRequestedEvent = "ai.knowledge_ingestion_requested.v1"
+	KnowledgeCleanupRequestedEvent   = "ai.knowledge_cleanup_requested.v1"
+	KnowledgeIngestionJobType        = "ai.knowledge_ingestion"
+	knowledgeIngestionHandler        = "ai.enqueue_knowledge_ingestion"
+)
+
+var errStaleKnowledgeIngestion = errors.New("knowledge ingestion revision became stale")
+
+type KnowledgeIngestionEvent struct {
+	DocumentID     string `json:"document_id"`
+	SourceRevision string `json:"source_revision"`
+	Revision       uint64 `json:"revision"`
+}
+
+type KnowledgeIngestionJobPayload struct {
+	Operation      string `json:"operation"`
+	DocumentID     string `json:"document_id"`
+	SourceRevision string `json:"source_revision"`
+	Revision       uint64 `json:"revision"`
+}
+
+func (s *KnowledgeIngestionService) Cleanup(ctx context.Context, documentID string) error {
+	ac, ok := auth.FromContext(ctx)
+	if !ok || ac.TenantID == "" {
+		return job.Permanent(errors.New("knowledge cleanup identity unavailable"))
+	}
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var document KnowledgeDocument
+		if err := tx.Unscoped().Where("tenant_id=? AND id=?", ac.TenantID, documentID).First(&document).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+		if !document.DeletedAt.Valid {
+			return nil
+		}
+		var versions []string
+		if err := tx.Model(&KnowledgeIndexVersion{}).Where("tenant_id=? AND source_document_id=?", ac.TenantID, documentID).Pluck("id", &versions).Error; err != nil {
+			return err
+		}
+		if len(versions) == 0 {
+			return nil
+		}
+		if err := tx.Where("tenant_id=? AND index_version_id IN ?", ac.TenantID, versions).Delete(&KnowledgeChunkPayload{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("tenant_id=? AND index_version_id IN ?", ac.TenantID, versions).Delete(&KnowledgeChunk{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&KnowledgeBase{}).Where("tenant_id=? AND id=? AND current_index_version_id IN ?", ac.TenantID, document.KnowledgeBaseID, versions).Update("current_index_version_id", nil).Error; err != nil {
+			return err
+		}
+		if err := tx.Unscoped().Model(&KnowledgeDocument{}).Where("tenant_id=? AND current_index_version_id IN ?", ac.TenantID, versions).Updates(map[string]any{"current_index_version_id": nil, "ingestion_status": aiknowledge.DocumentPending}).Error; err != nil {
+			return err
+		}
+		return tx.Where("tenant_id=? AND id IN ?", ac.TenantID, versions).Delete(&KnowledgeIndexVersion{}).Error
+	})
+}
+
+type KnowledgeIngestionService struct {
+	db         *gorm.DB
+	sources    aiknowledge.DocumentSourceResolver
+	parser     aiknowledge.DocumentParser
+	chunker    aiknowledge.Chunker
+	embeddings aimodelruntime.EmbeddingRuntime
+}
+
+type knowledgeBuiltChunk struct {
+	Document KnowledgeDocument
+	Chunk    aiknowledge.Chunk
+}
+
+func NewKnowledgeIngestionService(db *gorm.DB, sources aiknowledge.DocumentSourceResolver, parser aiknowledge.DocumentParser, chunker aiknowledge.Chunker, embeddings aimodelruntime.EmbeddingRuntime) *KnowledgeIngestionService {
+	return &KnowledgeIngestionService{db: db, sources: sources, parser: parser, chunker: chunker, embeddings: embeddings}
+}
+
+func (s *KnowledgeIngestionService) Process(ctx context.Context, payload KnowledgeIngestionJobPayload) error {
+	if s.db == nil || s.sources == nil || s.parser == nil || s.chunker == nil || s.embeddings == nil {
+		return job.Permanent(errors.New("knowledge ingestion dependencies unavailable"))
+	}
+	ac, ok := auth.FromContext(ctx)
+	if !ok || !ac.Authenticated || ac.TenantID == "" {
+		return job.Permanent(errors.New("knowledge ingestion identity unavailable"))
+	}
+	var document KnowledgeDocument
+	if err := s.db.WithContext(ctx).Where("tenant_id=? AND id=?", ac.TenantID, payload.DocumentID).First(&document).Error; err != nil {
+		return job.Permanent(errors.New("knowledge document unavailable"))
+	}
+	if document.Revision != payload.Revision || document.SourceRevision != payload.SourceRevision {
+		return nil
+	}
+	var base KnowledgeBase
+	if err := s.db.WithContext(ctx).Where("tenant_id=? AND id=?", ac.TenantID, document.KnowledgeBaseID).First(&base).Error; err != nil {
+		return job.Permanent(errors.New("knowledge base unavailable"))
+	}
+	var documents []KnowledgeDocument
+	if err := s.db.WithContext(ctx).Where("tenant_id=? AND knowledge_base_id=?", ac.TenantID, base.ID).Order("id").Find(&documents).Error; err != nil {
+		return job.Retryable(errors.New("knowledge document snapshot unavailable"))
+	}
+	if len(documents) == 0 {
+		return job.Permanent(errors.New("knowledge base contains no documents"))
+	}
+
+	version, done, err := s.beginVersion(ctx, base, document)
+	if err != nil {
+		return job.Retryable(errors.New("knowledge index reservation failed"))
+	}
+	if done {
+		return nil
+	}
+	failed := true
+	defer func() {
+		if failed {
+			s.failVersion(context.WithoutCancel(ctx), document, version.ID, "processing_failed")
+		}
+	}()
+
+	processor := aiknowledge.Processor{Sources: s.sources, Parser: s.parser, Chunker: s.chunker, Limits: aiknowledge.DefaultParseLimits()}
+	var chunks []knowledgeBuiltChunk
+	for _, snapshot := range documents {
+		parsed, parseErr := processor.Process(ctx, documentRef(snapshot), base.ChunkingConfig)
+		if parseErr != nil {
+			return classifyIngestionError(parseErr)
+		}
+		for _, chunk := range parsed {
+			chunks = append(chunks, knowledgeBuiltChunk{Document: snapshot, Chunk: chunk})
+		}
+	}
+	if len(chunks) == 0 {
+		return job.Permanent(errors.New("knowledge base contains no indexable text"))
+	}
+
+	vectors := make(map[string]aimodelruntime.EmbeddingVector, len(chunks))
+	deploymentID, preprocessingVersion, dimensions := "", "", 0
+	for start := 0; start < len(chunks); start += aimodelruntime.MaxEmbeddingItems {
+		end := start + aimodelruntime.MaxEmbeddingItems
+		if end > len(chunks) {
+			end = len(chunks)
+		}
+		inputs := make([]aimodelruntime.EmbeddingItem, 0, end-start)
+		for i := start; i < end; i++ {
+			inputs = append(inputs, aimodelruntime.EmbeddingItem{ID: fmt.Sprintf("%d", i), Text: chunks[i].Chunk.Text})
+		}
+		response, embedErr := s.embeddings.Embed(ctx, aimodelruntime.EmbeddingRequest{ModelAlias: base.EmbeddingAlias, Inputs: inputs, Purpose: aimodelruntime.EmbeddingPurposeKnowledgeIngestion})
+		if embedErr != nil {
+			return job.Retryable(errors.New("embedding runtime failed"))
+		}
+		if dimensions == 0 {
+			dimensions = response.Dimensions
+			deploymentID = response.Model.DeploymentID
+			preprocessingVersion = response.PreprocessingVersion
+		}
+		if response.Dimensions != dimensions || response.Model.DeploymentID != deploymentID || response.PreprocessingVersion != preprocessingVersion {
+			return job.Permanent(errors.New("embedding model changed during index build"))
+		}
+		for _, vector := range response.Vectors {
+			vectors[vector.ID] = vector
+		}
+	}
+	if dimensions <= 0 || deploymentID == "" {
+		return job.Permanent(errors.New("embedding provenance unavailable"))
+	}
+	if err = s.publish(ctx, base, documents, version, chunks, vectors, deploymentID, preprocessingVersion, dimensions); err != nil {
+		if errors.Is(err, errStaleKnowledgeIngestion) {
+			s.abortVersion(context.WithoutCancel(ctx), version.ID)
+			failed = false
+			return nil
+		}
+		return err
+	}
+	failed = false
+	return nil
+}
+
+func (s *KnowledgeIngestionService) beginVersion(ctx context.Context, base KnowledgeBase, document KnowledgeDocument) (KnowledgeIndexVersion, bool, error) {
+	var version KnowledgeIndexVersion
+	done := false
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("tenant_id=? AND id=?", base.TenantID, base.ID).First(&KnowledgeBase{}).Error; err != nil {
+			return err
+		}
+		err := tx.Where("tenant_id=? AND knowledge_base_id=? AND source_document_id=? AND source_revision=?", base.TenantID, base.ID, document.ID, document.SourceRevision).First(&version).Error
+		if err == nil {
+			if version.Status == aiknowledge.IndexReady {
+				done = true
+				return nil
+			}
+			return tx.Model(&version).Updates(map[string]any{"status": aiknowledge.IndexBuilding, "error_category": "", "completed_at": nil}).Error
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		var maxVersion int
+		if err = tx.Model(&KnowledgeIndexVersion{}).Where("tenant_id=? AND knowledge_base_id=?", base.TenantID, base.ID).Select("COALESCE(MAX(version),0)").Scan(&maxVersion).Error; err != nil {
+			return err
+		}
+		config, _ := json.Marshal(base.ChunkingConfig)
+		sum := sha256.Sum256(append([]byte(base.EmbeddingAlias+":"), config...))
+		sourceDocumentID, sourceRevision := document.ID, document.SourceRevision
+		version = KnowledgeIndexVersion{ID: uuid.NewString(), TenantID: base.TenantID, KnowledgeBaseID: base.ID, SourceDocumentID: &sourceDocumentID, SourceRevision: &sourceRevision, Version: maxVersion + 1, Status: aiknowledge.IndexBuilding, EmbeddingAlias: base.EmbeddingAlias, EmbeddingDeploymentID: "pending", EmbeddingDimensions: 1, PreprocessingVersion: "pending", ParserVersion: aiknowledge.ParserVersion, ChunkingVersion: aiknowledge.ChunkingVersion, ConfigHash: hex.EncodeToString(sum[:])}
+		return tx.Create(&version).Error
+	})
+	return version, done, err
+}
+
+func (s *KnowledgeIngestionService) publish(ctx context.Context, base KnowledgeBase, documents []KnowledgeDocument, version KnowledgeIndexVersion, chunks []knowledgeBuiltChunk, vectors map[string]aimodelruntime.EmbeddingVector, deploymentID, preprocessing string, dimensions int) error {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var currentBase KnowledgeBase
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("tenant_id=? AND id=?", base.TenantID, base.ID).First(&currentBase).Error; err != nil {
+			return errStaleKnowledgeIngestion
+		}
+		if currentBase.EmbeddingAlias != base.EmbeddingAlias || currentBase.ChunkingConfig != base.ChunkingConfig {
+			return errStaleKnowledgeIngestion
+		}
+		for _, snapshot := range documents {
+			var current KnowledgeDocument
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("tenant_id=? AND id=?", snapshot.TenantID, snapshot.ID).First(&current).Error; err != nil {
+				return errStaleKnowledgeIngestion
+			}
+			if current.Revision != snapshot.Revision || current.SourceRevision != snapshot.SourceRevision {
+				return errStaleKnowledgeIngestion
+			}
+		}
+		var currentVersion KnowledgeIndexVersion
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("tenant_id=? AND id=?", version.TenantID, version.ID).First(&currentVersion).Error; err != nil {
+			return err
+		}
+		if currentVersion.Status == aiknowledge.IndexReady {
+			return nil
+		}
+		if err := tx.Where("index_version_id=?", version.ID).Delete(&KnowledgeChunkPayload{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("index_version_id=?", version.ID).Delete(&KnowledgeChunk{}).Error; err != nil {
+			return err
+		}
+		for i, chunk := range chunks {
+			key := fmt.Sprintf("%d", i)
+			vector, ok := vectors[key]
+			if !ok || len(vector.Vector) != dimensions {
+				return job.Permanent(errors.New("embedding result incomplete"))
+			}
+			id := uuid.NewString()
+			row := KnowledgeChunk{ID: id, TenantID: chunk.Document.TenantID, KnowledgeBaseID: chunk.Document.KnowledgeBaseID, DocumentID: chunk.Document.ID, IndexVersionID: version.ID, Ordinal: i, SourceRevision: chunk.Document.SourceRevision, PageNumber: chunk.Chunk.PageNumber, PositionStart: chunk.Chunk.PositionStart, PositionEnd: chunk.Chunk.PositionEnd, HeadingPath: chunk.Chunk.HeadingPath, TokenCount: chunk.Chunk.TokenCount, ContentHash: chunk.Chunk.ContentHash}
+			if err := tx.Create(&row).Error; err != nil {
+				return err
+			}
+			payload := KnowledgeChunkPayload{ChunkID: id, TenantID: chunk.Document.TenantID, IndexVersionID: version.ID, Text: chunk.Chunk.Text, Vector: PGVector(vector.Vector), Dimensions: dimensions}
+			if err := tx.Create(&payload).Error; err != nil {
+				return err
+			}
+		}
+		now := time.Now().UTC()
+		if err := tx.Model(&KnowledgeIndexVersion{}).Where("id=?", version.ID).Updates(map[string]any{"status": aiknowledge.IndexReady, "embedding_deployment_id": deploymentID, "embedding_dimensions": dimensions, "preprocessing_version": preprocessing, "document_count": len(documents), "chunk_count": len(chunks), "completed_at": now}).Error; err != nil {
+			return err
+		}
+		if currentBase.CurrentIndexVersionID != nil {
+			_ = tx.Model(&KnowledgeIndexVersion{}).Where("id=? AND status=?", *currentBase.CurrentIndexVersionID, aiknowledge.IndexReady).Update("status", aiknowledge.IndexSuperseded).Error
+		}
+		for _, snapshot := range documents {
+			if err := tx.Model(&KnowledgeDocument{}).Where("tenant_id=? AND id=? AND revision=?", snapshot.TenantID, snapshot.ID, snapshot.Revision).Updates(map[string]any{"current_index_version_id": version.ID, "ingestion_status": aiknowledge.DocumentReady, "ingestion_error_category": ""}).Error; err != nil {
+				return err
+			}
+		}
+		return tx.Model(&KnowledgeBase{}).Where("tenant_id=? AND id=?", base.TenantID, base.ID).Update("current_index_version_id", version.ID).Error
+	})
+}
+
+func (s *KnowledgeIngestionService) abortVersion(ctx context.Context, versionID string) {
+	now := time.Now().UTC()
+	_ = s.db.WithContext(ctx).Model(&KnowledgeIndexVersion{}).Where("id=? AND status=?", versionID, aiknowledge.IndexBuilding).Updates(map[string]any{"status": aiknowledge.IndexAborted, "error_category": "stale_revision", "completed_at": now}).Error
+}
+
+func (s *KnowledgeIngestionService) failVersion(ctx context.Context, document KnowledgeDocument, versionID, category string) {
+	now := time.Now().UTC()
+	_ = s.db.WithContext(ctx).Model(&KnowledgeIndexVersion{}).Where("tenant_id=? AND id=? AND status=?", document.TenantID, versionID, aiknowledge.IndexBuilding).Updates(map[string]any{"status": aiknowledge.IndexFailed, "error_category": category, "completed_at": now}).Error
+	_ = s.db.WithContext(ctx).Model(&KnowledgeDocument{}).Where("tenant_id=? AND id=? AND revision=?", document.TenantID, document.ID, document.Revision).Updates(map[string]any{"ingestion_status": aiknowledge.DocumentFailed, "ingestion_error_category": category}).Error
+}
+
+func classifyIngestionError(err error) error {
+	switch {
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		return job.Cancelled(errors.New("knowledge ingestion cancelled"))
+	case errors.Is(err, aiknowledge.ErrUnsupportedFormat), errors.Is(err, aiknowledge.ErrMIMEMismatch), errors.Is(err, aiknowledge.ErrUnsafeContent), errors.Is(err, aiknowledge.ErrCorruptDocument), errors.Is(err, aiknowledge.ErrLimitExceeded):
+		return job.Permanent(errors.New("knowledge document rejected"))
+	default:
+		return job.Retryable(errors.New("knowledge parsing failed"))
+	}
+}
+func documentRef(d KnowledgeDocument) aiknowledge.DocumentRef {
+	return aiknowledge.DocumentRef{ID: d.ID, TenantID: d.TenantID, KnowledgeBaseID: d.KnowledgeBaseID, AttachmentID: d.AttachmentID, SourceRevision: d.SourceRevision, ContentType: d.ContentType, OriginalName: d.OriginalName, Revision: d.Revision}
+}
+
+func appendKnowledgeIngestion(ctx context.Context, tx *gorm.DB, writer outbox.Writer, document KnowledgeDocument) error {
+	if writer == nil {
+		return nil
+	}
+	_, err := writer.Append(ctx, tx, outbox.AppendInput{EventType: KnowledgeIngestionRequestedEvent, AggregateType: "ai.knowledge_document", AggregateID: document.ID, AggregateVersion: int64(document.Revision), Payload: KnowledgeIngestionEvent{DocumentID: document.ID, SourceRevision: document.SourceRevision, Revision: document.Revision}})
+	return err
+}
+
+func appendKnowledgeCleanup(ctx context.Context, tx *gorm.DB, writer outbox.Writer, document KnowledgeDocument) error {
+	if writer == nil {
+		return nil
+	}
+	_, err := writer.Append(ctx, tx, outbox.AppendInput{EventType: KnowledgeCleanupRequestedEvent, AggregateType: "ai.knowledge_document", AggregateID: document.ID, AggregateVersion: int64(document.Revision), Payload: KnowledgeIngestionEvent{DocumentID: document.ID, SourceRevision: document.SourceRevision, Revision: document.Revision}})
+	return err
+}

@@ -655,3 +655,5 @@ action.ai.agent_knowledge_bind.name: "Bind Agent Knowledge"
 action.ai.agent_knowledge_bind.description: "Bind a visible knowledge base as an agent candidate"
 action.ai.agent_knowledge_unbind.name: "Unbind Agent Knowledge"
 action.ai.agent_knowledge_unbind.description: "Remove an agent knowledge candidate binding"
+action.ai.knowledge_document_ingestion_retry.name: Retry knowledge document ingestion
+action.ai.knowledge_document_ingestion_retry.description: Reliably parse and index the knowledge document again

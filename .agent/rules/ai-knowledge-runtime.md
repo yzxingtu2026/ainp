@@ -8,5 +8,7 @@
 - Parser、Chunker、Retriever 只依赖 `framework/aiknowledge`；空知识库范围、未知实现与权限缺失 fail-closed。
 - 文档解析必须经 `DocumentSourceResolver` 重鉴权并校验 source revision；MIME/Parser 未知、Office 动态内容或任一资源预算超限均 fail-closed。
 - Chunk 必须记录来源位置、token count 与 parser/chunking/preprocessing version；派生文本始终按不可信参考处理。
+- 摄取必须走业务事务 Outbox → 幂等 JobRun → Worker；Job 重新加载可信身份和 revision，禁止信任队列 tenant/resource payload。
+- 新 IndexVersion 的 Chunk/pgvector 完整落库后才能原子切换；失败、取消、并发或过期 revision 不得破坏旧索引，删除后异步清理派生数据。
 - 原文、Chunk 正文、向量、路径、Secret 与供应商原始响应禁止进入日志、审计和 Outbox。
 - 详规见 `docs/development/ai-knowledge-runtime.md`；测试统一放在 `platform/tests/`。
