@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/yzxingtu2026/ainp/platform/framework/aiknowledge"
+	"github.com/yzxingtu2026/ainp/platform/framework/aimodel"
 	"github.com/yzxingtu2026/ainp/platform/framework/aimodelruntime"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/job"
@@ -85,6 +86,7 @@ type KnowledgeIngestionService struct {
 	sources    aiknowledge.DocumentSourceResolver
 	parser     aiknowledge.DocumentParser
 	chunker    aiknowledge.Chunker
+	models     aimodel.Resolver
 	embeddings aimodelruntime.EmbeddingRuntime
 }
 
@@ -93,12 +95,12 @@ type knowledgeBuiltChunk struct {
 	Chunk    aiknowledge.Chunk
 }
 
-func NewKnowledgeIngestionService(db *gorm.DB, sources aiknowledge.DocumentSourceResolver, parser aiknowledge.DocumentParser, chunker aiknowledge.Chunker, embeddings aimodelruntime.EmbeddingRuntime) *KnowledgeIngestionService {
-	return &KnowledgeIngestionService{db: db, sources: sources, parser: parser, chunker: chunker, embeddings: embeddings}
+func NewKnowledgeIngestionService(db *gorm.DB, sources aiknowledge.DocumentSourceResolver, parser aiknowledge.DocumentParser, chunker aiknowledge.Chunker, models aimodel.Resolver, embeddings aimodelruntime.EmbeddingRuntime) *KnowledgeIngestionService {
+	return &KnowledgeIngestionService{db: db, sources: sources, parser: parser, chunker: chunker, models: models, embeddings: embeddings}
 }
 
 func (s *KnowledgeIngestionService) Process(ctx context.Context, payload KnowledgeIngestionJobPayload) error {
-	if s.db == nil || s.sources == nil || s.parser == nil || s.chunker == nil || s.embeddings == nil {
+	if s.db == nil || s.sources == nil || s.parser == nil || s.chunker == nil || s.models == nil || s.embeddings == nil {
 		return job.Permanent(errors.New("knowledge ingestion dependencies unavailable"))
 	}
 	ac, ok := auth.FromContext(ctx)
@@ -112,6 +114,27 @@ func (s *KnowledgeIngestionService) Process(ctx context.Context, payload Knowled
 	if document.Revision != payload.Revision || document.SourceRevision != payload.SourceRevision {
 		return nil
 	}
+	claimed := s.db.WithContext(ctx).Model(&KnowledgeDocument{}).
+		Where("tenant_id=? AND id=? AND revision=? AND source_revision=?", document.TenantID, document.ID, document.Revision, document.SourceRevision).
+		Updates(map[string]any{"ingestion_status": aiknowledge.DocumentProcessing, "ingestion_error_category": ""})
+	if claimed.Error != nil {
+		return job.Retryable(errors.New("knowledge document claim failed"))
+	}
+	if claimed.RowsAffected != 1 {
+		return nil
+	}
+	completed := false
+	versionID := ""
+	defer func() {
+		if completed {
+			return
+		}
+		if versionID != "" {
+			s.failVersion(context.WithoutCancel(ctx), document, versionID, "processing_failed")
+			return
+		}
+		s.failDocument(context.WithoutCancel(ctx), document, "processing_failed")
+	}()
 	var base KnowledgeBase
 	if err := s.db.WithContext(ctx).Where("tenant_id=? AND id=?", ac.TenantID, document.KnowledgeBaseID).First(&base).Error; err != nil {
 		return job.Permanent(errors.New("knowledge base unavailable"))
@@ -123,20 +146,28 @@ func (s *KnowledgeIngestionService) Process(ctx context.Context, payload Knowled
 	if len(documents) == 0 {
 		return job.Permanent(errors.New("knowledge base contains no documents"))
 	}
+	resolved, err := s.models.Resolve(ctx, base.EmbeddingAlias, aimodel.CapabilityRequirements{
+		ModelType:       aimodel.ModelTypeEmbedding,
+		InputModalities: []aimodel.Modality{aimodel.ModalityText},
+		Features:        []aimodel.Feature{aimodel.FeatureEmbeddings},
+	})
+	if err != nil {
+		return job.Retryable(errors.New("embedding model resolution failed"))
+	}
+	if resolved == nil || resolved.DeploymentID == "" {
+		return job.Permanent(errors.New("embedding deployment unavailable"))
+	}
 
-	version, done, err := s.beginVersion(ctx, base, document)
+	version, done, err := s.beginVersion(ctx, base, document, resolved.DeploymentID)
 	if err != nil {
 		return job.Retryable(errors.New("knowledge index reservation failed"))
 	}
 	if done {
+		s.markDocumentReady(context.WithoutCancel(ctx), document, version.ID)
+		completed = true
 		return nil
 	}
-	failed := true
-	defer func() {
-		if failed {
-			s.failVersion(context.WithoutCancel(ctx), document, version.ID, "processing_failed")
-		}
-	}()
+	versionID = version.ID
 
 	processor := aiknowledge.Processor{Sources: s.sources, Parser: s.parser, Chunker: s.chunker, Limits: aiknowledge.DefaultParseLimits()}
 	var chunks []knowledgeBuiltChunk
@@ -154,7 +185,7 @@ func (s *KnowledgeIngestionService) Process(ctx context.Context, payload Knowled
 	}
 
 	vectors := make(map[string]aimodelruntime.EmbeddingVector, len(chunks))
-	deploymentID, preprocessingVersion, dimensions := "", "", 0
+	deploymentID, preprocessingVersion, dimensions := resolved.DeploymentID, "", 0
 	for start := 0; start < len(chunks); start += aimodelruntime.MaxEmbeddingItems {
 		end := start + aimodelruntime.MaxEmbeddingItems
 		if end > len(chunks) {
@@ -170,7 +201,6 @@ func (s *KnowledgeIngestionService) Process(ctx context.Context, payload Knowled
 		}
 		if dimensions == 0 {
 			dimensions = response.Dimensions
-			deploymentID = response.Model.DeploymentID
 			preprocessingVersion = response.PreprocessingVersion
 		}
 		if response.Dimensions != dimensions || response.Model.DeploymentID != deploymentID || response.PreprocessingVersion != preprocessingVersion {
@@ -186,16 +216,17 @@ func (s *KnowledgeIngestionService) Process(ctx context.Context, payload Knowled
 	if err = s.publish(ctx, base, documents, version, chunks, vectors, deploymentID, preprocessingVersion, dimensions); err != nil {
 		if errors.Is(err, errStaleKnowledgeIngestion) {
 			s.abortVersion(context.WithoutCancel(ctx), version.ID)
-			failed = false
+			s.markDocumentPending(context.WithoutCancel(ctx), document)
+			completed = true
 			return nil
 		}
 		return err
 	}
-	failed = false
+	completed = true
 	return nil
 }
 
-func (s *KnowledgeIngestionService) beginVersion(ctx context.Context, base KnowledgeBase, document KnowledgeDocument) (KnowledgeIndexVersion, bool, error) {
+func (s *KnowledgeIngestionService) beginVersion(ctx context.Context, base KnowledgeBase, document KnowledgeDocument, deploymentID string) (KnowledgeIndexVersion, bool, error) {
 	var version KnowledgeIndexVersion
 	done := false
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -208,7 +239,7 @@ func (s *KnowledgeIngestionService) beginVersion(ctx context.Context, base Knowl
 				done = true
 				return nil
 			}
-			return tx.Model(&version).Updates(map[string]any{"status": aiknowledge.IndexBuilding, "error_category": "", "completed_at": nil}).Error
+			return tx.Model(&version).Updates(map[string]any{"status": aiknowledge.IndexBuilding, "embedding_alias": base.EmbeddingAlias, "embedding_deployment_id": deploymentID, "error_category": "", "completed_at": nil}).Error
 		}
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
@@ -220,7 +251,7 @@ func (s *KnowledgeIngestionService) beginVersion(ctx context.Context, base Knowl
 		config, _ := json.Marshal(base.ChunkingConfig)
 		sum := sha256.Sum256(append([]byte(base.EmbeddingAlias+":"), config...))
 		sourceDocumentID, sourceRevision := document.ID, document.SourceRevision
-		version = KnowledgeIndexVersion{ID: uuid.NewString(), TenantID: base.TenantID, KnowledgeBaseID: base.ID, SourceDocumentID: &sourceDocumentID, SourceRevision: &sourceRevision, Version: maxVersion + 1, Status: aiknowledge.IndexBuilding, EmbeddingAlias: base.EmbeddingAlias, EmbeddingDeploymentID: "pending", EmbeddingDimensions: 1, PreprocessingVersion: "pending", ParserVersion: aiknowledge.ParserVersion, ChunkingVersion: aiknowledge.ChunkingVersion, ConfigHash: hex.EncodeToString(sum[:])}
+		version = KnowledgeIndexVersion{ID: uuid.NewString(), TenantID: base.TenantID, KnowledgeBaseID: base.ID, SourceDocumentID: &sourceDocumentID, SourceRevision: &sourceRevision, Version: maxVersion + 1, Status: aiknowledge.IndexBuilding, EmbeddingAlias: base.EmbeddingAlias, EmbeddingDeploymentID: deploymentID, EmbeddingDimensions: 1, PreprocessingVersion: "pending", ParserVersion: aiknowledge.ParserVersion, ChunkingVersion: aiknowledge.ChunkingVersion, ConfigHash: hex.EncodeToString(sum[:])}
 		return tx.Create(&version).Error
 	})
 	return version, done, err
@@ -298,6 +329,18 @@ func (s *KnowledgeIngestionService) failVersion(ctx context.Context, document Kn
 	now := time.Now().UTC()
 	_ = s.db.WithContext(ctx).Model(&KnowledgeIndexVersion{}).Where("tenant_id=? AND id=? AND status=?", document.TenantID, versionID, aiknowledge.IndexBuilding).Updates(map[string]any{"status": aiknowledge.IndexFailed, "error_category": category, "completed_at": now}).Error
 	_ = s.db.WithContext(ctx).Model(&KnowledgeDocument{}).Where("tenant_id=? AND id=? AND revision=?", document.TenantID, document.ID, document.Revision).Updates(map[string]any{"ingestion_status": aiknowledge.DocumentFailed, "ingestion_error_category": category}).Error
+}
+
+func (s *KnowledgeIngestionService) failDocument(ctx context.Context, document KnowledgeDocument, category string) {
+	_ = s.db.WithContext(ctx).Model(&KnowledgeDocument{}).Where("tenant_id=? AND id=? AND revision=?", document.TenantID, document.ID, document.Revision).Updates(map[string]any{"ingestion_status": aiknowledge.DocumentFailed, "ingestion_error_category": category}).Error
+}
+
+func (s *KnowledgeIngestionService) markDocumentReady(ctx context.Context, document KnowledgeDocument, versionID string) {
+	_ = s.db.WithContext(ctx).Model(&KnowledgeDocument{}).Where("tenant_id=? AND id=? AND revision=?", document.TenantID, document.ID, document.Revision).Updates(map[string]any{"current_index_version_id": versionID, "ingestion_status": aiknowledge.DocumentReady, "ingestion_error_category": ""}).Error
+}
+
+func (s *KnowledgeIngestionService) markDocumentPending(ctx context.Context, document KnowledgeDocument) {
+	_ = s.db.WithContext(ctx).Model(&KnowledgeDocument{}).Where("tenant_id=? AND id=? AND revision=?", document.TenantID, document.ID, document.Revision).Updates(map[string]any{"ingestion_status": aiknowledge.DocumentPending, "ingestion_error_category": ""}).Error
 }
 
 func classifyIngestionError(err error) error {

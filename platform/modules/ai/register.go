@@ -153,7 +153,7 @@ func Register(a *app.App) error {
 	a.KnowledgeSourceResolver = system.NewKnowledgeSourceResolver(a.DB, a.Storage, knowledge)
 	a.KnowledgeParser = parserRegistry
 	a.KnowledgeChunker = aiknowledge.NewFixedTokenChunker()
-	ingestion := NewKnowledgeIngestionService(a.DB, a.KnowledgeSourceResolver, a.KnowledgeParser, a.KnowledgeChunker, a.EmbeddingRuntime)
+	ingestion := NewKnowledgeIngestionService(a.DB, a.KnowledgeSourceResolver, a.KnowledgeParser, a.KnowledgeChunker, svc, a.EmbeddingRuntime)
 	retriever := NewKnowledgeRetrievalService(a.DB, knowledge, a.EmbeddingRuntime)
 	knowledge.SetRetrievalServices(retriever, retriever)
 	a.KnowledgeRetriever = retriever

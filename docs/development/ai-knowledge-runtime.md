@@ -49,8 +49,10 @@ Knowledge Runtime 管理租户知识库、附件来源、不可变索引版本�
 - Outbox/Job payload 仅携带 Document ID、source revision、document revision 和受控 operation，不得包含正文、Chunk、向量、路径或供应商错误。
 - Worker 必须按 JobRun ID 重新加载可信 tenant/realm/actor/payload，再读取当前 Document、附件授权和 revision；队列 Envelope 不是资源事实源。
 - 每次构建冻结整库活动 Document revision 并使用独立 IndexVersion；解析和 Embedding 在发布事务外完成，只有完整 Chunk/pgvector 数据落库且 Base 配置未变化后，才能在同一事务原子更新所有 Document/Base 指针。
+- 预留 IndexVersion 前必须通过统一模型 Resolver 解析 Embedding Alias，并写入真实 Deployment ID；禁止使用 `pending` 等不满足模型部署外键的占位值，Embedding 响应必须与预留 Deployment 一致。
 - 重复事件、重复 Job 和并发 Worker 通过 source revision 唯一约束及行锁幂等；过期 revision 静默退出，不得覆盖新索引。
 - 失败、取消或维度/模型版本漂移只标记候选版本失败，保留旧指针；错误只存稳定安全分类，不保存供应商原始响应。
+- Worker 接管当前 revision 后先将 Document 标记为 processing；模型解析、版本预留或后续处理任一失败都必须收口为 failed，禁止遗留不可重试的 pending/processing。管理端对历史 pending 和 failed 都允许手动重试。
 - Document 更新立即清空其当前索引指针；删除后软删除事实立即阻止检索，并通过独立清理 Job 最终删除 Chunk、正文和向量。
 
 ## 混合检索与 Citation

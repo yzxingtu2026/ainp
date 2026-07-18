@@ -31,14 +31,17 @@ import (
 	"gorm.io/gorm"
 )
 
-type knowledgeResolver struct{}
+type knowledgeResolver struct{ err error }
 
-func (knowledgeResolver) Resolve(_ context.Context, alias string, requirements aimodel.CapabilityRequirements) (*aimodel.ResolvedModel, error) {
+func (r knowledgeResolver) Resolve(_ context.Context, alias string, requirements aimodel.CapabilityRequirements) (*aimodel.ResolvedModel, error) {
+	if r.err != nil {
+		return nil, r.err
+	}
 	if alias != "embed" || requirements.ModelType != aimodel.ModelTypeEmbedding ||
 		len(requirements.Features) != 1 || requirements.Features[0] != aimodel.FeatureEmbeddings {
 		return nil, errs.New(errs.CodeValidation, "embedding requirements not satisfied")
 	}
-	return &aimodel.ResolvedModel{ModelType: aimodel.ModelTypeEmbedding}, nil
+	return &aimodel.ResolvedModel{DeploymentID: "deployment-v1", ModelType: aimodel.ModelTypeEmbedding}, nil
 }
 
 func TestKnowledgeContractsNormalizeValidateAndFakeDeterministically(t *testing.T) {

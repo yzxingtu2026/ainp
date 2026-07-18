@@ -149,7 +149,7 @@ const documentColumns = computed<DataTableColumns<Api.AI.KnowledgeDocument>>(() 
         {
           default: () =>
             [
-              row.ingestion_status === 'failed' && can(AI_ACTIONS.knowledgeDocumentRetry)
+              ['pending', 'failed'].includes(row.ingestion_status) && can(AI_ACTIONS.knowledgeDocumentRetry)
                 ? h(
                     NButton,
                     {
