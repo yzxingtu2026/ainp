@@ -41,7 +41,10 @@ export const AI_ACTIONS = {
   knowledgeDocumentDelete: 'ai.knowledge_document_delete',
   knowledgeDocumentRetry: 'ai.knowledge_document_ingestion_retry',
   knowledgeRetrievalTest: 'ai.knowledge_retrieval_test',
-  knowledgeCitationResolve: 'ai.knowledge_citation_resolve'
+  knowledgeCitationResolve: 'ai.knowledge_citation_resolve',
+  agentKnowledgeList: 'ai.agent_knowledge_list',
+  agentKnowledgeBind: 'ai.agent_knowledge_bind',
+  agentKnowledgeUnbind: 'ai.agent_knowledge_unbind'
 } as const;
 export const MODEL_TYPES = ['chat', 'embedding', 'rerank', 'image', 'speech', 'transcription'] as const;
 export const MODEL_MODALITIES = ['text', 'image', 'audio', 'file'] as const;

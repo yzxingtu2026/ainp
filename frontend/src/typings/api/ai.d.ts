@@ -52,6 +52,13 @@ declare namespace Api.AI {
     created_by: string;
     created_at: string;
   }
+  interface AgentKnowledgeBinding {
+    id: string;
+    agent_id: string;
+    knowledge_base_id: string;
+    created_by: string;
+    created_at: string;
+  }
   interface AgentDiagnosticIssue {
     code: string;
     resource?: string;

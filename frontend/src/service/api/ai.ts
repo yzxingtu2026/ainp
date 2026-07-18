@@ -136,3 +136,19 @@ export const testKnowledgeRetrieval = (data: { knowledge_base_id: string; docume
   post<{ items: Api.AI.RetrievalResult[] }>('knowledge-retrieval/test', data);
 export const resolveKnowledgeCitation = (citation: Api.AI.Citation) =>
   post<Api.AI.CitationLookup>('knowledge-citations/resolve', { citation });
+export const fetchAIAgentKnowledge = (agentId: string) =>
+  post<Api.AI.Page<Api.AI.AgentKnowledgeBinding>>('agent-knowledge/list', {
+    agent_id: agentId,
+    page: 1,
+    page_size: 100
+  });
+export const bindAIAgentKnowledge = (agentId: string, knowledgeBaseId: string) =>
+  post<Api.AI.AgentKnowledgeBinding>('agent-knowledge/bind', {
+    agent_id: agentId,
+    knowledge_base_id: knowledgeBaseId
+  });
+export const unbindAIAgentKnowledge = (agentId: string, knowledgeBaseId: string) =>
+  post<{ deleted: boolean }>('agent-knowledge/unbind', {
+    agent_id: agentId,
+    knowledge_base_id: knowledgeBaseId
+  });

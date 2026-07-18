@@ -638,6 +638,17 @@ declare namespace App {
           bound: string;
           unbind: string;
           toolsAfterCreate: string;
+          knowledge: string;
+          openKnowledgePicker: string;
+          knowledgePickerTitle: string;
+          knowledgePickerHint: string;
+          knowledgeSearchPlaceholder: string;
+          boundKnowledge: string;
+          noBoundKnowledge: string;
+          noKnowledgeCandidates: string;
+          noKnowledgeDescription: string;
+          indexReady: string;
+          knowledgeAfterCreate: string;
           diagnostics: string;
           diagnosticsHealthy: string;
           diagnosticsUnhealthy: string;

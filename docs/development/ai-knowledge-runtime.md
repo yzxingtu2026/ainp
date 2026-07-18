@@ -70,6 +70,7 @@ Knowledge Runtime 管理租户知识库、附件来源、不可变索引版本�
 ## 管理端页面
 
 - 知识库管理页只调用已注册 Action，不在前端实现权限判断、检索排序、解析或索引状态机。
+- Agent Builder 通过 `agent_knowledge_list/bind/unbind` 管理知识库绑定；选择器只展示当前可见、已启用且索引 ready 的候选，绑定只限定 Agent 候选范围且不得扩张当前用户权限。
 - 状态使用知识库 CodeSet/`CodeTag`/`CodeSelect`，时间使用 `DateTimeText`，列表接入统一分页语义。
 - 文档来源必须通过 `AttachmentPicker`/`AttachmentField` 选择并只提交 `attachment_id`；禁止拼 Object Key、缓存 transfer token 或自行生成附件下载地址。
 - 检索测试固定使用知识库持久化 `RetrievalConfig`；无 Embedding 时明确展示降级状态，不在浏览器侧模拟向量结果。
