@@ -2,6 +2,8 @@ package database
 
 import (
 	"fmt"
+	"log"
+	"os"
 	"time"
 
 	"gorm.io/driver/postgres"
@@ -14,7 +16,13 @@ func Open(dsn string) (*gorm.DB, error) {
 		return nil, fmt.Errorf("database dsn is empty")
 	}
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
-		Logger: gormlogger.Default.LogMode(gormlogger.Warn),
+		Logger: gormlogger.New(log.New(os.Stdout, "\r\n", log.LstdFlags), gormlogger.Config{
+			SlowThreshold:             200 * time.Millisecond,
+			LogLevel:                  gormlogger.Warn,
+			IgnoreRecordNotFoundError: false,
+			Colorful:                  true,
+			ParameterizedQueries:      true,
+		}),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)

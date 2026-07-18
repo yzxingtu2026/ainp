@@ -32,6 +32,7 @@ Knowledge Runtime 管理租户知识库、附件来源、不可变索引版本�
 - Parser、Chunker、Retriever 通过 `framework/aiknowledge` 注入；未知实现或空知识库范围 fail-closed。
 - Citation 只携带稳定资源标识、来源 revision、位置和 stale 状态，不携带存储地址。
 - 原文、向量、Object Key、路径、模型凭证和供应商原始响应禁止进入日志、审计与 Outbox。
+- 数据库 Logger 必须启用参数化查询，错误 SQL 也不得展开 Chunk 正文、向量或其他参数值。
 - 用户可见 Action、CodeSet 与错误信息统一使用 i18n key。
 
 ## 文档解析与切块
@@ -41,6 +42,7 @@ Knowledge Runtime 管理租户知识库、附件来源、不可变索引版本�
 - 首期只处理 UTF-8 文本、Markdown、PDF 及 OOXML（DOCX/XLSX/PPTX）；Office 宏、公式/字段指令、嵌入对象、外部关系和脚本一律拒绝，不执行外部程序或联网请求。
 - 文件字节、页数/工作表/幻灯片数、字符数、压缩条目和展开字节都必须受限；读取与解析过程必须传播 context 取消和超时。
 - 规范化和固定 token 切块使用稳定版本号；每个 Chunk 必须携带 source revision、页码或位置、token count、内容摘要及 parser/chunking/preprocessing version。
+- 文本规范化必须在 Parser 和 Chunker 边界移除 NUL、替换无效 UTF-8，并清理非空白控制字符；向量输入与 PostgreSQL 正文必须使用同一份规范化文本。
 - 解析结果始终是不可信参考文本，不得解释为 system/developer instruction；原文、路径和 Object Key 禁止进入日志、审计或 Outbox。
 
 ## 摄取与索引发布

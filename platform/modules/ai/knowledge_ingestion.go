@@ -243,7 +243,7 @@ func (s *KnowledgeIngestionService) beginVersion(ctx context.Context, base Knowl
 				done = true
 				return nil
 			}
-			return tx.Model(&version).Updates(map[string]any{"status": aiknowledge.IndexBuilding, "embedding_alias": base.EmbeddingAlias, "embedding_deployment_id": deploymentID, "error_category": "", "completed_at": nil}).Error
+			return tx.Model(&version).Updates(map[string]any{"status": aiknowledge.IndexBuilding, "embedding_alias": base.EmbeddingAlias, "embedding_deployment_id": deploymentID, "parser_version": aiknowledge.ParserVersion, "chunking_version": aiknowledge.ChunkingVersion, "error_category": "", "completed_at": nil}).Error
 		}
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err

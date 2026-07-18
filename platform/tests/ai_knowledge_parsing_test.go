@@ -111,8 +111,16 @@ func TestKnowledgeFixedTokenChunkerIsDeterministicAndTraceable(t *testing.T) {
 		t.Fatalf("chunks are not deterministic: %#v", first)
 	}
 	for _, chunk := range first {
-		if chunk.SourceRevision != doc.SourceRevision || chunk.ParserVersion != "safe-parser-v1" || chunk.ChunkingVersion != "fixed-tokens-v1" || chunk.PreprocessingVersion != "normalize-text-v1" {
+		if chunk.SourceRevision != doc.SourceRevision || chunk.ParserVersion != "safe-parser-v2" || chunk.ChunkingVersion != "fixed-tokens-v1" || chunk.PreprocessingVersion != "normalize-text-v2" {
 			t.Fatalf("missing provenance: %#v", chunk)
 		}
+	}
+	nulChunks, err := chunker.Chunk(context.Background(), aiknowledge.ChunkInput{
+		Document: doc,
+		Config:   config,
+		Sections: []aiknowledge.ParsedSection{{Text: "valid\x00text \xff end", ParserVersion: aiknowledge.ParserVersion}},
+	})
+	if err != nil || len(nulChunks) != 1 || strings.ContainsRune(nulChunks[0].Text, 0) || !strings.Contains(nulChunks[0].Text, "validtext") || !strings.Contains(nulChunks[0].Text, "\uFFFD") {
+		t.Fatalf("unsafe parser text was not normalized: %#v %v", nulChunks, err)
 	}
 }

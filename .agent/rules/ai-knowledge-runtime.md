@@ -8,6 +8,7 @@
 - Parser、Chunker、Retriever 只依赖 `framework/aiknowledge`；空知识库范围、未知实现与权限缺失 fail-closed。
 - 文档解析必须经 `DocumentSourceResolver` 重鉴权并校验 source revision；MIME/Parser 未知、Office 动态内容或任一资源预算超限均 fail-closed。
 - Chunk 必须记录来源位置、token count 与 parser/chunking/preprocessing version；派生文本始终按不可信参考处理。
+- Parser/Chunker 必须移除 NUL、替换无效 UTF-8 并清理非空白控制字符，向量输入与入库正文必须使用同一规范化文本。
 - 摄取必须走业务事务 Outbox → 幂等 JobRun → Worker；Job 重新加载可信身份和 revision，禁止信任队列 tenant/resource payload。
 - 新 IndexVersion 的 Chunk/pgvector 完整落库后才能原子切换；失败、取消、并发或过期 revision 不得破坏旧索引，删除后异步清理派生数据。
 - IndexVersion 预留前必须解析并冻结真实 Embedding Deployment ID，禁止使用 `pending` 占位；Embedding 响应的 Deployment 必须与预留版本一致。
@@ -16,4 +17,5 @@
 - Citation 回查不得返回正文；Agent 绑定不扩权，知识片段只能作为带明确边界的 user 级不可信参考，禁止进入 system/developer instructions。
 - 管理端只调用知识 Action；附件必须复用 AttachmentField/AttachmentPicker 且只传 attachment ID；检索测试使用持久化策略，Citation 预览每次重鉴权并只展示稳定标识与 available/stale。
 - 原文、Chunk 正文、向量、路径、Secret 与供应商原始响应禁止进入日志、审计和 Outbox。
+- GORM/数据库错误日志必须参数化，禁止展开正文、向量或其他 SQL 参数。
 - 详规见 `docs/development/ai-knowledge-runtime.md`；测试统一放在 `platform/tests/`。

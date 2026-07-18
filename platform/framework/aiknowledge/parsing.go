@@ -24,9 +24,9 @@ import (
 )
 
 const (
-	ParserVersion        = "safe-parser-v1"
+	ParserVersion        = "safe-parser-v2"
 	ChunkingVersion      = "fixed-tokens-v1"
-	PreprocessingVersion = "normalize-text-v1"
+	PreprocessingVersion = "normalize-text-v2"
 )
 
 var (
@@ -384,6 +384,16 @@ func textSections(text, revision string) []ParsedSection {
 	return []ParsedSection{{Text: text, SourceRevision: revision}}
 }
 func normalizeText(value string) string {
+	value = strings.ToValidUTF8(value, "\uFFFD")
+	value = strings.Map(func(r rune) rune {
+		if r == 0 {
+			return -1
+		}
+		if unicode.IsControl(r) && r != '\n' && r != '\r' && r != '\t' {
+			return ' '
+		}
+		return r
+	}, value)
 	value = strings.ReplaceAll(value, "\r\n", "\n")
 	value = strings.ReplaceAll(value, "\r", "\n")
 	return strings.Join(strings.Fields(value), " ")
@@ -403,7 +413,7 @@ func (c *FixedTokenChunker) Chunk(ctx context.Context, input ChunkInput) ([]Chun
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		tokens := tokenize(section.Text)
+		tokens := tokenize(normalizeText(section.Text))
 		if len(tokens) == 0 {
 			continue
 		}
