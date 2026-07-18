@@ -303,8 +303,12 @@ func (s *AttachmentService) BindResource(ctx context.Context, tx *gorm.DB, req a
 	}); err != nil {
 		return attachment.ResourceLink{}, errs.NewKey(errs.CodeNotFound, "attachment.not_found", "attachment not found")
 	}
-	var row model.Attachment
-	if err = tx.WithContext(ctx).Where("tenant_id=? AND id=? AND status=?", tenantID, req.AttachmentID, status.AttachmentReady).First(&row).Error; err != nil {
+	repos, repoErr := newAttachmentRepositories(ctx, tx)
+	if repoErr != nil {
+		return attachment.ResourceLink{}, repoErr
+	}
+	row, repoErr := repos.attachments.First("id=? AND status=?", req.AttachmentID, status.AttachmentReady)
+	if repoErr != nil {
 		return attachment.ResourceLink{}, errs.NewKey(errs.CodeNotFound, "attachment.not_found", "attachment not found")
 	}
 	if row.UploaderID != userID {
@@ -315,10 +319,10 @@ func (s *AttachmentService) BindResource(ctx context.Context, tx *gorm.DB, req a
 		return attachment.ResourceLink{}, errs.NewKey(errs.CodeForbidden, "attachment.resource_forbidden", err.Error())
 	}
 	link := model.AttachmentLink{
-		ID: uuid.NewString(), TenantID: tenantID, AttachmentID: row.ID,
+		ID: uuid.NewString(), AttachmentID: row.ID,
 		ResourceType: req.ResourceType, ResourceID: req.ResourceID, Field: req.Field,
 	}
-	if err = tx.WithContext(ctx).Create(&link).Error; err != nil {
+	if err = repos.links.Create(&link); err != nil {
 		return attachment.ResourceLink{}, mapAttachmentError(err)
 	}
 	return attachment.ResourceLink{
@@ -341,18 +345,19 @@ func (s *AttachmentService) UnbindResource(ctx context.Context, tx *gorm.DB, req
 	if err != nil {
 		return err
 	}
-	var row model.Attachment
-	if err = tx.WithContext(ctx).Where("tenant_id=? AND id=? AND status=?", tenantID, req.AttachmentID, status.AttachmentReady).First(&row).Error; err != nil {
+	repos, repoErr := newAttachmentRepositories(ctx, tx)
+	if repoErr != nil {
+		return repoErr
+	}
+	_, repoErr = repos.attachments.First("id=? AND status=?", req.AttachmentID, status.AttachmentReady)
+	if repoErr != nil {
 		return errs.NewKey(errs.CodeNotFound, "attachment.not_found", "attachment not found")
 	}
 	policyCtx := attachment.WithResourceLinkOperation(attachment.WithResourceTransaction(ctx, tx), attachment.ResourceLinkUnbind)
 	if err = s.policies.Allow(policyCtx, req.ResourceType, tenantID, userID, req.ResourceID, req.Field); err != nil {
 		return errs.NewKey(errs.CodeForbidden, "attachment.resource_forbidden", err.Error())
 	}
-	result := tx.WithContext(ctx).Where(
-		"tenant_id=? AND attachment_id=? AND resource_type=? AND resource_id=? AND field=?",
-		tenantID, req.AttachmentID, req.ResourceType, req.ResourceID, req.Field,
-	).Delete(&model.AttachmentLink{})
+	result := repos.links.DeleteWhere("attachment_id=? AND resource_type=? AND resource_id=? AND field=?", req.AttachmentID, req.ResourceType, req.ResourceID, req.Field)
 	if result.Error != nil {
 		return mapAttachmentError(result.Error)
 	}
@@ -374,13 +379,17 @@ func (s *AttachmentService) ListByResource(ctx context.Context, input json.RawMe
 	if err := s.policies.Allow(ctx, req.ResourceType, tenantID, userID, req.ResourceID, req.Field); err != nil {
 		return nil, errs.NewKey(errs.CodeForbidden, "attachment.resource_forbidden", err.Error())
 	}
-	q := s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Where("resource_type = ? AND resource_id = ?", req.ResourceType, req.ResourceID)
+	repos, repoErr := newAttachmentRepositories(ctx, s.db)
+	if repoErr != nil {
+		return nil, repoErr
+	}
+	q := repos.links.Where("resource_type = ? AND resource_id = ?", req.ResourceType, req.ResourceID)
 	if req.Field != "" {
 		q = q.Where("field = ?", req.Field)
 	}
-	var links []model.AttachmentLink
-	if err := q.Find(&links).Error; err != nil {
-		return nil, mapAttachmentError(err)
+	links, repoErr := q.Find("1=1")
+	if repoErr != nil {
+		return nil, mapAttachmentError(repoErr)
 	}
 	items := make([]AttachmentView, 0, len(links))
 	for _, link := range links {
@@ -730,9 +739,13 @@ func (s *AttachmentService) ParseTransferToken(token string) (*attachment.Transf
 func (s *AttachmentService) authorizeDownload(ctx context.Context, tenantID, userID string, row *model.Attachment) error {
 	switch row.Status {
 	case status.AttachmentReady:
-		var links []model.AttachmentLink
-		if err := s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Where("attachment_id = ?", row.ID).Find(&links).Error; err != nil {
-			return mapAttachmentError(err)
+		repos, repoErr := newAttachmentRepositories(ctx, s.db)
+		if repoErr != nil {
+			return repoErr
+		}
+		links, repoErr := repos.links.Find("attachment_id = ?", row.ID)
+		if repoErr != nil {
+			return mapAttachmentError(repoErr)
 		}
 		if len(links) == 0 {
 			if row.UploaderID != userID {
@@ -760,8 +773,11 @@ func (s *AttachmentService) authorizeDownload(ctx context.Context, tenantID, use
 }
 
 func (s *AttachmentService) getOwned(ctx context.Context, tenantID, id string) (*model.Attachment, error) {
-	var row model.Attachment
-	err := s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Where("id = ?", id).First(&row).Error
+	repos, repoErr := newAttachmentRepositories(ctx, s.db)
+	if repoErr != nil {
+		return nil, repoErr
+	}
+	row, err := repos.attachments.GetByID(id)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, errs.NewKey(errs.CodeNotFound, "attachment.not_found", "attachment not found")
 	}
@@ -777,7 +793,11 @@ func (s *AttachmentService) getOwned(ctx context.Context, tenantID, id string) (
 func (s *AttachmentService) markFailed(ctx context.Context, row *model.Attachment, reason string) error {
 	logging.Info(ctx, "attachment marked failed", "attachment_id", row.ID, "reason", reason)
 	_ = s.store.Delete(ctx, row.ObjectKey)
-	return s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Model(&model.Attachment{}).Where("id = ?", row.ID).Updates(map[string]any{
+	repos, err := newAttachmentRepositories(ctx, s.db)
+	if err != nil {
+		return err
+	}
+	return repos.attachments.Where("id = ?", row.ID).Updates(map[string]any{
 		"status": status.AttachmentFailed, "upload_jti": "", "updated_at": time.Now().UTC(),
 	}).Error
 }
