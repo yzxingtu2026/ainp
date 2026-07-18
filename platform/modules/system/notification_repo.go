@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 	"sync"
 	"time"
 
@@ -249,15 +248,20 @@ func (r *NotificationRepository) BatchLookupUserNames(ctx context.Context, tenan
 	if len(userIDs) == 0 {
 		return map[string]string{}, nil
 	}
-	var rows []struct {
+	ac := auth.MustFromContext(ctx)
+	if ac.TenantID != tenantID {
+		return nil, tenant.ErrTenantConflict
+	}
+	tdb, err := tenant.TenantDB(ctx, r.db)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := tenant.TenantRaw[struct {
 		ID          string `gorm:"column:id"`
 		Username    string `gorm:"column:username"`
 		DisplayName string `gorm:"column:display_name"`
-	}
-	if err := r.db.WithContext(ctx).Table("users").
-		Select("id, username, display_name").
-		Where("tenant_id = ? AND id IN ?", tenantID, userIDs).
-		Find(&rows).Error; err != nil {
+	}](tdb, "SELECT id, username, display_name FROM users WHERE tenant_id = ? AND id IN ?", userIDs)
+	if err != nil {
 		return nil, err
 	}
 	result := make(map[string]string, len(rows))
@@ -306,14 +310,11 @@ type DeliveryDetailRow struct {
 
 // GetDeliveryDetail returns a single delivery enriched with request content and user name.
 func (r *NotificationRepository) GetDeliveryDetail(ctx context.Context, deliveryID string) (*DeliveryDetailRow, error) {
-	ac := auth.MustFromContext(ctx)
-	if ac == nil || ac.TenantID == "" {
-		return nil, fmt.Errorf("tenant context required")
+	tdb, err := tenant.TenantDB(ctx, r.db)
+	if err != nil {
+		return nil, err
 	}
-	var row DeliveryDetailRow
-	err := r.db.WithContext(ctx).
-		Table("notification_deliveries AS d").
-		Select(`d.id, d.tenant_id, d.request_id, d.recipient_type, d.recipient_id,
+	rows, err := tenant.TenantRaw[DeliveryDetailRow](tdb, `SELECT d.id, d.tenant_id, d.request_id, d.recipient_type, d.recipient_id,
 			d.channel, d.provider, d.locale, d.status, d.attempts, d.max_attempts,
 			d.external_id, d.last_error, d.sent_at, d.delivered_at, d.failed_at, d.scheduled_at,
 			d.created_at, d.updated_at,
@@ -322,19 +323,19 @@ func (r *NotificationRepository) GetDeliveryDetail(ctx context.Context, delivery
 			COALESCE(un.title, '') AS title,
 			COALESCE(un.summary, '') AS summary,
 			COALESCE(un.body, '') AS body,
-			COALESCE(NULLIF(u.display_name, ''), u.username, '') AS recipient_name`).
-		Joins("LEFT JOIN notification_requests nr ON nr.id = d.request_id AND nr.tenant_id = d.tenant_id").
-		Joins("LEFT JOIN user_notifications un ON un.delivery_id = d.id AND un.tenant_id = d.tenant_id").
-		Joins("LEFT JOIN users u ON u.id = d.recipient_id AND u.tenant_id = d.tenant_id").
-		Where("d.id = ? AND d.tenant_id = ?", deliveryID, ac.TenantID).
-		Scan(&row).Error
+			COALESCE(NULLIF(u.display_name, ''), u.username, '') AS recipient_name
+		FROM notification_deliveries AS d
+		LEFT JOIN notification_requests AS nr ON nr.id = d.request_id AND nr.tenant_id = d.tenant_id
+		LEFT JOIN user_notifications AS un ON un.delivery_id = d.id AND un.tenant_id = d.tenant_id
+		LEFT JOIN users AS u ON u.id = d.recipient_id AND u.tenant_id = d.tenant_id
+		WHERE d.tenant_id = ? AND d.id = ? LIMIT 1`, deliveryID)
 	if err != nil {
 		return nil, err
 	}
-	if row.ID == "" {
+	if len(rows) == 0 {
 		return nil, nil
 	}
-	return &row, nil
+	return &rows[0], nil
 }
 
 // --- Template override operations ---

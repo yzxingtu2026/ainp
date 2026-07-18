@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/database"
+	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 	"github.com/yzxingtu2026/ainp/platform/framework/status"
 	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"github.com/yzxingtu2026/ainp/platform/modules/system"
@@ -72,5 +73,45 @@ func TestSessionRefreshRotationReplayAndTenantScope(t *testing.T) {
 	}
 	if _, err := authService.LoadAuthorization(context.Background(), auth.AuthorizationRequest{TenantID: "tenant-b", UserID: user.ID, SessionID: created.SessionID, Realm: auth.RealmTenant, AuthVersion: 1}); err == nil {
 		t.Fatal("cross-tenant session must fail")
+	}
+	userB := model.User{ID: "user-b", TenantID: "tenant-b", Username: "admin-b", PasswordHash: "x", Status: status.ActivationEnabled, AuthVersion: 1}
+	if err := testDB.Create(&userB).Error; err != nil {
+		t.Fatal(err)
+	}
+	sessionA1, err := sessions.Create(context.Background(), &user, "web", "A1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sessions.Create(context.Background(), &user, "mobile", "A2"); err != nil {
+		t.Fatal(err)
+	}
+	sessionB, err := sessions.Create(context.Background(), &userB, "web", "B1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	unified := system.NewUnifiedAuthService(testDB, nil, nil, nil, nil)
+	ctxA := auth.WithContext(context.Background(), &auth.Context{
+		Authenticated: true, Realm: auth.RealmTenant, TenantID: "tenant-a", UserID: "user-a", SessionID: sessionA1.SessionID,
+	})
+	listed, err := unified.ListSessions(ctxA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	views := listed.(map[string]any)["sessions"].([]system.SessionView)
+	if len(views) != 2 {
+		t.Fatalf("tenant session list=%#v", views)
+	}
+	if _, err := unified.RevokeSession(ctxA, sessionB.SessionID); appErrorCode(err) != errs.CodeNotFound {
+		t.Fatalf("cross-tenant revoke must be opaque: %v", err)
+	}
+	if _, err := unified.RevokeSession(ctxA, sessionA1.SessionID); err != nil {
+		t.Fatal(err)
+	}
+	revoked, err := unified.RevokeAll(ctxA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if revoked.(map[string]any)["revoked_count"] != int64(1) {
+		t.Fatalf("revoke all=%#v", revoked)
 	}
 }

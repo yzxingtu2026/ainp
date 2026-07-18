@@ -21,6 +21,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/config"
 	"github.com/yzxingtu2026/ainp/platform/framework/database"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
+	"github.com/yzxingtu2026/ainp/platform/framework/pagination"
 	"github.com/yzxingtu2026/ainp/platform/framework/status"
 	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"github.com/yzxingtu2026/ainp/platform/modules/system"
@@ -164,6 +165,14 @@ func TestAttachmentUploadBindDownloadRangeAndIsolation(t *testing.T) {
 	items := listed.(map[string]any)["items"].([]system.AttachmentView)
 	if len(items) != 1 || items[0].ID != prep.Attachment.ID || items[0].Status != string(status.AttachmentReady) {
 		t.Fatalf("list = %#v", listed)
+	}
+	adminList, err := svc.List(ctxA, json.RawMessage(`{"scope":"mine","page":1,"page_size":20}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	adminPage := adminList.(pagination.Result[system.AttachmentView])
+	if len(adminPage.Items) != 1 || adminPage.Items[0].UploaderName != "admin-a" {
+		t.Fatalf("attachment uploader names = %#v", adminPage.Items)
 	}
 
 	if _, err := svc.DownloadPrepare(ctxB, json.RawMessage(fmt.Sprintf(`{"id":%q}`, prep.Attachment.ID))); appErrorCode(err) != errs.CodeNotFound {

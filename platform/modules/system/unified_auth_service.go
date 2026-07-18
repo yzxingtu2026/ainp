@@ -13,6 +13,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/authentication"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 	"github.com/yzxingtu2026/ainp/platform/framework/status"
+	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"github.com/yzxingtu2026/ainp/platform/modules/system/model"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -181,8 +182,14 @@ type SessionView struct {
 
 func (s *UnifiedAuthService) ListSessions(ctx context.Context) (any, error) {
 	ac := auth.MustFromContext(ctx)
-	var rows []model.AuthSession
-	if err := s.db.WithContext(ctx).Where("tenant_id = ? AND user_id = ? AND revoked_at IS NULL AND expires_at > ?", ac.TenantID, ac.UserID, time.Now().UTC()).Order("last_seen_at DESC").Find(&rows).Error; err != nil {
+	tdb, err := tenant.TenantDB(ctx, s.db)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := tenant.TenantRaw[model.AuthSession](tdb, `SELECT * FROM auth_sessions
+WHERE tenant_id = ? AND user_id = ? AND revoked_at IS NULL AND expires_at > ?
+ORDER BY last_seen_at DESC`, ac.UserID, time.Now().UTC())
+	if err != nil {
 		return nil, err
 	}
 	views := make([]SessionView, 0, len(rows))
@@ -194,12 +201,20 @@ func (s *UnifiedAuthService) ListSessions(ctx context.Context) (any, error) {
 
 func (s *UnifiedAuthService) RevokeSession(ctx context.Context, sessionID string) (any, error) {
 	ac := auth.MustFromContext(ctx)
-	now := time.Now().UTC()
-	result := s.db.WithContext(ctx).Model(&model.AuthSession{}).Where("id = ? AND tenant_id = ? AND user_id = ? AND revoked_at IS NULL", sessionID, ac.TenantID, ac.UserID).Update("revoked_at", now)
-	if result.Error != nil {
-		return nil, result.Error
+	tdb, err := tenant.TenantDB(ctx, s.db)
+	if err != nil {
+		return nil, err
 	}
-	if result.RowsAffected != 1 {
+	now := time.Now().UTC()
+	rows, err := tenant.TenantRaw[struct{ ID string }](tdb, `WITH scoped AS (
+  SELECT id FROM auth_sessions WHERE tenant_id = ? AND id = ? AND user_id = ? AND revoked_at IS NULL FOR UPDATE
+)
+UPDATE auth_sessions AS s SET revoked_at = ?, updated_at = ?
+FROM scoped WHERE s.id = scoped.id RETURNING s.id`, sessionID, ac.UserID, now, now)
+	if err != nil {
+		return nil, err
+	}
+	if len(rows) != 1 {
 		return nil, errs.NewKey(errs.CodeNotFound, "common.not_found", "session not found")
 	}
 	return map[string]any{"revoked": true}, nil
@@ -215,10 +230,18 @@ func (s *UnifiedAuthService) RevokeCurrent(ctx context.Context) (any, error) {
 
 func (s *UnifiedAuthService) RevokeAll(ctx context.Context) (any, error) {
 	ac := auth.MustFromContext(ctx)
-	now := time.Now().UTC()
-	result := s.db.WithContext(ctx).Model(&model.AuthSession{}).Where("tenant_id = ? AND user_id = ? AND revoked_at IS NULL", ac.TenantID, ac.UserID).Update("revoked_at", now)
-	if result.Error != nil {
-		return nil, result.Error
+	tdb, err := tenant.TenantDB(ctx, s.db)
+	if err != nil {
+		return nil, err
 	}
-	return map[string]any{"revoked_count": result.RowsAffected}, nil
+	now := time.Now().UTC()
+	rows, err := tenant.TenantRaw[struct{ ID string }](tdb, `WITH scoped AS (
+  SELECT id FROM auth_sessions WHERE tenant_id = ? AND user_id = ? AND revoked_at IS NULL FOR UPDATE
+)
+UPDATE auth_sessions AS s SET revoked_at = ?, updated_at = ?
+FROM scoped WHERE s.id = scoped.id RETURNING s.id`, ac.UserID, now, now)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"revoked_count": int64(len(rows))}, nil
 }

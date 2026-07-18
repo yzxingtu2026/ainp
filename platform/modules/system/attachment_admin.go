@@ -12,7 +12,6 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/pagination"
 	"github.com/yzxingtu2026/ainp/platform/framework/status"
 	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
-	"github.com/yzxingtu2026/ainp/platform/modules/system/model"
 )
 
 type attachmentAdminListRequest struct {
@@ -190,11 +189,20 @@ func (s *AttachmentService) resolveUploaderNames(ctx context.Context, tenantID s
 	if len(uniq) == 0 {
 		return out
 	}
-	var users []model.User
-	if err := s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).
-		Select("id", "display_name", "username").
-		Where("tenant_id = ? AND id IN ?", tenantID, uniq).
-		Find(&users).Error; err != nil {
+	ac := auth.MustFromContext(ctx)
+	if ac.TenantID != tenantID {
+		return out
+	}
+	tdb, err := tenant.TenantDB(ctx, s.db)
+	if err != nil {
+		return out
+	}
+	users, err := tenant.TenantRaw[struct {
+		ID          string
+		DisplayName string
+		Username    string
+	}](tdb, "SELECT id, display_name, username FROM users WHERE tenant_id = ? AND id IN ?", uniq)
+	if err != nil {
 		return out
 	}
 	for _, u := range users {

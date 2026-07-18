@@ -19,6 +19,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"github.com/yzxingtu2026/ainp/platform/modules/system"
 	"github.com/yzxingtu2026/ainp/platform/modules/system/jobs"
+	"github.com/yzxingtu2026/ainp/platform/modules/system/model"
 	"gorm.io/gorm"
 )
 
@@ -95,12 +96,35 @@ func TestNotificationDeliveryAdminFiltersRetryAndTenantIsolation(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	if err := testDB.Create(&model.User{ID: "user-a", TenantID: "tenant-a", Username: "alice", DisplayName: "Alice", PasswordHash: "x", Status: status.ActivationEnabled}).Error; err != nil {
+		t.Fatal(err)
+	}
+	requestRepo, _ := tenant.NewSystemRepository[system.NotificationRequest](systemDB)
+	if err := requestRepo.Create(&system.NotificationRequest{ID: "req-a", TenantID: "tenant-a", DefinitionKey: "demo.notice", VariablesJSON: []byte(`{"key":"value"}`)}); err != nil {
+		t.Fatal(err)
+	}
+	userNotificationRepo, _ := tenant.NewSystemRepository[system.UserNotification](systemDB)
+	if err := userNotificationRepo.Create(&system.UserNotification{ID: "un-a", TenantID: "tenant-a", UserID: "user-a", RequestID: "req-a", DeliveryID: "a-dead-inapp", Title: "Title", Summary: "Summary", Body: "Body", ActionJSON: []byte("{}")}); err != nil {
+		t.Fatal(err)
+	}
 
 	ctx := auth.WithContext(context.Background(), &auth.Context{
 		TenantID: "tenant-a", UserID: "admin-a", Realm: auth.RealmTenant, Authenticated: true,
 	})
 	enqueuer := &recordingJobEnqueuer{}
 	service := system.NewNotificationDeliveryService(repo, enqueuer)
+	names, err := repo.BatchLookupUserNames(ctx, "tenant-a", []string{"user-a"})
+	if err != nil || names["user-a"] != "Alice" {
+		t.Fatalf("user names=%#v err=%v", names, err)
+	}
+	detail, err := repo.GetDeliveryDetail(ctx, "a-dead-inapp")
+	if err != nil || detail == nil || detail.RecipientName != "Alice" || detail.DefinitionKey != "demo.notice" || detail.Title != "Title" {
+		t.Fatalf("delivery detail=%#v err=%v", detail, err)
+	}
+	ctxB := auth.WithContext(context.Background(), &auth.Context{TenantID: "tenant-b", UserID: "admin-b", Realm: auth.RealmTenant, Authenticated: true})
+	if other, err := repo.GetDeliveryDetail(ctxB, "a-dead-inapp"); err != nil || other != nil {
+		t.Fatalf("cross-tenant detail=%#v err=%v", other, err)
+	}
 
 	defaultResult, err := service.List(ctx, json.RawMessage(`{"page":1,"page_size":20}`))
 	if err != nil {
