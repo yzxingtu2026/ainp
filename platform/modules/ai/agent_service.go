@@ -14,6 +14,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 	"github.com/yzxingtu2026/ainp/platform/framework/pagination"
+	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	systemmodel "github.com/yzxingtu2026/ainp/platform/modules/system/model"
 	"gorm.io/gorm"
 )
@@ -26,6 +27,9 @@ type AgentService struct {
 }
 
 func NewAgentService(db *gorm.DB, contracts *aiagent.Registry, models aimodel.Resolver, tools *aitool.Registry) *AgentService {
+	if err := registerAgentTenantModels(); err != nil {
+		panic(err)
+	}
 	return &AgentService{db: db, contracts: contracts, models: models, tools: tools}
 }
 
@@ -34,15 +38,20 @@ func (s *AgentService) ReconcileBuiltinForTenant(ctx context.Context, db *gorm.D
 	if !ok {
 		return errs.New(errs.CodeInternal, "builtin contract missing")
 	}
-	var count int64
-	if err := db.WithContext(ctx).Model(&Agent{}).Where("tenant_id = ? AND contract_key = ?", tenantID, c.Key).Count(&count).Error; err != nil {
+	ctx = auth.WithContext(ctx, &auth.Context{Authenticated: true, Realm: auth.RealmTenant, TenantID: tenantID, UserID: userID})
+	repos, err := newAgentRepositories(ctx, db)
+	if err != nil {
+		return err
+	}
+	count, err := repos.agents.Where("contract_key = ?", c.Key).Count()
+	if err != nil {
 		return err
 	}
 	if count > 0 {
 		return nil
 	}
 	owner := userID
-	return db.WithContext(ctx).Create(&Agent{ID: uuid.NewString(), TenantID: tenantID, OwnerUserID: &owner, ContractKey: c.Key, ContractVersion: c.Version, Code: "system-operations", Name: c.Name, Description: c.Description, Source: "builtin", Visibility: "tenant", Status: "draft", Revision: 1}).Error
+	return repos.agents.Create(&Agent{ID: uuid.NewString(), OwnerUserID: &owner, ContractKey: c.Key, ContractVersion: c.Version, Code: "system-operations", Name: c.Name, Description: c.Description, Source: "builtin", Visibility: "tenant", Status: "draft", Revision: 1})
 }
 
 type AgentListRequest struct {
@@ -164,12 +173,16 @@ func (s *AgentService) validateAvatar(ctx context.Context, ac *auth.Context, id 
 	return nil
 }
 
-func (s *AgentService) visibleQuery(ctx context.Context) (*gorm.DB, *auth.Context, error) {
+func (s *AgentService) visibleQuery(ctx context.Context) (*tenantdata.Repository[Agent], *auth.Context, error) {
 	ac, err := agentActor(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
-	q := s.db.WithContext(ctx).Where("tenant_id = ?", ac.TenantID)
+	repos, e := newAgentRepositories(ctx, s.db)
+	if e != nil {
+		return nil, nil, e
+	}
+	q := repos.agents
 	if !canManageTenant(ac) {
 		q = q.Where("visibility = ? OR owner_user_id = ?", "tenant", ac.UserID)
 	}
@@ -200,12 +213,12 @@ func (s *AgentService) List(ctx context.Context, r AgentListRequest) (any, error
 	if r.OwnerUserID != "" {
 		q = q.Where("owner_user_id = ?", r.OwnerUserID)
 	}
-	var total int64
-	if err := q.Model(&Agent{}).Count(&total).Error; err != nil {
+	total, err := q.Count()
+	if err != nil {
 		return nil, dbError(err, "list agents")
 	}
-	var rows []Agent
-	if err := q.Order("updated_at desc").Offset(r.Offset()).Limit(r.PageSize).Find(&rows).Error; err != nil {
+	rows, err := q.Order("updated_at desc").List(r.Offset(), r.PageSize)
+	if err != nil {
 		return nil, dbError(err, "list agents")
 	}
 	return map[string]any{"items": rows, "total": total, "page": r.Page, "page_size": r.PageSize}, nil
@@ -216,8 +229,8 @@ func (s *AgentService) get(ctx context.Context, id string, edit bool) (*Agent, *
 	if err != nil {
 		return nil, nil, err
 	}
-	var row Agent
-	if err = q.Where("id = ?", id).First(&row).Error; err != nil {
+	row, err := q.First("id = ?", id)
+	if err != nil {
 		return nil, nil, errs.New(errs.CodeNotFound, "agent not found")
 	}
 	if edit && !canManageTenant(ac) && (row.OwnerUserID == nil || *row.OwnerUserID != ac.UserID || row.Source != "personal") {
@@ -290,23 +303,27 @@ func (s *AgentService) Create(ctx context.Context, r AgentCreateRequest) (any, e
 		return nil, err
 	}
 	owner := ac.UserID
-	row := Agent{ID: uuid.NewString(), TenantID: ac.TenantID, OwnerUserID: &owner, Code: r.Code, Name: r.Name, Description: r.Description, AvatarAttachmentID: r.AvatarAttachmentID, Source: r.Source, Visibility: r.Visibility, Status: "draft", Revision: 1}
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if e := tx.Create(&row).Error; e != nil {
+	row := Agent{ID: uuid.NewString(), OwnerUserID: &owner, Code: r.Code, Name: r.Name, Description: r.Description, AvatarAttachmentID: r.AvatarAttachmentID, Source: r.Source, Visibility: r.Visibility, Status: "draft", Revision: 1}
+	repos, err := newAgentRepositories(ctx, s.db)
+	if err != nil {
+		return nil, err
+	}
+	err = repos.transaction(func(tx *agentRepositories) error {
+		if e := tx.agents.Create(&row); e != nil {
 			return dbError(e, "create agent")
 		}
 		genCfg, toolPolicy := marshal(r.GenerationConfig), marshal(r.ToolPolicy)
 		hash := versionContentHash(r.ModelAlias, r.TenantInstructions, genCfg, toolPolicy)
 		v := AgentVersion{
-			ID: uuid.NewString(), TenantID: ac.TenantID, AgentID: row.ID, Version: 1,
+			ID: uuid.NewString(), AgentID: row.ID, Version: 1,
 			Kind: AgentVersionKindRelease, ContentHash: hash, ModelAlias: r.ModelAlias,
 			TenantInstructions: r.TenantInstructions, GenerationConfig: genCfg, ToolPolicy: toolPolicy, CreatedBy: ac.UserID,
 		}
-		if e := tx.Create(&v).Error; e != nil {
+		if e := tx.versions.Create(&v); e != nil {
 			return e
 		}
 		row.CurrentVersion = 1
-		return tx.Model(&row).Update("current_version", 1).Error
+		return tx.agents.Where("id = ?", row.ID).Updates(map[string]any{"current_version": 1}).Error
 	})
 	if err != nil {
 		return nil, err
@@ -328,8 +345,12 @@ func (s *AgentService) Duplicate(ctx context.Context, r AgentDuplicateRequest) (
 	if !codePattern.MatchString(r.Code) || strings.TrimSpace(r.Name) == "" {
 		return nil, errs.New(errs.CodeValidation, "invalid duplicate identity")
 	}
-	var version AgentVersion
-	if err = s.db.WithContext(ctx).Where("tenant_id=? AND agent_id=? AND version=?", row.TenantID, row.ID, row.CurrentVersion).First(&version).Error; err != nil {
+	repos, err := newAgentRepositories(ctx, s.db)
+	if err != nil {
+		return nil, err
+	}
+	version, err := repos.versions.First("agent_id=? AND version=?", row.ID, row.CurrentVersion)
+	if err != nil {
 		return nil, errs.New(errs.CodeConflict, "source agent has no current version")
 	}
 	request := AgentCreateRequest{Code: r.Code, Name: r.Name, Description: row.Description, Source: "personal", Visibility: "private", ModelAlias: version.ModelAlias, TenantInstructions: version.TenantInstructions}
@@ -344,8 +365,7 @@ func (s *AgentService) Duplicate(ctx context.Context, r AgentDuplicateRequest) (
 		return nil, err
 	}
 	target := created.(Agent)
-	var bindings []AgentToolBinding
-	_ = s.db.WithContext(ctx).Where("tenant_id=? AND agent_id=?", row.TenantID, row.ID).Find(&bindings).Error
+	bindings, _ := repos.tools.Find("agent_id=?", row.ID)
 	for _, binding := range bindings {
 		if tool, ok := s.tools.Get(binding.ToolID); ok && tool.Status == "enabled" {
 			_, _ = s.BindTool(ctx, AgentBindRequest{AgentID: target.ID, ToolID: binding.ToolID})
@@ -390,7 +410,11 @@ func (s *AgentService) Update(ctx context.Context, r AgentUpdateRequest) (any, e
 		updates["draft_generation_config"] = marshal(r.GenerationConfig)
 		updates["draft_tool_policy"] = marshal(r.ToolPolicy)
 	}
-	result := s.db.WithContext(ctx).Model(&Agent{}).Where("id=? AND tenant_id=? AND revision=?", row.ID, row.TenantID, r.Revision).Updates(updates)
+	repos, e := newAgentRepositories(ctx, s.db)
+	if e != nil {
+		return nil, e
+	}
+	result := repos.agents.Where("id=? AND revision=?", row.ID, r.Revision).Updates(updates)
 	if result.Error != nil {
 		return nil, dbError(result.Error, "update agent")
 	}
@@ -416,7 +440,11 @@ func (s *AgentService) Status(ctx context.Context, r AgentStatusRequest) (any, e
 			return nil, errs.NewKey(errs.CodeConflict, "ai.agent.diagnostics_failed", "agent diagnostics failed")
 		}
 	}
-	result := s.db.WithContext(ctx).Model(&Agent{}).Where("id=? AND tenant_id=? AND revision=?", row.ID, row.TenantID, r.Revision).Updates(map[string]any{"status": r.Status, "revision": gorm.Expr("revision + 1")})
+	repos, e := newAgentRepositories(ctx, s.db)
+	if e != nil {
+		return nil, e
+	}
+	result := repos.agents.Where("id=? AND revision=?", row.ID, r.Revision).Updates(map[string]any{"status": r.Status, "revision": gorm.Expr("revision + 1")})
 	if result.Error != nil {
 		return nil, result.Error
 	}
@@ -437,20 +465,24 @@ func (s *AgentService) CreateVersion(ctx context.Context, r AgentVersionCreateRe
 	genCfg, toolPolicy := marshal(r.GenerationConfig), marshal(r.ToolPolicy)
 	hash := versionContentHash(r.ModelAlias, r.TenantInstructions, genCfg, toolPolicy)
 	var version AgentVersion
-	e = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		next, err := nextAgentVersionNumber(ctx, tx, row.TenantID, row.ID)
+	repos, e := newAgentRepositories(ctx, s.db)
+	if e != nil {
+		return nil, e
+	}
+	e = repos.transaction(func(tx *agentRepositories) error {
+		next, err := nextAgentVersionNumber(tx, row.ID)
 		if err != nil {
 			return err
 		}
 		version = AgentVersion{
-			ID: uuid.NewString(), TenantID: row.TenantID, AgentID: row.ID, Version: next,
+			ID: uuid.NewString(), AgentID: row.ID, Version: next,
 			Kind: AgentVersionKindRelease, ContentHash: hash, ModelAlias: r.ModelAlias,
 			TenantInstructions: r.TenantInstructions, GenerationConfig: genCfg, ToolPolicy: toolPolicy, CreatedBy: ac.UserID,
 		}
-		if e := tx.Create(&version).Error; e != nil {
+		if e := tx.versions.Create(&version); e != nil {
 			return e
 		}
-		res := tx.Model(&Agent{}).Where("id=? AND tenant_id=? AND revision=?", row.ID, row.TenantID, r.Revision).Updates(map[string]any{
+		res := tx.agents.Where("id=? AND revision=?", row.ID, r.Revision).Updates(map[string]any{
 			"current_version":           next,
 			"revision":                  gorm.Expr("revision + 1"),
 			"has_draft":                 false,
@@ -483,22 +515,26 @@ func (s *AgentService) MaterializePreview(ctx context.Context, r AgentPreviewMat
 	}
 	genCfg, toolPolicy := marshal(r.GenerationConfig), marshal(r.ToolPolicy)
 	hash := versionContentHash(r.ModelAlias, r.TenantInstructions, genCfg, toolPolicy)
-	var existing AgentVersion
-	if e = s.db.WithContext(ctx).Where("tenant_id=? AND agent_id=? AND kind=? AND content_hash=?", row.TenantID, row.ID, AgentVersionKindPreview, hash).Order("version desc").First(&existing).Error; e == nil {
+	repos, e := newAgentRepositories(ctx, s.db)
+	if e != nil {
+		return nil, e
+	}
+	existing, e := repos.versions.Where("agent_id=? AND kind=? AND content_hash=?", row.ID, AgentVersionKindPreview, hash).Order("version desc").First("1=1")
+	if e == nil {
 		return existing, nil
 	}
 	var version AgentVersion
-	e = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		next, err := nextAgentVersionNumber(ctx, tx, row.TenantID, row.ID)
+	e = repos.transaction(func(tx *agentRepositories) error {
+		next, err := nextAgentVersionNumber(tx, row.ID)
 		if err != nil {
 			return err
 		}
 		version = AgentVersion{
-			ID: uuid.NewString(), TenantID: row.TenantID, AgentID: row.ID, Version: next,
+			ID: uuid.NewString(), AgentID: row.ID, Version: next,
 			Kind: AgentVersionKindPreview, ContentHash: hash, ModelAlias: r.ModelAlias,
 			TenantInstructions: r.TenantInstructions, GenerationConfig: genCfg, ToolPolicy: toolPolicy, CreatedBy: ac.UserID,
 		}
-		return tx.Create(&version).Error
+		return tx.versions.Create(&version)
 	})
 	return version, e
 }
@@ -530,12 +566,15 @@ func agentRuntimeModelRequirements() aimodel.CapabilityRequirements {
 	}
 }
 
-func nextAgentVersionNumber(ctx context.Context, tx *gorm.DB, tenantID, agentID string) (int, error) {
-	var max int
-	if err := tx.WithContext(ctx).Model(&AgentVersion{}).Where("tenant_id=? AND agent_id=?", tenantID, agentID).Select("COALESCE(MAX(version),0)").Scan(&max).Error; err != nil {
+func nextAgentVersionNumber(repos *agentRepositories, agentID string) (int, error) {
+	latest, err := repos.versions.Where("agent_id=?", agentID).Order("version desc").First("1=1")
+	if tenantdata.IsNotFound(err) {
+		return 1, nil
+	}
+	if err != nil {
 		return 0, err
 	}
-	return max + 1, nil
+	return latest.Version + 1, nil
 }
 
 func versionContentHash(modelAlias, tenantInstructions string, generationConfig, toolPolicy json.RawMessage) string {
@@ -548,17 +587,23 @@ func (s *AgentService) ListVersions(ctx context.Context, r IDRequest) (any, erro
 	if e != nil {
 		return nil, e
 	}
-	var rows []AgentVersion
-	e = s.db.WithContext(ctx).Where("tenant_id=? AND agent_id=? AND kind=?", row.TenantID, row.ID, AgentVersionKindRelease).Order("version desc").Find(&rows).Error
-	return rows, e
-}
-func (s *AgentService) GetVersion(ctx context.Context, r IDRequest) (any, error) {
-	ac, e := agentActor(ctx)
+	repos, e := newAgentRepositories(ctx, s.db)
 	if e != nil {
 		return nil, e
 	}
-	var v AgentVersion
-	e = s.db.WithContext(ctx).Where("tenant_id=? AND id=?", ac.TenantID, r.ID).First(&v).Error
+	rows, e := repos.versions.Where("agent_id=? AND kind=?", row.ID, AgentVersionKindRelease).Order("version desc").Find("1=1")
+	return rows, e
+}
+func (s *AgentService) GetVersion(ctx context.Context, r IDRequest) (any, error) {
+	_, e := agentActor(ctx)
+	if e != nil {
+		return nil, e
+	}
+	repos, e := newAgentRepositories(ctx, s.db)
+	if e != nil {
+		return nil, e
+	}
+	v, e := repos.versions.GetByID(r.ID)
 	if e != nil {
 		return nil, errs.New(errs.CodeNotFound, "agent version not found")
 	}
@@ -577,8 +622,12 @@ func (s *AgentService) BindTool(ctx context.Context, r AgentBindRequest) (any, e
 	if !ok || tool.Status != "enabled" {
 		return nil, errs.New(errs.CodeNotFound, "tool not found")
 	}
-	binding := AgentToolBinding{ID: uuid.NewString(), TenantID: row.TenantID, AgentID: row.ID, ToolID: tool.ID, Source: string(tool.Source), Status: "enabled", CreatedBy: ac.UserID}
-	e = s.db.WithContext(ctx).Create(&binding).Error
+	binding := AgentToolBinding{ID: uuid.NewString(), AgentID: row.ID, ToolID: tool.ID, Source: string(tool.Source), Status: "enabled", CreatedBy: ac.UserID}
+	repos, e := newAgentRepositories(ctx, s.db)
+	if e != nil {
+		return nil, e
+	}
+	e = repos.tools.Create(&binding)
 	if e != nil {
 		return nil, dbError(e, "bind tool")
 	}
@@ -594,7 +643,11 @@ func (s *AgentService) UnbindTool(ctx context.Context, r AgentUnbindRequest) (an
 			return nil, errs.New(errs.CodeForbidden, "required contract tool cannot be unbound")
 		}
 	}
-	res := s.db.WithContext(ctx).Where("tenant_id=? AND agent_id=? AND tool_id=?", row.TenantID, row.ID, r.ToolID).Delete(&AgentToolBinding{})
+	repos, e := newAgentRepositories(ctx, s.db)
+	if e != nil {
+		return nil, e
+	}
+	res := repos.tools.DeleteWhere("agent_id=? AND tool_id=?", row.ID, r.ToolID)
 	if res.Error != nil {
 		return nil, res.Error
 	}
@@ -605,8 +658,11 @@ func (s *AgentService) ListTools(ctx context.Context, r IDRequest) (any, error) 
 	if e != nil {
 		return nil, e
 	}
-	var rows []AgentToolBinding
-	e = s.db.WithContext(ctx).Where("tenant_id=? AND agent_id=?", row.TenantID, row.ID).Order("tool_id").Find(&rows).Error
+	repos, e := newAgentRepositories(ctx, s.db)
+	if e != nil {
+		return nil, e
+	}
+	rows, e := repos.tools.Where("agent_id=?", row.ID).Order("tool_id").Find("1=1")
 	return rows, e
 }
 func (s *AgentService) SearchTools(ctx context.Context, r AgentToolSearchRequest) (any, error) {
@@ -638,8 +694,12 @@ func (s *AgentService) agentDiagnostics(ctx context.Context, row *Agent) AgentDi
 	if row.CurrentVersion <= 0 {
 		issues = append(issues, AgentDiagnosticIssue{Code: "version.missing", Message: "publish the first version before enabling"})
 	} else {
-		var v AgentVersion
-		if err := s.db.WithContext(ctx).Where("tenant_id=? AND agent_id=? AND version=?", row.TenantID, row.ID, row.CurrentVersion).First(&v).Error; err != nil {
+		repos, repoErr := newAgentRepositories(ctx, s.db)
+		v, err := AgentVersion{}, repoErr
+		if err == nil {
+			v, err = repos.versions.First("agent_id=? AND version=?", row.ID, row.CurrentVersion)
+		}
+		if err != nil {
 			issues = append(issues, AgentDiagnosticIssue{Code: "version.missing", Message: "current version is missing"})
 		} else if _, err = s.models.Resolve(ctx, v.ModelAlias, agentRuntimeModelRequirements()); err != nil {
 			issues = append(issues, AgentDiagnosticIssue{Code: "model.unavailable", Message: err.Error()})
@@ -665,8 +725,11 @@ func (s *AgentService) ReconcileBuiltin(ctx context.Context, _ AgentEmptyRequest
 	if !ok {
 		return nil, errs.New(errs.CodeInternal, "builtin contract missing")
 	}
-	var row Agent
-	e = s.db.WithContext(ctx).Where("tenant_id=? AND contract_key=?", ac.TenantID, c.Key).First(&row).Error
+	repos, e := newAgentRepositories(ctx, s.db)
+	if e != nil {
+		return nil, e
+	}
+	row, e := repos.agents.First("contract_key=?", c.Key)
 	if e == nil {
 		return map[string]any{"created": false, "agent": row}, nil
 	}
@@ -674,7 +737,7 @@ func (s *AgentService) ReconcileBuiltin(ctx context.Context, _ AgentEmptyRequest
 		return nil, e
 	}
 	owner := ac.UserID
-	row = Agent{ID: uuid.NewString(), TenantID: ac.TenantID, OwnerUserID: &owner, ContractKey: c.Key, ContractVersion: c.Version, Code: "system-operations", Name: c.Name, Description: c.Description, Source: "builtin", Visibility: "tenant", Status: "draft", Revision: 1}
-	e = s.db.WithContext(ctx).Create(&row).Error
+	row = Agent{ID: uuid.NewString(), OwnerUserID: &owner, ContractKey: c.Key, ContractVersion: c.Version, Code: "system-operations", Name: c.Name, Description: c.Description, Source: "builtin", Visibility: "tenant", Status: "draft", Revision: 1}
+	e = repos.agents.Create(&row)
 	return map[string]any{"created": e == nil, "agent": row}, e
 }

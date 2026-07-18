@@ -135,6 +135,19 @@ func TestTenantQuerySQLAndSystemBoundary(t *testing.T) {
 	}
 }
 
+func TestTenantRepositoryKeepsChainedConditions(t *testing.T) {
+	r := tenant.NewRegistry()
+	_ = r.Register(tenantContractDoc{}, tenant.ModelOptions{Kind: tenant.TenantOwned, InjectOnCreate: true, SystemAccess: true})
+	db := tenantDryDB(t, r)
+	tdb, _ := tenant.TenantDB(tenantContext("tenant-a"), db)
+	repo, _ := tenant.NewTenantRepository[tenantContractDoc](tdb)
+	query := repo.Where("title = ?", "A").Where("revision = ?", 2).Order("id desc")
+	_, err := query.Find("id <> ?", "x")
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestTenantTransactionKeepsAccessMode(t *testing.T) {
 	r := tenant.NewRegistry()
 	_ = r.Register(tenantContractDoc{}, tenant.ModelOptions{Kind: tenant.TenantOwned, InjectOnCreate: true, SystemAccess: true})

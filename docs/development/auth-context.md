@@ -129,6 +129,7 @@ System
 - 业务仓储只能由 `tenant.TenantDB(ctx, db)` 构造；租户身份仅来自已认证 tenant realm 的 `AuthContext`。平台查询必须显式使用 `tenant.SystemDB`，且要求已认证 platform realm 与 system operator。
 - 已注册 tenant-owned Model 的 GORM Query/Create/Update/Delete 在裸 DB、缺失上下文时 fail-closed；Create 自动注入可信 tenant 并拒绝冲突值。事务必须通过强类型包装器传播。
 - `Raw`、`Exec`、动态 `Table` 与复杂 JOIN 不承诺由 Model Callback 自动隔离，只能走命名明确的受控出口；Tenant 出口要求 SQL 首个绑定参数为 `tenant_id` 并由包装器自动注入可信租户，调用方不得传 tenant ID。领域权限、owner/visibility 与状态机仍由业务服务负责。
+- Agent 管理是首个迁移样板：Service 从 `TenantDB` 构造领域 Repository，链式 `Where/Order` 只表达 visibility、owner、status、revision 等领域条件，scoped transaction 内重新绑定 Repository；顶层 tenant 条件由 Callback 统一注入。Agent、AgentVersion、AgentToolBinding 已启用强制注册，Knowledge Binding 的 visibility JOIN 留待全仓迁移阶段完成后启用。
 
 ## 租户自定义域名（预留）
 
