@@ -212,9 +212,6 @@ async function loadEmbeddingAliases() {
     ]);
     aliases.value = aliasResult.data || [];
     deployments.value = deploymentResult.data?.items || [];
-    if (aliasResult.error || deploymentResult.error) {
-      window.$message?.warning($t('page.knowledge.embeddingAliasLoadFailed'));
-    }
   } finally {
     embeddingAliasesLoading.value = false;
   }
@@ -224,7 +221,7 @@ async function selectBase(row: Api.AI.KnowledgeBase) {
   const { data, error } = await fetchKnowledgeBase(row.id);
   if (error || !data) {
     selected.value = null;
-    window.$message?.error(error?.message || $t('page.knowledge.permissionRevoked'));
+    if (!error) window.$message?.error($t('page.knowledge.permissionRevoked'));
     return;
   }
   selected.value = data;
@@ -247,7 +244,6 @@ async function loadDocuments() {
     if (error) {
       documents.value = [];
       documentTotal.value = 0;
-      window.$message?.error(error.message || $t('page.knowledge.loadDocumentsFailed'));
       return;
     }
     documents.value = data?.items || [];
@@ -303,7 +299,7 @@ async function saveBase() {
         });
     const { data, error } = await request;
     if (error || !data) {
-      window.$message?.error(error?.message || $t('page.knowledge.saveFailed'));
+      if (!error) window.$message?.error($t('page.knowledge.saveFailed'));
       return;
     }
     editorVisible.value = false;
@@ -320,7 +316,7 @@ async function toggleStatus() {
   const next = selected.value.status === 'enabled' ? 'disabled' : 'enabled';
   const { data, error } = await updateKnowledgeBaseStatus(selected.value.id, next, selected.value.revision);
   if (error || !data) {
-    window.$message?.error(error?.message || $t('page.knowledge.statusFailed'));
+    if (!error) window.$message?.error($t('page.knowledge.statusFailed'));
     return;
   }
   selected.value = data;
@@ -337,7 +333,7 @@ function confirmDeleteBase() {
     negativeText: $t('common.cancel'),
     onPositiveClick: async () => {
       const { error } = await deleteKnowledgeBase(target.id, target.revision);
-      if (error) return window.$message?.error(error.message || $t('page.knowledge.deleteFailed'));
+      if (error) return;
       selected.value = null;
       baseQuery.page = pageAfterDelete(baseQuery.page, bases.value.length);
       await loadBases();
@@ -351,9 +347,7 @@ async function addDocuments(items: Api.Attachment.Item[]) {
   try {
     for (const item of items) {
       const { error } = await createKnowledgeDocument(selected.value.id, item.id);
-      if (error) {
-        window.$message?.error(`${item.original_name}: ${error.message || $t('page.knowledge.addDocumentFailed')}`);
-      }
+      if (error) continue;
     }
     pickerVisible.value = false;
     await loadDocuments();
@@ -364,7 +358,7 @@ async function addDocuments(items: Api.Attachment.Item[]) {
 
 async function retryDocument(row: Api.AI.KnowledgeDocument) {
   const { error } = await retryKnowledgeDocument(row.id);
-  if (error) return window.$message?.error(error.message || $t('page.knowledge.retryFailed'));
+  if (error) return;
   window.$message?.success($t('page.knowledge.retryRequested'));
   await loadDocuments();
 }
@@ -377,7 +371,7 @@ function confirmDeleteDocument(row: Api.AI.KnowledgeDocument) {
     negativeText: $t('common.cancel'),
     onPositiveClick: async () => {
       const { error } = await deleteKnowledgeDocument(row.id, row.revision);
-      if (error) return window.$message?.error(error.message || $t('page.knowledge.deleteFailed'));
+      if (error) return;
       documentQuery.page = pageAfterDelete(documentQuery.page, documents.value.length);
       await loadDocuments();
     }
@@ -395,7 +389,6 @@ async function runRetrieval() {
     });
     if (error) {
       retrievalResults.value = [];
-      window.$message?.error(error.message || $t('page.knowledge.retrievalFailed'));
       return;
     }
     retrievalResults.value = data?.items || [];
@@ -408,7 +401,7 @@ async function resolveCitation(item: Api.AI.RetrievalResult) {
   const key = item.citation.chunk_id;
   const { data, error } = await resolveKnowledgeCitation(item.citation);
   if (error || !data) {
-    window.$message?.error(error?.message || $t('page.knowledge.citationFailed'));
+    if (!error) window.$message?.error($t('page.knowledge.citationFailed'));
     return;
   }
   citationLookups.value = { ...citationLookups.value, [key]: data };
