@@ -14,6 +14,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/action"
 	"github.com/yzxingtu2026/ainp/platform/framework/aiagent"
 	"github.com/yzxingtu2026/ainp/platform/framework/aiconversation"
+	"github.com/yzxingtu2026/ainp/platform/framework/aiknowledge"
 	"github.com/yzxingtu2026/ainp/platform/framework/aimodel"
 	"github.com/yzxingtu2026/ainp/platform/framework/aimodelruntime"
 	"github.com/yzxingtu2026/ainp/platform/framework/aitool"
@@ -42,37 +43,40 @@ import (
 )
 
 type App struct {
-	Config                 *config.Config
-	DB                     *gorm.DB
-	Tokens                 *auth.TokenService
-	Authorization          auth.AuthorizationProvider
-	Authenticators         *authentication.Registry
-	AuthRateLimiter        authentication.RateLimiter
-	Capabilities           *capability.Registry
-	Actions                *action.Registry
-	Menus                  *menu.Registry
-	CodeSets               *codeset.Registry
-	Settings               *setting.Registry
-	StateMachines          *statemachine.Registry
-	AIProviderTypes        *aimodel.ProviderTypeRegistry
-	AgentContracts         *aiagent.Registry
-	ContextCompactor       aiconversation.ContextCompactor
-	AgentTenantInitializer func(context.Context, *gorm.DB, string, string) error
-	ModelResolver          aimodel.Resolver
-	AIAssetResolver        aimodelruntime.AssetResolver
-	EmbeddingRuntime       aimodelruntime.EmbeddingRuntime
-	ToolRegistry           *aitool.Registry
-	Storage                storage.ObjectStore
-	AttachmentPolicies     *attachment.PolicyRegistry
-	TransferTokens         *attachment.TransferTokenService
-	Outbox                 *outbox.Runtime
-	Jobs                   *job.Runtime
-	Notifications          *notification.DefinitionRegistry
-	LogProviders           *logcenter.Registry
-	NotificationRenderer   *notification.Renderer
-	OnHTTP                 func(engine *gin.Engine)
-	Auditor                audit.Recorder
-	Installed              bool
+	Config                   *config.Config
+	DB                       *gorm.DB
+	Tokens                   *auth.TokenService
+	Authorization            auth.AuthorizationProvider
+	Authenticators           *authentication.Registry
+	AuthRateLimiter          authentication.RateLimiter
+	Capabilities             *capability.Registry
+	Actions                  *action.Registry
+	Menus                    *menu.Registry
+	CodeSets                 *codeset.Registry
+	Settings                 *setting.Registry
+	StateMachines            *statemachine.Registry
+	AIProviderTypes          *aimodel.ProviderTypeRegistry
+	AgentContracts           *aiagent.Registry
+	ContextCompactor         aiconversation.ContextCompactor
+	KnowledgeService         aiknowledge.Service
+	KnowledgeAccessPolicy    aiknowledge.AccessPolicy
+	AgentTenantInitializer   func(context.Context, *gorm.DB, string, string) error
+	ModelResolver            aimodel.Resolver
+	AIAssetResolver          aimodelruntime.AssetResolver
+	EmbeddingRuntime         aimodelruntime.EmbeddingRuntime
+	ToolRegistry             *aitool.Registry
+	Storage                  storage.ObjectStore
+	AttachmentPolicies       *attachment.PolicyRegistry
+	AttachmentResourceLinker attachment.ResourceLinker
+	TransferTokens           *attachment.TransferTokenService
+	Outbox                   *outbox.Runtime
+	Jobs                     *job.Runtime
+	Notifications            *notification.DefinitionRegistry
+	LogProviders             *logcenter.Registry
+	NotificationRenderer     *notification.Renderer
+	OnHTTP                   func(engine *gin.Engine)
+	Auditor                  audit.Recorder
+	Installed                bool
 }
 
 func New(cfg *config.Config, db *gorm.DB, auditor audit.Recorder, tokens *auth.TokenService) *App {

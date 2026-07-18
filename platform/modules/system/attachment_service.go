@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/yzxingtu2026/ainp/platform/framework/attachment"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
+	"github.com/yzxingtu2026/ainp/platform/framework/dblock"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 	"github.com/yzxingtu2026/ainp/platform/framework/logging"
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
@@ -240,59 +241,125 @@ func (s *AttachmentService) DownloadPrepare(ctx context.Context, input json.RawM
 }
 
 func (s *AttachmentService) Bind(ctx context.Context, input json.RawMessage) (any, error) {
-	tenantID, userID, err := tenantIdentity(ctx)
-	if err != nil {
-		return nil, err
-	}
 	var req attachmentBindRequest
 	if err := json.Unmarshal(input, &req); err != nil || req.AttachmentID == "" || req.ResourceType == "" || req.ResourceID == "" {
 		return nil, errs.ValidationKey("common.validation_failed", "invalid bind request")
 	}
-	row, err := s.getOwned(ctx, tenantID, req.AttachmentID)
+	var link attachment.ResourceLink
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var bindErr error
+		link, bindErr = s.BindResource(ctx, tx, attachment.ResourceLinkRequest{
+			AttachmentID: req.AttachmentID, ResourceType: req.ResourceType,
+			ResourceID: req.ResourceID, Field: req.Field,
+		})
+		return bindErr
+	})
 	if err != nil {
 		return nil, err
 	}
-	if row.Status != status.AttachmentReady {
-		return nil, errs.ValidationKey("attachment.not_ready", "attachment is not ready")
-	}
-	if err := s.policies.Allow(ctx, req.ResourceType, tenantID, userID, req.ResourceID, req.Field); err != nil {
-		return nil, errs.NewKey(errs.CodeForbidden, "attachment.resource_forbidden", err.Error())
-	}
-	link := model.AttachmentLink{
-		ID: uuid.NewString(), TenantID: tenantID, AttachmentID: row.ID,
-		ResourceType: req.ResourceType, ResourceID: req.ResourceID, Field: req.Field,
-	}
-	if err := s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Create(&link).Error; err != nil {
-		return nil, mapAttachmentError(err)
+	tenantID, _, _ := tenantIdentity(ctx)
+	row, err := s.getOwned(ctx, tenantID, req.AttachmentID)
+	if err != nil {
+		return nil, err
 	}
 	setAttachmentAudit(ctx, row.ID, "attachment bind")
 	return map[string]any{"link_id": link.ID, "attachment": toAttachmentView(*row)}, nil
 }
 
 func (s *AttachmentService) Unbind(ctx context.Context, input json.RawMessage) (any, error) {
-	tenantID, userID, err := tenantIdentity(ctx)
-	if err != nil {
-		return nil, err
-	}
 	var req attachmentBindRequest
 	if err := json.Unmarshal(input, &req); err != nil || req.AttachmentID == "" || req.ResourceType == "" || req.ResourceID == "" {
 		return nil, errs.ValidationKey("common.validation_failed", "invalid unbind request")
 	}
-	if err := s.policies.Allow(ctx, req.ResourceType, tenantID, userID, req.ResourceID, req.Field); err != nil {
-		return nil, errs.NewKey(errs.CodeForbidden, "attachment.resource_forbidden", err.Error())
-	}
-	res := s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Where(
-		"attachment_id = ? AND resource_type = ? AND resource_id = ? AND field = ?",
-		req.AttachmentID, req.ResourceType, req.ResourceID, req.Field,
-	).Delete(&model.AttachmentLink{})
-	if res.Error != nil {
-		return nil, mapAttachmentError(res.Error)
-	}
-	if res.RowsAffected == 0 {
-		return nil, errs.NewKey(errs.CodeNotFound, "attachment.link_not_found", "attachment link not found")
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return s.UnbindResource(ctx, tx, attachment.ResourceLinkRequest{
+			AttachmentID: req.AttachmentID, ResourceType: req.ResourceType,
+			ResourceID: req.ResourceID, Field: req.Field,
+		})
+	})
+	if err != nil {
+		return nil, err
 	}
 	setAttachmentAudit(ctx, req.AttachmentID, "attachment unbind")
 	return map[string]any{"unbound": true}, nil
+}
+
+func (s *AttachmentService) BindResource(ctx context.Context, tx *gorm.DB, req attachment.ResourceLinkRequest) (attachment.ResourceLink, error) {
+	if tx == nil {
+		return attachment.ResourceLink{}, errs.NewKey(errs.CodeInternal, "attachment.transaction_required", "attachment resource transaction is required")
+	}
+	if _, ok := tx.Statement.ConnPool.(gorm.TxCommitter); !ok {
+		return attachment.ResourceLink{}, errs.NewKey(errs.CodeInternal, "attachment.transaction_required", "attachment resource transaction is required")
+	}
+	if err := req.Validate(); err != nil {
+		return attachment.ResourceLink{}, errs.ValidationKey("common.validation_failed", err.Error())
+	}
+	tenantID, userID, err := tenantIdentity(ctx)
+	if err != nil {
+		return attachment.ResourceLink{}, err
+	}
+	if err = dblock.WithTimeout(ctx, 10*time.Second, func(lockCtx context.Context) error {
+		return dblock.LockForTenant(tx.WithContext(lockCtx), "attachments", tenantID, req.AttachmentID)
+	}); err != nil {
+		return attachment.ResourceLink{}, errs.NewKey(errs.CodeNotFound, "attachment.not_found", "attachment not found")
+	}
+	var row model.Attachment
+	if err = tx.WithContext(ctx).Where("tenant_id=? AND id=? AND status=?", tenantID, req.AttachmentID, status.AttachmentReady).First(&row).Error; err != nil {
+		return attachment.ResourceLink{}, errs.NewKey(errs.CodeNotFound, "attachment.not_found", "attachment not found")
+	}
+	if row.UploaderID != userID {
+		return attachment.ResourceLink{}, errs.NewKey(errs.CodeNotFound, "attachment.not_found", "attachment not found")
+	}
+	policyCtx := attachment.WithResourceLinkOperation(attachment.WithResourceTransaction(ctx, tx), attachment.ResourceLinkBind)
+	if err = s.policies.Allow(policyCtx, req.ResourceType, tenantID, userID, req.ResourceID, req.Field); err != nil {
+		return attachment.ResourceLink{}, errs.NewKey(errs.CodeForbidden, "attachment.resource_forbidden", err.Error())
+	}
+	link := model.AttachmentLink{
+		ID: uuid.NewString(), TenantID: tenantID, AttachmentID: row.ID,
+		ResourceType: req.ResourceType, ResourceID: req.ResourceID, Field: req.Field,
+	}
+	if err = tx.WithContext(ctx).Create(&link).Error; err != nil {
+		return attachment.ResourceLink{}, mapAttachmentError(err)
+	}
+	return attachment.ResourceLink{
+		ID: link.ID, AttachmentID: link.AttachmentID, ResourceType: link.ResourceType,
+		ResourceID: link.ResourceID, Field: link.Field,
+	}, nil
+}
+
+func (s *AttachmentService) UnbindResource(ctx context.Context, tx *gorm.DB, req attachment.ResourceLinkRequest) error {
+	if tx == nil {
+		return errs.NewKey(errs.CodeInternal, "attachment.transaction_required", "attachment resource transaction is required")
+	}
+	if _, ok := tx.Statement.ConnPool.(gorm.TxCommitter); !ok {
+		return errs.NewKey(errs.CodeInternal, "attachment.transaction_required", "attachment resource transaction is required")
+	}
+	if err := req.Validate(); err != nil {
+		return errs.ValidationKey("common.validation_failed", err.Error())
+	}
+	tenantID, userID, err := tenantIdentity(ctx)
+	if err != nil {
+		return err
+	}
+	var row model.Attachment
+	if err = tx.WithContext(ctx).Where("tenant_id=? AND id=? AND status=?", tenantID, req.AttachmentID, status.AttachmentReady).First(&row).Error; err != nil {
+		return errs.NewKey(errs.CodeNotFound, "attachment.not_found", "attachment not found")
+	}
+	policyCtx := attachment.WithResourceLinkOperation(attachment.WithResourceTransaction(ctx, tx), attachment.ResourceLinkUnbind)
+	if err = s.policies.Allow(policyCtx, req.ResourceType, tenantID, userID, req.ResourceID, req.Field); err != nil {
+		return errs.NewKey(errs.CodeForbidden, "attachment.resource_forbidden", err.Error())
+	}
+	result := tx.WithContext(ctx).Where(
+		"tenant_id=? AND attachment_id=? AND resource_type=? AND resource_id=? AND field=?",
+		tenantID, req.AttachmentID, req.ResourceType, req.ResourceID, req.Field,
+	).Delete(&model.AttachmentLink{})
+	if result.Error != nil {
+		return mapAttachmentError(result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return errs.NewKey(errs.CodeNotFound, "attachment.link_not_found", "attachment link not found")
+	}
+	return nil
 }
 
 func (s *AttachmentService) ListByResource(ctx context.Context, input json.RawMessage) (any, error) {
@@ -338,27 +405,37 @@ func (s *AttachmentService) Delete(ctx context.Context, input json.RawMessage) (
 	if err := json.Unmarshal(input, &req); err != nil || req.ID == "" {
 		return nil, errs.ValidationKey("common.validation_failed", "attachment id required")
 	}
-	row, err := s.getOwned(ctx, tenantID, req.ID)
+	var row model.Attachment
+	now := time.Now().UTC()
+	err = dblock.WithTimeout(ctx, 10*time.Second, func(lockCtx context.Context) error {
+		return dblock.WithinTx(lockCtx, s.db, func(tx *gorm.DB) error {
+			if lockErr := dblock.LockForTenant(tx, "attachments", tenantID, req.ID); lockErr != nil {
+				return errs.NewKey(errs.CodeNotFound, "attachment.not_found", "attachment not found")
+			}
+			if queryErr := tx.Where("tenant_id=? AND id=?", tenantID, req.ID).First(&row).Error; queryErr != nil {
+				return errs.NewKey(errs.CodeNotFound, "attachment.not_found", "attachment not found")
+			}
+			var linkCount int64
+			if countErr := tx.Model(&model.AttachmentLink{}).
+				Where("tenant_id=? AND attachment_id=?", tenantID, row.ID).Count(&linkCount).Error; countErr != nil {
+				return mapAttachmentError(countErr)
+			}
+			if linkCount > 0 {
+				return errs.ValidationKey("attachment.has_links", "unbind attachment before delete")
+			}
+			if row.UploaderID != userID && !auth.MustFromContext(lockCtx).HasPermission(ActionAttachmentDelete) &&
+				row.Status == status.AttachmentReady {
+				return errs.NewKey(errs.CodeForbidden, "common.forbidden", "forbidden")
+			}
+			updates := map[string]any{"status": status.AttachmentDeleting, "upload_jti": "", "updated_at": now}
+			if updateErr := tx.Model(&model.Attachment{}).Where("tenant_id=? AND id=?", tenantID, row.ID).Updates(updates).Error; updateErr != nil {
+				return mapAttachmentError(updateErr)
+			}
+			return nil
+		})
+	})
 	if err != nil {
 		return nil, err
-	}
-	var linkCount int64
-	if err := s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Model(&model.AttachmentLink{}).Where("attachment_id = ?", row.ID).Count(&linkCount).Error; err != nil {
-		return nil, mapAttachmentError(err)
-	}
-	if linkCount > 0 {
-		return nil, errs.ValidationKey("attachment.has_links", "unbind attachment before delete")
-	}
-	if row.UploaderID != userID && !auth.MustFromContext(ctx).HasPermission(ActionAttachmentDelete) {
-		// still require delete permission via Action; uploader may delete own pending/failed
-		if row.Status == status.AttachmentReady {
-			return nil, errs.NewKey(errs.CodeForbidden, "common.forbidden", "forbidden")
-		}
-	}
-	now := time.Now().UTC()
-	updates := map[string]any{"status": status.AttachmentDeleting, "upload_jti": "", "updated_at": now}
-	if err := s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Model(&model.Attachment{}).Where("id = ?", row.ID).Updates(updates).Error; err != nil {
-		return nil, mapAttachmentError(err)
 	}
 	objectPending := false
 	if row.ThumbObjectKey != "" {
@@ -793,3 +870,5 @@ func ContentDisposition(filename string) string {
 	escaped := strings.ReplaceAll(safe, `"`, "")
 	return fmt.Sprintf(`attachment; filename="%s"`, escaped)
 }
+
+var _ attachment.ResourceLinker = (*AttachmentService)(nil)
