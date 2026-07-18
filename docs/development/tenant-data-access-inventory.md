@@ -16,7 +16,7 @@
 |---|---|---|---|
 | #111 样板 | Agent、AgentVersion、AgentToolBinding 及直接 Runtime 消费方 | 已完成 | Agent/Builder Preview/PostgreSQL |
 | Demo 模板 | RevisionDoc | 已完成 | 默认测试链与跨租户 Callback |
-| System/Framework | Setting、Notification Request/Delivery/TemplateOverride/UserNotification 已完成；User/Role/Auth/Attachment/Audit/Job/Outbox/Idempotency 待迁移 | 迁移中 | 各模块 PostgreSQL 集成测试 |
+| System/Framework | Setting、Notification Request/Delivery/TemplateOverride/UserNotification 已完成；Attachment 外围消费方已迁移、核心 Service/Thumb Job 迁移中；User/Role/Auth/Audit/Job/Outbox/Idempotency 待迁移 | 迁移中 | 各模块 PostgreSQL 集成测试 |
 | AI 治理与 Tool | Provider/Deployment/Alias/Invocation/Tool/Scope/Confirmation | 待迁移 | AI Model/Tool Runtime 测试 |
 | AI 会话与 Runtime | Conversation/Message/Stream/Snapshot/Run/Step/Event | 迁移中 | Conversation/Agent Runtime 测试 |
 | Knowledge | Base/Document/Index/Chunk/Payload/Binding 及 Raw JOIN | 待迁移 | Knowledge 全链路测试 |

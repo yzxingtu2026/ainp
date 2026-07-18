@@ -160,8 +160,16 @@ func (s *AgentService) validateAvatar(ctx context.Context, ac *auth.Context, id 
 	if id == nil || strings.TrimSpace(*id) == "" {
 		return nil
 	}
-	var attachment systemmodel.Attachment
-	if err := s.db.WithContext(ctx).Where("tenant_id=? AND id=? AND status=?", ac.TenantID, *id, "ready").First(&attachment).Error; err != nil {
+	tdb, repoErr := tenantdata.TenantDB(ctx, s.db)
+	if repoErr != nil {
+		return repoErr
+	}
+	repo, repoErr := tenantdata.NewTenantRepository[systemmodel.Attachment](tdb)
+	if repoErr != nil {
+		return repoErr
+	}
+	attachment, repoErr := repo.First("id=? AND status=?", *id, "ready")
+	if repoErr != nil {
 		return errs.New(errs.CodeNotFound, "avatar attachment not found")
 	}
 	if !canManageTenant(ac) && attachment.UploaderID != ac.UserID {

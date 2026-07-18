@@ -17,6 +17,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
 	"github.com/yzxingtu2026/ainp/platform/framework/pagination"
 	"github.com/yzxingtu2026/ainp/platform/framework/status"
+	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	systemmodel "github.com/yzxingtu2026/ainp/platform/modules/system/model"
 	"gorm.io/gorm"
 )
@@ -683,9 +684,16 @@ func (s *KnowledgeService) DeleteDocument(ctx context.Context, request Knowledge
 }
 
 func (s *KnowledgeService) attachmentSnapshot(ctx context.Context, ac *auth.Context, id string) (*systemmodel.Attachment, error) {
-	var row systemmodel.Attachment
-	if err := s.db.WithContext(ctx).Where("tenant_id=? AND id=? AND status=?", ac.TenantID, id, status.AttachmentReady).
-		First(&row).Error; err != nil {
+	tdb, repoErr := tenantdata.TenantDB(ctx, s.db)
+	if repoErr != nil {
+		return nil, repoErr
+	}
+	repo, repoErr := tenantdata.NewTenantRepository[systemmodel.Attachment](tdb)
+	if repoErr != nil {
+		return nil, repoErr
+	}
+	row, repoErr := repo.First("id=? AND status=?", id, status.AttachmentReady)
+	if repoErr != nil {
 		return nil, errs.NewKey(errs.CodeNotFound, "ai.knowledge.attachment_not_found", "ready attachment not found")
 	}
 	if row.UploaderID != ac.UserID {
