@@ -161,12 +161,16 @@ func (s *ConversationService) Create(ctx context.Context, r ConversationCreateRe
 	if r.Visibility == "tenant" && !canManageConversations(ac) {
 		return nil, errs.New(errs.CodeForbidden, "tenant conversation permission required")
 	}
-	var agent Agent
-	if err = s.db.WithContext(ctx).Where("tenant_id=? AND id=? AND (owner_user_id=? OR visibility=?)", ac.TenantID, r.AgentID, ac.UserID, "tenant").First(&agent).Error; err != nil {
+	repos, err := newAgentRepositories(ctx, s.db)
+	if err != nil {
+		return nil, err
+	}
+	_, err = repos.agents.First("id=? AND (owner_user_id=? OR visibility=?)", r.AgentID, ac.UserID, "tenant")
+	if err != nil {
 		return nil, errs.New(errs.CodeNotFound, "agent not found")
 	}
-	var version AgentVersion
-	if err = s.db.WithContext(ctx).Where("tenant_id=? AND id=? AND agent_id=?", ac.TenantID, r.AgentVersionID, r.AgentID).First(&version).Error; err != nil {
+	version, err := repos.versions.First("id=? AND agent_id=?", r.AgentVersionID, r.AgentID)
+	if err != nil {
 		return nil, errs.New(errs.CodeNotFound, "agent version not found")
 	}
 	purpose := strings.TrimSpace(r.Purpose)
