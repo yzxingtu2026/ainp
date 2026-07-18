@@ -1,0 +1,746 @@
+package ai
+
+import (
+	"context"
+	"regexp"
+	"strings"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/yzxingtu2026/ainp/platform/framework/aiknowledge"
+	"github.com/yzxingtu2026/ainp/platform/framework/aimodel"
+	"github.com/yzxingtu2026/ainp/platform/framework/attachment"
+	"github.com/yzxingtu2026/ainp/platform/framework/auth"
+	"github.com/yzxingtu2026/ainp/platform/framework/dblock"
+	"github.com/yzxingtu2026/ainp/platform/framework/errs"
+	"github.com/yzxingtu2026/ainp/platform/framework/pagination"
+	"github.com/yzxingtu2026/ainp/platform/framework/status"
+	systemmodel "github.com/yzxingtu2026/ainp/platform/modules/system/model"
+	"gorm.io/gorm"
+)
+
+const KnowledgeDocumentResourceType = "ai.knowledge_document"
+
+const (
+	auditKnowledgeBaseCreated     = "knowledge base created"
+	auditKnowledgeBaseUpdated     = "knowledge base updated"
+	auditKnowledgeBaseStatus      = "knowledge base status updated"
+	auditKnowledgeBaseDeleted     = "knowledge base deleted"
+	auditKnowledgeDocumentCreated = "knowledge document created"
+	auditKnowledgeDocumentUpdated = "knowledge document updated"
+	auditKnowledgeDocumentDeleted = "knowledge document deleted"
+	auditAgentKnowledgeBound      = "agent knowledge binding created"
+	auditAgentKnowledgeUnbound    = "agent knowledge binding deleted"
+)
+
+var sha256Pattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
+
+type KnowledgeService struct {
+	db     *gorm.DB
+	models aimodel.Resolver
+	agents *AgentService
+	links  attachment.ResourceLinker
+}
+
+func NewKnowledgeService(db *gorm.DB, models aimodel.Resolver, agents *AgentService, links attachment.ResourceLinker) *KnowledgeService {
+	return &KnowledgeService{db: db, models: models, agents: agents, links: links}
+}
+
+type KnowledgeBaseListRequest struct {
+	pagination.Request
+	Keyword    string `json:"keyword" validate:"max=128"`
+	Visibility string `json:"visibility" validate:"omitempty,oneof=private tenant"`
+	Status     string `json:"status" validate:"omitempty,oneof=draft enabled disabled"`
+}
+
+type KnowledgeBaseIDRequest struct {
+	ID string `json:"id" validate:"required"`
+}
+
+type KnowledgeBaseCreateRequest struct {
+	Code            string                      `json:"code" validate:"required,max=64"`
+	Name            string                      `json:"name" validate:"required,max=128"`
+	Description     string                      `json:"description" validate:"max=1024"`
+	Visibility      string                      `json:"visibility" validate:"required,oneof=private tenant"`
+	EmbeddingAlias  string                      `json:"embedding_alias" validate:"max=64"`
+	ChunkingConfig  aiknowledge.ChunkingConfig  `json:"chunking_config"`
+	RetrievalConfig aiknowledge.RetrievalConfig `json:"retrieval_config"`
+}
+
+func (r *KnowledgeBaseCreateRequest) Normalize() {
+	r.Code = strings.TrimSpace(r.Code)
+	r.Name = strings.TrimSpace(r.Name)
+	r.Description = strings.TrimSpace(r.Description)
+	r.Visibility = strings.TrimSpace(r.Visibility)
+	r.EmbeddingAlias = strings.TrimSpace(r.EmbeddingAlias)
+	r.ChunkingConfig.Normalize()
+	r.RetrievalConfig.Normalize()
+}
+
+func (r KnowledgeBaseCreateRequest) Validate(context.Context) error {
+	if !codePattern.MatchString(r.Code) {
+		return fieldValidation("code", "knowledge.validation.invalid_code", "knowledge base code is invalid")
+	}
+	if err := r.ChunkingConfig.Validate(); err != nil {
+		return fieldValidation("chunking_config", "knowledge.validation.invalid_chunking_config", err.Error())
+	}
+	if err := r.RetrievalConfig.Validate(); err != nil {
+		return fieldValidation("retrieval_config", "knowledge.validation.invalid_retrieval_config", err.Error())
+	}
+	return nil
+}
+
+type KnowledgeBaseUpdateRequest struct {
+	ID              string                      `json:"id" validate:"required"`
+	Name            string                      `json:"name" validate:"required,max=128"`
+	Description     string                      `json:"description" validate:"max=1024"`
+	Visibility      string                      `json:"visibility" validate:"required,oneof=private tenant"`
+	EmbeddingAlias  string                      `json:"embedding_alias" validate:"max=64"`
+	ChunkingConfig  aiknowledge.ChunkingConfig  `json:"chunking_config"`
+	RetrievalConfig aiknowledge.RetrievalConfig `json:"retrieval_config"`
+	Revision        uint64                      `json:"revision" validate:"required"`
+}
+
+func (r *KnowledgeBaseUpdateRequest) Normalize() {
+	r.ID = strings.TrimSpace(r.ID)
+	r.Name = strings.TrimSpace(r.Name)
+	r.Description = strings.TrimSpace(r.Description)
+	r.Visibility = strings.TrimSpace(r.Visibility)
+	r.EmbeddingAlias = strings.TrimSpace(r.EmbeddingAlias)
+	r.ChunkingConfig.Normalize()
+	r.RetrievalConfig.Normalize()
+}
+
+func (r KnowledgeBaseUpdateRequest) Validate(context.Context) error {
+	if err := r.ChunkingConfig.Validate(); err != nil {
+		return fieldValidation("chunking_config", "knowledge.validation.invalid_chunking_config", err.Error())
+	}
+	if err := r.RetrievalConfig.Validate(); err != nil {
+		return fieldValidation("retrieval_config", "knowledge.validation.invalid_retrieval_config", err.Error())
+	}
+	return nil
+}
+
+type KnowledgeBaseStatusRequest struct {
+	ID       string `json:"id" validate:"required"`
+	Status   string `json:"status" validate:"required,oneof=draft enabled disabled"`
+	Revision uint64 `json:"revision" validate:"required"`
+}
+
+type KnowledgeBaseDeleteRequest struct {
+	ID       string `json:"id" validate:"required"`
+	Revision uint64 `json:"revision" validate:"required"`
+}
+
+type KnowledgeDocumentListRequest struct {
+	pagination.Request
+	KnowledgeBaseID string `json:"knowledge_base_id" validate:"required"`
+	Status          string `json:"status" validate:"omitempty,oneof=pending ready processing failed"`
+}
+
+type KnowledgeDocumentIDRequest struct {
+	ID string `json:"id" validate:"required"`
+}
+
+type KnowledgeDocumentCreateRequest struct {
+	KnowledgeBaseID string `json:"knowledge_base_id" validate:"required"`
+	AttachmentID    string `json:"attachment_id" validate:"required"`
+}
+
+type KnowledgeDocumentUpdateRequest struct {
+	ID           string `json:"id" validate:"required"`
+	AttachmentID string `json:"attachment_id" validate:"required"`
+	Revision     uint64 `json:"revision" validate:"required"`
+}
+
+type KnowledgeDocumentDeleteRequest struct {
+	ID       string `json:"id" validate:"required"`
+	Revision uint64 `json:"revision" validate:"required"`
+}
+
+type AgentKnowledgeListRequest struct {
+	pagination.Request
+	AgentID string `json:"agent_id" validate:"required"`
+}
+
+type AgentKnowledgeBindRequest struct {
+	AgentID         string `json:"agent_id" validate:"required"`
+	KnowledgeBaseID string `json:"knowledge_base_id" validate:"required"`
+}
+
+type AgentKnowledgeUnbindRequest = AgentKnowledgeBindRequest
+
+func fieldValidation(field, key, fallback string) error {
+	return errs.ValidationKey("common.validation_failed", "validation failed", errs.FieldError{
+		Field: field, Message: fallback, MessageKey: key,
+	})
+}
+
+func knowledgeActor(ctx context.Context) (*auth.Context, error) {
+	ac, ok := auth.FromContext(ctx)
+	if !ok || ac == nil || !ac.Authenticated || strings.TrimSpace(ac.TenantID) == "" ||
+		strings.TrimSpace(ac.UserID) == "" || ac.Realm != auth.RealmTenant {
+		return nil, errs.NewKey(errs.CodeUnauthorized, "common.unauthorized", "unauthorized")
+	}
+	return ac, nil
+}
+
+func (s *KnowledgeService) dbForContext(ctx context.Context) *gorm.DB {
+	return attachment.ResourceTransaction(ctx, s.db).WithContext(ctx)
+}
+
+func knowledgeNotFound() error {
+	return errs.NewKey(errs.CodeNotFound, "ai.knowledge.not_found", "knowledge resource not found")
+}
+
+func revisionConflict() error {
+	return errs.NewKey(errs.CodeRevisionConflict, "common.revision_conflict", "data was updated by another operation")
+}
+
+func lockKnowledgeBase(ctx context.Context, tx *gorm.DB, tenantID, id string) error {
+	return dblock.WithTimeout(ctx, 10*time.Second, func(lockCtx context.Context) error {
+		if err := dblock.LockForTenant(tx.WithContext(lockCtx), "ai_knowledge_bases", tenantID, id); err != nil {
+			return knowledgeNotFound()
+		}
+		return nil
+	})
+}
+
+func (s *KnowledgeService) visibleKnowledgeBases(ctx context.Context) (*gorm.DB, *auth.Context, error) {
+	ac, err := knowledgeActor(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	query := s.dbForContext(ctx).Where("tenant_id = ?", ac.TenantID).
+		Where("visibility = ? OR owner_user_id = ?", aiknowledge.VisibilityTenant, ac.UserID)
+	return query, ac, nil
+}
+
+func (s *KnowledgeService) getKnowledgeBase(ctx context.Context, id string, manage bool) (*KnowledgeBase, *auth.Context, error) {
+	query, ac, err := s.visibleKnowledgeBases(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	var row KnowledgeBase
+	if err = query.Where("id = ?", id).First(&row).Error; err != nil {
+		return nil, nil, knowledgeNotFound()
+	}
+	if manage && row.OwnerUserID != ac.UserID {
+		return nil, nil, knowledgeNotFound()
+	}
+	return &row, ac, nil
+}
+
+func (s *KnowledgeService) ListKnowledgeBases(ctx context.Context, request KnowledgeBaseListRequest) (any, error) {
+	query, _, err := s.visibleKnowledgeBases(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if keyword := strings.TrimSpace(request.Keyword); keyword != "" {
+		like := "%" + keyword + "%"
+		query = query.Where("code ILIKE ? OR name ILIKE ?", like, like)
+	}
+	if request.Visibility != "" {
+		query = query.Where("visibility = ?", request.Visibility)
+	}
+	if request.Status != "" {
+		query = query.Where("status = ?", request.Status)
+	}
+	var total int64
+	if err = query.Model(&KnowledgeBase{}).Count(&total).Error; err != nil {
+		return nil, dbError(err, "list knowledge bases")
+	}
+	var rows []KnowledgeBase
+	if err = query.Order("updated_at DESC").Offset(request.Offset()).Limit(request.PageSize).Find(&rows).Error; err != nil {
+		return nil, dbError(err, "list knowledge bases")
+	}
+	return pagination.NewResult(rows, total, request.Request), nil
+}
+
+func (s *KnowledgeService) GetKnowledgeBase(ctx context.Context, request KnowledgeBaseIDRequest) (any, error) {
+	row, _, err := s.getKnowledgeBase(ctx, request.ID, false)
+	return row, err
+}
+
+func (s *KnowledgeService) CreateKnowledgeBase(ctx context.Context, request KnowledgeBaseCreateRequest) (any, error) {
+	ac, err := knowledgeActor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if request.EmbeddingAlias != "" {
+		if err = s.resolveEmbedding(ctx, request.EmbeddingAlias); err != nil {
+			return nil, err
+		}
+	}
+	row := KnowledgeBase{
+		ID: uuid.NewString(), TenantID: ac.TenantID, OwnerUserID: ac.UserID,
+		Code: request.Code, Name: request.Name, Description: request.Description,
+		Visibility: request.Visibility, Status: aiknowledge.KnowledgeBaseDraft,
+		EmbeddingAlias: request.EmbeddingAlias, ChunkingConfig: request.ChunkingConfig,
+		RetrievalConfig: request.RetrievalConfig, Revision: 1,
+	}
+	if err = s.db.WithContext(ctx).Create(&row).Error; err != nil {
+		return nil, knowledgeDBError(err, "ai.knowledge.code_exists", "knowledge base code already exists")
+	}
+	setKnowledgeAudit(ctx, "ai_knowledge_base", row.ID, auditKnowledgeBaseCreated)
+	return row, nil
+}
+
+func (s *KnowledgeService) UpdateKnowledgeBase(ctx context.Context, request KnowledgeBaseUpdateRequest) (any, error) {
+	row, _, err := s.getKnowledgeBase(ctx, request.ID, true)
+	if err != nil {
+		return nil, err
+	}
+	if request.EmbeddingAlias != "" {
+		if err = s.resolveEmbedding(ctx, request.EmbeddingAlias); err != nil {
+			return nil, err
+		}
+	}
+	if row.Status == aiknowledge.KnowledgeBaseEnabled && request.EmbeddingAlias == "" {
+		return nil, errs.NewKey(errs.CodeValidation, "ai.knowledge.embedding_required", "embedding alias is required before enabling")
+	}
+	updates := map[string]any{
+		"name": request.Name, "description": request.Description, "visibility": request.Visibility,
+		"embedding_alias": request.EmbeddingAlias, "chunking_config": marshal(request.ChunkingConfig),
+		"retrieval_config": marshal(request.RetrievalConfig), "revision": gorm.Expr("revision + 1"),
+	}
+	if row.EmbeddingAlias != request.EmbeddingAlias || row.ChunkingConfig != request.ChunkingConfig {
+		updates["current_index_version_id"] = nil
+	}
+	result := s.db.WithContext(ctx).Model(&KnowledgeBase{}).
+		Where("tenant_id=? AND id=? AND revision=?", row.TenantID, row.ID, request.Revision).
+		Updates(updates)
+	if result.Error != nil {
+		return nil, dbError(result.Error, "update knowledge base")
+	}
+	if result.RowsAffected != 1 {
+		return nil, revisionConflict()
+	}
+	setKnowledgeAudit(ctx, "ai_knowledge_base", row.ID, auditKnowledgeBaseUpdated)
+	return s.GetKnowledgeBase(ctx, KnowledgeBaseIDRequest{ID: row.ID})
+}
+
+func (s *KnowledgeService) UpdateKnowledgeBaseStatus(ctx context.Context, request KnowledgeBaseStatusRequest) (any, error) {
+	row, _, err := s.getKnowledgeBase(ctx, request.ID, true)
+	if err != nil {
+		return nil, err
+	}
+	if request.Status == aiknowledge.KnowledgeBaseEnabled {
+		if strings.TrimSpace(row.EmbeddingAlias) == "" {
+			return nil, errs.NewKey(errs.CodeValidation, "ai.knowledge.embedding_required", "embedding alias is required before enabling")
+		}
+		if err = s.resolveEmbedding(ctx, row.EmbeddingAlias); err != nil {
+			return nil, err
+		}
+	}
+	result := s.db.WithContext(ctx).Model(&KnowledgeBase{}).
+		Where("tenant_id=? AND id=? AND revision=?", row.TenantID, row.ID, request.Revision).
+		Updates(map[string]any{"status": request.Status, "revision": gorm.Expr("revision + 1")})
+	if result.Error != nil {
+		return nil, dbError(result.Error, "update knowledge base status")
+	}
+	if result.RowsAffected != 1 {
+		return nil, revisionConflict()
+	}
+	setKnowledgeAudit(ctx, "ai_knowledge_base", row.ID, auditKnowledgeBaseStatus)
+	return s.GetKnowledgeBase(ctx, KnowledgeBaseIDRequest{ID: row.ID})
+}
+
+func (s *KnowledgeService) DeleteKnowledgeBase(ctx context.Context, request KnowledgeBaseDeleteRequest) (any, error) {
+	row, _, err := s.getKnowledgeBase(ctx, request.ID, true)
+	if err != nil {
+		return nil, err
+	}
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if lockErr := lockKnowledgeBase(ctx, tx, row.TenantID, row.ID); lockErr != nil {
+			return lockErr
+		}
+		var current KnowledgeBase
+		if queryErr := tx.Where("tenant_id=? AND id=? AND owner_user_id=?", row.TenantID, row.ID, row.OwnerUserID).
+			First(&current).Error; queryErr != nil {
+			return knowledgeNotFound()
+		}
+		var documents, bindings int64
+		if countErr := tx.Model(&KnowledgeDocument{}).
+			Where("tenant_id=? AND knowledge_base_id=?", row.TenantID, row.ID).Count(&documents).Error; countErr != nil {
+			return dbError(countErr, "check knowledge base documents")
+		}
+		if countErr := tx.Model(&AgentKnowledgeBinding{}).
+			Where("tenant_id=? AND knowledge_base_id=?", row.TenantID, row.ID).Count(&bindings).Error; countErr != nil {
+			return dbError(countErr, "check knowledge base bindings")
+		}
+		if documents > 0 || bindings > 0 {
+			return errs.NewKey(errs.CodeConflict, "ai.knowledge.delete_referenced", "knowledge base still has documents or agent bindings")
+		}
+		result := tx.Where("tenant_id=? AND id=? AND revision=?", row.TenantID, row.ID, request.Revision).
+			Delete(&KnowledgeBase{})
+		if result.Error != nil {
+			return dbError(result.Error, "delete knowledge base")
+		}
+		if result.RowsAffected != 1 {
+			return revisionConflict()
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	setKnowledgeAudit(ctx, "ai_knowledge_base", row.ID, auditKnowledgeBaseDeleted)
+	return map[string]any{"deleted": true}, nil
+}
+
+func (s *KnowledgeService) resolveEmbedding(ctx context.Context, alias string) error {
+	if s.models == nil {
+		return errs.NewKey(errs.CodeValidation, "ai.knowledge.embedding_unavailable", "embedding model resolver is unavailable")
+	}
+	_, err := s.models.Resolve(ctx, alias, aimodel.CapabilityRequirements{
+		ModelType: aimodel.ModelTypeEmbedding,
+		Features:  []aimodel.Feature{aimodel.FeatureEmbeddings},
+	})
+	return err
+}
+
+func (s *KnowledgeService) getDocument(ctx context.Context, id string, manage bool) (*KnowledgeDocument, *KnowledgeBase, *auth.Context, error) {
+	ac, err := knowledgeActor(ctx)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	var document KnowledgeDocument
+	if err = s.dbForContext(ctx).Where("tenant_id=? AND id=?", ac.TenantID, id).First(&document).Error; err != nil {
+		return nil, nil, nil, knowledgeNotFound()
+	}
+	knowledgeBase, _, err := s.getKnowledgeBase(ctx, document.KnowledgeBaseID, manage)
+	if err != nil {
+		return nil, nil, nil, knowledgeNotFound()
+	}
+	return &document, knowledgeBase, ac, nil
+}
+
+func (s *KnowledgeService) ListDocuments(ctx context.Context, request KnowledgeDocumentListRequest) (any, error) {
+	knowledgeBase, ac, err := s.getKnowledgeBase(ctx, request.KnowledgeBaseID, false)
+	if err != nil {
+		return nil, err
+	}
+	query := s.db.WithContext(ctx).Where("tenant_id=? AND knowledge_base_id=?", ac.TenantID, knowledgeBase.ID)
+	if request.Status != "" {
+		query = query.Where("ingestion_status=?", request.Status)
+	}
+	var total int64
+	if err = query.Model(&KnowledgeDocument{}).Count(&total).Error; err != nil {
+		return nil, dbError(err, "list knowledge documents")
+	}
+	var rows []KnowledgeDocument
+	if err = query.Order("created_at DESC").Offset(request.Offset()).Limit(request.PageSize).Find(&rows).Error; err != nil {
+		return nil, dbError(err, "list knowledge documents")
+	}
+	return pagination.NewResult(rows, total, request.Request), nil
+}
+
+func (s *KnowledgeService) GetDocument(ctx context.Context, request KnowledgeDocumentIDRequest) (any, error) {
+	document, _, _, err := s.getDocument(ctx, request.ID, false)
+	return document, err
+}
+
+func (s *KnowledgeService) CreateDocument(ctx context.Context, request KnowledgeDocumentCreateRequest) (any, error) {
+	knowledgeBase, ac, err := s.getKnowledgeBase(ctx, request.KnowledgeBaseID, true)
+	if err != nil {
+		return nil, err
+	}
+	source, err := s.attachmentSnapshot(ctx, ac, request.AttachmentID)
+	if err != nil {
+		return nil, err
+	}
+	row := KnowledgeDocument{
+		ID: uuid.NewString(), TenantID: ac.TenantID, KnowledgeBaseID: knowledgeBase.ID,
+		AttachmentID: source.ID, SourceRevision: source.SHA256, ContentType: source.ContentType,
+		OriginalName: source.OriginalName, IngestionStatus: aiknowledge.DocumentPending, Revision: 1,
+	}
+	if s.links == nil {
+		return nil, errs.NewKey(errs.CodeInternal, "ai.knowledge.attachment_linker_unavailable", "attachment resource linker is unavailable")
+	}
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if lockErr := lockKnowledgeBase(ctx, tx, knowledgeBase.TenantID, knowledgeBase.ID); lockErr != nil {
+			return lockErr
+		}
+		var current KnowledgeBase
+		if queryErr := tx.Where("tenant_id=? AND id=? AND owner_user_id=?",
+			knowledgeBase.TenantID, knowledgeBase.ID, ac.UserID).First(&current).Error; queryErr != nil {
+			return knowledgeNotFound()
+		}
+		if createErr := tx.Create(&row).Error; createErr != nil {
+			return knowledgeDBError(createErr, "ai.knowledge.document_exists", "attachment is already referenced by this knowledge base")
+		}
+		_, linkErr := s.links.BindResource(ctx, tx, attachment.ResourceLinkRequest{
+			AttachmentID: row.AttachmentID, ResourceType: KnowledgeDocumentResourceType,
+			ResourceID: row.ID, Field: "source",
+		})
+		return linkErr
+	})
+	if err != nil {
+		return nil, knowledgeDBError(err, "ai.knowledge.document_exists", "attachment is already referenced by this knowledge base")
+	}
+	setKnowledgeAudit(ctx, "ai_knowledge_document", row.ID, auditKnowledgeDocumentCreated)
+	return row, nil
+}
+
+func (s *KnowledgeService) UpdateDocument(ctx context.Context, request KnowledgeDocumentUpdateRequest) (any, error) {
+	document, _, ac, err := s.getDocument(ctx, request.ID, true)
+	if err != nil {
+		return nil, err
+	}
+	source, err := s.attachmentSnapshot(ctx, ac, request.AttachmentID)
+	if err != nil {
+		return nil, err
+	}
+	if s.links == nil {
+		return nil, errs.NewKey(errs.CodeInternal, "ai.knowledge.attachment_linker_unavailable", "attachment resource linker is unavailable")
+	}
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if document.AttachmentID != source.ID {
+			if _, linkErr := s.links.BindResource(ctx, tx, attachment.ResourceLinkRequest{
+				AttachmentID: source.ID, ResourceType: KnowledgeDocumentResourceType,
+				ResourceID: document.ID, Field: "source",
+			}); linkErr != nil {
+				return linkErr
+			}
+			if unlinkErr := s.links.UnbindResource(ctx, tx, attachment.ResourceLinkRequest{
+				AttachmentID: document.AttachmentID, ResourceType: KnowledgeDocumentResourceType,
+				ResourceID: document.ID, Field: "source",
+			}); unlinkErr != nil {
+				return unlinkErr
+			}
+		}
+		result := tx.Model(&KnowledgeDocument{}).
+			Where("tenant_id=? AND id=? AND revision=?", ac.TenantID, document.ID, request.Revision).
+			Updates(map[string]any{
+				"attachment_id": source.ID, "source_revision": source.SHA256,
+				"content_type": source.ContentType, "original_name": source.OriginalName,
+				"ingestion_status": aiknowledge.DocumentPending, "ingestion_error_category": "",
+				"current_index_version_id": nil, "revision": gorm.Expr("revision + 1"),
+			})
+		if result.Error != nil {
+			return knowledgeDBError(result.Error, "ai.knowledge.document_exists", "attachment is already referenced by this knowledge base")
+		}
+		if result.RowsAffected != 1 {
+			return revisionConflict()
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	setKnowledgeAudit(ctx, "ai_knowledge_document", document.ID, auditKnowledgeDocumentUpdated)
+	return s.GetDocument(ctx, KnowledgeDocumentIDRequest{ID: document.ID})
+}
+
+func (s *KnowledgeService) DeleteDocument(ctx context.Context, request KnowledgeDocumentDeleteRequest) (any, error) {
+	document, _, ac, err := s.getDocument(ctx, request.ID, true)
+	if err != nil {
+		return nil, err
+	}
+	if s.links == nil {
+		return nil, errs.NewKey(errs.CodeInternal, "ai.knowledge.attachment_linker_unavailable", "attachment resource linker is unavailable")
+	}
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if unlinkErr := s.links.UnbindResource(ctx, tx, attachment.ResourceLinkRequest{
+			AttachmentID: document.AttachmentID, ResourceType: KnowledgeDocumentResourceType,
+			ResourceID: document.ID, Field: "source",
+		}); unlinkErr != nil {
+			return unlinkErr
+		}
+		result := tx.Where("tenant_id=? AND id=? AND revision=?", ac.TenantID, document.ID, request.Revision).
+			Delete(&KnowledgeDocument{})
+		if result.Error != nil {
+			return dbError(result.Error, "delete knowledge document")
+		}
+		if result.RowsAffected != 1 {
+			return revisionConflict()
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	setKnowledgeAudit(ctx, "ai_knowledge_document", document.ID, auditKnowledgeDocumentDeleted)
+	return map[string]any{"deleted": true}, nil
+}
+
+func (s *KnowledgeService) attachmentSnapshot(ctx context.Context, ac *auth.Context, id string) (*systemmodel.Attachment, error) {
+	var row systemmodel.Attachment
+	if err := s.db.WithContext(ctx).Where("tenant_id=? AND id=? AND status=?", ac.TenantID, id, status.AttachmentReady).
+		First(&row).Error; err != nil {
+		return nil, errs.NewKey(errs.CodeNotFound, "ai.knowledge.attachment_not_found", "ready attachment not found")
+	}
+	if row.UploaderID != ac.UserID {
+		return nil, errs.NewKey(errs.CodeNotFound, "ai.knowledge.attachment_not_found", "ready attachment not found")
+	}
+	if !sha256Pattern.MatchString(strings.ToLower(row.SHA256)) {
+		return nil, errs.NewKey(errs.CodeValidation, "ai.knowledge.attachment_revision_missing", "attachment SHA-256 is unavailable")
+	}
+	row.SHA256 = strings.ToLower(row.SHA256)
+	return &row, nil
+}
+
+func (s *KnowledgeService) ListAgentKnowledge(ctx context.Context, request AgentKnowledgeListRequest) (any, error) {
+	ac, err := knowledgeActor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	agent, _, err := s.agents.get(ctx, request.AgentID, false)
+	if err != nil {
+		return nil, err
+	}
+	query := s.db.WithContext(ctx).Model(&AgentKnowledgeBinding{}).
+		Joins("JOIN ai_knowledge_bases kb ON kb.tenant_id = ai_agent_knowledge_bindings.tenant_id AND kb.id = ai_agent_knowledge_bindings.knowledge_base_id AND kb.deleted_at IS NULL").
+		Where("ai_agent_knowledge_bindings.tenant_id=? AND ai_agent_knowledge_bindings.agent_id=?", agent.TenantID, agent.ID).
+		Where("kb.visibility=? OR kb.owner_user_id=?", aiknowledge.VisibilityTenant, ac.UserID)
+	var total int64
+	if err = query.Count(&total).Error; err != nil {
+		return nil, dbError(err, "list agent knowledge bindings")
+	}
+	var bindings []AgentKnowledgeBinding
+	if err = query.Select("ai_agent_knowledge_bindings.*").Order("ai_agent_knowledge_bindings.created_at ASC").
+		Offset(request.Offset()).Limit(request.PageSize).Find(&bindings).Error; err != nil {
+		return nil, dbError(err, "list agent knowledge bindings")
+	}
+	return pagination.NewResult(bindings, total, request.Request), nil
+}
+
+func (s *KnowledgeService) BindAgentKnowledge(ctx context.Context, request AgentKnowledgeBindRequest) (any, error) {
+	if _, err := knowledgeActor(ctx); err != nil {
+		return nil, err
+	}
+	agent, ac, err := s.agents.get(ctx, request.AgentID, true)
+	if err != nil {
+		return nil, err
+	}
+	knowledgeBase, _, err := s.getKnowledgeBase(ctx, request.KnowledgeBaseID, false)
+	if err != nil {
+		return nil, err
+	}
+	binding := AgentKnowledgeBinding{
+		ID: uuid.NewString(), TenantID: ac.TenantID, AgentID: agent.ID,
+		KnowledgeBaseID: knowledgeBase.ID, CreatedBy: ac.UserID,
+	}
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if lockErr := lockKnowledgeBase(ctx, tx, knowledgeBase.TenantID, knowledgeBase.ID); lockErr != nil {
+			return lockErr
+		}
+		var current KnowledgeBase
+		if queryErr := tx.Where("tenant_id=? AND id=?", knowledgeBase.TenantID, knowledgeBase.ID).
+			Where("visibility=? OR owner_user_id=?", aiknowledge.VisibilityTenant, ac.UserID).
+			First(&current).Error; queryErr != nil {
+			return knowledgeNotFound()
+		}
+		if createErr := tx.Create(&binding).Error; createErr != nil {
+			return knowledgeDBError(createErr, "ai.knowledge.binding_exists", "knowledge base is already bound to the agent")
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	setKnowledgeAudit(ctx, "ai_agent_knowledge_binding", binding.ID, auditAgentKnowledgeBound)
+	return binding, nil
+}
+
+func (s *KnowledgeService) UnbindAgentKnowledge(ctx context.Context, request AgentKnowledgeUnbindRequest) (any, error) {
+	if _, err := knowledgeActor(ctx); err != nil {
+		return nil, err
+	}
+	agent, ac, err := s.agents.get(ctx, request.AgentID, true)
+	if err != nil {
+		return nil, err
+	}
+	var binding AgentKnowledgeBinding
+	if err = s.db.WithContext(ctx).Where("tenant_id=? AND agent_id=? AND knowledge_base_id=?",
+		ac.TenantID, agent.ID, request.KnowledgeBaseID).First(&binding).Error; err != nil {
+		return nil, knowledgeNotFound()
+	}
+	result := s.db.WithContext(ctx).Delete(&binding)
+	if result.Error != nil {
+		return nil, dbError(result.Error, "unbind agent knowledge")
+	}
+	setKnowledgeAudit(ctx, "ai_agent_knowledge_binding", binding.ID, auditAgentKnowledgeUnbound)
+	return map[string]any{"deleted": true}, nil
+}
+
+func (s *KnowledgeService) CanReadKnowledgeBase(ctx context.Context, id string) error {
+	_, _, err := s.getKnowledgeBase(ctx, id, false)
+	return err
+}
+
+func (s *KnowledgeService) CanManageKnowledgeBase(ctx context.Context, id string) error {
+	_, _, err := s.getKnowledgeBase(ctx, id, true)
+	return err
+}
+
+func (s *KnowledgeService) CanReadDocument(ctx context.Context, id string) error {
+	_, _, _, err := s.getDocument(ctx, id, false)
+	return err
+}
+
+func (s *KnowledgeService) GetKnowledgeBaseRef(ctx context.Context, id string) (aiknowledge.KnowledgeBaseRef, error) {
+	row, _, err := s.getKnowledgeBase(ctx, id, false)
+	if err != nil {
+		return aiknowledge.KnowledgeBaseRef{}, err
+	}
+	return aiknowledge.KnowledgeBaseRef{
+		ID: row.ID, TenantID: row.TenantID, OwnerUserID: row.OwnerUserID, Visibility: row.Visibility,
+		Status: row.Status, EmbeddingAlias: row.EmbeddingAlias, Revision: row.Revision,
+	}, nil
+}
+
+func (s *KnowledgeService) GetDocumentRef(ctx context.Context, id string) (aiknowledge.DocumentRef, error) {
+	row, _, _, err := s.getDocument(ctx, id, false)
+	if err != nil {
+		return aiknowledge.DocumentRef{}, err
+	}
+	return aiknowledge.DocumentRef{
+		ID: row.ID, TenantID: row.TenantID, KnowledgeBaseID: row.KnowledgeBaseID,
+		AttachmentID: row.AttachmentID, SourceRevision: row.SourceRevision,
+		ContentType: row.ContentType, OriginalName: row.OriginalName, Revision: row.Revision,
+	}, nil
+}
+
+type knowledgeAttachmentPolicy struct {
+	service *KnowledgeService
+}
+
+func (p knowledgeAttachmentPolicy) ResourceType() string { return KnowledgeDocumentResourceType }
+
+func (p knowledgeAttachmentPolicy) CanAccess(ctx context.Context, tenantID, userID, resourceID, field string) error {
+	ac, err := knowledgeActor(ctx)
+	if err != nil || ac.TenantID != tenantID || ac.UserID != userID || field != "source" {
+		return knowledgeNotFound()
+	}
+	if attachment.ResourceLinkOperationFromContext(ctx) != "" {
+		_, _, _, manageErr := p.service.getDocument(ctx, resourceID, true)
+		return manageErr
+	}
+	return p.service.CanReadDocument(ctx, resourceID)
+}
+
+func knowledgeDBError(err error, conflictKey, conflictFallback string) error {
+	if err == nil {
+		return nil
+	}
+	if _, ok := errs.AsAppError(err); ok {
+		return err
+	}
+	lower := strings.ToLower(err.Error())
+	if strings.Contains(lower, "duplicate") || strings.Contains(lower, "unique") {
+		return errs.NewKey(errs.CodeConflict, conflictKey, conflictFallback)
+	}
+	return errs.Wrap(errs.CodeInternal, "knowledge persistence failed", err)
+}
+
+func setKnowledgeAudit(ctx context.Context, resourceType, resourceID, summary string) {
+	if ac, ok := auth.FromContext(ctx); ok && ac != nil {
+		ac.AuditResourceType = resourceType
+		ac.AuditResourceID = resourceID
+		ac.AuditSummary = summary
+	}
+}
+
+var _ aiknowledge.Service = (*KnowledgeService)(nil)

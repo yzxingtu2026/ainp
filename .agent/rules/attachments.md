@@ -1,6 +1,6 @@
 # 租户隔离附件系统
 
-- 附件元数据与绑定走 AttachmentService；字节只经 ObjectStore + 短时 transfer token。
+- 附件元数据与绑定走 AttachmentService；业务事务只经强类型 `attachment.ResourceLinker` 原子 Bind/Unbind，禁止直写链接表；字节只经 ObjectStore + 短时 transfer token。
 - `resource_type` 必须注册 AccessPolicy；未注册默认拒绝。
 - 上传策略经设置 `attachment.upload_policy` + PolicyProvider；业务入口用选择器，附件中心为管理页。
 - 派生：`thumb` 为标准变体（约 200²）；状态走独立 CodeSet `system.attachment_thumb_status`；原图 ready 不依赖派生。

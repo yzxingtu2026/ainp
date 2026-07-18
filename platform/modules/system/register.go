@@ -94,6 +94,7 @@ func Register(a *app.App) error {
 	policyProvider := NewSettingUploadPolicyProvider(settingSvc.Provider())
 	attachSvc := NewAttachmentService(a.DB, a.Storage, a.TransferTokens, a.AttachmentPolicies, policyProvider)
 	a.AIAssetResolver = attachSvc
+	a.AttachmentResourceLinker = attachSvc
 	if a.Outbox != nil {
 		attachSvc.SetOutboxWriter(a.Outbox.Writer)
 	}

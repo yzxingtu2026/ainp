@@ -143,6 +143,7 @@ func Register(a *app.App) error {
 	}
 	a.AgentContracts = contracts
 	agents := NewAgentService(a.DB, contracts, svc, toolRegistry)
+	knowledge := NewKnowledgeService(a.DB, svc, agents, a.AttachmentResourceLinker)
 	conversations := NewConversationService(a.DB, a.AIAssetResolver)
 	compactions := NewContextCompactionService(a.DB, conversations, svc, invocations, toolRegistry)
 	a.ContextCompactor = compactions
@@ -208,6 +209,9 @@ func Register(a *app.App) error {
 		if err := a.RegisterAction(action.Action{ID: d.id, Handler: d.handler, Meta: action.Metadata{Capability: "ai", Access: access, Name: d.name, NameKey: "action." + d.id + ".name", Description: d.name, DescriptionKey: "action." + d.id + ".description", PermissionGroup: d.group, PermissionGroupName: d.groupName, PermissionGroupNameKey: "permission_group." + d.group, Audit: &auditOn, HTTP: &action.HTTPMeta{Method: "POST", Path: d.path}}}); err != nil {
 			return err
 		}
+	}
+	if err := RegisterKnowledge(a, knowledge); err != nil {
+		return err
 	}
 	if err := toolRegistry.RegisterProvider(&aitool.ActionProvider{Actions: a.Actions}, &aitool.ActionExecutor{Actions: a.Actions}); err != nil {
 		return err
