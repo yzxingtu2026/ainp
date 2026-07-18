@@ -3,7 +3,6 @@ package system
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"regexp"
 	"sort"
 	"strings"
@@ -17,9 +16,9 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/i18n"
 	"github.com/yzxingtu2026/ainp/platform/framework/pagination"
 	"github.com/yzxingtu2026/ainp/platform/framework/status"
+	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"github.com/yzxingtu2026/ainp/platform/modules/system/model"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 var roleCodePattern = regexp.MustCompile(`^[a-z][a-z0-9_]{1,63}$`)
@@ -125,30 +124,36 @@ func (s *RoleService) List(ctx context.Context, input json.RawMessage) (any, err
 }
 
 func (s *RoleService) list(ctx context.Context, req roleListRequest) (any, error) {
-	tenantID, _, err := tenantIdentity(ctx)
+	_, _, err := tenantIdentity(ctx)
 	if err != nil {
 		return nil, err
 	}
-	query := s.db.WithContext(ctx).Table("roles AS r").Where("r.tenant_id = ?", tenantID)
-	if keyword := strings.TrimSpace(req.Keyword); keyword != "" {
-		like := "%" + keyword + "%"
-		query = query.Where("r.code ILIKE ? OR r.name ILIKE ?", like, like)
+	tdb, err := tenant.TenantDB(ctx, s.db)
+	if err != nil {
+		return nil, err
 	}
-	if req.Status != "" {
-		query = query.Where("r.status = ?", req.Status)
-	}
-	var total int64
-	if err := query.Count(&total).Error; err != nil {
+	keyword := strings.TrimSpace(req.Keyword)
+	like := "%" + keyword + "%"
+	counts, err := tenant.TenantRaw[struct{ Count int64 }](tdb, `SELECT COUNT(*) AS count FROM roles r
+WHERE r.tenant_id = ? AND (? = '' OR r.code ILIKE ? OR r.name ILIKE ?)
+  AND (? = '' OR r.status = ?)`, keyword, like, like, req.Status, req.Status)
+	if err != nil {
 		return nil, errs.Wrap(errs.CodeInternal, "count roles failed", err)
 	}
-	var rows []struct {
+	var total int64
+	if len(counts) == 1 {
+		total = counts[0].Count
+	}
+	rows, err := tenant.TenantRaw[struct {
 		model.Role
 		UserCount int64 `gorm:"column:user_count"`
-	}
-	if err := query.Select("r.*, COUNT(ur.id) AS user_count").
-		Joins("LEFT JOIN user_roles ur ON ur.role_id = r.id AND ur.tenant_id = r.tenant_id").
-		Group("r.id").Order("r.is_builtin DESC, r.created_at ASC, r.id ASC").
-		Offset(req.Offset()).Limit(req.PageSize).Scan(&rows).Error; err != nil {
+	}](tdb, `SELECT r.*, COUNT(ur.id) AS user_count FROM roles r
+LEFT JOIN user_roles ur ON ur.role_id = r.id AND ur.tenant_id = r.tenant_id
+WHERE r.tenant_id = ? AND (? = '' OR r.code ILIKE ? OR r.name ILIKE ?)
+  AND (? = '' OR r.status = ?)
+GROUP BY r.id ORDER BY r.is_builtin DESC, r.created_at ASC, r.id ASC OFFSET ? LIMIT ?`,
+		keyword, like, like, req.Status, req.Status, req.Offset(), req.PageSize)
+	if err != nil {
 		return nil, errs.Wrap(errs.CodeInternal, "list roles failed", err)
 	}
 	records := make([]RoleView, 0, len(rows))
@@ -159,7 +164,7 @@ func (s *RoleService) list(ctx context.Context, req roleListRequest) (any, error
 }
 
 func (s *RoleService) Get(ctx context.Context, input json.RawMessage) (any, error) {
-	tenantID, _, err := tenantIdentity(ctx)
+	_, _, err := tenantIdentity(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -167,17 +172,26 @@ func (s *RoleService) Get(ctx context.Context, input json.RawMessage) (any, erro
 	if err := decodeRoleRequest(input, &req); err != nil {
 		return nil, err
 	}
-	role, err := s.findRole(ctx, s.db, tenantID, req.ID, false)
+	tdb, err := tenant.TenantDB(ctx, s.db)
 	if err != nil {
 		return nil, err
 	}
-	permissions, err := s.rolePermissions(ctx, s.db, role.ID)
+	role, err := s.findRole(tdb, req.ID, false)
 	if err != nil {
 		return nil, err
+	}
+	permissions, err := s.rolePermissions(tdb, role.ID)
+	if err != nil {
+		return nil, err
+	}
+	counts, err := tenant.TenantRaw[struct{ Count int64 }](tdb,
+		`SELECT COUNT(*) AS count FROM user_roles WHERE tenant_id = ? AND role_id = ?`, role.ID)
+	if err != nil {
+		return nil, errs.Wrap(errs.CodeInternal, "count role users failed", err)
 	}
 	var count int64
-	if err := s.db.WithContext(ctx).Model(&model.UserRole{}).Where("tenant_id = ? AND role_id = ?", tenantID, role.ID).Count(&count).Error; err != nil {
-		return nil, errs.Wrap(errs.CodeInternal, "count role users failed", err)
+	if len(counts) == 1 {
+		count = counts[0].Count
 	}
 	return roleView(*role, count, permissions), nil
 }
@@ -208,8 +222,15 @@ func (s *RoleService) Create(ctx context.Context, input json.RawMessage) (any, e
 	}
 	role := model.Role{ID: uuid.NewString(), TenantID: tenantID, Code: req.Code, Name: req.Name, Description: strings.TrimSpace(req.Description), Status: req.Status}
 	setRoleAudit(ctx, role.ID, "role created")
-	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(&role).Error; err != nil {
+	tdb, err := tenant.TenantDB(ctx, s.db)
+	if err != nil {
+		return nil, err
+	}
+	if err := tdb.Transaction(func(tx tenant.TenantDatabase) error {
+		if err := tenant.TenantExec(tx, `WITH scoped_tenant AS (SELECT ?::text AS tenant_id)
+INSERT INTO roles
+(id, tenant_id, code, name, description, status, is_builtin, created_at, updated_at)
+SELECT ?, tenant_id, ?, ?, ?, ?, FALSE, ?, ? FROM scoped_tenant`, role.ID, role.Code, role.Name, role.Description, role.Status, time.Now().UTC(), time.Now().UTC()); err != nil {
 			if strings.Contains(strings.ToLower(err.Error()), "duplicate") {
 				return errs.NewKey(errs.CodeConflict, "role.code_conflict", "role code already exists")
 			}
@@ -226,7 +247,7 @@ func (s *RoleService) Create(ctx context.Context, input json.RawMessage) (any, e
 }
 
 func (s *RoleService) Update(ctx context.Context, input json.RawMessage) (any, error) {
-	tenantID, _, err := tenantIdentity(ctx)
+	_, _, err := tenantIdentity(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -240,8 +261,12 @@ func (s *RoleService) Update(ctx context.Context, input json.RawMessage) (any, e
 	}
 	var role *model.Role
 	setRoleAudit(ctx, req.ID, "role updated")
-	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		current, err := s.findRole(ctx, tx, tenantID, req.ID, true)
+	tdb, err := tenant.TenantDB(ctx, s.db)
+	if err != nil {
+		return nil, err
+	}
+	err = tdb.Transaction(func(tx tenant.TenantDatabase) error {
+		current, err := s.findRole(tx, req.ID, true)
 		if err != nil {
 			return err
 		}
@@ -249,11 +274,15 @@ func (s *RoleService) Update(ctx context.Context, input json.RawMessage) (any, e
 			return errs.NewKey(errs.CodeConflict, "role.builtin_protected", "built-in role cannot be disabled")
 		}
 		statusChanged := current.Status != req.Status
-		if err := tx.Model(current).Updates(map[string]any{"name": req.Name, "description": strings.TrimSpace(req.Description), "status": req.Status}).Error; err != nil {
+		if err := tenant.TenantExec(tx, `WITH scoped_role AS (
+  SELECT id FROM roles WHERE tenant_id = ? AND id = ?
+)
+UPDATE roles SET name = ?, description = ?, status = ?, updated_at = ?
+WHERE id IN (SELECT id FROM scoped_role)`, current.ID, req.Name, strings.TrimSpace(req.Description), req.Status, time.Now().UTC()); err != nil {
 			return err
 		}
 		if statusChanged {
-			if err := s.auth.BumpAuthVersionForRole(ctx, tx, tenantID, current.ID); err != nil {
+			if err := s.auth.BumpAuthVersionForRoleScoped(tx, current.ID); err != nil {
 				return err
 			}
 		}
@@ -268,7 +297,7 @@ func (s *RoleService) Update(ctx context.Context, input json.RawMessage) (any, e
 }
 
 func (s *RoleService) Delete(ctx context.Context, input json.RawMessage) (any, error) {
-	tenantID, _, err := tenantIdentity(ctx)
+	_, _, err := tenantIdentity(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -277,25 +306,34 @@ func (s *RoleService) Delete(ctx context.Context, input json.RawMessage) (any, e
 		return nil, err
 	}
 	setRoleAudit(ctx, req.ID, "role deleted")
-	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		role, err := s.findRole(ctx, tx, tenantID, req.ID, true)
+	tdb, err := tenant.TenantDB(ctx, s.db)
+	if err != nil {
+		return nil, err
+	}
+	err = tdb.Transaction(func(tx tenant.TenantDatabase) error {
+		role, err := s.findRole(tx, req.ID, true)
 		if err != nil {
 			return err
 		}
 		if role.IsBuiltin {
 			return errs.NewKey(errs.CodeConflict, "role.builtin_protected", "built-in role cannot be deleted")
 		}
-		var count int64
-		if err := tx.Model(&model.UserRole{}).Where("tenant_id = ? AND role_id = ?", tenantID, role.ID).Count(&count).Error; err != nil {
+		counts, err := tenant.TenantRaw[struct{ Count int64 }](tx,
+			`SELECT COUNT(*) AS count FROM user_roles WHERE tenant_id = ? AND role_id = ?`, role.ID)
+		if err != nil {
 			return err
+		}
+		var count int64
+		if len(counts) == 1 {
+			count = counts[0].Count
 		}
 		if count > 0 {
 			return errs.NewKey(errs.CodeConflict, "role.in_use", "role is assigned to users")
 		}
-		if err := tx.Where("role_id = ?", role.ID).Delete(&model.RolePermission{}).Error; err != nil {
+		if err := deleteRolePermissions(tx, role.ID); err != nil {
 			return err
 		}
-		return tx.Delete(role).Error
+		return tenant.TenantExec(tx, `DELETE FROM roles WHERE tenant_id = ? AND id = ?`, role.ID)
 	})
 	if err != nil {
 		return nil, normalizeRoleError(err, "delete role failed")
@@ -304,7 +342,7 @@ func (s *RoleService) Delete(ctx context.Context, input json.RawMessage) (any, e
 }
 
 func (s *RoleService) UpdatePermissions(ctx context.Context, input json.RawMessage) (any, error) {
-	tenantID, _, err := tenantIdentity(ctx)
+	_, _, err := tenantIdentity(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -317,8 +355,12 @@ func (s *RoleService) UpdatePermissions(ctx context.Context, input json.RawMessa
 		return nil, err
 	}
 	setRoleAudit(ctx, req.ID, "role permissions updated")
-	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		role, err := s.findRole(ctx, tx, tenantID, req.ID, true)
+	tdb, err := tenant.TenantDB(ctx, s.db)
+	if err != nil {
+		return nil, err
+	}
+	err = tdb.Transaction(func(tx tenant.TenantDatabase) error {
+		role, err := s.findRole(tx, req.ID, true)
 		if err != nil {
 			return err
 		}
@@ -328,7 +370,7 @@ func (s *RoleService) UpdatePermissions(ctx context.Context, input json.RawMessa
 		if err := replaceRolePermissions(tx, role.ID, permissions); err != nil {
 			return err
 		}
-		return s.auth.BumpAuthVersionForRole(ctx, tx, tenantID, role.ID)
+		return s.auth.BumpAuthVersionForRoleScoped(tx, role.ID)
 	})
 	if err != nil {
 		return nil, normalizeRoleError(err, "update role permissions failed")
@@ -420,27 +462,28 @@ func (s *RoleService) validatePermissions(values []string) ([]string, error) {
 	return result, nil
 }
 
-func (s *RoleService) findRole(ctx context.Context, tx *gorm.DB, tenantID, roleID string, lock bool) (*model.Role, error) {
+func (s *RoleService) findRole(db tenant.TenantDatabase, roleID string, lock bool) (*model.Role, error) {
 	if roleID == "" {
 		return nil, errs.ValidationKey("common.validation_failed", "role id is required")
 	}
-	query := tx.WithContext(ctx).Where("id = ? AND tenant_id = ?", roleID, tenantID)
+	sql := `SELECT * FROM roles WHERE tenant_id = ? AND id = ?`
 	if lock {
-		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+		sql += ` FOR UPDATE`
 	}
-	var role model.Role
-	if err := query.First(&role).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errs.NewKey(errs.CodeNotFound, "role.not_found", "role not found")
-		}
+	rows, err := tenant.TenantRaw[model.Role](db, sql, roleID)
+	if err != nil {
 		return nil, err
 	}
-	return &role, nil
+	if len(rows) != 1 {
+		return nil, errs.NewKey(errs.CodeNotFound, "role.not_found", "role not found")
+	}
+	return &rows[0], nil
 }
 
-func (s *RoleService) rolePermissions(ctx context.Context, tx *gorm.DB, roleID string) ([]string, error) {
-	var rows []model.RolePermission
-	if err := tx.WithContext(ctx).Where("role_id = ?", roleID).Order("permission ASC").Find(&rows).Error; err != nil {
+func (s *RoleService) rolePermissions(db tenant.TenantDatabase, roleID string) ([]string, error) {
+	rows, err := tenant.TenantRaw[model.RolePermission](db, `SELECT rp.* FROM role_permissions rp
+JOIN roles r ON r.id = rp.role_id WHERE r.tenant_id = ? AND r.id = ? ORDER BY rp.permission ASC`, roleID)
+	if err != nil {
 		return nil, errs.Wrap(errs.CodeInternal, "load role permissions failed", err)
 	}
 	result := make([]string, 0, len(rows))
@@ -450,12 +493,21 @@ func (s *RoleService) rolePermissions(ctx context.Context, tx *gorm.DB, roleID s
 	return result, nil
 }
 
-func replaceRolePermissions(tx *gorm.DB, roleID string, permissions []string) error {
-	if err := tx.Where("role_id = ?", roleID).Delete(&model.RolePermission{}).Error; err != nil {
+func deleteRolePermissions(db tenant.TenantDatabase, roleID string) error {
+	return tenant.TenantExec(db, `DELETE FROM role_permissions rp USING roles r
+WHERE r.tenant_id = ? AND r.id = ? AND rp.role_id = r.id`, roleID)
+}
+
+func replaceRolePermissions(db tenant.TenantDatabase, roleID string, permissions []string) error {
+	if err := deleteRolePermissions(db, roleID); err != nil {
 		return err
 	}
 	for _, permission := range permissions {
-		if err := tx.Create(&model.RolePermission{ID: uuid.NewString(), RoleID: roleID, Permission: permission}).Error; err != nil {
+		if err := tenant.TenantExec(db, `WITH scoped_role AS (
+  SELECT id FROM roles WHERE tenant_id = ? AND id = ?
+)
+INSERT INTO role_permissions (id, role_id, permission)
+SELECT ?, id, ? FROM scoped_role`, roleID, uuid.NewString(), permission); err != nil {
 			return err
 		}
 	}

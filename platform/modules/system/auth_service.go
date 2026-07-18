@@ -178,6 +178,18 @@ func (s *AuthService) BumpAuthVersionForRole(ctx context.Context, tx *gorm.DB, t
 		UpdateColumn("auth_version", gorm.Expr("auth_version + 1")).Error
 }
 
+// BumpAuthVersionForRoleScoped invalidates users through a trusted tenant transaction.
+func (s *AuthService) BumpAuthVersionForRoleScoped(db tenant.TenantDatabase, roleID string) error {
+	if roleID == "" {
+		return auth.ErrAuthorizationInvalid
+	}
+	return tenant.TenantExec(db, `UPDATE users AS u SET auth_version = auth_version + 1
+WHERE u.tenant_id = ? AND u.id IN (
+  SELECT ur.user_id FROM user_roles ur JOIN roles r ON r.id = ur.role_id AND r.tenant_id = ur.tenant_id
+  WHERE ur.tenant_id = u.tenant_id AND r.id = ?
+)`, roleID)
+}
+
 func (s *AuthService) BuildProfile(ctx context.Context, u *model.User) (*UserProfile, error) {
 	snapshot, err := s.LoadAuthorization(ctx, auth.AuthorizationRequest{
 		TenantID: u.TenantID, UserID: u.ID, Realm: auth.RealmTenant, AuthVersion: u.AuthVersion,
