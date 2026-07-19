@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/yzxingtu2026/ainp/platform/framework/aimemory"
+	"github.com/yzxingtu2026/ainp/platform/framework/aimodelruntime"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
 	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
@@ -251,10 +252,17 @@ type memorySourceRef struct {
 	ID       string `json:"id"`
 	Revision uint64 `json:"revision"`
 }
-type MemoryProjectionService struct{ db tenantdata.GuardedDatabase }
+type MemoryProjectionService struct {
+	db         tenantdata.GuardedDatabase
+	embeddings aimodelruntime.EmbeddingRuntime
+}
 
-func NewMemoryProjectionService(db *gorm.DB) *MemoryProjectionService {
-	return &MemoryProjectionService{db: tenantdata.GuardedDB(db)}
+func NewMemoryProjectionService(db *gorm.DB, embeddings ...aimodelruntime.EmbeddingRuntime) *MemoryProjectionService {
+	var runtime aimodelruntime.EmbeddingRuntime
+	if len(embeddings) > 0 {
+		runtime = embeddings[0]
+	}
+	return &MemoryProjectionService{db: tenantdata.GuardedDB(db), embeddings: runtime}
 }
 func (s *MemoryProjectionService) Rebuild(ctx context.Context, userID string) error {
 	now := time.Now().UTC()
@@ -263,7 +271,40 @@ func (s *MemoryProjectionService) Rebuild(ctx context.Context, userID string) er
 	if err := db.Where("user_id=? AND status='active' AND (expires_at IS NULL OR expires_at>?) AND (valid_from IS NULL OR valid_from<=?) AND (valid_to IS NULL OR valid_to>?)", userID, now, now, now).Order("recorded_at,id").Find(&items).Error; err != nil {
 		return err
 	}
+	vectorRows := map[string]MemoryProjection{}
+	if s.embeddings != nil && len(items) > 0 {
+		inputs := make([]aimodelruntime.EmbeddingItem, len(items))
+		for i, item := range items {
+			inputs[i] = aimodelruntime.EmbeddingItem{ID: item.ID, Text: item.Summary + "\n" + item.Content}
+		}
+		if response, embedErr := s.embeddings.Embed(ctx, aimodelruntime.EmbeddingRequest{ModelAlias: "default", Inputs: inputs, Purpose: aimodelruntime.EmbeddingPurposeMemory, Preprocessing: aimodelruntime.EmbeddingPreprocessingCosineNorm}); embedErr == nil && response != nil && response.Dimensions > 0 && response.Model.DeploymentID != "" {
+			for _, vector := range response.Vectors {
+				body, _ := json.Marshal(vector.Vector)
+				vectorRows[vector.ID] = MemoryProjection{ID: uuid.NewString(), UserID: userID, ItemID: vector.ID, Kind: aimemory.ProjectionVector, Status: aimemory.ProjectionReady, ModelAlias: "default", DeploymentID: response.Model.DeploymentID, Dimensions: response.Dimensions, VectorJSON: body, CreatedAt: now, UpdatedAt: now}
+			}
+		}
+	}
 	return db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("user_id=? AND kind IN ?", userID, []aimemory.ProjectionKind{aimemory.ProjectionExact, aimemory.ProjectionFTS, aimemory.ProjectionVector}).Delete(&MemoryProjection{}).Error; err != nil {
+			return err
+		}
+		for _, item := range items {
+			text := item.Summary + "\n" + item.Content
+			hash := sha256Hex([]byte(text))
+			for _, kind := range []aimemory.ProjectionKind{aimemory.ProjectionExact, aimemory.ProjectionFTS} {
+				row := MemoryProjection{ID: uuid.NewString(), UserID: userID, ItemID: item.ID, Kind: kind, Status: aimemory.ProjectionReady, ItemRevision: item.Revision, ContentHash: hash, SearchText: text, CreatedAt: now, UpdatedAt: now}
+				if err := tx.Create(&row).Error; err != nil {
+					return err
+				}
+			}
+			if row, ok := vectorRows[item.ID]; ok {
+				row.ItemRevision = item.Revision
+				row.ContentHash = hash
+				if err := tx.Create(&row).Error; err != nil {
+					return err
+				}
+			}
+		}
 		if err := tx.Where("user_id=?", userID).Delete(&MemoryDaySummary{}).Error; err != nil {
 			return err
 		}

@@ -26,5 +26,6 @@ Trusted Runtime Context 为 Agent Run、记忆召回和时间语义工具提供�
 ## 消费约束
 
 - Agent Runtime、Memory Retriever、Runtime Tool 通过同一个 `runtimecontext.Provider` 和 Run Time Snapshot 消费。
+- 自动记忆召回与 `builtin:memory.search` 从只读 Context Accessor 获取完全相同的 evaluated_at/timezone；日期参数只能缩小可信 owner 范围。
 - Tool 仅获取完成裁剪的只读上下文，禁止从模型参数接收 tenant/user/run/timezone。
 - 日志、审计、Outbox、Run Event 只能记录版本、timezone/source、evaluated_at 和错误分类，不记录私人画像内容。

@@ -42,4 +42,14 @@ active 变化只在事实事务写安全的 `ai.memory.item.changed` Outbox。�
 - day summary 使用 local_date/timezone/date_precision 分组；unknown/range 使用明确 date_group，绝不退回 observed_at/recorded_at；只存 item ID/revision provenance 和安全计数摘要。
 - current profile 是小容量强类型 JSON，包含 preferred_address、稳定 preferences/facts，并保存 source item revisions、policy version 和 content hash。
 
+## 时间感知混合召回
+
+- `MemoryRetrievalService` 只接受已注入的 Trusted Runtime Context；tenant/user/run/timezone 不从查询参数读取。
+- 查询先硬过滤 tenant、user、active、agent scope、expires/validity、日期、类型与敏感等级，再融合 exact、PostgreSQL FTS、ready vector、recency、confidence 和 importance。
+- exact/FTS/vector 投影保存 item revision 与 content hash；vector 额外固定 Embedding Alias、Deployment、dimensions。Embedding 不可用或 provenance 漂移时只降级 exact + FTS，不得跳过硬过滤。
+- relative date 由 Run Time Snapshot 解析为确定性 UTC/local 范围；`local_date` 与 occurred range 语义分开。
+- 自动 Recall Hook 只注入 normal 的 fact/context/event，受 Agent Version `max_recall_items/max_recall_tokens` 和用户 `auto_memory_enabled` 限制；当前称呼继续由强类型 profile 确定性解析。
+- 注入使用 `UNTRUSTED USER MEMORY` user-level reference section；Snapshot 仅保存 item/evidence revision refs，不保存正文或向量。
+- 唯一主动检索入口为 direct Slot `builtin:memory.search`；只读，禁止 add/update/delete Tool。
+
 第二阶段 consolidation 按 tenant+user 唯一批次和 lease 串行运行，使用冻结 consolidation Alias。模型输入仅含受控摘要、attribute、revision、recall/importance/validity；输出只允许 noop/duplicate/conflict/summary plan。应用层复核 item scope 与 revision 后只追加关系、保存计划和水位，禁止模型 activate/supersede/revoke/delete。

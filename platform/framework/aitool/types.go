@@ -196,6 +196,13 @@ type KnowledgeSearchInput struct {
 	DocumentIDs      []string `json:"document_ids,omitempty" validate:"omitempty,max=100"`
 	Limit            int      `json:"limit,omitempty"`
 }
+type MemorySearchInput struct {
+	Query    string   `json:"query" validate:"required,max=4096"`
+	DateFrom string   `json:"date_from,omitempty"`
+	DateTo   string   `json:"date_to,omitempty"`
+	Types    []string `json:"types,omitempty" validate:"omitempty,max=4"`
+	Limit    int      `json:"limit,omitempty" validate:"omitempty,min=1,max=20"`
+}
 
 type scopeContextKey struct{}
 

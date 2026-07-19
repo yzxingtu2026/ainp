@@ -68,6 +68,7 @@ type TrustedRuntimeContext struct {
 	PreferredAddressSource string       `json:"preferred_address_source"`
 	Locale                 string       `json:"locale"`
 	LocaleSource           string       `json:"locale_source"`
+	AutoMemoryEnabled      bool         `json:"auto_memory_enabled"`
 	ConversationID         string       `json:"conversation_id"`
 	ConversationCreatedAt  time.Time    `json:"conversation_created_at"`
 	AgentID                string       `json:"agent_id"`
