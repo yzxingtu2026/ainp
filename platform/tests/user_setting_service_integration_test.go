@@ -94,4 +94,23 @@ func TestUserSettingsAreSelfOnlyAndRevisioned(t *testing.T) {
 	if prefs.PreferredAddressOverride != "老板" || prefs.AutoMemoryEnabled {
 		t.Fatalf("typed prefs=%#v", prefs)
 	}
+
+	userService := system.NewUserService(testDB, nil)
+	updatedProfile, err := userService.UpdateSelfProfile(ctx("user-a"), json.RawMessage(`{"display_name":"Alice Updated"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updatedProfile.(system.SelfProfileView).DisplayName != "Alice Updated" {
+		t.Fatalf("updated self profile=%#v", updatedProfile)
+	}
+	var alice, bob model.User
+	if err := testDB.Where("tenant_id = ? AND id = ?", "tenant-a", "user-a").First(&alice).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := testDB.Where("tenant_id = ? AND id = ?", "tenant-a", "user-b").First(&bob).Error; err != nil {
+		t.Fatal(err)
+	}
+	if alice.DisplayName != "Alice Updated" || bob.DisplayName != "Bob" {
+		t.Fatalf("self update escaped owner boundary: alice=%q bob=%q", alice.DisplayName, bob.DisplayName)
+	}
 }

@@ -132,7 +132,11 @@ func (s *UserService) UpdateSelfProfile(ctx context.Context, input json.RawMessa
 	if err != nil {
 		return nil, err
 	}
-	if err := tenant.TenantExec(tdb, `UPDATE users SET display_name = ?, updated_at = ? WHERE tenant_id = ? AND id = ?`, req.DisplayName, time.Now().UTC(), userID); err != nil {
+	if err := tenant.TenantExec(tdb, `WITH scoped_user AS (
+  SELECT id FROM users WHERE tenant_id = ? AND id = ?
+)
+UPDATE users SET display_name = ?, updated_at = ?
+WHERE id IN (SELECT id FROM scoped_user)`, userID, req.DisplayName, time.Now().UTC()); err != nil {
 		return nil, normalizeUserError(err, "update self profile failed")
 	}
 	return s.SelfProfile(ctx, nil)
