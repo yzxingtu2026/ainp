@@ -116,7 +116,7 @@ onMounted(load);
               <NSwitch v-model:value="values.auto_memory_enabled" size="small" aria-label="自动记忆" />
               <NText>{{ values.auto_memory_enabled ? '自动记忆已开启' : '自动记忆已关闭' }}</NText>
             </div>
-            <NSpace><NButton type="primary" :loading="saving" @click="savePreferences">保存隐私设置</NButton><NButton disabled>管理记忆（#124）</NButton></NSpace>
+            <NSpace><NButton type="primary" :loading="saving" @click="savePreferences">保存隐私设置</NButton><NButton @click="router.push({ path: '/profile/memory', query: { from: 'profile' } })">管理记忆</NButton></NSpace>
           </NSpace>
         </NTabPane>
 

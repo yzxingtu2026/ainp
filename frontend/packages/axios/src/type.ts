@@ -82,6 +82,8 @@ export type MappedType<R extends ResponseType, JsonType = any> = R extends keyof
   : JsonType;
 
 export type CustomAxiosRequestConfig<R extends ResponseType = 'json'> = Omit<AxiosRequestConfig, 'responseType'> & {
+  /** Stable key used by the action middleware for mutation replay protection. */
+  _idempotencyKey?: string;
   responseType?: R;
 };
 

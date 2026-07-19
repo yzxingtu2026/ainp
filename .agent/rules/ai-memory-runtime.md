@@ -18,3 +18,5 @@
 - 召回必须先按 tenant/user/active/agent/validity/date/sensitivity 硬过滤，再融合 exact/FTS/vector/recency/confidence/importance；Embedding 异常只降级 exact+FTS。
 - 自动注入受 Agent Policy 与用户 auto_memory_enabled/条数/Token 限制，只作为 `UNTRUSTED USER MEMORY` user reference；Snapshot 只存 provenance refs。
 - 记忆 Runtime Tool 仅允许唯一 direct Slot `builtin:memory.search`，tenant/user/run/timezone 来自 RuntimeScope/Trusted Context；禁止 add/update/delete Tool 和公共 Runtime 业务 ID 分支。
+- 用户治理统一复用隐藏路由 `/profile/memory` 的 `MemoryWorkbench`，个人主页和后续 Workspace 只提供入口，不复制 API、Store 或权限逻辑，也不注册菜单。
+- 治理 Action 仅允许 authenticated `tenant + self`；管理权限不得扩大到成员正文。单项 mutation 使用 revision，清空使用当前 item ID/revision 快照令牌，全部 mutation 由 Action 框架强制持久化幂等。

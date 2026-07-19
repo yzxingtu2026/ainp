@@ -36,6 +36,7 @@ export const views: Record<LastLevelRouteKey, RouteComponent | (() => Promise<Ro
   operations_logs: () => import("@/views/operations/logs/index.vue"),
   "operations_notification-deliveries": () => import("@/views/operations/notification-deliveries/index.vue"),
   operations_outbox: () => import("@/views/operations/outbox/index.vue"),
+  profile_memory: () => import("@/views/profile/memory/index.vue"),
   system_attachments: () => import("@/views/system/attachments/index.vue"),
   "system_notification-templates": () => import("@/views/system/notification-templates/index.vue"),
   system_profile: () => import("@/views/system/profile/index.vue"),

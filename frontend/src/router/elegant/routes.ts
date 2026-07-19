@@ -265,6 +265,28 @@ export const generatedRoutes: GeneratedRoute[] = [
     ]
   },
   {
+    name: 'profile',
+    path: '/profile',
+    component: 'layout.base',
+    meta: {
+      title: 'profile',
+      i18nKey: 'route.profile',
+      hideInMenu: true
+    },
+    children: [
+      {
+        name: 'profile_memory',
+        path: '/profile/memory',
+        component: 'view.profile_memory',
+        meta: {
+          title: 'profile_memory',
+          i18nKey: 'route.profile_memory',
+          hideInMenu: true
+        }
+      }
+    ]
+  },
+  {
     name: 'setup',
     path: '/setup',
     component: 'layout.blank$view.setup',

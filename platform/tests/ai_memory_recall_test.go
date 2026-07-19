@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/yzxingtu2026/ainp/platform/framework/aimemory"
 	"github.com/yzxingtu2026/ainp/platform/framework/aimodelruntime"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/database"
@@ -110,5 +111,49 @@ func TestMemoryHybridRecallHardFiltersAndDegrades(t *testing.T) {
 	}
 	if !degraded.Degraded || degraded.DegradeReason != "embedding_provenance" || len(degraded.Items) != 1 {
 		t.Fatalf("unsafe degradation: %#v", degraded)
+	}
+	governance := ai.NewMemoryGovernanceService(db, nil)
+	management := ai.NewMemoryManagementService(db, governance, nil)
+	listed, err := management.List(ctx, ai.MemoryListRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	listResult := listed.(ai.MemoryListResult)
+	if listResult.Total != 3 {
+		t.Fatalf("self list leaked or omitted rows: %#v", listed)
+	}
+	if _, err = management.Get(ctx, ai.MemoryIDRequest{ID: "other"}); err == nil {
+		t.Fatal("cross-user detail read was allowed")
+	}
+	foreignMutationCtx := auth.WithContext(context.Background(), &auth.Context{TenantID: "tenant-a", UserID: "user-a", Realm: auth.RealmTenant, Authenticated: true, IdempotencyKey: "foreign-delete"})
+	if _, err = management.Decision(foreignMutationCtx, ai.MemoryIDRequest{ID: "other", Revision: 1}, "revoke"); err == nil {
+		t.Fatal("cross-user mutation was allowed")
+	}
+	correctCtx := auth.WithContext(context.Background(), &auth.Context{TenantID: "tenant-a", UserID: "user-a", Realm: auth.RealmTenant, Authenticated: true, IdempotencyKey: "correct-1"})
+	created, err := management.Correct(correctCtx, ai.MemoryCorrectRequest{ID: "active", Revision: 1, Summary: "上海会议已改期", Content: "上海会议已改期", LocalDate: "2026-07-18", DatePrecision: aimemory.DateExactDay})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.(ai.MemoryItem).SupersedesItemID == nil {
+		t.Fatal("correction did not preserve history")
+	}
+	clearCtx := auth.WithContext(context.Background(), &auth.Context{TenantID: "tenant-a", UserID: "user-a", Realm: auth.RealmTenant, Authenticated: true, IdempotencyKey: "clear-1"})
+	if _, err = management.Clear(clearCtx, ai.MemoryClearRequest{Scope: "all", RevisionToken: listResult.RevisionToken}); err == nil {
+		t.Fatal("stale clear revision token was accepted")
+	}
+	refreshed, err := management.List(ctx, ai.MemoryListRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = management.Clear(clearCtx, ai.MemoryClearRequest{Scope: "all", RevisionToken: refreshed.(ai.MemoryListResult).RevisionToken}); err != nil {
+		t.Fatal(err)
+	}
+	ctx = runtimecontext.WithTrusted(ctx, &runtimecontext.TrustedRuntimeContext{TenantID: "tenant-a", UserID: "user-a", AgentID: "agent-a", RunID: "run-a", Time: snap})
+	afterClear, err := retriever.Retrieve(ctx, ai.MemoryRecallRequest{Query: "上海会议", AgentID: "agent-a", Limit: 10, MaxTokens: 1000, NormalOnly: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(afterClear.Items) != 0 {
+		t.Fatalf("cleared memory remained recallable: %#v", afterClear)
 	}
 }

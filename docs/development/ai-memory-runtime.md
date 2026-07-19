@@ -53,3 +53,11 @@ active 变化只在事实事务写安全的 `ai.memory.item.changed` Outbox。�
 - 唯一主动检索入口为 direct Slot `builtin:memory.search`；只读，禁止 add/update/delete Tool。
 
 第二阶段 consolidation 按 tenant+user 唯一批次和 lease 串行运行，使用冻结 consolidation Alias。模型输入仅含受控摘要、attribute、revision、recall/importance/validity；输出只允许 noop/duplicate/conflict/summary plan。应用层复核 item scope 与 revision 后只追加关系、保存计划和水位，禁止模型 activate/supersede/revoke/delete。
+
+## 用户治理工作台
+
+用户长期记忆治理统一复用 `MemoryWorkbench`，独立隐藏路由为 `/profile/memory`。该路由不进入菜单，当前由个人主页进入，后续 AI Workspace 只组合相同组件、Store 和 Action，不复制治理逻辑。
+
+工作台只允许 `tenant + self`，即使调用者拥有租户管理权限也不能扩大到成员正文。列表、详情与当前画像是 authenticated 自助 Action；确认、拒绝、纠正、删除和清空必须使用 Action 框架持久化幂等。单项 mutation 使用 item revision，清空使用服务端按当前可清理 item ID/revision 生成的不透明 `revision_token`，过期令牌必须冲突失败。
+
+纠正追加新 Item 并保留 superseded 历史；删除和清空在事实事务内先改变状态，使召回同步失效，再经安全 Outbox 重建投影。详情仅展示受控 Evidence 元数据，撤权来源不得回传正文；Prompt、向量、模型原始响应及其他用户信息永不进入治理 API。

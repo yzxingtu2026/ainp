@@ -262,6 +262,8 @@ const local: App.I18n.Schema = {
     demo_attachments: 'Attachments',
     system: 'System',
     system_profile: 'Profile',
+    profile_memory: 'Memory Management',
+    profile: 'Profile',
     system_users: 'Users',
     system_roles: 'Roles',
     system_settings: 'Settings',
