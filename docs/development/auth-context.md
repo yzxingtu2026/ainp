@@ -16,7 +16,7 @@ Agent 只读要点：`.agent/rules/auth-context.md`。本文档定义租户隔�
 5. **一用户一租户**（一个登录身份只隶属一个 `tenant_id`）。
 6. **预留**租户绑定**自定义域名**（Phase 1 可不实现解析，模型留字段）。
 7. **Realm 只有 `tenant` / `platform`**；当前登录固定为 `tenant`，平台入口后续独立建设。
-8. 普通租户 Scope 缺失 `tenant_id` 必须报错；跨租户访问只允许显式 System Scope，且要求 platform realm。
+8. 普通 TenantDB 缺失可信 `tenant_id` 必须报错；跨租户访问只允许 SystemDB，且要求 platform realm + system operator。
 
 ## 主体模型
 
@@ -68,7 +68,7 @@ System
 
 - 不存在「请求里带 tenant_id 就切换租户」。
 - 因一用户一租户，**Phase 1 不做租户切换 API**。
-- 仓储/GORM：默认按 `tenant_id` Scope；缺失租户上下文直接报错，不得退化为无条件查询。
+- 仓储/GORM：tenant-owned Model 强制经 TenantDB/GuardedDatabase 与 Callback；缺失租户上下文直接报错，不得退化为无条件查询。
 - Action 内取租户：只从 AuthContext。
 
 ## 鉴权流程
@@ -120,7 +120,7 @@ System
 ## 系统级操作
 
 - 普通 Action：`is_system_operator=false`，强制单租户。
-- 平台超管 / 运维入口：必须是已认证 platform realm，并通过显式 System Scope/Repository，设 `is_system_operator`，**强制审计**，禁止复用普通业务 Action 做全租户扫描。
+- 平台超管 / 运维入口：必须是已认证 platform realm，并通过 SystemDB/System Repository，设 `is_system_operator`，**强制审计**，禁止复用普通业务 Action 做全租户扫描。
 - 多租户批处理：按租户循环 `WithTenant`，禁止无租户上下文写库。
 
 ## 数据访问基础协议
@@ -129,7 +129,8 @@ System
 - 业务仓储只能由 `tenant.TenantDB(ctx, db)` 构造；租户身份仅来自已认证 tenant realm 的 `AuthContext`。平台查询必须显式使用 `tenant.SystemDB`，且要求已认证 platform realm 与 system operator。
 - 已注册 tenant-owned Model 的 GORM Query/Create/Update/Delete 在裸 DB、缺失上下文时 fail-closed；Create 自动注入可信 tenant 并拒绝冲突值。事务必须通过强类型包装器传播。
 - `Raw`、`Exec`、动态 `Table` 与复杂 JOIN 不承诺由 Model Callback 自动隔离，只能走命名明确的受控出口；Tenant 出口要求 SQL 首个绑定参数为 `tenant_id` 并由包装器自动注入可信租户，调用方不得传 tenant ID。领域权限、owner/visibility 与状态机仍由业务服务负责。
-- Agent 管理是首个迁移样板：Service 从 `TenantDB` 构造领域 Repository，链式 `Where/Order` 只表达 visibility、owner、status、revision 等领域条件，scoped transaction 内重新绑定 Repository；顶层 tenant 条件由 Callback 统一注入。Agent、AgentVersion、AgentToolBinding 已启用强制注册，Knowledge Binding 的 visibility JOIN 留待全仓迁移阶段完成后启用。
+- Agent 管理是首个迁移样板：Service 从 `TenantDB` 构造领域 Repository，链式 `Where/Order` 只表达 visibility、owner、status、revision 等领域条件，scoped transaction 内重新绑定 Repository；顶层 tenant 条件由 Callback 统一注入。Agent、Conversation、Tool、Knowledge 与 Runtime tenant-owned Model 已完成注册和受控查询迁移。
+- 完整 Model 分类、GuardedDatabase、Callback/Raw 边界、后台恢复和复合约束见 [`tenant-data-access.md`](tenant-data-access.md)。
 
 ## 租户自定义域名（预留）
 
@@ -164,7 +165,7 @@ tenant realm 日志查询只允许使用声明支持可信租户过滤的 Provid
 - [ ] 上下文仅由框架注入；未信任 Body 中的 tenant_id
 - [ ] 一用户一租户；未实现违规的跨租户切换
 - [ ] Action 鉴权使用 permission 字符串
-- [ ] DB 查询带租户 Scope
+- [ ] tenant-owned DB 查询从 TenantDB Repository 或 GuardedDatabase 起步
 - [ ] 正式 JWT 不携带/信任 roles 与 permissions，授权来自当前 Provider 快照
 - [ ] 权限相关写操作与 `auth_version` 递增处于同一事务
 - [ ] Tenant 模型已预留域名字段（即使暂未使用）

@@ -16,7 +16,7 @@
 
 - `attachments`：`tenant_id` 强制非空；`provider` / `object_key` / `original_name` / `content_type` / `size` / `sha256` / `status` / `uploader_id`；`upload_jti` 仅存一次性上传令牌 ID（非 token 明文）；`expires_at` 用于 pending 临时保留。
 - **派生（thumb）列**（#36，Phase 1 单变体）：`thumb_status` / `thumb_object_key` / `thumb_content_type` / `thumb_size` / `thumb_error` / `thumb_updated_at`。未选独立 `attachment_derivatives` 表（多变体时可再拆）。
-- `attachment_links`：`(tenant_id, attachment_id, resource_type, resource_id, field)` 唯一；查询写入经 `tenant.ScopeByTenant` fail-closed。
+- `attachment_links`：`(tenant_id, attachment_id, resource_type, resource_id, field)` 唯一；查询写入经 TenantDB Repository 与 GORM tenant Callback fail-closed。
 - 原图状态机：`pending` / `ready` / `deleting` / `deleted` / `failed`（CodeSet `system.attachment_status`）。
 - **派生状态机（独立 CodeSet，禁止复用 AttachmentStatus）**：`pending` / `ready` / `failed` / `skipped`（CodeSet `system.attachment_thumb_status`）。原图 `ready` **不依赖**派生成功。
 - `original_name` 仅展示；`object_key` / `thumb_object_key` 由服务端 `storage.BuildKey` 生成（独立 object_id，租户隔离）。

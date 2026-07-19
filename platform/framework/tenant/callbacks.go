@@ -85,6 +85,13 @@ func guardWrite(tx *gorm.DB, r *Registry) {
 		}
 		return
 	}
+	if onConflictClause, exists := tx.Statement.Clauses["ON CONFLICT"]; exists {
+		onConflict, valid := onConflictClause.Expression.(clause.OnConflict)
+		if !valid || !containsColumn(onConflict.Columns, info.TenantColumn) {
+			_ = tx.AddError(ErrUnsafeUpsert)
+			return
+		}
+	}
 	if tx.Statement.Schema != nil {
 		field := tx.Statement.Schema.LookUpField("TenantID")
 		if field != nil {
@@ -115,4 +122,13 @@ func guardWrite(tx *gorm.DB, r *Registry) {
 	if tx.Error == nil {
 		guardQuery(tx, r)
 	}
+}
+
+func containsColumn(columns []clause.Column, name string) bool {
+	for _, column := range columns {
+		if strings.EqualFold(strings.TrimSpace(column.Name), strings.TrimSpace(name)) {
+			return true
+		}
+	}
+	return false
 }

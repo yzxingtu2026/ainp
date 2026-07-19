@@ -16,7 +16,7 @@ import (
 const maxKnowledgeRetrievalScope = 16
 
 type KnowledgeRetrievalService struct {
-	db         *gorm.DB
+	db         tenantdata.GuardedDatabase
 	access     aiknowledge.Service
 	embeddings aimodelruntime.EmbeddingRuntime
 }
@@ -25,7 +25,7 @@ func NewKnowledgeRetrievalService(db *gorm.DB, access aiknowledge.Service, embed
 	if err := registerKnowledgeTenantModels(); err != nil {
 		panic(err)
 	}
-	return &KnowledgeRetrievalService{db: tenantdata.RuntimeDB(db), access: access, embeddings: embeddings}
+	return &KnowledgeRetrievalService{db: tenantdata.GuardedDB(db), access: access, embeddings: embeddings}
 }
 
 type knowledgeCandidate struct {
@@ -42,7 +42,7 @@ func (s *KnowledgeRetrievalService) Retrieve(ctx context.Context, request aiknow
 
 func (s *KnowledgeRetrievalService) RetrieveWithMetadata(ctx context.Context, request aiknowledge.RetrievalRequest) (aiknowledge.RetrievalResponse, error) {
 	var response aiknowledge.RetrievalResponse
-	if s.db == nil || s.access == nil {
+	if !s.db.Available() || s.access == nil {
 		return response, errors.New("knowledge retrieval dependencies unavailable")
 	}
 	ac, ok := auth.FromContext(ctx)
@@ -195,7 +195,7 @@ func (s *KnowledgeRetrievalService) lexicalCandidates(ctx context.Context, tenan
 		queryArgs = append(queryArgs, documents)
 	}
 	queryArgs = append(queryArgs, limit)
-	tdb, err := tenantdata.TenantDB(ctx, s.db)
+	tdb, err := s.db.Tenant(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -212,7 +212,7 @@ func (s *KnowledgeRetrievalService) vectorCandidates(ctx context.Context, tenant
 	args = append(args, limit)
 	sql := `WITH trusted_tenant AS (SELECT ?::text tenant_id) SELECT c.id chunk_id,c.knowledge_base_id,c.document_id,c.index_version_id,c.source_revision,c.ordinal,c.page_number,c.position_start,c.position_end,c.heading_path,c.token_count,p.text,d.original_name title,d.attachment_id,0::float8 fts_score,(1-(p.vector OPERATOR(public.<=>) ?::public.vector)) vector_score FROM ai_knowledge_chunks c CROSS JOIN trusted_tenant tt JOIN ai_knowledge_chunk_payloads p ON p.tenant_id=c.tenant_id AND p.chunk_id=c.id JOIN ai_knowledge_documents d ON d.tenant_id=c.tenant_id AND d.id=c.document_id AND d.deleted_at IS NULL WHERE c.tenant_id=tt.tenant_id AND c.knowledge_base_id=? AND c.index_version_id=? AND d.current_index_version_id=? AND d.source_revision=c.source_revision` + filter + ` ORDER BY p.vector OPERATOR(public.<=>) ?::public.vector,c.id ASC LIMIT ?`
 	args = append(args[:len(args)-1], vector, limit)
-	tdb, err := tenantdata.TenantDB(ctx, s.db)
+	tdb, err := s.db.Tenant(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -232,7 +232,7 @@ func (s *KnowledgeRetrievalService) ResolveCitation(ctx context.Context, citatio
 	if err != nil {
 		return lookup, nil
 	}
-	tdb, err := tenantdata.TenantDB(ctx, s.db)
+	tdb, err := s.db.Tenant(ctx)
 	if err != nil {
 		return lookup, err
 	}

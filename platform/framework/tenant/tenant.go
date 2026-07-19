@@ -1,13 +1,10 @@
 package tenant
 
 import (
-	"context"
 	"errors"
 	"time"
 
-	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/status"
-	"gorm.io/gorm"
 )
 
 var (
@@ -28,16 +25,3 @@ type Tenant struct {
 }
 
 func (Tenant) TableName() string { return "tenants" }
-
-// SystemScope is the only framework-provided unscoped tenant-data entrypoint.
-// Callers must already be running in an authenticated platform realm.
-func SystemScope(ctx context.Context) func(db *gorm.DB) *gorm.DB {
-	return func(db *gorm.DB) *gorm.DB {
-		ac, ok := auth.FromContext(ctx)
-		if !ok || ac == nil || !ac.Authenticated || ac.Realm != auth.RealmPlatform || !ac.IsSystemOperator {
-			_ = db.AddError(ErrPlatformRealmRequired)
-			return db
-		}
-		return db
-	}
-}

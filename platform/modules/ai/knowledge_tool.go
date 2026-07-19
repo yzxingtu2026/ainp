@@ -35,7 +35,7 @@ type knowledgeToolCacheEntry struct {
 }
 
 type KnowledgeTool struct {
-	db        *gorm.DB
+	db        tenantdata.GuardedDatabase
 	access    aiknowledge.Service
 	retriever aiknowledge.KnowledgeRetriever
 	mu        sync.Mutex
@@ -46,7 +46,7 @@ func NewKnowledgeTool(db *gorm.DB, access aiknowledge.Service, retriever aiknowl
 	if err := registerToolTenantModels(); err != nil {
 		panic(err)
 	}
-	return &KnowledgeTool{db: tenantdata.RuntimeDB(db), access: access, retriever: retriever, cache: map[string]knowledgeToolCacheEntry{}}
+	return &KnowledgeTool{db: tenantdata.GuardedDB(db), access: access, retriever: retriever, cache: map[string]knowledgeToolCacheEntry{}}
 }
 
 func (t *KnowledgeTool) Definition() aitool.Definition {
@@ -177,7 +177,7 @@ func (t *KnowledgeTool) candidates(ctx context.Context, scope *ToolScope) ([]kno
 	if err := t.db.WithContext(ctx).Where("user_id=? AND id=?", scope.UserID, *scope.AgentRunID).First(&run).Error; err != nil {
 		return nil, err
 	}
-	repos, repoErr := newAgentRepositories(ctx, t.db)
+	repos, repoErr := newAgentRepositories(ctx, t.db.WithContext(ctx))
 	if repoErr != nil {
 		return nil, repoErr
 	}
@@ -185,7 +185,7 @@ func (t *KnowledgeTool) candidates(ctx context.Context, scope *ToolScope) ([]kno
 	if err != nil {
 		return nil, err
 	}
-	tdb, err := tenantdata.TenantDB(ctx, t.db)
+	tdb, err := t.db.Tenant(ctx)
 	if err != nil {
 		return nil, err
 	}

@@ -65,23 +65,28 @@ action.Metadata{
 
 - `ErrRevisionConflict`：sentinel error，版本冲突。
 - `Versioned` 接口：`GetRevision() int64`。
-- `ConditionalUpdate(db, table, pk, expectedRevision, updates)`：原子 UPDATE ... WHERE revision = expected。
+- `ConditionalUpdate(scopedTx, table, pk, expectedRevision, updates)`：仅供已建立 TenantDB scoped transaction 的基础设施路径。
 - `WithExpectedRevision(expected)`：GORM scope helper。
 - `CheckUpdateResult(result)`：检查 GORM update 结果是否为版本冲突。
 
 ### 2.2 使用方式
 
 ```go
-// 方式一：ConditionalUpdate
-err := revision.ConditionalUpdate(db, "my_table", docID, expectedRev, map[string]any{
+// 通用业务优先使用 Tenant Repository
+tdb, err := tenant.TenantDB(ctx, rootDB)
+if err != nil { return err }
+repo, err := tenant.NewTenantRepository[MyModel](tdb)
+if err != nil { return err }
+err = repo.UpdateRevision(docID, expectedRev, map[string]any{
     "title": "new title",
+    "revision": gorm.Expr("revision + 1"),
 })
 if errors.Is(err, revision.ErrRevisionConflict) {
     // 提示用户刷新
 }
 
-// 方式二：GORM Scope
-result := db.Model(&MyModel{}).
+// 领域专用查询从 GuardedDatabase 起步
+result := guarded.WithContext(ctx).Model(&MyModel{}).
     Where("id = ?", id).
     Scopes(revision.WithExpectedRevision(expected)).
     Updates(map[string]any{"title": "new", "revision": gorm.Expr("revision + 1")})
@@ -100,7 +105,7 @@ if err := revision.CheckUpdateResult(result); err != nil { ... }
 
 `platform/framework/dblock` 包提供：
 
-- `WithinTx(ctx, db, fn)`：事务包装，错误自动回滚。
+- `WithinTx(ctx, scopedDB, fn)`：只接受已恢复 tenant mode 的数据库句柄；错误自动回滚。
 - `LockForTenant(tx, table, tenantID, pk)`：单行 SELECT FOR UPDATE，强制 tenant 条件。
 - `LockRowsForUpdate(tx, table, tenantID, ids)`：多行锁定，自动排序减少死锁。
 - `WithTimeout(ctx, timeout, fn)`：context 超时保护。
@@ -111,7 +116,7 @@ if err := revision.CheckUpdateResult(result); err != nil { ... }
 1. **多行加锁必须先排序**：使用 `SortLockKeys` 或依赖 `LockRowsForUpdate` 内置排序。
 2. **锁内禁止外部调用**：HTTP、文件 I/O、AI 调用等均不允许在持锁期间执行。
 3. **始终使用超时保护**：通过 `WithTimeout` 包装，默认 10s。
-4. **强制 tenant 条件**：`LockForTenant` / `LockRowsForUpdate` 必须传 tenantID。
+4. **强制 tenant 条件**：`LockForTenant` / `LockRowsForUpdate` 只接收 TenantDB scoped transaction；tenantID 必须来自同一 AuthContext，禁止来自 DTO/Query/payload。
 
 ### 3.3 错误码
 

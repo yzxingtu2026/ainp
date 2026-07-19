@@ -29,7 +29,7 @@ func configureProviderView(provider *Provider) {
 }
 
 type Service struct {
-	db          *gorm.DB
+	db          tenantdata.GuardedDatabase
 	types       *aimodel.ProviderTypeRegistry
 	credentials aimodel.CredentialCipher
 	adapters    map[string]aimodel.ModelDiscoveryProvider
@@ -39,7 +39,7 @@ func NewService(db *gorm.DB, types *aimodel.ProviderTypeRegistry, credentials ai
 	if err := registerModelCatalogTenantModels(); err != nil {
 		panic(err)
 	}
-	return &Service{db: tenantdata.RuntimeDB(db), types: types, credentials: credentials, adapters: map[string]aimodel.ModelDiscoveryProvider{aimodel.ProtocolOpenAI: aimodel.NewHTTPDiscoveryAdapter(aimodel.ProtocolOpenAI), aimodel.ProtocolAnthropic: aimodel.NewHTTPDiscoveryAdapter(aimodel.ProtocolAnthropic), aimodel.ProtocolOpenAICompatible: aimodel.NewHTTPDiscoveryAdapter(aimodel.ProtocolOpenAICompatible)}}
+	return &Service{db: tenantdata.GuardedDB(db), types: types, credentials: credentials, adapters: map[string]aimodel.ModelDiscoveryProvider{aimodel.ProtocolOpenAI: aimodel.NewHTTPDiscoveryAdapter(aimodel.ProtocolOpenAI), aimodel.ProtocolAnthropic: aimodel.NewHTTPDiscoveryAdapter(aimodel.ProtocolAnthropic), aimodel.ProtocolOpenAICompatible: aimodel.NewHTTPDiscoveryAdapter(aimodel.ProtocolOpenAICompatible)}}
 }
 func tenant(ctx context.Context) (string, error) {
 	ac := auth.MustFromContext(ctx)
@@ -326,7 +326,7 @@ func (s *Service) ImportDeployments(ctx context.Context, r ImportRequest) (any, 
 	out := make([]Deployment, 0, len(r.Items))
 	e = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		copy := *s
-		copy.db = tx
+		copy.db = tenantdata.GuardedDB(tx)
 		for _, item := range r.Items {
 			v, e := copy.createDeployment(ctx, tid, item)
 			if e != nil {

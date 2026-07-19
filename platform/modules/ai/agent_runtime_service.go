@@ -31,7 +31,7 @@ const (
 )
 
 type AgentRuntimeService struct {
-	db            *gorm.DB
+	db            tenantdata.GuardedDatabase
 	conversations *ConversationService
 	invocations   *InvocationService
 	tools         *ToolService
@@ -46,7 +46,7 @@ func NewAgentRuntimeService(db *gorm.DB, c *ConversationService, i *InvocationSe
 	if err := registerAgentRuntimeTenantModels(); err != nil {
 		panic(err)
 	}
-	return &AgentRuntimeService{db: tenantdata.RuntimeDB(db), conversations: c, invocations: i, tools: t, compactor: compactor, writer: w, authorization: authorization, leaseDuration: 30 * time.Second, now: func() time.Time { return time.Now().UTC() }}
+	return &AgentRuntimeService{db: tenantdata.GuardedDB(db), conversations: c, invocations: i, tools: t, compactor: compactor, writer: w, authorization: authorization, leaseDuration: 30 * time.Second, now: func() time.Time { return time.Now().UTC() }}
 }
 
 type AgentRunStartRequest struct {
@@ -104,7 +104,7 @@ func (s *AgentRuntimeService) Start(ctx context.Context, r AgentRunStartRequest)
 	if conversation.Status != "active" {
 		return nil, errs.New(errs.CodeConflict, "conversation is not active")
 	}
-	tdb, err := tenantdata.TenantDB(ctx, s.db)
+	tdb, err := s.db.Tenant(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -496,7 +496,7 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 	}
 	budget = budget.Normalize()
 	deadline := s.now().Add(time.Duration(budget.MaxDurationSeconds) * time.Second)
-	repos, repoErr := newAgentRepositories(ctx, s.db)
+	repos, repoErr := newAgentRepositories(ctx, s.db.WithContext(ctx))
 	if repoErr != nil {
 		return s.fail(ctx, run, "tenant_repository_unavailable")
 	}
@@ -504,7 +504,7 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 	if err != nil {
 		return s.fail(ctx, run, "agent_version_unavailable")
 	}
-	tdb, scopeErr := tenantdata.TenantDB(ctx, s.db)
+	tdb, scopeErr := s.db.Tenant(ctx)
 	if scopeErr != nil {
 		return s.fail(ctx, run, "tenant_context_unavailable")
 	}
@@ -709,7 +709,7 @@ func (s *AgentRuntimeService) runtimeMessages(ctx context.Context, run *AgentRun
 			}
 			run.Compactions++
 			id := result.SnapshotID
-			tdb, scopeErr := tenantdata.TenantDB(ctx, s.db)
+			tdb, scopeErr := s.db.Tenant(ctx)
 			if scopeErr != nil {
 				return nil, nil, scopeErr
 			}
@@ -897,7 +897,7 @@ func (s *AgentRuntimeService) ensureToolScope(ctx context.Context, run *AgentRun
 	if err := s.db.WithContext(ctx).Where("user_id=? AND agent_run_id=? AND expires_at>?", run.UserID, run.ID, s.now()).First(&existing).Error; err == nil {
 		return existing.ID, nil
 	}
-	repos, repoErr := newAgentRepositories(ctx, s.db)
+	repos, repoErr := newAgentRepositories(ctx, s.db.WithContext(ctx))
 	if repoErr != nil {
 		return "", repoErr
 	}
@@ -1108,7 +1108,7 @@ func (s *AgentRuntimeService) resumeConfirmation(ctx context.Context, run *Agent
 	return err
 }
 func (s *AgentRuntimeService) currentConversationRevision(ctx context.Context, run *AgentRun) uint64 {
-	tdb, err := tenantdata.TenantDB(ctx, s.db)
+	tdb, err := s.db.Tenant(ctx)
 	if err != nil {
 		return 0
 	}

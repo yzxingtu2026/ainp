@@ -28,7 +28,7 @@ const toolScopeTTL = 30 * time.Minute
 const toolHandleTTL = 10 * time.Minute
 
 type ToolService struct {
-	db                    *gorm.DB
+	db                    tenantdata.GuardedDatabase
 	registry              *aitool.Registry
 	signer                *aitool.HandleSigner
 	writer                outbox.Writer
@@ -46,7 +46,7 @@ func NewToolService(db *gorm.DB, r *aitool.Registry, signer *aitool.HandleSigner
 	if err := registerToolTenantModels(); err != nil {
 		panic(err)
 	}
-	return &ToolService{db: tenantdata.RuntimeDB(db), registry: r, signer: signer, writer: w}
+	return &ToolService{db: tenantdata.GuardedDB(db), registry: r, signer: signer, writer: w}
 }
 func (s *ToolService) SetEmbeddingService(v aitool.EmbeddingService) { s.embeddings = v }
 func (s *ToolService) SetConfirmationHooks(pending func(context.Context, *gorm.DB, *ToolConfirmation) error, decided func(context.Context, *ToolConfirmation) error) {
@@ -438,7 +438,7 @@ func (s *ToolService) finishInvocation(ctx context.Context, inv *ToolInvocation,
 	if s.writer == nil {
 		return s.db.WithContext(ctx).Model(&ToolInvocation{}).Where("id=? AND status IN ?", inv.ID, []string{"running", "waiting_confirmation"}).Updates(updates).Error
 	}
-	return outbox.WithinTx(ctx, s.db, s.writer, func(tx *gorm.DB, w outbox.Writer) error {
+	return outbox.WithinTx(ctx, s.db.WithContext(ctx), s.writer, func(tx *gorm.DB, w outbox.Writer) error {
 		res := tx.Model(&ToolInvocation{}).Where("id=? AND status IN ?", inv.ID, []string{"running", "waiting_confirmation"}).Updates(updates)
 		if res.Error != nil {
 			return res.Error
@@ -518,7 +518,7 @@ func (s *ToolService) syncCatalog(ctx context.Context, tenantID string) error {
 			return nil
 		}
 		if s.writer != nil {
-			if err := outbox.WithinTx(ctx, s.db, s.writer, write); err != nil {
+			if err := outbox.WithinTx(ctx, s.db.WithContext(ctx), s.writer, write); err != nil {
 				return err
 			}
 		} else if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error { return write(tx, nil) }); err != nil {
@@ -532,7 +532,7 @@ func (s *ToolService) mergeFTS(ctx context.Context, ac *auth.Context, scope *Too
 	if strings.TrimSpace(r.Query) == "" {
 		return current
 	}
-	tdb, err := tenantdata.TenantDB(ctx, s.db)
+	tdb, err := s.db.Tenant(ctx)
 	if err != nil {
 		return current
 	}

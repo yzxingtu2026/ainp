@@ -14,6 +14,7 @@ var (
 	ErrTenantDBRequired = errors.New("tenant database is required")
 	ErrSystemDBRequired = errors.New("system database is required")
 	ErrTenantConflict   = errors.New("model tenant conflicts with authenticated tenant")
+	ErrUnsafeUpsert     = errors.New("tenant upsert conflict target must include tenant column")
 	ErrUnsafeQuery      = errors.New("raw tenant query is not allowed")
 )
 
@@ -31,12 +32,35 @@ type TenantDatabase struct {
 	tenantID string
 }
 type SystemDatabase struct{ db *gorm.DB }
+type GuardedDatabase struct{ db *gorm.DB }
 
-func RuntimeDB(db *gorm.DB) *gorm.DB {
+// GuardedDB returns an opaque runtime handle whose GORM operations always run
+// with tenant callbacks enabled. It is intended for registered tenant-owned
+// models that still need domain-specific GORM queries; new generic CRUD should
+// prefer TenantDB plus Repository.
+func GuardedDB(db *gorm.DB) GuardedDatabase {
 	if db == nil {
-		return nil
+		return GuardedDatabase{}
 	}
-	return db.Session(&gorm.Session{NewDB: true}).Set(accessModeKey, modeTenant)
+	return GuardedDatabase{db: db.Session(&gorm.Session{NewDB: true})}
+}
+
+func (d GuardedDatabase) Available() bool { return d.db != nil }
+
+func (d GuardedDatabase) WithContext(ctx context.Context) *gorm.DB {
+	if d.db == nil {
+		db := &gorm.DB{}
+		_ = db.AddError(ErrTenantDBRequired)
+		return db
+	}
+	return accessDB(d.db, ctx, modeTenant)
+}
+
+func (d GuardedDatabase) Tenant(ctx context.Context) (TenantDatabase, error) {
+	if d.db == nil {
+		return TenantDatabase{}, ErrTenantDBRequired
+	}
+	return TenantDB(ctx, d.db)
 }
 
 // MigrationDB marks schema installation access explicitly. It must not be used
@@ -56,7 +80,7 @@ func TenantDB(ctx context.Context, db *gorm.DB) (TenantDatabase, error) {
 	if db == nil {
 		return TenantDatabase{}, ErrTenantDBRequired
 	}
-	scoped := db.Session(&gorm.Session{}).WithContext(ctx).Set(accessModeKey, modeTenant)
+	scoped := accessDB(db, ctx, modeTenant)
 	return TenantDatabase{db: scoped, tenantID: ac.TenantID}, nil
 }
 
@@ -68,7 +92,12 @@ func SystemDB(ctx context.Context, db *gorm.DB) (SystemDatabase, error) {
 	if db == nil {
 		return SystemDatabase{}, ErrSystemDBRequired
 	}
-	return SystemDatabase{db: db.Session(&gorm.Session{}).WithContext(ctx).Set(accessModeKey, modeSystem)}, nil
+	return SystemDatabase{db: accessDB(db, ctx, modeSystem)}, nil
+}
+
+func accessDB(db *gorm.DB, ctx context.Context, mode accessMode) *gorm.DB {
+	scoped := db.Session(&gorm.Session{NewDB: true}).WithContext(ctx).Set(accessModeKey, mode)
+	return scoped.Session(&gorm.Session{})
 }
 
 func (d TenantDatabase) Transaction(fn func(TenantDatabase) error) error {

@@ -199,7 +199,7 @@ func openKnowledgeTestDB(t *testing.T) *gorm.DB {
 	if err = ai.AutoMigrateKnowledge(db); err != nil {
 		t.Fatal(err)
 	}
-	return tenantdata.RuntimeDB(db).WithContext(ingestionContext())
+	return tenantdata.GuardedDB(db).WithContext(ingestionContext())
 }
 
 func TestKnowledgeSQLMigrationExecutesWithTenantConstraints(t *testing.T) {
@@ -239,19 +239,22 @@ func TestKnowledgeSQLMigrationExecutesWithTenantConstraints(t *testing.T) {
 	if err = db.Exec(string(migration)).Error; err != nil {
 		t.Fatalf("knowledge migration must remain idempotent after AutoMigrate: %v", err)
 	}
-	for _, constraint := range []string{
-		"fk_ai_knowledge_base_owner_tenant",
-		"fk_ai_knowledge_document_attachment_tenant",
-		"fk_ai_knowledge_index_embedding_deployment_tenant",
-		"fk_ai_knowledge_chunk_document_tenant",
-		"fk_ai_agent_knowledge_agent_tenant",
+	for _, item := range []struct {
+		constraint string
+		table      string
+	}{
+		{"fk_ai_knowledge_base_owner_tenant", "ai_knowledge_bases"},
+		{"fk_ai_knowledge_document_attachment_tenant", "ai_knowledge_documents"},
+		{"fk_ai_knowledge_index_embedding_deployment_tenant", "ai_knowledge_index_versions"},
+		{"fk_ai_knowledge_chunk_document_tenant", "ai_knowledge_chunks"},
+		{"fk_ai_agent_knowledge_agent_tenant", "ai_agent_knowledge_bindings"},
 	} {
 		var count int64
-		if err = db.Raw("SELECT COUNT(*) FROM pg_constraint WHERE conname = ?", constraint).Scan(&count).Error; err != nil {
+		if err = db.Raw("SELECT COUNT(*) FROM pg_constraint WHERE conname = ? AND conrelid = ?::regclass", item.constraint, item.table).Scan(&count).Error; err != nil {
 			t.Fatal(err)
 		}
 		if count != 1 {
-			t.Fatalf("migration constraint %s missing", constraint)
+			t.Fatalf("migration constraint %s missing from %s", item.constraint, item.table)
 		}
 	}
 }

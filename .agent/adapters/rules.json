@@ -244,6 +244,23 @@
       }
     },
     {
+      "id": "tenant-data-access",
+      "source": ".agent/rules/tenant-data-access.md",
+      "qoder": {
+        "path": ".qoder/rules/tenant-data-access.md",
+        "frontmatter": {
+          "trigger": "always_on"
+        }
+      },
+      "cursor": {
+        "path": ".cursor/rules/tenant-data-access.mdc",
+        "frontmatter": {
+          "description": "租户数据访问：TenantDB、Registry、Callback、受控 SQL 与强制架构门禁",
+          "alwaysApply": true
+        }
+      }
+    },
+    {
       "id": "authentication-and-session",
       "source": ".agent/rules/authentication-and-session.md",
       "qoder": {

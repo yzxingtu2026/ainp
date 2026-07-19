@@ -20,7 +20,6 @@ const maxErrorLen = 512
 type RunStore interface {
 	Create(ctx context.Context, run *Run) error
 	Get(ctx context.Context, id string) (*Run, error)
-	GetByIdempotency(ctx context.Context, tenantID, jobType, key string) (*Run, error)
 	UpdateFields(ctx context.Context, id string, fields map[string]any) error
 	List(ctx context.Context, q ListQuery) ([]Run, int64, error)
 	MarkCancelRequested(ctx context.Context, id string) error
@@ -75,20 +74,6 @@ func (s *gormRunStore) Get(ctx context.Context, id string) (*Run, error) {
 func GetTrusted(ctx context.Context, db *gorm.DB, id string) (*Run, error) {
 	var run Run
 	err := db.WithContext(ctx).Where("id = ?", id).First(&run).Error
-	if err == gorm.ErrRecordNotFound {
-		return nil, ErrNotFound
-	}
-	if err != nil {
-		return nil, err
-	}
-	return &run, nil
-}
-
-func (s *gormRunStore) GetByIdempotency(ctx context.Context, tenantID, jobType, key string) (*Run, error) {
-	var run Run
-	err := s.db.WithContext(ctx).
-		Where("tenant_id = ? AND job_type = ? AND idempotency_key = ?", tenantID, jobType, key).
-		First(&run).Error
 	if err == gorm.ErrRecordNotFound {
 		return nil, ErrNotFound
 	}

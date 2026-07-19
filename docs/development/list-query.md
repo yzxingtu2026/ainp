@@ -11,7 +11,7 @@ Agent 只读要点：`.agent/rules/list-query.md`。
 - 领域 List DTO 嵌入 `pagination.Request`，通过 `action.JSON[T]` 执行 Decode、Normalize 和验证。
 - Service/Repository 只接收强类型查询；空字符串表示不启用可选筛选，模块可明确额外默认语义。
 - 枚举筛选必须校验。排序只有 DTO 明确开放时才能使用，并映射到后端白名单 SQL 片段。
-- 禁止任意字段、任意操作符或原始 SQL Filter DSL；tenant scope 继续由既有 Scope 和鉴权上下文约束。
+- 禁止任意字段、任意操作符或原始 SQL Filter DSL；tenant scope 由 TenantDB/GuardedDatabase 与 Callback 强制，列表 DTO 不接收 tenant。
 - 返回 `pagination.Result[T]`；分页类型不依赖 Gin，也不负责 HTTP 输出。
 
 ## 前端职责
@@ -27,4 +27,4 @@ Agent 只读要点：`.agent/rules/list-query.md`。
 
 ## 防回退
 
-后端测试扫描业务模块，阻止重新引入 `json:"current"` 或 `"records":` 分页协议。新增列表还需覆盖默认值、上限、枚举筛选、空筛选和 tenant scope。
+后端测试扫描业务模块，阻止重新引入 `json:"current"` 或 `"records":` 分页协议；租户数据架构门禁另行阻止裸 DB、手写 tenant 条件和未登记 Raw。新增列表还需覆盖默认值、上限、枚举筛选、空筛选和跨租户不可见。

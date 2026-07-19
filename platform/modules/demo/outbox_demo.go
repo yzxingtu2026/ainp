@@ -3,6 +3,7 @@ package demo
 import (
 	"context"
 	"encoding/json"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
+	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"gorm.io/gorm"
 )
 
@@ -43,13 +45,29 @@ type NoteCreatedPayload struct {
 var (
 	NoteIndexCalls   atomic.Int64
 	NoteCounterCalls atomic.Int64
+	noteRegistration struct {
+		sync.Once
+		err error
+	}
 )
 
 func registerOutboxDemo(a *app.App) error {
 	if a.Outbox == nil || a.DB == nil {
 		return nil
 	}
-	if err := a.DB.AutoMigrate(&Note{}); err != nil {
+	noteRegistration.Do(func() {
+		noteRegistration.err = tenantdata.DefaultRegistry.Register(Note{}, tenantdata.ModelOptions{
+			Kind: tenantdata.TenantOwned, InjectOnCreate: true, SystemAccess: true,
+		})
+	})
+	if noteRegistration.err != nil {
+		return noteRegistration.err
+	}
+	migrationDB, err := tenantdata.MigrationDB(a.DB)
+	if err != nil {
+		return err
+	}
+	if err := migrationDB.AutoMigrate(&Note{}); err != nil {
 		return err
 	}
 	if err := a.Outbox.RegisterDefinition(outbox.Definition{
@@ -98,10 +116,10 @@ func registerOutboxDemo(a *app.App) error {
 				req.Title = "untitled"
 			}
 			var note Note
-			err := outbox.WithinTx(ctx, a.DB, writer, func(tx *gorm.DB, w outbox.Writer) error {
+			guarded := tenantdata.GuardedDB(a.DB)
+			err := outbox.WithinTx(ctx, guarded.WithContext(ctx), writer, func(tx *gorm.DB, w outbox.Writer) error {
 				note = Note{
 					ID:        uuid.NewString(),
-					TenantID:  ac.TenantID,
 					Title:     req.Title,
 					CreatedAt: time.Now().UTC(),
 				}

@@ -8,10 +8,10 @@
 - 租户用户管理：username 创建后不可改；状态与资料编辑分离；角色全量替换；不提供物理删除；禁止自停用；须保留至少一名 enabled 内置 admin。
 - 密码统一强度校验（8–72，含字母与数字）；明文/哈希不得进入响应、日志或审计。
 - Dev Token 仅用于显式启用的开发环境，不代表生产 Token 失效语义，也不得进入生产 JWT 路径。
-- Phase 1：Org/Dept 仅预留；禁止普通业务跨租户；DB 须带租户条件。
-- Realm 仅 `tenant` / `platform`；当前登录固定 tenant。普通 Scope 缺 tenant 必须报错，跨租户只走经 platform realm 校验的显式 System 入口。
+- Phase 1：Org/Dept 仅预留；禁止普通业务跨租户；tenant-owned DB 访问必须走 TenantDB/GuardedDatabase 强制边界。
+- Realm 仅 `tenant` / `platform`；当前登录固定 tenant。缺 tenant 必须报错，跨租户只走经 platform realm + system operator 校验的 SystemDB。
 - 预留租户绑定自定义域名（Phase 1 可不实现）。
 - tenant 日志查询只使用声明可信 tenant filter 的 Provider，tenant_id 由 AuthContext 注入；混合租户或数据库原始日志必须 fail-closed。
-- tenant-owned/global Model 必须显式登记；已登记 tenant-owned Model 只允许经 `TenantDB` Repository 访问，平台跨租户只允许经 `SystemDB`。裸 DB、缺失上下文、冲突 TenantID 必须 fail-closed；Raw/Exec 只走受控参数化出口。
+- tenant-owned/global/可信基础设施 Model 必须显式登记或分类；已登记 tenant-owned Model 只允许经 `TenantDB` Repository 或 `GuardedDatabase` 访问。裸 DB、缺失上下文、冲突 TenantID 必须 fail-closed；详见 `tenant-data-access`。
 
 详规：`docs/development/auth-context.md`
