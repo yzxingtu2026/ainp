@@ -81,6 +81,12 @@ func TestDblockLockForTenantEmptyTenant(t *testing.T) {
 	}
 }
 
+func TestDblockRejectsUnsafeTableName(t *testing.T) {
+	if err := dblock.LockForTenant(&gorm.DB{}, "dblock_test_rows; DROP TABLE users", "t1", "id"); err == nil {
+		t.Fatal("unsafe table name must be rejected before SQL execution")
+	}
+}
+
 func TestDblockLockRowsForUpdate(t *testing.T) {
 	db := openDblockTestDB(t)
 

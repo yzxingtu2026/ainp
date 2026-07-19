@@ -3,11 +3,14 @@ package dblock
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"sort"
 	"time"
 
 	"gorm.io/gorm"
 )
+
+var tableNamePattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 
 // WithinTx executes fn inside a database transaction.
 // If fn returns an error, the transaction is rolled back; otherwise committed.
@@ -18,6 +21,9 @@ func WithinTx(ctx context.Context, db *gorm.DB, fn func(tx *gorm.DB) error) erro
 // LockForTenant acquires a SELECT ... FOR UPDATE row lock for a single row
 // identified by primary key, enforcing tenant isolation.
 func LockForTenant(tx *gorm.DB, table string, tenantID string, pk any) error {
+	if !tableNamePattern.MatchString(table) {
+		return fmt.Errorf("dblock: invalid table name")
+	}
 	if tenantID == "" {
 		return fmt.Errorf("dblock: tenant_id is required for row lock")
 	}
@@ -37,6 +43,9 @@ func LockForTenant(tx *gorm.DB, table string, tenantID string, pk any) error {
 // LockRowsForUpdate acquires SELECT ... FOR UPDATE on multiple rows
 // within the same tenant. Rows are locked in stable (sorted) order to reduce deadlock risk.
 func LockRowsForUpdate(tx *gorm.DB, table string, tenantID string, ids []string) error {
+	if !tableNamePattern.MatchString(table) {
+		return fmt.Errorf("dblock: invalid table name")
+	}
 	if tenantID == "" {
 		return fmt.Errorf("dblock: tenant_id is required for row lock")
 	}
@@ -45,7 +54,7 @@ func LockRowsForUpdate(tx *gorm.DB, table string, tenantID string, ids []string)
 	}
 	sorted := SortLockKeys(ids)
 	result := tx.Exec(
-		fmt.Sprintf("SELECT 1 FROM %s WHERE id = ANY(?) AND tenant_id = ? ORDER BY id FOR UPDATE", table),
+		fmt.Sprintf("SELECT 1 FROM %s WHERE id IN ? AND tenant_id = ? ORDER BY id FOR UPDATE", table),
 		sorted, tenantID,
 	)
 	if result.Error != nil {
