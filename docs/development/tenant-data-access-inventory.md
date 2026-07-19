@@ -17,7 +17,7 @@
 | #111 样板 | Agent、AgentVersion、AgentToolBinding 及直接 Runtime 消费方 | 已完成 | Agent/Builder Preview/PostgreSQL |
 | Demo 模板 | RevisionDoc | 已完成 | 默认测试链与跨租户 Callback |
 | System/Framework | Setting、Notification Request/Delivery/TemplateOverride/UserNotification（含 User 展示名与详情 JOIN）、Attachment/AttachmentLink（含 Service、管理查询、User 展示名与 Thumb Job）、Idempotency Record、Audit、Outbox、Job Run、AuthSession、Auth pre-auth/授权加载、Role 与 User 已迁移；Job Worker/Outbox dispatcher 保留为精确可信恢复例外 | 已完成 | 各模块 PostgreSQL 集成测试 |
-| AI 治理与 Tool | Tool Catalog/Search/Scope/Confirmation/Invocation 与 FTS Raw 已迁移；Provider/Deployment/Alias/Model Invocation ORM 待迁移 | 迁移中 | Tool Runtime 默认与 PostgreSQL 测试 |
+| AI 治理与 Tool | Tool Catalog/Search/Scope/Confirmation/Invocation、Provider/Deployment/Alias 与 FTS Raw 已迁移；Model Invocation 启动恢复路径待迁移 | 迁移中 | Model/Embedding/Tool Runtime 默认与 PostgreSQL 测试 |
 | AI 会话与 Runtime | Conversation/Message/Stream/Snapshot、Run/Step/Event 已完成；Job claim 复用 Envelope 恢复的可信 tenant，Runtime ORM 已清理冗余 tenant 条件 | 已完成 | Conversation/Agent Runtime 默认与 PostgreSQL 测试 |
 | Knowledge | Retrieval/Citation/Agent Binding Raw JOIN 已迁移；Base/Document/Index/Chunk/Payload ORM 与 Ingestion Worker 待迁移 | 迁移中 | Knowledge 全链路测试 |
 | Operations | Audit/Outbox/Job/Log 管理查询 | 待迁移 | Operations Center 测试 |
