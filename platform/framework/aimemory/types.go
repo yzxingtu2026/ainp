@@ -71,6 +71,7 @@ const (
 	StatusRevoked       ItemStatus = "revoked"
 	StatusExpired       ItemStatus = "expired"
 	StatusDeleted       ItemStatus = "deleted"
+	StatusRejected      ItemStatus = "rejected"
 
 	SourceUserStatement SourceKind = "user_statement"
 	SourceAssistant     SourceKind = "assistant_inference"
@@ -110,7 +111,7 @@ func ValidItemType(v ItemType) bool {
 }
 func ValidStatus(v ItemStatus) bool {
 	switch v {
-	case StatusCandidate, StatusPendingReview, StatusActive, StatusSuperseded, StatusRevoked, StatusExpired, StatusDeleted:
+	case StatusCandidate, StatusPendingReview, StatusActive, StatusSuperseded, StatusRevoked, StatusExpired, StatusDeleted, StatusRejected:
 		return true
 	}
 	return false

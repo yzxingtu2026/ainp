@@ -82,10 +82,10 @@ func TestMemoryExtractionMigrationPostgres(t *testing.T) {
 	if err = ai.AutoMigrate(db); err != nil {
 		t.Fatal(err)
 	}
-	if err = db.Migrator().DropTable(&ai.MemoryEvaluation{}); err != nil {
+	if err = db.Migrator().DropTable(&ai.MemoryConsolidationBatch{}, &ai.MemoryRelation{}, &ai.MemoryGovernanceDecision{}, &ai.MemoryEvaluation{}); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"0028_tenant_composite_constraints.sql", "0029_ai_memory_foundation.sql", "0030_agent_memory_policy.sql", "0031_memory_candidate_extraction.sql"} {
+	for _, name := range []string{"0028_tenant_composite_constraints.sql", "0029_ai_memory_foundation.sql", "0030_agent_memory_policy.sql", "0031_memory_candidate_extraction.sql", "0032_memory_governance_projections.sql"} {
 		body, readErr := os.ReadFile("../migrations/" + name)
 		if readErr != nil {
 			t.Fatal(readErr)
@@ -103,6 +103,7 @@ func TestMemoryExtractionMigrationPostgres(t *testing.T) {
 	}
 	policy := aimemory.SystemDefaultPolicy()
 	policy.Enabled = true
+	policy.AutoSaveLowSensitive = true
 	policy.ExtractionModelAlias = "memory"
 	policyJSON, _ := json.Marshal(policy)
 	statements := []struct {
@@ -114,7 +115,7 @@ func TestMemoryExtractionMigrationPostgres(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	fake := &fakeMemoryExtractor{outputs: []string{`{"candidates":[{"kind":"preference","summary":"称呼偏好","content":"用户希望被称呼为老板","occurred_at":null,"occurred_end_at":null,"occurred_timezone":"Asia/Shanghai","date_precision":"exact_time","valid_from":null,"valid_to":null,"confidence":0.98,"sensitivity":"normal","importance":90,"explicit_user_intent":true,"source_message_ids":["m1","m2"],"reason":"preference"}]}`}}
+	fake := &fakeMemoryExtractor{outputs: []string{`{"candidates":[{"kind":"preference","summary":"称呼偏好","content":"用户希望被称呼为老板","occurred_at":"2026-07-19T09:00:00+08:00","occurred_end_at":null,"occurred_timezone":"Asia/Shanghai","date_precision":"exact_time","valid_from":null,"valid_to":null,"confidence":0.98,"sensitivity":"normal","importance":90,"explicit_user_intent":true,"source_message_ids":["m1","m2"],"reason":"preference","attribute_key":"preferred_address","attribute_value":"老板"}]}`}}
 	ctx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, Realm: auth.RealmTenant, TenantID: "tenant-a", UserID: "user-a"})
 	service := ai.NewMemoryExtractionService(db, fake)
 	if err = service.EvaluateRun(ctx, "run-a"); err != nil {
@@ -131,5 +132,35 @@ func TestMemoryExtractionMigrationPostgres(t *testing.T) {
 	}
 	if fake.calls != 1 {
 		t.Fatalf("model calls = %d, want 1", fake.calls)
+	}
+	governance := ai.NewMemoryGovernanceService(db, nil)
+	if err = governance.GovernRun(ctx, "run-a"); err != nil {
+		t.Fatal(err)
+	}
+	projection := ai.NewMemoryProjectionService(db)
+	if err = projection.Rebuild(ctx, "user-a"); err != nil {
+		t.Fatal(err)
+	}
+	var status string
+	if err = db.Raw(`SELECT status FROM ai_memory_items WHERE tenant_id='tenant-a' LIMIT 1`).Scan(&status).Error; err != nil {
+		t.Fatal(err)
+	}
+	if status != "active" {
+		t.Fatalf("governed status = %s", status)
+	}
+	var profileJSON string
+	if err = db.Raw(`SELECT profile_json FROM ai_memory_current_profiles WHERE tenant_id='tenant-a' AND user_id='user-a'`).Scan(&profileJSON).Error; err != nil {
+		t.Fatal(err)
+	}
+	var profile map[string]any
+	if json.Unmarshal([]byte(profileJSON), &profile) != nil || profile["preferred_address"] != "老板" {
+		t.Fatalf("unexpected profile: %s", profileJSON)
+	}
+	var localDate string
+	if err = db.Raw(`SELECT local_date::text FROM ai_memory_day_summaries WHERE tenant_id='tenant-a' AND user_id='user-a'`).Scan(&localDate).Error; err != nil {
+		t.Fatal(err)
+	}
+	if localDate != "2026-07-19" {
+		t.Fatalf("day archive date = %s", localDate)
 	}
 }

@@ -23,7 +23,7 @@ func (e permanentExtractionError) Error() string { return e.err.Error() }
 func (e permanentExtractionError) Unwrap() error { return e.err }
 func jobPermanent(err error) error               { return permanentExtractionError{err: err} }
 
-func RegisterMemoryExtraction(a *app.App, service *MemoryExtractionService) error {
+func RegisterMemoryExtraction(a *app.App, service *MemoryExtractionService, governance *MemoryGovernanceService) error {
 	if a.Outbox != nil {
 		if err := a.Outbox.RegisterHandler(outbox.HandlerFunc{HandlerName: "ai.enqueue_memory_extraction", Types: []string{agentRunTerminalEvent}, Fn: func(ctx context.Context, env outbox.Envelope) error {
 			var payload struct {
@@ -50,6 +50,9 @@ func RegisterMemoryExtraction(a *app.App, service *MemoryExtractionService) erro
 				return job.Permanent(err)
 			}
 			err := service.EvaluateRun(ctx, p.RunID)
+			if err == nil && governance != nil {
+				err = governance.GovernRun(ctx, p.RunID)
+			}
 			var permanent permanentExtractionError
 			if errors.As(err, &permanent) {
 				return job.Permanent(err)
