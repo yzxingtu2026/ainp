@@ -50,7 +50,7 @@ func (s *KnowledgeIngestionService) Cleanup(ctx context.Context, documentID stri
 	}
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var document KnowledgeDocument
-		if err := tx.Unscoped().Where("tenant_id=? AND id=?", ac.TenantID, documentID).First(&document).Error; err != nil {
+		if err := tx.Unscoped().Where("id=?", documentID).First(&document).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return nil
 			}
@@ -60,25 +60,25 @@ func (s *KnowledgeIngestionService) Cleanup(ctx context.Context, documentID stri
 			return nil
 		}
 		var versions []string
-		if err := tx.Model(&KnowledgeIndexVersion{}).Where("tenant_id=? AND source_document_id=?", ac.TenantID, documentID).Pluck("id", &versions).Error; err != nil {
+		if err := tx.Model(&KnowledgeIndexVersion{}).Where("source_document_id=?", documentID).Pluck("id", &versions).Error; err != nil {
 			return err
 		}
 		if len(versions) == 0 {
 			return nil
 		}
-		if err := tx.Where("tenant_id=? AND index_version_id IN ?", ac.TenantID, versions).Delete(&KnowledgeChunkPayload{}).Error; err != nil {
+		if err := tx.Where("index_version_id IN ?", versions).Delete(&KnowledgeChunkPayload{}).Error; err != nil {
 			return err
 		}
-		if err := tx.Where("tenant_id=? AND index_version_id IN ?", ac.TenantID, versions).Delete(&KnowledgeChunk{}).Error; err != nil {
+		if err := tx.Where("index_version_id IN ?", versions).Delete(&KnowledgeChunk{}).Error; err != nil {
 			return err
 		}
-		if err := tx.Model(&KnowledgeBase{}).Where("tenant_id=? AND id=? AND current_index_version_id IN ?", ac.TenantID, document.KnowledgeBaseID, versions).Update("current_index_version_id", nil).Error; err != nil {
+		if err := tx.Model(&KnowledgeBase{}).Where("id=? AND current_index_version_id IN ?", document.KnowledgeBaseID, versions).Update("current_index_version_id", nil).Error; err != nil {
 			return err
 		}
-		if err := tx.Unscoped().Model(&KnowledgeDocument{}).Where("tenant_id=? AND current_index_version_id IN ?", ac.TenantID, versions).Updates(map[string]any{"current_index_version_id": nil, "ingestion_status": aiknowledge.DocumentPending}).Error; err != nil {
+		if err := tx.Unscoped().Model(&KnowledgeDocument{}).Where("current_index_version_id IN ?", versions).Updates(map[string]any{"current_index_version_id": nil, "ingestion_status": aiknowledge.DocumentPending}).Error; err != nil {
 			return err
 		}
-		return tx.Where("tenant_id=? AND id IN ?", ac.TenantID, versions).Delete(&KnowledgeIndexVersion{}).Error
+		return tx.Where("id IN ?", versions).Delete(&KnowledgeIndexVersion{}).Error
 	})
 }
 
@@ -112,14 +112,14 @@ func (s *KnowledgeIngestionService) Process(ctx context.Context, payload Knowled
 		return job.Permanent(errors.New("knowledge ingestion identity unavailable"))
 	}
 	var document KnowledgeDocument
-	if err := s.db.WithContext(ctx).Where("tenant_id=? AND id=?", ac.TenantID, payload.DocumentID).First(&document).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("id=?", payload.DocumentID).First(&document).Error; err != nil {
 		return job.Permanent(errors.New("knowledge document unavailable"))
 	}
 	if document.Revision != payload.Revision || document.SourceRevision != payload.SourceRevision {
 		return nil
 	}
 	claimed := s.db.WithContext(ctx).Model(&KnowledgeDocument{}).
-		Where("tenant_id=? AND id=? AND revision=? AND source_revision=?", document.TenantID, document.ID, document.Revision, document.SourceRevision).
+		Where("id=? AND revision=? AND source_revision=?", document.ID, document.Revision, document.SourceRevision).
 		Updates(map[string]any{"ingestion_status": aiknowledge.DocumentProcessing, "ingestion_error_category": ""})
 	if claimed.Error != nil {
 		return job.Retryable(errors.New("knowledge document claim failed"))
@@ -140,11 +140,11 @@ func (s *KnowledgeIngestionService) Process(ctx context.Context, payload Knowled
 		s.failDocument(context.WithoutCancel(ctx), document, "processing_failed")
 	}()
 	var base KnowledgeBase
-	if err := s.db.WithContext(ctx).Where("tenant_id=? AND id=?", ac.TenantID, document.KnowledgeBaseID).First(&base).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("id=?", document.KnowledgeBaseID).First(&base).Error; err != nil {
 		return job.Permanent(errors.New("knowledge base unavailable"))
 	}
 	var documents []KnowledgeDocument
-	if err := s.db.WithContext(ctx).Where("tenant_id=? AND knowledge_base_id=?", ac.TenantID, base.ID).Order("id").Find(&documents).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("knowledge_base_id=?", base.ID).Order("id").Find(&documents).Error; err != nil {
 		return job.Retryable(errors.New("knowledge document snapshot unavailable"))
 	}
 	if len(documents) == 0 {
@@ -238,10 +238,10 @@ func (s *KnowledgeIngestionService) beginVersion(ctx context.Context, base Knowl
 	var version KnowledgeIndexVersion
 	done := false
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("tenant_id=? AND id=?", base.TenantID, base.ID).First(&KnowledgeBase{}).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=?", base.ID).First(&KnowledgeBase{}).Error; err != nil {
 			return err
 		}
-		err := tx.Where("tenant_id=? AND knowledge_base_id=? AND source_document_id=? AND source_revision=?", base.TenantID, base.ID, document.ID, document.SourceRevision).First(&version).Error
+		err := tx.Where("knowledge_base_id=? AND source_document_id=? AND source_revision=?", base.ID, document.ID, document.SourceRevision).First(&version).Error
 		if err == nil {
 			if version.Status == aiknowledge.IndexReady && version.ParserVersion == aiknowledge.ParserVersion && version.ChunkingVersion == aiknowledge.ChunkingVersion {
 				done = true
@@ -253,7 +253,7 @@ func (s *KnowledgeIngestionService) beginVersion(ctx context.Context, base Knowl
 			return err
 		}
 		var maxVersion int
-		if err = tx.Model(&KnowledgeIndexVersion{}).Where("tenant_id=? AND knowledge_base_id=?", base.TenantID, base.ID).Select("COALESCE(MAX(version),0)").Scan(&maxVersion).Error; err != nil {
+		if err = tx.Model(&KnowledgeIndexVersion{}).Where("knowledge_base_id=?", base.ID).Select("COALESCE(MAX(version),0)").Scan(&maxVersion).Error; err != nil {
 			return err
 		}
 		config, _ := json.Marshal(base.ChunkingConfig)
@@ -268,7 +268,7 @@ func (s *KnowledgeIngestionService) beginVersion(ctx context.Context, base Knowl
 func (s *KnowledgeIngestionService) publish(ctx context.Context, base KnowledgeBase, documents []KnowledgeDocument, version KnowledgeIndexVersion, chunks []knowledgeBuiltChunk, vectors map[string]aimodelruntime.EmbeddingVector, deploymentID, preprocessing string, dimensions int) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var currentBase KnowledgeBase
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("tenant_id=? AND id=?", base.TenantID, base.ID).First(&currentBase).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=?", base.ID).First(&currentBase).Error; err != nil {
 			return errStaleKnowledgeIngestion
 		}
 		if currentBase.EmbeddingAlias != base.EmbeddingAlias || currentBase.ChunkingConfig != base.ChunkingConfig {
@@ -276,7 +276,7 @@ func (s *KnowledgeIngestionService) publish(ctx context.Context, base KnowledgeB
 		}
 		for _, snapshot := range documents {
 			var current KnowledgeDocument
-			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("tenant_id=? AND id=?", snapshot.TenantID, snapshot.ID).First(&current).Error; err != nil {
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=?", snapshot.ID).First(&current).Error; err != nil {
 				return errStaleKnowledgeIngestion
 			}
 			if current.Revision != snapshot.Revision || current.SourceRevision != snapshot.SourceRevision {
@@ -284,7 +284,7 @@ func (s *KnowledgeIngestionService) publish(ctx context.Context, base KnowledgeB
 			}
 		}
 		var currentVersion KnowledgeIndexVersion
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("tenant_id=? AND id=?", version.TenantID, version.ID).First(&currentVersion).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=?", version.ID).First(&currentVersion).Error; err != nil {
 			return err
 		}
 		if currentVersion.Status == aiknowledge.IndexReady {
@@ -320,11 +320,11 @@ func (s *KnowledgeIngestionService) publish(ctx context.Context, base KnowledgeB
 			_ = tx.Model(&KnowledgeIndexVersion{}).Where("id=? AND status=?", *currentBase.CurrentIndexVersionID, aiknowledge.IndexReady).Update("status", aiknowledge.IndexSuperseded).Error
 		}
 		for _, snapshot := range documents {
-			if err := tx.Model(&KnowledgeDocument{}).Where("tenant_id=? AND id=? AND revision=?", snapshot.TenantID, snapshot.ID, snapshot.Revision).Updates(map[string]any{"current_index_version_id": version.ID, "ingestion_status": aiknowledge.DocumentReady, "ingestion_error_category": ""}).Error; err != nil {
+			if err := tx.Model(&KnowledgeDocument{}).Where("id=? AND revision=?", snapshot.ID, snapshot.Revision).Updates(map[string]any{"current_index_version_id": version.ID, "ingestion_status": aiknowledge.DocumentReady, "ingestion_error_category": ""}).Error; err != nil {
 				return err
 			}
 		}
-		return tx.Model(&KnowledgeBase{}).Where("tenant_id=? AND id=?", base.TenantID, base.ID).Update("current_index_version_id", version.ID).Error
+		return tx.Model(&KnowledgeBase{}).Where("id=?", base.ID).Update("current_index_version_id", version.ID).Error
 	})
 }
 
@@ -335,20 +335,20 @@ func (s *KnowledgeIngestionService) abortVersion(ctx context.Context, versionID 
 
 func (s *KnowledgeIngestionService) failVersion(ctx context.Context, document KnowledgeDocument, versionID, category string) {
 	now := time.Now().UTC()
-	_ = s.db.WithContext(ctx).Model(&KnowledgeIndexVersion{}).Where("tenant_id=? AND id=? AND status=?", document.TenantID, versionID, aiknowledge.IndexBuilding).Updates(map[string]any{"status": aiknowledge.IndexFailed, "error_category": category, "completed_at": now}).Error
-	_ = s.db.WithContext(ctx).Model(&KnowledgeDocument{}).Where("tenant_id=? AND id=? AND revision=?", document.TenantID, document.ID, document.Revision).Updates(map[string]any{"ingestion_status": aiknowledge.DocumentFailed, "ingestion_error_category": category}).Error
+	_ = s.db.WithContext(ctx).Model(&KnowledgeIndexVersion{}).Where("id=? AND status=?", versionID, aiknowledge.IndexBuilding).Updates(map[string]any{"status": aiknowledge.IndexFailed, "error_category": category, "completed_at": now}).Error
+	_ = s.db.WithContext(ctx).Model(&KnowledgeDocument{}).Where("id=? AND revision=?", document.ID, document.Revision).Updates(map[string]any{"ingestion_status": aiknowledge.DocumentFailed, "ingestion_error_category": category}).Error
 }
 
 func (s *KnowledgeIngestionService) failDocument(ctx context.Context, document KnowledgeDocument, category string) {
-	_ = s.db.WithContext(ctx).Model(&KnowledgeDocument{}).Where("tenant_id=? AND id=? AND revision=?", document.TenantID, document.ID, document.Revision).Updates(map[string]any{"ingestion_status": aiknowledge.DocumentFailed, "ingestion_error_category": category}).Error
+	_ = s.db.WithContext(ctx).Model(&KnowledgeDocument{}).Where("id=? AND revision=?", document.ID, document.Revision).Updates(map[string]any{"ingestion_status": aiknowledge.DocumentFailed, "ingestion_error_category": category}).Error
 }
 
 func (s *KnowledgeIngestionService) markDocumentReady(ctx context.Context, document KnowledgeDocument, versionID string) {
-	_ = s.db.WithContext(ctx).Model(&KnowledgeDocument{}).Where("tenant_id=? AND id=? AND revision=?", document.TenantID, document.ID, document.Revision).Updates(map[string]any{"current_index_version_id": versionID, "ingestion_status": aiknowledge.DocumentReady, "ingestion_error_category": ""}).Error
+	_ = s.db.WithContext(ctx).Model(&KnowledgeDocument{}).Where("id=? AND revision=?", document.ID, document.Revision).Updates(map[string]any{"current_index_version_id": versionID, "ingestion_status": aiknowledge.DocumentReady, "ingestion_error_category": ""}).Error
 }
 
 func (s *KnowledgeIngestionService) markDocumentPending(ctx context.Context, document KnowledgeDocument) {
-	_ = s.db.WithContext(ctx).Model(&KnowledgeDocument{}).Where("tenant_id=? AND id=? AND revision=?", document.TenantID, document.ID, document.Revision).Updates(map[string]any{"ingestion_status": aiknowledge.DocumentPending, "ingestion_error_category": ""}).Error
+	_ = s.db.WithContext(ctx).Model(&KnowledgeDocument{}).Where("id=? AND revision=?", document.ID, document.Revision).Updates(map[string]any{"ingestion_status": aiknowledge.DocumentPending, "ingestion_error_category": ""}).Error
 }
 
 func classifyIngestionError(err error) error {

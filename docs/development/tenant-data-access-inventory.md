@@ -19,7 +19,7 @@
 | System/Framework | Setting、Notification Request/Delivery/TemplateOverride/UserNotification（含 User 展示名与详情 JOIN）、Attachment/AttachmentLink（含 Service、管理查询、User 展示名与 Thumb Job）、Idempotency Record、Audit、Outbox、Job Run、AuthSession、Auth pre-auth/授权加载、Role 与 User 已迁移；Job Worker/Outbox dispatcher 保留为精确可信恢复例外 | 已完成 | 各模块 PostgreSQL 集成测试 |
 | AI 治理与 Tool | Tool Catalog/Search/Scope/Confirmation/Invocation、Provider/Deployment/Alias/Model Invocation 与 FTS Raw 已迁移；Model Invocation 启动恢复保留私有固定 SQL 扫描并逐租户恢复 AuthContext | 已完成 | Model/Embedding/Tool Runtime 默认与 PostgreSQL 测试 |
 | AI 会话与 Runtime | Conversation/Message/Stream/Snapshot、Run/Step/Event 已完成；Job claim 复用 Envelope 恢复的可信 tenant，Runtime ORM 已清理冗余 tenant 条件 | 已完成 | Conversation/Agent Runtime 默认与 PostgreSQL 测试 |
-| Knowledge | Retrieval/Citation Raw JOIN 已迁移；Base/Document/Index/Chunk/Payload 已启用 Registry 与 tenant-only ORM，Ingestion Worker 已恢复可信 tenant；冗余 tenant 条件与 Agent Binding JOIN 待清理 | 迁移中 | Knowledge 全链路测试 |
+| Knowledge | Retrieval/Citation Raw JOIN 已迁移；Base/Document/Index/Chunk/Payload 已启用 Registry 与 tenant-only ORM，Ingestion Worker 冗余 tenant 条件已清理；Service 冗余条件与 Agent Binding JOIN 待清理 | 迁移中 | Knowledge 全链路测试 |
 | Operations | Audit/Outbox/Job/Log 管理查询 | 待迁移 | Operations Center 测试 |
 
 ## 精确例外
