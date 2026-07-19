@@ -29,17 +29,6 @@ type Tenant struct {
 
 func (Tenant) TableName() string { return "tenants" }
 
-func ScopeByTenant(ctx context.Context) func(db *gorm.DB) *gorm.DB {
-	return func(db *gorm.DB) *gorm.DB {
-		ac, ok := auth.FromContext(ctx)
-		if !ok || ac == nil || auth.NormalizeRealm(ac.Realm) != auth.RealmTenant || ac.TenantID == "" {
-			_ = db.AddError(ErrTenantContextRequired)
-			return db
-		}
-		return db.Where("tenant_id = ?", ac.TenantID)
-	}
-}
-
 // SystemScope is the only framework-provided unscoped tenant-data entrypoint.
 // Callers must already be running in an authenticated platform realm.
 func SystemScope(ctx context.Context) func(db *gorm.DB) *gorm.DB {

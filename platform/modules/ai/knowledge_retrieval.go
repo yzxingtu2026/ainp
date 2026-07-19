@@ -78,11 +78,11 @@ func (s *KnowledgeRetrievalService) RetrieveWithMetadata(ctx context.Context, re
 			continue
 		}
 		var base KnowledgeBase
-		if err := s.db.WithContext(ctx).Where("tenant_id=? AND id=? AND status=? AND current_index_version_id IS NOT NULL", ac.TenantID, baseID, aiknowledge.KnowledgeBaseEnabled).First(&base).Error; err != nil {
+		if err := s.db.WithContext(ctx).Where("id=? AND status=? AND current_index_version_id IS NOT NULL", baseID, aiknowledge.KnowledgeBaseEnabled).First(&base).Error; err != nil {
 			continue
 		}
 		var version KnowledgeIndexVersion
-		if err := s.db.WithContext(ctx).Where("tenant_id=? AND id=? AND knowledge_base_id=? AND status=?", ac.TenantID, *base.CurrentIndexVersionID, base.ID, aiknowledge.IndexReady).First(&version).Error; err != nil {
+		if err := s.db.WithContext(ctx).Where("id=? AND knowledge_base_id=? AND status=?", *base.CurrentIndexVersionID, base.ID, aiknowledge.IndexReady).First(&version).Error; err != nil {
 			continue
 		}
 		rows, err := s.lexicalCandidates(ctx, ac.TenantID, base, version, query, documentIDs, candidateLimit)

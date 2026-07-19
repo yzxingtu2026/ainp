@@ -47,4 +47,14 @@
 - tenant 只来自 AuthContext；业务 DTO、Query 和消息 payload 不得构造数据库 tenant scope。
 - Model 只有在其全部业务消费方迁移后才启用强制 Registry，避免把未迁移路径伪装为安全路径。
 - owner、visibility、permission、revision、lease 和状态机仍是领域条件，不能因自动 tenant scope 删除。
-- Knowledge Raw/JOIN 在迁移到受控领域 Query 前不得登记为已完成。
+- 业务复杂 SQL 只允许 TenantRaw/TenantExec 或领域专用 Query；SQL 中的 tenant 占位符由 AuthContext 注入。
+
+## 最终扫描基线
+
+- 普通业务裸 `Raw/Exec/Table/JOIN`：零命中；剩余业务 SQL 均通过 TenantRaw/TenantExec。
+- 普通业务手写顶层 tenant ORM 条件：零命中；owner、visibility、revision、status、lease 等领域条件继续保留。
+- DDL：仅限 `*/migrate.go`、AI model migration 与 `system/seed.go`，不接受请求 tenant。
+- 并发基础设施：`framework/revision` 与 `framework/dblock` 只接受调用方传入的 scoped transaction。
+- 身份建立前查询：仅限 system 私有 `preAuthStore`，能力不向业务模块暴露。
+- 跨租户后台能力：仅限已登记的 Outbox dispatcher、Job worker/pending recovery 与 ModelInvocation stale recovery。
+- 受控 tenant SQL：System/Auth/Notification/Attachment、AI Raw/JOIN、Operations Audit/Outbox/Job 的 tenant 字样是 TenantRaw/TenantExec 固定占位符，不属于手写 ORM scope。
