@@ -148,34 +148,12 @@ func (s *AuthService) LoadAuthorization(ctx context.Context, req auth.Authorizat
 	}, nil
 }
 
-// BumpAuthVersion invalidates all previously issued tokens for one tenant user.
-// Callers must pass the same transaction used for the protected business change.
-func (s *AuthService) BumpAuthVersion(ctx context.Context, tx *gorm.DB, tenantID, userID string) error {
-	if tx == nil || tenantID == "" || userID == "" {
+func (s *AuthService) BumpAuthVersionScoped(db tenant.TenantDatabase, userID string) error {
+	if userID == "" {
 		return auth.ErrAuthorizationInvalid
 	}
-	result := tx.WithContext(ctx).Model(&model.User{}).
-		Where("id = ? AND tenant_id = ?", userID, tenantID).
-		UpdateColumn("auth_version", gorm.Expr("auth_version + 1"))
-	if result.Error != nil {
-		return result.Error
-	}
-	if result.RowsAffected != 1 {
-		return auth.ErrAuthorizationInvalid
-	}
-	return nil
-}
-
-// BumpAuthVersionForRole invalidates tokens for every user assigned to a tenant role.
-func (s *AuthService) BumpAuthVersionForRole(ctx context.Context, tx *gorm.DB, tenantID, roleID string) error {
-	if tx == nil || tenantID == "" || roleID == "" {
-		return auth.ErrAuthorizationInvalid
-	}
-	userIDs := tx.Model(&model.UserRole{}).Select("user_id").
-		Where("tenant_id = ? AND role_id = ?", tenantID, roleID)
-	return tx.WithContext(ctx).Model(&model.User{}).
-		Where("tenant_id = ? AND id IN (?)", tenantID, userIDs).
-		UpdateColumn("auth_version", gorm.Expr("auth_version + 1")).Error
+	return tenant.TenantExec(db, `UPDATE users SET auth_version = auth_version + 1
+WHERE tenant_id = ? AND id = ?`, userID)
 }
 
 // BumpAuthVersionForRoleScoped invalidates users through a trusted tenant transaction.

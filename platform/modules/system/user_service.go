@@ -234,13 +234,18 @@ func (s *UserService) Create(ctx context.Context, input json.RawMessage) (any, e
 		if err != nil {
 			return err
 		}
-		if err := tx.Create(&user).Error; err != nil {
+		now := time.Now().UTC()
+		user.CreatedAt, user.UpdatedAt = now, now
+		if err := tenant.TenantExec(tdb, `WITH scoped_tenant AS (SELECT ?::text AS tenant_id)
+INSERT INTO users (id, tenant_id, username, password_hash, display_name, status, auth_version, org_id, dept_id, created_at, updated_at)
+SELECT ?, tenant_id, ?, ?, ?, ?, 1, ?, ?, ?, ? FROM scoped_tenant`,
+			user.ID, user.Username, user.PasswordHash, user.DisplayName, user.Status, user.OrgID, user.DeptID, now, now); err != nil {
 			if strings.Contains(strings.ToLower(err.Error()), "duplicate") {
 				return errs.NewKey(errs.CodeConflict, "user.username_conflict", "username already exists")
 			}
 			return err
 		}
-		return replaceUserRoles(tx, tenantID, user.ID, roleIDs(roles))
+		return replaceUserRoles(tdb, user.ID, roleIDs(roles))
 	}); err != nil {
 		return nil, normalizeUserError(err, "create user failed")
 	}
@@ -273,12 +278,15 @@ func (s *UserService) Update(ctx context.Context, input json.RawMessage) (any, e
 		if err != nil {
 			return err
 		}
-		if err := tx.Model(current).Updates(map[string]any{
-			"display_name": req.DisplayName, "org_id": req.OrgID, "dept_id": req.DeptID,
-		}).Error; err != nil {
+		if err := tenant.TenantExec(tdb, `WITH scoped_user AS (
+  SELECT id FROM users WHERE tenant_id = ? AND id = ?
+)
+UPDATE users SET display_name = ?, org_id = ?, dept_id = ?, updated_at = ?
+WHERE id IN (SELECT id FROM scoped_user)`, current.ID, req.DisplayName, req.OrgID, req.DeptID, time.Now().UTC()); err != nil {
 			return err
 		}
 		current.DisplayName, current.OrgID, current.DeptID = req.DisplayName, req.OrgID, req.DeptID
+		current.UpdatedAt = time.Now().UTC()
 		user = current
 		return nil
 	})
@@ -297,7 +305,7 @@ func (s *UserService) Update(ctx context.Context, input json.RawMessage) (any, e
 }
 
 func (s *UserService) UpdateStatus(ctx context.Context, input json.RawMessage) (any, error) {
-	tenantID, actorID, err := tenantIdentity(ctx)
+	_, actorID, err := tenantIdentity(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -329,10 +337,14 @@ func (s *UserService) UpdateStatus(ctx context.Context, input json.RawMessage) (
 				return err
 			}
 		}
-		if err := tx.Model(user).Update("status", req.Status).Error; err != nil {
+		if err := tenant.TenantExec(tdb, `WITH scoped_user AS (
+  SELECT id FROM users WHERE tenant_id = ? AND id = ?
+)
+UPDATE users SET status = ?, updated_at = ? WHERE id IN (SELECT id FROM scoped_user)`,
+			user.ID, req.Status, time.Now().UTC()); err != nil {
 			return err
 		}
-		return s.auth.BumpAuthVersion(ctx, tx, tenantID, user.ID)
+		return s.auth.BumpAuthVersionScoped(tdb, user.ID)
 	})
 	if err != nil {
 		return nil, normalizeUserError(err, "update user status failed")
@@ -341,7 +353,7 @@ func (s *UserService) UpdateStatus(ctx context.Context, input json.RawMessage) (
 }
 
 func (s *UserService) UpdateRoles(ctx context.Context, input json.RawMessage) (any, error) {
-	tenantID, _, err := tenantIdentity(ctx)
+	_, _, err := tenantIdentity(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -370,10 +382,10 @@ func (s *UserService) UpdateRoles(ctx context.Context, input json.RawMessage) (a
 		if err := s.protectLastAdmin(tdb, user.ID, remainsAdmin); err != nil {
 			return err
 		}
-		if err := replaceUserRoles(tx, tenantID, user.ID, roleIDs(roles)); err != nil {
+		if err := replaceUserRoles(tdb, user.ID, roleIDs(roles)); err != nil {
 			return err
 		}
-		if err := s.auth.BumpAuthVersion(ctx, tx, tenantID, user.ID); err != nil {
+		if err := s.auth.BumpAuthVersionScoped(tdb, user.ID); err != nil {
 			return err
 		}
 		return s.notifyRoleChanged(ctx, tx, user.ID, targetUsername, roles)
@@ -385,7 +397,7 @@ func (s *UserService) UpdateRoles(ctx context.Context, input json.RawMessage) (a
 }
 
 func (s *UserService) ResetPassword(ctx context.Context, input json.RawMessage) (any, error) {
-	tenantID, _, err := tenantIdentity(ctx)
+	_, _, err := tenantIdentity(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -412,10 +424,14 @@ func (s *UserService) ResetPassword(ctx context.Context, input json.RawMessage) 
 			return err
 		}
 		targetUsername = user.Username
-		if err := tx.Model(user).Update("password_hash", string(hash)).Error; err != nil {
+		if err := tenant.TenantExec(tdb, `WITH scoped_user AS (
+  SELECT id FROM users WHERE tenant_id = ? AND id = ?
+)
+UPDATE users SET password_hash = ?, updated_at = ? WHERE id IN (SELECT id FROM scoped_user)`,
+			user.ID, string(hash), time.Now().UTC()); err != nil {
 			return err
 		}
-		if err := s.auth.BumpAuthVersion(ctx, tx, tenantID, user.ID); err != nil {
+		if err := s.auth.BumpAuthVersionScoped(tdb, user.ID); err != nil {
 			return err
 		}
 		return s.notifyPasswordReset(ctx, tx, user.ID, targetUsername)
@@ -542,12 +558,16 @@ WHERE u.tenant_id = ? AND u.status = ?
 	return rows[0].Count, nil
 }
 
-func replaceUserRoles(tx *gorm.DB, tenantID, userID string, roleIDs []string) error {
-	if err := tx.Where("tenant_id = ? AND user_id = ?", tenantID, userID).Delete(&model.UserRole{}).Error; err != nil {
+func replaceUserRoles(db tenant.TenantDatabase, userID string, roleIDs []string) error {
+	if err := tenant.TenantExec(db, `DELETE FROM user_roles WHERE tenant_id = ? AND user_id = ?`, userID); err != nil {
 		return err
 	}
 	for _, roleID := range roleIDs {
-		if err := tx.Create(&model.UserRole{ID: uuid.NewString(), TenantID: tenantID, UserID: userID, RoleID: roleID}).Error; err != nil {
+		if err := tenant.TenantExec(db, `WITH scoped_role AS (
+  SELECT id, tenant_id FROM roles WHERE tenant_id = ? AND id = ?
+)
+INSERT INTO user_roles (id, tenant_id, user_id, role_id)
+SELECT ?, tenant_id, ?, id FROM scoped_role`, roleID, uuid.NewString(), userID); err != nil {
 			return err
 		}
 	}

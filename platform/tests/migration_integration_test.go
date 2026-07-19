@@ -117,7 +117,14 @@ func TestUserTenantUsernameMigration(t *testing.T) {
 	}); !errors.Is(err, auth.ErrAuthorizationInvalid) {
 		t.Fatalf("wrong realm authorization error = %v", err)
 	}
-	if err := svc.BumpAuthVersion(context.Background(), testDB, "t-bump", "u-bump"); err != nil {
+	authCtx := auth.WithContext(context.Background(), &auth.Context{
+		Authenticated: true, Realm: auth.RealmTenant, TenantID: "t-bump", UserID: "u-bump",
+	})
+	tenantDB, err := tenant.TenantDB(authCtx, testDB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.BumpAuthVersionScoped(tenantDB, "u-bump"); err != nil {
 		t.Fatal(err)
 	}
 	if err := testDB.First(&bumpUser, "id = ? AND tenant_id = ?", "u-bump", "t-bump").Error; err != nil {
@@ -131,7 +138,7 @@ func TestUserTenantUsernameMigration(t *testing.T) {
 	}); !errors.Is(err, auth.ErrAuthorizationStale) {
 		t.Fatalf("stale authorization error = %v", err)
 	}
-	if err := svc.BumpAuthVersionForRole(context.Background(), testDB, "t-bump", "r-bump"); err != nil {
+	if err := svc.BumpAuthVersionForRoleScoped(tenantDB, "r-bump"); err != nil {
 		t.Fatal(err)
 	}
 	if err := testDB.First(&bumpUser, "id = ? AND tenant_id = ?", "u-bump", "t-bump").Error; err != nil {
