@@ -43,7 +43,10 @@ func (s *ToolService) SetDefinitionProjector(projector func(context.Context, *To
 }
 
 func NewToolService(db *gorm.DB, r *aitool.Registry, signer *aitool.HandleSigner, w outbox.Writer) *ToolService {
-	return &ToolService{db: db, registry: r, signer: signer, writer: w}
+	if err := registerToolTenantModels(); err != nil {
+		panic(err)
+	}
+	return &ToolService{db: tenantdata.RuntimeDB(db), registry: r, signer: signer, writer: w}
 }
 func (s *ToolService) SetEmbeddingService(v aitool.EmbeddingService) { s.embeddings = v }
 func (s *ToolService) SetConfirmationHooks(pending func(context.Context, *gorm.DB, *ToolConfirmation) error, decided func(context.Context, *ToolConfirmation) error) {
@@ -239,7 +242,7 @@ func (s *ToolService) Load(ctx context.Context, r ToolLoadRequest) (any, error) 
 		}
 		out = append(out, aitool.LoadedTool{Definition: d, Handle: token, ExpiresAt: exp.Unix()})
 	}
-	if err = s.db.WithContext(ctx).Model(&ToolScope{}).Where("id=? AND tenant_id=? AND user_id=?", scope.ID, ac.TenantID, ac.UserID).Updates(map[string]any{"loaded_tools_json": jsonBytes(loaded), "schema_bytes": bytes}).Error; err != nil {
+	if err = s.db.WithContext(ctx).Model(&ToolScope{}).Where("id=? AND user_id=?", scope.ID, ac.UserID).Updates(map[string]any{"loaded_tools_json": jsonBytes(loaded), "schema_bytes": bytes}).Error; err != nil {
 		return nil, err
 	}
 	return ToolLoadResponse{ScopeID: scope.ID, Tools: out}, nil
@@ -275,7 +278,7 @@ func (s *ToolService) Approve(ctx context.Context, r ToolConfirmationRequest) (a
 		return nil, err
 	}
 	var c ToolConfirmation
-	if err = s.db.WithContext(ctx).Where("id=? AND tenant_id=? AND user_id=?", r.ID, ac.TenantID, ac.UserID).First(&c).Error; err != nil {
+	if err = s.db.WithContext(ctx).Where("id=? AND user_id=?", r.ID, ac.UserID).First(&c).Error; err != nil {
 		return nil, err
 	}
 	if c.Status != "pending" || time.Now().UTC().After(c.ExpiresAt) {
@@ -290,7 +293,7 @@ func (s *ToolService) Approve(ctx context.Context, r ToolConfirmationRequest) (a
 		return nil, errs.New(errs.CodeConflict, "tool contract changed")
 	}
 	now := time.Now().UTC()
-	claim := s.db.WithContext(ctx).Model(&ToolConfirmation{}).Where("id=? AND tenant_id=? AND user_id=? AND status='pending'", c.ID, ac.TenantID, ac.UserID).Updates(map[string]any{"status": "approved", "decided_at": now})
+	claim := s.db.WithContext(ctx).Model(&ToolConfirmation{}).Where("id=? AND user_id=? AND status='pending'", c.ID, ac.UserID).Updates(map[string]any{"status": "approved", "decided_at": now})
 	if claim.Error != nil {
 		return nil, claim.Error
 	}
@@ -318,11 +321,11 @@ func (s *ToolService) Reject(ctx context.Context, r ToolConfirmationRequest) (an
 		return nil, err
 	}
 	var c ToolConfirmation
-	if err := s.db.WithContext(ctx).Where("id=? AND tenant_id=? AND user_id=? AND status='pending'", r.ID, ac.TenantID, ac.UserID).First(&c).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("id=? AND user_id=? AND status='pending'", r.ID, ac.UserID).First(&c).Error; err != nil {
 		return nil, err
 	}
 	now := time.Now().UTC()
-	res := s.db.WithContext(ctx).Model(&ToolConfirmation{}).Where("id=? AND tenant_id=? AND user_id=? AND status='pending'", r.ID, ac.TenantID, ac.UserID).Updates(map[string]any{"status": "rejected", "decided_at": now})
+	res := s.db.WithContext(ctx).Model(&ToolConfirmation{}).Where("id=? AND user_id=? AND status='pending'", r.ID, ac.UserID).Updates(map[string]any{"status": "rejected", "decided_at": now})
 	if res.Error != nil {
 		return nil, res.Error
 	}
@@ -347,7 +350,7 @@ func (s *ToolService) ListConfirmations(ctx context.Context, r ToolConfirmationL
 	if err != nil {
 		return nil, err
 	}
-	q := s.db.WithContext(ctx).Where("tenant_id=? AND user_id=? AND status='pending' AND expires_at>?", ac.TenantID, ac.UserID, time.Now().UTC())
+	q := s.db.WithContext(ctx).Where("user_id=? AND status='pending' AND expires_at>?", ac.UserID, time.Now().UTC())
 	if r.ScopeID != "" {
 		q = q.Where("scope_id=?", r.ScopeID)
 	}
@@ -389,7 +392,7 @@ func (s *ToolService) execute(ctx context.Context, ac *auth.Context, scope *Tool
 		return &aitool.Result{CallID: callID, Status: "confirmation_required", Summary: "user confirmation is required", Data: c}, nil
 	}
 	if approved != nil {
-		if err := s.db.WithContext(ctx).Where("id=? AND tenant_id=? AND user_id=? AND status='waiting_confirmation'", approved.InvocationID, ac.TenantID, ac.UserID).First(&inv).Error; err != nil {
+		if err := s.db.WithContext(ctx).Where("id=? AND user_id=? AND status='waiting_confirmation'", approved.InvocationID, ac.UserID).First(&inv).Error; err != nil {
 			return nil, err
 		}
 		if err := s.db.WithContext(ctx).Model(&ToolInvocation{}).Where("id=? AND status='waiting_confirmation'", inv.ID).Update("status", "running").Error; err != nil {
@@ -480,7 +483,7 @@ func (s *ToolService) scope(ctx context.Context, ac *auth.Context, id string) (*
 		return v, nil
 	}
 	var v ToolScope
-	if err := s.db.WithContext(ctx).Where("id=? AND tenant_id=? AND user_id=?", id, ac.TenantID, ac.UserID).First(&v).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("id=? AND user_id=?", id, ac.UserID).First(&v).Error; err != nil {
 		return nil, err
 	}
 	if v.SessionID != ac.SessionID || v.AuthVersion != ac.AuthVersion || v.Realm != string(auth.NormalizeRealm(ac.Realm)) || !v.ExpiresAt.After(now) {
@@ -491,7 +494,7 @@ func (s *ToolService) scope(ctx context.Context, ac *auth.Context, id string) (*
 func (s *ToolService) syncCatalog(ctx context.Context, tenantID string) error {
 	for _, d := range s.registry.List() {
 		var existing ToolCatalog
-		lookup := s.db.WithContext(ctx).Where("tenant_id=? AND tool_id=?", tenantID, d.ID).First(&existing).Error
+		lookup := s.db.WithContext(ctx).Where("tool_id=?", d.ID).First(&existing).Error
 		changed := errors.Is(lookup, gorm.ErrRecordNotFound) || existing.SchemaHash != d.SchemaHash || existing.Status != d.Status || existing.Name != d.Name || existing.Summary != d.DescriptionForLLM || existing.Risk != string(d.Risk) || existing.SideEffect != string(d.SideEffect)
 		if lookup != nil && !errors.Is(lookup, gorm.ErrRecordNotFound) {
 			return lookup

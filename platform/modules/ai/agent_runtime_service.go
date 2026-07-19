@@ -328,7 +328,7 @@ func (s *AgentRuntimeService) OnConfirmationPending(ctx context.Context, tx *gor
 		return nil
 	}
 	var scope ToolScope
-	if err := tx.WithContext(ctx).Where("tenant_id=? AND id=?", c.TenantID, c.ScopeID).First(&scope).Error; err != nil || scope.AgentRunID == nil {
+	if err := tx.WithContext(ctx).Where("id=?", c.ScopeID).First(&scope).Error; err != nil || scope.AgentRunID == nil {
 		return err
 	}
 	_, err := s.writer.Append(ctx, tx, outbox.AppendInput{EventType: agentRunConfirmationTimeoutEvent, AggregateType: "ai_agent_run", AggregateID: *scope.AgentRunID, AggregateVersion: 1, Payload: map[string]any{"run_id": *scope.AgentRunID, "confirmation_id": c.ID, "expires_at": c.ExpiresAt}})
@@ -336,7 +336,7 @@ func (s *AgentRuntimeService) OnConfirmationPending(ctx context.Context, tx *gor
 }
 func (s *AgentRuntimeService) OnConfirmationDecided(ctx context.Context, c *ToolConfirmation) error {
 	var scope ToolScope
-	if err := s.db.WithContext(ctx).Where("tenant_id=? AND id=?", c.TenantID, c.ScopeID).First(&scope).Error; err != nil || scope.AgentRunID == nil {
+	if err := s.db.WithContext(ctx).Where("id=?", c.ScopeID).First(&scope).Error; err != nil || scope.AgentRunID == nil {
 		return err
 	}
 	var run AgentRun
@@ -360,7 +360,7 @@ func (s *AgentRuntimeService) WakeExpiredConfirmation(ctx context.Context, runID
 		return false, err
 	}
 	var c ToolConfirmation
-	if err := s.db.WithContext(ctx).Where("tenant_id=? AND id=?", run.TenantID, *step.ConfirmationID).First(&c).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("id=?", *step.ConfirmationID).First(&c).Error; err != nil {
 		return false, err
 	}
 	if c.Status == "pending" && c.ExpiresAt.After(s.now()) {
@@ -894,7 +894,7 @@ func asGenerateResponse(value any) (aimodelruntime.GenerateResponse, bool) {
 
 func (s *AgentRuntimeService) ensureToolScope(ctx context.Context, run *AgentRun, agent *Agent) (string, error) {
 	var existing ToolScope
-	if err := s.db.WithContext(ctx).Where("tenant_id=? AND user_id=? AND agent_run_id=? AND expires_at>?", run.TenantID, run.UserID, run.ID, s.now()).First(&existing).Error; err == nil {
+	if err := s.db.WithContext(ctx).Where("user_id=? AND agent_run_id=? AND expires_at>?", run.UserID, run.ID, s.now()).First(&existing).Error; err == nil {
 		return existing.ID, nil
 	}
 	repos, repoErr := newAgentRepositories(ctx, s.db)
@@ -1043,7 +1043,7 @@ func (s *AgentRuntimeService) appendToolResult(ctx context.Context, run *AgentRu
 	}
 	encoded, _ := json.Marshal(value)
 	var invocation ToolInvocation
-	if s.db.WithContext(ctx).Where("tenant_id=? AND agent_run_id=? AND tool_call_id=?", run.TenantID, run.ID, call.ToolCallID).Order("created_at DESC").First(&invocation).Error == nil {
+	if s.db.WithContext(ctx).Where("agent_run_id=? AND tool_call_id=?", run.ID, call.ToolCallID).Order("created_at DESC").First(&invocation).Error == nil {
 		step.ToolInvocationID = &invocation.ID
 		_ = s.db.WithContext(ctx).Model(&AgentStep{}).Where("id=?", step.ID).Update("tool_invocation_id", invocation.ID).Error
 	}
@@ -1077,7 +1077,7 @@ func (s *AgentRuntimeService) resumeConfirmation(ctx context.Context, run *Agent
 		return err
 	}
 	var c ToolConfirmation
-	if err := s.db.WithContext(ctx).Where("tenant_id=? AND user_id=? AND id=?", run.TenantID, run.UserID, *step.ConfirmationID).First(&c).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("user_id=? AND id=?", run.UserID, *step.ConfirmationID).First(&c).Error; err != nil {
 		return s.fail(ctx, run, "confirmation_missing")
 	}
 	if c.Status == "pending" && c.ExpiresAt.After(s.now()) {
@@ -1090,7 +1090,7 @@ func (s *AgentRuntimeService) resumeConfirmation(ctx context.Context, run *Agent
 		return s.fail(ctx, run, "conversation_revision_changed")
 	}
 	var inv ToolInvocation
-	if err := s.db.WithContext(ctx).Where("tenant_id=? AND id=? AND status=?", run.TenantID, c.InvocationID, "completed").First(&inv).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("id=? AND status=?", c.InvocationID, "completed").First(&inv).Error; err != nil {
 		return s.fail(ctx, run, "confirmation_execution_unavailable")
 	}
 	var result aitool.Result

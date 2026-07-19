@@ -43,7 +43,10 @@ type KnowledgeTool struct {
 }
 
 func NewKnowledgeTool(db *gorm.DB, access aiknowledge.Service, retriever aiknowledge.KnowledgeRetriever) *KnowledgeTool {
-	return &KnowledgeTool{db: db, access: access, retriever: retriever, cache: map[string]knowledgeToolCacheEntry{}}
+	if err := registerToolTenantModels(); err != nil {
+		panic(err)
+	}
+	return &KnowledgeTool{db: tenantdata.RuntimeDB(db), access: access, retriever: retriever, cache: map[string]knowledgeToolCacheEntry{}}
 }
 
 func (t *KnowledgeTool) Definition() aitool.Definition {
@@ -88,7 +91,7 @@ func (t *KnowledgeTool) Execute(ctx context.Context, _ aitool.LoadedTool, argume
 		return &aitool.Result{Status: "failed", Summary: "knowledge search input is invalid", ErrorCategory: "invalid_request"}, nil
 	}
 	var calls int64
-	t.db.WithContext(ctx).Model(&ToolInvocation{}).Where("tenant_id=? AND agent_run_id=? AND tool_id=?", scope.TenantID, *scope.AgentRunID, knowledgeSearchToolID).Count(&calls)
+	t.db.WithContext(ctx).Model(&ToolInvocation{}).Where("agent_run_id=? AND tool_id=?", *scope.AgentRunID, knowledgeSearchToolID).Count(&calls)
 	if calls > maxKnowledgeSearchesPerRun {
 		return &aitool.Result{Status: "failed", Summary: "knowledge search budget exhausted", ErrorCategory: "knowledge_budget_exhausted"}, nil
 	}
@@ -171,7 +174,7 @@ func (t *KnowledgeTool) candidates(ctx context.Context, scope *ToolScope) ([]kno
 		return nil, nil
 	}
 	var run AgentRun
-	if err := t.db.WithContext(ctx).Where("tenant_id=? AND user_id=? AND id=?", scope.TenantID, scope.UserID, *scope.AgentRunID).First(&run).Error; err != nil {
+	if err := t.db.WithContext(ctx).Where("user_id=? AND id=?", scope.UserID, *scope.AgentRunID).First(&run).Error; err != nil {
 		return nil, err
 	}
 	repos, repoErr := newAgentRepositories(ctx, t.db)
