@@ -10,7 +10,7 @@ const LOCAL_AUTH_ROUTE_NAMES = new Set(['home', 'notification']);
  * 本地隐藏子路由：无后端菜单也会注入，供列表内跳转（如 Agent Builder）。
  * 必须挂在已有一级路由下（name 含 `_` 的叶子不能单独做一级路由）。
  */
-const LOCAL_HIDDEN_CHILD_ROUTE_NAMES = new Set(['ai_agent-builder']);
+const LOCAL_HIDDEN_CHILD_ROUTE_NAMES = new Set(['ai_agent-builder', 'profile_memory']);
 
 function cloneRoute(route: ElegantConstRoute): ElegantConstRoute {
   return {
@@ -28,7 +28,9 @@ function collectLocalAuthRoutes(authRoutes: ElegantConstRoute[]): ElegantConstRo
       out.push(cloneRoute(route));
       continue;
     }
-    const hiddenChildren = (route.children || []).filter(child => LOCAL_HIDDEN_CHILD_ROUTE_NAMES.has(String(child.name)));
+    const hiddenChildren = (route.children || []).filter(child =>
+      LOCAL_HIDDEN_CHILD_ROUTE_NAMES.has(String(child.name))
+    );
     if (hiddenChildren.length === 0) continue;
     out.push({
       ...cloneRoute(route),
