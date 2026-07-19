@@ -23,13 +23,17 @@ export const useMemoryManagementStore = defineStore('memory-management', () => {
     type: '',
     sensitivity: '',
     agent_id: '',
-    date_from: '',
-    date_to: ''
+    date_from: null as string | null,
+    date_to: null as string | null
   });
   async function load() {
     loading.value = true;
     try {
-      const { data } = await fetchMemoryList({ ...filters });
+      const { data } = await fetchMemoryList({
+        ...filters,
+        date_from: filters.date_from || '',
+        date_to: filters.date_to || ''
+      });
       if (data) {
         rows.value = data.items || [];
         total.value = data.total;

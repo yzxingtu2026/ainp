@@ -18,7 +18,12 @@ const clearConfirm = ref('');
 const preference = ref<Api.Setting.Definition | null>(null);
 const autoMemoryEnabled = ref(true);
 const preferenceSaving = ref(false);
-const correction = reactive({ summary: '', content: '', local_date: '', date_precision: 'exact_day' });
+const correction = reactive({
+  summary: '',
+  content: '',
+  local_date: null as string | null,
+  date_precision: 'exact_day'
+});
 
 const pending = computed(() => store.rows.filter(item => item.status === 'pending_review'));
 const timeline = computed(() => {
@@ -84,7 +89,7 @@ function startCorrection() {
   Object.assign(correction, {
     summary: store.detail.summary,
     content: store.detail.content,
-    local_date: store.detail.local_date?.slice(0, 10) || '',
+    local_date: store.detail.local_date?.slice(0, 10) || null,
     date_precision: store.detail.date_precision
   });
   correctionOpen.value = true;
@@ -92,7 +97,12 @@ function startCorrection() {
 
 async function saveCorrection() {
   if (!store.detail) return;
-  const { error } = await correctMemory({ id: store.detail.id, revision: store.detail.revision, ...correction });
+  const { error } = await correctMemory({
+    id: store.detail.id,
+    revision: store.detail.revision,
+    ...correction,
+    local_date: correction.local_date || ''
+  });
   if (!error) {
     correctionOpen.value = false;
     detailOpen.value = false;
