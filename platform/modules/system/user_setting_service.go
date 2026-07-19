@@ -193,6 +193,19 @@ func (s *UserSettingService) Preferences(ctx context.Context) (*RuntimePreferenc
 	return &out, nil
 }
 
+func (s *UserSettingService) PreferencesWithSource(ctx context.Context) (*RuntimePreferences, string, error) {
+	eff, err := s.effective(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+	raw, _ := json.Marshal(eff.Values)
+	var out RuntimePreferences
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil, "", err
+	}
+	return &out, eff.Source, nil
+}
+
 func registerRuntimePreferencesSetting(a interface {
 	RegisterSettingCategory(setting.Category) error
 	RegisterSettingDefinition(setting.Definition) error

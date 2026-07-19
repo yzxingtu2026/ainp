@@ -7,6 +7,7 @@
 - 用户可见设置用统一动态表单；禁止后端下发组件路径/脚本。
 - user scope 只允许 authenticated self Action；tenant/user 只能来自 AuthContext，管理员也不得代读代改私人偏好。
 - `profile.runtime_preferences` 经类型化 `UserSettingService.Preferences` 读取；IANA 时区服务端校验，审计只记 key/revision，不记值。
+- `general.runtime_defaults` 只承载租户 timezone/locale 回退；可信 Runtime Context 必须按 user → tenant → system 解析来源。
 - `multi_select` 自定义值必须由字段显式开启 `allow_custom_values`，并优先配置 `custom_value_pattern`；禁止全局放开任意选项。
 - 字段关联显隐只用声明式 `visible_when`（同组兄弟字段 + `eq`/`in`）；禁止表达式/脚本；隐藏字段跳过必填校验且保留值。
 - 启动配置（DSN/JWT/端口）不得纳入设置系统；Setting 不承载状态/业务字典。

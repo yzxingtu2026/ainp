@@ -94,6 +94,7 @@ type ContextSnapshot struct {
 	TokenEstimate          int             `gorm:"not null" json:"token_estimate"`
 	Status                 string          `gorm:"size:16;not null;check:ck_ai_snapshot_status,status IN ('ready','invalid')" json:"status"`
 	Payload                json.RawMessage `gorm:"type:jsonb;not null" json:"payload"`
+	RuntimeContextRefs     json.RawMessage `gorm:"type:jsonb;not null;default:'{}'" json:"runtime_context_refs,omitempty"`
 	IdempotencyKey         string          `gorm:"size:191;not null;uniqueIndex:ux_ai_snapshot_idem,priority:3" json:"-"`
 	CreatedAt              time.Time       `json:"created_at"`
 	Current                bool            `gorm:"-" json:"is_current"`

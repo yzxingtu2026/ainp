@@ -9,3 +9,4 @@
 - ContextAssembler 只装配并报告预算，不静默裁剪、不调用模型；压缩交给 ContextCompactor。
 - ContextSnapshot 不覆盖 canonical Message；必须固定 conversation revision、Agent Version、模型、来源范围与策略版本。
 - 日志、审计与 Outbox 禁止携带消息正文、附件内容或 Snapshot payload。
+- Runtime Context 不是 canonical Message；Snapshot 只保存 run/context/policy/timezone/evaluated_at refs，不保存动态 Prompt 或私人画像正文。

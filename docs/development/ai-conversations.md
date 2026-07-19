@@ -31,7 +31,7 @@ Message content 复用 `aimodelruntime.ContentPart`。数据库保存最终 cano
 
 ## ContextSnapshot
 
-Snapshot 固定 conversation revision、Agent Version、模型 Deployment、来源 sequence 范围、parent、kind、策略版本与 Token 估算。#76 只允许 `raw` 和 `assembled`，不生成摘要。Snapshot 创建使用租户内会话级幂等键，创建后不可更新。
+Snapshot 固定 conversation revision、Agent Version、模型 Deployment、来源 sequence 范围、parent、kind、策略版本与 Token 估算。Runtime Context 不是 Message；Snapshot 只附加 run/context/policy version、timezone/source 与 evaluated_at refs，不保存完整动态 Prompt、称呼或记忆正文。Snapshot 创建使用租户内会话级幂等键，创建后不可覆盖 payload。
 
 ## 前端边界
 

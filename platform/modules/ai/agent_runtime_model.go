@@ -16,6 +16,9 @@ type AgentRun struct {
 	SessionID            string          `gorm:"size:64" json:"session_id"`
 	AuthVersion          uint64          `gorm:"not null" json:"auth_version"`
 	ContextSnapshotID    *string         `gorm:"size:64" json:"context_snapshot_id,omitempty"`
+	EvaluatedAtUTC       *time.Time      `json:"evaluated_at_utc,omitempty"`
+	Timezone             string          `gorm:"size:64;not null;default:''" json:"timezone,omitempty"`
+	TimeSnapshotJSON     json.RawMessage `gorm:"type:jsonb;not null;default:'{}'" json:"-"`
 	Status               string          `gorm:"size:32;not null;index:idx_ai_run_list,priority:3" json:"status"`
 	BudgetJSON           json.RawMessage `gorm:"type:jsonb;not null" json:"budget"`
 	CurrentStep          int             `gorm:"not null;default:0" json:"current_step"`
