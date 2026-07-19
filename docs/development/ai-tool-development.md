@@ -77,6 +77,19 @@ AI: &action.AIMeta{
 
 ## 新增 Provider 和 Executor
 
+框架内置、需要动态可用性或专用预算/观测的核心工具应实现 `aitool.RuntimeSlot`，放在 `platform/modules/ai/tools/{tool}/`，并只在 `platform/modules/ai/tools/register.go` 的显式聚合调用处注册。Slot 必须声明：
+
+- `Definition` 与 `direct/progressive` 发现模式；
+- 基于可信 `RuntimeScope` 的动态投影；
+- Executor；
+- 通用 Step/Invocation 分类、预算类别/硬上限；
+- 允许持久化的安全观测字段白名单。
+- 允许暴露的稳定失败子分类白名单；未声明分类统一收敛为 `execution_failed`。
+
+禁止为新核心工具修改 `ToolService` 或 `AgentRuntimeService` 的 Tool ID 分支。模型参数不能提供 tenant、user、run 或 scope；这些标识只能来自 `RuntimeScope`。动态投影必须用于 project/search/load/execute 全路径，且只能收紧静态 Registry、Scope 和权限结果。
+
+普通动态来源使用下述 Provider/Executor 接口；不要为了一个核心工具注册第二个同 Source Provider。
+
 Provider 只提供定义，不执行工具：
 
 ```go
@@ -168,6 +181,8 @@ if err := a.ToolRegistry.RegisterProvider(
 ```
 
 每种 Source 当前只能注册一个 Provider/Executor 组合。若一个 Source 下有多个插件或 MCP Server，应由该 Source Provider 聚合它们的定义，不能重复注册同一个 Source。
+
+核心 Slot 不按 Source 共享 Executor。Registry 根据 Tool ID 定位 Slot Executor，因此多个 `builtin` Slot 可以独立注册、投影和执行，且不会互相覆盖。
 
 Registry 在搜索、加载和模型投影前刷新，因此后注册的 Action/插件可以被发现。定义重复、Source 不匹配、非法 ID 或 Schema 会使刷新失败，不能静默跳过。
 
@@ -264,6 +279,9 @@ func TestWeatherToolExecutor(t *testing.T) {
 - [ ] 风险、副作用和确认策略按最严格原则配置。
 - [ ] permission、tenant 和 realm 沿用事实源，不复制权限逻辑。
 - [ ] Executor 不绕过 Tool Runtime，不记录敏感输入输出。
+- [ ] 核心 Slot 只修改独立工具目录和显式聚合入口，公共主循环没有业务 Tool ID 分支。
+- [ ] project/search/load/execute 共用动态可用性判定，投影后撤权会立即拒绝执行。
+- [ ] Slot 预算、分类和观测字段由通用元数据声明，事实摘要只保留白名单字段。
 - [ ] 搜索文本和向量不含 Schema、参数、结果或 Credential。
 - [ ] 测试覆盖发现、加载、执行、确认、跨租户和脱敏。
 - [ ] `go test ./...`、`pnpm typecheck`、`pnpm build`、`agent-rules doctor` 和 `git diff --check` 通过。

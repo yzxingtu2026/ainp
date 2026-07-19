@@ -33,6 +33,7 @@ const (
 )
 
 var toolIDPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]*:[a-z][a-z0-9_.-]*$`)
+var observationFieldPattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 
 type Definition struct {
 	ID                   string          `json:"id"`
@@ -112,6 +113,71 @@ type Executor interface {
 }
 type EmbeddingService interface {
 	Scores(context.Context, string, []Definition) (map[string]float64, error)
+}
+
+type DiscoveryMode string
+
+const (
+	DiscoveryProgressive DiscoveryMode = "progressive"
+	DiscoveryDirect      DiscoveryMode = "direct"
+)
+
+// RuntimeScope only contains trusted runtime identifiers. Slots must not derive
+// tenant, actor, run, or authorization facts from model arguments.
+type RuntimeScope struct {
+	ID          string
+	TenantID    string
+	UserID      string
+	Realm       string
+	SessionID   string
+	AuthVersion uint64
+	AgentRunID  string
+}
+
+type RuntimeMetadata struct {
+	StepType          string
+	InvocationClass   string
+	BudgetCategory    string
+	MaxCallsPerRun    int
+	Observations      []RuntimeObservation
+	FailureCategories []string
+}
+
+type RuntimeObservation struct {
+	Field  string
+	Source string
+}
+
+func (m RuntimeMetadata) Validate() error {
+	if !slices.Contains([]string{"tool_search", "tool_load", "tool_execute"}, m.StepType) || strings.TrimSpace(m.InvocationClass) == "" || m.MaxCallsPerRun < 0 {
+		return fmt.Errorf("invalid runtime metadata")
+	}
+	if m.MaxCallsPerRun > 0 && strings.TrimSpace(m.BudgetCategory) == "" {
+		return fmt.Errorf("budget category is required")
+	}
+	seen := map[string]bool{}
+	for _, observation := range m.Observations {
+		if !observationFieldPattern.MatchString(observation.Field) || seen[observation.Field] || !slices.Contains([]string{"result_data", "resource_ref_count"}, observation.Source) {
+			return fmt.Errorf("invalid observation field")
+		}
+		seen[observation.Field] = true
+	}
+	seen = map[string]bool{}
+	for _, category := range m.FailureCategories {
+		if !observationFieldPattern.MatchString(category) || seen[category] {
+			return fmt.Errorf("invalid failure category")
+		}
+		seen[category] = true
+	}
+	return nil
+}
+
+type RuntimeSlot interface {
+	Definition() Definition
+	DiscoveryMode() DiscoveryMode
+	Project(context.Context, RuntimeScope, Definition) (Definition, bool, error)
+	Metadata() RuntimeMetadata
+	Execute(context.Context, LoadedTool, json.RawMessage) (*Result, error)
 }
 
 type MetaSearchInput struct {

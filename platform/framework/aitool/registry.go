@@ -12,14 +12,42 @@ import (
 )
 
 type Registry struct {
-	mu        sync.RWMutex
-	tools     map[string]Definition
-	providers map[Source]Provider
-	executors map[Source]Executor
+	mu          sync.RWMutex
+	tools       map[string]Definition
+	providers   map[Source]Provider
+	executors   map[Source]Executor
+	slots       map[string]RuntimeSlot
+	runtimeRefs map[string]string
 }
 
 func NewRegistry() *Registry {
-	return &Registry{tools: map[string]Definition{}, providers: map[Source]Provider{}, executors: map[Source]Executor{}}
+	return &Registry{tools: map[string]Definition{}, providers: map[Source]Provider{}, executors: map[Source]Executor{}, slots: map[string]RuntimeSlot{}, runtimeRefs: map[string]string{}}
+}
+func (r *Registry) RegisterSlot(slot RuntimeSlot) error {
+	if slot == nil {
+		return fmt.Errorf("runtime tool slot is required")
+	}
+	d := slot.Definition()
+	if err := d.Validate(); err != nil {
+		return fmt.Errorf("runtime tool slot %s: %w", d.ID, err)
+	}
+	if slot.DiscoveryMode() != DiscoveryDirect && slot.DiscoveryMode() != DiscoveryProgressive {
+		return fmt.Errorf("runtime tool slot %s has invalid discovery mode", d.ID)
+	}
+	if err := slot.Metadata().Validate(); err != nil {
+		return fmt.Errorf("runtime tool slot %s: %w", d.ID, err)
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.slots[d.ID]; ok {
+		return fmt.Errorf("runtime tool slot already registered: %s", d.ID)
+	}
+	if existing, ok := r.runtimeRefs[d.RuntimeRef]; ok {
+		return fmt.Errorf("runtime ref already registered by %s: %s", existing, d.RuntimeRef)
+	}
+	r.slots[d.ID] = slot
+	r.runtimeRefs[d.RuntimeRef] = d.ID
+	return nil
 }
 func (r *Registry) RegisterProvider(p Provider, e Executor) error {
 	if p == nil || e == nil {
@@ -41,7 +69,25 @@ func (r *Registry) Refresh(ctx context.Context) error {
 		ps = append(ps, p)
 	}
 	r.mu.RUnlock()
+	sort.Slice(ps, func(i, j int) bool { return ps[i].Source() < ps[j].Source() })
 	next := map[string]Definition{}
+	refs := map[string]string{}
+	r.mu.RLock()
+	slots := make([]RuntimeSlot, 0, len(r.slots))
+	for _, slot := range r.slots {
+		slots = append(slots, slot)
+	}
+	r.mu.RUnlock()
+	sort.Slice(slots, func(i, j int) bool { return slots[i].Definition().ID < slots[j].Definition().ID })
+	for _, slot := range slots {
+		d := slot.Definition()
+		d.SchemaHash = schemaHash(d)
+		if err := d.Validate(); err != nil {
+			return fmt.Errorf("runtime tool slot %s: %w", d.ID, err)
+		}
+		next[d.ID] = d
+		refs[d.RuntimeRef] = d.ID
+	}
 	for _, p := range ps {
 		items, err := p.List(ctx)
 		if err != nil {
@@ -58,7 +104,11 @@ func (r *Registry) Refresh(ctx context.Context) error {
 			if _, ok := next[d.ID]; ok {
 				return fmt.Errorf("duplicate tool: %s", d.ID)
 			}
+			if existing, ok := refs[d.RuntimeRef]; ok {
+				return fmt.Errorf("duplicate runtime ref %s: %s and %s", d.RuntimeRef, existing, d.ID)
+			}
 			next[d.ID] = d
+			refs[d.RuntimeRef] = d.ID
 		}
 	}
 	r.mu.Lock()
@@ -77,6 +127,55 @@ func (r *Registry) Executor(source Source) (Executor, bool) {
 	defer r.mu.RUnlock()
 	e, ok := r.executors[source]
 	return e, ok
+}
+func (r *Registry) ExecutorFor(d Definition) (Executor, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if slot, ok := r.slots[d.ID]; ok {
+		return slot, true
+	}
+	e, ok := r.executors[d.Source]
+	return e, ok
+}
+func (r *Registry) Project(ctx context.Context, scope RuntimeScope, d Definition) (Definition, bool, error) {
+	r.mu.RLock()
+	slot, ok := r.slots[d.ID]
+	r.mu.RUnlock()
+	if !ok {
+		return d, true, nil
+	}
+	return slot.Project(ctx, scope, d)
+}
+func (r *Registry) SlotMetadata(id string) (RuntimeMetadata, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	slot, ok := r.slots[id]
+	if !ok {
+		return RuntimeMetadata{}, false
+	}
+	return slot.Metadata(), true
+}
+func (r *Registry) DirectSlotIDs() []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]string, 0, len(r.slots))
+	for id, slot := range r.slots {
+		if slot.DiscoveryMode() == DiscoveryDirect {
+			out = append(out, id)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+func (r *Registry) SlotIDs() []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]string, 0, len(r.slots))
+	for id := range r.slots {
+		out = append(out, id)
+	}
+	sort.Strings(out)
+	return out
 }
 func (r *Registry) List() []Definition {
 	r.mu.RLock()

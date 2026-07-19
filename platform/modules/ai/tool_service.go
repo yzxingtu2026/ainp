@@ -35,11 +35,6 @@ type ToolService struct {
 	embeddings            aitool.EmbeddingService
 	onConfirmationPending func(context.Context, *gorm.DB, *ToolConfirmation) error
 	onConfirmationDecided func(context.Context, *ToolConfirmation) error
-	projectDefinition     func(context.Context, *ToolScope, aitool.Definition) (aitool.Definition, bool, error)
-}
-
-func (s *ToolService) SetDefinitionProjector(projector func(context.Context, *ToolScope, aitool.Definition) (aitool.Definition, bool, error)) {
-	s.projectDefinition = projector
 }
 
 func NewToolService(db *gorm.DB, r *aitool.Registry, signer *aitool.HandleSigner, w outbox.Writer) *ToolService {
@@ -65,7 +60,8 @@ func (s *ToolService) ProjectModelTools(ctx context.Context, scopeID string) (st
 	if err != nil {
 		return "", nil, err
 	}
-	ids := append([]string{"meta:tool.search", "meta:tool.load", knowledgeSearchToolID}, decodeStrings(scope.LoadedToolsJSON)...)
+	ids := append([]string{"meta:tool.search", "meta:tool.load"}, s.registry.DirectSlotIDs()...)
+	ids = append(ids, decodeStrings(scope.LoadedToolsJSON)...)
 	out := make([]aimodelruntime.ToolDefinition, 0, len(ids))
 	seen := map[string]bool{}
 	for _, id := range ids {
@@ -77,14 +73,12 @@ func (s *ToolService) ProjectModelTools(ctx context.Context, scopeID string) (st
 		if !ok || d.Status != "enabled" || !scopeAllows(scope, d) || !toolVisible(ac, d) {
 			continue
 		}
-		if s.projectDefinition != nil {
-			d, ok, err = s.projectDefinition(ctx, scope, d)
-			if err != nil {
-				return "", nil, err
-			}
-			if !ok {
-				continue
-			}
+		d, ok, err = s.project(ctx, scope, d)
+		if err != nil {
+			return "", nil, err
+		}
+		if !ok {
+			continue
 		}
 		out = append(out, aimodelruntime.ToolDefinition{Name: modelToolName(d.ID), Description: d.DescriptionForLLM, Parameters: d.InputSchema})
 	}
@@ -166,15 +160,13 @@ func (s *ToolService) Search(ctx context.Context, r ToolSearchRequest) (any, err
 	projected := make([]aitool.Definition, 0, len(definitions))
 	visibleIDs := make(map[string]bool, len(definitions))
 	for _, definition := range definitions {
-		if s.projectDefinition != nil {
-			var visible bool
-			definition, visible, err = s.projectDefinition(ctx, scope, definition)
-			if err != nil {
-				return nil, err
-			}
-			if !visible {
-				continue
-			}
+		var visible bool
+		definition, visible, err = s.project(ctx, scope, definition)
+		if err != nil {
+			return nil, err
+		}
+		if !visible {
+			continue
 		}
 		projected = append(projected, definition)
 		visibleIDs[definition.ID] = true
@@ -212,14 +204,12 @@ func (s *ToolService) Load(ctx context.Context, r ToolLoadRequest) (any, error) 
 		if !ok || d.Status != "enabled" || !scopeAllows(scope, d) || !toolVisible(ac, d) {
 			return nil, errs.New(errs.CodeForbidden, "tool is not visible")
 		}
-		if s.projectDefinition != nil {
-			d, ok, err = s.projectDefinition(ctx, scope, d)
-			if err != nil {
-				return nil, err
-			}
-			if !ok {
-				return nil, errs.New(errs.CodeForbidden, "tool is not visible")
-			}
+		d, ok, err = s.project(ctx, scope, d)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return nil, errs.New(errs.CodeForbidden, "tool is not visible")
 		}
 		if !set[id] {
 			if len(loaded) >= 8 {
@@ -249,6 +239,9 @@ func (s *ToolService) Load(ctx context.Context, r ToolLoadRequest) (any, error) 
 }
 
 func (s *ToolService) Execute(ctx context.Context, r ToolExecuteRequest) (any, error) {
+	if err := s.registry.Refresh(ctx); err != nil {
+		return nil, err
+	}
 	ac, err := toolActor(ctx)
 	if err != nil {
 		return nil, err
@@ -273,6 +266,9 @@ func (s *ToolService) Execute(ctx context.Context, r ToolExecuteRequest) (any, e
 }
 
 func (s *ToolService) Approve(ctx context.Context, r ToolConfirmationRequest) (any, error) {
+	if err := s.registry.Refresh(ctx); err != nil {
+		return nil, err
+	}
 	ac, err := toolActor(ctx)
 	if err != nil {
 		return nil, err
@@ -291,6 +287,10 @@ func (s *ToolService) Approve(ctx context.Context, r ToolConfirmationRequest) (a
 	d, ok := s.registry.Get(c.ToolID)
 	if !ok || d.SchemaHash != c.SchemaHash || !toolVisible(ac, d) {
 		return nil, errs.New(errs.CodeConflict, "tool contract changed")
+	}
+	d, ok, err = s.project(ctx, scope, d)
+	if err != nil || !ok {
+		return nil, errs.New(errs.CodeConflict, "tool authorization changed")
 	}
 	now := time.Now().UTC()
 	claim := s.db.WithContext(ctx).Model(&ToolConfirmation{}).Where("id=? AND user_id=? AND status='pending'", c.ID, ac.UserID).Updates(map[string]any{"status": "approved", "decided_at": now})
@@ -401,7 +401,21 @@ func (s *ToolService) execute(ctx context.Context, ac *auth.Context, scope *Tool
 	} else if err := s.db.WithContext(ctx).Create(&inv).Error; err != nil {
 		return nil, err
 	}
-	executor, ok := s.registry.Executor(d.Source)
+	if metadata, isSlot := s.registry.SlotMetadata(d.ID); isSlot && metadata.MaxCallsPerRun > 0 && scope.AgentRunID != nil {
+		var calls int64
+		if err := s.db.WithContext(ctx).Model(&ToolInvocation{}).Where("agent_run_id=? AND tool_id=?", *scope.AgentRunID, d.ID).Count(&calls).Error; err != nil {
+			_ = s.finishInvocation(ctx, &inv, nil, "failed", "budget_check_failed", err)
+			return nil, err
+		}
+		if calls > int64(metadata.MaxCallsPerRun) {
+			result := &aitool.Result{Status: "failed", Summary: metadata.BudgetCategory + " budget exhausted", ErrorCategory: metadata.BudgetCategory + "_budget_exhausted"}
+			if err := s.finishInvocation(ctx, &inv, result, "failed", result.ErrorCategory, nil); err != nil {
+				return nil, err
+			}
+			return result, nil
+		}
+	}
+	executor, ok := s.registry.ExecutorFor(d)
 	if !ok {
 		return nil, s.finishInvocation(ctx, &inv, nil, "failed", "execution_failed", fmt.Errorf("tool executor unavailable"))
 	}
@@ -416,6 +430,10 @@ func (s *ToolService) execute(ctx context.Context, ac *auth.Context, scope *Tool
 	invocationStatus, category := "completed", ""
 	if result.Status == "failed" {
 		invocationStatus, category = "failed", result.ErrorCategory
+		if metadata, isSlot := s.registry.SlotMetadata(d.ID); isSlot && !slices.Contains(metadata.FailureCategories, category) {
+			category = "execution_failed"
+			result.ErrorCategory = category
+		}
 	}
 	if err := s.finishInvocation(ctx, &inv, result, invocationStatus, category, nil); err != nil {
 		return nil, err
@@ -435,6 +453,10 @@ func (s *ToolService) finishInvocation(ctx context.Context, inv *ToolInvocation,
 		updates["result_json"] = jsonBytes(aitool.Result{CallID: result.CallID, Status: result.Status, Summary: result.Summary, ResourceRefs: append([]string(nil), result.ResourceRefs...), Truncated: result.Truncated, ErrorCategory: result.ErrorCategory})
 	}
 	payload := map[string]any{"invocation_id": inv.ID, "tool_id": inv.ToolID, "source": inv.Source, "status": status, "duration_ms": duration, "error_category": category}
+	if metadata, ok := s.registry.SlotMetadata(inv.ToolID); ok {
+		payload["invocation_class"] = metadata.InvocationClass
+		payload["budget_category"] = metadata.BudgetCategory
+	}
 	if s.writer == nil {
 		return s.db.WithContext(ctx).Model(&ToolInvocation{}).Where("id=? AND status IN ?", inv.ID, []string{"running", "waiting_confirmation"}).Updates(updates).Error
 	}
@@ -471,7 +493,21 @@ func (s *ToolService) resolveLoaded(ctx context.Context, ac *auth.Context, token
 	if !ok || d.SchemaHash != claims.SchemaHash || d.RuntimeRef != claims.RuntimeRef || !toolVisible(ac, d) {
 		return zero, nil, errs.New(errs.CodeConflict, "tool contract changed")
 	}
+	d, ok, err = s.project(ctx, scope, d)
+	if err != nil {
+		return zero, nil, err
+	}
+	if !ok {
+		return zero, nil, errs.New(errs.CodeForbidden, "tool is no longer available")
+	}
 	return aitool.LoadedTool{Definition: d, Handle: token, ExpiresAt: claims.ExpiresAt}, scope, nil
+}
+func (s *ToolService) project(ctx context.Context, scope *ToolScope, d aitool.Definition) (aitool.Definition, bool, error) {
+	runtimeScope := aitool.RuntimeScope{ID: scope.ID, TenantID: scope.TenantID, UserID: scope.UserID, Realm: scope.Realm, SessionID: scope.SessionID, AuthVersion: scope.AuthVersion}
+	if scope.AgentRunID != nil {
+		runtimeScope.AgentRunID = *scope.AgentRunID
+	}
+	return s.registry.Project(ctx, runtimeScope, d)
 }
 func (s *ToolService) scope(ctx context.Context, ac *auth.Context, id string) (*ToolScope, error) {
 	now := time.Now().UTC()
