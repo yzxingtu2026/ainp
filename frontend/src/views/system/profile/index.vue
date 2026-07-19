@@ -112,7 +112,10 @@ onMounted(load);
           <NSpace vertical size="large" class="max-w-680px">
             <NCard size="small" title="当前生效称呼"><NText strong>{{ address.value }}</NText><NTag class="ml-12px">{{ address.source }}</NTag></NCard>
             <NCard size="small" title="记忆画像称呼">{{ profile?.memory_preferred_address || '暂无记忆画像' }}</NCard>
-            <NSwitch v-model:value="values.auto_memory_enabled"><template #checked>自动记忆已开启</template><template #unchecked>自动记忆已关闭</template></NSwitch>
+            <div class="flex items-center gap-10px">
+              <NSwitch v-model:value="values.auto_memory_enabled" size="small" aria-label="自动记忆" />
+              <NText>{{ values.auto_memory_enabled ? '自动记忆已开启' : '自动记忆已关闭' }}</NText>
+            </div>
             <NSpace><NButton type="primary" :loading="saving" @click="savePreferences">保存隐私设置</NButton><NButton disabled>管理记忆（#124）</NButton></NSpace>
           </NSpace>
         </NTabPane>
