@@ -48,7 +48,7 @@ platform/
 │   ├── validation/           # 强类型 DTO 结构校验与字段错误映射
 │   ├── pagination/           # 统一分页 Request、默认值与泛型 Result
 │   ├── auth/                 # AuthContext
-│   ├── tenant/               # 租户与 Scope 钩子
+│   ├── tenant/               # TenantDB/SystemDB、Registry、Callback、Repository
 │   ├── capability/           # Capability 注册表
 │   ├── action/               # Action 注册表与执行链
 │   ├── menu/                 # Menu 注册表（独立）
@@ -94,6 +94,18 @@ framework    ❌ modules
 modules/A    ❌ modules/B（默认；共享进 framework）
 tests        → framework + modules（仅测试依赖）
 ```
+
+tenant-owned 数据依赖固定为：
+
+```text
+Action/Handler → Service → Tenant Repository / Domain Query → GORM
+```
+
+- 通用 CRUD 使用 TenantDB Repository。
+- 领域专用 ORM 查询使用 GuardedDatabase，不能保存可直接绕过 Callback 的根 DB。
+- Raw/JOIN 使用 TenantRaw/TenantExec；平台跨租户使用 SystemDB。
+- transaction 内继续使用 scoped transaction，禁止回退 Service 根 DB。
+- 详规见 [`tenant-data-access.md`](tenant-data-access.md)。
 
 - 业务执行入口只有 **Action**；Gin 只做 HTTP 适配。
 - `operations` 不反向依赖 `system`；通知等领域能力通过最小接口注入运维注册器。

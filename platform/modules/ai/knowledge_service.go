@@ -39,7 +39,7 @@ const (
 var sha256Pattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
 type KnowledgeService struct {
-	db        *gorm.DB
+	db        tenantdata.GuardedDatabase
 	models    aimodel.Resolver
 	agents    *AgentService
 	links     attachment.ResourceLinker
@@ -59,7 +59,7 @@ func NewKnowledgeService(db *gorm.DB, models aimodel.Resolver, agents *AgentServ
 	if err := registerKnowledgeTenantModels(); err != nil {
 		panic(err)
 	}
-	return &KnowledgeService{db: tenantdata.RuntimeDB(db), models: models, agents: agents, links: links}
+	return &KnowledgeService{db: tenantdata.GuardedDB(db), models: models, agents: agents, links: links}
 }
 
 type KnowledgeBaseListRequest struct {
@@ -222,7 +222,7 @@ func knowledgeActor(ctx context.Context) (*auth.Context, error) {
 }
 
 func (s *KnowledgeService) dbForContext(ctx context.Context) *gorm.DB {
-	return attachment.ResourceTransaction(ctx, s.db).WithContext(ctx)
+	return attachment.ResourceTransaction(ctx, s.db.WithContext(ctx)).WithContext(ctx)
 }
 
 func knowledgeNotFound() error {
@@ -684,7 +684,7 @@ func (s *KnowledgeService) DeleteDocument(ctx context.Context, request Knowledge
 }
 
 func (s *KnowledgeService) attachmentSnapshot(ctx context.Context, ac *auth.Context, id string) (*systemmodel.Attachment, error) {
-	tdb, repoErr := tenantdata.TenantDB(ctx, s.db)
+	tdb, repoErr := s.db.Tenant(ctx)
 	if repoErr != nil {
 		return nil, repoErr
 	}
@@ -715,7 +715,7 @@ func (s *KnowledgeService) ListAgentKnowledge(ctx context.Context, request Agent
 	if err != nil {
 		return nil, err
 	}
-	tdb, err := tenantdata.TenantDB(ctx, s.db)
+	tdb, err := s.db.Tenant(ctx)
 	if err != nil {
 		return nil, err
 	}

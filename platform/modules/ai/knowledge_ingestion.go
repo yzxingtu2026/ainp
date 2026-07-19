@@ -83,7 +83,7 @@ func (s *KnowledgeIngestionService) Cleanup(ctx context.Context, documentID stri
 }
 
 type KnowledgeIngestionService struct {
-	db         *gorm.DB
+	db         tenantdata.GuardedDatabase
 	sources    aiknowledge.DocumentSourceResolver
 	parser     aiknowledge.DocumentParser
 	chunker    aiknowledge.Chunker
@@ -100,11 +100,11 @@ func NewKnowledgeIngestionService(db *gorm.DB, sources aiknowledge.DocumentSourc
 	if err := registerKnowledgeTenantModels(); err != nil {
 		panic(err)
 	}
-	return &KnowledgeIngestionService{db: tenantdata.RuntimeDB(db), sources: sources, parser: parser, chunker: chunker, models: models, embeddings: embeddings}
+	return &KnowledgeIngestionService{db: tenantdata.GuardedDB(db), sources: sources, parser: parser, chunker: chunker, models: models, embeddings: embeddings}
 }
 
 func (s *KnowledgeIngestionService) Process(ctx context.Context, payload KnowledgeIngestionJobPayload) error {
-	if s.db == nil || s.sources == nil || s.parser == nil || s.chunker == nil || s.models == nil || s.embeddings == nil {
+	if !s.db.Available() || s.sources == nil || s.parser == nil || s.chunker == nil || s.models == nil || s.embeddings == nil {
 		return job.Permanent(errors.New("knowledge ingestion dependencies unavailable"))
 	}
 	ac, ok := auth.FromContext(ctx)

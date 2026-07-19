@@ -13,17 +13,28 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type tenantContractDoc struct {
-	ID        string `gorm:"primaryKey"`
-	TenantID  string `gorm:"size:64;not null"`
-	Title     string
+	ID        string `gorm:"primaryKey;uniqueIndex:ux_tenant_contract_doc_id,priority:2"`
+	TenantID  string `gorm:"size:64;not null;uniqueIndex:ux_tenant_contract_doc,priority:1;uniqueIndex:ux_tenant_contract_doc_id,priority:1"`
+	Title     string `gorm:"uniqueIndex:ux_tenant_contract_doc,priority:2"`
 	Revision  uint64
 	DeletedAt gorm.DeletedAt
+	Items     []tenantContractItem `gorm:"foreignKey:TenantID,DocID;references:TenantID,ID"`
 }
 
 func (tenantContractDoc) TableName() string { return "tenant_contract_docs" }
+
+type tenantContractItem struct {
+	ID       string `gorm:"primaryKey"`
+	TenantID string `gorm:"size:64;not null;index"`
+	DocID    string `gorm:"size:64;not null;index"`
+	Value    string
+}
+
+func (tenantContractItem) TableName() string { return "tenant_contract_items" }
 
 type tenantContractGlobal struct {
 	ID   string `gorm:"primaryKey"`
@@ -174,6 +185,11 @@ func TestTenantDatabasePostgresIsolation(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	if _, ok := tenant.DefaultRegistry.Lookup(tenantContractItem{}); !ok {
+		if err := tenant.DefaultRegistry.Register(tenantContractItem{}, tenant.ModelOptions{Kind: tenant.TenantOwned, InjectOnCreate: true, SystemAccess: true}); err != nil {
+			t.Fatal(err)
+		}
+	}
 	admin, err := database.Open(dsn)
 	if err != nil {
 		t.Fatal(err)
@@ -193,7 +209,7 @@ func TestTenantDatabasePostgresIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	srepo, _ := tenant.NewSystemRepository[tenantContractDoc](sdb)
-	if err = db.Session(&gorm.Session{SkipHooks: true}).AutoMigrate(&tenantContractDoc{}); err != nil {
+	if err = db.Session(&gorm.Session{SkipHooks: true}).AutoMigrate(&tenantContractDoc{}, &tenantContractItem{}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -218,8 +234,99 @@ func TestTenantDatabasePostgresIsolation(t *testing.T) {
 	if rows, err := aRepo.List(0, 10); err != nil || len(rows) != 1 || rows[0].ID != "a" {
 		t.Fatalf("tenant A list leaked: %#v %v", rows, err)
 	}
+	if count, err := aRepo.Count(); err != nil || count != 1 {
+		t.Fatalf("tenant A count leaked: %d %v", count, err)
+	}
+	if exists, err := aRepo.Exists("id = ?", "b"); err != nil || exists {
+		t.Fatalf("tenant A exists leaked tenant B: %v %v", exists, err)
+	}
+	batch := []tenantContractDoc{{ID: "a-batch-1", Title: "batch-1", Revision: 1}, {ID: "a-batch-2", Title: "batch-2", Revision: 1}}
+	if err = aRepo.CreateBatch(batch, 1); err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range batch {
+		if item.TenantID != "tenant-a" {
+			t.Fatalf("batch tenant not injected: %#v", item)
+		}
+	}
 	if err = aRepo.UpdateRevision("a", 1, map[string]any{"title": "A2", "revision": 2}); err != nil {
 		t.Fatal(err)
+	}
+	guardedA := tenant.GuardedDB(db)
+	crossSave := tenantContractDoc{ID: "b", TenantID: "tenant-a", Title: "overwrite", Revision: 2}
+	if err = guardedA.WithContext(tenantContext("tenant-a")).Save(&crossSave).Error; !errors.Is(err, tenant.ErrUnsafeUpsert) {
+		t.Fatalf("tenant A Save error = %v, want ErrUnsafeUpsert", err)
+	}
+	if loadedB, loadErr := bRepo.GetByID("b"); loadErr != nil || loadedB.Title != "B" || loadedB.TenantID != "tenant-b" {
+		t.Fatalf("tenant B changed after cross-tenant Save: %#v %v", loadedB, loadErr)
+	}
+	upsert := tenantContractDoc{ID: "a-upsert", Title: "shared-upsert", Revision: 1}
+	if err = guardedA.WithContext(tenantContext("tenant-a")).Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "tenant_id"}, {Name: "title"}},
+		DoUpdates: clause.AssignmentColumns([]string{"revision"}),
+	}).Create(&upsert).Error; err != nil {
+		t.Fatal(err)
+	}
+	upsert.Revision = 2
+	if err = guardedA.WithContext(tenantContext("tenant-a")).Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "tenant_id"}, {Name: "title"}},
+		DoUpdates: clause.AssignmentColumns([]string{"revision"}),
+	}).Create(&upsert).Error; err != nil {
+		t.Fatal(err)
+	}
+	if loaded, err := aRepo.GetByID("a-upsert"); err != nil || loaded.Revision != 2 {
+		t.Fatalf("tenant upsert result = %#v, %v", loaded, err)
+	}
+	if err = guardedA.WithContext(tenantContext("tenant-a")).Create(&tenantContractItem{ID: "item-a", DocID: "a", Value: "A"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	guardedB := tenant.GuardedDB(db)
+	if err = guardedB.WithContext(tenantContext("tenant-b")).Create(&tenantContractItem{ID: "item-cross", DocID: "a", Value: "cross"}).Error; err == nil {
+		t.Fatal("composite relation accepted a cross-tenant child")
+	}
+	if err = guardedB.WithContext(tenantContext("tenant-b")).Create(&tenantContractItem{ID: "item-b", DocID: "b", Value: "B"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	var withItems tenantContractDoc
+	if err = guardedA.WithContext(tenantContext("tenant-a")).Preload("Items").Where("id = ?", "a").First(&withItems).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(withItems.Items) != 1 || withItems.Items[0].ID != "item-a" {
+		t.Fatalf("preload crossed tenant boundary: %#v", withItems.Items)
+	}
+	var associated []tenantContractItem
+	if err = guardedA.WithContext(tenantContext("tenant-a")).Model(&withItems).Association("Items").Find(&associated); err != nil {
+		t.Fatal(err)
+	}
+	if len(associated) != 1 || associated[0].ID != "item-a" {
+		t.Fatalf("association crossed tenant boundary: %#v", associated)
+	}
+	var unscoped tenantContractDoc
+	if err = guardedA.WithContext(tenantContext("tenant-a")).Unscoped().Where("id = ?", "b").First(&unscoped).Error; !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("Unscoped bypassed tenant boundary: %#v %v", unscoped, err)
+	}
+	rawRows, err := tenant.TenantRaw[tenantContractDoc](aDB, "SELECT * FROM tenant_contract_docs WHERE tenant_id = ? AND id = ?", "b")
+	if err != nil || len(rawRows) != 0 {
+		t.Fatalf("TenantRaw crossed tenant boundary: %#v %v", rawRows, err)
+	}
+	if err = aDB.Transaction(func(tx tenant.TenantDatabase) error {
+		repository, repoErr := tenant.NewTenantRepository[tenantContractDoc](tx)
+		if repoErr != nil {
+			return repoErr
+		}
+		_, repoErr = repository.Clauses(clause.Locking{Strength: "UPDATE"}).GetByID("b")
+		if !tenant.IsNotFound(repoErr) {
+			return fmt.Errorf("row lock crossed tenant boundary: %w", repoErr)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if result := aRepo.DeleteWhere("id IN ?", []string{"a-batch-1", "a-batch-2", "b"}); result.Error != nil || result.RowsAffected != 2 {
+		t.Fatalf("batch delete crossed tenant boundary: %#v", result)
+	}
+	if result := aRepo.DeleteWhere("id = ?", "a-upsert"); result.Error != nil || result.RowsAffected != 1 {
+		t.Fatalf("upsert cleanup failed: %#v", result)
 	}
 	if err = aRepo.Delete(&a); err != nil {
 		t.Fatal(err)

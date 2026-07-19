@@ -26,13 +26,18 @@
 
 | 位置 | 类型 | 原因 | 约束 |
 |---|---|---|---|
-| `*/migrate.go`、`modules/*/model.go`、`system/seed.go` | Exec/DDL | schema migration、约束和索引维护 | 只在启动/安装阶段；不得接受请求 tenant |
+| `framework/{job,idempotency,outbox}/migrate.go:ensureConstraints` | Exec/DDL | schema constraint 与索引维护 | 只在启动 migration 阶段 |
+| `modules/ai/model.go:AutoMigrate`、`knowledge_model.go:AutoMigrateKnowledge/addKnowledgeConstraint` | Exec/DDL | AI schema、vector/FTS 与复合约束维护 | 只在启动 migration 阶段 |
+| `modules/system/seed.go:ensure*Constraint(s)` | Exec/Table | system schema 约束维护与固定表校验 | 只在启动 migration 阶段；固定内部表清单 |
 | `RevisionDocService.AutoMigrate` | AutoMigrate | Demo 表启动建表 | 不执行 tenant-owned 业务 CRUD |
 | `framework/revision`、`framework/dblock` | Table/Exec | 通用并发基础设施 | 调用方必须来自 scoped transaction；本 Issue 后续迁移 |
 | `framework/audit.GormRecorder` | mixed-realm write | `audit_logs` 同时记录 tenant 与 platform realm | tenant 管理查询只走 TenantRaw；写入 tenant/realm 来自已认证 Action AuthContext |
-| `framework/outbox.Dispatcher` | trusted dispatcher | Dispatcher 在请求 AuthContext 外跨租户 claim/publish | tenant 管理查询与手动重试走 TenantRaw；dispatcher 能力在后续批次独立收敛 |
-| `framework/job.GetTrusted`、`RunStore.UpdateFields/ListPendingEnqueue` | trusted worker | Worker 首次加载 JobRun 时尚未恢复业务 AuthContext，并需跨租户恢复 pending enqueue | tenant 列表/详情/取消走 TenantRaw；worker 能力在后续批次独立收敛 |
-| `InvocationService.RecoverStale` | trusted startup recovery | 启动时尚无 tenant AuthContext，需要发现跨租户遗留的 running 调用 | 仅允许私有固定 SQL 扫描未注册 DTO；逐行恢复 AuthContext 后通过 RuntimeDB 更新与写 Outbox |
+| `framework/outbox.Dispatcher`、`gormDeliveryStore.RunHandler/ListByEvent` | trusted dispatcher | Dispatcher 在请求 AuthContext 外跨租户 claim/publish/投递 | tenant 管理查询与手动重试走 TenantRaw；能力不向业务暴露 |
+| `framework/job.GetTrusted`、`RunStore.Create/UpdateFields/ListPendingEnqueue`、`CreateIdempotent` | trusted worker | Worker/Enqueuer 首次加载或写入 JobRun 时尚未恢复业务 AuthContext | tenant 列表/详情/取消走 TenantRaw；tenant 来自 ResolveTenantContext 或可信 JobRun |
+| `InvocationService.RecoverStale` | trusted startup recovery | 启动时尚无 tenant AuthContext，需要发现跨租户遗留的 running 调用 | 仅允许私有固定 SQL 扫描未注册 DTO；逐行恢复 AuthContext 后通过 GuardedDatabase 更新与写 Outbox |
+| `system.preAuthStore` | authentication bootstrap | 身份、会话和授权查询发生在完整 AuthContext 建立前 | 私有固定查询；tenant 来自已校验租户/身份；不暴露通用 DB |
+
+逐调用方法的机器可检查清单位于 `platform/tests/tenant_data_architecture_test.go`，键固定为 `文件:函数:调用方法`，并记录原因与风险；删除调用后 stale exception 会令默认测试失败。
 
 ## 已识别契约风险
 
@@ -45,16 +50,17 @@
 ## 当前边界
 
 - tenant 只来自 AuthContext；业务 DTO、Query 和消息 payload 不得构造数据库 tenant scope。
-- Model 只有在其全部业务消费方迁移后才启用强制 Registry，避免把未迁移路径伪装为安全路径。
+- 44 个持久化 tenant 字段 Model 已全部进入强制分类：36 个注册 TenantOwned，8 个为认证启动、mixed realm 或跨租户恢复例外；新增未分类 Model 由架构测试 fail-closed。
 - owner、visibility、permission、revision、lease 和状态机仍是领域条件，不能因自动 tenant scope 删除。
 - 业务复杂 SQL 只允许 TenantRaw/TenantExec 或领域专用 Query；SQL 中的 tenant 占位符由 AuthContext 注入。
 
 ## 最终扫描基线
 
-- 普通业务裸 `Raw/Exec/Table/JOIN`：零命中；剩余业务 SQL 均通过 TenantRaw/TenantExec。
-- 普通业务手写顶层 tenant ORM 条件：零命中；owner、visibility、revision、status、lease 等领域条件继续保留。
-- DDL：仅限 `*/migrate.go`、AI model migration 与 `system/seed.go`，不接受请求 tenant。
+- 普通业务裸 `Raw/Exec/Table/JOIN`：架构门禁零命中；剩余业务 SQL 均通过 TenantRaw/TenantExec。
+- 普通业务手写顶层 tenant ORM 条件：架构门禁零命中；preAuth 与 Job enqueue 的精确启动例外已登记。
+- DDL：精确限定到上表 migration/constraint 函数，不接受请求 tenant。
 - 并发基础设施：`framework/revision` 与 `framework/dblock` 只接受调用方传入的 scoped transaction。
 - 身份建立前查询：仅限 system 私有 `preAuthStore`，能力不向业务模块暴露。
 - 跨租户后台能力：仅限已登记的 Outbox dispatcher、Job worker/pending recovery 与 ModelInvocation stale recovery。
 - 受控 tenant SQL：System/Auth/Notification/Attachment、AI Raw/JOIN、Operations Audit/Outbox/Job 的 tenant 字样是 TenantRaw/TenantExec 固定占位符，不属于手写 ORM scope。
+- 完整开发规范与新 Model 清单见 `docs/development/tenant-data-access.md`。

@@ -22,7 +22,7 @@ import (
 const invocationFinishedEvent = "ai.model_invocation.finished.v1"
 
 type InvocationService struct {
-	db                *gorm.DB
+	db                tenantdata.GuardedDatabase
 	trustedRecoveryDB *gorm.DB
 	resolver          aimodel.Resolver
 	adapters          *aimodelruntime.AdapterRegistry
@@ -66,7 +66,7 @@ func NewInvocationService(db *gorm.DB, resolver aimodel.Resolver, adapters *aimo
 	if err := registerModelInvocationTenantModel(); err != nil {
 		panic(err)
 	}
-	return &InvocationService{db: tenantdata.RuntimeDB(db), trustedRecoveryDB: db, resolver: resolver, adapters: adapters, writer: writer}
+	return &InvocationService{db: tenantdata.GuardedDB(db), trustedRecoveryDB: db, resolver: resolver, adapters: adapters, writer: writer}
 }
 
 func (s *InvocationService) Generate(ctx context.Context, req aimodelruntime.GenerateRequest) (any, error) {
@@ -483,7 +483,7 @@ func (s *InvocationService) finish(ctx context.Context, row *ModelInvocation, us
 	if s.writer == nil {
 		return s.db.WithContext(ctx).Model(&ModelInvocation{}).Where("id = ? AND status = 'running'", row.ID).Updates(updates).Error
 	}
-	return outbox.WithinTx(ctx, s.db, s.writer, func(tx *gorm.DB, w outbox.Writer) error {
+	return outbox.WithinTx(ctx, s.db.WithContext(ctx), s.writer, func(tx *gorm.DB, w outbox.Writer) error {
 		result := tx.Model(&ModelInvocation{}).Where("id = ? AND status = 'running'", row.ID).Updates(updates)
 		if result.Error != nil {
 			return result.Error

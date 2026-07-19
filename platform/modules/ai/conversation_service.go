@@ -20,7 +20,7 @@ import (
 )
 
 type ConversationService struct {
-	db     *gorm.DB
+	db     tenantdata.GuardedDatabase
 	assets aimodelruntime.AssetResolver
 }
 
@@ -28,7 +28,7 @@ func NewConversationService(db *gorm.DB, assets aimodelruntime.AssetResolver) *C
 	if err := registerConversationTenantModels(); err != nil {
 		panic(err)
 	}
-	return &ConversationService{db: tenantdata.RuntimeDB(db), assets: assets}
+	return &ConversationService{db: tenantdata.GuardedDB(db), assets: assets}
 }
 
 type ConversationListRequest struct {
@@ -164,7 +164,7 @@ func (s *ConversationService) Create(ctx context.Context, r ConversationCreateRe
 	if r.Visibility == "tenant" && !canManageConversations(ac) {
 		return nil, errs.New(errs.CodeForbidden, "tenant conversation permission required")
 	}
-	repos, err := newAgentRepositories(ctx, s.db)
+	repos, err := newAgentRepositories(ctx, s.db.WithContext(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -472,7 +472,7 @@ func (s *ConversationService) CreateSnapshot(ctx context.Context, r SnapshotCrea
 	if r.SourceSequenceFrom > r.SourceSequenceTo {
 		return nil, errs.New(errs.CodeValidation, "invalid snapshot source range")
 	}
-	tdb, err := tenantdata.TenantDB(ctx, s.db)
+	tdb, err := s.db.Tenant(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -506,12 +506,12 @@ func (s *ConversationService) CreateSnapshot(ctx context.Context, r SnapshotCrea
 	return &snap, nil
 }
 func (s *ConversationService) GetSnapshot(ctx context.Context, id string) (*ContextSnapshot, error) {
-	ac, err := conversationActor(ctx)
+	_, err := conversationActor(ctx)
 	if err != nil {
 		return nil, err
 	}
 	var snap ContextSnapshot
-	if err = s.db.WithContext(ctx).Where("id=?", ac.TenantID, id).First(&snap).Error; err != nil {
+	if err = s.db.WithContext(ctx).Where("id=?", id).First(&snap).Error; err != nil {
 		return nil, errs.New(errs.CodeNotFound, "snapshot not found")
 	}
 	conversation, _, err := s.get(ctx, snap.ConversationID, false)
@@ -541,12 +541,12 @@ func (s *ConversationService) Begin(ctx context.Context, conversationID, idempot
 }
 
 func (s *ConversationService) stream(ctx context.Context, id string) (*AssistantStream, error) {
-	ac, err := conversationActor(ctx)
+	_, err := conversationActor(ctx)
 	if err != nil {
 		return nil, err
 	}
 	var stream AssistantStream
-	if err = s.db.WithContext(ctx).Where("id=?", ac.TenantID, id).First(&stream).Error; err != nil {
+	if err = s.db.WithContext(ctx).Where("id=?", id).First(&stream).Error; err != nil {
 		return nil, errs.New(errs.CodeNotFound, "assistant stream not found")
 	}
 	if _, _, err = s.get(ctx, stream.ConversationID, false); err != nil {
