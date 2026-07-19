@@ -14,6 +14,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 	"github.com/yzxingtu2026/ainp/platform/framework/pagination"
+	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -469,13 +470,19 @@ func (s *ConversationService) CreateSnapshot(ctx context.Context, r SnapshotCrea
 	if r.SourceSequenceFrom > r.SourceSequenceTo {
 		return nil, errs.New(errs.CodeValidation, "invalid snapshot source range")
 	}
-	var deployment Deployment
-	if err = s.db.WithContext(ctx).Where("tenant_id=? AND id=?", row.TenantID, r.ModelDeploymentID).First(&deployment).Error; err != nil {
+	tdb, err := tenantdata.TenantDB(ctx, s.db)
+	if err != nil {
+		return nil, err
+	}
+	deployments, err := tenantdata.TenantRaw[Deployment](tdb,
+		`SELECT * FROM ai_model_deployments WHERE tenant_id=? AND id=? LIMIT 1`, r.ModelDeploymentID)
+	if err != nil || len(deployments) != 1 {
 		return nil, errs.New(errs.CodeNotFound, "model deployment not found")
 	}
 	if r.ParentSnapshotID != nil {
-		var parent ContextSnapshot
-		if err = s.db.WithContext(ctx).Where("tenant_id=? AND conversation_id=? AND id=?", row.TenantID, row.ID, *r.ParentSnapshotID).First(&parent).Error; err != nil {
+		parents, parentErr := tenantdata.TenantRaw[ContextSnapshot](tdb,
+			`SELECT * FROM ai_context_snapshots WHERE tenant_id=? AND conversation_id=? AND id=? LIMIT 1`, row.ID, *r.ParentSnapshotID)
+		if parentErr != nil || len(parents) != 1 {
 			return nil, errs.New(errs.CodeNotFound, "parent snapshot not found")
 		}
 	}

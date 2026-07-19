@@ -11,6 +11,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/aitool"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
+	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"gorm.io/gorm"
 )
 
@@ -146,11 +147,16 @@ func (s *ContextCompactionService) Compact(ctx context.Context, r aiconversation
 	}
 	depth := 0
 	if r.ParentSnapshotID != nil {
-		var parent ContextSnapshot
-		if err = s.db.WithContext(ctx).Where("tenant_id=? AND conversation_id=? AND id=?", ac.TenantID, r.ConversationID, *r.ParentSnapshotID).First(&parent).Error; err != nil {
+		tdb, scopeErr := tenantdata.TenantDB(ctx, s.db)
+		if scopeErr != nil {
+			return nil, scopeErr
+		}
+		parents, queryErr := tenantdata.TenantRaw[ContextSnapshot](tdb,
+			`SELECT * FROM ai_context_snapshots WHERE tenant_id=? AND conversation_id=? AND id=? LIMIT 1`, r.ConversationID, *r.ParentSnapshotID)
+		if queryErr != nil || len(parents) != 1 {
 			return nil, errs.New(errs.CodeNotFound, "parent snapshot not found")
 		}
-		depth = parent.CompactionDepth + 1
+		depth = parents[0].CompactionDepth + 1
 	}
 	engine := aiconversation.Engine{Tokenizer: s.tokenizer, Provider: runtimeCompactionProvider{invocations: s.invocations, modelAlias: r.ModelAlias}, Memory: s.memory, Config: aiconversation.EngineConfig{PolicyVersion: "hybrid-v1", PromptVersion: "summary-v1", MaxDepth: 3, RecentMessages: 6}}
 	payload, status, err := engine.Compact(ctx, r.ConversationID, *assembly, available, depth)
@@ -202,8 +208,14 @@ func (s *ContextCompactionService) Diagnostics(ctx context.Context, r Compaction
 	if _, _, err := s.conversations.get(ctx, r.ConversationID, false); err != nil {
 		return nil, err
 	}
-	var rows []ContextSnapshot
-	if err := s.db.WithContext(ctx).Select("id, conversation_id, conversation_revision, source_sequence_from, source_sequence_to, policy_version, compaction_depth, reason, quality_status, token_estimate, created_at").Where("tenant_id=? AND conversation_id=? AND kind=?", ac.TenantID, r.ConversationID, "compacted").Order("created_at DESC").Limit(20).Find(&rows).Error; err != nil {
+	tdb, err := tenantdata.TenantDB(ctx, s.db)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := tenantdata.TenantRaw[ContextSnapshot](tdb, `SELECT id, tenant_id, conversation_id, conversation_revision,
+source_sequence_from, source_sequence_to, policy_version, compaction_depth, reason, quality_status, token_estimate, created_at
+FROM ai_context_snapshots WHERE tenant_id=? AND conversation_id=? AND kind=? ORDER BY created_at DESC LIMIT 20`, r.ConversationID, "compacted")
+	if err != nil {
 		return nil, err
 	}
 	result := map[string]any{"snapshots": rows}
