@@ -19,6 +19,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
 	aitools "github.com/yzxingtu2026/ainp/platform/modules/ai/tools"
 	knowledgetool "github.com/yzxingtu2026/ainp/platform/modules/ai/tools/knowledge"
+	memorytool "github.com/yzxingtu2026/ainp/platform/modules/ai/tools/memory"
 	"github.com/yzxingtu2026/ainp/platform/modules/system"
 )
 
@@ -165,11 +166,14 @@ func Register(a *app.App) error {
 	compactions := NewContextCompactionService(a.DB, conversations, svc, invocations, toolRegistry)
 	memoryExtraction := NewMemoryExtractionService(a.DB, invocations)
 	memoryGovernance := NewMemoryGovernanceService(a.DB, writer)
-	memoryProjection := NewMemoryProjectionService(a.DB)
+	memoryProjection := NewMemoryProjectionService(a.DB, a.EmbeddingRuntime)
+	memoryRetriever := NewMemoryRetrievalService(a.DB, a.EmbeddingRuntime)
+	memoryRuntimeTool := NewMemoryTool(memoryRetriever)
 	memoryConsolidation := NewMemoryConsolidationService(a.DB, invocations)
 	compactions.SetMemoryFlushHook(memoryExtraction)
 	a.ContextCompactor = compactions
 	agentRuntime := NewAgentRuntimeService(a.DB, conversations, invocations, tools, compactions, writer, a.Authorization, a.RuntimeContextProvider)
+	agentRuntime.SetMemoryRetriever(memoryRetriever)
 	tools.SetConfirmationHooks(agentRuntime.OnConfirmationPending, agentRuntime.OnConfirmationDecided)
 	if err := RegisterAgentRuntime(a, agentRuntime); err != nil {
 		return err
@@ -247,7 +251,7 @@ func Register(a *app.App) error {
 	if err := toolRegistry.RegisterProvider(&aitool.ActionProvider{Actions: a.Actions}, &aitool.ActionExecutor{Actions: a.Actions}); err != nil {
 		return err
 	}
-	if err := aitools.RegisterBuiltins(toolRegistry, knowledgetool.New(knowledgeTool.Project, knowledgeTool)); err != nil {
+	if err := aitools.RegisterBuiltins(toolRegistry, knowledgetool.New(knowledgeTool.Project, knowledgeTool), memorytool.New(memoryRuntimeTool.Project, memoryRuntimeTool)); err != nil {
 		return err
 	}
 	meta := []aitool.Definition{{ID: "meta:tool.search", Source: aitool.SourceMeta, Name: "tool.search", DescriptionForLLM: "Search visible tools by intent and return compact candidates", DescriptionForHuman: "搜索当前用户可用的工具", Capability: "ai", InputSchema: action.SchemaFor[aitool.MetaSearchInput](), Risk: aitool.RiskLow, SideEffect: aitool.SideEffectRead, RuntimeRef: "tool.search", SchemaVersion: 1, Status: "enabled"}, {ID: "meta:tool.load", Source: aitool.SourceMeta, Name: "tool.load", DescriptionForLLM: "Load a small number of candidate tools into the current scope", DescriptionForHuman: "将候选工具加载到当前调用范围", Capability: "ai", InputSchema: action.SchemaFor[aitool.MetaLoadInput](), Risk: aitool.RiskLow, SideEffect: aitool.SideEffectRead, RuntimeRef: "tool.load", SchemaVersion: 1, Status: "enabled"}}

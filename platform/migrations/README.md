@@ -7,6 +7,7 @@
 - `0004_tenant_setting_values.sql` 创建租户设置覆盖值表；分类/字段 Schema 由代码注册，不在库中存 Definition。
 - `0033_user_setting_values.sql` 创建按租户与当前用户隔离的 user-scope 设置覆盖值表。
 - `0034_trusted_runtime_context.sql` 为 Agent Run 固定服务端时间快照，并为 Context Snapshot 增加脱敏 Runtime Context refs。
+- `0035_memory_hybrid_recall.sql` 增加记忆召回硬过滤索引与 Snapshot provenance refs。
 - `0005_attachments.sql` 创建 `attachments` / `attachment_links` 与状态 CHECK；附件策略与 AccessPolicy 由代码注册。
 - `0011_audit_log_indexes.sql` 为租户审计时间线、Action 与资源筛选增加复合索引。
 - `0012_authentication_sessions.sql` 创建统一认证身份、challenge 与轮换会话表；旧 JWT 缺少 `sid`，升级后需重新登录。

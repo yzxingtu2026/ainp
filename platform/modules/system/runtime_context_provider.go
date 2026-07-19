@@ -106,7 +106,7 @@ func (p *RuntimeContextProvider) Build(ctx context.Context, req runtimecontext.B
 	if prefSource != "user" {
 		locale, localeSource = tenantLocale, tenantSource
 	}
-	return &runtimecontext.TrustedRuntimeContext{TenantID: req.TenantID, UserID: req.UserID, Username: user.Username, DisplayName: user.DisplayName, PreferredAddress: preferred, PreferredAddressSource: preferredSource, Locale: locale, LocaleSource: localeSource, ConversationID: req.ConversationID, ConversationCreatedAt: req.ConversationCreatedAt, AgentID: req.AgentID, AgentVersionID: req.AgentVersionID, RunID: req.RunID, Time: snap, ContextVersion: runtimecontext.ContextVersion, PolicyVersion: runtimecontext.PolicyVersion}, nil
+	return &runtimecontext.TrustedRuntimeContext{TenantID: req.TenantID, UserID: req.UserID, Username: user.Username, DisplayName: user.DisplayName, PreferredAddress: preferred, PreferredAddressSource: preferredSource, Locale: locale, LocaleSource: localeSource, AutoMemoryEnabled: prefs.AutoMemoryEnabled, ConversationID: req.ConversationID, ConversationCreatedAt: req.ConversationCreatedAt, AgentID: req.AgentID, AgentVersionID: req.AgentVersionID, RunID: req.RunID, Time: snap, ContextVersion: runtimecontext.ContextVersion, PolicyVersion: runtimecontext.PolicyVersion}, nil
 }
 
 func registerRuntimeContextDefaultsSetting(a interface {

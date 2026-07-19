@@ -196,3 +196,30 @@ func TestKnowledgeToolIsRegisteredAndKeepsChunkTextOutOfFacts(t *testing.T) {
 		}
 	}
 }
+
+func TestMemorySearchIsSingleDirectSlotWithoutRuntimeIDBranch(t *testing.T) {
+	slot, err := os.ReadFile("../modules/ai/tools/memory/slot.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(slot)
+	for _, expected := range []string{`"builtin:memory.search"`, `DiscoveryDirect`, `MaxCallsPerRun: 3`, `memory_retrieval`} {
+		if !strings.Contains(src, expected) {
+			t.Fatalf("memory slot missing %q", expected)
+		}
+	}
+	register, err := os.ReadFile("../modules/ai/register.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(string(register), "memorytool.New(") != 1 {
+		t.Fatal("memory search slot must be registered exactly once")
+	}
+	toolService, err := os.ReadFile("../modules/ai/tool_service.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(toolService), `"builtin:memory.search"`) {
+		t.Fatal("ToolService must not branch on memory tool ID")
+	}
+}

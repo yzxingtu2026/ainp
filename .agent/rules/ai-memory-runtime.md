@@ -15,3 +15,6 @@
 - 重复事实追加 Evidence + duplicate 关系；纠正追加新 Item 并以 supersedes/valid_to 结束旧事实，禁止原地覆盖正文或自动删除。
 - active 生命周期变化必须写安全 Outbox，由 Job 重建 day/profile；日归档只按 local_date/timezone/date_precision，unknown/range 显式分组，禁止 observed/recorded 日期回填。
 - Consolidation 按 tenant+user lease 串行，模型只能提 noop/duplicate/conflict/summary plan；执行前复核 item scope/revision，禁止模型 activate/supersede/revoke/delete。
+- 召回必须先按 tenant/user/active/agent/validity/date/sensitivity 硬过滤，再融合 exact/FTS/vector/recency/confidence/importance；Embedding 异常只降级 exact+FTS。
+- 自动注入受 Agent Policy 与用户 auto_memory_enabled/条数/Token 限制，只作为 `UNTRUSTED USER MEMORY` user reference；Snapshot 只存 provenance refs。
+- 记忆 Runtime Tool 仅允许唯一 direct Slot `builtin:memory.search`，tenant/user/run/timezone 来自 RuntimeScope/Trusted Context；禁止 add/update/delete Tool 和公共 Runtime 业务 ID 分支。
