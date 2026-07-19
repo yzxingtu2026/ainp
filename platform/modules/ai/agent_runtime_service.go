@@ -82,7 +82,7 @@ func (s *AgentRuntimeService) get(ctx context.Context, id string) (*AgentRun, *a
 		return nil, nil, err
 	}
 	var row AgentRun
-	if err = s.db.WithContext(ctx).Where("tenant_id=? AND user_id=? AND id=?", ac.TenantID, ac.UserID, id).First(&row).Error; err != nil {
+	if err = s.db.WithContext(ctx).Where("user_id=? AND id=?", ac.UserID, id).First(&row).Error; err != nil {
 		return nil, nil, errs.New(errs.CodeNotFound, "agent run not found")
 	}
 	return &row, ac, nil
@@ -121,7 +121,7 @@ WHERE tenant_id=? AND conversation_id=? AND id=? AND role=? AND status=? LIMIT 1
 	budgetJSON, _ := json.Marshal(budget)
 	run := AgentRun{ID: uuid.NewString(), TenantID: ac.TenantID, UserID: ac.UserID, ConversationID: conversation.ID, ConversationRevision: conversation.Revision, TriggerMessageID: trigger.ID, AgentVersionID: conversation.AgentVersionID, SessionID: ac.SessionID, AuthVersion: ac.AuthVersion, Status: string(aiagentruntime.RunQueued), BudgetJSON: budgetJSON, IdempotencyKey: key, Revision: 1}
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if e := tx.Where("tenant_id=? AND user_id=? AND idempotency_key=?", ac.TenantID, ac.UserID, key).First(&run).Error; e == nil {
+		if e := tx.Where("user_id=? AND idempotency_key=?", ac.UserID, key).First(&run).Error; e == nil {
 			return nil
 		} else if !errors.Is(e, gorm.ErrRecordNotFound) {
 			return e
@@ -147,7 +147,7 @@ func (s *AgentRuntimeService) Get(ctx context.Context, r AgentRunIDRequest) (any
 		return nil, err
 	}
 	var steps []AgentStep
-	if err = s.db.WithContext(ctx).Where("tenant_id=? AND run_id=?", run.TenantID, run.ID).Order("step_index ASC").Find(&steps).Error; err != nil {
+	if err = s.db.WithContext(ctx).Where("run_id=?", run.ID).Order("step_index ASC").Find(&steps).Error; err != nil {
 		return nil, err
 	}
 	return map[string]any{"run": run, "steps": steps}, nil
@@ -158,7 +158,7 @@ func (s *AgentRuntimeService) List(ctx context.Context, r AgentRunListRequest) (
 		return nil, err
 	}
 	r.Normalize()
-	q := s.db.WithContext(ctx).Where("tenant_id=? AND user_id=?", ac.TenantID, ac.UserID)
+	q := s.db.WithContext(ctx).Where("user_id=?", ac.UserID)
 	if r.Status != "" {
 		q = q.Where("status=?", r.Status)
 	}
@@ -182,7 +182,7 @@ func (s *AgentRuntimeService) Events(ctx context.Context, r AgentRunEventsReques
 		r.Limit = 200
 	}
 	var rows []AgentRunEvent
-	err = s.db.WithContext(ctx).Where("tenant_id=? AND run_id=? AND sequence>?", run.TenantID, run.ID, r.AfterSequence).Order("sequence ASC").Limit(r.Limit + 1).Find(&rows).Error
+	err = s.db.WithContext(ctx).Where("run_id=? AND sequence>?", run.ID, r.AfterSequence).Order("sequence ASC").Limit(r.Limit + 1).Find(&rows).Error
 	if err != nil {
 		return nil, err
 	}
@@ -211,7 +211,7 @@ func (s *AgentRuntimeService) Subscribe(ctx context.Context, r AgentRunEventsReq
 		defer ticker.Stop()
 		for {
 			var rows []AgentRunEvent
-			if e := s.db.WithContext(streamCtx).Where("tenant_id=? AND run_id=? AND sequence>?", run.TenantID, run.ID, cursor).Order("sequence ASC").Limit(200).Find(&rows).Error; e != nil {
+			if e := s.db.WithContext(streamCtx).Where("run_id=? AND sequence>?", run.ID, cursor).Order("sequence ASC").Limit(200).Find(&rows).Error; e != nil {
 				return
 			}
 			for _, event := range rows {
@@ -223,7 +223,7 @@ func (s *AgentRuntimeService) Subscribe(ctx context.Context, r AgentRunEventsReq
 				}
 			}
 			var current AgentRun
-			if s.db.WithContext(streamCtx).Select("status").Where("tenant_id=? AND id=?", run.TenantID, run.ID).First(&current).Error != nil {
+			if s.db.WithContext(streamCtx).Select("status").Where("id=?", run.ID).First(&current).Error != nil {
 				return
 			}
 			if current.Status == "completed" || current.Status == "failed" || current.Status == "cancelled" || current.Status == "waiting_confirmation" || current.Status == "paused" {
@@ -250,7 +250,7 @@ func (s *AgentRuntimeService) Cancel(ctx context.Context, r AgentRunIDRequest) (
 	}
 	now := s.now()
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		res := tx.Model(&AgentRun{}).Where("tenant_id=? AND id=? AND revision=? AND status=?", run.TenantID, run.ID, r.Revision, run.Status).Updates(map[string]any{"status": string(to), "finished_at": now, "lease_owner": "", "lease_expires_at": nil, "revision": gorm.Expr("revision+1")})
+		res := tx.Model(&AgentRun{}).Where("id=? AND revision=? AND status=?", run.ID, r.Revision, run.Status).Updates(map[string]any{"status": string(to), "finished_at": now, "lease_owner": "", "lease_expires_at": nil, "revision": gorm.Expr("revision+1")})
 		if res.Error != nil {
 			return res.Error
 		}
@@ -301,7 +301,7 @@ func (s *AgentRuntimeService) requeue(ctx context.Context, r AgentRunIDRequest, 
 
 func (s *AgentRuntimeService) setQueued(ctx context.Context, run *AgentRun, revision uint64, eventType string) (any, error) {
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		res := tx.Model(&AgentRun{}).Where("tenant_id=? AND id=? AND revision=? AND status=?", run.TenantID, run.ID, revision, run.Status).Updates(map[string]any{"status": "queued", "error_category": "", "lease_owner": "", "lease_expires_at": nil, "revision": gorm.Expr("revision+1")})
+		res := tx.Model(&AgentRun{}).Where("id=? AND revision=? AND status=?", run.ID, revision, run.Status).Updates(map[string]any{"status": "queued", "error_category": "", "lease_owner": "", "lease_expires_at": nil, "revision": gorm.Expr("revision+1")})
 		if res.Error != nil {
 			return res.Error
 		}
@@ -340,7 +340,7 @@ func (s *AgentRuntimeService) OnConfirmationDecided(ctx context.Context, c *Tool
 		return err
 	}
 	var run AgentRun
-	if err := s.db.WithContext(ctx).Where("tenant_id=? AND id=? AND status=?", c.TenantID, *scope.AgentRunID, "waiting_confirmation").First(&run).Error; errors.Is(err, gorm.ErrRecordNotFound) {
+	if err := s.db.WithContext(ctx).Where("id=? AND status=?", *scope.AgentRunID, "waiting_confirmation").First(&run).Error; errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil
 	} else if err != nil {
 		return err
@@ -356,7 +356,7 @@ func (s *AgentRuntimeService) WakeExpiredConfirmation(ctx context.Context, runID
 		return false, err
 	}
 	var step AgentStep
-	if err := s.db.WithContext(ctx).Where("tenant_id=? AND run_id=? AND status=? AND confirmation_id IS NOT NULL", run.TenantID, run.ID, "waiting").Order("step_index DESC").First(&step).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("run_id=? AND status=? AND confirmation_id IS NOT NULL", run.ID, "waiting").Order("step_index DESC").First(&step).Error; err != nil {
 		return false, err
 	}
 	var c ToolConfirmation
@@ -375,11 +375,11 @@ func (s *AgentRuntimeService) WakeExpiredConfirmation(ctx context.Context, runID
 
 func (s *AgentRuntimeService) appendEvent(ctx context.Context, tx *gorm.DB, run *AgentRun, eventType string, stepID *string, payload any) error {
 	var locked AgentRun
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").Where("tenant_id=? AND id=?", run.TenantID, run.ID).First(&locked).Error; err != nil {
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").Where("id=?", run.ID).First(&locked).Error; err != nil {
 		return err
 	}
 	var last uint64
-	if err := tx.Model(&AgentRunEvent{}).Where("tenant_id=? AND run_id=?", run.TenantID, run.ID).Select("COALESCE(MAX(sequence),0)").Scan(&last).Error; err != nil {
+	if err := tx.Model(&AgentRunEvent{}).Where("run_id=?", run.ID).Select("COALESCE(MAX(sequence),0)").Scan(&last).Error; err != nil {
 		return err
 	}
 	body, _ := json.Marshal(payload)
@@ -396,7 +396,7 @@ func (s *AgentRuntimeService) claim(ctx context.Context, runID, worker string) (
 	expires := now.Add(s.leaseDuration)
 	noop := false
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if e := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("tenant_id=? AND id=?", trustedTenant, runID).First(&run).Error; e != nil {
+		if e := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=?", runID).First(&run).Error; e != nil {
 			return e
 		}
 		if run.Status != "queued" && !(run.Status == "running" && (run.LeaseExpiresAt == nil || run.LeaseExpiresAt.Before(now))) {
@@ -430,7 +430,7 @@ func (s *AgentRuntimeService) newStep(ctx context.Context, run *AgentRun, t aiag
 		if e := tx.Create(&step).Error; e != nil {
 			return e
 		}
-		res := tx.Model(&AgentRun{}).Where("tenant_id=? AND id=? AND status=? AND lease_owner=?", run.TenantID, run.ID, "running", run.LeaseOwner).Updates(map[string]any{"current_step": step.StepIndex, "revision": gorm.Expr("revision+1")})
+		res := tx.Model(&AgentRun{}).Where("id=? AND status=? AND lease_owner=?", run.ID, "running", run.LeaseOwner).Updates(map[string]any{"current_step": step.StepIndex, "revision": gorm.Expr("revision+1")})
 		if res.Error != nil {
 			return res.Error
 		}
@@ -641,7 +641,7 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 
 func (s *AgentRuntimeService) persistCounters(ctx context.Context, run *AgentRun) error {
 	res := s.db.WithContext(ctx).Model(&AgentRun{}).
-		Where("tenant_id=? AND id=? AND status=? AND lease_owner=?", run.TenantID, run.ID, "running", run.LeaseOwner).
+		Where("id=? AND status=? AND lease_owner=?", run.ID, "running", run.LeaseOwner).
 		Updates(map[string]any{"model_calls": run.ModelCalls, "tool_calls": run.ToolCalls, "compactions": run.Compactions, "input_tokens": run.InputTokens, "output_tokens": run.OutputTokens, "context_snapshot_id": run.ContextSnapshotID, "revision": gorm.Expr("revision+1")})
 	if res.Error != nil {
 		return res.Error
@@ -1071,7 +1071,7 @@ func (s *AgentRuntimeService) appendToolResult(ctx context.Context, run *AgentRu
 
 func (s *AgentRuntimeService) resumeConfirmation(ctx context.Context, run *AgentRun) error {
 	var step AgentStep
-	if err := s.db.WithContext(ctx).Where("tenant_id=? AND run_id=? AND status=? AND confirmation_id IS NOT NULL", run.TenantID, run.ID, "waiting").Order("step_index DESC").First(&step).Error; errors.Is(err, gorm.ErrRecordNotFound) {
+	if err := s.db.WithContext(ctx).Where("run_id=? AND status=? AND confirmation_id IS NOT NULL", run.ID, "waiting").Order("step_index DESC").First(&step).Error; errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil
 	} else if err != nil {
 		return err
@@ -1123,7 +1123,7 @@ func (s *AgentRuntimeService) pause(ctx context.Context, run *AgentRun, reason s
 }
 func (s *AgentRuntimeService) waitForConfirmation(ctx context.Context, run *AgentRun, confirmationID string) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		res := tx.Model(&AgentRun{}).Where("tenant_id=? AND id=? AND status=? AND lease_owner=?", run.TenantID, run.ID, "running", run.LeaseOwner).Updates(map[string]any{"status": "waiting_confirmation", "lease_owner": "", "lease_expires_at": nil, "revision": gorm.Expr("revision+1")})
+		res := tx.Model(&AgentRun{}).Where("id=? AND status=? AND lease_owner=?", run.ID, "running", run.LeaseOwner).Updates(map[string]any{"status": "waiting_confirmation", "lease_owner": "", "lease_expires_at": nil, "revision": gorm.Expr("revision+1")})
 		if res.Error != nil {
 			return res.Error
 		}
@@ -1149,7 +1149,7 @@ func (s *AgentRuntimeService) terminalLike(ctx context.Context, run *AgentRun, s
 		updates["finished_at"] = now
 	}
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		res := tx.Model(&AgentRun{}).Where("tenant_id=? AND id=? AND status=? AND lease_owner=?", run.TenantID, run.ID, run.Status, run.LeaseOwner).Updates(updates)
+		res := tx.Model(&AgentRun{}).Where("id=? AND status=? AND lease_owner=?", run.ID, run.Status, run.LeaseOwner).Updates(updates)
 		if res.Error != nil {
 			return res.Error
 		}
