@@ -57,6 +57,7 @@ VisibleWhen: &setting.VisibleWhen{Field: "mode", In: []any{"a", "b"}}
 - 使用与 tenant scope 相同的代码 Schema、强类型验证、`schema_version` 和 `revision` 乐观锁。
 - 审计只记录 setting key 与 revision，不记录称呼、时区等设置值。
 - `profile.runtime_preferences` 提供称呼覆盖、IANA 时区、locale、回答风格、日期/时间格式和自动记忆开关；业务通过 `UserSettingService.Preferences` 类型化读取。
+- `general.runtime_defaults` 提供用户未主动设置时的租户 timezone/locale 回退；RuntimeContextProvider 按 user → tenant → system 解析并记录来源。
 
 ## Action / 读写入口 / 前端
 

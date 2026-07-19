@@ -76,8 +76,10 @@ func Register(a *app.App) error {
 	if err := registerRuntimePreferencesSetting(a); err != nil {
 		return err
 	}
-
 	if err := registerExampleSettings(a); err != nil {
+		return err
+	}
+	if err := registerRuntimeContextDefaultsSetting(a); err != nil {
 		return err
 	}
 	settingSvc := NewSettingService(a.DB, a.Settings)
@@ -86,6 +88,7 @@ func Register(a *app.App) error {
 		return err
 	}
 	userSettingSvc := NewUserSettingService(a.DB, a.Settings)
+	a.RuntimeContextProvider = NewRuntimeContextProvider(a.DB, userSettingSvc, a.SettingValues, nil)
 	if err := registerProfileActions(a, userSvc, userSettingSvc); err != nil {
 		return err
 	}

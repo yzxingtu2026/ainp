@@ -565,6 +565,12 @@
       "source": ".agent/rules/ai-agent-runtime.md",
       "qoder": {"path": ".qoder/rules/ai-agent-runtime.md", "frontmatter": {"trigger": "always_on"}},
       "cursor": {"path": ".cursor/rules/ai-agent-runtime.mdc", "frontmatter": {"description": "Agent Run/Step 状态机、lease、Outbox Job、工具确认与可靠恢复", "alwaysApply": true}}
+    },
+    {
+      "id": "runtime-context",
+      "source": ".agent/rules/runtime-context.md",
+      "qoder": {"path": ".qoder/rules/runtime-context.md", "frontmatter": {"trigger": "always_on"}},
+      "cursor": {"path": ".cursor/rules/runtime-context.mdc", "frontmatter": {"description": "服务端可信身份、Run 时间快照、Prompt 临时注入与消费边界", "alwaysApply": true}}
     }
   ]
 }

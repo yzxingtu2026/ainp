@@ -169,7 +169,7 @@ func Register(a *app.App) error {
 	memoryConsolidation := NewMemoryConsolidationService(a.DB, invocations)
 	compactions.SetMemoryFlushHook(memoryExtraction)
 	a.ContextCompactor = compactions
-	agentRuntime := NewAgentRuntimeService(a.DB, conversations, invocations, tools, compactions, writer, a.Authorization)
+	agentRuntime := NewAgentRuntimeService(a.DB, conversations, invocations, tools, compactions, writer, a.Authorization, a.RuntimeContextProvider)
 	tools.SetConfirmationHooks(agentRuntime.OnConfirmationPending, agentRuntime.OnConfirmationDecided)
 	if err := RegisterAgentRuntime(a, agentRuntime); err != nil {
 		return err

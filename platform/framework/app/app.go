@@ -36,6 +36,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/notification"
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
 	"github.com/yzxingtu2026/ainp/platform/framework/permission"
+	"github.com/yzxingtu2026/ainp/platform/framework/runtimecontext"
 	"github.com/yzxingtu2026/ainp/platform/framework/setting"
 	"github.com/yzxingtu2026/ainp/platform/framework/statemachine"
 	"github.com/yzxingtu2026/ainp/platform/framework/storage"
@@ -55,6 +56,7 @@ type App struct {
 	CodeSets                 *codeset.Registry
 	Settings                 *setting.Registry
 	SettingValues            *setting.Provider
+	RuntimeContextProvider   runtimecontext.Provider
 	StateMachines            *statemachine.Registry
 	AIProviderTypes          *aimodel.ProviderTypeRegistry
 	AgentContracts           *aiagent.Registry

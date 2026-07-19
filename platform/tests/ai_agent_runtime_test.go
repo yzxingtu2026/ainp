@@ -1,9 +1,15 @@
 package tests
 
 import (
+	"fmt"
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/google/uuid"
+	"github.com/yzxingtu2026/ainp/platform/framework/database"
+	"github.com/yzxingtu2026/ainp/platform/modules/ai"
+	"github.com/yzxingtu2026/ainp/platform/modules/system"
 
 	"github.com/yzxingtu2026/ainp/platform/framework/aiagentruntime"
 )
@@ -19,6 +25,46 @@ func TestAgentRunStateMachineRejectsIllegalTransitions(t *testing.T) {
 		if err := aiagentruntime.ValidateRunTransition(pair[0], pair[1]); err == nil {
 			t.Fatalf("invalid transition accepted: %s -> %s", pair[0], pair[1])
 		}
+	}
+}
+
+func TestTrustedRuntimeContextMigrationPostgres(t *testing.T) {
+	dsn := os.Getenv("AINP_TEST_DATABASE_DSN")
+	if dsn == "" {
+		t.Skip("AINP_TEST_DATABASE_DSN is not set")
+	}
+	admin, err := database.Open(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	schema := "ainp_runtime_migration_" + uuid.NewString()[:8]
+	if err = admin.Exec(fmt.Sprintf(`CREATE SCHEMA %q`, schema)).Error; err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = admin.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE`, schema)).Error })
+	db, err := database.Open(dsn + " search_path=" + schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = system.AutoMigrate(db); err != nil {
+		t.Fatal(err)
+	}
+	if err = ai.AutoMigrate(db); err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile("../migrations/0034_trusted_runtime_context.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = db.Exec(string(body)).Error; err != nil {
+		t.Fatal(err)
+	}
+	var count int64
+	if err = db.Raw(`SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=current_schema() AND ((table_name='ai_agent_runs' AND column_name IN ('evaluated_at_utc','timezone','time_snapshot_json')) OR (table_name='ai_context_snapshots' AND column_name='runtime_context_refs'))`).Scan(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 4 {
+		t.Fatalf("runtime context columns=%d, want 4", count)
 	}
 }
 
@@ -53,6 +99,24 @@ func TestAgentRuntimeMigrationHasRecoveryConstraints(t *testing.T) {
 	for _, expected := range []string{"UNIQUE(tenant_id,user_id,idempotency_key)", "lease_expires_at", "UNIQUE(tenant_id,run_id,step_index)", "UNIQUE(tenant_id,run_id,sequence)", "waiting_confirmation", "result_json", "ON DELETE RESTRICT"} {
 		if !strings.Contains(sql, expected) {
 			t.Fatalf("migration missing %s", expected)
+		}
+	}
+}
+
+func TestTrustedRuntimeContextMigrationStoresOnlyTimeAndRefs(t *testing.T) {
+	body, err := os.ReadFile("../migrations/0034_trusted_runtime_context.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := string(body)
+	for _, expected := range []string{"evaluated_at_utc", "timezone", "time_snapshot_json", "runtime_context_refs"} {
+		if !strings.Contains(sql, expected) {
+			t.Fatalf("runtime context migration missing %s", expected)
+		}
+	}
+	for _, forbidden := range []string{"preferred_address", "memory_content", "prompt_text"} {
+		if strings.Contains(sql, forbidden) {
+			t.Fatalf("runtime context migration must not persist %s", forbidden)
 		}
 	}
 }

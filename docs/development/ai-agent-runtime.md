@@ -4,7 +4,7 @@ Agent Runtime 把不可变 Agent Version 执行为可暂停、可恢复、可审
 
 ## 状态与事实
 
-Run 固定 tenant、actor、session/auth version、conversation、trigger message、agent version、conversation revision、预算和当前 ContextSnapshot。Step 追加记录 context assemble/compact、model、tool search/load/execute、confirmation、finalize，输入输出只保存安全摘要。
+Run 固定 tenant、actor、session/auth version、conversation、trigger message、agent version、conversation revision、预算、当前 ContextSnapshot，以及首次执行生成的 evaluated_at/timezone Time Snapshot。Step 追加记录 context assemble/compact、model、tool search/load/execute、confirmation、finalize，输入输出只保存安全摘要。
 
 Run 状态为 queued/running/waiting_confirmation/paused/completed/failed/cancelled；Step 为 pending/running/waiting/completed/failed/skipped/cancelled。非法迁移 fail-closed，completed/cancelled 不可恢复；failed 只能显式 retry。
 
@@ -18,6 +18,7 @@ Builder 预览约束：
 ## 执行与恢复
 
 - Worker 使用行锁和短 lease 抢占。同一 Run 的重复 Job、有主 lease 或终态均幂等 no-op；过期 lease 才允许接管。
+- 第一次执行经统一 RuntimeContextProvider 生成不可变时间快照；同一 Run 的模型调用、恢复和 retry 复用原快照。动态可信身份/时间区块靠近本轮 user message，固定 Agent instructions 不变。
 - 每次 Job 从 AuthorizationProvider 重新加载 actor 当前权限和 auth version，不使用平台管理员身份或长期 service token。
 - 模型调用只经统一 Model Runtime；Agent 执行使用 `Stream`，Provider 的 `output_text.delta` 到达后立即追加为 `run.delta`，禁止等待完整 `Generate` 响应后再人为切片伪造流式输出。调用前由 ContextCompactor 按目标模型判断预算并固定 Snapshot。
 - Provider context overflow 只允许受预算限制的压缩重试；step/model/tool/compaction/Token/时长均有硬上限。
