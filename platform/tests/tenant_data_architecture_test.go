@@ -60,6 +60,7 @@ var tenantModelClassifications = map[string]tenantModelClassification{
 	"modules/ai/memory_model.go:MemoryProjection":                        {Registered: true},
 	"modules/ai/memory_model.go:MemoryDaySummary":                        {Registered: true},
 	"modules/ai/memory_model.go:MemoryCurrentProfile":                    {Registered: true},
+	"modules/ai/memory_model.go:MemoryEvaluation":                        {Registered: true},
 	"modules/demo/note_service.go:RevisionDoc":                           {Registered: true},
 	"modules/demo/outbox_demo.go:Note":                                   {Registered: true},
 	"modules/system/model/attachment.go:Attachment":                      {Registered: true},

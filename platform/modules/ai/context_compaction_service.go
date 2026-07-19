@@ -28,6 +28,11 @@ type ContextCompactionService struct {
 func NewContextCompactionService(db *gorm.DB, conversations *ConversationService, models aimodel.Resolver, invocations *InvocationService, tools *aitool.Registry) *ContextCompactionService {
 	return &ContextCompactionService{db: db, conversations: conversations, models: models, invocations: invocations, tokenizer: aiconversation.JSONTokenizer{}, memory: aiconversation.NoopMemoryFlushHook{}, tools: tools}
 }
+func (s *ContextCompactionService) SetMemoryFlushHook(h aiconversation.DurableMemoryFlushHook) {
+	if h != nil {
+		s.memory = h
+	}
+}
 
 type runtimeCompactionProvider struct {
 	invocations *InvocationService

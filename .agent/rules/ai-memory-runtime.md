@@ -8,3 +8,6 @@
 - Vector 只经统一 Embedding Runtime，冻结 alias/deployment/dimensions；正文、向量和候选内容禁止进入普通日志、审计摘要或 Outbox。
 - 所有关系使用 tenant/user 复合约束并经 TenantDB/Repository 访问；跨租户、跨用户 evidence、supersedes、projection 必须 fail-closed。
 - Memory Policy 发布时按 Agent 输入→租户默认→系统默认解析并冻结；只引用满足 Structured Output 的 Alias，禁止 Provider/Deployment/Credential 进入策略。
+- Run 终态 Outbox→Job 异步提取候选；资格检查只能做 committed user/assistant 增量等结构判断，禁止关键词/句式判断长期价值。
+- 每 Run 唯一 Evaluation 水位；正常异步与 compaction flush 复用同一 EvaluateRun。模型只能引用允许 Message ID，未知字段/越界来源/非法时间 fail-closed，输出只能保存 candidate。
+- 提取日志只含安全计数、类型/敏感度分布、延迟、Usage 与失败分类，禁止消息原文和候选正文。

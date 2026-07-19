@@ -88,6 +88,7 @@ func (s *InvocationService) Generate(ctx context.Context, req aimodelruntime.Gen
 	if err := s.finish(ctx, prepared.row, &resp.Usage, resp.FinishReason, "", resp.ProviderRequestID); err != nil {
 		return nil, err
 	}
+	resp.InvocationID = prepared.row.ID
 	// 返回值类型，避免 Action/Runtime 对 *GenerateResponse 断言失败。
 	return *resp, nil
 }

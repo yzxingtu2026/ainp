@@ -330,6 +330,7 @@ type ModelSummary struct {
 }
 type GenerateResponse struct {
 	ID                string       `json:"id"`
+	InvocationID      string       `json:"invocation_id,omitempty"`
 	Model             ModelSummary `json:"model"`
 	Output            []OutputItem `json:"output"`
 	FinishReason      FinishReason `json:"finish_reason"`
