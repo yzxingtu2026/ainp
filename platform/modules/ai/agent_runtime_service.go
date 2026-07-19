@@ -565,7 +565,7 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 			return s.fail(ctx, run, "model_failed")
 		}
 		var invocation ModelInvocation
-		if s.db.WithContext(ctx).Where("tenant_id=? AND agent_run_id=?", run.TenantID, run.ID).Order("created_at DESC").First(&invocation).Error == nil {
+		if s.db.WithContext(ctx).Where("agent_run_id=?", run.ID).Order("created_at DESC").First(&invocation).Error == nil {
 			step.ModelInvocationID = &invocation.ID
 			_ = s.db.WithContext(ctx).Model(&AgentStep{}).Where("id=?", step.ID).Update("model_invocation_id", invocation.ID).Error
 		}
