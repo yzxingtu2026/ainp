@@ -104,7 +104,7 @@ func (s *SettingService) List(ctx context.Context, _ json.RawMessage) (any, erro
 	lang := ac.Language
 
 	categories := s.registry.ListCategories(auth.RealmTenant)
-	definitions := s.registry.ListDefinitions(auth.RealmTenant)
+	definitions := s.registry.ListDefinitionsByScope(auth.RealmTenant, setting.ScopeTenant)
 	byCategory := map[string][]SettingDefinitionView{}
 	for _, def := range definitions {
 		if def.Permission != "" && !ac.HasPermission(def.Permission) {
@@ -151,6 +151,9 @@ func (s *SettingService) Get(ctx context.Context, input json.RawMessage) (any, e
 	if !ok {
 		return nil, errs.NewKey(errs.CodeNotFound, "setting.not_found", "setting not found")
 	}
+	if def.Scope != setting.ScopeTenant {
+		return nil, errs.NewKey(errs.CodeNotFound, "setting.not_found", "setting not found")
+	}
 	ac := auth.MustFromContext(ctx)
 	if def.Permission != "" && !ac.HasPermission(def.Permission) {
 		return nil, errs.NewKey(errs.CodeForbidden, "common.forbidden", "forbidden")
@@ -173,6 +176,9 @@ func (s *SettingService) Update(ctx context.Context, input json.RawMessage) (any
 	}
 	def, ok := s.registry.GetDefinition(req.Key)
 	if !ok {
+		return nil, errs.NewKey(errs.CodeNotFound, "setting.not_found", "setting not found")
+	}
+	if def.Scope != setting.ScopeTenant {
 		return nil, errs.NewKey(errs.CodeNotFound, "setting.not_found", "setting not found")
 	}
 	ac := auth.MustFromContext(ctx)
@@ -209,6 +215,9 @@ func (s *SettingService) Reset(ctx context.Context, input json.RawMessage) (any,
 	}
 	def, ok := s.registry.GetDefinition(req.Key)
 	if !ok {
+		return nil, errs.NewKey(errs.CodeNotFound, "setting.not_found", "setting not found")
+	}
+	if def.Scope != setting.ScopeTenant {
 		return nil, errs.NewKey(errs.CodeNotFound, "setting.not_found", "setting not found")
 	}
 	ac := auth.MustFromContext(ctx)

@@ -110,6 +110,7 @@ System
 - 角色全量替换并事务化：校验角色属于当前租户且 enabled → 替换 UserRole → `BumpAuthVersion`。
 - 不提供物理删除；使用 `disabled` 保留审计主体。当前用户不可自停用；租户须保留至少一名 enabled 内置 `admin` 用户。
 - OrgID/DeptID 仅预留字段，本阶段不实现组织架构选择。
+- 当前用户资料使用 authenticated self-only Action；只允许修改自己的 `display_name`。user-scope Runtime Preferences 同样只从 AuthContext 解析 owner，管理员权限不允许代读或代改。
 
 ## 密码强度
 

@@ -84,6 +84,16 @@ export function fetchLogout() {
   return request<{ revoked: boolean }>({ url: '/api/v1/system/auth/logout', method: 'post' });
 }
 
+export function fetchAuthSessions() {
+  return request<{ sessions: Api.Auth.Session[] }>({ url: '/api/v1/system/auth/sessions' });
+}
+
+export function revokeAuthSession(sessionId: string) {
+  return request<{ revoked: boolean }>({
+    url: '/api/v1/system/auth/sessions/revoke', method: 'post', data: { session_id: sessionId }
+  });
+}
+
 /** @deprecated mock only */
 export function fetchCustomBackendError(code: string, msg: string) {
   return request({ url: '/auth/error', params: { code, msg } });

@@ -1,5 +1,11 @@
 declare namespace Api {
   namespace User {
+
+    interface SelfProfile extends Record {
+      memory_preferred_address: string;
+      effective_address: string;
+      address_source: 'memory_profile' | 'display_name' | 'username';
+    }
     type ActivationStatus = 'enabled' | 'disabled';
 
     interface RoleBrief {

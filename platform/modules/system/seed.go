@@ -49,7 +49,7 @@ func AutoMigrate(db *gorm.DB) error {
 	if err != nil {
 		return err
 	}
-	if err := migrationDB.AutoMigrate(&model.TenantSettingValue{}, &model.Attachment{}, &model.AttachmentLink{}); err != nil {
+	if err := migrationDB.AutoMigrate(&model.TenantSettingValue{}, &model.UserSettingValue{}, &model.Attachment{}, &model.AttachmentLink{}); err != nil {
 		return err
 	}
 	if err := outbox.AutoMigrate(db); err != nil {

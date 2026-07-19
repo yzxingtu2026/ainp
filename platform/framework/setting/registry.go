@@ -95,12 +95,16 @@ func (r *Registry) ListCategories(surface auth.Realm) []Category {
 }
 
 func (r *Registry) ListDefinitions(surface auth.Realm) []Definition {
+	return r.ListDefinitionsByScope(surface, "")
+}
+
+func (r *Registry) ListDefinitionsByScope(surface auth.Realm, scope Scope) []Definition {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	surface = auth.NormalizeRealm(surface)
 	out := make([]Definition, 0, len(r.definitions))
 	for _, d := range r.definitions {
-		if auth.NormalizeRealm(d.Surface) == surface {
+		if auth.NormalizeRealm(d.Surface) == surface && (scope == "" || d.Scope == scope) {
 			out = append(out, cloneDefinition(d))
 		}
 	}
