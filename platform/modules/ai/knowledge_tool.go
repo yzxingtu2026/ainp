@@ -14,6 +14,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/action"
 	"github.com/yzxingtu2026/ainp/platform/framework/aiknowledge"
 	"github.com/yzxingtu2026/ainp/platform/framework/aitool"
+	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"gorm.io/gorm"
 )
 
@@ -181,13 +182,16 @@ func (t *KnowledgeTool) candidates(ctx context.Context, scope *ToolScope) ([]kno
 	if err != nil {
 		return nil, err
 	}
-	var rows []knowledgeToolCandidate
-	err = t.db.WithContext(ctx).Table("ai_agent_knowledge_bindings b").
-		Select("kb.id,kb.name,kb.description,iv.id AS index_version_id").
-		Joins("JOIN ai_knowledge_bases kb ON kb.tenant_id=b.tenant_id AND kb.id=b.knowledge_base_id AND kb.deleted_at IS NULL").
-		Joins("JOIN ai_knowledge_index_versions iv ON iv.tenant_id=kb.tenant_id AND iv.id=kb.current_index_version_id AND iv.knowledge_base_id=kb.id").
-		Where("b.tenant_id=? AND b.agent_id=? AND kb.status=? AND iv.status=?", scope.TenantID, version.AgentID, aiknowledge.KnowledgeBaseEnabled, aiknowledge.IndexReady).
-		Order("kb.id").Scan(&rows).Error
+	tdb, err := tenantdata.TenantDB(ctx, t.db)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := tenantdata.TenantRaw[knowledgeToolCandidate](tdb, `SELECT kb.id,kb.name,kb.description,iv.id AS index_version_id
+FROM ai_agent_knowledge_bindings b
+JOIN ai_knowledge_bases kb ON kb.tenant_id=b.tenant_id AND kb.id=b.knowledge_base_id AND kb.deleted_at IS NULL
+JOIN ai_knowledge_index_versions iv ON iv.tenant_id=kb.tenant_id AND iv.id=kb.current_index_version_id AND iv.knowledge_base_id=kb.id
+WHERE b.tenant_id=? AND b.agent_id=? AND kb.status=? AND iv.status=? ORDER BY kb.id`,
+		version.AgentID, aiknowledge.KnowledgeBaseEnabled, aiknowledge.IndexReady)
 	if err != nil {
 		return nil, err
 	}

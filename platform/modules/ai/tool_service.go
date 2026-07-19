@@ -17,6 +17,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
+	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -528,15 +529,22 @@ func (s *ToolService) mergeFTS(ctx context.Context, ac *auth.Context, scope *Too
 	if strings.TrimSpace(r.Query) == "" {
 		return current
 	}
-	var ids []string
-	if err := s.db.WithContext(ctx).Raw("SELECT tool_id FROM ai_tool_search_documents WHERE tenant_id = ? AND to_tsvector('simple', search_text) @@ plainto_tsquery('simple', ?) ORDER BY ts_rank(to_tsvector('simple', search_text), plainto_tsquery('simple', ?)) DESC LIMIT 10", ac.TenantID, r.Query, r.Query).Scan(&ids).Error; err != nil {
+	tdb, err := tenantdata.TenantDB(ctx, s.db)
+	if err != nil {
+		return current
+	}
+	rows, err := tenantdata.TenantRaw[struct {
+		ToolID string `gorm:"column:tool_id"`
+	}](tdb, "SELECT tool_id FROM ai_tool_search_documents WHERE tenant_id = ? AND to_tsvector('simple', search_text) @@ plainto_tsquery('simple', ?) ORDER BY ts_rank(to_tsvector('simple', search_text), plainto_tsquery('simple', ?)) DESC LIMIT 10", r.Query, r.Query)
+	if err != nil {
 		return current
 	}
 	seen := map[string]bool{}
 	for _, item := range current {
 		seen[item.ID] = true
 	}
-	for _, id := range ids {
+	for _, row := range rows {
+		id := row.ToolID
 		if seen[id] {
 			continue
 		}
