@@ -20,7 +20,7 @@
 | AI 治理与 Tool | Tool Catalog/Search/Scope/Confirmation/Invocation、Provider/Deployment/Alias/Model Invocation 与 FTS Raw 已迁移；Model Invocation 启动恢复保留私有固定 SQL 扫描并逐租户恢复 AuthContext | 已完成 | Model/Embedding/Tool Runtime 默认与 PostgreSQL 测试 |
 | AI 会话与 Runtime | Conversation/Message/Stream/Snapshot、Run/Step/Event 已完成；Job claim 复用 Envelope 恢复的可信 tenant，Runtime ORM 已清理冗余 tenant 条件 | 已完成 | Conversation/Agent Runtime 默认与 PostgreSQL 测试 |
 | Knowledge | Base/Document/Index/Chunk/Payload/Agent Binding 已启用 Registry 与 tenant-only ORM；Ingestion Worker 与 Service 冗余 tenant 条件已清理，Retrieval/Citation/Agent Binding JOIN 已迁移 TenantRaw | 已完成 | Knowledge 默认与 PostgreSQL 全链路测试 |
-| Operations | Audit/Outbox/Job/Log 管理查询 | 待迁移 | Operations Center 测试 |
+| Operations | Audit/User JOIN、Outbox/Event Delivery JOIN、Job 管理查询均已迁移 TenantRaw；Log 仅开放声明 TenantFilter 且回包复核 tenant 的 Provider | 已完成 | Operations Center/Audit/Outbox/Job/Log 测试 |
 
 ## 精确例外
 
