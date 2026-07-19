@@ -220,7 +220,7 @@ onMounted(loadSettings);
 </script>
 
 <template>
-  <div class="min-h-500px flex-col-stretch gap-16px overflow-hidden lt-sm:overflow-auto">
+  <div class="h-full min-h-0 flex-col-stretch gap-16px overflow-x-hidden overflow-y-auto">
     <NCard :title="$t('page.setting.title')" :bordered="false" class="card-wrapper" :loading="loading">
       <template #header-extra>
         <NSpace v-if="showActions">

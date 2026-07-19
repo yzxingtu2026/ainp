@@ -9,11 +9,13 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/yzxingtu2026/ainp/platform/framework/aiagent"
+	"github.com/yzxingtu2026/ainp/platform/framework/aimemory"
 	"github.com/yzxingtu2026/ainp/platform/framework/aimodel"
 	"github.com/yzxingtu2026/ainp/platform/framework/aitool"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 	"github.com/yzxingtu2026/ainp/platform/framework/pagination"
+	"github.com/yzxingtu2026/ainp/platform/framework/setting"
 	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	systemmodel "github.com/yzxingtu2026/ainp/platform/modules/system/model"
 	"gorm.io/gorm"
@@ -24,7 +26,10 @@ type AgentService struct {
 	contracts *aiagent.Registry
 	models    aimodel.Resolver
 	tools     *aitool.Registry
+	settings  *setting.Provider
 }
+
+func (s *AgentService) SetMemoryPolicyProvider(p *setting.Provider) { s.settings = p }
 
 func NewAgentService(db *gorm.DB, contracts *aiagent.Registry, models aimodel.Resolver, tools *aitool.Registry) *AgentService {
 	if err := registerAgentTenantModels(); err != nil {
@@ -64,16 +69,17 @@ type AgentListRequest struct {
 	OwnerUserID string `json:"owner_user_id"`
 }
 type AgentCreateRequest struct {
-	Code               string         `json:"code" validate:"required"`
-	Name               string         `json:"name" validate:"required"`
-	Description        string         `json:"description"`
-	Source             string         `json:"source"`
-	Visibility         string         `json:"visibility"`
-	ModelAlias         string         `json:"model_alias" validate:"required"`
-	TenantInstructions string         `json:"tenant_instructions"`
-	AvatarAttachmentID *string        `json:"avatar_attachment_id"`
-	GenerationConfig   map[string]any `json:"generation_config"`
-	ToolPolicy         map[string]any `json:"tool_policy"`
+	Code               string           `json:"code" validate:"required"`
+	Name               string           `json:"name" validate:"required"`
+	Description        string           `json:"description"`
+	Source             string           `json:"source"`
+	Visibility         string           `json:"visibility"`
+	ModelAlias         string           `json:"model_alias" validate:"required"`
+	TenantInstructions string           `json:"tenant_instructions"`
+	AvatarAttachmentID *string          `json:"avatar_attachment_id"`
+	GenerationConfig   map[string]any   `json:"generation_config"`
+	ToolPolicy         map[string]any   `json:"tool_policy"`
+	MemoryPolicy       *aimemory.Policy `json:"memory_policy,omitempty"`
 }
 type AgentUpdateRequest struct {
 	ID                 string  `json:"id" validate:"required"`
@@ -81,30 +87,33 @@ type AgentUpdateRequest struct {
 	Description        string  `json:"description"`
 	AvatarAttachmentID *string `json:"avatar_attachment_id"`
 	// 以下为 Builder 草稿运行配置；写入 Agent 草稿列，不创建 Version、不晋升 current。
-	ModelAlias         string         `json:"model_alias"`
-	TenantInstructions string         `json:"tenant_instructions"`
-	GenerationConfig   map[string]any `json:"generation_config"`
-	ToolPolicy         map[string]any `json:"tool_policy"`
-	SaveDraftConfig    bool           `json:"save_draft_config"`
-	Revision           uint64         `json:"revision" validate:"required"`
+	ModelAlias         string           `json:"model_alias"`
+	TenantInstructions string           `json:"tenant_instructions"`
+	GenerationConfig   map[string]any   `json:"generation_config"`
+	ToolPolicy         map[string]any   `json:"tool_policy"`
+	MemoryPolicy       *aimemory.Policy `json:"memory_policy,omitempty"`
+	SaveDraftConfig    bool             `json:"save_draft_config"`
+	Revision           uint64           `json:"revision" validate:"required"`
 }
 type AgentVersionCreateRequest struct {
-	AgentID            string         `json:"agent_id" validate:"required"`
-	ModelAlias         string         `json:"model_alias" validate:"required"`
-	TenantInstructions string         `json:"tenant_instructions"`
-	GenerationConfig   map[string]any `json:"generation_config"`
-	ToolPolicy         map[string]any `json:"tool_policy"`
-	Revision           uint64         `json:"revision" validate:"required"`
+	AgentID            string           `json:"agent_id" validate:"required"`
+	ModelAlias         string           `json:"model_alias" validate:"required"`
+	TenantInstructions string           `json:"tenant_instructions"`
+	GenerationConfig   map[string]any   `json:"generation_config"`
+	ToolPolicy         map[string]any   `json:"tool_policy"`
+	MemoryPolicy       *aimemory.Policy `json:"memory_policy,omitempty"`
+	Revision           uint64           `json:"revision" validate:"required"`
 }
 
 // AgentPreviewMaterializeRequest 将 Builder 当前编辑状态物化为 preview Version，不晋升 current_version。
 type AgentPreviewMaterializeRequest struct {
-	AgentID            string         `json:"agent_id" validate:"required"`
-	ModelAlias         string         `json:"model_alias" validate:"required"`
-	TenantInstructions string         `json:"tenant_instructions"`
-	GenerationConfig   map[string]any `json:"generation_config"`
-	ToolPolicy         map[string]any `json:"tool_policy"`
-	Revision           uint64         `json:"revision" validate:"required"`
+	AgentID            string           `json:"agent_id" validate:"required"`
+	ModelAlias         string           `json:"model_alias" validate:"required"`
+	TenantInstructions string           `json:"tenant_instructions"`
+	GenerationConfig   map[string]any   `json:"generation_config"`
+	ToolPolicy         map[string]any   `json:"tool_policy"`
+	MemoryPolicy       *aimemory.Policy `json:"memory_policy,omitempty"`
+	Revision           uint64           `json:"revision" validate:"required"`
 }
 type AgentBindRequest struct {
 	AgentID string `json:"agent_id" validate:"required"`
@@ -310,6 +319,11 @@ func (s *AgentService) Create(ctx context.Context, r AgentCreateRequest) (any, e
 	if _, err := s.models.Resolve(ctx, r.ModelAlias, agentRuntimeModelRequirements()); err != nil {
 		return nil, err
 	}
+	memoryPolicy, memorySource, err := s.resolveMemoryPolicy(ctx, r.MemoryPolicy)
+	if err != nil {
+		return nil, err
+	}
+	memoryJSON := marshal(memoryPolicy)
 	owner := ac.UserID
 	row := Agent{ID: uuid.NewString(), OwnerUserID: &owner, Code: r.Code, Name: r.Name, Description: r.Description, AvatarAttachmentID: r.AvatarAttachmentID, Source: r.Source, Visibility: r.Visibility, Status: "draft", Revision: 1}
 	repos, err := newAgentRepositories(ctx, s.db)
@@ -321,11 +335,11 @@ func (s *AgentService) Create(ctx context.Context, r AgentCreateRequest) (any, e
 			return dbError(e, "create agent")
 		}
 		genCfg, toolPolicy := marshal(r.GenerationConfig), marshal(r.ToolPolicy)
-		hash := versionContentHash(r.ModelAlias, r.TenantInstructions, genCfg, toolPolicy)
+		hash := versionContentHash(r.ModelAlias, r.TenantInstructions, genCfg, toolPolicy, memoryJSON)
 		v := AgentVersion{
 			ID: uuid.NewString(), AgentID: row.ID, Version: 1,
 			Kind: AgentVersionKindRelease, ContentHash: hash, ModelAlias: r.ModelAlias,
-			TenantInstructions: r.TenantInstructions, GenerationConfig: genCfg, ToolPolicy: toolPolicy, CreatedBy: ac.UserID,
+			TenantInstructions: r.TenantInstructions, GenerationConfig: genCfg, ToolPolicy: toolPolicy, MemoryPolicy: memoryJSON, MemoryPolicySource: memorySource, CreatedBy: ac.UserID,
 		}
 		if e := tx.versions.Create(&v); e != nil {
 			return e
@@ -368,6 +382,7 @@ func (s *AgentService) Duplicate(ctx context.Context, r AgentDuplicateRequest) (
 	}
 	_ = json.Unmarshal(version.GenerationConfig, &request.GenerationConfig)
 	_ = json.Unmarshal(version.ToolPolicy, &request.ToolPolicy)
+	_ = json.Unmarshal(version.MemoryPolicy, &request.MemoryPolicy)
 	created, err := s.Create(ctx, request)
 	if err != nil {
 		return nil, err
@@ -417,6 +432,7 @@ func (s *AgentService) Update(ctx context.Context, r AgentUpdateRequest) (any, e
 		updates["draft_model_alias"] = strings.TrimSpace(r.ModelAlias)
 		updates["draft_generation_config"] = marshal(r.GenerationConfig)
 		updates["draft_tool_policy"] = marshal(r.ToolPolicy)
+		updates["draft_memory_policy"] = marshal(r.MemoryPolicy)
 	}
 	repos, e := newAgentRepositories(ctx, s.db)
 	if e != nil {
@@ -471,7 +487,12 @@ func (s *AgentService) CreateVersion(ctx context.Context, r AgentVersionCreateRe
 		return nil, e
 	}
 	genCfg, toolPolicy := marshal(r.GenerationConfig), marshal(r.ToolPolicy)
-	hash := versionContentHash(r.ModelAlias, r.TenantInstructions, genCfg, toolPolicy)
+	memoryPolicy, memorySource, e := s.resolveMemoryPolicy(ctx, r.MemoryPolicy)
+	if e != nil {
+		return nil, e
+	}
+	memoryJSON := marshal(memoryPolicy)
+	hash := versionContentHash(r.ModelAlias, r.TenantInstructions, genCfg, toolPolicy, memoryJSON)
 	var version AgentVersion
 	repos, e := newAgentRepositories(ctx, s.db)
 	if e != nil {
@@ -485,7 +506,7 @@ func (s *AgentService) CreateVersion(ctx context.Context, r AgentVersionCreateRe
 		version = AgentVersion{
 			ID: uuid.NewString(), AgentID: row.ID, Version: next,
 			Kind: AgentVersionKindRelease, ContentHash: hash, ModelAlias: r.ModelAlias,
-			TenantInstructions: r.TenantInstructions, GenerationConfig: genCfg, ToolPolicy: toolPolicy, CreatedBy: ac.UserID,
+			TenantInstructions: r.TenantInstructions, GenerationConfig: genCfg, ToolPolicy: toolPolicy, MemoryPolicy: memoryJSON, MemoryPolicySource: memorySource, CreatedBy: ac.UserID,
 		}
 		if e := tx.versions.Create(&version); e != nil {
 			return e
@@ -498,6 +519,7 @@ func (s *AgentService) CreateVersion(ctx context.Context, r AgentVersionCreateRe
 			"draft_model_alias":         "",
 			"draft_generation_config":   marshal(map[string]any{}),
 			"draft_tool_policy":         marshal(map[string]any{}),
+			"draft_memory_policy":       nil,
 		})
 		if res.Error != nil {
 			return res.Error
@@ -522,7 +544,12 @@ func (s *AgentService) MaterializePreview(ctx context.Context, r AgentPreviewMat
 		return nil, e
 	}
 	genCfg, toolPolicy := marshal(r.GenerationConfig), marshal(r.ToolPolicy)
-	hash := versionContentHash(r.ModelAlias, r.TenantInstructions, genCfg, toolPolicy)
+	memoryPolicy, memorySource, e := s.resolveMemoryPolicy(ctx, r.MemoryPolicy)
+	if e != nil {
+		return nil, e
+	}
+	memoryJSON := marshal(memoryPolicy)
+	hash := versionContentHash(r.ModelAlias, r.TenantInstructions, genCfg, toolPolicy, memoryJSON)
 	repos, e := newAgentRepositories(ctx, s.db)
 	if e != nil {
 		return nil, e
@@ -540,7 +567,7 @@ func (s *AgentService) MaterializePreview(ctx context.Context, r AgentPreviewMat
 		version = AgentVersion{
 			ID: uuid.NewString(), AgentID: row.ID, Version: next,
 			Kind: AgentVersionKindPreview, ContentHash: hash, ModelAlias: r.ModelAlias,
-			TenantInstructions: r.TenantInstructions, GenerationConfig: genCfg, ToolPolicy: toolPolicy, CreatedBy: ac.UserID,
+			TenantInstructions: r.TenantInstructions, GenerationConfig: genCfg, ToolPolicy: toolPolicy, MemoryPolicy: memoryJSON, MemoryPolicySource: memorySource, CreatedBy: ac.UserID,
 		}
 		return tx.versions.Create(&version)
 	})
@@ -574,6 +601,107 @@ func agentRuntimeModelRequirements() aimodel.CapabilityRequirements {
 	}
 }
 
+func memoryModelRequirements() aimodel.CapabilityRequirements {
+	return aimodel.CapabilityRequirements{ModelType: aimodel.ModelTypeChat, InputModalities: []aimodel.Modality{aimodel.ModalityText}, OutputModalities: []aimodel.Modality{aimodel.ModalityText}, Features: []aimodel.Feature{aimodel.FeatureStructuredOutput}}
+}
+
+func (s *AgentService) resolveMemoryPolicy(ctx context.Context, override *aimemory.Policy) (aimemory.Policy, string, error) {
+	policy, source := aimemory.SystemDefaultPolicy(), "system_default"
+	ac := auth.MustFromContext(ctx)
+	if override == nil && s.settings != nil {
+		effective, err := s.settings.Get(ctx, ac.TenantID, aimemory.SettingKeyPolicyDefaults)
+		if err != nil {
+			return policy, source, err
+		}
+		policy = memoryPolicyFromValues(effective.Values)
+		if effective.Source == "tenant" {
+			source = "tenant_default"
+		}
+	}
+	if override != nil {
+		policy, source = *override, "agent_version"
+	}
+	policy.ExtractionModelAlias = strings.TrimSpace(policy.ExtractionModelAlias)
+	policy.ConsolidationModelAlias = strings.TrimSpace(policy.ConsolidationModelAlias)
+	if policy.ConsolidationModelAlias == "" {
+		policy.ConsolidationModelAlias = policy.ExtractionModelAlias
+	}
+	if err := policy.Validate(); err != nil {
+		return policy, source, errs.New(errs.CodeValidation, err.Error())
+	}
+	if !policy.Enabled {
+		return policy, source, nil
+	}
+	if s.models == nil {
+		return policy, source, errs.New(errs.CodeConflict, "memory model resolver unavailable")
+	}
+	seenAliases := map[string]bool{}
+	for _, alias := range []string{policy.ExtractionModelAlias, policy.ConsolidationModelAlias} {
+		if seenAliases[alias] {
+			continue
+		}
+		seenAliases[alias] = true
+		resolved, err := s.models.Resolve(ctx, alias, memoryModelRequirements())
+		if err != nil {
+			return policy, source, err
+		}
+		if resolved.Limits.ContextWindow > 0 && resolved.Limits.ContextWindow < 4096 {
+			return policy, source, errs.New(errs.CodeValidation, "memory model context window is too small")
+		}
+	}
+	return policy, source, nil
+}
+func (s *AgentService) ResolveMemoryPolicy(ctx context.Context, override *aimemory.Policy) (aimemory.Policy, string, error) {
+	return s.resolveMemoryPolicy(ctx, override)
+}
+
+func memoryPolicyFromValues(v map[string]any) aimemory.Policy {
+	d := aimemory.SystemDefaultPolicy()
+	if x, ok := v["enabled"].(bool); ok {
+		d.Enabled = x
+	}
+	if x, ok := v["extraction_model_alias"].(string); ok {
+		d.ExtractionModelAlias = x
+	}
+	if x, ok := v["consolidation_model_alias"].(string); ok {
+		d.ConsolidationModelAlias = x
+	}
+	if x, ok := v["auto_save_low_sensitive"].(bool); ok {
+		d.AutoSaveLowSensitive = x
+	}
+	if x, ok := v["write_approval_mode"].(string); ok {
+		d.WriteApprovalMode = aimemory.WriteApprovalMode(x)
+	}
+	if x, ok := v["agent_specific_scope"].(bool); ok {
+		d.AgentSpecificScope = x
+	}
+	d.MaxCandidatesPerTurn = intValue(v["max_candidates_per_turn"], d.MaxCandidatesPerTurn)
+	d.MaxConsolidationItems = intValue(v["max_consolidation_items"], d.MaxConsolidationItems)
+	d.MaxRecallItems = intValue(v["max_recall_items"], d.MaxRecallItems)
+	d.MaxRecallTokens = intValue(v["max_recall_tokens"], d.MaxRecallTokens)
+	if x, ok := v["policy_version"].(string); ok {
+		d.PolicyVersion = x
+	}
+	if x, ok := v["prompt_version"].(string); ok {
+		d.PromptVersion = x
+	}
+	if x, ok := v["schema_version"].(string); ok {
+		d.SchemaVersion = x
+	}
+	return d
+}
+func intValue(v any, fallback int) int {
+	switch n := v.(type) {
+	case float64:
+		return int(n)
+	case int:
+		return n
+	case int64:
+		return int(n)
+	}
+	return fallback
+}
+
 func nextAgentVersionNumber(repos *agentRepositories, agentID string) (int, error) {
 	latest, err := repos.versions.Where("agent_id=?", agentID).Order("version desc").First("1=1")
 	if tenantdata.IsNotFound(err) {
@@ -585,8 +713,8 @@ func nextAgentVersionNumber(repos *agentRepositories, agentID string) (int, erro
 	return latest.Version + 1, nil
 }
 
-func versionContentHash(modelAlias, tenantInstructions string, generationConfig, toolPolicy json.RawMessage) string {
-	sum := sha256.Sum256([]byte(modelAlias + "\n" + tenantInstructions + "\n" + string(generationConfig) + "\n" + string(toolPolicy)))
+func versionContentHash(modelAlias, tenantInstructions string, generationConfig, toolPolicy, memoryPolicy json.RawMessage) string {
+	sum := sha256.Sum256([]byte(modelAlias + "\n" + tenantInstructions + "\n" + string(generationConfig) + "\n" + string(toolPolicy) + "\n" + string(memoryPolicy)))
 	return hex.EncodeToString(sum[:])
 }
 
@@ -709,8 +837,28 @@ func (s *AgentService) agentDiagnostics(ctx context.Context, row *Agent) AgentDi
 		}
 		if err != nil {
 			issues = append(issues, AgentDiagnosticIssue{Code: "version.missing", Message: "current version is missing"})
+		} else if s.models == nil {
+			issues = append(issues, AgentDiagnosticIssue{Code: "model.unavailable", Message: "model resolver unavailable"})
 		} else if _, err = s.models.Resolve(ctx, v.ModelAlias, agentRuntimeModelRequirements()); err != nil {
 			issues = append(issues, AgentDiagnosticIssue{Code: "model.unavailable", Message: err.Error()})
+		} else {
+			var policy aimemory.Policy
+			if len(v.MemoryPolicy) > 0 && string(v.MemoryPolicy) != "{}" {
+				if err = json.Unmarshal(v.MemoryPolicy, &policy); err != nil || policy.Validate() != nil {
+					issues = append(issues, AgentDiagnosticIssue{Code: "memory.policy_invalid", Message: "memory policy is invalid"})
+				} else if policy.Enabled {
+					seenAliases := map[string]bool{}
+					for _, alias := range []string{policy.ExtractionModelAlias, policy.ConsolidationModelAlias} {
+						if seenAliases[alias] {
+							continue
+						}
+						seenAliases[alias] = true
+						if _, resolveErr := s.models.Resolve(ctx, alias, memoryModelRequirements()); resolveErr != nil {
+							issues = append(issues, AgentDiagnosticIssue{Code: "memory.model_unavailable", Resource: alias, Message: resolveErr.Error()})
+						}
+					}
+				}
+			}
 		}
 	}
 	for _, id := range s.requiredTools(row) {

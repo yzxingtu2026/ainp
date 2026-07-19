@@ -1,6 +1,7 @@
 package system
 
 import (
+	"github.com/yzxingtu2026/ainp/platform/framework/aimemory"
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
 	"github.com/yzxingtu2026/ainp/platform/framework/attachment"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
@@ -21,7 +22,33 @@ func registerExampleSettings(a *app.App) error {
 	if err := registerVisibilityDemoSetting(a); err != nil {
 		return err
 	}
-	return registerAttachmentUploadPolicySetting(a)
+	if err := registerAttachmentUploadPolicySetting(a); err != nil {
+		return err
+	}
+	return registerMemoryPolicySetting(a)
+}
+
+func registerMemoryPolicySetting(a *app.App) error {
+	if err := a.RegisterSettingCategory(setting.Category{Key: "ai", Title: "AI", Description: "AI 运行策略", Icon: "mdi:brain", Order: 30, Surface: auth.RealmTenant}); err != nil {
+		return err
+	}
+	minOne, maxCandidates, maxBatch, maxRecall, minTokens, maxTokens := 1.0, 100.0, 1000.0, 100.0, 128.0, 100000.0
+	d := aimemory.SystemDefaultPolicy()
+	return a.RegisterSettingDefinition(setting.Definition{Key: aimemory.SettingKeyPolicyDefaults, CategoryKey: "ai", Title: "长期记忆默认策略", Description: "Agent Version 未覆盖时使用的租户默认值", Scope: setting.ScopeTenant, Surface: auth.RealmTenant, Permission: ActionSettingList, Order: 10, SchemaVersion: 1, Fields: []setting.Field{
+		{Key: "enabled", Type: setting.FieldBoolean, Label: "启用长期记忆", Default: d.Enabled},
+		{Key: "extraction_model_alias", Type: setting.FieldText, Label: "记忆处理模型 Alias", Default: d.ExtractionModelAlias, Required: true},
+		{Key: "consolidation_model_alias", Type: setting.FieldText, Label: "整理模型 Alias", Default: ""},
+		{Key: "auto_save_low_sensitive", Type: setting.FieldBoolean, Label: "低敏候选自动保存", Default: d.AutoSaveLowSensitive},
+		{Key: "write_approval_mode", Type: setting.FieldSelect, Label: "写入审批", Default: string(d.WriteApprovalMode), Required: true, Options: []setting.FieldOption{{Value: "always", Label: "始终审批"}, {Value: "sensitive_only", Label: "仅敏感内容"}, {Value: "never", Label: "无需审批"}}},
+		{Key: "agent_specific_scope", Type: setting.FieldBoolean, Label: "Agent 专属作用域", Default: false},
+		{Key: "max_candidates_per_turn", Type: setting.FieldNumber, Label: "每轮候选上限", Default: float64(d.MaxCandidatesPerTurn), Min: &minOne, Max: &maxCandidates},
+		{Key: "max_consolidation_items", Type: setting.FieldNumber, Label: "批量整理上限", Default: float64(d.MaxConsolidationItems), Min: &minOne, Max: &maxBatch},
+		{Key: "max_recall_items", Type: setting.FieldNumber, Label: "召回条数上限", Default: float64(d.MaxRecallItems), Min: &minOne, Max: &maxRecall},
+		{Key: "max_recall_tokens", Type: setting.FieldNumber, Label: "召回 Token 上限", Default: float64(d.MaxRecallTokens), Min: &minTokens, Max: &maxTokens},
+		{Key: "policy_version", Type: setting.FieldText, Label: "策略版本", Default: d.PolicyVersion, Required: true},
+		{Key: "prompt_version", Type: setting.FieldText, Label: "Prompt 版本", Default: d.PromptVersion, Required: true},
+		{Key: "schema_version", Type: setting.FieldText, Label: "Schema 版本", Default: d.SchemaVersion, Required: true},
+	}})
 }
 
 func registerAttachmentUploadPolicySetting(a *app.App) error {

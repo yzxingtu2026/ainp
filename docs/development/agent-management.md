@@ -48,4 +48,8 @@ Agent Contract（代码注册的能力与安全契约）
 4. Workspace（#80）默认只列 `purpose=workspace`，禁止把 `kind=preview` 用于 workspace 会话。
 5. Builder 预览可对 `draft|enabled` agent 启动 Run；`disabled` 仍禁止。工具绑定挂在 `agent_id` 上，绑/解绑即时生效，无需为纯工具变更强制新 preview version。
 
-本层不实现 Workspace 产品页、知识库或长期记忆；运行对象只能引用明确的 `agent_version_id`。
+## 记忆策略
+
+Builder 可选择继承租户默认记忆策略或提交 Agent 覆盖。发布和 preview 物化时按 `Agent 输入 -> 租户 ai.memory_policy 设置 -> 系统默认` 解析，并把完整有效 `memory_policy` 与 `memory_policy_source` 冻结到不可变 Agent Version；旧版本不随设置变化。启用记忆时 extraction/consolidation Alias 都必须经统一 Resolver 验证 Structured Output、可用性和最小上下文，整理 Alias 为空时回退 extraction。Builder 选择器只展示当前租户已启用且声明 Structured Output 的 Alias。
+
+本层不执行候选提取、写入、召回或向量化；运行对象只能引用明确的 `agent_version_id`。

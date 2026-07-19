@@ -20,6 +20,7 @@ declare namespace Api.AI {
     draft_model_alias?: string;
     draft_generation_config?: Record<string, unknown>;
     draft_tool_policy?: Record<string, unknown>;
+    draft_memory_policy?: MemoryPolicy | null;
     revision: number;
     created_at: string;
     updated_at: string;
@@ -40,8 +41,25 @@ declare namespace Api.AI {
     tenant_instructions?: string;
     generation_config: Record<string, unknown>;
     tool_policy: Record<string, unknown>;
+    memory_policy: MemoryPolicy;
+    memory_policy_source: 'agent_version' | 'tenant_default' | 'system_default';
     created_by: string;
     created_at: string;
+  }
+  interface MemoryPolicy {
+    enabled: boolean;
+    extraction_model_alias: string;
+    consolidation_model_alias?: string;
+    auto_save_low_sensitive: boolean;
+    write_approval_mode: 'always' | 'sensitive_only' | 'never';
+    agent_specific_scope: boolean;
+    max_candidates_per_turn: number;
+    max_consolidation_items: number;
+    max_recall_items: number;
+    max_recall_tokens: number;
+    policy_version: string;
+    prompt_version: string;
+    schema_version: string;
   }
   interface AgentToolBinding {
     id: string;

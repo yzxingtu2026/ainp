@@ -105,6 +105,13 @@ export function useBuilderPreview(options: {
     temperature: number;
     top_p: number;
     max_output_tokens: number;
+    memory_inherit: boolean;
+    memory_enabled: boolean;
+    memory_extraction_alias: string;
+    memory_consolidation_alias: string;
+    memory_auto_save: boolean;
+    memory_approval_mode: Api.AI.MemoryPolicy['write_approval_mode'];
+    memory_agent_scope: boolean;
     revision: number;
   };
   diagnostics: Ref<Api.AI.AgentDiagnostics | null>;
@@ -230,6 +237,19 @@ export function useBuilderPreview(options: {
         max_output_tokens: options.draft.max_output_tokens
       },
       tool_policy: {},
+      memory_policy: options.draft.memory_inherit ? undefined : {
+        enabled: options.draft.memory_enabled,
+        extraction_model_alias: options.draft.memory_extraction_alias,
+        consolidation_model_alias: options.draft.memory_consolidation_alias,
+        auto_save_low_sensitive: options.draft.memory_auto_save,
+        write_approval_mode: options.draft.memory_approval_mode,
+        agent_specific_scope: options.draft.memory_agent_scope,
+        max_candidates_per_turn: 8,
+        max_consolidation_items: 50,
+        max_recall_items: 10,
+        max_recall_tokens: 2000,
+        policy_version: '1', prompt_version: '1', schema_version: '1'
+      },
       revision: options.draft.revision
     });
     if (matError || !data) throw matError || new Error($t('page.agentBuilder.previewMaterializeFailed'));

@@ -7,3 +7,4 @@
 - 当前召回必须同步排除 superseded/revoked/expired/deleted、已过期或已失效事实；异步索引清理不得形成授权窗口。
 - Vector 只经统一 Embedding Runtime，冻结 alias/deployment/dimensions；正文、向量和候选内容禁止进入普通日志、审计摘要或 Outbox。
 - 所有关系使用 tenant/user 复合约束并经 TenantDB/Repository 访问；跨租户、跨用户 evidence、supersedes、projection 必须 fail-closed。
+- Memory Policy 发布时按 Agent 输入→租户默认→系统默认解析并冻结；只引用满足 Structured Output 的 Alias，禁止 Provider/Deployment/Credential 进入策略。
