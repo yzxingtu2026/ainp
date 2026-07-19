@@ -239,6 +239,7 @@ func Register(a *app.App) error {
 		Path:       "/system/profile",
 		Component:  "system/profile",
 		BindAction: "system.auth_me",
+		HideInMenu: true,
 		Module:     "system",
 		Order:      1,
 	}); err != nil {

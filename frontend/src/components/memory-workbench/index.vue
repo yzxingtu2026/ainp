@@ -50,7 +50,7 @@ const statusLabel: Record<string, string> = {
 watch(view, async value => {
   await router.replace({ query: { ...route.query, view: value } });
   store.filters.page = 1;
-  store.filters.status = value === 'pending' ? 'pending_review' : '';
+  store.filters.status = value === 'pending' ? 'pending_review' : null;
   await store.load();
 });
 
@@ -239,7 +239,7 @@ onMounted(() => Promise.all([store.load(), store.loadProfile(), loadPreference()
         </NTabPane>
 
         <NTabPane name="all" tab="全部记忆">
-          <div class="mb-16px grid gap-12px md:grid-cols-4">
+          <div class="mb-16px grid gap-12px md:grid-cols-[minmax(180px,1fr)_minmax(180px,1fr)_minmax(180px,1fr)_96px]">
             <NInput v-model:value="store.filters.keyword" clearable placeholder="搜索记忆" @keyup.enter="search" />
             <NSelect
               v-model:value="store.filters.status"
@@ -257,7 +257,10 @@ onMounted(() => Promise.all([store.load(), store.loadProfile(), loadPreference()
                 { label: '受限', value: 'restricted' }
               ]"
             />
-            <NButton @click="search">搜索</NButton>
+            <NButton class="w-full" @click="search">
+              <template #icon><SvgIcon icon="ph:magnifying-glass" /></template>
+              搜索
+            </NButton>
           </div>
           <NList bordered>
             <NListItem v-for="item in store.rows" :key="item.id" class="cursor-pointer" @click="show(item)">

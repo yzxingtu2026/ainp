@@ -19,10 +19,10 @@ export const useMemoryManagementStore = defineStore('memory-management', () => {
     page: 1,
     page_size: 20,
     keyword: '',
-    status: '',
-    type: '',
-    sensitivity: '',
-    agent_id: '',
+    status: null as string | null,
+    type: null as string | null,
+    sensitivity: null as string | null,
+    agent_id: null as string | null,
     date_from: null as string | null,
     date_to: null as string | null
   });
@@ -31,6 +31,10 @@ export const useMemoryManagementStore = defineStore('memory-management', () => {
     try {
       const { data } = await fetchMemoryList({
         ...filters,
+        status: filters.status || '',
+        type: filters.type || '',
+        sensitivity: filters.sensitivity || '',
+        agent_id: filters.agent_id || '',
         date_from: filters.date_from || '',
         date_to: filters.date_to || ''
       });
