@@ -43,7 +43,10 @@ type AgentRuntimeService struct {
 }
 
 func NewAgentRuntimeService(db *gorm.DB, c *ConversationService, i *InvocationService, t *ToolService, compactor aiconversation.ContextCompactor, w outbox.Writer, authorization auth.AuthorizationProvider) *AgentRuntimeService {
-	return &AgentRuntimeService{db: db, conversations: c, invocations: i, tools: t, compactor: compactor, writer: w, authorization: authorization, leaseDuration: 30 * time.Second, now: func() time.Time { return time.Now().UTC() }}
+	if err := registerAgentRuntimeTenantModels(); err != nil {
+		panic(err)
+	}
+	return &AgentRuntimeService{db: tenantdata.RuntimeDB(db), conversations: c, invocations: i, tools: t, compactor: compactor, writer: w, authorization: authorization, leaseDuration: 30 * time.Second, now: func() time.Time { return time.Now().UTC() }}
 }
 
 type AgentRunStartRequest struct {
