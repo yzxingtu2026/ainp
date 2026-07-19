@@ -76,18 +76,18 @@ func TestAgentRunOutboxEnqueueInjectsAuthFromEnvelope(t *testing.T) {
 	}
 }
 
-func TestAgentRuntimeUsesKnowledgeToolWithoutAutomaticRetrieval(t *testing.T) {
+func TestAgentRuntimeUsesSlotMetadataWithoutBusinessToolBranches(t *testing.T) {
 	body, err := os.ReadFile("../modules/ai/agent_runtime_service.go")
 	if err != nil {
 		t.Fatal(err)
 	}
 	src := string(body)
-	for _, expected := range []string{"knowledgeSearchToolID", "modelToolName(knowledgeSearchToolID)", `"citation_count"`} {
+	for _, expected := range []string{"SlotIDs()", "SlotMetadata(toolID)", "metadata.Observations"} {
 		if !strings.Contains(src, expected) {
-			t.Fatalf("agent knowledge integration missing %q", expected)
+			t.Fatalf("agent slot integration missing %q", expected)
 		}
 	}
-	for _, forbidden := range []string{"knowledgeMessages(", "s.knowledge.Retrieve(ctx", "Instructions: aiknowledge.FormatUntrustedReferences"} {
+	for _, forbidden := range []string{"knowledgeSearchToolID", `"builtin:knowledge.search"`, "knowledgeMessages(", "s.knowledge.Retrieve(ctx", "Instructions: aiknowledge.FormatUntrustedReferences"} {
 		if strings.Contains(src, forbidden) {
 			t.Fatalf("automatic or trusted knowledge injection remains: %q", forbidden)
 		}
@@ -100,9 +100,18 @@ func TestKnowledgeToolIsRegisteredAndKeepsChunkTextOutOfFacts(t *testing.T) {
 		t.Fatal(err)
 	}
 	src := string(body)
-	for _, expected := range []string{`knowledgeSearchToolID`, `"builtin:knowledge.search"`, `FormatUntrustedReferences`, `maxKnowledgeSearchesPerRun`, `cacheKey`, `CanReadKnowledgeBase`} {
+	for _, expected := range []string{`FormatUntrustedReferences`, `cacheKey`, `CanReadKnowledgeBase`} {
 		if !strings.Contains(src, expected) {
 			t.Fatalf("knowledge tool missing %q", expected)
+		}
+	}
+	slot, err := os.ReadFile("../modules/ai/tools/knowledge/slot.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{`"builtin:knowledge.search"`, `DiscoveryDirect`, `MaxCallsPerRun: 4`, `Observations`} {
+		if !strings.Contains(string(slot), expected) {
+			t.Fatalf("knowledge slot missing %q", expected)
 		}
 	}
 	toolService, err := os.ReadFile("../modules/ai/tool_service.go")
@@ -112,7 +121,14 @@ func TestKnowledgeToolIsRegisteredAndKeepsChunkTextOutOfFacts(t *testing.T) {
 	if !strings.Contains(string(toolService), `result_json`) || !strings.Contains(string(toolService), `Summary: result.Summary`) {
 		t.Fatal("tool invocation must persist a redacted result summary")
 	}
-	if !strings.Contains(string(toolService), `"meta:tool.search", "meta:tool.load", knowledgeSearchToolID`) {
-		t.Fatal("knowledge search must be a direct core tool projection candidate")
+	for _, expected := range []string{"DirectSlotIDs()", "s.registry.Project", "ExecutorFor", "SlotMetadata"} {
+		if !strings.Contains(string(toolService), expected) {
+			t.Fatalf("tool service must consume slot registry through %q", expected)
+		}
+	}
+	for _, forbidden := range []string{"knowledgeSearchToolID", `"builtin:knowledge.search"`, "SetDefinitionProjector"} {
+		if strings.Contains(string(toolService), forbidden) {
+			t.Fatalf("tool service contains business-specific slot branch %q", forbidden)
+		}
 	}
 }

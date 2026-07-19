@@ -907,9 +907,7 @@ func (s *AgentRuntimeService) ensureToolScope(ctx context.Context, run *AgentRun
 	}
 	allowed := []string{"meta:tool.search", "meta:tool.load"}
 	if s.tools.registry != nil {
-		if _, ok := s.tools.registry.Get(knowledgeSearchToolID); ok {
-			allowed = append(allowed, knowledgeSearchToolID)
-		}
+		allowed = append(allowed, s.tools.registry.SlotIDs()...)
 	}
 	for _, b := range bindings {
 		allowed = append(allowed, b.ToolID)
@@ -927,8 +925,15 @@ func (s *AgentRuntimeService) executeToolCall(ctx context.Context, run *AgentRun
 	if call.ToolName == modelToolName("meta:tool.load") {
 		stepType = aiagentruntime.StepToolLoad
 	}
-	if call.ToolName == modelToolName(knowledgeSearchToolID) {
-		stepType = aiagentruntime.StepToolSearch
+	toolID := ""
+	for _, d := range s.tools.registry.List() {
+		if modelToolName(d.ID) == call.ToolName {
+			toolID = d.ID
+			break
+		}
+	}
+	if metadata, ok := s.tools.registry.SlotMetadata(toolID); ok {
+		stepType = aiagentruntime.StepType(metadata.StepType)
 	}
 	step, stepErr := s.newStep(ctx, run, stepType, map[string]any{"tool_name": call.ToolName, "tool_call_id": call.ToolCallID})
 	if stepErr != nil {
@@ -957,13 +962,6 @@ func (s *AgentRuntimeService) executeToolCall(ctx context.Context, run *AgentRun
 			definitions = append(definitions, tool.Definition)
 		}
 		return s.appendToolResult(ctx, run, step, call, map[string]any{"scope_id": loaded.ScopeID, "tools": definitions}, nil)
-	}
-	toolID := ""
-	for _, d := range s.tools.registry.List() {
-		if modelToolName(d.ID) == call.ToolName {
-			toolID = d.ID
-			break
-		}
 	}
 	if toolID == "" {
 		return false, fmt.Errorf("unknown model tool")
@@ -1051,17 +1049,33 @@ func (s *AgentRuntimeService) appendToolResult(ctx context.Context, run *AgentRu
 	if err == nil {
 		summary := map[string]any{"tool_call_id": call.ToolCallID}
 		category := ""
-		if call.ToolName == modelToolName(knowledgeSearchToolID) {
-			if result, ok := value.(*aitool.Result); ok {
+		toolID := ""
+		for _, d := range s.tools.registry.List() {
+			if modelToolName(d.ID) == call.ToolName {
+				toolID = d.ID
+				break
+			}
+		}
+		if metadata, exists := s.tools.registry.SlotMetadata(toolID); exists {
+			if result, resultOK := value.(*aitool.Result); resultOK {
 				category = result.ErrorCategory
-				for _, key := range []string{"candidate_count", "returned_count", "duration_ms", "degraded", "degrade_reason", "cache_hit"} {
-					if data, ok := result.Data.(map[string]any); ok {
-						if item, exists := data[key]; exists {
-							summary[key] = item
+				data, _ := result.Data.(map[string]any)
+				for _, observation := range metadata.Observations {
+					switch observation.Source {
+					case "result_data":
+						if item, ok := data[observation.Field]; ok {
+							summary[observation.Field] = item
 						}
+					case "resource_ref_count":
+						summary[observation.Field] = len(result.ResourceRefs)
 					}
 				}
-				summary["citation_count"] = len(result.ResourceRefs)
+				status := "completed"
+				if result.Status == "failed" {
+					status = "failed"
+				}
+				_ = s.finishStep(ctx, run, step, status, summary, category)
+				return false, nil
 			}
 		}
 		_ = s.finishStep(ctx, run, step, "completed", summary, category)
