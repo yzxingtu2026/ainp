@@ -14,7 +14,7 @@ var memoryModelRegistration struct {
 
 func registerMemoryTenantModels() error {
 	memoryModelRegistration.Do(func() {
-		for _, m := range []any{MemoryItem{}, MemoryItemVersion{}, MemoryEvidence{}, MemoryProjection{}, MemoryDaySummary{}, MemoryCurrentProfile{}} {
+		for _, m := range []any{MemoryItem{}, MemoryItemVersion{}, MemoryEvidence{}, MemoryProjection{}, MemoryDaySummary{}, MemoryCurrentProfile{}, MemoryEvaluation{}} {
 			if err := tenantdata.DefaultRegistry.Register(m, tenantdata.ModelOptions{Kind: tenantdata.TenantOwned, InjectOnCreate: true, SystemAccess: true}); err != nil {
 				memoryModelRegistration.err = err
 				return

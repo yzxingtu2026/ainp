@@ -6,33 +6,40 @@ import (
 )
 
 type MemoryItem struct {
-	ID               string                 `gorm:"primaryKey;size:64" json:"id"`
-	TenantID         string                 `gorm:"size:64;not null;uniqueIndex:ux_ai_memory_item_scope,priority:1;index:idx_ai_memory_current,priority:1" json:"-"`
-	UserID           string                 `gorm:"size:64;not null;uniqueIndex:ux_ai_memory_item_scope,priority:2;index:idx_ai_memory_current,priority:2" json:"user_id"`
-	AgentID          *string                `gorm:"size:64;uniqueIndex:ux_ai_memory_item_scope,priority:3" json:"agent_id,omitempty"`
-	Type             aimemory.ItemType      `gorm:"size:24;not null;index:idx_ai_memory_current,priority:3" json:"type"`
-	Status           aimemory.ItemStatus    `gorm:"size:24;not null;index:idx_ai_memory_current,priority:4" json:"status"`
-	Summary          string                 `gorm:"size:512;not null" json:"summary"`
-	Content          string                 `gorm:"type:text;not null" json:"content"`
-	Confidence       float64                `gorm:"not null" json:"confidence"`
-	Sensitivity      aimemory.Sensitivity   `gorm:"size:16;not null" json:"sensitivity"`
-	Importance       int                    `gorm:"not null" json:"importance"`
-	Revision         uint64                 `gorm:"not null;default:1" json:"revision"`
-	OccurredAt       *time.Time             `json:"occurred_at,omitempty"`
-	OccurredEndAt    *time.Time             `json:"occurred_end_at,omitempty"`
-	OccurredTimezone string                 `gorm:"size:64;not null;default:''" json:"occurred_timezone"`
-	LocalDate        *time.Time             `gorm:"type:date;index" json:"local_date,omitempty"`
-	DatePrecision    aimemory.DatePrecision `gorm:"size:16;not null" json:"date_precision"`
-	ObservedAt       time.Time              `gorm:"not null" json:"observed_at"`
-	RecordedAt       time.Time              `gorm:"not null" json:"recorded_at"`
-	ValidFrom        *time.Time             `json:"valid_from,omitempty"`
-	ValidTo          *time.Time             `json:"valid_to,omitempty"`
-	ExpiresAt        *time.Time             `gorm:"index" json:"expires_at,omitempty"`
-	LastRecalledAt   *time.Time             `json:"last_recalled_at,omitempty"`
-	RecallCount      uint64                 `gorm:"not null;default:0" json:"recall_count"`
-	SupersedesItemID *string                `gorm:"size:64;index" json:"supersedes_item_id,omitempty"`
-	CreatedAt        time.Time              `json:"created_at"`
-	UpdatedAt        time.Time              `json:"updated_at"`
+	ID                 string                 `gorm:"primaryKey;size:64" json:"id"`
+	TenantID           string                 `gorm:"size:64;not null;uniqueIndex:ux_ai_memory_item_scope,priority:1;index:idx_ai_memory_current,priority:1" json:"-"`
+	UserID             string                 `gorm:"size:64;not null;uniqueIndex:ux_ai_memory_item_scope,priority:2;index:idx_ai_memory_current,priority:2" json:"user_id"`
+	AgentID            *string                `gorm:"size:64;uniqueIndex:ux_ai_memory_item_scope,priority:3" json:"agent_id,omitempty"`
+	Type               aimemory.ItemType      `gorm:"size:24;not null;index:idx_ai_memory_current,priority:3" json:"type"`
+	Status             aimemory.ItemStatus    `gorm:"size:24;not null;index:idx_ai_memory_current,priority:4" json:"status"`
+	Summary            string                 `gorm:"size:512;not null" json:"summary"`
+	Content            string                 `gorm:"type:text;not null" json:"content"`
+	Confidence         float64                `gorm:"not null" json:"confidence"`
+	Sensitivity        aimemory.Sensitivity   `gorm:"size:16;not null" json:"sensitivity"`
+	Importance         int                    `gorm:"not null" json:"importance"`
+	Revision           uint64                 `gorm:"not null;default:1" json:"revision"`
+	OccurredAt         *time.Time             `json:"occurred_at,omitempty"`
+	OccurredEndAt      *time.Time             `json:"occurred_end_at,omitempty"`
+	OccurredTimezone   string                 `gorm:"size:64;not null;default:''" json:"occurred_timezone"`
+	LocalDate          *time.Time             `gorm:"type:date;index" json:"local_date,omitempty"`
+	DatePrecision      aimemory.DatePrecision `gorm:"size:16;not null" json:"date_precision"`
+	ObservedAt         time.Time              `gorm:"not null" json:"observed_at"`
+	RecordedAt         time.Time              `gorm:"not null" json:"recorded_at"`
+	ValidFrom          *time.Time             `json:"valid_from,omitempty"`
+	ValidTo            *time.Time             `json:"valid_to,omitempty"`
+	ExpiresAt          *time.Time             `gorm:"index" json:"expires_at,omitempty"`
+	LastRecalledAt     *time.Time             `json:"last_recalled_at,omitempty"`
+	RecallCount        uint64                 `gorm:"not null;default:0" json:"recall_count"`
+	SupersedesItemID   *string                `gorm:"size:64;index" json:"supersedes_item_id,omitempty"`
+	EvaluationID       *string                `gorm:"size:64;index" json:"evaluation_id,omitempty"`
+	AgentVersionID     *string                `gorm:"size:64" json:"agent_version_id,omitempty"`
+	PolicyJSON         []byte                 `gorm:"type:jsonb" json:"policy,omitempty"`
+	PromptVersion      string                 `gorm:"size:32;not null;default:''" json:"prompt_version,omitempty"`
+	SchemaVersion      string                 `gorm:"size:32;not null;default:''" json:"schema_version,omitempty"`
+	ArgumentsHash      string                 `gorm:"size:64;not null;default:''" json:"arguments_hash,omitempty"`
+	ExplicitUserIntent bool                   `gorm:"not null;default:false" json:"explicit_user_intent"`
+	CreatedAt          time.Time              `json:"created_at"`
+	UpdatedAt          time.Time              `json:"updated_at"`
 }
 
 func (MemoryItem) TableName() string { return "ai_memory_items" }
@@ -114,3 +121,24 @@ type MemoryCurrentProfile struct {
 }
 
 func (MemoryCurrentProfile) TableName() string { return "ai_memory_current_profiles" }
+
+type MemoryEvaluation struct {
+	ID                   string  `gorm:"primaryKey;size:64" json:"id"`
+	TenantID             string  `gorm:"size:64;not null;uniqueIndex:ux_ai_memory_evaluation_run" json:"-"`
+	UserID               string  `gorm:"size:64;not null" json:"user_id"`
+	ConversationID       string  `gorm:"size:64;not null;index" json:"conversation_id"`
+	RunID                string  `gorm:"size:64;not null;uniqueIndex:ux_ai_memory_evaluation_run" json:"run_id"`
+	AgentVersionID       string  `gorm:"size:64;not null" json:"agent_version_id"`
+	SequenceFrom         uint64  `gorm:"not null" json:"sequence_from"`
+	SequenceTo           uint64  `gorm:"not null" json:"sequence_to"`
+	Status               string  `gorm:"size:24;not null;index" json:"status"`
+	CandidateCount       int     `gorm:"not null;default:0" json:"candidate_count"`
+	InvocationID         *string `gorm:"size:64" json:"invocation_id,omitempty"`
+	ArgumentsHash        string  `gorm:"size:64;not null" json:"arguments_hash"`
+	ErrorCategory        string  `gorm:"size:64;not null;default:''" json:"error_category,omitempty"`
+	Attempts             int     `gorm:"not null;default:0" json:"attempts"`
+	CreatedAt, UpdatedAt time.Time
+	CompletedAt          *time.Time
+}
+
+func (MemoryEvaluation) TableName() string { return "ai_memory_evaluations" }
