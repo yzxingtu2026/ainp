@@ -147,6 +147,7 @@ func Register(a *app.App) error {
 	}
 	a.AgentContracts = contracts
 	agents := NewAgentService(a.DB, contracts, svc, toolRegistry)
+	agents.SetMemoryPolicyProvider(a.SettingValues)
 	knowledge := NewKnowledgeService(a.DB, svc, agents, a.AttachmentResourceLinker)
 	parserRegistry, err := aiknowledge.NewDefaultParserRegistry(aiknowledge.DefaultParseLimits())
 	if err != nil {

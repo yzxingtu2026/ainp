@@ -18,3 +18,7 @@
 `exact / fts / vector` 投影必须保存 Item revision 与 content hash。Vector 只能通过统一 Embedding Runtime 生成，并冻结 model alias、deployment、dimensions；元数据不完整时 fail-closed。`ai_memory_day_summaries` 和 `ai_memory_current_profiles` 只定义重建边界，本阶段不实现模型整理流程。
 
 所有表必须注册 tenant data access Registry。Item、Evidence、Version、Projection 的数据库关联使用包含 tenant/user 的复合外键，应用服务也必须在创建 supersedes 等关系前复核用户作用域。日志、审计摘要和 Outbox 事件仅允许 ID、状态、类型、revision 与安全计数，不得携带正文、Embedding 或候选内容。
+
+## Memory Policy
+
+Memory Policy 包含开关、extraction/consolidation Alias、低敏自动保存、写入审批、Agent 专属作用域、各阶段预算及 policy/prompt/schema version。解析优先级固定为 Agent Version 输入、租户 `ai.memory_policy` 默认、系统默认；发布时冻结有效策略和来源。模型只引用 Alias，必须支持 Structured Output；consolidation 为空回退 extraction，不得静默切换到其他未声明模型。

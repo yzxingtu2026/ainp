@@ -18,6 +18,7 @@ import {
   NSelect,
   NSpace,
   NSpin,
+  NSwitch,
   NTabPane,
   NTabs,
   NTag,
@@ -101,6 +102,13 @@ const draft = reactive({
   temperature: 0.7,
   top_p: 1,
   max_output_tokens: 2048,
+  memory_inherit: true,
+  memory_enabled: false,
+  memory_extraction_alias: '',
+  memory_consolidation_alias: '',
+  memory_auto_save: false,
+  memory_approval_mode: 'always' as Api.AI.MemoryPolicy['write_approval_mode'],
+  memory_agent_scope: false,
   revision: 0
 });
 const selectedAlias = computed(() => aliases.value.find(item => item.code === draft.model_alias));
@@ -113,6 +121,11 @@ const previewSupportsVision = computed(() =>
     selectedDeployment.value?.capabilities_json.features?.includes('vision')
   )
 );
+const memoryAliasOptions = computed(() => modelOptions.value.filter(option => {
+  const alias = aliases.value.find(item => item.code === option.value);
+  const deployment = deployments.value.find(item => item.id === alias?.deployment_id);
+  return deployment?.status === 'enabled' && deployment.capabilities_json.features?.includes('structured_output');
+}));
 
 const {
   status: previewStatus,
@@ -291,6 +304,8 @@ async function loadAgent(id: string) {
     const current = versions.value.find(item => item.version === agent.value?.current_version);
     const useDraft = Boolean(agent.value.has_draft);
     const gen = useDraft ? agent.value.draft_generation_config || {} : current?.generation_config || {};
+    const memory = useDraft ? agent.value.draft_memory_policy : current?.memory_policy;
+    const inherited = useDraft ? !agent.value.draft_memory_policy : current?.memory_policy_source !== 'agent_version';
     Object.assign(draft, {
       code: agent.value.code,
       name: agent.value.name,
@@ -302,6 +317,13 @@ async function loadAgent(id: string) {
       temperature: Number(gen.temperature ?? 0.7),
       top_p: Number(gen.top_p ?? 1),
       max_output_tokens: Number(gen.max_output_tokens ?? 2048),
+      memory_inherit: inherited,
+      memory_enabled: Boolean(memory?.enabled),
+      memory_extraction_alias: memory?.extraction_model_alias || '',
+      memory_consolidation_alias: memory?.consolidation_model_alias || '',
+      memory_auto_save: Boolean(memory?.auto_save_low_sensitive),
+      memory_approval_mode: memory?.write_approval_mode || 'always',
+      memory_agent_scope: Boolean(memory?.agent_specific_scope),
       revision: agent.value.revision
     });
     dirty.value = false;
@@ -384,6 +406,10 @@ function generationConfig() {
     max_output_tokens: draft.max_output_tokens
   };
 }
+function memoryPolicy(): Api.AI.MemoryPolicy | undefined {
+  if (draft.memory_inherit) return undefined;
+  return { enabled: draft.memory_enabled, extraction_model_alias: draft.memory_extraction_alias, consolidation_model_alias: draft.memory_consolidation_alias, auto_save_low_sensitive: draft.memory_auto_save, write_approval_mode: draft.memory_approval_mode, agent_specific_scope: draft.memory_agent_scope, max_candidates_per_turn: 8, max_consolidation_items: 50, max_recall_items: 10, max_recall_tokens: 2000, policy_version: '1', prompt_version: '1', schema_version: '1' };
+}
 
 function isMetaDirty() {
   if (!agent.value) return false;
@@ -431,6 +457,7 @@ async function saveMetadata() {
       tenant_instructions: draft.tenant_instructions,
       generation_config: generationConfig(),
       tool_policy: {},
+      memory_policy: memoryPolicy(),
       revision: draft.revision
     });
     if (error || !data) {
@@ -464,7 +491,8 @@ async function publishVersion() {
         model_alias: draft.model_alias,
         tenant_instructions: draft.tenant_instructions,
         generation_config: generationConfig(),
-        tool_policy: {}
+        tool_policy: {},
+        memory_policy: memoryPolicy()
       });
       if (error || !data) return;
       dirty.value = false;
@@ -483,6 +511,7 @@ async function publishVersion() {
       tenant_instructions: draft.tenant_instructions,
       generation_config: generationConfig(),
       tool_policy: {},
+      memory_policy: memoryPolicy(),
       revision: draft.revision
     });
     if (error || !data) {
@@ -576,6 +605,13 @@ watch(
         temperature: 0.7,
         top_p: 1,
         max_output_tokens: 2048,
+        memory_inherit: true,
+        memory_enabled: false,
+        memory_extraction_alias: '',
+        memory_consolidation_alias: '',
+        memory_auto_save: false,
+        memory_approval_mode: 'always',
+        memory_agent_scope: false,
         revision: 0
       });
       dirty.value = false;
@@ -739,6 +775,21 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
                       <NInputNumber v-model:value="draft.max_output_tokens" :min="1" :max="1000000" class="w-full" />
                     </NFormItem>
                   </div>
+                </NCollapseItem>
+
+                <NCollapseItem :title="$t('page.agentBuilder.memoryPolicy')" name="memory">
+                  <NFormItem :label="$t('page.agentBuilder.memoryInherit')"><NSwitch v-model:value="draft.memory_inherit" /></NFormItem>
+                  <NAlert v-if="draft.memory_inherit" type="info" class="mb-12px">{{ $t('page.agentBuilder.memoryInheritedHint') }}</NAlert>
+                  <template v-else>
+                    <NFormItem :label="$t('page.agentBuilder.memoryEnabled')"><NSwitch v-model:value="draft.memory_enabled" /></NFormItem>
+                    <NFormItem :label="$t('page.agentBuilder.memoryModel')"><NSelect v-model:value="draft.memory_extraction_alias" filterable clearable :disabled="!draft.memory_enabled" :options="memoryAliasOptions" /></NFormItem>
+                    <NFormItem :label="$t('page.agentBuilder.memoryConsolidationModel')"><NSelect v-model:value="draft.memory_consolidation_alias" filterable clearable :disabled="!draft.memory_enabled" :options="memoryAliasOptions" :placeholder="$t('page.agentBuilder.memoryConsolidationFallback')" /></NFormItem>
+                    <div class="grid grid-cols-2 gap-12px">
+                      <NFormItem :label="$t('page.agentBuilder.memoryAutoSave')"><NSwitch v-model:value="draft.memory_auto_save" /></NFormItem>
+                      <NFormItem :label="$t('page.agentBuilder.memoryAgentScope')"><NSwitch v-model:value="draft.memory_agent_scope" /></NFormItem>
+                    </div>
+                    <NFormItem :label="$t('page.agentBuilder.memoryApproval')"><NSelect v-model:value="draft.memory_approval_mode" :options="[{ label: $t('page.agentBuilder.memoryApprovalAlways'), value: 'always' }, { label: $t('page.agentBuilder.memoryApprovalSensitive'), value: 'sensitive_only' }, { label: $t('page.agentBuilder.memoryApprovalNever'), value: 'never' }]" /></NFormItem>
+                  </template>
                 </NCollapseItem>
 
                 <NCollapseItem :title="$t('page.agentBuilder.tools')" name="tools">
@@ -983,6 +1034,14 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
                     <NInputNumber v-model:value="draft.max_output_tokens" :min="1" :max="1000000" class="w-full" />
                   </NFormItem>
                 </NCollapseItem>
+                <NCollapseItem :title="$t('page.agentBuilder.memoryPolicy')" name="memory">
+                  <NFormItem :label="$t('page.agentBuilder.memoryInherit')"><NSwitch v-model:value="draft.memory_inherit" /></NFormItem>
+                  <template v-if="!draft.memory_inherit">
+                    <NFormItem :label="$t('page.agentBuilder.memoryEnabled')"><NSwitch v-model:value="draft.memory_enabled" /></NFormItem>
+                    <NFormItem :label="$t('page.agentBuilder.memoryModel')"><NSelect v-model:value="draft.memory_extraction_alias" filterable :disabled="!draft.memory_enabled" :options="memoryAliasOptions" /></NFormItem>
+                    <NFormItem :label="$t('page.agentBuilder.memoryApproval')"><NSelect v-model:value="draft.memory_approval_mode" :options="[{ label: $t('page.agentBuilder.memoryApprovalAlways'), value: 'always' }, { label: $t('page.agentBuilder.memoryApprovalSensitive'), value: 'sensitive_only' }, { label: $t('page.agentBuilder.memoryApprovalNever'), value: 'never' }]" /></NFormItem>
+                  </template>
+                </NCollapseItem>
                 <NCollapseItem :title="$t('page.agentBuilder.diagnostics')" name="diagnostics">
                   <NAlert
                     v-if="diagnostics"
@@ -1066,7 +1125,13 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
             <NThing
               :title="`${$t('page.agentBuilder.versionLabel')} ${version.version}`"
               :description="`${$t('page.agentBuilder.modelAlias')}: ${version.model_alias}`"
-            />
+            >
+              <div class="mt-4px text-12px text-gray-500">
+                {{ $t('page.agentBuilder.memoryPolicy') }}：{{ version.memory_policy?.enabled ? $t('page.agentBuilder.memoryEnabled') : $t('page.agentBuilder.memoryDisabled') }}
+                · {{ version.memory_policy_source }}
+                <span v-if="version.memory_policy?.enabled">· {{ version.memory_policy.extraction_model_alias }}</span>
+              </div>
+            </NThing>
           </NListItem>
         </NList>
       </NDrawerContent>

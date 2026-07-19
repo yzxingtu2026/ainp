@@ -54,6 +54,7 @@ type App struct {
 	Menus                    *menu.Registry
 	CodeSets                 *codeset.Registry
 	Settings                 *setting.Registry
+	SettingValues            *setting.Provider
 	StateMachines            *statemachine.Registry
 	AIProviderTypes          *aimodel.ProviderTypeRegistry
 	AgentContracts           *aiagent.Registry
