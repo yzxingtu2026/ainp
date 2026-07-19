@@ -50,6 +50,7 @@ func TestRoleManagementActionsAndMenuAreRegistered(t *testing.T) {
 		}
 	}
 	foundMenu := false
+	foundHiddenProfile := false
 	for _, registered := range application.Menus.List() {
 		if registered.ID == system.MenuRoleManagement && registered.Permission == system.ActionRoleList {
 			foundMenu = true
@@ -57,9 +58,15 @@ func TestRoleManagementActionsAndMenuAreRegistered(t *testing.T) {
 		if (registered.ID == "system.profile" || registered.ID == "system.profile_refresh") && registered.Permission != "" {
 			t.Fatalf("authenticated profile entry must not require permission: %#v", registered)
 		}
+		if registered.ID == "system.profile" {
+			foundHiddenProfile = registered.HideInMenu
+		}
 	}
 	if !foundMenu {
 		t.Fatal("role management menu was not registered")
+	}
+	if !foundHiddenProfile {
+		t.Fatal("profile route must remain registered but hidden from the sidebar")
 	}
 }
 

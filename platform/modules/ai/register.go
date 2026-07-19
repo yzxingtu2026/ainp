@@ -166,6 +166,7 @@ func Register(a *app.App) error {
 	compactions := NewContextCompactionService(a.DB, conversations, svc, invocations, toolRegistry)
 	memoryExtraction := NewMemoryExtractionService(a.DB, invocations)
 	memoryGovernance := NewMemoryGovernanceService(a.DB, writer)
+	memoryManagement := NewMemoryManagementService(a.DB, memoryGovernance, writer)
 	memoryProjection := NewMemoryProjectionService(a.DB, a.EmbeddingRuntime)
 	memoryRetriever := NewMemoryRetrievalService(a.DB, a.EmbeddingRuntime)
 	memoryRuntimeTool := NewMemoryTool(memoryRetriever)
@@ -179,6 +180,9 @@ func Register(a *app.App) error {
 		return err
 	}
 	if err := RegisterMemoryGovernance(a, memoryProjection, memoryConsolidation); err != nil {
+		return err
+	}
+	if err := RegisterMemoryManagement(a, memoryManagement); err != nil {
 		return err
 	}
 	if err := RegisterMemoryExtraction(a, memoryExtraction, memoryGovernance); err != nil {

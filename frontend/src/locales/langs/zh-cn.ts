@@ -258,6 +258,8 @@ const local: App.I18n.Schema = {
     demo_attachments: '附件联调',
     system: '系统',
     system_profile: '个人中心',
+    profile_memory: '记忆管理',
+    profile: '个人功能',
     system_users: '用户管理',
     system_roles: '角色管理',
     system_settings: '系统设置',
