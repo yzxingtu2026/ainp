@@ -21,3 +21,4 @@
 - `0026_ai_knowledge_ingestion.sql` 启用 pgvector，增加摄取触发 revision 与隔离的 Chunk 正文/向量载荷表；载荷不得进入 API、日志、审计或 Outbox。
 - `0027_ai_knowledge_retrieval.sql` 为 Chunk 载荷增加生成式 FTS 列与 GIN 索引，混合排序仍只读取当前原子发布版本。
 - `0031_memory_candidate_extraction.sql` 创建每 Run 唯一的记忆评估水位，并为 candidate 增加冻结 Policy、Invocation、版本和参数哈希追溯字段。
+- `0032_memory_governance_projections.sql` 创建确定性治理决策、追加式关系与串行整理批次，并扩展可重建的按日归档和当前画像 provenance。

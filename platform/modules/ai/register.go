@@ -164,6 +164,9 @@ func Register(a *app.App) error {
 	conversations := NewConversationService(a.DB, a.AIAssetResolver)
 	compactions := NewContextCompactionService(a.DB, conversations, svc, invocations, toolRegistry)
 	memoryExtraction := NewMemoryExtractionService(a.DB, invocations)
+	memoryGovernance := NewMemoryGovernanceService(a.DB, writer)
+	memoryProjection := NewMemoryProjectionService(a.DB)
+	memoryConsolidation := NewMemoryConsolidationService(a.DB, invocations)
 	compactions.SetMemoryFlushHook(memoryExtraction)
 	a.ContextCompactor = compactions
 	agentRuntime := NewAgentRuntimeService(a.DB, conversations, invocations, tools, compactions, writer, a.Authorization)
@@ -171,7 +174,10 @@ func Register(a *app.App) error {
 	if err := RegisterAgentRuntime(a, agentRuntime); err != nil {
 		return err
 	}
-	if err := RegisterMemoryExtraction(a, memoryExtraction); err != nil {
+	if err := RegisterMemoryGovernance(a, memoryProjection, memoryConsolidation); err != nil {
+		return err
+	}
+	if err := RegisterMemoryExtraction(a, memoryExtraction, memoryGovernance); err != nil {
 		return err
 	}
 	a.AgentTenantInitializer = agents.ReconcileBuiltinForTenant

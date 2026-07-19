@@ -30,3 +30,16 @@ Memory Policy 包含开关、extraction/consolidation Alias、低敏自动保存
 每个 Run 对应唯一 `ai_memory_evaluations` 水位事实；并发、重试和 compaction flush 都复用 `MemoryExtractionService.EvaluateRun`。输入只包含本轮用户文本、助手最终文本、允许引用的 Message ID、可信时间以及冻结版本号和预算。Structured Output 禁止 tenant/user/run/actor 字段，未知字段、越界来源、非法时间和超预算候选 fail-closed。合法空数组表示已评估且没有长期价值。
 
 模型输出只落 `candidate`，并保存 Evaluation、Agent Version、冻结 Policy、Invocation、prompt/schema version 与 arguments hash。候选不会自动变为 active。日志只记录 Run ID、安全计数、类型/敏感度分布、耗时和 Usage，禁止原文与候选正文。
+
+## 治理、整理与投影
+
+Candidate 进入确定性治理：只有用户明确表达、normal、confidence ≥ 0.85、类型为 preference/fact 且冻结策略允许时才能自动 active；敏感、推断、低置信和事实冲突默认 pending_review，confidence < 0.2 才自动 rejected。模型 sensitivity/confidence 只能收紧，不能绕过这些门槛。治理决策保存 item revision、原因和幂等键；用户确认/reject/revoke 也必须用 revision 与幂等键。
+
+等价 active 事实不会复制：新 candidate 标为 rejected，创建 duplicate 关系并把新 Evidence 追加到现有事实。带稳定 attribute_key 的明确 preference 纠正通过新 Item active、旧 Item superseded + valid_to、显式 supersedes 关系表达；普通事实冲突进入 review。自动流程禁止原地改写正文或删除事实。
+
+active 变化只在事实事务写安全的 `ai.memory.item.changed` Outbox。独立 Job 从当前 active items 全量重建：
+
+- day summary 使用 local_date/timezone/date_precision 分组；unknown/range 使用明确 date_group，绝不退回 observed_at/recorded_at；只存 item ID/revision provenance 和安全计数摘要。
+- current profile 是小容量强类型 JSON，包含 preferred_address、稳定 preferences/facts，并保存 source item revisions、policy version 和 content hash。
+
+第二阶段 consolidation 按 tenant+user 唯一批次和 lease 串行运行，使用冻结 consolidation Alias。模型输入仅含受控摘要、attribute、revision、recall/importance/validity；输出只允许 noop/duplicate/conflict/summary plan。应用层复核 item scope 与 revision 后只追加关系、保存计划和水位，禁止模型 activate/supersede/revoke/delete。

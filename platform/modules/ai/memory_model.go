@@ -38,6 +38,8 @@ type MemoryItem struct {
 	SchemaVersion      string                 `gorm:"size:32;not null;default:''" json:"schema_version,omitempty"`
 	ArgumentsHash      string                 `gorm:"size:64;not null;default:''" json:"arguments_hash,omitempty"`
 	ExplicitUserIntent bool                   `gorm:"not null;default:false" json:"explicit_user_intent"`
+	AttributeKey       string                 `gorm:"size:64;not null;default:''" json:"attribute_key,omitempty"`
+	AttributeValue     string                 `gorm:"size:512;not null;default:''" json:"attribute_value,omitempty"`
 	CreatedAt          time.Time              `json:"created_at"`
 	UpdatedAt          time.Time              `json:"updated_at"`
 }
@@ -103,6 +105,10 @@ type MemoryDaySummary struct {
 	Status               aimemory.ProjectionStatus `gorm:"size:16;not null"`
 	Summary              string                    `gorm:"type:text;not null"`
 	ContentHash          string                    `gorm:"size:64;not null"`
+	DateGroup            string                    `gorm:"size:32;not null;default:'exact'"`
+	PolicyVersion        string                    `gorm:"size:32;not null;default:''"`
+	ModelInvocationID    *string                   `gorm:"size:64"`
+	SourceItemsJSON      []byte                    `gorm:"type:jsonb;not null;default:'[]'"`
 	CreatedAt, UpdatedAt time.Time
 }
 
@@ -117,6 +123,9 @@ type MemoryCurrentProfile struct {
 	Status               aimemory.ProjectionStatus `gorm:"size:16;not null"`
 	ProfileJSON          []byte                    `gorm:"type:jsonb;not null"`
 	ContentHash          string                    `gorm:"size:64;not null"`
+	PolicyVersion        string                    `gorm:"size:32;not null;default:''"`
+	ModelInvocationID    *string                   `gorm:"size:64"`
+	SourceItemsJSON      []byte                    `gorm:"type:jsonb;not null;default:'[]'"`
 	CreatedAt, UpdatedAt time.Time
 }
 
@@ -142,3 +151,48 @@ type MemoryEvaluation struct {
 }
 
 func (MemoryEvaluation) TableName() string { return "ai_memory_evaluations" }
+
+type MemoryGovernanceDecision struct {
+	ID             string  `gorm:"primaryKey;size:64"`
+	TenantID       string  `gorm:"size:64;not null;index"`
+	UserID         string  `gorm:"size:64;not null"`
+	ItemID         string  `gorm:"size:64;not null;index"`
+	ItemRevision   uint64  `gorm:"not null"`
+	Action         string  `gorm:"size:32;not null"`
+	Reason         string  `gorm:"size:64;not null"`
+	RelatedItemID  *string `gorm:"size:64"`
+	PolicyVersion  string  `gorm:"size:32;not null"`
+	IdempotencyKey string  `gorm:"size:191;not null;uniqueIndex"`
+	CreatedAt      time.Time
+}
+
+func (MemoryGovernanceDecision) TableName() string { return "ai_memory_governance_decisions" }
+
+type MemoryRelation struct {
+	ID         string `gorm:"primaryKey;size:64"`
+	TenantID   string `gorm:"size:64;not null;uniqueIndex:ux_ai_memory_relation"`
+	UserID     string `gorm:"size:64;not null"`
+	FromItemID string `gorm:"size:64;not null;uniqueIndex:ux_ai_memory_relation"`
+	ToItemID   string `gorm:"size:64;not null;uniqueIndex:ux_ai_memory_relation"`
+	Kind       string `gorm:"size:24;not null;uniqueIndex:ux_ai_memory_relation"`
+	CreatedAt  time.Time
+}
+
+func (MemoryRelation) TableName() string { return "ai_memory_relations" }
+
+type MemoryConsolidationBatch struct {
+	ID                   string `gorm:"primaryKey;size:64"`
+	TenantID             string `gorm:"size:64;not null;uniqueIndex:ux_ai_memory_consolidation_user"`
+	UserID               string `gorm:"size:64;not null;uniqueIndex:ux_ai_memory_consolidation_user"`
+	Status               string `gorm:"size:24;not null;index"`
+	WatermarkAt          *time.Time
+	LeaseOwner           string `gorm:"size:128"`
+	LeaseExpiresAt       *time.Time
+	InvocationID         *string `gorm:"size:64"`
+	PlanJSON             []byte  `gorm:"type:jsonb;not null;default:'{}'"`
+	Attempts             int     `gorm:"not null;default:0"`
+	ErrorCategory        string  `gorm:"size:64;not null;default:''"`
+	CreatedAt, UpdatedAt time.Time
+}
+
+func (MemoryConsolidationBatch) TableName() string { return "ai_memory_consolidation_batches" }

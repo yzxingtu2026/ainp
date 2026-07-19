@@ -11,3 +11,7 @@
 - Run 终态 Outbox→Job 异步提取候选；资格检查只能做 committed user/assistant 增量等结构判断，禁止关键词/句式判断长期价值。
 - 每 Run 唯一 Evaluation 水位；正常异步与 compaction flush 复用同一 EvaluateRun。模型只能引用允许 Message ID，未知字段/越界来源/非法时间 fail-closed，输出只能保存 candidate。
 - 提取日志只含安全计数、类型/敏感度分布、延迟、Usage 与失败分类，禁止消息原文和候选正文。
+- Candidate 自动 active 仅限明确用户表达 + normal + 高置信 + preference/fact + Policy 允许；敏感、推断、冲突默认 review，极低置信才自动 reject。
+- 重复事实追加 Evidence + duplicate 关系；纠正追加新 Item 并以 supersedes/valid_to 结束旧事实，禁止原地覆盖正文或自动删除。
+- active 生命周期变化必须写安全 Outbox，由 Job 重建 day/profile；日归档只按 local_date/timezone/date_precision，unknown/range 显式分组，禁止 observed/recorded 日期回填。
+- Consolidation 按 tenant+user lease 串行，模型只能提 noop/duplicate/conflict/summary plan；执行前复核 item scope/revision，禁止模型 activate/supersede/revoke/delete。
