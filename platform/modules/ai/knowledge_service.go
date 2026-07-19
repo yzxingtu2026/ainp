@@ -402,7 +402,7 @@ func (s *KnowledgeService) DeleteKnowledgeBase(ctx context.Context, request Know
 			return dbError(countErr, "check knowledge base documents")
 		}
 		if countErr := tx.Model(&AgentKnowledgeBinding{}).
-			Where("tenant_id=? AND knowledge_base_id=?", row.TenantID, row.ID).Count(&bindings).Error; countErr != nil {
+			Where("knowledge_base_id=?", row.ID).Count(&bindings).Error; countErr != nil {
 			return dbError(countErr, "check knowledge base bindings")
 		}
 		if documents > 0 || bindings > 0 {
@@ -715,17 +715,27 @@ func (s *KnowledgeService) ListAgentKnowledge(ctx context.Context, request Agent
 	if err != nil {
 		return nil, err
 	}
-	query := s.db.WithContext(ctx).Model(&AgentKnowledgeBinding{}).
-		Joins("JOIN ai_knowledge_bases kb ON kb.tenant_id = ai_agent_knowledge_bindings.tenant_id AND kb.id = ai_agent_knowledge_bindings.knowledge_base_id AND kb.deleted_at IS NULL").
-		Where("ai_agent_knowledge_bindings.tenant_id=? AND ai_agent_knowledge_bindings.agent_id=?", agent.TenantID, agent.ID).
-		Where("kb.visibility=? OR kb.owner_user_id=?", aiknowledge.VisibilityTenant, ac.UserID)
-	var total int64
-	if err = query.Count(&total).Error; err != nil {
+	tdb, err := tenantdata.TenantDB(ctx, s.db)
+	if err != nil {
+		return nil, err
+	}
+	counts, err := tenantdata.TenantRaw[struct{ Count int64 }](tdb, `SELECT COUNT(*) AS count
+FROM ai_agent_knowledge_bindings b
+JOIN ai_knowledge_bases kb ON kb.tenant_id=b.tenant_id AND kb.id=b.knowledge_base_id AND kb.deleted_at IS NULL
+WHERE b.tenant_id=? AND b.agent_id=? AND (kb.visibility=? OR kb.owner_user_id=?)`, agent.ID, aiknowledge.VisibilityTenant, ac.UserID)
+	if err != nil {
 		return nil, dbError(err, "list agent knowledge bindings")
 	}
-	var bindings []AgentKnowledgeBinding
-	if err = query.Select("ai_agent_knowledge_bindings.*").Order("ai_agent_knowledge_bindings.created_at ASC").
-		Offset(request.Offset()).Limit(request.PageSize).Find(&bindings).Error; err != nil {
+	var total int64
+	if len(counts) == 1 {
+		total = counts[0].Count
+	}
+	bindings, err := tenantdata.TenantRaw[AgentKnowledgeBinding](tdb, `SELECT b.*
+FROM ai_agent_knowledge_bindings b
+JOIN ai_knowledge_bases kb ON kb.tenant_id=b.tenant_id AND kb.id=b.knowledge_base_id AND kb.deleted_at IS NULL
+WHERE b.tenant_id=? AND b.agent_id=? AND (kb.visibility=? OR kb.owner_user_id=?)
+ORDER BY b.created_at ASC LIMIT ? OFFSET ?`, agent.ID, aiknowledge.VisibilityTenant, ac.UserID, request.PageSize, request.Offset())
+	if err != nil {
 		return nil, dbError(err, "list agent knowledge bindings")
 	}
 	return pagination.NewResult(bindings, total, request.Request), nil
@@ -773,13 +783,12 @@ func (s *KnowledgeService) UnbindAgentKnowledge(ctx context.Context, request Age
 	if _, err := knowledgeActor(ctx); err != nil {
 		return nil, err
 	}
-	agent, ac, err := s.agents.get(ctx, request.AgentID, true)
+	agent, _, err := s.agents.get(ctx, request.AgentID, true)
 	if err != nil {
 		return nil, err
 	}
 	var binding AgentKnowledgeBinding
-	if err = s.db.WithContext(ctx).Where("tenant_id=? AND agent_id=? AND knowledge_base_id=?",
-		ac.TenantID, agent.ID, request.KnowledgeBaseID).First(&binding).Error; err != nil {
+	if err = s.db.WithContext(ctx).Where("agent_id=? AND knowledge_base_id=?", agent.ID, request.KnowledgeBaseID).First(&binding).Error; err != nil {
 		return nil, knowledgeNotFound()
 	}
 	result := s.db.WithContext(ctx).Delete(&binding)

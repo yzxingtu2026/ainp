@@ -13,7 +13,7 @@ var knowledgeModelRegistration struct {
 
 func registerKnowledgeTenantModels() error {
 	knowledgeModelRegistration.Do(func() {
-		for _, model := range []any{KnowledgeBase{}, KnowledgeDocument{}, KnowledgeIndexVersion{}, KnowledgeChunk{}, KnowledgeChunkPayload{}} {
+		for _, model := range []any{KnowledgeBase{}, KnowledgeDocument{}, KnowledgeIndexVersion{}, KnowledgeChunk{}, KnowledgeChunkPayload{}, AgentKnowledgeBinding{}} {
 			if err := tenantdata.DefaultRegistry.Register(model, tenantdata.ModelOptions{Kind: tenantdata.TenantOwned, InjectOnCreate: true, SystemAccess: true}); err != nil {
 				knowledgeModelRegistration.err = err
 				return
