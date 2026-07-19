@@ -22,7 +22,10 @@ type KnowledgeRetrievalService struct {
 }
 
 func NewKnowledgeRetrievalService(db *gorm.DB, access aiknowledge.Service, embeddings aimodelruntime.EmbeddingRuntime) *KnowledgeRetrievalService {
-	return &KnowledgeRetrievalService{db: db, access: access, embeddings: embeddings}
+	if err := registerKnowledgeTenantModels(); err != nil {
+		panic(err)
+	}
+	return &KnowledgeRetrievalService{db: tenantdata.RuntimeDB(db), access: access, embeddings: embeddings}
 }
 
 type knowledgeCandidate struct {

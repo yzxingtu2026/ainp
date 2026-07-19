@@ -56,7 +56,10 @@ func (s *KnowledgeService) SetRetrievalServices(retriever aiknowledge.KnowledgeR
 }
 
 func NewKnowledgeService(db *gorm.DB, models aimodel.Resolver, agents *AgentService, links attachment.ResourceLinker) *KnowledgeService {
-	return &KnowledgeService{db: db, models: models, agents: agents, links: links}
+	if err := registerKnowledgeTenantModels(); err != nil {
+		panic(err)
+	}
+	return &KnowledgeService{db: tenantdata.RuntimeDB(db), models: models, agents: agents, links: links}
 }
 
 type KnowledgeBaseListRequest struct {

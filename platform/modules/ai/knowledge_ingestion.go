@@ -16,6 +16,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/job"
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
+	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -96,7 +97,10 @@ type knowledgeBuiltChunk struct {
 }
 
 func NewKnowledgeIngestionService(db *gorm.DB, sources aiknowledge.DocumentSourceResolver, parser aiknowledge.DocumentParser, chunker aiknowledge.Chunker, models aimodel.Resolver, embeddings aimodelruntime.EmbeddingRuntime) *KnowledgeIngestionService {
-	return &KnowledgeIngestionService{db: db, sources: sources, parser: parser, chunker: chunker, models: models, embeddings: embeddings}
+	if err := registerKnowledgeTenantModels(); err != nil {
+		panic(err)
+	}
+	return &KnowledgeIngestionService{db: tenantdata.RuntimeDB(db), sources: sources, parser: parser, chunker: chunker, models: models, embeddings: embeddings}
 }
 
 func (s *KnowledgeIngestionService) Process(ctx context.Context, payload KnowledgeIngestionJobPayload) error {
@@ -312,7 +316,7 @@ func (s *KnowledgeIngestionService) publish(ctx context.Context, base KnowledgeB
 		if err := tx.Model(&KnowledgeIndexVersion{}).Where("id=?", version.ID).Updates(map[string]any{"status": aiknowledge.IndexReady, "embedding_deployment_id": deploymentID, "embedding_dimensions": dimensions, "preprocessing_version": preprocessing, "document_count": len(documents), "chunk_count": len(chunks), "completed_at": now}).Error; err != nil {
 			return err
 		}
-		if currentBase.CurrentIndexVersionID != nil {
+		if currentBase.CurrentIndexVersionID != nil && *currentBase.CurrentIndexVersionID != version.ID {
 			_ = tx.Model(&KnowledgeIndexVersion{}).Where("id=? AND status=?", *currentBase.CurrentIndexVersionID, aiknowledge.IndexReady).Update("status", aiknowledge.IndexSuperseded).Error
 		}
 		for _, snapshot := range documents {
