@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sync"
 
 	"github.com/google/uuid"
+	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/setting"
 	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"github.com/yzxingtu2026/ainp/platform/modules/system/model"
@@ -17,15 +19,43 @@ type settingValueStore struct {
 	db *gorm.DB
 }
 
+var settingValueRegistration sync.Once
+
 func NewSettingValueStore(db *gorm.DB) setting.ValueStore {
+	settingValueRegistration.Do(func() {
+		if err := tenant.DefaultRegistry.Register(model.TenantSettingValue{}, tenant.ModelOptions{Kind: tenant.TenantOwned, InjectOnCreate: true, SystemAccess: true}); err != nil {
+			panic(err)
+		}
+	})
 	return &settingValueStore{db: db}
 }
 
+func (s *settingValueStore) repository(ctx context.Context) (tenant.TenantDatabase, *tenant.Repository[model.TenantSettingValue], error) {
+	tdb, err := tenant.TenantDB(ctx, s.db)
+	if err != nil {
+		return tdb, nil, err
+	}
+	repo, err := tenant.NewTenantRepository[model.TenantSettingValue](tdb)
+	return tdb, repo, err
+}
+
+func validateStoreTenant(ctx context.Context, tenantID string) error {
+	ac, ok := auth.FromContext(ctx)
+	if !ok || ac == nil || ac.TenantID != tenantID {
+		return tenant.ErrTenantConflict
+	}
+	return nil
+}
+
 func (s *settingValueStore) Get(ctx context.Context, tenantID, settingKey string) (*setting.StoredValue, error) {
-	var row model.TenantSettingValue
-	err := s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).
-		Where("tenant_id = ? AND setting_key = ?", tenantID, settingKey).
-		First(&row).Error
+	if err := validateStoreTenant(ctx, tenantID); err != nil {
+		return nil, err
+	}
+	_, repo, err := s.repository(ctx)
+	if err != nil {
+		return nil, err
+	}
+	row, err := repo.First("setting_key = ?", settingKey)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
@@ -52,21 +82,25 @@ func (s *settingValueStore) Put(ctx context.Context, tenantID, settingKey string
 		return nil, err
 	}
 	var result *setting.StoredValue
-	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var row model.TenantSettingValue
-		qerr := tx.Scopes(tenant.ScopeByTenant(ctx)).
-			Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("tenant_id = ? AND setting_key = ?", tenantID, settingKey).
-			First(&row).Error
+	if err := validateStoreTenant(ctx, tenantID); err != nil {
+		return nil, err
+	}
+	tdb, _, err := s.repository(ctx)
+	if err != nil {
+		return nil, err
+	}
+	err = tdb.Transaction(func(tx tenant.TenantDatabase) error {
+		repo, _ := tenant.NewTenantRepository[model.TenantSettingValue](tx)
+		row, qerr := repo.Clauses(clause.Locking{Strength: "UPDATE"}).First("setting_key = ?", settingKey)
 		if errors.Is(qerr, gorm.ErrRecordNotFound) {
 			if expectedRevision != 0 {
 				return setting.ErrRevisionConflict
 			}
 			created := model.TenantSettingValue{
-				ID: uuid.NewString(), TenantID: tenantID, SettingKey: settingKey,
+				ID: uuid.NewString(), SettingKey: settingKey,
 				SchemaVersion: schemaVersion, ValueJSON: payload, Revision: 1, UpdatedBy: updatedBy,
 			}
-			if err := tx.Create(&created).Error; err != nil {
+			if err := repo.Create(&created); err != nil {
 				return err
 			}
 			result = &setting.StoredValue{SchemaVersion: created.SchemaVersion, Revision: created.Revision, Values: values, UpdatedBy: updatedBy}
@@ -84,11 +118,12 @@ func (s *settingValueStore) Put(ctx context.Context, tenantID, settingKey string
 			"revision":       row.Revision + 1,
 			"updated_by":     updatedBy,
 		}
-		if err := tx.Model(&model.TenantSettingValue{}).
-			Scopes(tenant.ScopeByTenant(ctx)).
-			Where("id = ? AND tenant_id = ? AND revision = ?", row.ID, tenantID, expectedRevision).
-			Updates(updates).Error; err != nil {
-			return err
+		res := repo.Where("id = ? AND revision = ?", row.ID, expectedRevision).Updates(updates)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected != 1 {
+			return setting.ErrRevisionConflict
 		}
 		result = &setting.StoredValue{SchemaVersion: schemaVersion, Revision: expectedRevision + 1, Values: values, UpdatedBy: updatedBy}
 		return nil
@@ -97,12 +132,16 @@ func (s *settingValueStore) Put(ctx context.Context, tenantID, settingKey string
 }
 
 func (s *settingValueStore) Delete(ctx context.Context, tenantID, settingKey string, expectedRevision int64) error {
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var row model.TenantSettingValue
-		err := tx.Scopes(tenant.ScopeByTenant(ctx)).
-			Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("tenant_id = ? AND setting_key = ?", tenantID, settingKey).
-			First(&row).Error
+	if err := validateStoreTenant(ctx, tenantID); err != nil {
+		return err
+	}
+	tdb, _, err := s.repository(ctx)
+	if err != nil {
+		return err
+	}
+	return tdb.Transaction(func(tx tenant.TenantDatabase) error {
+		repo, _ := tenant.NewTenantRepository[model.TenantSettingValue](tx)
+		row, err := repo.Clauses(clause.Locking{Strength: "UPDATE"}).First("setting_key = ?", settingKey)
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			if expectedRevision != 0 {
 				return setting.ErrRevisionConflict
@@ -115,6 +154,6 @@ func (s *settingValueStore) Delete(ctx context.Context, tenantID, settingKey str
 		if row.Revision != expectedRevision {
 			return setting.ErrRevisionConflict
 		}
-		return tx.Where("id = ? AND tenant_id = ?", row.ID, tenantID).Delete(&model.TenantSettingValue{}).Error
+		return repo.Delete(&row)
 	})
 }

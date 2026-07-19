@@ -14,6 +14,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 	"github.com/yzxingtu2026/ainp/platform/framework/pagination"
+	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -24,7 +25,10 @@ type ConversationService struct {
 }
 
 func NewConversationService(db *gorm.DB, assets aimodelruntime.AssetResolver) *ConversationService {
-	return &ConversationService{db: db, assets: assets}
+	if err := registerConversationTenantModels(); err != nil {
+		panic(err)
+	}
+	return &ConversationService{db: tenantdata.RuntimeDB(db), assets: assets}
 }
 
 type ConversationListRequest struct {
@@ -93,8 +97,7 @@ func (s *ConversationService) visibleQuery(ctx context.Context) (*gorm.DB, *auth
 	if err != nil {
 		return nil, nil, err
 	}
-	q := s.db.WithContext(ctx).Where("tenant_id = ?", ac.TenantID).
-		Where("owner_user_id = ? OR visibility = ?", ac.UserID, "tenant")
+	q := s.db.WithContext(ctx).Where("owner_user_id = ? OR visibility = ?", ac.UserID, "tenant")
 	return q, ac, nil
 }
 
@@ -217,7 +220,7 @@ func (s *ConversationService) Update(ctx context.Context, r ConversationUpdateRe
 	if title == "" || utf8.RuneCountInString(title) > 256 {
 		return nil, errs.New(errs.CodeValidation, "invalid title")
 	}
-	res := s.db.WithContext(ctx).Model(&Conversation{}).Where("id=? AND tenant_id=? AND revision=?", row.ID, row.TenantID, r.Revision).Updates(map[string]any{"title": title, "revision": gorm.Expr("revision + 1")})
+	res := s.db.WithContext(ctx).Model(&Conversation{}).Where("id=? AND revision=?", row.ID, r.Revision).Updates(map[string]any{"title": title, "revision": gorm.Expr("revision + 1")})
 	if res.Error != nil {
 		return nil, res.Error
 	}
@@ -235,7 +238,7 @@ func (s *ConversationService) setStatus(ctx context.Context, r ConversationState
 	if row.Status != from {
 		return nil, errs.New(errs.CodeConflict, "invalid conversation state")
 	}
-	res := s.db.WithContext(ctx).Model(&Conversation{}).Where("id=? AND tenant_id=? AND revision=? AND status=?", row.ID, row.TenantID, r.Revision, from).Updates(map[string]any{"status": to, "revision": gorm.Expr("revision + 1")})
+	res := s.db.WithContext(ctx).Model(&Conversation{}).Where("id=? AND revision=? AND status=?", row.ID, r.Revision, from).Updates(map[string]any{"status": to, "revision": gorm.Expr("revision + 1")})
 	if res.Error != nil {
 		return nil, res.Error
 	}
@@ -295,22 +298,22 @@ func (s *ConversationService) CreateMessage(ctx context.Context, r MessageCreate
 	var result ConversationMessage
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var locked Conversation
-		if e := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("tenant_id=? AND id=?", ac.TenantID, row.ID).First(&locked).Error; e != nil {
+		if e := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=?", row.ID).First(&locked).Error; e != nil {
 			return e
 		}
-		if e := tx.Where("tenant_id=? AND conversation_id=? AND idempotency_key=?", ac.TenantID, row.ID, key).First(&result).Error; e == nil {
+		if e := tx.Where("conversation_id=? AND idempotency_key=?", row.ID, key).First(&result).Error; e == nil {
 			return nil
 		} else if !errors.Is(e, gorm.ErrRecordNotFound) {
 			return e
 		}
 		if r.ReplyToMessageID != nil {
 			var parent ConversationMessage
-			if e := tx.Where("tenant_id=? AND conversation_id=? AND id=? AND status=?", ac.TenantID, row.ID, *r.ReplyToMessageID, "committed").First(&parent).Error; e != nil {
+			if e := tx.Where("conversation_id=? AND id=? AND status=?", row.ID, *r.ReplyToMessageID, "committed").First(&parent).Error; e != nil {
 				return errs.New(errs.CodeValidation, "reply target is not a committed message in this conversation")
 			}
 		}
 		var last uint64
-		if e := tx.Model(&ConversationMessage{}).Where("tenant_id=? AND conversation_id=?", ac.TenantID, row.ID).Select("COALESCE(MAX(sequence),0)").Scan(&last).Error; e != nil {
+		if e := tx.Model(&ConversationMessage{}).Where("conversation_id=?", row.ID).Select("COALESCE(MAX(sequence),0)").Scan(&last).Error; e != nil {
 			return e
 		}
 		now := time.Now().UTC()
@@ -319,7 +322,7 @@ func (s *ConversationService) CreateMessage(ctx context.Context, r MessageCreate
 		if e := tx.Create(&result).Error; e != nil {
 			return e
 		}
-		return tx.Model(&Conversation{}).Where("id=? AND tenant_id=?", row.ID, ac.TenantID).Updates(map[string]any{"last_message_at": now, "revision": gorm.Expr("revision + 1")}).Error
+		return tx.Model(&Conversation{}).Where("id=?", row.ID).Updates(map[string]any{"last_message_at": now, "revision": gorm.Expr("revision + 1")}).Error
 	})
 	if err != nil {
 		return nil, dbError(err, "create message")
@@ -346,16 +349,16 @@ func (s *ConversationService) AppendRuntimeMessage(ctx context.Context, conversa
 	var result ConversationMessage
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var locked Conversation
-		if e := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("tenant_id=? AND id=?", ac.TenantID, row.ID).First(&locked).Error; e != nil {
+		if e := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=?", row.ID).First(&locked).Error; e != nil {
 			return e
 		}
-		if e := tx.Where("tenant_id=? AND conversation_id=? AND idempotency_key=?", ac.TenantID, row.ID, idempotencyKey).First(&result).Error; e == nil {
+		if e := tx.Where("conversation_id=? AND idempotency_key=?", row.ID, idempotencyKey).First(&result).Error; e == nil {
 			return nil
 		} else if !errors.Is(e, gorm.ErrRecordNotFound) {
 			return e
 		}
 		var last uint64
-		if e := tx.Model(&ConversationMessage{}).Where("tenant_id=? AND conversation_id=?", ac.TenantID, row.ID).Select("COALESCE(MAX(sequence),0)").Scan(&last).Error; e != nil {
+		if e := tx.Model(&ConversationMessage{}).Where("conversation_id=?", row.ID).Select("COALESCE(MAX(sequence),0)").Scan(&last).Error; e != nil {
 			return e
 		}
 		now := time.Now().UTC()
@@ -364,7 +367,7 @@ func (s *ConversationService) AppendRuntimeMessage(ctx context.Context, conversa
 		if e := tx.Create(&result).Error; e != nil {
 			return e
 		}
-		return tx.Model(&Conversation{}).Where("tenant_id=? AND id=?", ac.TenantID, row.ID).Updates(map[string]any{"last_message_at": now, "revision": gorm.Expr("revision + 1")}).Error
+		return tx.Model(&Conversation{}).Where("id=?", row.ID).Updates(map[string]any{"last_message_at": now, "revision": gorm.Expr("revision + 1")}).Error
 	})
 	if err != nil {
 		return nil, err
@@ -381,7 +384,7 @@ func (s *ConversationService) ListMessages(ctx context.Context, r MessageListReq
 		r.Limit = 50
 	}
 	var rows []ConversationMessage
-	err = s.db.WithContext(ctx).Where("tenant_id=? AND conversation_id=? AND sequence>?", row.TenantID, row.ID, r.AfterSequence).Order("sequence ASC").Limit(r.Limit + 1).Find(&rows).Error
+	err = s.db.WithContext(ctx).Where("conversation_id=? AND sequence>?", row.ID, r.AfterSequence).Order("sequence ASC").Limit(r.Limit + 1).Find(&rows).Error
 	if err != nil {
 		return nil, err
 	}
@@ -396,12 +399,12 @@ func (s *ConversationService) ListMessages(ctx context.Context, r MessageListReq
 	return map[string]any{"items": rows, "next_sequence": next, "has_more": hasMore}, nil
 }
 func (s *ConversationService) GetMessage(ctx context.Context, r MessageGetRequest) (any, error) {
-	ac, err := conversationActor(ctx)
+	_, err := conversationActor(ctx)
 	if err != nil {
 		return nil, err
 	}
 	var row ConversationMessage
-	if err = s.db.WithContext(ctx).Where("tenant_id=? AND id=?", ac.TenantID, r.ID).First(&row).Error; err != nil {
+	if err = s.db.WithContext(ctx).Where("id=?", r.ID).First(&row).Error; err != nil {
 		return nil, errs.New(errs.CodeNotFound, "message not found")
 	}
 	if _, _, err = s.get(ctx, row.ConversationID, false); err != nil {
@@ -419,7 +422,7 @@ func (s *ConversationService) Assemble(ctx context.Context, r aiconversation.Ass
 		return nil, errs.New(errs.CodeValidation, "positive budgets required")
 	}
 	var records []ConversationMessage
-	if err = s.db.WithContext(ctx).Where("tenant_id=? AND conversation_id=? AND status=?", row.TenantID, row.ID, "committed").Order("sequence ASC").Find(&records).Error; err != nil {
+	if err = s.db.WithContext(ctx).Where("conversation_id=? AND status=?", row.ID, "committed").Order("sequence ASC").Find(&records).Error; err != nil {
 		return nil, err
 	}
 	out := &aiconversation.AssemblyResult{Status: "within_budget", ConversationRevision: row.Revision, AgentVersionID: row.AgentVersionID, Budget: aiconversation.Budget{MaxBytes: r.MaxBytes, MaxTokens: r.MaxTokens}}
@@ -469,13 +472,19 @@ func (s *ConversationService) CreateSnapshot(ctx context.Context, r SnapshotCrea
 	if r.SourceSequenceFrom > r.SourceSequenceTo {
 		return nil, errs.New(errs.CodeValidation, "invalid snapshot source range")
 	}
-	var deployment Deployment
-	if err = s.db.WithContext(ctx).Where("tenant_id=? AND id=?", row.TenantID, r.ModelDeploymentID).First(&deployment).Error; err != nil {
+	tdb, err := tenantdata.TenantDB(ctx, s.db)
+	if err != nil {
+		return nil, err
+	}
+	deployments, err := tenantdata.TenantRaw[Deployment](tdb,
+		`SELECT * FROM ai_model_deployments WHERE tenant_id=? AND id=? LIMIT 1`, r.ModelDeploymentID)
+	if err != nil || len(deployments) != 1 {
 		return nil, errs.New(errs.CodeNotFound, "model deployment not found")
 	}
 	if r.ParentSnapshotID != nil {
-		var parent ContextSnapshot
-		if err = s.db.WithContext(ctx).Where("tenant_id=? AND conversation_id=? AND id=?", row.TenantID, row.ID, *r.ParentSnapshotID).First(&parent).Error; err != nil {
+		parents, parentErr := tenantdata.TenantRaw[ContextSnapshot](tdb,
+			`SELECT * FROM ai_context_snapshots WHERE tenant_id=? AND conversation_id=? AND id=? LIMIT 1`, row.ID, *r.ParentSnapshotID)
+		if parentErr != nil || len(parents) != 1 {
 			return nil, errs.New(errs.CodeNotFound, "parent snapshot not found")
 		}
 	}
@@ -484,7 +493,7 @@ func (s *ConversationService) CreateSnapshot(ctx context.Context, r SnapshotCrea
 	}
 	snap := ContextSnapshot{ID: uuid.NewString(), TenantID: row.TenantID, ConversationID: row.ID, ConversationRevision: row.Revision, AgentVersionID: row.AgentVersionID, ModelDeploymentID: r.ModelDeploymentID, SourceSequenceFrom: r.SourceSequenceFrom, SourceSequenceTo: r.SourceSequenceTo, ParentSnapshotID: r.ParentSnapshotID, Kind: r.Kind, PolicyVersion: r.PolicyVersion, SchemaVersion: r.SchemaVersion, PromptVersion: r.PromptVersion, SummarizerDeploymentID: r.SummarizerDeploymentID, CompactionDepth: r.CompactionDepth, Reason: r.Reason, QualityStatus: r.QualityStatus, TokenEstimate: r.TokenEstimate, Status: "ready", Payload: r.Payload, IdempotencyKey: r.IdempotencyKey}
 	if err = s.db.WithContext(ctx).Create(&snap).Error; err != nil {
-		if e := s.db.WithContext(ctx).Where("tenant_id=? AND conversation_id=? AND idempotency_key=?", row.TenantID, row.ID, r.IdempotencyKey).First(&snap).Error; e == nil {
+		if e := s.db.WithContext(ctx).Where("conversation_id=? AND idempotency_key=?", row.ID, r.IdempotencyKey).First(&snap).Error; e == nil {
 			if snap.ConversationRevision != row.Revision || snap.ModelDeploymentID != r.ModelDeploymentID || snap.Kind != r.Kind || string(snap.Payload) != string(r.Payload) {
 				return nil, errs.New(errs.CodeIdempotencyConflict, "snapshot idempotency conflict")
 			}
@@ -502,7 +511,7 @@ func (s *ConversationService) GetSnapshot(ctx context.Context, id string) (*Cont
 		return nil, err
 	}
 	var snap ContextSnapshot
-	if err = s.db.WithContext(ctx).Where("tenant_id=? AND id=?", ac.TenantID, id).First(&snap).Error; err != nil {
+	if err = s.db.WithContext(ctx).Where("id=?", ac.TenantID, id).First(&snap).Error; err != nil {
 		return nil, errs.New(errs.CodeNotFound, "snapshot not found")
 	}
 	conversation, _, err := s.get(ctx, snap.ConversationID, false)
@@ -523,7 +532,7 @@ func (s *ConversationService) Begin(ctx context.Context, conversationID, idempot
 	}
 	stream := AssistantStream{ID: uuid.NewString(), TenantID: row.TenantID, ConversationID: row.ID, IdempotencyKey: idempotencyKey, Status: "streaming"}
 	if err = s.db.WithContext(ctx).Create(&stream).Error; err != nil {
-		if e := s.db.WithContext(ctx).Where("tenant_id=? AND conversation_id=? AND idempotency_key=?", row.TenantID, row.ID, idempotencyKey).First(&stream).Error; e == nil {
+		if e := s.db.WithContext(ctx).Where("conversation_id=? AND idempotency_key=?", row.ID, idempotencyKey).First(&stream).Error; e == nil {
 			return stream.ID, nil
 		}
 		return "", err
@@ -537,7 +546,7 @@ func (s *ConversationService) stream(ctx context.Context, id string) (*Assistant
 		return nil, err
 	}
 	var stream AssistantStream
-	if err = s.db.WithContext(ctx).Where("tenant_id=? AND id=?", ac.TenantID, id).First(&stream).Error; err != nil {
+	if err = s.db.WithContext(ctx).Where("id=?", ac.TenantID, id).First(&stream).Error; err != nil {
 		return nil, errs.New(errs.CodeNotFound, "assistant stream not found")
 	}
 	if _, _, err = s.get(ctx, stream.ConversationID, false); err != nil {
@@ -557,7 +566,7 @@ func (s *ConversationService) Append(ctx context.Context, streamID string, delta
 	record := AssistantStreamDelta{ID: uuid.NewString(), TenantID: stream.TenantID, StreamID: stream.ID, Cursor: delta.Cursor, Type: delta.Type, Data: delta.Data}
 	if err = s.db.WithContext(ctx).Create(&record).Error; err != nil {
 		var existing AssistantStreamDelta
-		if e := s.db.WithContext(ctx).Where("tenant_id=? AND stream_id=? AND cursor=?", stream.TenantID, stream.ID, delta.Cursor).First(&existing).Error; e == nil && existing.Type == delta.Type && string(existing.Data) == string(delta.Data) {
+		if e := s.db.WithContext(ctx).Where("stream_id=? AND cursor=?", stream.ID, delta.Cursor).First(&existing).Error; e == nil && existing.Type == delta.Type && string(existing.Data) == string(delta.Data) {
 			return nil
 		}
 		return errs.New(errs.CodeConflict, "stream cursor conflict")
@@ -571,7 +580,7 @@ func (s *ConversationService) Replay(ctx context.Context, streamID string, after
 		return nil, err
 	}
 	var rows []AssistantStreamDelta
-	if err = s.db.WithContext(ctx).Where("tenant_id=? AND stream_id=? AND cursor>?", stream.TenantID, stream.ID, after).Order("cursor ASC").Limit(1000).Find(&rows).Error; err != nil {
+	if err = s.db.WithContext(ctx).Where("stream_id=? AND cursor>?", stream.ID, after).Order("cursor ASC").Limit(1000).Find(&rows).Error; err != nil {
 		return nil, err
 	}
 	out := make([]aiconversation.StreamDelta, 0, len(rows))
@@ -592,7 +601,7 @@ func (s *ConversationService) Commit(ctx context.Context, streamID string, conte
 	var messageID string
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var locked AssistantStream
-		if e := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("tenant_id=? AND id=?", stream.TenantID, stream.ID).First(&locked).Error; e != nil {
+		if e := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=?", stream.ID).First(&locked).Error; e != nil {
 			return e
 		}
 		if locked.Status == "committed" && locked.MessageID != nil {
@@ -603,11 +612,11 @@ func (s *ConversationService) Commit(ctx context.Context, streamID string, conte
 			return errs.New(errs.CodeConflict, "assistant stream is not active")
 		}
 		var conversation Conversation
-		if e := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("tenant_id=? AND id=? AND status=?", stream.TenantID, stream.ConversationID, "active").First(&conversation).Error; e != nil {
+		if e := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=? AND status=?", stream.ConversationID, "active").First(&conversation).Error; e != nil {
 			return errs.New(errs.CodeConflict, "conversation is not active")
 		}
 		var last uint64
-		if e := tx.Model(&ConversationMessage{}).Where("tenant_id=? AND conversation_id=?", stream.TenantID, stream.ConversationID).Select("COALESCE(MAX(sequence),0)").Scan(&last).Error; e != nil {
+		if e := tx.Model(&ConversationMessage{}).Where("conversation_id=?", stream.ConversationID).Select("COALESCE(MAX(sequence),0)").Scan(&last).Error; e != nil {
 			return e
 		}
 		payload, _ := json.Marshal(content)
@@ -618,10 +627,10 @@ func (s *ConversationService) Commit(ctx context.Context, streamID string, conte
 			return e
 		}
 		messageID = message.ID
-		if e := tx.Model(&AssistantStream{}).Where("tenant_id=? AND id=? AND status=?", stream.TenantID, stream.ID, "streaming").Updates(map[string]any{"status": "committed", "message_id": message.ID, "completed_at": now}).Error; e != nil {
+		if e := tx.Model(&AssistantStream{}).Where("id=? AND status=?", stream.ID, "streaming").Updates(map[string]any{"status": "committed", "message_id": message.ID, "completed_at": now}).Error; e != nil {
 			return e
 		}
-		return tx.Model(&Conversation{}).Where("tenant_id=? AND id=?", stream.TenantID, stream.ConversationID).Updates(map[string]any{"last_message_at": now, "revision": gorm.Expr("revision + 1")}).Error
+		return tx.Model(&Conversation{}).Where("id=?", stream.ConversationID).Updates(map[string]any{"last_message_at": now, "revision": gorm.Expr("revision + 1")}).Error
 	})
 	return messageID, err
 }
@@ -637,24 +646,24 @@ func (s *ConversationService) DeleteArchived(ctx context.Context, id string) err
 		return errs.New(errs.CodeConflict, "conversation must be archived before cleanup")
 	}
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("tenant_id=? AND conversation_id=?", row.TenantID, row.ID).Delete(&ContextSnapshot{}).Error; err != nil {
+		if err := tx.Where("conversation_id=?", row.ID).Delete(&ContextSnapshot{}).Error; err != nil {
 			return err
 		}
 		var streamIDs []string
-		if err := tx.Model(&AssistantStream{}).Where("tenant_id=? AND conversation_id=?", row.TenantID, row.ID).Pluck("id", &streamIDs).Error; err != nil {
+		if err := tx.Model(&AssistantStream{}).Where("conversation_id=?", row.ID).Pluck("id", &streamIDs).Error; err != nil {
 			return err
 		}
 		if len(streamIDs) > 0 {
-			if err := tx.Where("tenant_id=? AND stream_id IN ?", row.TenantID, streamIDs).Delete(&AssistantStreamDelta{}).Error; err != nil {
+			if err := tx.Where("stream_id IN ?", streamIDs).Delete(&AssistantStreamDelta{}).Error; err != nil {
 				return err
 			}
 		}
-		if err := tx.Where("tenant_id=? AND conversation_id=?", row.TenantID, row.ID).Delete(&ConversationMessage{}).Error; err != nil {
+		if err := tx.Where("conversation_id=?", row.ID).Delete(&ConversationMessage{}).Error; err != nil {
 			return err
 		}
-		if err := tx.Where("tenant_id=? AND conversation_id=?", row.TenantID, row.ID).Delete(&AssistantStream{}).Error; err != nil {
+		if err := tx.Where("conversation_id=?", row.ID).Delete(&AssistantStream{}).Error; err != nil {
 			return err
 		}
-		return tx.Where("tenant_id=? AND id=? AND status=?", row.TenantID, row.ID, "archived").Delete(&Conversation{}).Error
+		return tx.Where("id=? AND status=?", row.ID, "archived").Delete(&Conversation{}).Error
 	})
 }

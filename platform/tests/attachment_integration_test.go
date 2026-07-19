@@ -21,6 +21,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/config"
 	"github.com/yzxingtu2026/ainp/platform/framework/database"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
+	"github.com/yzxingtu2026/ainp/platform/framework/pagination"
 	"github.com/yzxingtu2026/ainp/platform/framework/status"
 	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"github.com/yzxingtu2026/ainp/platform/modules/system"
@@ -165,6 +166,14 @@ func TestAttachmentUploadBindDownloadRangeAndIsolation(t *testing.T) {
 	if len(items) != 1 || items[0].ID != prep.Attachment.ID || items[0].Status != string(status.AttachmentReady) {
 		t.Fatalf("list = %#v", listed)
 	}
+	adminList, err := svc.List(ctxA, json.RawMessage(`{"scope":"mine","page":1,"page_size":20}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	adminPage := adminList.(pagination.Result[system.AttachmentView])
+	if len(adminPage.Items) != 1 || adminPage.Items[0].UploaderName != "admin-a" {
+		t.Fatalf("attachment uploader names = %#v", adminPage.Items)
+	}
 
 	if _, err := svc.DownloadPrepare(ctxB, json.RawMessage(fmt.Sprintf(`{"id":%q}`, prep.Attachment.ID))); appErrorCode(err) != errs.CodeNotFound {
 		t.Fatalf("cross-tenant download prepare err=%v", err)
@@ -271,16 +280,26 @@ func TestAttachmentExpiredPendingCleanup(t *testing.T) {
 	}
 	id := prepared.(system.TransferPrepareView).Attachment.ID
 	past := time.Now().UTC().Add(-time.Hour)
-	if err := testDB.Model(&model.Attachment{}).Where("id = ?", id).Update("expires_at", past).Error; err != nil {
+	tenantDB, err := tenant.TenantDB(ctx, testDB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attachments, _ := tenant.NewTenantRepository[model.Attachment](tenantDB)
+	if err := attachments.Where("id = ?", id).Updates(map[string]any{"expires_at": past}).Error; err != nil {
 		t.Fatal(err)
 	}
 	cleaned, err := svc.CleanupExpired(ctx, 10)
 	if err != nil || cleaned != 1 {
 		t.Fatalf("cleanup = %d %v", cleaned, err)
 	}
-	var count int64
-	if err := testDB.Unscoped().Model(&model.Attachment{}).Where("id = ? AND deleted_at IS NOT NULL", id).Count(&count).Error; err != nil || count != 1 {
-		t.Fatalf("soft-deleted count=%d err=%v", count, err)
+	platformCtx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, Realm: auth.RealmPlatform, IsSystemOperator: true})
+	systemDB, err := tenant.SystemDB(platformCtx, testDB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	counts, err := tenant.SystemRaw[struct{ Count int64 }](systemDB, "SELECT COUNT(*) AS count FROM attachments WHERE id = ? AND deleted_at IS NOT NULL", id)
+	if err != nil || len(counts) != 1 || counts[0].Count != 1 {
+		t.Fatalf("soft-deleted counts=%v err=%v", counts, err)
 	}
 }
 

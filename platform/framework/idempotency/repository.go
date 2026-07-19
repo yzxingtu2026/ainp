@@ -3,9 +3,12 @@ package idempotency
 import (
 	"context"
 	"errors"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/yzxingtu2026/ainp/platform/framework/auth"
+	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"gorm.io/gorm"
 )
 
@@ -17,9 +20,35 @@ type Repository struct {
 	db *gorm.DB
 }
 
+var recordModelRegistration sync.Once
+
 // NewRepository creates a new Repository.
 func NewRepository(db *gorm.DB) *Repository {
+	recordModelRegistration.Do(func() {
+		if err := tenant.DefaultRegistry.Register(Record{}, tenant.ModelOptions{
+			Kind: tenant.TenantOwned, InjectOnCreate: true, SystemAccess: true,
+		}); err != nil {
+			panic(err)
+		}
+	})
 	return &Repository{db: db}
+}
+
+func (r *Repository) tenantRepository(ctx context.Context, tenantID string) (*tenant.Repository[Record], error) {
+	ac := auth.MustFromContext(ctx)
+	if ac.TenantID != tenantID {
+		return nil, tenant.ErrTenantConflict
+	}
+	tdb, err := tenant.TenantDB(ctx, r.db)
+	if err != nil {
+		return nil, err
+	}
+	return tenant.NewTenantRepository[Record](tdb)
+}
+
+func (r *Repository) currentTenantRepository(ctx context.Context) (*tenant.Repository[Record], error) {
+	ac := auth.MustFromContext(ctx)
+	return r.tenantRepository(ctx, ac.TenantID)
 }
 
 // Create inserts a new idempotency record in processing state.
@@ -27,7 +56,6 @@ func (r *Repository) Create(ctx context.Context, tenantID, userID, actionID, key
 	now := time.Now().UTC()
 	rec := &Record{
 		ID:             uuid.NewString(),
-		TenantID:       tenantID,
 		UserID:         userID,
 		ActionID:       actionID,
 		IdempotencyKey: key,
@@ -36,7 +64,10 @@ func (r *Repository) Create(ctx context.Context, tenantID, userID, actionID, key
 		StartedAt:      now,
 		ExpiresAt:      now.Add(ttl),
 	}
-	err := r.db.WithContext(ctx).Create(rec).Error
+	repo, err := r.tenantRepository(ctx, tenantID)
+	if err == nil {
+		err = repo.Create(rec)
+	}
 	if err != nil && isDuplicateKeyError(err) {
 		return nil, ErrDuplicateKey
 	}
@@ -45,11 +76,11 @@ func (r *Repository) Create(ctx context.Context, tenantID, userID, actionID, key
 
 // GetByKey looks up an idempotency record by its composite key.
 func (r *Repository) GetByKey(ctx context.Context, tenantID, userID, actionID, key string) (*Record, error) {
-	var rec Record
-	err := r.db.WithContext(ctx).
-		Where("tenant_id = ? AND user_id = ? AND action_id = ? AND idempotency_key = ?",
-			tenantID, userID, actionID, key).
-		First(&rec).Error
+	repo, err := r.tenantRepository(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	rec, err := repo.First("user_id = ? AND action_id = ? AND idempotency_key = ?", userID, actionID, key)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
@@ -63,10 +94,12 @@ func (r *Repository) GetByKey(ctx context.Context, tenantID, userID, actionID, k
 // Returns true if the record was successfully claimed.
 func (r *Repository) ClaimProcessing(ctx context.Context, id string, timeout time.Duration) (bool, error) {
 	cutoff := time.Now().UTC().Add(-timeout)
-	result := r.db.WithContext(ctx).
-		Model(&Record{}).
-		Where("id = ? AND status = ? AND started_at < ?", id, StatusProcessing, cutoff).
-		Update("started_at", time.Now().UTC())
+	repo, err := r.currentTenantRepository(ctx)
+	if err != nil {
+		return false, err
+	}
+	result := repo.Where("id = ? AND status = ? AND started_at < ?", id, StatusProcessing, cutoff).
+		Updates(map[string]any{"started_at": time.Now().UTC()})
 	return result.RowsAffected > 0, result.Error
 }
 
@@ -83,14 +116,21 @@ func (r *Repository) Complete(ctx context.Context, id string, status Status, res
 	if errorJSON != nil {
 		updates["error_json"] = errorJSON
 	}
-	return r.db.WithContext(ctx).Model(&Record{}).Where("id = ?", id).Updates(updates).Error
+	repo, err := r.currentTenantRepository(ctx)
+	if err != nil {
+		return err
+	}
+	return repo.Where("id = ?", id).Updates(updates).Error
 }
 
 // CleanupExpired deletes expired idempotency records.
 func (r *Repository) CleanupExpired(ctx context.Context) (int64, error) {
-	result := r.db.WithContext(ctx).
-		Where("expires_at < ?", time.Now().UTC()).
-		Delete(&Record{})
+	sdb, err := tenant.SystemDB(ctx, r.db)
+	if err != nil {
+		return 0, err
+	}
+	repo, _ := tenant.NewSystemRepository[Record](sdb)
+	result := repo.DeleteWhere("expires_at < ?", time.Now().UTC())
 	return result.RowsAffected, result.Error
 }
 

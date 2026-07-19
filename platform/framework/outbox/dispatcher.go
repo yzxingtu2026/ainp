@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/yzxingtu2026/ainp/platform/framework/logging"
 	"github.com/yzxingtu2026/ainp/platform/framework/status"
+	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -251,6 +252,29 @@ func RetryEvent(ctx context.Context, db *gorm.DB, eventID string) error {
 		return res.Error
 	}
 	if res.RowsAffected == 0 {
+		return fmt.Errorf("outbox: event %s not found or not retryable", eventID)
+	}
+	return nil
+}
+
+// RetryTenantEvent resets a current-tenant failed/dead event to pending.
+func RetryTenantEvent(ctx context.Context, db *gorm.DB, eventID string) error {
+	tdb, err := tenant.TenantDB(ctx, db)
+	if err != nil {
+		return err
+	}
+	now := time.Now().UTC()
+	rows, err := tenant.TenantRaw[struct{ ID string }](tdb, `WITH scoped AS (
+  SELECT id FROM outbox_events WHERE tenant_id = ? AND id = ? AND status IN (?, ?) FOR UPDATE
+)
+UPDATE outbox_events AS e
+SET status = ?, available_at = ?, locked_by = '', locked_at = NULL, last_error = '', updated_at = ?
+FROM scoped WHERE e.id = scoped.id
+RETURNING e.id`, eventID, status.OutboxFailed, status.OutboxDead, status.OutboxPending, now, now)
+	if err != nil {
+		return err
+	}
+	if len(rows) == 0 {
 		return fmt.Errorf("outbox: event %s not found or not retryable", eventID)
 	}
 	return nil

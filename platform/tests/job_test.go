@@ -162,6 +162,38 @@ func TestJobFailClosedWithoutTenant(t *testing.T) {
 	}
 }
 
+func TestJobRunTenantOperations(t *testing.T) {
+	db := openJobTestDB(t)
+	now := time.Now().UTC()
+	for _, run := range []job.Run{
+		{ID: "t1-run", TenantID: "t1", Realm: string(auth.RealmTenant), JobType: "demo.ping", SchemaVersion: 1, Queue: job.QueueDefault, PayloadJSON: []byte("{}"), Status: status.JobQueued, MaxAttempts: 1, CreatedAt: now, UpdatedAt: now},
+		{ID: "t2-run", TenantID: "t2", Realm: string(auth.RealmTenant), JobType: "demo.ping", SchemaVersion: 1, Queue: job.QueueDefault, PayloadJSON: []byte("{}"), Status: status.JobQueued, MaxAttempts: 1, CreatedAt: now, UpdatedAt: now},
+	} {
+		if err := db.Create(&run).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	store := job.NewRunStore(db)
+	ctxA := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, Realm: auth.RealmTenant, TenantID: "t1"})
+	if _, err := store.Get(ctxA, "t2-run"); !errors.Is(err, job.ErrNotFound) {
+		t.Fatalf("cross-tenant get must be opaque: %v", err)
+	}
+	rows, total, err := store.List(ctxA, job.ListQuery{Page: 1, PageSize: 20})
+	if err != nil || total != 1 || len(rows) != 1 || rows[0].ID != "t1-run" {
+		t.Fatalf("tenant list rows=%#v total=%d err=%v", rows, total, err)
+	}
+	if err := store.MarkCancelRequested(ctxA, "t2-run"); !errors.Is(err, job.ErrConflict) {
+		t.Fatalf("cross-tenant cancel must fail closed: %v", err)
+	}
+	if err := store.MarkCancelRequested(ctxA, "t1-run"); err != nil {
+		t.Fatal(err)
+	}
+	run, err := store.Get(ctxA, "t1-run")
+	if err != nil || run.CancelRequestedAt == nil {
+		t.Fatalf("cancel request was not persisted: run=%#v err=%v", run, err)
+	}
+}
+
 func openJobTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	dsn := os.Getenv("AINP_TEST_DATABASE_DSN")

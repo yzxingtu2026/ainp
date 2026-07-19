@@ -2,7 +2,6 @@ package operations
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"time"
 
@@ -13,6 +12,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 	"github.com/yzxingtu2026/ainp/platform/framework/i18n"
 	"github.com/yzxingtu2026/ainp/platform/framework/pagination"
+	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"gorm.io/gorm"
 )
 
@@ -63,7 +63,7 @@ func NewAuditLogService(db *gorm.DB, actions ...*action.Registry) *AuditLogServi
 }
 
 func (s *AuditLogService) list(ctx context.Context, req auditLogListRequest) (any, error) {
-	ac, err := requireTenant(ctx)
+	_, err := requireTenant(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -73,30 +73,42 @@ func (s *AuditLogService) list(ctx context.Context, req auditLogListRequest) (an
 	}
 	req.Normalize()
 
-	q := s.db.WithContext(ctx).Table("audit_logs AS a").
-		Select("a.*, COALESCE(u.display_name, u.username, '') AS actor_name").
-		Joins("LEFT JOIN users AS u ON u.id = a.user_id AND u.tenant_id = a.tenant_id").
-		Where("a.tenant_id = ? AND a.occurred_at >= ? AND a.occurred_at <= ?", ac.TenantID, start, end)
+	tdb, err := tenant.TenantDB(ctx, s.db)
+	if err != nil {
+		return nil, err
+	}
+	fromSQL := " FROM audit_logs AS a LEFT JOIN users AS u ON u.id = a.user_id AND u.tenant_id = a.tenant_id" +
+		" WHERE a.tenant_id = ? AND a.occurred_at >= ? AND a.occurred_at <= ?"
+	args := []any{start, end}
 	if keyword := strings.TrimSpace(req.UserKeyword); keyword != "" {
 		like := "%" + strings.ToLower(keyword) + "%"
-		q = q.Where("LOWER(u.username) LIKE ? OR LOWER(u.display_name) LIKE ?", like, like)
+		fromSQL += " AND (LOWER(u.username) LIKE ? OR LOWER(u.display_name) LIKE ?)"
+		args = append(args, like, like)
 	}
 	filters := map[string]string{"a.actor_type": req.ActorType, "a.action_id": req.ActionID, "a.result": req.Result, "a.resource_type": req.ResourceType, "a.resource_id": req.ResourceID, "a.request_id": req.RequestID, "a.client": req.Client}
 	for column, value := range filters {
 		if value != "" {
-			q = q.Where(column+" = ?", value)
+			fromSQL += " AND " + column + " = ?"
+			args = append(args, value)
 		}
 	}
-	var total int64
-	if err := q.Count(&total).Error; err != nil {
+	counts, err := tenant.TenantRaw[struct{ Count int64 }](tdb, "SELECT COUNT(*) AS count"+fromSQL, args...)
+	if err != nil {
 		return nil, err
+	}
+	total := int64(0)
+	if len(counts) > 0 {
+		total = counts[0].Count
 	}
 	order := "DESC"
 	if req.Sort == "asc" {
 		order = "ASC"
 	}
-	var rows []AuditLogItem
-	if err := q.Order("a.occurred_at " + order).Offset(req.Offset()).Limit(req.PageSize).Scan(&rows).Error; err != nil {
+	listArgs := append(append([]any{}, args...), req.PageSize, req.Offset())
+	rows, err := tenant.TenantRaw[AuditLogItem](tdb,
+		"SELECT a.*, COALESCE(u.display_name, u.username, '') AS actor_name"+fromSQL+
+			" ORDER BY a.occurred_at "+order+" LIMIT ? OFFSET ?", listArgs...)
+	if err != nil {
 		return nil, err
 	}
 	for i := range rows {
@@ -106,21 +118,25 @@ func (s *AuditLogService) list(ctx context.Context, req auditLogListRequest) (an
 }
 
 func (s *AuditLogService) get(ctx context.Context, req auditLogGetRequest) (any, error) {
-	ac, err := requireTenant(ctx)
+	_, err := requireTenant(ctx)
 	if err != nil {
 		return nil, err
 	}
-	var row AuditLogItem
-	err = s.db.WithContext(ctx).Table("audit_logs AS a").
-		Select("a.*, COALESCE(u.display_name, u.username, '') AS actor_name").
-		Joins("LEFT JOIN users AS u ON u.id = a.user_id AND u.tenant_id = a.tenant_id").
-		Where("a.tenant_id = ? AND a.id = ?", ac.TenantID, req.ID).Take(&row).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
+	tdb, err := tenant.TenantDB(ctx, s.db)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := tenant.TenantRaw[AuditLogItem](tdb,
+		"SELECT a.*, COALESCE(u.display_name, u.username, '') AS actor_name FROM audit_logs AS a"+
+			" LEFT JOIN users AS u ON u.id = a.user_id AND u.tenant_id = a.tenant_id"+
+			" WHERE a.tenant_id = ? AND a.id = ? LIMIT 1", req.ID)
+	if len(rows) == 0 && err == nil {
 		return nil, errs.NewKey(errs.CodeNotFound, "audit.not_found", "audit log not found")
 	}
 	if err != nil {
 		return nil, err
 	}
+	row := rows[0]
 	row.ActionName = s.actionName(ctx, row.ActionID)
 	return map[string]any{"audit_log": row}, nil
 }

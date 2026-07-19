@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -11,7 +12,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
-	"github.com/yzxingtu2026/ainp/platform/framework/revision"
+	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"gorm.io/gorm"
 )
 
@@ -31,13 +32,28 @@ func (RevisionDoc) TableName() string { return "demo_revision_docs" }
 
 func (d RevisionDoc) GetRevision() int64 { return d.Revision }
 
+var revisionDocRegistration sync.Once
+
 // RevisionDocService provides CRUD for the demo RevisionDoc resource.
 type RevisionDocService struct {
 	db *gorm.DB
 }
 
 func NewRevisionDocService(db *gorm.DB) *RevisionDocService {
+	revisionDocRegistration.Do(func() {
+		if err := tenantdata.DefaultRegistry.Register(RevisionDoc{}, tenantdata.ModelOptions{Kind: tenantdata.TenantOwned, InjectOnCreate: true, SystemAccess: true}); err != nil {
+			panic(err)
+		}
+	})
 	return &RevisionDocService{db: db}
+}
+
+func (s *RevisionDocService) repository(ctx context.Context) (*tenantdata.Repository[RevisionDoc], error) {
+	tdb, err := tenantdata.TenantDB(ctx, s.db)
+	if err != nil {
+		return nil, err
+	}
+	return tenantdata.NewTenantRepository[RevisionDoc](tdb)
 }
 
 func (s *RevisionDocService) AutoMigrate() error {
@@ -55,28 +71,33 @@ func (s *RevisionDocService) Create(ctx context.Context, input json.RawMessage) 
 	}
 	doc := RevisionDoc{
 		ID:        uuid.NewString(),
-		TenantID:  ac.TenantID,
 		Title:     req.Title,
 		Content:   req.Content,
 		Revision:  1,
 		CreatedBy: ac.UserID,
 	}
-	if err := s.db.WithContext(ctx).Create(&doc).Error; err != nil {
+	repo, err := s.repository(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := repo.Create(&doc); err != nil {
 		return nil, errs.Wrap(errs.CodeInternal, "create doc failed", err)
 	}
 	return doc, nil
 }
 
 func (s *RevisionDocService) Get(ctx context.Context, input json.RawMessage) (any, error) {
-	ac := auth.MustFromContext(ctx)
 	var req struct {
 		ID string `json:"id"`
 	}
 	if err := json.Unmarshal(input, &req); err != nil || req.ID == "" {
 		return nil, errs.ValidationKey("common.validation_failed", "id is required")
 	}
-	var doc RevisionDoc
-	err := s.db.WithContext(ctx).Where("id = ? AND tenant_id = ?", req.ID, ac.TenantID).First(&doc).Error
+	repo, err := s.repository(ctx)
+	if err != nil {
+		return nil, err
+	}
+	doc, err := repo.GetByID(req.ID)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, errs.NewKey(errs.CodeNotFound, "demo.doc_not_found", "document not found")
 	}
@@ -87,7 +108,6 @@ func (s *RevisionDocService) Get(ctx context.Context, input json.RawMessage) (an
 }
 
 func (s *RevisionDocService) Update(ctx context.Context, input json.RawMessage) (any, error) {
-	ac := auth.MustFromContext(ctx)
 	var req struct {
 		ID       string `json:"id"`
 		Title    string `json:"title"`
@@ -110,27 +130,28 @@ func (s *RevisionDocService) Update(ctx context.Context, input json.RawMessage) 
 	}
 	updates["revision"] = gorm.Expr("revision + 1")
 
-	result := s.db.WithContext(ctx).
-		Table("demo_revision_docs").
-		Where("id = ? AND tenant_id = ? AND revision = ?", req.ID, ac.TenantID, req.Revision).
-		Updates(updates)
-
-	if err := revision.CheckUpdateResult(result); err != nil {
-		if errors.Is(err, revision.ErrRevisionConflict) {
-			return nil, errs.NewKey(errs.CodeRevisionConflict, "common.revision_conflict", "data was updated by another operation")
-		}
-		return nil, errs.Wrap(errs.CodeInternal, "update doc failed", err)
+	repo, err := s.repository(ctx)
+	if err != nil {
+		return nil, err
 	}
-
-	var doc RevisionDoc
-	_ = s.db.WithContext(ctx).Where("id = ? AND tenant_id = ?", req.ID, ac.TenantID).First(&doc).Error
+	result := repo.Where("id = ? AND revision = ?", req.ID, req.Revision).Updates(updates)
+	if result.Error != nil {
+		return nil, errs.Wrap(errs.CodeInternal, "update doc failed", result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return nil, errs.NewKey(errs.CodeRevisionConflict, "common.revision_conflict", "data was updated by another operation")
+	}
+	doc, _ := repo.GetByID(req.ID)
 	return doc, nil
 }
 
 func (s *RevisionDocService) List(ctx context.Context, _ json.RawMessage) (any, error) {
-	ac := auth.MustFromContext(ctx)
-	var docs []RevisionDoc
-	if err := s.db.WithContext(ctx).Where("tenant_id = ?", ac.TenantID).Order("created_at DESC").Limit(50).Find(&docs).Error; err != nil {
+	repo, err := s.repository(ctx)
+	if err != nil {
+		return nil, err
+	}
+	docs, err := repo.Order("created_at DESC").List(0, 50)
+	if err != nil {
 		return nil, errs.Wrap(errs.CodeInternal, "list docs failed", err)
 	}
 	return map[string]any{"items": docs}, nil

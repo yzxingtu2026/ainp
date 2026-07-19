@@ -20,6 +20,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/config"
 	"github.com/yzxingtu2026/ainp/platform/framework/database"
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
+	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"github.com/yzxingtu2026/ainp/platform/modules/ai"
 )
 
@@ -390,9 +391,15 @@ func TestEmbeddingRuntimePostgresInvocationAndTenantIsolation(t *testing.T) {
 		t.Fatalf("unexpected embed response: %#v", resp)
 	}
 	var row ai.ModelInvocation
-	if err = db.Where("tenant_id=? AND mode=?", "t1", "embedding").First(&row).Error; err != nil {
-		t.Fatal(err)
+	tdb, scopeErr := tenantdata.TenantDB(ctx1, db)
+	if scopeErr != nil {
+		t.Fatal(scopeErr)
 	}
+	rows, queryErr := tenantdata.TenantRaw[ai.ModelInvocation](tdb, "SELECT * FROM ai_model_invocations WHERE tenant_id=? AND mode=? LIMIT 1", "embedding")
+	if queryErr != nil || len(rows) != 1 {
+		t.Fatalf("unexpected invocation query: %#v %v", rows, queryErr)
+	}
+	row = rows[0]
 	if row.Status != "completed" || row.EmbeddingPurpose != "knowledge_query" || row.EmbeddingItemCount != 1 || row.EmbeddingTextBytes <= 0 {
 		t.Fatalf("unexpected invocation row: %#v", row)
 	}
@@ -406,6 +413,19 @@ func TestEmbeddingRuntimePostgresInvocationAndTenantIsolation(t *testing.T) {
 	}
 	if strings.Contains(string(events[0].PayloadJSON), "tenant scoped knowledge") || strings.Contains(string(events[0].PayloadJSON), `"vector"`) {
 		t.Fatalf("sensitive payload leaked: %s", events[0].PayloadJSON)
+	}
+	staleStarted := time.Now().UTC().Add(-20 * time.Minute)
+	if err = db.Exec(`INSERT INTO ai_model_invocations
+(id,tenant_id,user_id,session_id,model_alias,provider_id,deployment_id,remote_model_id,mode,status,started_at,input_modalities_json)
+VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, "stale-t1", "t1", "u1", "s1", "embed-default", provider.ID, deployment.ID, "text-embedding-3-small", "embedding", "running", staleStarted, json.RawMessage(`[]`)).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err = invocations.RecoverStale(context.Background(), 10*time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	staleRows, staleErr := tenantdata.TenantRaw[ai.ModelInvocation](tdb, "SELECT * FROM ai_model_invocations WHERE tenant_id=? AND id=? LIMIT 1", "stale-t1")
+	if staleErr != nil || len(staleRows) != 1 || staleRows[0].Status != "unknown" {
+		t.Fatalf("stale invocation was not recovered: %#v %v", staleRows, staleErr)
 	}
 	ctx2 := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t2", UserID: "u2", SessionID: "s2", Realm: auth.RealmTenant})
 	if _, err = invocations.Embed(ctx2, aimodelruntime.EmbeddingRequest{

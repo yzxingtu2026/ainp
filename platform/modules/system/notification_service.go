@@ -10,6 +10,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/logging"
 	"github.com/yzxingtu2026/ainp/platform/framework/notification"
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
+	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"github.com/yzxingtu2026/ainp/platform/modules/system/jobs"
 	"gorm.io/gorm"
 )
@@ -67,11 +68,15 @@ func (s *gormOrchestratorStore) FindByIdempotencyKey(ctx context.Context, tenant
 	if idempotencyKey == "" {
 		return "", false, nil
 	}
-	var req NotificationRequest
-	err := s.repo.db.WithContext(ctx).
-		Where("tenant_id = ? AND definition_key = ? AND idempotency_key = ?",
-			tenantID, definitionKey, idempotencyKey).
-		First(&req).Error
+	ac, ok := auth.FromContext(ctx)
+	if !ok || ac == nil || ac.TenantID != tenantID {
+		return "", false, tenant.ErrTenantConflict
+	}
+	repo, repoErr := s.repo.requestRepository(ctx)
+	if repoErr != nil {
+		return "", false, repoErr
+	}
+	req, err := repo.First("definition_key = ? AND idempotency_key = ?", definitionKey, idempotencyKey)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return "", false, nil
@@ -282,23 +287,23 @@ func (h *NotificationOutboxHandler) Handle(ctx context.Context, env outbox.Envel
 // UserExistsFn returns a function that checks if a user exists and is enabled in a tenant.
 func UserExistsFn(db *gorm.DB) func(ctx context.Context, tenantID, userID string) (bool, error) {
 	return func(ctx context.Context, tenantID, userID string) (bool, error) {
+		ac := auth.MustFromContext(ctx)
+		if ac.TenantID != tenantID {
+			return false, tenant.ErrTenantConflict
+		}
+		tdb, err := tenant.TenantDB(ctx, db)
+		if err != nil {
+			return false, err
+		}
 		type userRow struct {
 			ID     string
 			Status string
 		}
-		var row userRow
-		err := db.WithContext(ctx).
-			Table("users").
-			Select("id, status").
-			Where("id = ? AND tenant_id = ?", userID, tenantID).
-			First(&row).Error
+		rows, err := tenant.TenantRaw[userRow](tdb, "SELECT id, status FROM users WHERE tenant_id = ? AND id = ? LIMIT 1", userID)
 		if err != nil {
-			if err == gorm.ErrRecordNotFound {
-				return false, nil
-			}
 			return false, err
 		}
-		return row.Status == "enabled", nil
+		return len(rows) > 0 && rows[0].Status == "enabled", nil
 	}
 }
 

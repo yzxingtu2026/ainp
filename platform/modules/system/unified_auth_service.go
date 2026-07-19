@@ -13,9 +13,9 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/authentication"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 	"github.com/yzxingtu2026/ainp/platform/framework/status"
+	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"github.com/yzxingtu2026/ainp/platform/modules/system/model"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 type AuthenticateRequest struct {
@@ -47,10 +47,11 @@ type UnifiedAuthService struct {
 	auth     *AuthService
 	sessions *SessionService
 	limiter  authentication.RateLimiter
+	preAuth  *preAuthStore
 }
 
 func NewUnifiedAuthService(db *gorm.DB, registry *authentication.Registry, authService *AuthService, sessions *SessionService, limiter authentication.RateLimiter) *UnifiedAuthService {
-	return &UnifiedAuthService{db: db, registry: registry, auth: authService, sessions: sessions, limiter: limiter}
+	return &UnifiedAuthService{db: db, registry: registry, auth: authService, sessions: sessions, limiter: limiter, preAuth: newPreAuthStore(db)}
 }
 
 func (s *UnifiedAuthService) allow(ctx context.Context, key string) error {
@@ -131,17 +132,18 @@ func (s *UnifiedAuthService) resolveIdentity(ctx context.Context, identity *auth
 	if identity == nil || identity.Provider == "" || identity.Subject == "" || identity.TenantID == "" {
 		return nil, errs.NewKey(errs.CodeInvalidCredentials, "auth.invalid_credentials", "invalid credentials")
 	}
-	var user model.User
+	var user *model.User
 	if identity.Provider == passwordMethod {
-		if err := s.db.WithContext(ctx).Where("tenant_id = ? AND username = ?", identity.TenantID, identity.Subject).First(&user).Error; err != nil {
+		var err error
+		if user, err = s.preAuth.findUserByUsername(ctx, identity.TenantID, identity.Subject); err != nil {
 			return nil, errs.NewKey(errs.CodeInvalidCredentials, "auth.invalid_credentials", "invalid credentials")
 		}
 	} else {
-		var row model.AuthIdentity
-		if err := s.db.WithContext(ctx).Where("tenant_id = ? AND provider = ? AND subject = ? AND status = ?", identity.TenantID, identity.Provider, identity.Subject, status.ActivationEnabled).First(&row).Error; err != nil {
+		row, err := s.preAuth.findIdentity(ctx, identity.TenantID, identity.Provider, identity.Subject)
+		if err != nil {
 			return nil, errs.NewKey(errs.CodeInvalidCredentials, "auth.invalid_credentials", "invalid credentials")
 		}
-		if err := s.db.WithContext(ctx).Where("id = ? AND tenant_id = ?", row.UserID, row.TenantID).First(&user).Error; err != nil {
+		if user, err = s.preAuth.findUserByID(ctx, s.db, row.TenantID, row.UserID); err != nil {
 			return nil, errs.NewKey(errs.CodeInvalidCredentials, "auth.invalid_credentials", "invalid credentials")
 		}
 	}
@@ -156,10 +158,10 @@ func (s *UnifiedAuthService) resolveIdentity(ctx context.Context, identity *auth
 		ID: uuid.NewString(), TenantID: user.TenantID, UserID: user.ID, Provider: identity.Provider,
 		Subject: identity.Subject, NormalizedIdentifier: identity.NormalizedIdentifier, Status: status.ActivationEnabled, VerifiedAt: time.Now().UTC(),
 	}
-	if err := s.db.WithContext(ctx).Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "tenant_id"}, {Name: "provider"}, {Name: "subject"}}, DoUpdates: clause.Assignments(map[string]any{"verified_at": row.VerifiedAt, "normalized_identifier": row.NormalizedIdentifier})}).Create(&row).Error; err != nil {
+	if err := s.preAuth.upsertIdentity(ctx, &row); err != nil {
 		return nil, errs.Wrap(errs.CodeInternal, "persist verified identity failed", err)
 	}
-	return &user, nil
+	return user, nil
 }
 
 func (s *UnifiedAuthService) Refresh(ctx context.Context, req RefreshRequest) (any, error) {
@@ -181,8 +183,14 @@ type SessionView struct {
 
 func (s *UnifiedAuthService) ListSessions(ctx context.Context) (any, error) {
 	ac := auth.MustFromContext(ctx)
-	var rows []model.AuthSession
-	if err := s.db.WithContext(ctx).Where("tenant_id = ? AND user_id = ? AND revoked_at IS NULL AND expires_at > ?", ac.TenantID, ac.UserID, time.Now().UTC()).Order("last_seen_at DESC").Find(&rows).Error; err != nil {
+	tdb, err := tenant.TenantDB(ctx, s.db)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := tenant.TenantRaw[model.AuthSession](tdb, `SELECT * FROM auth_sessions
+WHERE tenant_id = ? AND user_id = ? AND revoked_at IS NULL AND expires_at > ?
+ORDER BY last_seen_at DESC`, ac.UserID, time.Now().UTC())
+	if err != nil {
 		return nil, err
 	}
 	views := make([]SessionView, 0, len(rows))
@@ -194,12 +202,20 @@ func (s *UnifiedAuthService) ListSessions(ctx context.Context) (any, error) {
 
 func (s *UnifiedAuthService) RevokeSession(ctx context.Context, sessionID string) (any, error) {
 	ac := auth.MustFromContext(ctx)
-	now := time.Now().UTC()
-	result := s.db.WithContext(ctx).Model(&model.AuthSession{}).Where("id = ? AND tenant_id = ? AND user_id = ? AND revoked_at IS NULL", sessionID, ac.TenantID, ac.UserID).Update("revoked_at", now)
-	if result.Error != nil {
-		return nil, result.Error
+	tdb, err := tenant.TenantDB(ctx, s.db)
+	if err != nil {
+		return nil, err
 	}
-	if result.RowsAffected != 1 {
+	now := time.Now().UTC()
+	rows, err := tenant.TenantRaw[struct{ ID string }](tdb, `WITH scoped AS (
+  SELECT id FROM auth_sessions WHERE tenant_id = ? AND id = ? AND user_id = ? AND revoked_at IS NULL FOR UPDATE
+)
+UPDATE auth_sessions AS s SET revoked_at = ?, updated_at = ?
+FROM scoped WHERE s.id = scoped.id RETURNING s.id`, sessionID, ac.UserID, now, now)
+	if err != nil {
+		return nil, err
+	}
+	if len(rows) != 1 {
 		return nil, errs.NewKey(errs.CodeNotFound, "common.not_found", "session not found")
 	}
 	return map[string]any{"revoked": true}, nil
@@ -215,10 +231,18 @@ func (s *UnifiedAuthService) RevokeCurrent(ctx context.Context) (any, error) {
 
 func (s *UnifiedAuthService) RevokeAll(ctx context.Context) (any, error) {
 	ac := auth.MustFromContext(ctx)
-	now := time.Now().UTC()
-	result := s.db.WithContext(ctx).Model(&model.AuthSession{}).Where("tenant_id = ? AND user_id = ? AND revoked_at IS NULL", ac.TenantID, ac.UserID).Update("revoked_at", now)
-	if result.Error != nil {
-		return nil, result.Error
+	tdb, err := tenant.TenantDB(ctx, s.db)
+	if err != nil {
+		return nil, err
 	}
-	return map[string]any{"revoked_count": result.RowsAffected}, nil
+	now := time.Now().UTC()
+	rows, err := tenant.TenantRaw[struct{ ID string }](tdb, `WITH scoped AS (
+  SELECT id FROM auth_sessions WHERE tenant_id = ? AND user_id = ? AND revoked_at IS NULL FOR UPDATE
+)
+UPDATE auth_sessions AS s SET revoked_at = ?, updated_at = ?
+FROM scoped WHERE s.id = scoped.id RETURNING s.id`, ac.UserID, now, now)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"revoked_count": int64(len(rows))}, nil
 }

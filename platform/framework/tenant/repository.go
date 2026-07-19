@@ -4,6 +4,7 @@ import (
 	"errors"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type Repository[T any] struct{ db *gorm.DB }
@@ -30,6 +31,9 @@ func (r *Repository[T]) Where(query any, args ...any) *Repository[T] {
 	return r.clone(r.query().Where(query, args...))
 }
 func (r *Repository[T]) Order(value any) *Repository[T] { return r.clone(r.query().Order(value)) }
+func (r *Repository[T]) Clauses(conds ...clause.Expression) *Repository[T] {
+	return r.clone(r.query().Clauses(conds...))
+}
 
 func NewTenantRepository[T any](db TenantDatabase) (*Repository[T], error) {
 	if db.db == nil {

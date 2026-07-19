@@ -13,6 +13,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
 	"github.com/yzxingtu2026/ainp/platform/framework/pagination"
 	"github.com/yzxingtu2026/ainp/platform/framework/status"
+	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"github.com/yzxingtu2026/ainp/platform/modules/operations"
 	"github.com/yzxingtu2026/ainp/platform/modules/system"
 )
@@ -128,6 +129,21 @@ func TestOutboxListFiltersAndKeepsTenantScope(t *testing.T) {
 	if _, exposed := payload.Items[0]["TenantID"]; exposed {
 		t.Fatalf("outbox JSON must use explicit public fields: %s", encoded)
 	}
+	ctxB := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t2", Realm: auth.RealmTenant})
+	if err := outbox.RetryTenantEvent(ctxB, db, "t1-a"); err == nil {
+		t.Fatal("cross-tenant retry must fail closed")
+	}
+	if err := outbox.RetryTenantEvent(ctx, db, "t1-a"); err != nil {
+		t.Fatal(err)
+	}
+	retried, err := operations.NewOutboxService(db).List(ctx, json.RawMessage(`{"status":"pending","page":1,"page_size":10}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	retriedData := retried.(pagination.Result[outbox.Event])
+	if retriedData.Total != 1 || len(retriedData.Items) != 1 || retriedData.Items[0].ID != "t1-a" {
+		t.Fatalf("unexpected retried tenant event: %#v", retriedData)
+	}
 }
 
 func TestNotificationDeliveryListDefaultsToAllStatuses(t *testing.T) {
@@ -137,12 +153,21 @@ func TestNotificationDeliveryListDefaultsToAllStatuses(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t1", Realm: auth.RealmTenant})
+	platformCtx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, Realm: auth.RealmPlatform, IsSystemOperator: true})
+	systemDB, err := tenant.SystemDB(platformCtx, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deliveryRepo, err := tenant.NewSystemRepository[system.NotificationDelivery](systemDB)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, delivery := range []system.NotificationDelivery{
 		{ID: "t1-sent", TenantID: "t1", RequestID: "r1", RecipientID: "u1", Channel: "in_app", Status: "sent"},
 		{ID: "t1-failed", TenantID: "t1", RequestID: "r2", RecipientID: "u1", Channel: "in_app", Status: "failed"},
 		{ID: "t2-sent", TenantID: "t2", RequestID: "r3", RecipientID: "u2", Channel: "in_app", Status: "sent"},
 	} {
-		if err := repo.CreateDelivery(ctx, &delivery); err != nil {
+		if err := deliveryRepo.Create(&delivery); err != nil {
 			t.Fatal(err)
 		}
 	}

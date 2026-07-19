@@ -16,6 +16,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/database"
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
 	"github.com/yzxingtu2026/ainp/platform/framework/permission"
+	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"github.com/yzxingtu2026/ainp/platform/modules/ai"
 )
 
@@ -207,6 +208,15 @@ func TestToolRuntimePostgresLifecycleAndIsolation(t *testing.T) {
 	if err = registry.RegisterProvider(provider, executor); err != nil {
 		t.Fatal(err)
 	}
+	meta := []aitool.Definition{
+		{ID: "meta:tool.search", Source: aitool.SourceMeta, Name: "tool.search", DescriptionForLLM: "Search visible tools by intent and return compact candidates", DescriptionForHuman: "搜索当前用户可用的工具", Capability: "ai", InputSchema: action.SchemaFor[aitool.MetaSearchInput](), Risk: aitool.RiskLow, SideEffect: aitool.SideEffectRead, RuntimeRef: "tool.search", SchemaVersion: 1, Status: "enabled"},
+		{ID: "meta:tool.load", Source: aitool.SourceMeta, Name: "tool.load", DescriptionForLLM: "Load a small number of candidate tools into the current scope", DescriptionForHuman: "将候选工具加载到当前调用范围", Capability: "ai", InputSchema: action.SchemaFor[aitool.MetaLoadInput](), Risk: aitool.RiskLow, SideEffect: aitool.SideEffectRead, RuntimeRef: "tool.load", SchemaVersion: 1, Status: "enabled"},
+	}
+	if err = registry.RegisterProvider(&aitool.StaticProvider{ProviderSource: aitool.SourceMeta, Definitions: meta}, aitool.ExecuteFunc(func(context.Context, aitool.LoadedTool, json.RawMessage) (*aitool.Result, error) {
+		return &aitool.Result{Status: "completed"}, nil
+	})); err != nil {
+		t.Fatal(err)
+	}
 	if err = registry.Refresh(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -238,7 +248,16 @@ func TestToolRuntimePostgresLifecycleAndIsolation(t *testing.T) {
 		t.Fatal("executor was not called")
 	}
 	var inv ai.ToolInvocation
-	if err = db.Where("tenant_id='t1' AND tool_call_id='call-1'").First(&inv).Error; err != nil || inv.Status != "completed" {
+	tdb, scopeErr := tenantdata.TenantDB(ctx, db)
+	if scopeErr != nil {
+		t.Fatal(scopeErr)
+	}
+	invocations, queryErr := tenantdata.TenantRaw[ai.ToolInvocation](tdb, "SELECT * FROM ai_tool_invocations WHERE tenant_id=? AND tool_call_id=? LIMIT 1", "call-1")
+	if queryErr != nil || len(invocations) != 1 {
+		t.Fatalf("unexpected invocation query: %#v %v", invocations, queryErr)
+	}
+	inv = invocations[0]
+	if inv.Status != "completed" {
 		t.Fatalf("unexpected invocation: %#v %v", inv, err)
 	}
 	var events []outbox.Event

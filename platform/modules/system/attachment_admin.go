@@ -12,7 +12,6 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/pagination"
 	"github.com/yzxingtu2026/ainp/platform/framework/status"
 	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
-	"github.com/yzxingtu2026/ainp/platform/modules/system/model"
 )
 
 type attachmentAdminListRequest struct {
@@ -67,7 +66,11 @@ func (s *AttachmentService) list(ctx context.Context, req attachmentAdminListReq
 		scope = "mine"
 	}
 	ac := auth.MustFromContext(ctx)
-	query := s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Model(&model.Attachment{})
+	repos, repoErr := newAttachmentRepositories(ctx, s.db)
+	if repoErr != nil {
+		return nil, repoErr
+	}
+	query := repos.attachments.Where("1 = 1")
 	switch scope {
 	case "all":
 		if !ac.HasPermission(ActionAttachmentList) {
@@ -93,21 +96,17 @@ func (s *AttachmentService) list(ctx context.Context, req attachmentAdminListReq
 		query = query.Where("status IN ?", []status.AttachmentStatus{status.AttachmentReady, status.AttachmentPending})
 	}
 
-	var total int64
-	if err := query.Count(&total).Error; err != nil {
+	total, err := query.Count()
+	if err != nil {
 		return nil, mapAttachmentError(err)
 	}
-	var rows []model.Attachment
-	if err := query.Order("created_at DESC, id DESC").
-		Offset(req.Offset()).Limit(req.PageSize).Find(&rows).Error; err != nil {
+	rows, err := query.Order("created_at DESC, id DESC").List(req.Offset(), req.PageSize)
+	if err != nil {
 		return nil, mapAttachmentError(err)
 	}
 	records := make([]AttachmentView, 0, len(rows))
 	uploaderIDs := make([]string, 0, len(rows))
 	for _, row := range rows {
-		if row.TenantID != tenantID {
-			continue
-		}
 		records = append(records, toAttachmentView(row))
 		if row.UploaderID != "" {
 			uploaderIDs = append(uploaderIDs, row.UploaderID)
@@ -141,9 +140,13 @@ func (s *AttachmentService) Get(ctx context.Context, input json.RawMessage) (any
 	if row.UploaderID != userID && !canManage {
 		return nil, errs.NewKey(errs.CodeForbidden, "common.forbidden", "forbidden")
 	}
-	var links []model.AttachmentLink
-	if err := s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Where("attachment_id = ?", row.ID).Find(&links).Error; err != nil {
-		return nil, mapAttachmentError(err)
+	repos, repoErr := newAttachmentRepositories(ctx, s.db)
+	if repoErr != nil {
+		return nil, repoErr
+	}
+	links, repoErr := repos.links.Find("attachment_id = ?", row.ID)
+	if repoErr != nil {
+		return nil, mapAttachmentError(repoErr)
 	}
 	linkViews := make([]AttachmentLinkView, 0, len(links))
 	for _, link := range links {
@@ -186,11 +189,20 @@ func (s *AttachmentService) resolveUploaderNames(ctx context.Context, tenantID s
 	if len(uniq) == 0 {
 		return out
 	}
-	var users []model.User
-	if err := s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).
-		Select("id", "display_name", "username").
-		Where("tenant_id = ? AND id IN ?", tenantID, uniq).
-		Find(&users).Error; err != nil {
+	ac := auth.MustFromContext(ctx)
+	if ac.TenantID != tenantID {
+		return out
+	}
+	tdb, err := tenant.TenantDB(ctx, s.db)
+	if err != nil {
+		return out
+	}
+	users, err := tenant.TenantRaw[struct {
+		ID          string
+		DisplayName string
+		Username    string
+	}](tdb, "SELECT id, display_name, username FROM users WHERE tenant_id = ? AND id IN ?", uniq)
+	if err != nil {
 		return out
 	}
 	for _, u := range users {

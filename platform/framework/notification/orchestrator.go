@@ -214,7 +214,7 @@ func (o *Orchestrator) Process(ctx context.Context, input NotificationInput) (re
 
 		for _, ch := range channels {
 			// Resolve template (validates template exists)
-			resolveResult, tplErr := o.resolver.Resolve(input.TenantID, def, ch, locale)
+			resolveResult, tplErr := o.resolver.Resolve(ctx, input.TenantID, def, ch, locale)
 			if tplErr != nil {
 				o.logger.Error(ctx, "notification: template resolution failed", tplErr,
 					"definition_key", input.DefinitionKey,

@@ -9,6 +9,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/aiknowledge"
 	"github.com/yzxingtu2026/ainp/platform/framework/aimodelruntime"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
+	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"gorm.io/gorm"
 )
 
@@ -21,7 +22,10 @@ type KnowledgeRetrievalService struct {
 }
 
 func NewKnowledgeRetrievalService(db *gorm.DB, access aiknowledge.Service, embeddings aimodelruntime.EmbeddingRuntime) *KnowledgeRetrievalService {
-	return &KnowledgeRetrievalService{db: db, access: access, embeddings: embeddings}
+	if err := registerKnowledgeTenantModels(); err != nil {
+		panic(err)
+	}
+	return &KnowledgeRetrievalService{db: tenantdata.RuntimeDB(db), access: access, embeddings: embeddings}
 }
 
 type knowledgeCandidate struct {
@@ -74,11 +78,11 @@ func (s *KnowledgeRetrievalService) RetrieveWithMetadata(ctx context.Context, re
 			continue
 		}
 		var base KnowledgeBase
-		if err := s.db.WithContext(ctx).Where("tenant_id=? AND id=? AND status=? AND current_index_version_id IS NOT NULL", ac.TenantID, baseID, aiknowledge.KnowledgeBaseEnabled).First(&base).Error; err != nil {
+		if err := s.db.WithContext(ctx).Where("id=? AND status=? AND current_index_version_id IS NOT NULL", baseID, aiknowledge.KnowledgeBaseEnabled).First(&base).Error; err != nil {
 			continue
 		}
 		var version KnowledgeIndexVersion
-		if err := s.db.WithContext(ctx).Where("tenant_id=? AND id=? AND knowledge_base_id=? AND status=?", ac.TenantID, *base.CurrentIndexVersionID, base.ID, aiknowledge.IndexReady).First(&version).Error; err != nil {
+		if err := s.db.WithContext(ctx).Where("id=? AND knowledge_base_id=? AND status=?", *base.CurrentIndexVersionID, base.ID, aiknowledge.IndexReady).First(&version).Error; err != nil {
 			continue
 		}
 		rows, err := s.lexicalCandidates(ctx, ac.TenantID, base, version, query, documentIDs, candidateLimit)
@@ -185,30 +189,34 @@ func (s *KnowledgeRetrievalService) lexicalCandidates(ctx context.Context, tenan
 	if len(documents) > 0 {
 		filter = " AND c.document_id IN ?"
 	}
-	sql := `SELECT c.id chunk_id,c.knowledge_base_id,c.document_id,c.index_version_id,c.source_revision,c.ordinal,c.page_number,c.position_start,c.position_end,c.heading_path,c.token_count,p.text,d.original_name title,d.attachment_id,ts_rank_cd(p.search_vector,plainto_tsquery('simple',?)) fts_score,0::float8 vector_score FROM ai_knowledge_chunks c JOIN ai_knowledge_chunk_payloads p ON p.tenant_id=c.tenant_id AND p.chunk_id=c.id JOIN ai_knowledge_documents d ON d.tenant_id=c.tenant_id AND d.id=c.document_id AND d.deleted_at IS NULL WHERE c.tenant_id=? AND c.knowledge_base_id=? AND c.index_version_id=? AND d.current_index_version_id=? AND d.source_revision=c.source_revision AND (p.search_vector @@ plainto_tsquery('simple',?) OR lower(p.text) LIKE '%'||lower(?)||'%')` + filter + ` ORDER BY fts_score DESC,c.id ASC LIMIT ?`
-	queryArgs := []any{query, tenantID, base.ID, version.ID, version.ID, query, query}
+	sql := `WITH trusted_tenant AS (SELECT ?::text tenant_id) SELECT c.id chunk_id,c.knowledge_base_id,c.document_id,c.index_version_id,c.source_revision,c.ordinal,c.page_number,c.position_start,c.position_end,c.heading_path,c.token_count,p.text,d.original_name title,d.attachment_id,ts_rank_cd(p.search_vector,plainto_tsquery('simple',?)) fts_score,0::float8 vector_score FROM ai_knowledge_chunks c CROSS JOIN trusted_tenant tt JOIN ai_knowledge_chunk_payloads p ON p.tenant_id=c.tenant_id AND p.chunk_id=c.id JOIN ai_knowledge_documents d ON d.tenant_id=c.tenant_id AND d.id=c.document_id AND d.deleted_at IS NULL WHERE c.tenant_id=tt.tenant_id AND c.knowledge_base_id=? AND c.index_version_id=? AND d.current_index_version_id=? AND d.source_revision=c.source_revision AND (p.search_vector @@ plainto_tsquery('simple',?) OR lower(p.text) LIKE '%'||lower(?)||'%')` + filter + ` ORDER BY fts_score DESC,c.id ASC LIMIT ?`
+	queryArgs := []any{query, base.ID, version.ID, version.ID, query, query}
 	if len(documents) > 0 {
 		queryArgs = append(queryArgs, documents)
 	}
 	queryArgs = append(queryArgs, limit)
-	var rows []knowledgeCandidate
-	err := s.db.WithContext(ctx).Raw(sql, queryArgs...).Scan(&rows).Error
-	return rows, err
+	tdb, err := tenantdata.TenantDB(ctx, s.db)
+	if err != nil {
+		return nil, err
+	}
+	return tenantdata.TenantRaw[knowledgeCandidate](tdb, sql, queryArgs...)
 }
 
 func (s *KnowledgeRetrievalService) vectorCandidates(ctx context.Context, tenantID string, base KnowledgeBase, version KnowledgeIndexVersion, vector PGVector, documents []string, limit int) ([]knowledgeCandidate, error) {
 	filter := ""
-	args := []any{vector, tenantID, base.ID, version.ID, version.ID}
+	args := []any{vector, base.ID, version.ID, version.ID}
 	if len(documents) > 0 {
 		filter = " AND c.document_id IN ?"
 		args = append(args, documents)
 	}
 	args = append(args, limit)
-	sql := `SELECT c.id chunk_id,c.knowledge_base_id,c.document_id,c.index_version_id,c.source_revision,c.ordinal,c.page_number,c.position_start,c.position_end,c.heading_path,c.token_count,p.text,d.original_name title,d.attachment_id,0::float8 fts_score,(1-(p.vector OPERATOR(public.<=>) ?::public.vector)) vector_score FROM ai_knowledge_chunks c JOIN ai_knowledge_chunk_payloads p ON p.tenant_id=c.tenant_id AND p.chunk_id=c.id JOIN ai_knowledge_documents d ON d.tenant_id=c.tenant_id AND d.id=c.document_id AND d.deleted_at IS NULL WHERE c.tenant_id=? AND c.knowledge_base_id=? AND c.index_version_id=? AND d.current_index_version_id=? AND d.source_revision=c.source_revision` + filter + ` ORDER BY p.vector OPERATOR(public.<=>) ?::public.vector,c.id ASC LIMIT ?`
+	sql := `WITH trusted_tenant AS (SELECT ?::text tenant_id) SELECT c.id chunk_id,c.knowledge_base_id,c.document_id,c.index_version_id,c.source_revision,c.ordinal,c.page_number,c.position_start,c.position_end,c.heading_path,c.token_count,p.text,d.original_name title,d.attachment_id,0::float8 fts_score,(1-(p.vector OPERATOR(public.<=>) ?::public.vector)) vector_score FROM ai_knowledge_chunks c CROSS JOIN trusted_tenant tt JOIN ai_knowledge_chunk_payloads p ON p.tenant_id=c.tenant_id AND p.chunk_id=c.id JOIN ai_knowledge_documents d ON d.tenant_id=c.tenant_id AND d.id=c.document_id AND d.deleted_at IS NULL WHERE c.tenant_id=tt.tenant_id AND c.knowledge_base_id=? AND c.index_version_id=? AND d.current_index_version_id=? AND d.source_revision=c.source_revision` + filter + ` ORDER BY p.vector OPERATOR(public.<=>) ?::public.vector,c.id ASC LIMIT ?`
 	args = append(args[:len(args)-1], vector, limit)
-	var rows []knowledgeCandidate
-	err := s.db.WithContext(ctx).Raw(sql, args...).Scan(&rows).Error
-	return rows, err
+	tdb, err := tenantdata.TenantDB(ctx, s.db)
+	if err != nil {
+		return nil, err
+	}
+	return tenantdata.TenantRaw[knowledgeCandidate](tdb, sql, args...)
 }
 
 func (s *KnowledgeRetrievalService) ResolveCitation(ctx context.Context, citation aiknowledge.Citation) (aiknowledge.CitationLookup, error) {
@@ -224,10 +232,17 @@ func (s *KnowledgeRetrievalService) ResolveCitation(ctx context.Context, citatio
 	if err != nil {
 		return lookup, nil
 	}
-	var count int64
-	err = s.db.WithContext(ctx).Raw(`SELECT COUNT(*) FROM ai_knowledge_chunks c JOIN ai_knowledge_documents d ON d.tenant_id=c.tenant_id AND d.id=c.document_id AND d.deleted_at IS NULL JOIN ai_knowledge_bases kb ON kb.tenant_id=c.tenant_id AND kb.id=c.knowledge_base_id AND kb.deleted_at IS NULL WHERE c.tenant_id=? AND c.id=? AND c.knowledge_base_id=? AND c.document_id=? AND c.index_version_id=? AND c.source_revision=? AND d.source_revision=c.source_revision AND d.current_index_version_id=c.index_version_id AND kb.current_index_version_id=c.index_version_id`, ref.TenantID, citation.ChunkID, citation.KnowledgeBaseID, citation.DocumentID, citation.IndexVersionID, ref.SourceRevision).Scan(&count).Error
+	tdb, err := tenantdata.TenantDB(ctx, s.db)
 	if err != nil {
 		return lookup, err
+	}
+	counts, err := tenantdata.TenantRaw[struct{ Count int64 }](tdb, `SELECT COUNT(*) AS count FROM ai_knowledge_chunks c JOIN ai_knowledge_documents d ON d.tenant_id=c.tenant_id AND d.id=c.document_id AND d.deleted_at IS NULL JOIN ai_knowledge_bases kb ON kb.tenant_id=c.tenant_id AND kb.id=c.knowledge_base_id AND kb.deleted_at IS NULL WHERE c.tenant_id=? AND c.id=? AND c.knowledge_base_id=? AND c.document_id=? AND c.index_version_id=? AND c.source_revision=? AND d.source_revision=c.source_revision AND d.current_index_version_id=c.index_version_id AND kb.current_index_version_id=c.index_version_id`, citation.ChunkID, citation.KnowledgeBaseID, citation.DocumentID, citation.IndexVersionID, ref.SourceRevision)
+	if err != nil {
+		return lookup, err
+	}
+	var count int64
+	if len(counts) == 1 {
+		count = counts[0].Count
 	}
 	lookup.Available = count == 1 && ref.SourceRevision == citation.SourceRevision
 	lookup.Stale = !lookup.Available

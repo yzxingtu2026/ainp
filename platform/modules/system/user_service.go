@@ -3,7 +3,6 @@ package system
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"regexp"
 	"sort"
@@ -19,10 +18,10 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
 	"github.com/yzxingtu2026/ainp/platform/framework/pagination"
 	"github.com/yzxingtu2026/ainp/platform/framework/status"
+	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"github.com/yzxingtu2026/ainp/platform/modules/system/model"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 var usernamePattern = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_]{2,63}$`)
@@ -122,37 +121,40 @@ func (s *UserService) List(ctx context.Context, input json.RawMessage) (any, err
 }
 
 func (s *UserService) list(ctx context.Context, req userListRequest) (any, error) {
-	tenantID, _, err := tenantIdentity(ctx)
+	_, _, err := tenantIdentity(ctx)
 	if err != nil {
 		return nil, err
 	}
-	query := s.db.WithContext(ctx).Table("users AS u").Where("u.tenant_id = ?", tenantID)
-	if keyword := strings.TrimSpace(req.Keyword); keyword != "" {
-		like := "%" + keyword + "%"
-		query = query.Where("u.username ILIKE ? OR u.display_name ILIKE ?", like, like)
+	tdb, err := tenant.TenantDB(ctx, s.db)
+	if err != nil {
+		return nil, err
 	}
-	if req.Status != "" {
-		query = query.Where("u.status = ?", req.Status)
-	}
-	if roleID := strings.TrimSpace(req.RoleID); roleID != "" {
-		query = query.Where(
-			"EXISTS (SELECT 1 FROM user_roles ur WHERE ur.user_id = u.id AND ur.tenant_id = u.tenant_id AND ur.role_id = ?)",
-			roleID,
-		)
-	}
-
-	var total int64
-	if err := query.Count(&total).Error; err != nil {
+	keyword, roleID := strings.TrimSpace(req.Keyword), strings.TrimSpace(req.RoleID)
+	like := "%" + keyword + "%"
+	counts, err := tenant.TenantRaw[struct{ Count int64 }](tdb, `SELECT COUNT(*) AS count FROM users u
+WHERE u.tenant_id = ? AND (? = '' OR u.username ILIKE ? OR u.display_name ILIKE ?)
+  AND (? = '' OR u.status = ?)
+  AND (? = '' OR EXISTS (
+    SELECT 1 FROM user_roles ur WHERE ur.tenant_id = u.tenant_id AND ur.user_id = u.id AND ur.role_id = ?
+  ))`, keyword, like, like, req.Status, req.Status, roleID, roleID)
+	if err != nil {
 		return nil, errs.Wrap(errs.CodeInternal, "count users failed", err)
 	}
-
-	var users []model.User
-	if err := query.Select("u.*").Order("u.created_at ASC, u.id ASC").
-		Offset(req.Offset()).Limit(req.PageSize).Scan(&users).Error; err != nil {
+	var total int64
+	if len(counts) == 1 {
+		total = counts[0].Count
+	}
+	users, err := tenant.TenantRaw[model.User](tdb, `SELECT u.* FROM users u
+WHERE u.tenant_id = ? AND (? = '' OR u.username ILIKE ? OR u.display_name ILIKE ?)
+  AND (? = '' OR u.status = ?)
+  AND (? = '' OR EXISTS (
+    SELECT 1 FROM user_roles ur WHERE ur.tenant_id = u.tenant_id AND ur.user_id = u.id AND ur.role_id = ?
+  ))
+ORDER BY u.created_at ASC, u.id ASC OFFSET ? LIMIT ?`, keyword, like, like, req.Status, req.Status, roleID, roleID, req.Offset(), req.PageSize)
+	if err != nil {
 		return nil, errs.Wrap(errs.CodeInternal, "list users failed", err)
 	}
-
-	roleMap, err := s.loadUserRoles(ctx, s.db, tenantID, userIDs(users))
+	roleMap, err := s.loadUserRoles(tdb, userIDs(users))
 	if err != nil {
 		return nil, err
 	}
@@ -164,7 +166,7 @@ func (s *UserService) list(ctx context.Context, req userListRequest) (any, error
 }
 
 func (s *UserService) Get(ctx context.Context, input json.RawMessage) (any, error) {
-	tenantID, _, err := tenantIdentity(ctx)
+	_, _, err := tenantIdentity(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -172,11 +174,15 @@ func (s *UserService) Get(ctx context.Context, input json.RawMessage) (any, erro
 	if err := decodeUserRequest(input, &req); err != nil {
 		return nil, err
 	}
-	user, err := s.findUser(ctx, s.db, tenantID, req.ID, false)
+	tdb, err := tenant.TenantDB(ctx, s.db)
 	if err != nil {
 		return nil, err
 	}
-	roleMap, err := s.loadUserRoles(ctx, s.db, tenantID, []string{user.ID})
+	user, err := s.findUser(tdb, req.ID, false)
+	if err != nil {
+		return nil, err
+	}
+	roleMap, err := s.loadUserRoles(tdb, []string{user.ID})
 	if err != nil {
 		return nil, err
 	}
@@ -220,17 +226,26 @@ func (s *UserService) Create(ctx context.Context, input json.RawMessage) (any, e
 	var roles []model.Role
 	setUserAudit(ctx, user.ID, "user created")
 	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		roles, err = s.validateAssignableRoles(ctx, tx, tenantID, req.RoleIDs)
+		tdb, scopeErr := tenant.TenantDB(ctx, tx)
+		if scopeErr != nil {
+			return scopeErr
+		}
+		roles, err = s.validateAssignableRoles(tdb, req.RoleIDs)
 		if err != nil {
 			return err
 		}
-		if err := tx.Create(&user).Error; err != nil {
+		now := time.Now().UTC()
+		user.CreatedAt, user.UpdatedAt = now, now
+		if err := tenant.TenantExec(tdb, `WITH scoped_tenant AS (SELECT ?::text AS tenant_id)
+INSERT INTO users (id, tenant_id, username, password_hash, display_name, status, auth_version, org_id, dept_id, created_at, updated_at)
+SELECT ?, tenant_id, ?, ?, ?, ?, 1, ?, ?, ?, ? FROM scoped_tenant`,
+			user.ID, user.Username, user.PasswordHash, user.DisplayName, user.Status, user.OrgID, user.DeptID, now, now); err != nil {
 			if strings.Contains(strings.ToLower(err.Error()), "duplicate") {
 				return errs.NewKey(errs.CodeConflict, "user.username_conflict", "username already exists")
 			}
 			return err
 		}
-		return replaceUserRoles(tx, tenantID, user.ID, roleIDs(roles))
+		return replaceUserRoles(tdb, user.ID, roleIDs(roles))
 	}); err != nil {
 		return nil, normalizeUserError(err, "create user failed")
 	}
@@ -238,7 +253,7 @@ func (s *UserService) Create(ctx context.Context, input json.RawMessage) (any, e
 }
 
 func (s *UserService) Update(ctx context.Context, input json.RawMessage) (any, error) {
-	tenantID, _, err := tenantIdentity(ctx)
+	_, _, err := tenantIdentity(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -255,23 +270,34 @@ func (s *UserService) Update(ctx context.Context, input json.RawMessage) (any, e
 	var user *model.User
 	setUserAudit(ctx, req.ID, "user updated")
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		current, err := s.findUser(ctx, tx, tenantID, req.ID, true)
+		tdb, scopeErr := tenant.TenantDB(ctx, tx)
+		if scopeErr != nil {
+			return scopeErr
+		}
+		current, err := s.findUser(tdb, req.ID, true)
 		if err != nil {
 			return err
 		}
-		if err := tx.Model(current).Updates(map[string]any{
-			"display_name": req.DisplayName, "org_id": req.OrgID, "dept_id": req.DeptID,
-		}).Error; err != nil {
+		if err := tenant.TenantExec(tdb, `WITH scoped_user AS (
+  SELECT id FROM users WHERE tenant_id = ? AND id = ?
+)
+UPDATE users SET display_name = ?, org_id = ?, dept_id = ?, updated_at = ?
+WHERE id IN (SELECT id FROM scoped_user)`, current.ID, req.DisplayName, req.OrgID, req.DeptID, time.Now().UTC()); err != nil {
 			return err
 		}
 		current.DisplayName, current.OrgID, current.DeptID = req.DisplayName, req.OrgID, req.DeptID
+		current.UpdatedAt = time.Now().UTC()
 		user = current
 		return nil
 	})
 	if err != nil {
 		return nil, normalizeUserError(err, "update user failed")
 	}
-	roleMap, err := s.loadUserRoles(ctx, s.db, tenantID, []string{user.ID})
+	tdb, err := tenant.TenantDB(ctx, s.db)
+	if err != nil {
+		return nil, err
+	}
+	roleMap, err := s.loadUserRoles(tdb, []string{user.ID})
 	if err != nil {
 		return nil, err
 	}
@@ -279,7 +305,7 @@ func (s *UserService) Update(ctx context.Context, input json.RawMessage) (any, e
 }
 
 func (s *UserService) UpdateStatus(ctx context.Context, input json.RawMessage) (any, error) {
-	tenantID, actorID, err := tenantIdentity(ctx)
+	_, actorID, err := tenantIdentity(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -295,7 +321,11 @@ func (s *UserService) UpdateStatus(ctx context.Context, input json.RawMessage) (
 	}
 	setUserAudit(ctx, req.ID, "user status updated")
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		user, err := s.findUser(ctx, tx, tenantID, req.ID, true)
+		tdb, scopeErr := tenant.TenantDB(ctx, tx)
+		if scopeErr != nil {
+			return scopeErr
+		}
+		user, err := s.findUser(tdb, req.ID, true)
 		if err != nil {
 			return err
 		}
@@ -303,14 +333,18 @@ func (s *UserService) UpdateStatus(ctx context.Context, input json.RawMessage) (
 			return nil
 		}
 		if req.Status == status.ActivationDisabled {
-			if err := s.protectLastAdmin(ctx, tx, tenantID, user.ID, false); err != nil {
+			if err := s.protectLastAdmin(tdb, user.ID, false); err != nil {
 				return err
 			}
 		}
-		if err := tx.Model(user).Update("status", req.Status).Error; err != nil {
+		if err := tenant.TenantExec(tdb, `WITH scoped_user AS (
+  SELECT id FROM users WHERE tenant_id = ? AND id = ?
+)
+UPDATE users SET status = ?, updated_at = ? WHERE id IN (SELECT id FROM scoped_user)`,
+			user.ID, req.Status, time.Now().UTC()); err != nil {
 			return err
 		}
-		return s.auth.BumpAuthVersion(ctx, tx, tenantID, user.ID)
+		return s.auth.BumpAuthVersionScoped(tdb, user.ID)
 	})
 	if err != nil {
 		return nil, normalizeUserError(err, "update user status failed")
@@ -319,7 +353,7 @@ func (s *UserService) UpdateStatus(ctx context.Context, input json.RawMessage) (
 }
 
 func (s *UserService) UpdateRoles(ctx context.Context, input json.RawMessage) (any, error) {
-	tenantID, _, err := tenantIdentity(ctx)
+	_, _, err := tenantIdentity(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -331,23 +365,27 @@ func (s *UserService) UpdateRoles(ctx context.Context, input json.RawMessage) (a
 	var targetUsername string
 	setUserAudit(ctx, req.ID, "user roles updated")
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		user, err := s.findUser(ctx, tx, tenantID, req.ID, true)
+		tdb, scopeErr := tenant.TenantDB(ctx, tx)
+		if scopeErr != nil {
+			return scopeErr
+		}
+		user, err := s.findUser(tdb, req.ID, true)
 		if err != nil {
 			return err
 		}
 		targetUsername = user.Username
-		roles, err = s.validateAssignableRoles(ctx, tx, tenantID, req.RoleIDs)
+		roles, err = s.validateAssignableRoles(tdb, req.RoleIDs)
 		if err != nil {
 			return err
 		}
 		remainsAdmin := user.Status == status.ActivationEnabled && hasBuiltinAdmin(roles)
-		if err := s.protectLastAdmin(ctx, tx, tenantID, user.ID, remainsAdmin); err != nil {
+		if err := s.protectLastAdmin(tdb, user.ID, remainsAdmin); err != nil {
 			return err
 		}
-		if err := replaceUserRoles(tx, tenantID, user.ID, roleIDs(roles)); err != nil {
+		if err := replaceUserRoles(tdb, user.ID, roleIDs(roles)); err != nil {
 			return err
 		}
-		if err := s.auth.BumpAuthVersion(ctx, tx, tenantID, user.ID); err != nil {
+		if err := s.auth.BumpAuthVersionScoped(tdb, user.ID); err != nil {
 			return err
 		}
 		return s.notifyRoleChanged(ctx, tx, user.ID, targetUsername, roles)
@@ -359,7 +397,7 @@ func (s *UserService) UpdateRoles(ctx context.Context, input json.RawMessage) (a
 }
 
 func (s *UserService) ResetPassword(ctx context.Context, input json.RawMessage) (any, error) {
-	tenantID, _, err := tenantIdentity(ctx)
+	_, _, err := tenantIdentity(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -377,15 +415,23 @@ func (s *UserService) ResetPassword(ctx context.Context, input json.RawMessage) 
 	var targetUsername string
 	setUserAudit(ctx, req.ID, "user password reset")
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		user, err := s.findUser(ctx, tx, tenantID, req.ID, true)
+		tdb, scopeErr := tenant.TenantDB(ctx, tx)
+		if scopeErr != nil {
+			return scopeErr
+		}
+		user, err := s.findUser(tdb, req.ID, true)
 		if err != nil {
 			return err
 		}
 		targetUsername = user.Username
-		if err := tx.Model(user).Update("password_hash", string(hash)).Error; err != nil {
+		if err := tenant.TenantExec(tdb, `WITH scoped_user AS (
+  SELECT id FROM users WHERE tenant_id = ? AND id = ?
+)
+UPDATE users SET password_hash = ?, updated_at = ? WHERE id IN (SELECT id FROM scoped_user)`,
+			user.ID, string(hash), time.Now().UTC()); err != nil {
 			return err
 		}
-		if err := s.auth.BumpAuthVersion(ctx, tx, tenantID, user.ID); err != nil {
+		if err := s.auth.BumpAuthVersionScoped(tdb, user.ID); err != nil {
 			return err
 		}
 		return s.notifyPasswordReset(ctx, tx, user.ID, targetUsername)
@@ -396,25 +442,25 @@ func (s *UserService) ResetPassword(ctx context.Context, input json.RawMessage) 
 	return map[string]any{"id": req.ID}, nil
 }
 
-func (s *UserService) findUser(ctx context.Context, tx *gorm.DB, tenantID, userID string, lock bool) (*model.User, error) {
+func (s *UserService) findUser(db tenant.TenantDatabase, userID string, lock bool) (*model.User, error) {
 	if userID == "" {
 		return nil, errs.ValidationKey("common.validation_failed", "user id is required")
 	}
-	query := tx.WithContext(ctx).Where("id = ? AND tenant_id = ?", userID, tenantID)
+	sql := `SELECT * FROM users WHERE tenant_id = ? AND id = ?`
 	if lock {
-		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+		sql += ` FOR UPDATE`
 	}
-	var user model.User
-	if err := query.First(&user).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errs.NewKey(errs.CodeNotFound, "user.not_found", "user not found")
-		}
+	rows, err := tenant.TenantRaw[model.User](db, sql, userID)
+	if err != nil {
 		return nil, err
 	}
-	return &user, nil
+	if len(rows) != 1 {
+		return nil, errs.NewKey(errs.CodeNotFound, "user.not_found", "user not found")
+	}
+	return &rows[0], nil
 }
 
-func (s *UserService) validateAssignableRoles(ctx context.Context, tx *gorm.DB, tenantID string, values []string) ([]model.Role, error) {
+func (s *UserService) validateAssignableRoles(db tenant.TenantDatabase, values []string) ([]model.Role, error) {
 	seen := make(map[string]struct{})
 	ids := make([]string, 0, len(values))
 	for _, value := range values {
@@ -431,10 +477,9 @@ func (s *UserService) validateAssignableRoles(ctx context.Context, tx *gorm.DB, 
 	if len(ids) == 0 {
 		return []model.Role{}, nil
 	}
-	var roles []model.Role
-	if err := tx.WithContext(ctx).
-		Where("tenant_id = ? AND id IN ? AND status = ?", tenantID, ids, status.ActivationEnabled).
-		Find(&roles).Error; err != nil {
+	roles, err := tenant.TenantRaw[model.Role](db,
+		`SELECT * FROM roles WHERE tenant_id = ? AND id IN ? AND status = ?`, ids, status.ActivationEnabled)
+	if err != nil {
 		return nil, err
 	}
 	if len(roles) != len(ids) {
@@ -444,25 +489,22 @@ func (s *UserService) validateAssignableRoles(ctx context.Context, tx *gorm.DB, 
 	return roles, nil
 }
 
-func (s *UserService) loadUserRoles(ctx context.Context, tx *gorm.DB, tenantID string, ids []string) (map[string][]UserRoleBrief, error) {
+func (s *UserService) loadUserRoles(db tenant.TenantDatabase, ids []string) (map[string][]UserRoleBrief, error) {
 	result := make(map[string][]UserRoleBrief, len(ids))
 	if len(ids) == 0 {
 		return result, nil
 	}
-	var rows []struct {
+	rows, err := tenant.TenantRaw[struct {
 		UserID    string                  `gorm:"column:user_id"`
 		ID        string                  `gorm:"column:id"`
 		Code      string                  `gorm:"column:code"`
 		Name      string                  `gorm:"column:name"`
 		Status    status.ActivationStatus `gorm:"column:status"`
 		IsBuiltin bool                    `gorm:"column:is_builtin"`
-	}
-	if err := tx.WithContext(ctx).Table("user_roles AS ur").
-		Select("ur.user_id, r.id, r.code, r.name, r.status, r.is_builtin").
-		Joins("JOIN roles r ON r.id = ur.role_id AND r.tenant_id = ur.tenant_id").
-		Where("ur.tenant_id = ? AND ur.user_id IN ?", tenantID, ids).
-		Order("r.is_builtin DESC, r.code ASC").
-		Scan(&rows).Error; err != nil {
+	}](db, `SELECT ur.user_id, r.id, r.code, r.name, r.status, r.is_builtin
+FROM user_roles ur JOIN roles r ON r.id = ur.role_id AND r.tenant_id = ur.tenant_id
+WHERE ur.tenant_id = ? AND ur.user_id IN ? ORDER BY r.is_builtin DESC, r.code ASC`, ids)
+	if err != nil {
 		return nil, errs.Wrap(errs.CodeInternal, "load user roles failed", err)
 	}
 	for _, row := range rows {
@@ -475,15 +517,15 @@ func (s *UserService) loadUserRoles(ctx context.Context, tx *gorm.DB, tenantID s
 
 // protectLastAdmin 在事务内保证租户至少保留一名 enabled 的内置 admin 用户。
 // remainsAdmin 表示变更后目标用户是否仍是 enabled 内置管理员。
-func (s *UserService) protectLastAdmin(ctx context.Context, tx *gorm.DB, tenantID, userID string, remainsAdmin bool) error {
-	isAdmin, err := s.isEnabledBuiltinAdmin(ctx, tx, tenantID, userID)
+func (s *UserService) protectLastAdmin(db tenant.TenantDatabase, userID string, remainsAdmin bool) error {
+	isAdmin, err := s.isEnabledBuiltinAdmin(db, userID)
 	if err != nil {
 		return err
 	}
 	if !isAdmin || remainsAdmin {
 		return nil
 	}
-	count, err := s.countEnabledBuiltinAdmins(ctx, tx, tenantID)
+	count, err := s.countEnabledBuiltinAdmins(db)
 	if err != nil {
 		return err
 	}
@@ -493,36 +535,39 @@ func (s *UserService) protectLastAdmin(ctx context.Context, tx *gorm.DB, tenantI
 	return nil
 }
 
-func (s *UserService) isEnabledBuiltinAdmin(ctx context.Context, tx *gorm.DB, tenantID, userID string) (bool, error) {
-	var count int64
-	err := tx.WithContext(ctx).Table("users AS u").
-		Joins("JOIN user_roles ur ON ur.user_id = u.id AND ur.tenant_id = u.tenant_id").
-		Joins("JOIN roles r ON r.id = ur.role_id AND r.tenant_id = u.tenant_id").
-		Where("u.id = ? AND u.tenant_id = ? AND u.status = ?", userID, tenantID, status.ActivationEnabled).
-		Where("r.code = ? AND r.is_builtin = ? AND r.status = ?", BuiltinAdminCode, true, status.ActivationEnabled).
-		Count(&count).Error
-	return count > 0, err
+func (s *UserService) isEnabledBuiltinAdmin(db tenant.TenantDatabase, userID string) (bool, error) {
+	rows, err := tenant.TenantRaw[struct{ Count int64 }](db, `SELECT COUNT(*) AS count FROM users u
+JOIN user_roles ur ON ur.user_id = u.id AND ur.tenant_id = u.tenant_id
+JOIN roles r ON r.id = ur.role_id AND r.tenant_id = u.tenant_id
+WHERE u.tenant_id = ? AND u.id = ? AND u.status = ?
+  AND r.code = ? AND r.is_builtin = TRUE AND r.status = ?`,
+		userID, status.ActivationEnabled, BuiltinAdminCode, status.ActivationEnabled)
+	return len(rows) == 1 && rows[0].Count > 0, err
 }
 
-func (s *UserService) countEnabledBuiltinAdmins(ctx context.Context, tx *gorm.DB, tenantID string) (int64, error) {
-	var count int64
-	err := tx.WithContext(ctx).Raw(`
-		SELECT COUNT(DISTINCT u.id)
-		FROM users u
-		INNER JOIN user_roles ur ON ur.user_id = u.id AND ur.tenant_id = u.tenant_id
-		INNER JOIN roles r ON r.id = ur.role_id AND r.tenant_id = u.tenant_id
-		WHERE u.tenant_id = ? AND u.status = ?
-		  AND r.code = ? AND r.is_builtin = TRUE AND r.status = ?
-	`, tenantID, status.ActivationEnabled, BuiltinAdminCode, status.ActivationEnabled).Scan(&count).Error
-	return count, err
+func (s *UserService) countEnabledBuiltinAdmins(db tenant.TenantDatabase) (int64, error) {
+	rows, err := tenant.TenantRaw[struct{ Count int64 }](db, `SELECT COUNT(DISTINCT u.id) AS count
+FROM users u JOIN user_roles ur ON ur.user_id = u.id AND ur.tenant_id = u.tenant_id
+JOIN roles r ON r.id = ur.role_id AND r.tenant_id = u.tenant_id
+WHERE u.tenant_id = ? AND u.status = ?
+  AND r.code = ? AND r.is_builtin = TRUE AND r.status = ?`,
+		status.ActivationEnabled, BuiltinAdminCode, status.ActivationEnabled)
+	if err != nil || len(rows) != 1 {
+		return 0, err
+	}
+	return rows[0].Count, nil
 }
 
-func replaceUserRoles(tx *gorm.DB, tenantID, userID string, roleIDs []string) error {
-	if err := tx.Where("tenant_id = ? AND user_id = ?", tenantID, userID).Delete(&model.UserRole{}).Error; err != nil {
+func replaceUserRoles(db tenant.TenantDatabase, userID string, roleIDs []string) error {
+	if err := tenant.TenantExec(db, `DELETE FROM user_roles WHERE tenant_id = ? AND user_id = ?`, userID); err != nil {
 		return err
 	}
 	for _, roleID := range roleIDs {
-		if err := tx.Create(&model.UserRole{ID: uuid.NewString(), TenantID: tenantID, UserID: userID, RoleID: roleID}).Error; err != nil {
+		if err := tenant.TenantExec(db, `WITH scoped_role AS (
+  SELECT id, tenant_id FROM roles WHERE tenant_id = ? AND id = ?
+)
+INSERT INTO user_roles (id, tenant_id, user_id, role_id)
+SELECT ?, tenant_id, ?, id FROM scoped_role`, roleID, uuid.NewString(), userID); err != nil {
 			return err
 		}
 	}

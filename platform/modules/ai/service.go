@@ -12,6 +12,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 	"github.com/yzxingtu2026/ainp/platform/framework/pagination"
+	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"gorm.io/gorm"
 )
 
@@ -35,7 +36,10 @@ type Service struct {
 }
 
 func NewService(db *gorm.DB, types *aimodel.ProviderTypeRegistry, credentials aimodel.CredentialCipher) *Service {
-	return &Service{db: db, types: types, credentials: credentials, adapters: map[string]aimodel.ModelDiscoveryProvider{aimodel.ProtocolOpenAI: aimodel.NewHTTPDiscoveryAdapter(aimodel.ProtocolOpenAI), aimodel.ProtocolAnthropic: aimodel.NewHTTPDiscoveryAdapter(aimodel.ProtocolAnthropic), aimodel.ProtocolOpenAICompatible: aimodel.NewHTTPDiscoveryAdapter(aimodel.ProtocolOpenAICompatible)}}
+	if err := registerModelCatalogTenantModels(); err != nil {
+		panic(err)
+	}
+	return &Service{db: tenantdata.RuntimeDB(db), types: types, credentials: credentials, adapters: map[string]aimodel.ModelDiscoveryProvider{aimodel.ProtocolOpenAI: aimodel.NewHTTPDiscoveryAdapter(aimodel.ProtocolOpenAI), aimodel.ProtocolAnthropic: aimodel.NewHTTPDiscoveryAdapter(aimodel.ProtocolAnthropic), aimodel.ProtocolOpenAICompatible: aimodel.NewHTTPDiscoveryAdapter(aimodel.ProtocolOpenAICompatible)}}
 }
 func tenant(ctx context.Context) (string, error) {
 	ac := auth.MustFromContext(ctx)
@@ -128,11 +132,11 @@ type AliasDeleteRequest struct {
 
 func (s *Service) ProviderTypes(context.Context, struct{}) (any, error) { return s.types.List(), nil }
 func (s *Service) ListProviders(ctx context.Context, r ListRequest) (any, error) {
-	tid, e := tenant(ctx)
+	_, e := tenant(ctx)
 	if e != nil {
 		return nil, e
 	}
-	q := s.db.WithContext(ctx).Where("tenant_id = ?", tid)
+	q := s.db.WithContext(ctx)
 	if r.Keyword != "" {
 		q = q.Where("code ILIKE ? OR name ILIKE ?", "%"+r.Keyword+"%", "%"+r.Keyword+"%")
 	}
@@ -149,12 +153,12 @@ func (s *Service) ListProviders(ctx context.Context, r ListRequest) (any, error)
 	return pagination.NewResult(rows, n, r.Request), dbError(e, "list providers")
 }
 func (s *Service) GetProvider(ctx context.Context, r IDRequest) (any, error) {
-	tid, e := tenant(ctx)
+	_, e := tenant(ctx)
 	if e != nil {
 		return nil, e
 	}
 	var v Provider
-	e = s.db.WithContext(ctx).Where("tenant_id=? AND id=?", tid, r.ID).First(&v).Error
+	e = s.db.WithContext(ctx).Where("id=?", r.ID).First(&v).Error
 	if e == gorm.ErrRecordNotFound {
 		return nil, errs.New(errs.CodeNotFound, "provider not found")
 	}
@@ -211,7 +215,7 @@ func (s *Service) UpdateProvider(ctx context.Context, r ProviderUpdateRequest) (
 		}
 		updates["credential_ciphertext"] = ciphertext
 	}
-	res := s.db.WithContext(ctx).Model(&Provider{}).Where("tenant_id=? AND id=?", tid, r.ID).Updates(updates)
+	res := s.db.WithContext(ctx).Model(&Provider{}).Where("id=?", r.ID).Updates(updates)
 	if res.Error != nil {
 		return nil, dbError(res.Error, "update provider")
 	}
@@ -224,11 +228,11 @@ func (s *Service) UpdateProviderStatus(ctx context.Context, r StatusRequest) (an
 	if !statusOK(r.Status) {
 		return nil, errs.Validation("invalid status")
 	}
-	tid, e := tenant(ctx)
+	_, e := tenant(ctx)
 	if e != nil {
 		return nil, e
 	}
-	res := s.db.WithContext(ctx).Model(&Provider{}).Where("tenant_id=? AND id=?", tid, r.ID).Update("status", r.Status)
+	res := s.db.WithContext(ctx).Model(&Provider{}).Where("id=?", r.ID).Update("status", r.Status)
 	if res.RowsAffected == 0 {
 		return nil, errs.New(errs.CodeNotFound, "provider not found")
 	}
@@ -240,7 +244,7 @@ func (s *Service) Discover(ctx context.Context, r DiscoverRequest) (any, error) 
 		return nil, e
 	}
 	var p Provider
-	e = s.db.WithContext(ctx).Where("tenant_id=? AND id=? AND status=?", tid, r.ProviderID, enabled).First(&p).Error
+	e = s.db.WithContext(ctx).Where("id=? AND status=?", r.ProviderID, enabled).First(&p).Error
 	if e != nil {
 		return nil, errs.New(errs.CodeNotFound, "enabled provider not found")
 	}
@@ -261,7 +265,7 @@ func (s *Service) Discover(ctx context.Context, r DiscoverRequest) (any, error) 
 		return nil, err
 	}
 	var imported []string
-	if err := s.db.WithContext(ctx).Model(&Deployment{}).Where("tenant_id=? AND provider_id=?", tid, p.ID).Pluck("remote_model_id", &imported).Error; err != nil {
+	if err := s.db.WithContext(ctx).Model(&Deployment{}).Where("provider_id=?", p.ID).Pluck("remote_model_id", &imported).Error; err != nil {
 		return nil, dbError(err, "load imported models")
 	}
 	seen := make(map[string]bool, len(imported))
@@ -297,7 +301,7 @@ func (s *Service) createDeployment(ctx context.Context, tid string, r Deployment
 		return Deployment{}, e
 	}
 	var count int64
-	if e := s.db.WithContext(ctx).Model(&Provider{}).Where("tenant_id=? AND id=?", tid, r.ProviderID).Count(&count).Error; e != nil || count == 0 {
+	if e := s.db.WithContext(ctx).Model(&Provider{}).Where("id=?", r.ProviderID).Count(&count).Error; e != nil || count == 0 {
 		return Deployment{}, errs.New(errs.CodeNotFound, "provider not found")
 	}
 	if r.Status == "" {
@@ -335,11 +339,11 @@ func (s *Service) ImportDeployments(ctx context.Context, r ImportRequest) (any, 
 	return out, e
 }
 func (s *Service) ListDeployments(ctx context.Context, r ListRequest) (any, error) {
-	tid, e := tenant(ctx)
+	_, e := tenant(ctx)
 	if e != nil {
 		return nil, e
 	}
-	q := s.db.WithContext(ctx).Where("tenant_id=?", tid)
+	q := s.db.WithContext(ctx)
 	if r.Keyword != "" {
 		q = q.Where("code ILIKE ? OR display_name ILIKE ? OR remote_model_id ILIKE ?", "%"+r.Keyword+"%", "%"+r.Keyword+"%", "%"+r.Keyword+"%")
 	}
@@ -353,19 +357,19 @@ func (s *Service) ListDeployments(ctx context.Context, r ListRequest) (any, erro
 	return pagination.NewResult(rows, n, r.Request), dbError(e, "list deployments")
 }
 func (s *Service) GetDeployment(ctx context.Context, r IDRequest) (any, error) {
-	tid, e := tenant(ctx)
+	_, e := tenant(ctx)
 	if e != nil {
 		return nil, e
 	}
 	var v Deployment
-	e = s.db.WithContext(ctx).Where("tenant_id=? AND id=?", tid, r.ID).First(&v).Error
+	e = s.db.WithContext(ctx).Where("id=?", r.ID).First(&v).Error
 	if e == gorm.ErrRecordNotFound {
 		return nil, errs.New(errs.CodeNotFound, "deployment not found")
 	}
 	return v, dbError(e, "get deployment")
 }
 func (s *Service) UpdateDeployment(ctx context.Context, r DeploymentUpdateRequest) (any, error) {
-	tid, e := tenant(ctx)
+	_, e := tenant(ctx)
 	if e != nil {
 		return nil, e
 	}
@@ -373,7 +377,7 @@ func (s *Service) UpdateDeployment(ctx context.Context, r DeploymentUpdateReques
 	if e = validateDeployment(tmp); e != nil {
 		return nil, e
 	}
-	res := s.db.WithContext(ctx).Model(&Deployment{}).Where("tenant_id=? AND id=?", tid, r.ID).Updates(map[string]any{"display_name": r.DisplayName, "model_type": r.ModelType, "capabilities_json": marshal(r.Capabilities), "limits_json": marshal(r.Limits), "config_json": marshal(r.Config)})
+	res := s.db.WithContext(ctx).Model(&Deployment{}).Where("id=?", r.ID).Updates(map[string]any{"display_name": r.DisplayName, "model_type": r.ModelType, "capabilities_json": marshal(r.Capabilities), "limits_json": marshal(r.Limits), "config_json": marshal(r.Config)})
 	if res.Error != nil {
 		return nil, dbError(res.Error, "update deployment")
 	}
@@ -386,11 +390,11 @@ func (s *Service) UpdateDeploymentStatus(ctx context.Context, r StatusRequest) (
 	if !statusOK(r.Status) {
 		return nil, errs.Validation("invalid status")
 	}
-	tid, e := tenant(ctx)
+	_, e := tenant(ctx)
 	if e != nil {
 		return nil, e
 	}
-	res := s.db.WithContext(ctx).Model(&Deployment{}).Where("tenant_id=? AND id=?", tid, r.ID).Update("status", r.Status)
+	res := s.db.WithContext(ctx).Model(&Deployment{}).Where("id=?", r.ID).Update("status", r.Status)
 	if res.Error != nil {
 		return nil, dbError(res.Error, "update deployment status")
 	}
@@ -400,18 +404,18 @@ func (s *Service) UpdateDeploymentStatus(ctx context.Context, r StatusRequest) (
 	return s.GetDeployment(ctx, IDRequest{r.ID})
 }
 func (s *Service) DeleteDeployment(ctx context.Context, r IDRequest) (any, error) {
-	tid, e := tenant(ctx)
+	_, e := tenant(ctx)
 	if e != nil {
 		return nil, e
 	}
 	var aliases int64
-	if e = s.db.WithContext(ctx).Model(&Alias{}).Where("tenant_id=? AND deployment_id=?", tid, r.ID).Count(&aliases).Error; e != nil {
+	if e = s.db.WithContext(ctx).Model(&Alias{}).Where("deployment_id=?", r.ID).Count(&aliases).Error; e != nil {
 		return nil, dbError(e, "check deployment aliases")
 	}
 	if aliases > 0 {
 		return nil, errs.New(errs.CodeConflict, "deployment is referenced by aliases")
 	}
-	res := s.db.WithContext(ctx).Where("tenant_id=? AND id=?", tid, r.ID).Delete(&Deployment{})
+	res := s.db.WithContext(ctx).Where("id=?", r.ID).Delete(&Deployment{})
 	if res.Error != nil {
 		return nil, dbError(res.Error, "delete deployment")
 	}
@@ -421,12 +425,12 @@ func (s *Service) DeleteDeployment(ctx context.Context, r IDRequest) (any, error
 	return map[string]any{"deleted": true}, nil
 }
 func (s *Service) ListAliases(ctx context.Context, _ struct{}) (any, error) {
-	tid, e := tenant(ctx)
+	_, e := tenant(ctx)
 	if e != nil {
 		return nil, e
 	}
 	var rows []Alias
-	e = s.db.WithContext(ctx).Where("tenant_id=?", tid).Order("code").Find(&rows).Error
+	e = s.db.WithContext(ctx).Order("code").Find(&rows).Error
 	return rows, dbError(e, "list aliases")
 }
 func (s *Service) UpsertAlias(ctx context.Context, r AliasUpsertRequest) (any, error) {
@@ -438,14 +442,14 @@ func (s *Service) UpsertAlias(ctx context.Context, r AliasUpsertRequest) (any, e
 		return nil, errs.ValidationKey("common.validation_failed", "invalid alias code", errs.FieldError{Field: "code", Message: "must start with a lowercase letter and contain only lowercase letters, digits, dot, underscore or hyphen", MessageKey: "validation.invalid"})
 	}
 	var n int64
-	if e = s.db.WithContext(ctx).Model(&Deployment{}).Where("tenant_id=? AND id=?", tid, r.DeploymentID).Count(&n).Error; e != nil {
+	if e = s.db.WithContext(ctx).Model(&Deployment{}).Where("id=?", r.DeploymentID).Count(&n).Error; e != nil {
 		return nil, dbError(e, "check alias deployment")
 	}
 	if n == 0 {
 		return nil, errs.New(errs.CodeNotFound, "deployment not found")
 	}
 	var v Alias
-	e = s.db.WithContext(ctx).Where("tenant_id=? AND code=?", tid, r.Code).First(&v).Error
+	e = s.db.WithContext(ctx).Where("code=?", r.Code).First(&v).Error
 	if e == gorm.ErrRecordNotFound {
 		v = Alias{ID: uuid.NewString(), TenantID: tid, Code: r.Code, DeploymentID: r.DeploymentID}
 		e = s.db.WithContext(ctx).Create(&v).Error
@@ -455,11 +459,11 @@ func (s *Service) UpsertAlias(ctx context.Context, r AliasUpsertRequest) (any, e
 	return v, dbError(e, "alias")
 }
 func (s *Service) DeleteAlias(ctx context.Context, r AliasDeleteRequest) (any, error) {
-	tid, e := tenant(ctx)
+	_, e := tenant(ctx)
 	if e != nil {
 		return nil, e
 	}
-	res := s.db.WithContext(ctx).Where("tenant_id=? AND code=?", tid, r.Code).Delete(&Alias{})
+	res := s.db.WithContext(ctx).Where("code=?", r.Code).Delete(&Alias{})
 	if res.RowsAffected == 0 {
 		return nil, errs.New(errs.CodeNotFound, "alias not found")
 	}
@@ -475,15 +479,15 @@ func (s *Service) Resolve(ctx context.Context, code string, req aimodel.Capabili
 		return nil, errs.Validation(e.Error())
 	}
 	var a Alias
-	if e = s.db.WithContext(ctx).Where("tenant_id=? AND code=?", tid, code).First(&a).Error; e != nil {
+	if e = s.db.WithContext(ctx).Where("code=?", code).First(&a).Error; e != nil {
 		return nil, errs.New(errs.CodeNotFound, "alias not found")
 	}
 	var d Deployment
-	if e = s.db.WithContext(ctx).Where("tenant_id=? AND id=? AND status=?", tid, a.DeploymentID, enabled).First(&d).Error; e != nil {
+	if e = s.db.WithContext(ctx).Where("id=? AND status=?", a.DeploymentID, enabled).First(&d).Error; e != nil {
 		return nil, errs.New(errs.CodeNotFound, "enabled deployment not found")
 	}
 	var p Provider
-	if e = s.db.WithContext(ctx).Where("tenant_id=? AND id=? AND status=?", tid, d.ProviderID, enabled).First(&p).Error; e != nil {
+	if e = s.db.WithContext(ctx).Where("id=? AND status=?", d.ProviderID, enabled).First(&p).Error; e != nil {
 		return nil, errs.New(errs.CodeNotFound, "enabled provider not found")
 	}
 	pt, ok := s.types.Get(p.Protocol)

@@ -42,19 +42,31 @@ func (s *OutboxService) list(ctx context.Context, req outboxListRequest) (any, e
 	if _, err := requireTenant(ctx); err != nil {
 		return nil, err
 	}
-	db := s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Model(&outbox.Event{})
-	if value := strings.TrimSpace(req.EventType); value != "" {
-		db = db.Where("event_type = ?", value)
-	}
-	if value := strings.TrimSpace(req.Status); value != "" {
-		db = db.Where("status = ?", value)
-	}
-	var total int64
-	if err := db.Count(&total).Error; err != nil {
+	tdb, err := tenant.TenantDB(ctx, s.db)
+	if err != nil {
 		return nil, err
 	}
-	var rows []outbox.Event
-	if err := db.Order("occurred_at DESC").Offset(req.Offset()).Limit(req.PageSize).Find(&rows).Error; err != nil {
+	whereSQL := " WHERE tenant_id = ?"
+	args := make([]any, 0, 2)
+	if value := strings.TrimSpace(req.EventType); value != "" {
+		whereSQL += " AND event_type = ?"
+		args = append(args, value)
+	}
+	if value := strings.TrimSpace(req.Status); value != "" {
+		whereSQL += " AND status = ?"
+		args = append(args, value)
+	}
+	counts, err := tenant.TenantRaw[struct{ Count int64 }](tdb, "SELECT COUNT(*) AS count FROM outbox_events"+whereSQL, args...)
+	if err != nil {
+		return nil, err
+	}
+	total := int64(0)
+	if len(counts) > 0 {
+		total = counts[0].Count
+	}
+	listArgs := append(append([]any{}, args...), req.PageSize, req.Offset())
+	rows, err := tenant.TenantRaw[outbox.Event](tdb, "SELECT * FROM outbox_events"+whereSQL+" ORDER BY occurred_at DESC LIMIT ? OFFSET ?", listArgs...)
+	if err != nil {
 		return nil, err
 	}
 	return pagination.NewResult(rows, total, req.Request), nil
@@ -72,14 +84,16 @@ func (s *OutboxService) Summary(ctx context.Context, _ json.RawMessage) (any, er
 	if _, err := requireTenant(ctx); err != nil {
 		return nil, err
 	}
+	tdb, err := tenant.TenantDB(ctx, s.db)
+	if err != nil {
+		return nil, err
+	}
 	type row struct {
 		Status status.OutboxStatus
 		Count  int64
 	}
-	var rows []row
-	q := s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Model(&outbox.Event{}).
-		Select("status, count(*) as count").Group("status")
-	if err := q.Scan(&rows).Error; err != nil {
+	rows, err := tenant.TenantRaw[row](tdb, "SELECT status, COUNT(*) AS count FROM outbox_events WHERE tenant_id = ? GROUP BY status")
+	if err != nil {
 		return nil, err
 	}
 	counts := map[string]int64{
@@ -93,16 +107,13 @@ func (s *OutboxService) Summary(ctx context.Context, _ json.RawMessage) (any, er
 		counts[string(r.Status)] = r.Count
 	}
 	var oldest *time.Time
-	var pending outbox.Event
-	err := s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Model(&outbox.Event{}).
-		Where("status IN ?", []status.OutboxStatus{status.OutboxPending, status.OutboxFailed, status.OutboxProcessing}).
-		Order("occurred_at ASC").
-		First(&pending).Error
-	if err == nil {
-		t := pending.OccurredAt
-		oldest = &t
-	} else if err != gorm.ErrRecordNotFound {
+	pending, err := tenant.TenantRaw[outbox.Event](tdb, "SELECT * FROM outbox_events WHERE tenant_id = ? AND status IN (?, ?, ?) ORDER BY occurred_at ASC LIMIT 1", status.OutboxPending, status.OutboxFailed, status.OutboxProcessing)
+	if err != nil {
 		return nil, err
+	}
+	if len(pending) > 0 {
+		t := pending[0].OccurredAt
+		oldest = &t
 	}
 	return map[string]any{
 		"counts":            counts,
@@ -114,16 +125,22 @@ func (s *OutboxService) listDeliveries(ctx context.Context, req outboxEventIDReq
 	if _, err := requireTenant(ctx); err != nil {
 		return nil, err
 	}
-	var ev outbox.Event
-	if err := s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).
-		Where("id = ?", req.EventID).First(&ev).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return nil, errs.NewKey(errs.CodeNotFound, "outbox.event_not_found", "outbox event not found")
-		}
+	tdb, err := tenant.TenantDB(ctx, s.db)
+	if err != nil {
 		return nil, err
 	}
-	var deliveries []outbox.Delivery
-	if err := s.db.WithContext(ctx).Where("event_id = ?", ev.ID).Order("handler_name").Find(&deliveries).Error; err != nil {
+	events, err := tenant.TenantRaw[outbox.Event](tdb, "SELECT * FROM outbox_events WHERE tenant_id = ? AND id = ? LIMIT 1", req.EventID)
+	if err != nil {
+		return nil, err
+	}
+	if len(events) == 0 {
+		return nil, errs.NewKey(errs.CodeNotFound, "outbox.event_not_found", "outbox event not found")
+	}
+	ev := events[0]
+	deliveries, err := tenant.TenantRaw[outbox.Delivery](tdb, `SELECT d.* FROM event_deliveries AS d
+JOIN outbox_events AS e ON e.id = d.event_id
+WHERE e.tenant_id = ? AND e.id = ? ORDER BY d.handler_name`, ev.ID)
+	if err != nil {
 		return nil, err
 	}
 	return map[string]any{
@@ -150,15 +167,19 @@ func (s *OutboxService) retry(ctx context.Context, req outboxEventIDRequest) (an
 	if err != nil {
 		return nil, err
 	}
-	var ev outbox.Event
-	if err := s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).
-		Where("id = ?", req.EventID).First(&ev).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return nil, errs.NewKey(errs.CodeNotFound, "outbox.event_not_found", "outbox event not found")
-		}
+	tdb, err := tenant.TenantDB(ctx, s.db)
+	if err != nil {
 		return nil, err
 	}
-	if err := outbox.RetryEvent(ctx, s.db, ev.ID); err != nil {
+	events, err := tenant.TenantRaw[outbox.Event](tdb, "SELECT * FROM outbox_events WHERE tenant_id = ? AND id = ? LIMIT 1", req.EventID)
+	if err != nil {
+		return nil, err
+	}
+	if len(events) == 0 {
+		return nil, errs.NewKey(errs.CodeNotFound, "outbox.event_not_found", "outbox event not found")
+	}
+	ev := events[0]
+	if err := outbox.RetryTenantEvent(ctx, s.db, ev.ID); err != nil {
 		return nil, errs.NewKey(errs.CodeConflict, "outbox.retry_not_allowed", err.Error())
 	}
 	ac.AuditResourceType = "outbox_event"

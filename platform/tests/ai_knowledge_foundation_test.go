@@ -25,6 +25,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/pagination"
 	"github.com/yzxingtu2026/ainp/platform/framework/status"
 	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
+	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"github.com/yzxingtu2026/ainp/platform/modules/ai"
 	"github.com/yzxingtu2026/ainp/platform/modules/system"
 	systemmodel "github.com/yzxingtu2026/ainp/platform/modules/system/model"
@@ -198,7 +199,7 @@ func openKnowledgeTestDB(t *testing.T) *gorm.DB {
 	if err = ai.AutoMigrateKnowledge(db); err != nil {
 		t.Fatal(err)
 	}
-	return db
+	return tenantdata.RuntimeDB(db).WithContext(ingestionContext())
 }
 
 func TestKnowledgeSQLMigrationExecutesWithTenantConstraints(t *testing.T) {
@@ -382,7 +383,11 @@ func TestKnowledgeTenantAttachmentRevisionAndBindingBoundaries(t *testing.T) {
 		{ID: "other", TenantID: "tenant-a", Provider: "local", ObjectKey: "private/path-b", OriginalName: "other.txt", ContentType: "text/plain", SHA256: hash, Status: status.AttachmentReady, UploaderID: "other"},
 		{ID: "cross", TenantID: "tenant-b", Provider: "local", ObjectKey: "private/path-c", OriginalName: "cross.txt", ContentType: "text/plain", SHA256: hash, Status: status.AttachmentReady, UploaderID: "owner"},
 	} {
-		if err := db.Create(&attachment).Error; err != nil {
+		ctx := ownerCtx
+		if attachment.TenantID != "tenant-a" {
+			ctx = knowledgeContext(attachment.TenantID, "owner")
+		}
+		if err := db.WithContext(ctx).Create(&attachment).Error; err != nil {
 			t.Fatal(err)
 		}
 	}

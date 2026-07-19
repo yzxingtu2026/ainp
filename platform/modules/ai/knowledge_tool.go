@@ -14,6 +14,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/action"
 	"github.com/yzxingtu2026/ainp/platform/framework/aiknowledge"
 	"github.com/yzxingtu2026/ainp/platform/framework/aitool"
+	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"gorm.io/gorm"
 )
 
@@ -42,7 +43,10 @@ type KnowledgeTool struct {
 }
 
 func NewKnowledgeTool(db *gorm.DB, access aiknowledge.Service, retriever aiknowledge.KnowledgeRetriever) *KnowledgeTool {
-	return &KnowledgeTool{db: db, access: access, retriever: retriever, cache: map[string]knowledgeToolCacheEntry{}}
+	if err := registerToolTenantModels(); err != nil {
+		panic(err)
+	}
+	return &KnowledgeTool{db: tenantdata.RuntimeDB(db), access: access, retriever: retriever, cache: map[string]knowledgeToolCacheEntry{}}
 }
 
 func (t *KnowledgeTool) Definition() aitool.Definition {
@@ -87,7 +91,7 @@ func (t *KnowledgeTool) Execute(ctx context.Context, _ aitool.LoadedTool, argume
 		return &aitool.Result{Status: "failed", Summary: "knowledge search input is invalid", ErrorCategory: "invalid_request"}, nil
 	}
 	var calls int64
-	t.db.WithContext(ctx).Model(&ToolInvocation{}).Where("tenant_id=? AND agent_run_id=? AND tool_id=?", scope.TenantID, *scope.AgentRunID, knowledgeSearchToolID).Count(&calls)
+	t.db.WithContext(ctx).Model(&ToolInvocation{}).Where("agent_run_id=? AND tool_id=?", *scope.AgentRunID, knowledgeSearchToolID).Count(&calls)
 	if calls > maxKnowledgeSearchesPerRun {
 		return &aitool.Result{Status: "failed", Summary: "knowledge search budget exhausted", ErrorCategory: "knowledge_budget_exhausted"}, nil
 	}
@@ -170,7 +174,7 @@ func (t *KnowledgeTool) candidates(ctx context.Context, scope *ToolScope) ([]kno
 		return nil, nil
 	}
 	var run AgentRun
-	if err := t.db.WithContext(ctx).Where("tenant_id=? AND user_id=? AND id=?", scope.TenantID, scope.UserID, *scope.AgentRunID).First(&run).Error; err != nil {
+	if err := t.db.WithContext(ctx).Where("user_id=? AND id=?", scope.UserID, *scope.AgentRunID).First(&run).Error; err != nil {
 		return nil, err
 	}
 	repos, repoErr := newAgentRepositories(ctx, t.db)
@@ -181,13 +185,16 @@ func (t *KnowledgeTool) candidates(ctx context.Context, scope *ToolScope) ([]kno
 	if err != nil {
 		return nil, err
 	}
-	var rows []knowledgeToolCandidate
-	err = t.db.WithContext(ctx).Table("ai_agent_knowledge_bindings b").
-		Select("kb.id,kb.name,kb.description,iv.id AS index_version_id").
-		Joins("JOIN ai_knowledge_bases kb ON kb.tenant_id=b.tenant_id AND kb.id=b.knowledge_base_id AND kb.deleted_at IS NULL").
-		Joins("JOIN ai_knowledge_index_versions iv ON iv.tenant_id=kb.tenant_id AND iv.id=kb.current_index_version_id AND iv.knowledge_base_id=kb.id").
-		Where("b.tenant_id=? AND b.agent_id=? AND kb.status=? AND iv.status=?", scope.TenantID, version.AgentID, aiknowledge.KnowledgeBaseEnabled, aiknowledge.IndexReady).
-		Order("kb.id").Scan(&rows).Error
+	tdb, err := tenantdata.TenantDB(ctx, t.db)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := tenantdata.TenantRaw[knowledgeToolCandidate](tdb, `SELECT kb.id,kb.name,kb.description,iv.id AS index_version_id
+FROM ai_agent_knowledge_bindings b
+JOIN ai_knowledge_bases kb ON kb.tenant_id=b.tenant_id AND kb.id=b.knowledge_base_id AND kb.deleted_at IS NULL
+JOIN ai_knowledge_index_versions iv ON iv.tenant_id=kb.tenant_id AND iv.id=kb.current_index_version_id AND iv.knowledge_base_id=kb.id
+WHERE b.tenant_id=? AND b.agent_id=? AND kb.status=? AND iv.status=? ORDER BY kb.id`,
+		version.AgentID, aiknowledge.KnowledgeBaseEnabled, aiknowledge.IndexReady)
 	if err != nil {
 		return nil, err
 	}

@@ -15,6 +15,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/aimodelruntime"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
+	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"gorm.io/gorm"
 )
 
@@ -22,6 +23,7 @@ const invocationFinishedEvent = "ai.model_invocation.finished.v1"
 
 type InvocationService struct {
 	db                *gorm.DB
+	trustedRecoveryDB *gorm.DB
 	resolver          aimodel.Resolver
 	adapters          *aimodelruntime.AdapterRegistry
 	embeddingAdapters *aimodelruntime.EmbeddingAdapterRegistry
@@ -61,7 +63,10 @@ type invocationFinishedPayload struct {
 }
 
 func NewInvocationService(db *gorm.DB, resolver aimodel.Resolver, adapters *aimodelruntime.AdapterRegistry, writer outbox.Writer) *InvocationService {
-	return &InvocationService{db: db, resolver: resolver, adapters: adapters, writer: writer}
+	if err := registerModelInvocationTenantModel(); err != nil {
+		panic(err)
+	}
+	return &InvocationService{db: tenantdata.RuntimeDB(db), trustedRecoveryDB: db, resolver: resolver, adapters: adapters, writer: writer}
 }
 
 func (s *InvocationService) Generate(ctx context.Context, req aimodelruntime.GenerateRequest) (any, error) {
@@ -493,14 +498,17 @@ func (s *InvocationService) finish(ctx context.Context, row *ModelInvocation, us
 
 func (s *InvocationService) RecoverStale(ctx context.Context, olderThan time.Duration) error {
 	cutoff := time.Now().UTC().Add(-olderThan)
-	var rows []ModelInvocation
-	if err := s.db.WithContext(ctx).Where("status = 'running' AND started_at < ?", cutoff).Find(&rows).Error; err != nil {
+	// Startup recovery runs before a tenant AuthContext exists. Keep this fixed
+	// cross-tenant scan private, then restore each row's trusted tenant context.
+	type staleInvocation ModelInvocation
+	var staleRows []staleInvocation
+	if err := s.trustedRecoveryDB.WithContext(ctx).Raw("SELECT * FROM ai_model_invocations WHERE status = ? AND started_at < ? ORDER BY started_at", "running", cutoff).Scan(&staleRows).Error; err != nil {
 		return err
 	}
-	for i := range rows {
-		row := &rows[i]
+	for i := range staleRows {
+		row := ModelInvocation(staleRows[i])
 		recoveryCtx := auth.WithContext(ctx, &auth.Context{Authenticated: true, Realm: auth.RealmTenant, TenantID: row.TenantID, UserID: row.UserID, SessionID: row.SessionID, RequestID: row.RequestID, TraceID: row.TraceID})
-		if err := s.finish(recoveryCtx, row, nil, aimodelruntime.FinishError, aimodelruntime.ErrorProviderUnavailable, "", "unknown"); err != nil {
+		if err := s.finish(recoveryCtx, &row, nil, aimodelruntime.FinishError, aimodelruntime.ErrorProviderUnavailable, "", "unknown"); err != nil {
 			return err
 		}
 	}

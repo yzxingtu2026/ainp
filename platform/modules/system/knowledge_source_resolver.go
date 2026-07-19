@@ -2,7 +2,6 @@ package system
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 
@@ -45,9 +44,20 @@ func (r *KnowledgeSourceResolver) OpenSource(ctx context.Context, req aiknowledg
 	if current.TenantID != authCtx.TenantID || current.AttachmentID != req.Document.AttachmentID || current.SourceRevision != req.Document.SourceRevision {
 		return aiknowledge.DocumentSource{}, fmt.Errorf("knowledge source revision changed")
 	}
-	var attachmentRow model.Attachment
-	err = r.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Where("id = ?", current.AttachmentID).First(&attachmentRow).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
+	tdb, err := tenant.TenantDB(ctx, r.db)
+	if err != nil {
+		return aiknowledge.DocumentSource{}, err
+	}
+	attachments, err := tenant.NewTenantRepository[model.Attachment](tdb)
+	if err != nil {
+		return aiknowledge.DocumentSource{}, err
+	}
+	linksRepo, err := tenant.NewTenantRepository[model.AttachmentLink](tdb)
+	if err != nil {
+		return aiknowledge.DocumentSource{}, err
+	}
+	attachmentRow, err := attachments.GetByID(current.AttachmentID)
+	if tenant.IsNotFound(err) {
 		return aiknowledge.DocumentSource{}, fmt.Errorf("knowledge source not found")
 	}
 	if err != nil {
@@ -56,9 +66,7 @@ func (r *KnowledgeSourceResolver) OpenSource(ctx context.Context, req aiknowledg
 	if attachmentRow.TenantID != current.TenantID || attachmentRow.Status != status.AttachmentReady || attachmentRow.SHA256 != current.SourceRevision || attachmentRow.Size > req.MaxBytes {
 		return aiknowledge.DocumentSource{}, fmt.Errorf("knowledge source snapshot invalid")
 	}
-	var links int64
-	err = r.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Model(&model.AttachmentLink{}).
-		Where("attachment_id = ? AND resource_type = ? AND resource_id = ? AND field = ?", attachmentRow.ID, "ai.knowledge_document", current.ID, "source").Count(&links).Error
+	links, err := linksRepo.Where("attachment_id = ? AND resource_type = ? AND resource_id = ? AND field = ?", attachmentRow.ID, "ai.knowledge_document", current.ID, "source").Count()
 	if err != nil {
 		return aiknowledge.DocumentSource{}, err
 	}

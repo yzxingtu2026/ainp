@@ -10,14 +10,6 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestScopeByTenantFailsClosedWithoutTenant(t *testing.T) {
-	db := &gorm.DB{Config: &gorm.Config{}}
-	tenant.ScopeByTenant(context.Background())(db)
-	if !errors.Is(db.Error, tenant.ErrTenantContextRequired) {
-		t.Fatalf("expected tenant context error, got %v", db.Error)
-	}
-}
-
 func TestSystemScopeRequiresPlatformOperator(t *testing.T) {
 	db := &gorm.DB{Config: &gorm.Config{}}
 	ctx := auth.WithContext(context.Background(), &auth.Context{Realm: auth.RealmTenant, Authenticated: true, IsSystemOperator: true})

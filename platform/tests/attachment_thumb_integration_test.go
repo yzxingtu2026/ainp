@@ -94,8 +94,13 @@ func TestAttachmentThumbSkippedAndVariantGate(t *testing.T) {
 		t.Fatalf("upload failed: %s", uploadResp.Body.String())
 	}
 
-	var row model.Attachment
-	if err := testDB.Where("id = ?", prep.Attachment.ID).First(&row).Error; err != nil {
+	tenantDB, err := tenant.TenantDB(ctxA, testDB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attachments, _ := tenant.NewTenantRepository[model.Attachment](tenantDB)
+	row, err := attachments.GetByID(prep.Attachment.ID)
+	if err != nil {
 		t.Fatal(err)
 	}
 	if row.GetThumbStatus() != status.AttachmentThumbSkipped {
@@ -123,8 +128,8 @@ func TestAttachmentThumbSkippedAndVariantGate(t *testing.T) {
 	if envelopeCode(upResp.Body.Bytes()) != 0 {
 		t.Fatalf("image upload failed: %s", upResp.Body.String())
 	}
-	var imgRow model.Attachment
-	if err := testDB.Where("id = ?", imgPrep.Attachment.ID).First(&imgRow).Error; err != nil {
+	imgRow, err := attachments.GetByID(imgPrep.Attachment.ID)
+	if err != nil {
 		t.Fatal(err)
 	}
 	if imgRow.GetThumbStatus() != status.AttachmentThumbPending {
@@ -155,7 +160,7 @@ func TestAttachmentThumbSkippedAndVariantGate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := testDB.Model(&model.Attachment{}).Where("id = ?", imgRow.ID).Updates(map[string]any{
+	if err := attachments.Where("id = ?", imgRow.ID).Updates(map[string]any{
 		"thumb_status": status.AttachmentThumbReady, "thumb_object_key": info.Key,
 		"thumb_content_type": "image/jpeg", "thumb_size": info.Size,
 	}).Error; err != nil {

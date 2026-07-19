@@ -17,6 +17,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
 	"github.com/yzxingtu2026/ainp/platform/framework/pagination"
 	"github.com/yzxingtu2026/ainp/platform/framework/status"
+	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	systemmodel "github.com/yzxingtu2026/ainp/platform/modules/system/model"
 	"gorm.io/gorm"
 )
@@ -55,7 +56,10 @@ func (s *KnowledgeService) SetRetrievalServices(retriever aiknowledge.KnowledgeR
 }
 
 func NewKnowledgeService(db *gorm.DB, models aimodel.Resolver, agents *AgentService, links attachment.ResourceLinker) *KnowledgeService {
-	return &KnowledgeService{db: db, models: models, agents: agents, links: links}
+	if err := registerKnowledgeTenantModels(); err != nil {
+		panic(err)
+	}
+	return &KnowledgeService{db: tenantdata.RuntimeDB(db), models: models, agents: agents, links: links}
 }
 
 type KnowledgeBaseListRequest struct {
@@ -243,8 +247,7 @@ func (s *KnowledgeService) visibleKnowledgeBases(ctx context.Context) (*gorm.DB,
 	if err != nil {
 		return nil, nil, err
 	}
-	query := s.dbForContext(ctx).Where("tenant_id = ?", ac.TenantID).
-		Where("visibility = ? OR owner_user_id = ?", aiknowledge.VisibilityTenant, ac.UserID)
+	query := s.dbForContext(ctx).Where("visibility = ? OR owner_user_id = ?", aiknowledge.VisibilityTenant, ac.UserID)
 	return query, ac, nil
 }
 
@@ -341,7 +344,7 @@ func (s *KnowledgeService) UpdateKnowledgeBase(ctx context.Context, request Know
 		updates["current_index_version_id"] = nil
 	}
 	result := s.db.WithContext(ctx).Model(&KnowledgeBase{}).
-		Where("tenant_id=? AND id=? AND revision=?", row.TenantID, row.ID, request.Revision).
+		Where("id=? AND revision=?", row.ID, request.Revision).
 		Updates(updates)
 	if result.Error != nil {
 		return nil, dbError(result.Error, "update knowledge base")
@@ -367,7 +370,7 @@ func (s *KnowledgeService) UpdateKnowledgeBaseStatus(ctx context.Context, reques
 		}
 	}
 	result := s.db.WithContext(ctx).Model(&KnowledgeBase{}).
-		Where("tenant_id=? AND id=? AND revision=?", row.TenantID, row.ID, request.Revision).
+		Where("id=? AND revision=?", row.ID, request.Revision).
 		Updates(map[string]any{"status": request.Status, "revision": gorm.Expr("revision + 1")})
 	if result.Error != nil {
 		return nil, dbError(result.Error, "update knowledge base status")
@@ -389,23 +392,23 @@ func (s *KnowledgeService) DeleteKnowledgeBase(ctx context.Context, request Know
 			return lockErr
 		}
 		var current KnowledgeBase
-		if queryErr := tx.Where("tenant_id=? AND id=? AND owner_user_id=?", row.TenantID, row.ID, row.OwnerUserID).
+		if queryErr := tx.Where("id=? AND owner_user_id=?", row.ID, row.OwnerUserID).
 			First(&current).Error; queryErr != nil {
 			return knowledgeNotFound()
 		}
 		var documents, bindings int64
 		if countErr := tx.Model(&KnowledgeDocument{}).
-			Where("tenant_id=? AND knowledge_base_id=?", row.TenantID, row.ID).Count(&documents).Error; countErr != nil {
+			Where("knowledge_base_id=?", row.ID).Count(&documents).Error; countErr != nil {
 			return dbError(countErr, "check knowledge base documents")
 		}
 		if countErr := tx.Model(&AgentKnowledgeBinding{}).
-			Where("tenant_id=? AND knowledge_base_id=?", row.TenantID, row.ID).Count(&bindings).Error; countErr != nil {
+			Where("knowledge_base_id=?", row.ID).Count(&bindings).Error; countErr != nil {
 			return dbError(countErr, "check knowledge base bindings")
 		}
 		if documents > 0 || bindings > 0 {
 			return errs.NewKey(errs.CodeConflict, "ai.knowledge.delete_referenced", "knowledge base still has documents or agent bindings")
 		}
-		result := tx.Where("tenant_id=? AND id=? AND revision=?", row.TenantID, row.ID, request.Revision).
+		result := tx.Where("id=? AND revision=?", row.ID, request.Revision).
 			Delete(&KnowledgeBase{})
 		if result.Error != nil {
 			return dbError(result.Error, "delete knowledge base")
@@ -439,7 +442,7 @@ func (s *KnowledgeService) getDocument(ctx context.Context, id string, manage bo
 		return nil, nil, nil, err
 	}
 	var document KnowledgeDocument
-	if err = s.dbForContext(ctx).Where("tenant_id=? AND id=?", ac.TenantID, id).First(&document).Error; err != nil {
+	if err = s.dbForContext(ctx).Where("id=?", id).First(&document).Error; err != nil {
 		return nil, nil, nil, knowledgeNotFound()
 	}
 	knowledgeBase, _, err := s.getKnowledgeBase(ctx, document.KnowledgeBaseID, manage)
@@ -450,11 +453,11 @@ func (s *KnowledgeService) getDocument(ctx context.Context, id string, manage bo
 }
 
 func (s *KnowledgeService) ListDocuments(ctx context.Context, request KnowledgeDocumentListRequest) (any, error) {
-	knowledgeBase, ac, err := s.getKnowledgeBase(ctx, request.KnowledgeBaseID, false)
+	knowledgeBase, _, err := s.getKnowledgeBase(ctx, request.KnowledgeBaseID, false)
 	if err != nil {
 		return nil, err
 	}
-	query := s.db.WithContext(ctx).Where("tenant_id=? AND knowledge_base_id=?", ac.TenantID, knowledgeBase.ID)
+	query := s.db.WithContext(ctx).Where("knowledge_base_id=?", knowledgeBase.ID)
 	if request.Status != "" {
 		query = query.Where("ingestion_status=?", request.Status)
 	}
@@ -475,7 +478,7 @@ func (s *KnowledgeService) GetDocument(ctx context.Context, request KnowledgeDoc
 }
 
 func (s *KnowledgeService) TestRetrieval(ctx context.Context, request KnowledgeRetrievalTestRequest) (any, error) {
-	knowledgeBase, ac, err := s.getKnowledgeBase(ctx, request.KnowledgeBaseID, false)
+	knowledgeBase, _, err := s.getKnowledgeBase(ctx, request.KnowledgeBaseID, false)
 	if err != nil {
 		return nil, err
 	}
@@ -487,7 +490,7 @@ func (s *KnowledgeService) TestRetrieval(ctx context.Context, request KnowledgeR
 	}
 	var readyVersions int64
 	if err = s.dbForContext(ctx).Model(&KnowledgeIndexVersion{}).
-		Where("tenant_id=? AND id=? AND knowledge_base_id=? AND status=?", ac.TenantID, *knowledgeBase.CurrentIndexVersionID, knowledgeBase.ID, aiknowledge.IndexReady).
+		Where("id=? AND knowledge_base_id=? AND status=?", *knowledgeBase.CurrentIndexVersionID, knowledgeBase.ID, aiknowledge.IndexReady).
 		Count(&readyVersions).Error; err != nil {
 		return nil, dbError(err, "check knowledge retrieval index")
 	}
@@ -547,13 +550,11 @@ func (s *KnowledgeService) CreateDocument(ctx context.Context, request Knowledge
 			return lockErr
 		}
 		var current KnowledgeBase
-		if queryErr := tx.Where("tenant_id=? AND id=? AND owner_user_id=?",
-			knowledgeBase.TenantID, knowledgeBase.ID, ac.UserID).First(&current).Error; queryErr != nil {
+		if queryErr := tx.Where("id=? AND owner_user_id=?", knowledgeBase.ID, ac.UserID).First(&current).Error; queryErr != nil {
 			return knowledgeNotFound()
 		}
 		var existing KnowledgeDocument
-		queryErr := tx.Where("tenant_id=? AND knowledge_base_id=? AND attachment_id=?",
-			ac.TenantID, knowledgeBase.ID, source.ID).First(&existing).Error
+		queryErr := tx.Where("knowledge_base_id=? AND attachment_id=?", knowledgeBase.ID, source.ID).First(&existing).Error
 		if queryErr == nil {
 			row = existing
 			return nil
@@ -611,7 +612,7 @@ func (s *KnowledgeService) UpdateDocument(ctx context.Context, request Knowledge
 			}
 		}
 		result := tx.Model(&KnowledgeDocument{}).
-			Where("tenant_id=? AND id=? AND revision=?", ac.TenantID, document.ID, request.Revision).
+			Where("id=? AND revision=?", document.ID, request.Revision).
 			Updates(map[string]any{
 				"attachment_id": source.ID, "source_revision": source.SHA256,
 				"content_type": source.ContentType, "original_name": source.OriginalName,
@@ -640,7 +641,7 @@ func (s *KnowledgeService) UpdateDocument(ctx context.Context, request Knowledge
 }
 
 func (s *KnowledgeService) DeleteDocument(ctx context.Context, request KnowledgeDocumentDeleteRequest) (any, error) {
-	document, _, ac, err := s.getDocument(ctx, request.ID, true)
+	document, _, _, err := s.getDocument(ctx, request.ID, true)
 	if err != nil {
 		return nil, err
 	}
@@ -654,7 +655,7 @@ func (s *KnowledgeService) DeleteDocument(ctx context.Context, request Knowledge
 		}); unlinkErr != nil {
 			return unlinkErr
 		}
-		result := tx.Where("tenant_id=? AND id=? AND revision=?", ac.TenantID, document.ID, request.Revision).
+		result := tx.Where("id=? AND revision=?", document.ID, request.Revision).
 			Delete(&KnowledgeDocument{})
 		if result.Error != nil {
 			return dbError(result.Error, "delete knowledge document")
@@ -666,7 +667,7 @@ func (s *KnowledgeService) DeleteDocument(ctx context.Context, request Knowledge
 			return err
 		}
 		var remaining KnowledgeDocument
-		err := tx.Where("tenant_id=? AND knowledge_base_id=?", document.TenantID, document.KnowledgeBaseID).Order("id").First(&remaining).Error
+		err := tx.Where("knowledge_base_id=?", document.KnowledgeBaseID).Order("id").First(&remaining).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil
 		}
@@ -683,9 +684,16 @@ func (s *KnowledgeService) DeleteDocument(ctx context.Context, request Knowledge
 }
 
 func (s *KnowledgeService) attachmentSnapshot(ctx context.Context, ac *auth.Context, id string) (*systemmodel.Attachment, error) {
-	var row systemmodel.Attachment
-	if err := s.db.WithContext(ctx).Where("tenant_id=? AND id=? AND status=?", ac.TenantID, id, status.AttachmentReady).
-		First(&row).Error; err != nil {
+	tdb, repoErr := tenantdata.TenantDB(ctx, s.db)
+	if repoErr != nil {
+		return nil, repoErr
+	}
+	repo, repoErr := tenantdata.NewTenantRepository[systemmodel.Attachment](tdb)
+	if repoErr != nil {
+		return nil, repoErr
+	}
+	row, repoErr := repo.First("id=? AND status=?", id, status.AttachmentReady)
+	if repoErr != nil {
 		return nil, errs.NewKey(errs.CodeNotFound, "ai.knowledge.attachment_not_found", "ready attachment not found")
 	}
 	if row.UploaderID != ac.UserID {
@@ -707,17 +715,27 @@ func (s *KnowledgeService) ListAgentKnowledge(ctx context.Context, request Agent
 	if err != nil {
 		return nil, err
 	}
-	query := s.db.WithContext(ctx).Model(&AgentKnowledgeBinding{}).
-		Joins("JOIN ai_knowledge_bases kb ON kb.tenant_id = ai_agent_knowledge_bindings.tenant_id AND kb.id = ai_agent_knowledge_bindings.knowledge_base_id AND kb.deleted_at IS NULL").
-		Where("ai_agent_knowledge_bindings.tenant_id=? AND ai_agent_knowledge_bindings.agent_id=?", agent.TenantID, agent.ID).
-		Where("kb.visibility=? OR kb.owner_user_id=?", aiknowledge.VisibilityTenant, ac.UserID)
-	var total int64
-	if err = query.Count(&total).Error; err != nil {
+	tdb, err := tenantdata.TenantDB(ctx, s.db)
+	if err != nil {
+		return nil, err
+	}
+	counts, err := tenantdata.TenantRaw[struct{ Count int64 }](tdb, `SELECT COUNT(*) AS count
+FROM ai_agent_knowledge_bindings b
+JOIN ai_knowledge_bases kb ON kb.tenant_id=b.tenant_id AND kb.id=b.knowledge_base_id AND kb.deleted_at IS NULL
+WHERE b.tenant_id=? AND b.agent_id=? AND (kb.visibility=? OR kb.owner_user_id=?)`, agent.ID, aiknowledge.VisibilityTenant, ac.UserID)
+	if err != nil {
 		return nil, dbError(err, "list agent knowledge bindings")
 	}
-	var bindings []AgentKnowledgeBinding
-	if err = query.Select("ai_agent_knowledge_bindings.*").Order("ai_agent_knowledge_bindings.created_at ASC").
-		Offset(request.Offset()).Limit(request.PageSize).Find(&bindings).Error; err != nil {
+	var total int64
+	if len(counts) == 1 {
+		total = counts[0].Count
+	}
+	bindings, err := tenantdata.TenantRaw[AgentKnowledgeBinding](tdb, `SELECT b.*
+FROM ai_agent_knowledge_bindings b
+JOIN ai_knowledge_bases kb ON kb.tenant_id=b.tenant_id AND kb.id=b.knowledge_base_id AND kb.deleted_at IS NULL
+WHERE b.tenant_id=? AND b.agent_id=? AND (kb.visibility=? OR kb.owner_user_id=?)
+ORDER BY b.created_at ASC LIMIT ? OFFSET ?`, agent.ID, aiknowledge.VisibilityTenant, ac.UserID, request.PageSize, request.Offset())
+	if err != nil {
 		return nil, dbError(err, "list agent knowledge bindings")
 	}
 	return pagination.NewResult(bindings, total, request.Request), nil
@@ -744,7 +762,7 @@ func (s *KnowledgeService) BindAgentKnowledge(ctx context.Context, request Agent
 			return lockErr
 		}
 		var current KnowledgeBase
-		if queryErr := tx.Where("tenant_id=? AND id=?", knowledgeBase.TenantID, knowledgeBase.ID).
+		if queryErr := tx.Where("id=?", knowledgeBase.ID).
 			Where("visibility=? OR owner_user_id=?", aiknowledge.VisibilityTenant, ac.UserID).
 			First(&current).Error; queryErr != nil {
 			return knowledgeNotFound()
@@ -765,13 +783,12 @@ func (s *KnowledgeService) UnbindAgentKnowledge(ctx context.Context, request Age
 	if _, err := knowledgeActor(ctx); err != nil {
 		return nil, err
 	}
-	agent, ac, err := s.agents.get(ctx, request.AgentID, true)
+	agent, _, err := s.agents.get(ctx, request.AgentID, true)
 	if err != nil {
 		return nil, err
 	}
 	var binding AgentKnowledgeBinding
-	if err = s.db.WithContext(ctx).Where("tenant_id=? AND agent_id=? AND knowledge_base_id=?",
-		ac.TenantID, agent.ID, request.KnowledgeBaseID).First(&binding).Error; err != nil {
+	if err = s.db.WithContext(ctx).Where("agent_id=? AND knowledge_base_id=?", agent.ID, request.KnowledgeBaseID).First(&binding).Error; err != nil {
 		return nil, knowledgeNotFound()
 	}
 	result := s.db.WithContext(ctx).Delete(&binding)

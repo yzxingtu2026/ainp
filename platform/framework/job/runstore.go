@@ -57,15 +57,18 @@ func (s *gormRunStore) Create(ctx context.Context, run *Run) error {
 }
 
 func (s *gormRunStore) Get(ctx context.Context, id string) (*Run, error) {
-	var run Run
-	err := s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Where("id = ?", id).First(&run).Error
-	if err == gorm.ErrRecordNotFound {
-		return nil, ErrNotFound
-	}
+	tdb, err := tenant.TenantDB(ctx, s.db)
 	if err != nil {
 		return nil, err
 	}
-	return &run, nil
+	rows, err := tenant.TenantRaw[Run](tdb, "SELECT * FROM job_runs WHERE tenant_id = ? AND id = ? LIMIT 1", id)
+	if err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return nil, ErrNotFound
+	}
+	return &rows[0], nil
 }
 
 // GetTrusted loads a run by id without tenant scope (Worker uses JobRun as source of truth).
@@ -107,41 +110,57 @@ func (s *gormRunStore) List(ctx context.Context, q ListQuery) ([]Run, int64, err
 	if q.PageSize < 1 || q.PageSize > 100 {
 		q.PageSize = 20
 	}
-	db := s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Model(&Run{})
-	if q.JobType != "" {
-		db = db.Where("job_type = ?", q.JobType)
-	}
-	if q.Status != "" {
-		db = db.Where("status = ?", q.Status)
-	}
-	if q.From != nil {
-		db = db.Where("created_at >= ?", *q.From)
-	}
-	if q.To != nil {
-		db = db.Where("created_at <= ?", *q.To)
-	}
-	var total int64
-	if err := db.Count(&total).Error; err != nil {
+	tdb, err := tenant.TenantDB(ctx, s.db)
+	if err != nil {
 		return nil, 0, err
 	}
-	var rows []Run
-	err := db.Order("created_at DESC").Offset((q.Page - 1) * q.PageSize).Limit(q.PageSize).Find(&rows).Error
+	whereSQL := " WHERE tenant_id = ?"
+	args := make([]any, 0, 4)
+	if q.JobType != "" {
+		whereSQL += " AND job_type = ?"
+		args = append(args, q.JobType)
+	}
+	if q.Status != "" {
+		whereSQL += " AND status = ?"
+		args = append(args, q.Status)
+	}
+	if q.From != nil {
+		whereSQL += " AND created_at >= ?"
+		args = append(args, *q.From)
+	}
+	if q.To != nil {
+		whereSQL += " AND created_at <= ?"
+		args = append(args, *q.To)
+	}
+	counts, err := tenant.TenantRaw[struct{ Count int64 }](tdb, "SELECT COUNT(*) AS count FROM job_runs"+whereSQL, args...)
+	if err != nil {
+		return nil, 0, err
+	}
+	total := int64(0)
+	if len(counts) > 0 {
+		total = counts[0].Count
+	}
+	listArgs := append(append([]any{}, args...), q.PageSize, (q.Page-1)*q.PageSize)
+	rows, err := tenant.TenantRaw[Run](tdb, "SELECT * FROM job_runs"+whereSQL+" ORDER BY created_at DESC LIMIT ? OFFSET ?", listArgs...)
 	return rows, total, err
 }
 
 func (s *gormRunStore) MarkCancelRequested(ctx context.Context, id string) error {
 	now := time.Now().UTC()
-	res := s.db.WithContext(ctx).Scopes(tenant.ScopeByTenant(ctx)).Model(&Run{}).
-		Where("id = ? AND status IN ?", id, []status.JobRunStatus{
-			status.JobPendingEnqueue, status.JobQueued, status.JobRunning, status.JobRetrying,
-		}).Updates(map[string]any{
-		"cancel_requested_at": now,
-		"updated_at":          now,
-	})
-	if res.Error != nil {
-		return res.Error
+	tdb, err := tenant.TenantDB(ctx, s.db)
+	if err != nil {
+		return err
 	}
-	if res.RowsAffected == 0 {
+	rows, err := tenant.TenantRaw[struct{ ID string }](tdb, `WITH scoped AS (
+  SELECT id FROM job_runs WHERE tenant_id = ? AND id = ? AND status IN (?, ?, ?, ?) FOR UPDATE
+)
+UPDATE job_runs AS r SET cancel_requested_at = ?, updated_at = ?
+FROM scoped WHERE r.id = scoped.id RETURNING r.id`, id,
+		status.JobPendingEnqueue, status.JobQueued, status.JobRunning, status.JobRetrying, now, now)
+	if err != nil {
+		return err
+	}
+	if len(rows) == 0 {
 		return ErrConflict
 	}
 	return nil

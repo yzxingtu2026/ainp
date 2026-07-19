@@ -155,8 +155,17 @@ func TestSettingServiceTenantIsolationAndRevision(t *testing.T) {
 	if resetView.Source != "default" || resetView.Revision != 0 || resetView.Values["display_name"] != "AINP" {
 		t.Fatalf("reset view = %#v", resetView)
 	}
-	var count int64
-	if err := testDB.Model(&model.TenantSettingValue{}).Where("tenant_id = ? AND setting_key = ?", "tenant-a", "general.preferences").Count(&count).Error; err != nil {
+	platformCtx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, Realm: auth.RealmPlatform, IsSystemOperator: true})
+	systemDB, err := tenant.SystemDB(platformCtx, testDB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settingRepo, err := tenant.NewSystemRepository[model.TenantSettingValue](systemDB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	count, err := settingRepo.Where("tenant_id = ? AND setting_key = ?", "tenant-a", "general.preferences").Count()
+	if err != nil {
 		t.Fatal(err)
 	}
 	if count != 0 {

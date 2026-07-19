@@ -19,6 +19,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"github.com/yzxingtu2026/ainp/platform/modules/system"
 	"github.com/yzxingtu2026/ainp/platform/modules/system/jobs"
+	"github.com/yzxingtu2026/ainp/platform/modules/system/model"
 	"gorm.io/gorm"
 )
 
@@ -81,10 +82,30 @@ func TestNotificationDeliveryAdminFiltersRetryAndTenantIsolation(t *testing.T) {
 		{ID: "a-delivered", TenantID: "tenant-a", RequestID: "req-a", RecipientID: "user-a", Channel: "email", Status: "delivered"},
 		{ID: "b-failed-email", TenantID: "tenant-b", RequestID: "req-b", RecipientID: "user-b", Channel: "email", Status: "failed"},
 	}
+	platformCtx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, Realm: auth.RealmPlatform, IsSystemOperator: true})
+	systemDB, err := tenant.SystemDB(platformCtx, testDB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deliveryRepo, err := tenant.NewSystemRepository[system.NotificationDelivery](systemDB)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for i := range deliveries {
-		if err := testDB.Create(&deliveries[i]).Error; err != nil {
+		if err := deliveryRepo.Create(&deliveries[i]); err != nil {
 			t.Fatal(err)
 		}
+	}
+	if err := testDB.Create(&model.User{ID: "user-a", TenantID: "tenant-a", Username: "alice", DisplayName: "Alice", PasswordHash: "x", Status: status.ActivationEnabled}).Error; err != nil {
+		t.Fatal(err)
+	}
+	requestRepo, _ := tenant.NewSystemRepository[system.NotificationRequest](systemDB)
+	if err := requestRepo.Create(&system.NotificationRequest{ID: "req-a", TenantID: "tenant-a", DefinitionKey: "demo.notice", VariablesJSON: []byte(`{"key":"value"}`)}); err != nil {
+		t.Fatal(err)
+	}
+	userNotificationRepo, _ := tenant.NewSystemRepository[system.UserNotification](systemDB)
+	if err := userNotificationRepo.Create(&system.UserNotification{ID: "un-a", TenantID: "tenant-a", UserID: "user-a", RequestID: "req-a", DeliveryID: "a-dead-inapp", Title: "Title", Summary: "Summary", Body: "Body", ActionJSON: []byte("{}")}); err != nil {
+		t.Fatal(err)
 	}
 
 	ctx := auth.WithContext(context.Background(), &auth.Context{
@@ -92,13 +113,25 @@ func TestNotificationDeliveryAdminFiltersRetryAndTenantIsolation(t *testing.T) {
 	})
 	enqueuer := &recordingJobEnqueuer{}
 	service := system.NewNotificationDeliveryService(repo, enqueuer)
+	names, err := repo.BatchLookupUserNames(ctx, "tenant-a", []string{"user-a"})
+	if err != nil || names["user-a"] != "Alice" {
+		t.Fatalf("user names=%#v err=%v", names, err)
+	}
+	detail, err := repo.GetDeliveryDetail(ctx, "a-dead-inapp")
+	if err != nil || detail == nil || detail.RecipientName != "Alice" || detail.DefinitionKey != "demo.notice" || detail.Title != "Title" {
+		t.Fatalf("delivery detail=%#v err=%v", detail, err)
+	}
+	ctxB := auth.WithContext(context.Background(), &auth.Context{TenantID: "tenant-b", UserID: "admin-b", Realm: auth.RealmTenant, Authenticated: true})
+	if other, err := repo.GetDeliveryDetail(ctxB, "a-dead-inapp"); err != nil || other != nil {
+		t.Fatalf("cross-tenant detail=%#v err=%v", other, err)
+	}
 
 	defaultResult, err := service.List(ctx, json.RawMessage(`{"page":1,"page_size":20}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if total := defaultResult.(pagination.Result[map[string]any]).Total; total != 2 {
-		t.Fatalf("default list total = %d, want failed/dead records only", total)
+	if total := defaultResult.(pagination.Result[map[string]any]).Total; total != 3 {
+		t.Fatalf("default list total = %d, want all tenant delivery statuses", total)
 	}
 	filtered, err := service.List(ctx, json.RawMessage(`{"page":1,"page_size":20,"status":"failed","channel":"email"}`))
 	if err != nil {
@@ -128,8 +161,8 @@ func TestNotificationDeliveryAdminFiltersRetryAndTenantIsolation(t *testing.T) {
 	if !strings.HasPrefix(enqueuer.inputs[0].IdempotencyKey, "notification-retry:a-failed-email:") {
 		t.Fatalf("retry idempotency key = %q", enqueuer.inputs[0].IdempotencyKey)
 	}
-	var retried system.NotificationDelivery
-	if err := testDB.First(&retried, "id = ?", "a-failed-email").Error; err != nil {
+	retried, err := deliveryRepo.GetByID("a-failed-email")
+	if err != nil {
 		t.Fatal(err)
 	}
 	if retried.Status != "pending" {
@@ -140,8 +173,8 @@ func TestNotificationDeliveryAdminFiltersRetryAndTenantIsolation(t *testing.T) {
 	if _, err := service.Retry(ctx, json.RawMessage(`{"id":"a-dead-inapp"}`)); err == nil {
 		t.Fatal("retry should fail when enqueue fails")
 	}
-	var notRetried system.NotificationDelivery
-	if err := testDB.First(&notRetried, "id = ?", "a-dead-inapp").Error; err != nil {
+	notRetried, err := deliveryRepo.GetByID("a-dead-inapp")
+	if err != nil {
 		t.Fatal(err)
 	}
 	if notRetried.Status != "dead" {
