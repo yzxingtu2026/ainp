@@ -25,7 +25,10 @@ type ConversationService struct {
 }
 
 func NewConversationService(db *gorm.DB, assets aimodelruntime.AssetResolver) *ConversationService {
-	return &ConversationService{db: db, assets: assets}
+	if err := registerConversationTenantModels(); err != nil {
+		panic(err)
+	}
+	return &ConversationService{db: tenantdata.RuntimeDB(db), assets: assets}
 }
 
 type ConversationListRequest struct {

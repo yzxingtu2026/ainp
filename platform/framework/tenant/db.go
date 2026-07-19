@@ -32,6 +32,13 @@ type TenantDatabase struct {
 }
 type SystemDatabase struct{ db *gorm.DB }
 
+func RuntimeDB(db *gorm.DB) *gorm.DB {
+	if db == nil {
+		return nil
+	}
+	return db.Session(&gorm.Session{NewDB: true}).Set(accessModeKey, modeTenant)
+}
+
 // MigrationDB marks schema installation access explicitly. It must not be used
 // by request, worker, setup-data, or other runtime business paths.
 func MigrationDB(db *gorm.DB) (*gorm.DB, error) {

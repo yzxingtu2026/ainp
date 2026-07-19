@@ -18,6 +18,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
 	"github.com/yzxingtu2026/ainp/platform/framework/pagination"
+	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -100,10 +101,16 @@ func (s *AgentRuntimeService) Start(ctx context.Context, r AgentRunStartRequest)
 	if conversation.Status != "active" {
 		return nil, errs.New(errs.CodeConflict, "conversation is not active")
 	}
-	var trigger ConversationMessage
-	if err = s.db.WithContext(ctx).Where("tenant_id=? AND conversation_id=? AND id=? AND role=? AND status=?", ac.TenantID, conversation.ID, r.TriggerMessageID, "user", "committed").First(&trigger).Error; err != nil {
+	tdb, err := tenantdata.TenantDB(ctx, s.db)
+	if err != nil {
+		return nil, err
+	}
+	triggers, err := tenantdata.TenantRaw[ConversationMessage](tdb, `SELECT * FROM ai_messages
+WHERE tenant_id=? AND conversation_id=? AND id=? AND role=? AND status=? LIMIT 1`, conversation.ID, r.TriggerMessageID, "user", "committed")
+	if err != nil || len(triggers) != 1 {
 		return nil, errs.New(errs.CodeNotFound, "trigger message not found")
 	}
+	trigger := triggers[0]
 	budget := r.Budget.Normalize()
 	if err = budget.Validate(); err != nil {
 		return nil, errs.New(errs.CodeValidation, err.Error())
@@ -494,10 +501,15 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 	if err != nil {
 		return s.fail(ctx, run, "agent_version_unavailable")
 	}
-	var conversation Conversation
-	if err = s.db.WithContext(ctx).Where("tenant_id=? AND id=?", run.TenantID, run.ConversationID).First(&conversation).Error; err != nil {
+	tdb, scopeErr := tenantdata.TenantDB(ctx, s.db)
+	if scopeErr != nil {
+		return s.fail(ctx, run, "tenant_context_unavailable")
+	}
+	conversations, queryErr := tenantdata.TenantRaw[Conversation](tdb, `SELECT * FROM ai_conversations WHERE tenant_id=? AND id=? LIMIT 1`, run.ConversationID)
+	if queryErr != nil || len(conversations) != 1 {
 		return s.fail(ctx, run, "conversation_unavailable")
 	}
+	conversation := conversations[0]
 	if conversation.Purpose == ConversationPurposeWorkspace && version.Kind == AgentVersionKindPreview {
 		return s.fail(ctx, run, "preview_version_forbidden")
 	}
@@ -694,10 +706,18 @@ func (s *AgentRuntimeService) runtimeMessages(ctx context.Context, run *AgentRun
 			}
 			run.Compactions++
 			id := result.SnapshotID
-			var snap ContextSnapshot
-			if err = s.db.WithContext(ctx).Where("tenant_id=? AND id=?", run.TenantID, id).First(&snap).Error; err != nil {
-				return nil, nil, err
+			tdb, scopeErr := tenantdata.TenantDB(ctx, s.db)
+			if scopeErr != nil {
+				return nil, nil, scopeErr
 			}
+			snaps, queryErr := tenantdata.TenantRaw[ContextSnapshot](tdb, `SELECT * FROM ai_context_snapshots WHERE tenant_id=? AND id=? LIMIT 1`, id)
+			if queryErr != nil {
+				return nil, nil, queryErr
+			}
+			if len(snaps) != 1 {
+				return nil, nil, fmt.Errorf("snapshot not found")
+			}
+			snap := snaps[0]
 			var payload aiconversation.SnapshotPayload
 			if json.Unmarshal(snap.Payload, &payload) != nil {
 				return nil, nil, fmt.Errorf("invalid snapshot")
@@ -1085,9 +1105,15 @@ func (s *AgentRuntimeService) resumeConfirmation(ctx context.Context, run *Agent
 	return err
 }
 func (s *AgentRuntimeService) currentConversationRevision(ctx context.Context, run *AgentRun) uint64 {
-	var c Conversation
-	_ = s.db.WithContext(ctx).Select("revision").Where("tenant_id=? AND id=?", run.TenantID, run.ConversationID).First(&c).Error
-	return c.Revision
+	tdb, err := tenantdata.TenantDB(ctx, s.db)
+	if err != nil {
+		return 0
+	}
+	rows, err := tenantdata.TenantRaw[struct{ Revision uint64 }](tdb, `SELECT revision FROM ai_conversations WHERE tenant_id=? AND id=? LIMIT 1`, run.ConversationID)
+	if err != nil || len(rows) != 1 {
+		return 0
+	}
+	return rows[0].Revision
 }
 func (s *AgentRuntimeService) pause(ctx context.Context, run *AgentRun, reason string) error {
 	return s.terminalLike(ctx, run, "paused", reason, false)
