@@ -1,11 +1,11 @@
 # 统一设置系统
 
-本文档约定代码定义、租户隔离的运行时业务设置。Agent 要点：`.agent/rules/settings-system.md`。
+本文档约定代码定义、租户隔离及当前用户自助维护的运行时业务设置。Agent 要点：`.agent/rules/settings-system.md`。
 
 ## 边界
 
 - **启动配置**（YAML / 环境变量）：DSN、JWT Secret、监听端口等，**不进入**设置系统。
-- **运行时业务设置**：模块用 Go 代码注册 Category / Definition / Field；数据库只存租户覆盖值。
+- **运行时业务设置**：模块用 Go 代码注册 Category / Definition / Field；数据库只存 tenant 或 user scope 覆盖值。
 - Setting **不承载**固定状态字典或租户业务字典（见 `code-sets-and-status.md`）。
 
 ## 注册协议
@@ -13,7 +13,7 @@
 - 包：`platform/framework/setting`
 - `RegisterCategory` / `RegisterDefinition`（经 `app.App`）
 - Category / Definition key 全局唯一；Definition 必须引用已注册 Category
-- Phase 1 仅启用 `tenant` scope / surface
+- tenant surface 启用 `tenant` 与 `user` scope；`platform` scope 仍保留未启用
 - 字段类型：`text` / `textarea` / `number` / `boolean` / `select` / `multi_select` / `color`
 - `multi_select` 默认只接受注册选项；确有业务需要时可显式启用 `allow_custom_values`，并用 `custom_value_pattern` 限制自定义值格式
 - 图标：Iconify `collection:name`，默认 `mdi`
@@ -49,6 +49,15 @@ VisibleWhen: &setting.VisibleWhen{Field: "mode", In: []any{"a", "b"}}
 - `revision` 乐观锁；`schema_version` 不匹配不得静默误读
 - 未覆盖返回代码默认值；重置删除覆盖行
 
+## 当前用户值
+
+- 表：`user_setting_values`，`UNIQUE (tenant_id, user_id, setting_key)`，并以复合外键关联用户。
+- `user_id` 与 `tenant_id` 只能来自通过认证的 AuthContext；请求体和 Query 不接受 owner 字段。
+- 读写入口固定为 self-only authenticated Action；管理员权限不赋予代读、代改私人偏好的能力。
+- 使用与 tenant scope 相同的代码 Schema、强类型验证、`schema_version` 和 `revision` 乐观锁。
+- 审计只记录 setting key 与 revision，不记录称呼、时区等设置值。
+- `profile.runtime_preferences` 提供称呼覆盖、IANA 时区、locale、回答风格、日期/时间格式和自动记忆开关；业务通过 `UserSettingService.Preferences` 类型化读取。
+
 ## Action / 读写入口 / 前端
 
 ### 管理端（统一读写）
@@ -63,6 +72,7 @@ VisibleWhen: &setting.VisibleWhen{Field: "mode", In: []any{"a", "b"}}
 ### 业务侧（统一只读）
 
 - 底层：`platform/framework/setting.Provider.Get(ctx, tenantID, settingKey)`（默认值合并 + 可选缓存）
+- tenant Provider 会拒绝 user-scope Definition；用户偏好只能通过 self-only `UserSettingService` 读取。
 - 推荐：模块内类型化封装，例如 `SettingService.Preferences(ctx)`
 - **禁止**：业务散落 `Get("xxx")` + 手工抠 JSON；**禁止**业务自行实现 Save（写操作一律走管理 Action）
 
@@ -71,6 +81,7 @@ VisibleWhen: &setting.VisibleWhen{Field: "mode", In: []any{"a", "b"}}
 - 页面：`/system/settings` 按 Category 导航 + Definition 动态表单
 - 禁止后端下发组件路径/脚本；特殊控件仅通过前端白名单 Renderer 扩展
 - 动态表单仅在字段声明 `allow_custom_values` 时开放多选自定义项；其他多选仍保持注册选项白名单
+- 当前用户从头像菜单进入 `/system/profile`；基本资料、对话偏好、记忆与隐私、账号安全用 `?tab=` 深链，不进入管理员设置页面。
 
 ## 检查清单
 

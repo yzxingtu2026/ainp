@@ -10,6 +10,26 @@ const USER_API = {
   passwordReset: '/api/v1/system/users/password/reset'
 } as const;
 
+export function fetchSelfProfile() {
+  return request<Api.User.SelfProfile>({ url: '/api/v1/system/profile' });
+}
+
+export function updateSelfProfile(displayName: string) {
+  return request<Api.User.SelfProfile>({
+    url: '/api/v1/system/profile/update', method: 'post', data: { display_name: displayName }
+  });
+}
+
+export function fetchUserPreferences() {
+  return request<Api.Setting.Definition>({ url: '/api/v1/system/profile/preferences' });
+}
+
+export function updateUserPreferences(revision: number, values: Record<string, unknown>) {
+  return request<Api.Setting.Definition>({
+    url: '/api/v1/system/profile/preferences/update', method: 'post', data: { revision, values }
+  });
+}
+
 export function fetchUserList(params: Api.User.ListParams) {
   return request<Api.User.ListResult>({ url: USER_API.list, method: 'post', data: params });
 }

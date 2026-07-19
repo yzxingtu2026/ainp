@@ -69,6 +69,75 @@ type userUpdateRequest struct {
 	DeptID      string `json:"dept_id"`
 }
 
+type selfProfileUpdateRequest struct {
+	DisplayName string `json:"display_name" validate:"required,max=128"`
+}
+
+type SelfProfileView struct {
+	UserView
+	MemoryPreferredAddress string `json:"memory_preferred_address"`
+	EffectiveAddress       string `json:"effective_address"`
+	AddressSource          string `json:"address_source"`
+}
+
+func (s *UserService) SelfProfile(ctx context.Context, _ json.RawMessage) (any, error) {
+	_, userID, err := tenantIdentity(ctx)
+	if err != nil {
+		return nil, err
+	}
+	tdb, err := tenant.TenantDB(ctx, s.db)
+	if err != nil {
+		return nil, err
+	}
+	user, err := s.findUser(tdb, userID, false)
+	if err != nil {
+		return nil, err
+	}
+	roleMap, err := s.loadUserRoles(tdb, []string{userID})
+	if err != nil {
+		return nil, err
+	}
+	view := SelfProfileView{UserView: userView(*user, roleMap[userID])}
+	rows, qerr := tenant.TenantRaw[struct{ PreferredAddress string }](tdb, `SELECT COALESCE(profile_json->>'preferred_address','') AS preferred_address
+FROM ai_memory_current_profiles WHERE tenant_id = ? AND user_id = ? AND agent_id IS NULL AND status = 'ready'
+ORDER BY source_revision DESC LIMIT 1`, userID)
+	if qerr == nil && len(rows) > 0 {
+		view.MemoryPreferredAddress = strings.TrimSpace(rows[0].PreferredAddress)
+	}
+	view.EffectiveAddress, view.AddressSource = view.MemoryPreferredAddress, "memory_profile"
+	if view.EffectiveAddress == "" {
+		view.EffectiveAddress, view.AddressSource = user.DisplayName, "display_name"
+	}
+	if view.EffectiveAddress == "" {
+		view.EffectiveAddress, view.AddressSource = user.Username, "username"
+	}
+	return view, nil
+}
+
+func (s *UserService) UpdateSelfProfile(ctx context.Context, input json.RawMessage) (any, error) {
+	_, userID, err := tenantIdentity(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var req selfProfileUpdateRequest
+	if err := decodeUserRequest(input, &req); err != nil {
+		return nil, err
+	}
+	req.DisplayName = strings.TrimSpace(req.DisplayName)
+	if req.DisplayName == "" {
+		return nil, errs.ValidationKey("common.validation_failed", "display_name is required")
+	}
+	setUserAudit(ctx, userID, "self profile updated")
+	tdb, err := tenant.TenantDB(ctx, s.db)
+	if err != nil {
+		return nil, err
+	}
+	if err := tenant.TenantExec(tdb, `UPDATE users SET display_name = ?, updated_at = ? WHERE tenant_id = ? AND id = ?`, req.DisplayName, time.Now().UTC(), userID); err != nil {
+		return nil, normalizeUserError(err, "update self profile failed")
+	}
+	return s.SelfProfile(ctx, nil)
+}
+
 type userStatusRequest struct {
 	ID     string                  `json:"id" validate:"required"`
 	Status status.ActivationStatus `json:"status" validate:"required,oneof=enabled disabled"`

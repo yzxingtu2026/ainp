@@ -32,11 +32,12 @@ type Scope string
 
 const (
 	ScopeTenant   Scope = "tenant"
+	ScopeUser     Scope = "user"
 	ScopePlatform Scope = "platform" // reserved; not enabled in Phase 1
 )
 
 func (s Scope) Valid() bool {
-	return s == ScopeTenant || s == ScopePlatform
+	return s == ScopeTenant || s == ScopeUser || s == ScopePlatform
 }
 
 var (
@@ -161,8 +162,8 @@ func ValidateDefinition(def Definition, categories map[string]Category) error {
 	if !scope.Valid() {
 		return fmt.Errorf("invalid setting definition scope: %s", def.Scope)
 	}
-	// Phase 1 only enables tenant scope/surface registrations.
-	if scope != ScopeTenant {
+	// Platform scope remains reserved; tenant and self-only user scopes are enabled.
+	if scope == ScopePlatform {
 		return fmt.Errorf("setting definition scope %q is not enabled in phase 1: %s", scope, def.Key)
 	}
 	surface := auth.NormalizeRealm(def.Surface)

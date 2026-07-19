@@ -234,6 +234,16 @@ func TestSettingActionsAndMenuAreRegistered(t *testing.T) {
 	if _, ok := application.Settings.GetDefinition("general.visibility_demo"); !ok {
 		t.Fatal("visibility demo setting definition was not registered")
 	}
+	runtimePrefs, ok := application.Settings.GetDefinition(system.RuntimePreferencesKey)
+	if !ok || runtimePrefs.Scope != setting.ScopeUser {
+		t.Fatal("user-scope runtime preferences definition was not registered")
+	}
+	for _, actionID := range []string{system.ActionProfileGet, system.ActionProfileUpdate, system.ActionUserPreferencesGet, system.ActionUserPreferencesUpdate} {
+		registered, ok := application.Actions.Get(actionID)
+		if !ok || registered.Meta.Access != "authenticated" {
+			t.Fatalf("authenticated profile action not registered: %s", actionID)
+		}
+	}
 	attachmentDef, ok := application.Settings.GetDefinition(system.SettingKeyAttachmentUploadPolicy)
 	if !ok {
 		t.Fatal("attachment upload policy setting definition was not registered")

@@ -72,6 +72,7 @@ var tenantModelClassifications = map[string]tenantModelClassification{
 	"modules/system/model/models.go:AuthSession":                         {Reason: "private pre-auth store rotates sessions before request AuthContext exists"},
 	"modules/system/model/models.go:Role":                                {Reason: "role authorization bootstrap uses fixed TenantRaw queries"},
 	"modules/system/model/models.go:TenantSettingValue":                  {Registered: true},
+	"modules/system/model/models.go:UserSettingValue":                    {Registered: true},
 	"modules/system/model/models.go:User":                                {Reason: "private pre-auth store resolves users before authenticated AuthContext exists"},
 	"modules/system/model/models.go:UserRole":                            {Reason: "role membership is constrained through users and roles by composite foreign keys"},
 	"modules/system/notification_models.go:NotificationDelivery":         {Registered: true},

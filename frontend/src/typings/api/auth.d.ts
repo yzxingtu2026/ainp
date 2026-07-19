@@ -29,6 +29,16 @@ declare namespace Api {
       capabilities: { challenge: boolean; redirect: boolean; label_key?: string };
     }
 
+    interface Session {
+      id: string;
+      client: string;
+      device_summary?: string;
+      created_at: string;
+      last_seen_at: string;
+      expires_at: string;
+      is_current: boolean;
+    }
+
     interface AinPUserProfile {
       realm: 'tenant' | 'platform';
       id: string;

@@ -73,6 +73,9 @@ func (p *Provider) Get(ctx context.Context, tenantID, settingKey string) (*Effec
 	if !ok {
 		return nil, fmt.Errorf("setting not found: %s", settingKey)
 	}
+	if def.Scope != ScopeTenant {
+		return nil, fmt.Errorf("setting scope %q is not supported by tenant provider: %s", def.Scope, settingKey)
+	}
 	p.mu.RLock()
 	if cached, ok := p.cache[cacheKey(tenantID, settingKey)]; ok {
 		cp := *cached

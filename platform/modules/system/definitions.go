@@ -22,6 +22,11 @@ const (
 	ActionSettingUpdate = "system.setting_update"
 	ActionSettingReset  = "system.setting_reset"
 
+	ActionProfileGet            = "system.profile_get"
+	ActionProfileUpdate         = "system.profile_update"
+	ActionUserPreferencesGet    = "system.user_preferences_get"
+	ActionUserPreferencesUpdate = "system.user_preferences_update"
+
 	ActionAttachmentUploadPrepare   = "system.attachment_upload_prepare"
 	ActionAttachmentDownloadPrepare = "system.attachment_download_prepare"
 	ActionAttachmentBind            = "system.attachment_bind"
@@ -32,11 +37,11 @@ const (
 	ActionAttachmentGet             = "system.attachment_get"
 	ActionAttachmentPolicyGet       = "system.attachment_policy_get"
 
-	MenuRoleManagement      = "system.roles"
-	MenuUserManagement      = "system.users"
-	MenuSettingManagement   = "system.settings"
-	MenuAttachmentCenter    = "system.attachments"
-	BuiltinAdminCode        = "admin"
+	MenuRoleManagement    = "system.roles"
+	MenuUserManagement    = "system.users"
+	MenuSettingManagement = "system.settings"
+	MenuAttachmentCenter  = "system.attachments"
+	BuiltinAdminCode      = "admin"
 )
 
 var adminMinimumPermissions = []string{

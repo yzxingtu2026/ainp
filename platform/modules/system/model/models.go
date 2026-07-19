@@ -117,3 +117,19 @@ type TenantSettingValue struct {
 }
 
 func (TenantSettingValue) TableName() string { return "tenant_setting_values" }
+
+// UserSettingValue stores one current user's private, schema-registered overrides.
+type UserSettingValue struct {
+	ID            string    `gorm:"primaryKey;size:64"`
+	TenantID      string    `gorm:"size:64;uniqueIndex:ux_user_setting_key;not null;index"`
+	UserID        string    `gorm:"size:64;uniqueIndex:ux_user_setting_key;not null;index"`
+	SettingKey    string    `gorm:"size:128;uniqueIndex:ux_user_setting_key;not null"`
+	SchemaVersion int       `gorm:"not null"`
+	ValueJSON     []byte    `gorm:"type:jsonb;not null"`
+	Revision      int64     `gorm:"not null;default:1"`
+	UpdatedBy     string    `gorm:"size:64;not null"`
+	CreatedAt     time.Time `gorm:"autoCreateTime"`
+	UpdatedAt     time.Time `gorm:"autoUpdateTime"`
+}
+
+func (UserSettingValue) TableName() string { return "user_setting_values" }
