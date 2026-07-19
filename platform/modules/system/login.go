@@ -2,13 +2,12 @@ package system
 
 import (
 	"context"
-	"errors"
 
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 	"github.com/yzxingtu2026/ainp/platform/framework/status"
+	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"github.com/yzxingtu2026/ainp/platform/modules/system/model"
-	"gorm.io/gorm"
 )
 
 func (s *AuthService) Me(ctx context.Context) (any, error) {
@@ -17,13 +16,18 @@ func (s *AuthService) Me(ctx context.Context) (any, error) {
 		return nil, errs.NewKey(errs.CodeUnauthorized, "common.unauthorized", "unauthorized")
 	}
 
-	var u model.User
-	if err := s.db.WithContext(ctx).Where("id = ? AND tenant_id = ?", ac.UserID, ac.TenantID).First(&u).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errs.NewKey(errs.CodeNotFound, "common.not_found", "user not found")
-		}
+	tdb, err := tenant.TenantDB(ctx, s.db)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := tenant.TenantRaw[model.User](tdb, `SELECT * FROM users WHERE tenant_id = ? AND id = ?`, ac.UserID)
+	if err != nil {
 		return nil, errs.Wrap(errs.CodeInternal, "lookup user failed", err)
 	}
+	if len(rows) != 1 {
+		return nil, errs.NewKey(errs.CodeNotFound, "common.not_found", "user not found")
+	}
+	u := rows[0]
 	if u.Status != status.ActivationEnabled {
 		return nil, errs.NewKey(errs.CodeUserDisabled, "auth.user_disabled", "user disabled")
 	}

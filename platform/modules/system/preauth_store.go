@@ -2,6 +2,8 @@ package system
 
 import (
 	"context"
+	"sort"
+	"time"
 
 	"github.com/yzxingtu2026/ainp/platform/framework/status"
 	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
@@ -65,4 +67,53 @@ func (s *preAuthStore) rotateSession(ctx context.Context, sessionID string, fn f
 		}
 		return fn(tx, &row)
 	})
+}
+
+func (s *preAuthStore) loadAuthorization(ctx context.Context, tenantID, userID, sessionID string, authVersion uint64) (*model.User, []string, []string, error) {
+	tenantRow, err := s.findTenant(ctx, tenantID)
+	if err != nil || tenantRow.Status != status.ActivationEnabled {
+		return nil, nil, nil, err
+	}
+	user, err := s.findUserByID(ctx, s.db, tenantID, userID)
+	if err != nil || user.Status != status.ActivationEnabled {
+		return nil, nil, nil, err
+	}
+	if sessionID != "" {
+		var count int64
+		err = s.db.WithContext(ctx).Model(&model.AuthSession{}).
+			Where("tenant_id = ? AND id = ? AND user_id = ? AND auth_version = ? AND revoked_at IS NULL AND expires_at > ?", tenantID, sessionID, userID, authVersion, time.Now().UTC()).
+			Count(&count).Error
+		if err != nil || count != 1 {
+			return nil, nil, nil, err
+		}
+	}
+	var rows []struct {
+		Role       string `gorm:"column:role_code"`
+		Permission string `gorm:"column:permission"`
+	}
+	err = s.db.WithContext(ctx).Raw(`SELECT r.code AS role_code, rp.permission
+FROM user_roles ur JOIN roles r ON r.tenant_id = ur.tenant_id AND r.id = ur.role_id
+LEFT JOIN role_permissions rp ON rp.role_id = r.id
+WHERE ur.tenant_id = ? AND ur.user_id = ? AND r.status = ?
+ORDER BY r.code, rp.permission`, tenantID, userID, status.ActivationEnabled).Scan(&rows).Error
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	roleSet, permissionSet := map[string]struct{}{}, map[string]struct{}{}
+	for _, row := range rows {
+		roleSet[row.Role] = struct{}{}
+		if row.Permission != "" {
+			permissionSet[row.Permission] = struct{}{}
+		}
+	}
+	roles, permissions := make([]string, 0, len(roleSet)), make([]string, 0, len(permissionSet))
+	for role := range roleSet {
+		roles = append(roles, role)
+	}
+	for permission := range permissionSet {
+		permissions = append(permissions, permission)
+	}
+	sort.Strings(roles)
+	sort.Strings(permissions)
+	return user, roles, permissions, nil
 }

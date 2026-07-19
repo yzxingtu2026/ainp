@@ -2,12 +2,8 @@ package system
 
 import (
 	"context"
-	"errors"
-	"sort"
-	"time"
 
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
-	"github.com/yzxingtu2026/ainp/platform/framework/status"
 	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"github.com/yzxingtu2026/ainp/platform/modules/system/model"
 	"gorm.io/gorm"
@@ -48,57 +44,8 @@ func (s *AuthService) FindTenant(ctx context.Context, tenantID string) (*tenant.
 }
 
 func (s *AuthService) LoadRolesAndPermissions(ctx context.Context, userID, tenantID string) (roles []string, perms []string, err error) {
-	var userRoles []model.UserRole
-	if err = s.db.WithContext(ctx).
-		Where("user_id = ? AND tenant_id = ?", userID, tenantID).
-		Find(&userRoles).Error; err != nil {
-		return nil, nil, err
-	}
-	if len(userRoles) == 0 {
-		return []string{}, []string{}, nil
-	}
-
-	roleIDs := make([]string, 0, len(userRoles))
-	for _, ur := range userRoles {
-		roleIDs = append(roleIDs, ur.RoleID)
-	}
-
-	var roleRows []model.Role
-	if err = s.db.WithContext(ctx).
-		Where("id IN ? AND tenant_id = ? AND status = ?", roleIDs, tenantID, status.ActivationEnabled).
-		Find(&roleRows).Error; err != nil {
-		return nil, nil, err
-	}
-
-	enabledRoleIDs := make([]string, 0, len(roleRows))
-	roles = make([]string, 0, len(roleRows))
-	for _, r := range roleRows {
-		roles = append(roles, r.Code)
-		enabledRoleIDs = append(enabledRoleIDs, r.ID)
-	}
-	sort.Strings(roles)
-
-	if len(enabledRoleIDs) == 0 {
-		return roles, []string{}, nil
-	}
-
-	var rp []model.RolePermission
-	if err = s.db.WithContext(ctx).
-		Where("role_id IN ?", enabledRoleIDs).
-		Find(&rp).Error; err != nil {
-		return nil, nil, err
-	}
-
-	seen := map[string]struct{}{}
-	for _, p := range rp {
-		if _, ok := seen[p.Permission]; ok {
-			continue
-		}
-		seen[p.Permission] = struct{}{}
-		perms = append(perms, p.Permission)
-	}
-	sort.Strings(perms)
-	return roles, perms, nil
+	_, roles, perms, err = s.preAuth.loadAuthorization(ctx, tenantID, userID, "", 0)
+	return roles, perms, err
 }
 
 // LoadAuthorization validates the current tenant/user state and returns a fresh
@@ -108,39 +55,12 @@ func (s *AuthService) LoadAuthorization(ctx context.Context, req auth.Authorizat
 		return nil, auth.ErrAuthorizationInvalid
 	}
 
-	var t tenant.Tenant
-	if err := s.db.WithContext(ctx).Where("id = ? AND status = ?", req.TenantID, status.ActivationEnabled).First(&t).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, auth.ErrAuthorizationInvalid
-		}
-		return nil, err
-	}
-
-	var u model.User
-	if err := s.db.WithContext(ctx).
-		Where("id = ? AND tenant_id = ? AND status = ?", req.UserID, req.TenantID, status.ActivationEnabled).
-		First(&u).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, auth.ErrAuthorizationInvalid
-		}
-		return nil, err
+	u, roles, permissions, err := s.preAuth.loadAuthorization(ctx, req.TenantID, req.UserID, req.SessionID, req.AuthVersion)
+	if err != nil || u == nil {
+		return nil, auth.ErrAuthorizationInvalid
 	}
 	if u.AuthVersion != req.AuthVersion {
 		return nil, auth.ErrAuthorizationStale
-	}
-	if req.SessionID != "" {
-		var count int64
-		now := time.Now().UTC()
-		if err := s.db.WithContext(ctx).Model(&model.AuthSession{}).
-			Where("id = ? AND tenant_id = ? AND user_id = ? AND auth_version = ? AND revoked_at IS NULL AND expires_at > ?", req.SessionID, req.TenantID, req.UserID, req.AuthVersion, now).
-			Count(&count).Error; err != nil || count != 1 {
-			return nil, auth.ErrAuthorizationInvalid
-		}
-	}
-
-	roles, permissions, err := s.LoadRolesAndPermissions(ctx, u.ID, u.TenantID)
-	if err != nil {
-		return nil, err
 	}
 	return &auth.AuthorizationSnapshot{
 		TenantID: u.TenantID, UserID: u.ID, SessionID: req.SessionID, OrgID: u.OrgID, DeptID: u.DeptID,
