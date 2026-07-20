@@ -106,7 +106,7 @@ async function saveCorrection() {
   if (!error) {
     correctionOpen.value = false;
     detailOpen.value = false;
-    await Promise.all([store.load(), store.loadProfile()]);
+    await Promise.all([store.load(), store.loadProfile(), store.loadPendingTotal()]);
     window.$message?.success('纠正已保存，历史记录已保留');
   }
 }
@@ -117,7 +117,7 @@ async function clearAll() {
   if (!error) {
     clearOpen.value = false;
     clearConfirm.value = '';
-    await Promise.all([store.load(), store.loadProfile()]);
+    await Promise.all([store.load(), store.loadProfile(), store.loadPendingTotal()]);
     window.$message?.success('已有记忆已退出召回');
   }
 }
@@ -133,7 +133,7 @@ function search() {
   store.load();
 }
 
-onMounted(() => Promise.all([store.load(), store.loadProfile(), loadPreference()]));
+onMounted(() => Promise.all([store.load(), store.loadProfile(), store.loadPendingTotal(), loadPreference()]));
 </script>
 
 <template>
@@ -220,7 +220,7 @@ onMounted(() => Promise.all([store.load(), store.loadProfile(), loadPreference()
         <NTabPane name="pending">
           <template #tab>
             待确认
-            <NBadge :value="store.total" :max="99" />
+            <NBadge :value="store.pendingTotal" :max="99" :show="store.pendingTotal > 0" />
           </template>
           <NList v-if="pending.length" bordered>
             <NListItem v-for="item in pending" :key="item.id">
