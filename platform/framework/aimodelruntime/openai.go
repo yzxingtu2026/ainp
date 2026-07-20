@@ -29,6 +29,9 @@ func (a *OpenAIAdapter) payload(in AdapterRequest, stream bool) (map[string]any,
 	}
 	r := in.Request
 	p := map[string]any{"model": in.Model.RemoteModelID, "input": openAIInput(r.Messages), "stream": stream}
+	if in.DisableReasoning {
+		p["enable_thinking"] = false
+	}
 	if r.Instructions != "" {
 		p["instructions"] = r.Instructions
 	}

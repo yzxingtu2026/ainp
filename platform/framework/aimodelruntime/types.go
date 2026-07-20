@@ -412,6 +412,7 @@ type AdapterRequest struct {
 	Request                  GenerateRequest
 	Model                    *aimodel.ResolvedModel
 	StructuredOutputStrategy StructuredOutputStrategy
+	DisableReasoning         bool
 }
 type ModelAdapter interface {
 	Generate(context.Context, AdapterRequest) (*GenerateResponse, error)

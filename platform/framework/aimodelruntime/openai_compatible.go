@@ -24,6 +24,9 @@ func (a *OpenAICompatibleAdapter) StructuredOutputStrategies() []StructuredOutpu
 func (a *OpenAICompatibleAdapter) payload(in AdapterRequest, stream bool) (map[string]any, StructuredOutputStrategy, error) {
 	r := in.Request
 	p := map[string]any{"model": in.Model.RemoteModelID, "messages": compatibleMessages(r), "stream": stream}
+	if in.DisableReasoning {
+		p["enable_thinking"] = false
+	}
 	if r.MaxOutputTokens != nil {
 		p["max_tokens"] = *r.MaxOutputTokens
 	}

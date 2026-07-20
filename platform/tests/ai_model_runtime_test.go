@@ -195,11 +195,12 @@ func TestAnthropicStructuredOutputUsesResponseOnlyFunction(t *testing.T) {
 	req := fixtureAdapterRequest(server.URL, aimodel.ProtocolAnthropic)
 	req.Request.StructuredOutput = &aimodelruntime.StructuredOutput{Name: "result", Strict: true, Schema: json.RawMessage(`{"type":"object"}`)}
 	req.StructuredOutputStrategy = aimodelruntime.StructuredOutputResponseFunction
+	req.DisableReasoning = true
 	resp, err := aimodelruntime.NewAnthropicAdapter(server.Client()).Generate(context.Background(), req)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if body["tool_choice"].(map[string]any)["name"] != "result" || len(resp.Output) != 1 || resp.Output[0].Type != aimodelruntime.PartOutputText || resp.Output[0].Text != `{"items":[]}` {
+	if body["thinking"] != nil || body["tool_choice"].(map[string]any)["name"] != "result" || len(resp.Output) != 1 || resp.Output[0].Type != aimodelruntime.PartOutputText || resp.Output[0].Text != `{"items":[]}` {
 		t.Fatalf("response-only function was not normalized: body=%#v response=%#v", body, resp)
 	}
 }
@@ -238,11 +239,12 @@ func TestOpenAIStructuredOutputUsesResponseOnlyFunction(t *testing.T) {
 	req := fixtureAdapterRequest(server.URL, aimodel.ProtocolOpenAI)
 	req.Request.StructuredOutput = &aimodelruntime.StructuredOutput{Name: "result", Strict: true, Schema: json.RawMessage(`{"type":"object"}`)}
 	req.StructuredOutputStrategy = aimodelruntime.StructuredOutputResponseFunction
+	req.DisableReasoning = true
 	resp, err := aimodelruntime.NewOpenAIAdapter(server.Client()).Generate(context.Background(), req)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if body["text"] != nil || body["tools"] == nil || body["tool_choice"] != "required" || len(resp.Output) != 1 || resp.Output[0].Type != aimodelruntime.PartOutputText || resp.Output[0].Text != `{"items":[]}` {
+	if body["text"] != nil || body["tools"] == nil || body["tool_choice"] != "required" || body["enable_thinking"] != false || len(resp.Output) != 1 || resp.Output[0].Type != aimodelruntime.PartOutputText || resp.Output[0].Text != `{"items":[]}` {
 		t.Fatalf("openai response function was not normalized: body=%#v response=%#v", body, resp)
 	}
 }
@@ -267,6 +269,7 @@ func TestOpenAICompatibleStructuredOutputStrategies(t *testing.T) {
 			req := fixtureAdapterRequest(server.URL, aimodel.ProtocolOpenAICompatible)
 			req.Request.StructuredOutput = &aimodelruntime.StructuredOutput{Name: "result", Strict: true, Schema: json.RawMessage(`{"type":"object"}`)}
 			req.StructuredOutputStrategy = tc.strategy
+			req.DisableReasoning = tc.strategy == aimodelruntime.StructuredOutputResponseFunction
 			resp, err := aimodelruntime.NewOpenAICompatibleAdapter(server.Client()).Generate(context.Background(), req)
 			if err != nil {
 				t.Fatal(err)
@@ -276,6 +279,9 @@ func TestOpenAICompatibleStructuredOutputStrategies(t *testing.T) {
 			}
 			if tc.strategy == aimodelruntime.StructuredOutputResponseFunction && body["tools"] == nil {
 				t.Fatal("function strategy did not emit private tools")
+			}
+			if tc.strategy == aimodelruntime.StructuredOutputResponseFunction && body["enable_thinking"] != false {
+				t.Fatal("function strategy must disable reasoning")
 			}
 			if tc.strategy != aimodelruntime.StructuredOutputResponseFunction && body["response_format"] == nil {
 				t.Fatal("response format strategy was not mapped")

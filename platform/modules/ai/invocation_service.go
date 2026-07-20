@@ -270,7 +270,7 @@ func (s *InvocationService) prepare(ctx context.Context, req aimodelruntime.Gene
 		return nil, err
 	}
 	runCtx, cancel := context.WithTimeout(ctx, time.Duration(req.TimeoutMS)*time.Millisecond)
-	return &preparedInvocation{ctx: runCtx, cancel: cancel, adapter: adapter, request: aimodelruntime.AdapterRequest{Request: req, Model: resolved, StructuredOutputStrategy: strategy}, row: row, imageData: imageData}, nil
+	return &preparedInvocation{ctx: runCtx, cancel: cancel, adapter: adapter, request: aimodelruntime.AdapterRequest{Request: req, Model: resolved, StructuredOutputStrategy: strategy, DisableReasoning: strategy == aimodelruntime.StructuredOutputResponseFunction}, row: row, imageData: imageData}, nil
 }
 
 func (s *InvocationService) resolveImages(ctx context.Context, req *aimodelruntime.GenerateRequest) (int, int64, [][]byte, error) {

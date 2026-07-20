@@ -26,6 +26,8 @@ Response-only function 不注册到 Tool Registry、不创建 Scope/Handle/Confi
 
 OpenAI Responses 的 response-only function 固定只投影一个私有函数，并使用字符串 `tool_choice=required`；不得使用供应商支持不一致的命名函数对象。Adapter 收到结果后仍须校验返回函数名与契约名称一致。
 
+选择 `response_only_function` 时，Runtime 必须在私有 `AdapterRequest` 中强制 `DisableReasoning=true`，防止思考模式拒绝强制工具选择或输出非函数内容。OpenAI Responses 与 OpenAI-Compatible Adapter 映射为 `enable_thinking=false`；Anthropic Messages 的扩展思考为请求级 opt-in，因此该策略不得注入 thinking 配置。业务层和模型名称不得参与该约束。
+
 调用账本仅记录最终 `structured_output_strategy` 名称。禁止记录 Schema、Prompt、函数 arguments 或完整响应。格式错误使用 `response_mismatch`，能力不足使用 `capability_not_supported`；调用方只可在总 Job 次数、Token 和超时预算内重试。旧 Deployment 只有 `structured_output` feature、没有策略列表时视为能力元数据不完整，必须由管理员确认后补齐，不自动迁移猜测。
 
 当前结构化输出只支持非流式 `Generate`；流式响应无法在发送增量前完成整份 Schema 校验，因此 `StructuredOutput + Stream` fail-closed。
