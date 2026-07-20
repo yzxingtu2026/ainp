@@ -14,7 +14,18 @@ func TestAIRegistrationTranslationKeysExist(t *testing.T) {
 	keys := []string{
 		"capability.ai.name", "capability.ai.description",
 		"permission_group.ai.provider_management", "permission_group.ai.model_catalog", "permission_group.ai.agent_management",
+		"permission_group.ai.agent_slot_management", "permission_group.ai.agent_slot_preferences",
 		"menu.ai.root.title", "menu.ai.providers.title", "menu.ai.models.title", "menu.ai.agents.title", "menu.ai.knowledge.title",
+		"menu.ai.agent_slots.title",
+		"action.ai.agent_slot_list.name", "action.ai.agent_slot_list.description",
+		"action.ai.agent_slot_get.name", "action.ai.agent_slot_get.description",
+		"action.ai.agent_slot_update.name", "action.ai.agent_slot_update.description",
+		"action.ai.agent_slot_reset.name", "action.ai.agent_slot_reset.description",
+		"action.ai.agent_slot_reconcile.name", "action.ai.agent_slot_reconcile.description",
+		"action.ai.agent_slot_preference_get.name", "action.ai.agent_slot_preference_get.description",
+		"action.ai.agent_slot_preference_update.name", "action.ai.agent_slot_preference_update.description",
+		"action.ai.agent_slot_preference_reset.name", "action.ai.agent_slot_preference_reset.description",
+		"action.ai.conversation_create_for_slot.name", "action.ai.conversation_create_for_slot.description",
 		"ai.model.streaming_not_supported", "ai.model.vision_not_supported", "ai.model.capability_not_supported",
 	}
 	actions := []string{
