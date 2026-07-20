@@ -3,6 +3,7 @@ import { computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useAppStore } from '@/store/modules/app';
 import { useRouteStore } from '@/store/modules/route';
+import { useThemeStore } from '@/store/modules/theme';
 import { $t } from '@/locales';
 
 defineOptions({ name: 'AiWorkspaceLauncher' });
@@ -10,6 +11,7 @@ defineOptions({ name: 'AiWorkspaceLauncher' });
 const props = defineProps<{ location: 'sider' | 'header' }>();
 const appStore = useAppStore();
 const routeStore = useRouteStore();
+const themeStore = useThemeStore();
 const route = useRoute();
 const router = useRouter();
 
@@ -21,6 +23,14 @@ const label = computed(() => {
 });
 const selected = computed(() => Boolean(launcherRoute.value && route.path.startsWith(launcherRoute.value.path)));
 const collapsed = computed(() => props.location === 'sider' && appStore.siderCollapse);
+const iconOnly = computed(
+  () =>
+    props.location === 'sider' &&
+    (collapsed.value ||
+      themeStore.layout.mode === 'vertical-mix' ||
+      themeStore.layout.mode === 'vertical-hybrid-header-first' ||
+      themeStore.layout.mode === 'top-hybrid-sidebar-first')
+);
 
 function openWorkspace() {
   if (launcherRoute.value) void router.push(launcherRoute.value.path);
@@ -29,18 +39,18 @@ function openWorkspace() {
 
 <template>
   <div v-if="launcherRoute" class="ai-launcher-wrap" :class="`ai-launcher-wrap--${location}`">
-    <NTooltip :disabled="!collapsed" placement="right">
+    <NTooltip :disabled="!iconOnly" placement="right">
       <template #trigger>
         <button
           type="button"
           class="ai-launcher"
-          :class="{ 'ai-launcher--selected': selected, 'ai-launcher--collapsed': collapsed }"
+          :class="{ 'ai-launcher--selected': selected, 'ai-launcher--collapsed': iconOnly }"
           :aria-label="label"
           :aria-current="selected ? 'page' : undefined"
           @click="openWorkspace"
         >
           <AiMascot :size="location === 'header' ? 38 : 44" />
-          <span v-if="!collapsed" class="ai-launcher__label">{{ label }}</span>
+          <span v-if="!iconOnly" class="ai-launcher__label">{{ label }}</span>
         </button>
       </template>
       {{ label }}
