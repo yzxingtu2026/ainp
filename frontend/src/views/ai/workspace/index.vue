@@ -64,17 +64,23 @@ onMounted(() => void workspace.initialize());
 
 <template>
   <div class="ai-workspace">
-    <aside v-if="!appStore.isMobile && !conversationPanelCollapsed" class="ai-workspace__sidebar">
-      <ConversationPanel
-        :active="workspace.activeConversations.value"
-        :archived="workspace.archivedConversations.value"
-        :current-id="workspace.conversation.value?.id"
-        @new="workspace.newConversation"
-        @select="chooseConversation"
-        @rename="openRename"
-        @archive="workspace.archiveConversation"
-        @restore="workspace.restoreConversation"
-      />
+    <aside
+      v-if="!appStore.isMobile"
+      class="ai-workspace__sidebar"
+      :class="{ 'ai-workspace__sidebar--collapsed': conversationPanelCollapsed }"
+    >
+      <div class="ai-workspace__sidebar-body">
+        <ConversationPanel
+          :active="workspace.activeConversations.value"
+          :archived="workspace.archivedConversations.value"
+          :current-id="workspace.conversation.value?.id"
+          @new="workspace.newConversation"
+          @select="chooseConversation"
+          @rename="openRename"
+          @archive="workspace.archiveConversation"
+          @restore="workspace.restoreConversation"
+        />
+      </div>
     </aside>
 
     <main class="ai-workspace__main">
@@ -320,8 +326,26 @@ onMounted(() => void workspace.initialize());
 .ai-workspace__sidebar {
   width: clamp(260px, 20vw, 300px);
   flex: none;
+  overflow: hidden;
   border-right: 1px solid rgba(127, 127, 127, 0.15);
   background: rgb(var(--container-color));
+  visibility: visible;
+  transition:
+    width 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+    visibility 0s linear 0s;
+}
+
+.ai-workspace__sidebar--collapsed {
+  width: 0;
+  visibility: hidden;
+  transition:
+    width 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+    visibility 0s linear 0.3s;
+}
+
+.ai-workspace__sidebar-body {
+  width: clamp(260px, 20vw, 300px);
+  height: 100%;
 }
 
 .ai-workspace__main {
