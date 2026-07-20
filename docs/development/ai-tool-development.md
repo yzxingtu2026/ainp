@@ -31,7 +31,7 @@ func (s *Service) GetOrder(ctx context.Context, req OrderGetRequest) (any, error
 }
 ```
 
-生产 Action 必须显式完成 AI 分类：适合 Agent 使用的 Action 填写完整 `AIMeta`；暂不适合暴露的 Action 使用 `action.ExcludeFromAI("稳定原因")`。禁止以 `AI=nil` 作为长期排除清单，因为新增 Action 会在盘点中被静默遗漏。
+Action 是否暴露以其注册处的 `Metadata.AI` 为唯一事实源。适合 Agent 使用的 Action 填写完整 `AIMeta`；不暴露的 Action 保持 `AI=nil`，由 `ActionProvider` 默认忽略。禁止新增 `action_ai_inventory.go`、Action ID switch 或其他与 Registry 平行的手工暴露清单。
 
 注册可暴露 Action 时增加 `AIMeta`：
 
@@ -64,13 +64,7 @@ if err := a.RegisterAction(action.Action{
 
 不要手写一份与 DTO 平行的输入或输出 Schema。`action.SchemaFor[T]()` 会映射 JSON 字段、required、min/max、oneof、嵌套对象和数组，并默认拒绝额外字段。`ResultSummary` 只能描述结果类别，不得拼入参数、业务正文或敏感字段。
 
-暂不暴露时必须留下稳定理由：
-
-```go
-AI: action.ExcludeFromAI("installation and authentication bootstrap actions are not available to agents"),
-```
-
-排除原因应描述安全或产品边界，不能填写“尚未处理”“TODO”等临时状态。
+未声明 `AIMeta` 的 Action 不会进入 Tool Registry，也不会被 `tool.search`、`tool.load` 或模型调用。需要新增暴露能力时，直接修改该 Action 的注册定义并补齐契约测试，不同步维护第二份 ID 清单。
 
 ### 写操作示例
 

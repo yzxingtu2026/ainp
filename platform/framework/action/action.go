@@ -42,7 +42,6 @@ func (h *HTTPMeta) IsEnabled() bool {
 
 type AIMeta struct {
 	ExposeTool           bool
-	ExclusionReason      string
 	Risk                 string
 	SideEffect           string
 	RequiresConfirmation bool
@@ -52,10 +51,6 @@ type AIMeta struct {
 	ResultSummary        string
 	InputSchema          json.RawMessage
 	OutputSchema         json.RawMessage
-}
-
-func ExcludeFromAI(reason string) *AIMeta {
-	return &AIMeta{ExclusionReason: reason}
 }
 
 // IdempotencyMeta 控制 Action 的幂等策略。
@@ -189,7 +184,7 @@ func (r *Registry) Register(a Action) error {
 	if err := validateIdempotency(a.Meta.Idempotency); err != nil {
 		return fmt.Errorf("action %s: %w", a.ID, err)
 	}
-	if a.Meta.AI != nil {
+	if a.Meta.AI != nil && a.Meta.AI.ExposeTool {
 		if err := validateAIMeta(a.ID, a.Meta.AI); err != nil {
 			return err
 		}
@@ -202,15 +197,6 @@ func (r *Registry) Register(a Action) error {
 }
 
 func validateAIMeta(actionID string, meta *AIMeta) error {
-	if !meta.ExposeTool {
-		if strings.TrimSpace(meta.ExclusionReason) == "" {
-			return fmt.Errorf("action %s: AI exclusion reason is required", actionID)
-		}
-		return nil
-	}
-	if strings.TrimSpace(meta.ExclusionReason) != "" {
-		return fmt.Errorf("action %s: exposed AI action must not declare exclusion reason", actionID)
-	}
 	if meta.Summary == "" || meta.HumanDescription == "" {
 		return fmt.Errorf("action %s: AI summary and human description are required", actionID)
 	}

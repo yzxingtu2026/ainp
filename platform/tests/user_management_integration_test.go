@@ -38,15 +38,12 @@ func TestUserManagementActionsAndMenuAreRegistered(t *testing.T) {
 		if registered.Meta.PermissionGroup != "system.user_management" {
 			t.Fatalf("user action permission group = %q", registered.Meta.PermissionGroup)
 		}
-		if registered.Meta.AI == nil {
-			t.Fatalf("user action %s must be explicitly classified for AI", actionID)
-		}
 		shouldExpose := actionID == system.ActionUserList || actionID == system.ActionUserGet
-		if registered.Meta.AI.ExposeTool != shouldExpose {
-			t.Fatalf("user action %s expose_tool = %v", actionID, registered.Meta.AI.ExposeTool)
+		if shouldExpose && (registered.Meta.AI == nil || !registered.Meta.AI.ExposeTool) {
+			t.Fatalf("user action %s must expose a complete AI contract", actionID)
 		}
-		if !shouldExpose && registered.Meta.AI.ExclusionReason == "" {
-			t.Fatalf("user action %s must record an AI exclusion reason", actionID)
+		if !shouldExpose && registered.Meta.AI != nil {
+			t.Fatalf("user action %s must remain unavailable to AI", actionID)
 		}
 	}
 	foundMenu := false

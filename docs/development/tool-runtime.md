@@ -12,7 +12,7 @@
 
 工具 ID 必须为 `{source}:{namespaced-id}`。首期实现 `meta` 与 `action`，`builtin/plugin/http/mcp` 只能通过同一 Provider/Executor 接口扩展。未知来源、重复 Provider、非法 Schema、缺少风险元数据均在注册或刷新时 fail-closed。
 
-生产 Action 必须显式分类为完整 `AIMeta.ExposeTool=true` 或带稳定原因的 `action.ExcludeFromAI(...)`。暴露项使用 `action.SchemaFor[Request/Response]()` 从强类型 DTO 生成输入/输出 Schema，并声明 tags、风险、副作用、确认策略与安全结果摘要。Action Executor 只能调用 `ActionRegistry.Invoke`。
+Action 是否暴露以注册处的 `Metadata.AI` 为唯一事实源：仅 `AIMeta.ExposeTool=true` 自动投影为 Action Tool，`AI=nil` 默认不暴露。暴露项使用 `action.SchemaFor[Request/Response]()` 从强类型 DTO 生成输入/输出 Schema，并声明 tags、风险、副作用、确认策略与安全结果摘要。禁止维护 `action_ai_inventory.go` 等平行暴露清单；Action Executor 只能调用 `ActionRegistry.Invoke`。
 
 框架核心工具通过 `RuntimeSlot` 注册。Slot 同时声明稳定 Definition、`direct/progressive` 发现模式、动态投影、Executor、Step/Invocation 分类、预算类别与安全观测字段。`platform/modules/ai/tools/register.go` 是唯一显式聚合入口；每个核心工具位于独立子目录，例如 `tools/knowledge/slot.go`。生产启动不扫描源码、不使用 Go Plugin，也不依赖隐藏 `init()`。
 

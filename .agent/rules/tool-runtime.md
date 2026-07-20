@@ -4,7 +4,7 @@
 - 模型调用通过 `enable_tools/tool_scope_id` 投影已加载真实 Schema，禁止客户端直接提交 `tools` 绕过 Registry。
 - Tool ID 必须 namespaced；Provider/Executor 统一注册，未知来源、重复、非法 Schema 与缺失风险元数据 fail-closed。
 - 核心工具必须实现独立 `RuntimeSlot` 并经 `platform/modules/ai/tools/register.go` 显式聚合；禁止扫描源码、Go Plugin、隐藏 `init()`，禁止在 ToolService/Agent Runtime 增加业务 Tool ID 分支。
-- 生产 Action 必须显式分类为完整 `AIMeta` 暴露或带稳定原因的排除；输入/输出 Schema 必须由同一强类型 DTO 生成，Action Tool 只经 `ActionRegistry.Invoke`。
+- Action 是否暴露以注册处的 `Metadata.AI` 为唯一事实源；仅 `AIMeta.ExposeTool=true` 自动投影，`AI=nil` 默认不暴露。输入/输出 Schema 必须由同一强类型 DTO 生成，Action Tool 只经 `ActionRegistry.Invoke`，禁止维护平行暴露清单。
 - Scope 精确 Tool 与来源/能力白名单按“精确命中或来源+能力命中”授权；来源/能力只开放渐进 search/load，禁止未 load Schema 进入模型初始投影。
 - search/load/execute 每次重新应用 tenant、realm、permission、Scope 与启用状态；Embedding/索引绝不是权限事实源。
 - project/search/load/execute 共用 Slot 动态可用性协议且只能收紧权限；Step/Invocation 分类、专用预算和事实摘要由 Slot 元数据生成，观测只持久化白名单字段。

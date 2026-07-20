@@ -96,7 +96,7 @@ purchase_order_create    # 禁止缺少 capability 点分前缀（除非 capabil
 | `description` | string | 否 | OpenAPI / AI 说明 |
 | `audit` | bool | 否 | 建议写操作 `true`；只读 list/get 可 `false`；默认建议 `true` |
 | `http` | HTTPMeta | 否 | 暴露 HTTP 时填 |
-| `ai` | AIMeta | 否 | 暴露 Agent/MCP 时填 |
+| `ai` | AIMeta | 否 | Action Tool 的唯一暴露声明；`nil` 默认不暴露 |
 
 **不在** Metadata 内嵌菜单树；菜单一律 `RegisterMenu`。
 
@@ -116,17 +116,26 @@ purchase_order_create    # 禁止缺少 capability 点分前缀（除非 capabil
 | `path` | string | 如 `/api/v1/purchase/orders`；统一 `/api/v1` 前缀 |
 | `enabled` | bool | 默认 true |
 
-### AIMeta（Phase 1 可简化）
+### AIMeta
+
+`Metadata.AI` 是 Action Tool 暴露的唯一事实源。`AI=nil` 默认不暴露；只有 `ExposeTool=true` 才由 `ActionProvider` 自动投影，并继续复用 Action permission。禁止维护独立 Action ID 暴露清单。
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | `expose_tool` | bool | 是否作为 Agent/MCP Tool |
-| `risk` | string | `low` / `medium` / `high`（high 预留人工确认） |
-| `summary` | string | 给模型的一句话；可复用 description |
+| `risk` | string | `low` / `medium` / `high` / `critical` |
+| `side_effect` | string | `none` / `read` / `write` / `external` / `paid` / `destructive` |
+| `requires_confirmation` | bool | 是否强制单次确认 |
+| `summary` | string | 面向模型的安全用途描述 |
+| `human_description` | string | 面向用户的工具说明 |
+| `tags` | []string | 用于检索的稳定业务词 |
+| `result_summary` | string | 不含参数与正文的安全结果摘要 |
+| `input_schema` | JSON Schema | 由 `action.SchemaFor[Request]()` 生成 |
+| `output_schema` | JSON Schema | 由 `action.SchemaFor[Response]()` 生成 |
 
 ### 预留（Phase 1 不强制）
 
-`workflow`、`input_schema`、`output_schema`、`ui`、更细的 MCP 开关等：结构可先占位，业务可不填。
+`workflow`、`ui`、更细的 MCP 开关等：结构可先占位，业务可不填。
 
 ## Menu（独立注册）
 
@@ -196,7 +205,14 @@ RegisterAction(Action{
     Capability: "purchase",
     Audit: true,
     HTTP: &HTTPMeta{Method: "POST", Path: "/api/v1/purchase/orders"},
-    AI:   &AIMeta{ExposeTool: true, Risk: "medium"},
+    AI: &AIMeta{
+      ExposeTool: true, Risk: "medium", SideEffect: "write",
+      RequiresConfirmation: true,
+      Summary: "创建采购订单", HumanDescription: "创建一张新的采购订单",
+      ResultSummary: "采购订单已创建",
+      InputSchema: action.SchemaFor[OrderCreateRequest](),
+      OutputSchema: action.SchemaFor[OrderView](),
+    },
   },
 })
 ```
