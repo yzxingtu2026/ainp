@@ -242,7 +242,7 @@ func TestOpenAIStructuredOutputUsesResponseOnlyFunction(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if body["text"] != nil || body["tools"] == nil || len(resp.Output) != 1 || resp.Output[0].Type != aimodelruntime.PartOutputText || resp.Output[0].Text != `{"items":[]}` {
+	if body["text"] != nil || body["tools"] == nil || body["tool_choice"] != "required" || len(resp.Output) != 1 || resp.Output[0].Type != aimodelruntime.PartOutputText || resp.Output[0].Text != `{"items":[]}` {
 		t.Fatalf("openai response function was not normalized: body=%#v response=%#v", body, resp)
 	}
 }

@@ -65,7 +65,9 @@ func (a *OpenAIAdapter) payload(in AdapterRequest, stream bool) (map[string]any,
 				return nil, &RuntimeError{Category: ErrorInvalidRequest, Message: "structured output cannot be combined with executable tools"}
 			}
 			p["tools"] = []any{map[string]any{"type": "function", "name": r.StructuredOutput.Name, "description": r.StructuredOutput.Description, "parameters": schema}}
-			p["tool_choice"] = map[string]any{"type": "function", "name": r.StructuredOutput.Name}
+			// A single private response function plus "required" is supported by
+			// both OpenAI Responses and compatible providers such as DashScope.
+			p["tool_choice"] = "required"
 		default:
 			return nil, &RuntimeError{Category: ErrorCapabilityNotSupported, Message: "selected structured output strategy is not supported by openai adapter"}
 		}
