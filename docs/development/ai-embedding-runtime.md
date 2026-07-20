@@ -26,6 +26,8 @@ Runtime 只负责批量文本 → 向量与 Usage；pgvector 表、切块、检�
 
 - `EmbeddingRequest`：`model_alias`、有序 `inputs[{id,text}]`、可选 `dimensions`、`purpose`、`timeout_ms`、可选显式 `preprocessing`
 - `purpose` 稳定值：`tool_index` / `knowledge_ingestion` / `knowledge_query` / `memory` / `other`
+
+Tool Runtime 使用租户设置 `ai.tool_search.embedding_model_alias` 选择受治理 Alias。Catalog 索引和查询都必须使用 `purpose=tool_index` 与 `cosine_normalize.v1`，并校验 deployment、dimensions、preprocessing、schema version 和 catalog revision；禁止恢复旧的 `aitool.EmbeddingService` 或由 Tool 模块直连供应商。
 - 首期仅文本；空白文本、重复 item ID、单项/批量字节与预计 Token 超限在 Provider 调用前拒绝
 - `EmbeddingResponse`：安全 Model 摘要、按输入 ID/顺序的 vectors、dimensions、Usage、sub_batch_count
 - 默认不归一化、不截断、不降维；仅当显式 `preprocessing=cosine_normalize` 时归一化，并记录 `preprocessing_version`

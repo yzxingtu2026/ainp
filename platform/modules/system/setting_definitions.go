@@ -2,6 +2,7 @@ package system
 
 import (
 	"github.com/yzxingtu2026/ainp/platform/framework/aimemory"
+	"github.com/yzxingtu2026/ainp/platform/framework/aitool"
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
 	"github.com/yzxingtu2026/ainp/platform/framework/attachment"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
@@ -25,7 +26,15 @@ func registerExampleSettings(a *app.App) error {
 	if err := registerAttachmentUploadPolicySetting(a); err != nil {
 		return err
 	}
-	return registerMemoryPolicySetting(a)
+	if err := registerMemoryPolicySetting(a); err != nil {
+		return err
+	}
+	return registerToolSearchSetting(a)
+}
+
+func registerToolSearchSetting(a *app.App) error {
+	maxAliasLength := 64
+	return a.RegisterSettingDefinition(setting.Definition{Key: aitool.SettingKeySearch, CategoryKey: "ai", Title: "工具语义检索", Description: "配置工具目录和查询使用的 Embedding Model Alias；留空时降级为词法检索", Scope: setting.ScopeTenant, Surface: auth.RealmTenant, Permission: ActionSettingList, Order: 20, SchemaVersion: 1, Fields: []setting.Field{{Key: aitool.SettingFieldModelAlias, Type: setting.FieldText, Label: "Embedding Model Alias", Default: "", MaxLength: &maxAliasLength}}})
 }
 
 func registerMemoryPolicySetting(a *app.App) error {

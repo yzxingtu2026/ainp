@@ -22,11 +22,15 @@ Tool Catalog 是完整 Registry 的租户级派生事实，不是权限事实源
 
 Reconcile 按 Tool ID 比较完整安全定义：新增和变更写入 Catalog，Registry 中已移除的 Tool 保留事实行但标记 `disabled`。每次有效变化推进单调 `catalog.revision`，并在同一事务写 `ai.tool_catalog.changed.v1`；事件 `aggregate_version` 等于 Catalog revision。Search Document 绑定 `catalog_revision`：启用定义变更后进入 `pending`，词法投影完成后进入 `ready`，停用或移除立即进入 `stale`。Handler 只处理仍匹配当前 revision 的事件，重复或乱序事件不得覆盖新状态。`failed` 保留给后续索引任务记录终态，修复 Action 可再次生成新 revision。
 
+租户设置 `ai.tool_search.embedding_model_alias` 控制语义检索，空值表示只使用 exact + 中文词法归一化 + PostgreSQL FTS。配置 Alias 后，Catalog 事件经 Outbox 入队 `ai.tool_catalog.embed`，Job 只通过统一 `EmbeddingRuntime` 以 `purpose=tool_index`、`cosine_normalize.v1` 生成 pgvector，并持久化 alias、deployment、remote model、dimensions、preprocessing、schema version 与 catalog revision。模型、维度、预处理或 revision 不匹配的向量不得参与查询；失败标记 `failed`，可重试或通过 rebuild 生成新 revision。
+
 核心 `builtin:knowledge.search` 是首个直接投影 Slot，但只在当前 Agent 至少存在一个绑定、当前 actor 可读、enabled 且索引 ready 的知识库时可用。动态描述只能列出这些候选的名称、用途和稳定 ID，不得暴露 tenant、对象存储字段或无权资源。
 
 ## Search、Scope 与 Handle
 
 搜索顺序为安全过滤、精确 ID/名称、关键词/FTS、可选 Embedding 融合。Embedding 不可用时必须退化；向量和搜索文档不是权限事实源。`ProjectModelTools`、`tool.search`、`tool.load`、Handle 执行和确认后执行统一调用 Registry 的动态投影协议，并重新应用 tenant、realm、user permission、Scope 白名单、启用状态和实时资源条件。动态投影只能收紧静态结果，不能把 Scope 外工具扩权加入候选。
+
+中文降级会为安全发现文本生成有上限的 Unicode 双字词，避免仅依赖 PostgreSQL `simple` 分词。exact/名称命中始终优先；词法/FTS 与 provenance 匹配的 vector 候选使用确定性 RRF 融合，最后再应用权限、Scope 和动态投影。Embedding 设置、调用或索引不可用时响应标记 degraded，但 exact + lexical/FTS 仍返回结果。
 
 ToolScope 的授权由两类白名单组成：精确 `allowed_tools` 用于 meta、RuntimeSlot、显式 Binding 和已知特殊工具；`allowed_sources + allowed_capabilities` 用于渐进发现。工具满足精确 Tool 白名单，或同时满足来源与能力白名单时才进入 Scope；二者不是三重 AND。来源/能力授权只允许 search/load，未 load 的 Action Schema 不得进入模型初始工具列表。
 

@@ -14,22 +14,24 @@ type Risk string
 type SideEffect string
 
 const (
-	SourceMeta            Source     = "meta"
-	SourceAction          Source     = "action"
-	SourceBuiltin         Source     = "builtin"
-	SourcePlugin          Source     = "plugin"
-	SourceHTTP            Source     = "http"
-	SourceMCP             Source     = "mcp"
-	RiskLow               Risk       = "low"
-	RiskMedium            Risk       = "medium"
-	RiskHigh              Risk       = "high"
-	RiskCritical          Risk       = "critical"
-	SideEffectNone        SideEffect = "none"
-	SideEffectRead        SideEffect = "read"
-	SideEffectWrite       SideEffect = "write"
-	SideEffectExternal    SideEffect = "external"
-	SideEffectPaid        SideEffect = "paid"
-	SideEffectDestructive SideEffect = "destructive"
+	SettingKeySearch                  = "ai.tool_search"
+	SettingFieldModelAlias            = "embedding_model_alias"
+	SourceMeta             Source     = "meta"
+	SourceAction           Source     = "action"
+	SourceBuiltin          Source     = "builtin"
+	SourcePlugin           Source     = "plugin"
+	SourceHTTP             Source     = "http"
+	SourceMCP              Source     = "mcp"
+	RiskLow                Risk       = "low"
+	RiskMedium             Risk       = "medium"
+	RiskHigh               Risk       = "high"
+	RiskCritical           Risk       = "critical"
+	SideEffectNone         SideEffect = "none"
+	SideEffectRead         SideEffect = "read"
+	SideEffectWrite        SideEffect = "write"
+	SideEffectExternal     SideEffect = "external"
+	SideEffectPaid         SideEffect = "paid"
+	SideEffectDestructive  SideEffect = "destructive"
 )
 
 var toolIDPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]*:[a-z][a-z0-9_.-]*$`)
@@ -112,10 +114,6 @@ type Provider interface {
 type Executor interface {
 	Execute(context.Context, LoadedTool, json.RawMessage) (*Result, error)
 }
-type EmbeddingService interface {
-	Scores(context.Context, string, []Definition) (map[string]float64, error)
-}
-
 type DiscoveryMode string
 
 const (

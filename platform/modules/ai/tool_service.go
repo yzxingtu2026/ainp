@@ -16,6 +16,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
+	"github.com/yzxingtu2026/ainp/platform/framework/setting"
 	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"gorm.io/gorm"
 )
@@ -30,7 +31,8 @@ type ToolService struct {
 	registry              *aitool.Registry
 	signer                *aitool.HandleSigner
 	writer                outbox.Writer
-	embeddings            aitool.EmbeddingService
+	embeddings            aimodelruntime.EmbeddingRuntime
+	settings              *setting.Provider
 	catalogProjectionSync bool
 	onConfirmationPending func(context.Context, *gorm.DB, *ToolConfirmation) error
 	onConfirmationDecided func(context.Context, *ToolConfirmation) error
@@ -42,7 +44,8 @@ func NewToolService(db *gorm.DB, r *aitool.Registry, signer *aitool.HandleSigner
 	}
 	return &ToolService{db: tenantdata.GuardedDB(db), registry: r, signer: signer, writer: w}
 }
-func (s *ToolService) SetEmbeddingService(v aitool.EmbeddingService) { s.embeddings = v }
+func (s *ToolService) SetEmbeddingRuntime(v aimodelruntime.EmbeddingRuntime) { s.embeddings = v }
+func (s *ToolService) SetSettingProvider(v *setting.Provider)                { s.settings = v }
 func (s *ToolService) SetCatalogProjectionSynchronous(enabled bool) {
 	s.catalogProjectionSync = enabled
 }
@@ -95,8 +98,10 @@ type ToolSearchRequest struct {
 	Limit      int           `json:"limit,omitempty"`
 }
 type ToolSearchResponse struct {
-	ScopeID string             `json:"scope_id"`
-	Items   []aitool.Candidate `json:"items"`
+	ScopeID       string             `json:"scope_id"`
+	Items         []aitool.Candidate `json:"items"`
+	Degraded      bool               `json:"degraded"`
+	DegradeReason string             `json:"degrade_reason,omitempty"`
 }
 type ToolLoadRequest struct {
 	ScopeID string   `json:"scope_id" validate:"required"`
@@ -170,13 +175,13 @@ func (s *ToolService) Search(ctx context.Context, r ToolSearchRequest) (any, err
 		projected = append(projected, definition)
 		visibleIDs[definition.ID] = true
 	}
-	items, err := aitool.Search(ctx, projected, r.Query, r.Capability, r.Source, r.Limit, func(d aitool.Definition) bool { return scopeAllows(scope, d) && toolVisible(ac, d) }, s.embeddings)
+	items, err := aitool.Search(ctx, projected, r.Query, r.Capability, r.Source, r.Limit, func(d aitool.Definition) bool { return scopeAllows(scope, d) && toolVisible(ac, d) })
 	if err != nil {
 		return nil, err
 	}
-	items = s.mergeFTS(ctx, ac, scope, r, items)
+	items, degraded, degradeReason := s.mergeHybrid(ctx, ac, scope, r, items)
 	items = slices.DeleteFunc(items, func(item aitool.Candidate) bool { return !visibleIDs[item.ID] })
-	return ToolSearchResponse{ScopeID: scope.ID, Items: items}, nil
+	return ToolSearchResponse{ScopeID: scope.ID, Items: items, Degraded: degraded, DegradeReason: degradeReason}, nil
 }
 func (s *ToolService) Load(ctx context.Context, r ToolLoadRequest) (any, error) {
 	if err := s.registry.Refresh(ctx); err != nil {
@@ -534,9 +539,13 @@ func (s *ToolService) mergeFTS(ctx context.Context, ac *auth.Context, scope *Too
 	if err != nil {
 		return current
 	}
+	lexicalQuery := strings.Join(aitool.LexicalTerms(r.Query), " ")
+	if lexicalQuery == "" {
+		return current
+	}
 	rows, err := tenantdata.TenantRaw[struct {
 		ToolID string `gorm:"column:tool_id"`
-	}](tdb, "SELECT tool_id FROM ai_tool_search_documents WHERE tenant_id = ? AND index_status = 'ready' AND to_tsvector('simple', search_text) @@ plainto_tsquery('simple', ?) ORDER BY ts_rank(to_tsvector('simple', search_text), plainto_tsquery('simple', ?)) DESC LIMIT 10", r.Query, r.Query)
+	}](tdb, "SELECT tool_id FROM ai_tool_search_documents WHERE tenant_id = ? AND index_status = 'ready' AND to_tsvector('simple', search_text) @@ plainto_tsquery('simple', ?) ORDER BY ts_rank(to_tsvector('simple', search_text), plainto_tsquery('simple', ?)) DESC LIMIT 10", lexicalQuery, lexicalQuery)
 	if err != nil {
 		return current
 	}
@@ -553,7 +562,7 @@ func (s *ToolService) mergeFTS(ctx context.Context, ac *auth.Context, scope *Too
 		if !ok || !scopeAllows(scope, d) || !toolVisible(ac, d) {
 			continue
 		}
-		extra, _ := aitool.Search(ctx, []aitool.Definition{d}, "", r.Capability, r.Source, 1, func(aitool.Definition) bool { return true }, nil)
+		extra, _ := aitool.Search(ctx, []aitool.Definition{d}, "", r.Capability, r.Source, 1, func(aitool.Definition) bool { return true })
 		if len(extra) > 0 {
 			extra[0].Score = .5
 			current = append(current, extra[0])

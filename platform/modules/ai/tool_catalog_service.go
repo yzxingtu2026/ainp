@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/yzxingtu2026/ainp/platform/framework/aimodelruntime"
 	"github.com/yzxingtu2026/ainp/platform/framework/aitool"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
@@ -31,7 +32,7 @@ type ToolCatalogChangedPayload struct {
 	CatalogRevision uint64 `json:"catalog_revision"`
 }
 
-func (s *ToolService) ReconcileCatalog(ctx context.Context) (ToolCatalogReconcileResult, error) {
+func (s *ToolService) ReconcileCatalog(ctx context.Context, force ...bool) (ToolCatalogReconcileResult, error) {
 	var result ToolCatalogReconcileResult
 	ac := auth.MustFromContext(ctx)
 	if !ac.Authenticated || auth.NormalizeRealm(ac.Realm) != auth.RealmTenant || strings.TrimSpace(ac.TenantID) == "" {
@@ -41,6 +42,11 @@ func (s *ToolService) ReconcileCatalog(ctx context.Context) (ToolCatalogReconcil
 		return result, err
 	}
 	definitions := s.registry.List()
+	embeddingAlias, err := s.embeddingAlias(ctx)
+	if err != nil {
+		return result, err
+	}
+	forceProjection := len(force) > 0 && force[0]
 	write := func(tx *gorm.DB, writer outbox.Writer) error {
 		var existing []ToolCatalog
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Order("tool_id").Find(&existing).Error; err != nil {
@@ -63,7 +69,7 @@ func (s *ToolService) ReconcileCatalog(ctx context.Context) (ToolCatalogReconcil
 			desired[definition.ID] = true
 			current, exists := byID[definition.ID]
 			document, documentExists := documentsByID[definition.ID]
-			if exists && catalogMatches(current, definition) && documentExists && documentMatches(document, current, definition) {
+			if !forceProjection && exists && catalogMatches(current, definition) && documentExists && documentMatches(document, current, definition, embeddingAlias) {
 				result.Unchanged++
 				continue
 			}
@@ -161,15 +167,19 @@ func catalogMatches(row ToolCatalog, definition aitool.Definition) bool {
 	return row.Source == string(definition.Source) && row.Name == definition.Name && row.Capability == definition.Capability && row.Summary == definition.DescriptionForLLM && slices.Equal(tags, definition.Tags) && row.Risk == string(definition.Risk) && row.SideEffect == string(definition.SideEffect) && row.SchemaVersion == definition.SchemaVersion && row.SchemaHash == definition.SchemaHash && row.Status == definition.Status
 }
 
-func documentMatches(document ToolSearchDocument, catalog ToolCatalog, definition aitool.Definition) bool {
+func documentMatches(document ToolSearchDocument, catalog ToolCatalog, definition aitool.Definition, embeddingAlias string) bool {
 	var hints []string
 	_ = json.Unmarshal(document.InputHintsJSON, &hints)
 	expectedStatus := "stale"
 	if definition.Status == "enabled" && (document.IndexStatus == "pending" || document.IndexStatus == "ready") {
 		expectedStatus = document.IndexStatus
 	}
-	expectedText := strings.Join(append([]string{definition.ID, definition.Name, definition.DescriptionForLLM, definition.Capability}, definition.Tags...), " ")
-	return document.CatalogRevision == catalog.Revision && document.IndexStatus == expectedStatus && document.SearchText == expectedText && slices.Equal(hints, aitool.InputHints(definition.InputSchema))
+	expectedText := aitool.SearchDocumentText(definition)
+	baseMatches := document.CatalogRevision == catalog.Revision && document.IndexStatus == expectedStatus && document.SearchText == expectedText && slices.Equal(hints, aitool.InputHints(definition.InputSchema))
+	if !baseMatches || definition.Status != "enabled" || embeddingAlias == "" || document.IndexStatus == "pending" {
+		return baseMatches
+	}
+	return document.EmbeddingAlias == embeddingAlias && document.EmbeddingDeploymentID != "" && document.EmbeddingDimensions > 0 && document.EmbeddingPreprocessing == aimodelruntime.EmbeddingPreprocessingVersionCosine && document.EmbeddingSchemaVersion == toolEmbeddingSchemaVersion && document.EmbeddingVector != nil
 }
 
 func upsertCatalogProjection(tx *gorm.DB, row ToolCatalog, definition aitool.Definition) error {
@@ -180,6 +190,6 @@ func upsertCatalogProjection(tx *gorm.DB, row ToolCatalog, definition aitool.Def
 	if definition.Status != "enabled" {
 		indexStatus = "stale"
 	}
-	doc := ToolSearchDocument{ID: uuid.NewString(), TenantID: row.TenantID, ToolID: row.ToolID, SearchText: strings.Join(append([]string{definition.ID, definition.Name, definition.DescriptionForLLM, definition.Capability}, definition.Tags...), " "), InputHintsJSON: jsonBytes(aitool.InputHints(definition.InputSchema)), IndexStatus: indexStatus, CatalogRevision: row.Revision}
-	return tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "tenant_id"}, {Name: "tool_id"}}, DoUpdates: clause.AssignmentColumns([]string{"search_text", "input_hints_json", "index_status", "catalog_revision", "embedding_model", "updated_at"})}).Create(&doc).Error
+	doc := ToolSearchDocument{ID: uuid.NewString(), TenantID: row.TenantID, ToolID: row.ToolID, SearchText: aitool.SearchDocumentText(definition), InputHintsJSON: jsonBytes(aitool.InputHints(definition.InputSchema)), IndexStatus: indexStatus, CatalogRevision: row.Revision}
+	return tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "tenant_id"}, {Name: "tool_id"}}, DoUpdates: clause.AssignmentColumns([]string{"search_text", "input_hints_json", "index_status", "catalog_revision", "embedding_model", "embedding_alias", "embedding_deployment_id", "embedding_dimensions", "embedding_preprocessing", "embedding_schema_version", "embedding_vector", "vector_updated_at", "updated_at"})}).Create(&doc).Error
 }

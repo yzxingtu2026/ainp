@@ -15,7 +15,6 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/aimodelruntime"
 	"github.com/yzxingtu2026/ainp/platform/framework/aitool"
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
-	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/capability"
 	"github.com/yzxingtu2026/ainp/platform/framework/menu"
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
@@ -155,18 +154,11 @@ func Register(a *app.App) error {
 		return err
 	}
 	tools := NewToolService(a.DB, toolRegistry, handleSigner, writer)
+	tools.SetEmbeddingRuntime(a.EmbeddingRuntime)
+	tools.SetSettingProvider(a.SettingValues)
 	tools.SetCatalogProjectionSynchronous(a.Outbox == nil || !a.Outbox.Enabled)
-	if a.Outbox != nil {
-		if err := a.Outbox.RegisterHandler(outbox.HandlerFunc{HandlerName: "ai.project_tool_search_document", Types: []string{toolCatalogChangedEvent}, Fn: func(ctx context.Context, env outbox.Envelope) error {
-			var payload ToolCatalogChangedPayload
-			if err := json.Unmarshal(env.Payload, &payload); err != nil {
-				return err
-			}
-			ctx = auth.WithContext(ctx, &auth.Context{Authenticated: true, TenantID: env.TenantID, UserID: env.ActorID, Realm: auth.Realm(env.Realm), RequestID: env.CorrelationID, Client: "outbox"})
-			return tools.MarkCatalogDocumentReady(ctx, payload)
-		}}); err != nil {
-			return err
-		}
+	if err := RegisterToolCatalogEmbedding(a, tools); err != nil {
+		return err
 	}
 	invocations.SetToolProjector(tools)
 	a.ToolRegistry = toolRegistry
@@ -249,7 +241,7 @@ func Register(a *app.App) error {
 		{ActionToolConfirmationList, "/api/v1/ai/tool-confirmations/list", "待确认工具列表", "ai.tool_runtime", "工具运行时", action.JSON(tools.ListConfirmations)},
 		{ActionToolConfirmationApprove, "/api/v1/ai/tool-confirmations/approve", "批准本次工具执行", "ai.tool_runtime", "工具运行时", action.JSON(tools.Approve)},
 		{ActionToolConfirmationReject, "/api/v1/ai/tool-confirmations/reject", "拒绝本次工具执行", "ai.tool_runtime", "工具运行时", action.JSON(tools.Reject)},
-		{ActionToolCatalogRebuild, "/api/v1/ai/tools/catalog/rebuild", "重建工具目录", "ai.tool_runtime", "工具运行时", action.JSON(func(ctx context.Context, _ struct{}) (any, error) { return tools.ReconcileCatalog(ctx) })},
+		{ActionToolCatalogRebuild, "/api/v1/ai/tools/catalog/rebuild", "重建工具目录", "ai.tool_runtime", "工具运行时", action.JSON(func(ctx context.Context, _ struct{}) (any, error) { return tools.ReconcileCatalog(ctx, true) })},
 		{ActionAgentList, "/api/v1/ai/agents/list", "智能体列表", "ai.agent_management", "智能体", action.JSON(agents.List)},
 		{ActionAgentGet, "/api/v1/ai/agents/get", "智能体详情", "ai.agent_management", "智能体", action.JSON(agents.Get)},
 		{ActionAgentCreate, "/api/v1/ai/agents/create", "创建智能体", "ai.agent_management", "智能体", action.JSON(agents.Create)},

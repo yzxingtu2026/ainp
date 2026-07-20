@@ -119,16 +119,23 @@ type ToolCatalog struct {
 func (ToolCatalog) TableName() string { return "ai_tool_catalog" }
 
 type ToolSearchDocument struct {
-	ID              string          `gorm:"primaryKey;size:64"`
-	TenantID        string          `gorm:"size:64;not null;uniqueIndex:ux_ai_tool_search_tenant_tool"`
-	ToolID          string          `gorm:"size:255;not null;uniqueIndex:ux_ai_tool_search_tenant_tool"`
-	SearchText      string          `gorm:"type:text;not null"`
-	InputHintsJSON  json.RawMessage `gorm:"type:jsonb;not null;default:'[]'"`
-	IndexStatus     string          `gorm:"size:16;not null"`
-	CatalogRevision uint64          `gorm:"not null;default:1"`
-	EmbeddingModel  string          `gorm:"size:128"`
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	ID                     string          `gorm:"primaryKey;size:64"`
+	TenantID               string          `gorm:"size:64;not null;uniqueIndex:ux_ai_tool_search_tenant_tool"`
+	ToolID                 string          `gorm:"size:255;not null;uniqueIndex:ux_ai_tool_search_tenant_tool"`
+	SearchText             string          `gorm:"type:text;not null"`
+	InputHintsJSON         json.RawMessage `gorm:"type:jsonb;not null;default:'[]'"`
+	IndexStatus            string          `gorm:"size:16;not null"`
+	CatalogRevision        uint64          `gorm:"not null;default:1"`
+	EmbeddingModel         string          `gorm:"size:128"`
+	EmbeddingAlias         string          `gorm:"size:64"`
+	EmbeddingDeploymentID  string          `gorm:"size:64"`
+	EmbeddingDimensions    int             `gorm:"not null;default:0"`
+	EmbeddingPreprocessing string          `gorm:"size:32"`
+	EmbeddingSchemaVersion int             `gorm:"not null;default:0"`
+	EmbeddingVector        *PGVector       `gorm:"type:public.vector" json:"-"`
+	VectorUpdatedAt        *time.Time
+	CreatedAt              time.Time
+	UpdatedAt              time.Time
 }
 
 func (ToolSearchDocument) TableName() string { return "ai_tool_search_documents" }
@@ -205,6 +212,9 @@ type ToolInvocation struct {
 func (ToolInvocation) TableName() string { return "ai_tool_invocations" }
 
 func AutoMigrate(db *gorm.DB) error {
+	if err := db.Exec("CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public").Error; err != nil {
+		return err
+	}
 	if err := registerMemoryTenantModels(); err != nil {
 		return err
 	}

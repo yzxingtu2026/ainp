@@ -70,6 +70,8 @@ VisibleWhen: &setting.VisibleWhen{Field: "mode", In: []any{"a", "b"}}
 
 长期记忆租户默认值注册为 `ai.memory_policy`。Agent 模块只能通过注入的 `setting.Provider` 读取并类型化解析；管理员修改默认值不会改写已经发布的 Agent Version。
 
+Tool Runtime 语义检索 Alias 注册为 `ai.tool_search.embedding_model_alias`。空值明确表示词法降级；修改 Alias 后调用 `ai.tool_catalog_rebuild` 生成新 revision 并重建向量，禁止直接修改 Search Document provenance。
+
 ### 业务侧（统一只读）
 
 - 底层：`platform/framework/setting.Provider.Get(ctx, tenantID, settingKey)`（默认值合并 + 可选缓存）

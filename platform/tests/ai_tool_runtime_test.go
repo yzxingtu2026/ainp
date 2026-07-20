@@ -3,6 +3,7 @@ package tests
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -10,12 +11,14 @@ import (
 	"time"
 
 	"github.com/yzxingtu2026/ainp/platform/framework/action"
+	"github.com/yzxingtu2026/ainp/platform/framework/aimodelruntime"
 	"github.com/yzxingtu2026/ainp/platform/framework/aitool"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/config"
 	"github.com/yzxingtu2026/ainp/platform/framework/database"
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
 	"github.com/yzxingtu2026/ainp/platform/framework/permission"
+	"github.com/yzxingtu2026/ainp/platform/framework/setting"
 	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"github.com/yzxingtu2026/ainp/platform/modules/ai"
 )
@@ -41,6 +44,47 @@ type fakeToolExecutor struct{ called bool }
 func (e *fakeToolExecutor) Execute(_ context.Context, _ aitool.LoadedTool, _ json.RawMessage) (*aitool.Result, error) {
 	e.called = true
 	return &aitool.Result{Status: "completed"}, nil
+}
+
+type fakeToolEmbeddingRuntime struct {
+	requests []aimodelruntime.EmbeddingRequest
+	err      error
+}
+
+func (f *fakeToolEmbeddingRuntime) Embed(_ context.Context, request aimodelruntime.EmbeddingRequest) (*aimodelruntime.EmbeddingResponse, error) {
+	f.requests = append(f.requests, request)
+	if f.err != nil {
+		return nil, f.err
+	}
+	vectors := make([]aimodelruntime.EmbeddingVector, len(request.Inputs))
+	for i, input := range request.Inputs {
+		vectors[i] = aimodelruntime.EmbeddingVector{ID: input.ID, Index: i, Vector: []float32{1, 0}}
+	}
+	return &aimodelruntime.EmbeddingResponse{Model: aimodelruntime.ModelSummary{Alias: request.ModelAlias, DeploymentID: "embed-deployment", RemoteModelID: "embed-model"}, Vectors: vectors, Dimensions: 2, Preprocessing: aimodelruntime.EmbeddingPreprocessingCosineNorm, PreprocessingVersion: aimodelruntime.EmbeddingPreprocessingVersionCosine}, nil
+}
+
+type fakeToolSettingStore struct{ alias string }
+
+func (f fakeToolSettingStore) Get(context.Context, string, string) (*setting.StoredValue, error) {
+	return &setting.StoredValue{SchemaVersion: 1, Revision: 1, Values: map[string]any{aitool.SettingFieldModelAlias: f.alias}}, nil
+}
+func (fakeToolSettingStore) Put(context.Context, string, string, int64, int, map[string]any, string) (*setting.StoredValue, error) {
+	return nil, errors.New("not implemented")
+}
+func (fakeToolSettingStore) Delete(context.Context, string, string, int64) error {
+	return errors.New("not implemented")
+}
+
+func toolSettingProvider(t *testing.T, alias string) *setting.Provider {
+	t.Helper()
+	registry := setting.NewRegistry()
+	if err := registry.RegisterCategory(setting.Category{Key: "ai", Title: "AI", Icon: "mdi:brain", Surface: auth.RealmTenant}); err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.RegisterDefinition(setting.Definition{Key: aitool.SettingKeySearch, CategoryKey: "ai", Title: "Tool search", Scope: setting.ScopeTenant, Surface: auth.RealmTenant, SchemaVersion: 1, Fields: []setting.Field{{Key: aitool.SettingFieldModelAlias, Type: setting.FieldText, Label: "Embedding Model Alias", Default: ""}}}); err != nil {
+		t.Fatal(err)
+	}
+	return setting.NewProvider(registry, fakeToolSettingStore{alias: alias})
 }
 
 func toolFixture(id, name, summary string) aitool.Definition {
@@ -82,7 +126,7 @@ func TestToolSearchReturnsCompactAuthorizedCandidates(t *testing.T) {
 	definitions := []aitool.Definition{toolFixture("action:purchase.order_create", "创建采购单", "创建供应商采购订单"), toolFixture("action:admin.secret", "内部管理", "只允许管理员")}
 	definitions[0].PermissionRefs = []string{"purchase.create"}
 	definitions[1].PermissionRefs = []string{"admin.secret"}
-	items, err := aitool.Search(context.Background(), definitions, "创建采购单", "", aitool.SourceAction, 5, func(d aitool.Definition) bool { return d.PermissionRefs[0] == "purchase.create" }, nil)
+	items, err := aitool.Search(context.Background(), definitions, "创建采购单", "", aitool.SourceAction, 5, func(d aitool.Definition) bool { return d.PermissionRefs[0] == "purchase.create" })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,6 +136,21 @@ func TestToolSearchReturnsCompactAuthorizedCandidates(t *testing.T) {
 	encoded, _ := json.Marshal(items)
 	if strings.Contains(string(encoded), "input_schema") || strings.Contains(string(encoded), "runtime_ref") {
 		t.Fatalf("search leaked full definition: %s", encoded)
+	}
+}
+
+func TestToolSearchNormalizesChineseIntentTerms(t *testing.T) {
+	definition := toolFixture("action:system.user_list", "用户列表", "分页查询当前租户用户")
+	items, err := aitool.Search(context.Background(), []aitool.Definition{definition}, "系统用户管理", "", aitool.SourceAction, 5, func(aitool.Definition) bool { return true })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].ID != definition.ID {
+		t.Fatalf("Chinese lexical fallback missed user action: %#v", items)
+	}
+	text := aitool.SearchDocumentText(definition)
+	if !strings.Contains(text, "用户") || !strings.Contains(text, "户列") {
+		t.Fatalf("search document is not normalized for Chinese FTS: %s", text)
 	}
 }
 
@@ -174,6 +233,15 @@ func TestToolCatalogLifecycleMigrationContract(t *testing.T) {
 			t.Fatalf("tool catalog lifecycle migration missing %s", required)
 		}
 	}
+	vectorMigration, err := os.ReadFile("../migrations/0041_ai_tool_vector_search.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{"CREATE EXTENSION IF NOT EXISTS vector", "embedding_vector", "embedding_deployment_id", "embedding_dimensions", "embedding_preprocessing", "idx_ai_tool_search_vector_ready"} {
+		if !strings.Contains(string(vectorMigration), required) {
+			t.Fatalf("tool vector migration missing %s", required)
+		}
+	}
 }
 
 func TestToolRuntimePostgresLifecycleAndIsolation(t *testing.T) {
@@ -237,6 +305,8 @@ func TestToolRuntimePostgresLifecycleAndIsolation(t *testing.T) {
 	}
 	signer, _ := aitool.NewHandleSigner(strings.Repeat("s", 32))
 	service := ai.NewToolService(db, registry, signer, rt.Writer)
+	embeddingRuntime := &fakeToolEmbeddingRuntime{}
+	service.SetEmbeddingRuntime(embeddingRuntime)
 	ctx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t1", UserID: "u1", SessionID: "s1", AuthVersion: 1, Realm: auth.RealmTenant, Permissions: []string{"purchase.read"}})
 	guarded := tenantdata.GuardedDB(db)
 	reconciled, err := service.ReconcileCatalog(ctx)
@@ -294,8 +364,12 @@ func TestToolRuntimePostgresLifecycleAndIsolation(t *testing.T) {
 	if err != nil || reconciled.Updated != 1 {
 		t.Fatalf("restored tool was not reactivated: %#v %v", reconciled, err)
 	}
-	if err = service.MarkCatalogDocumentReady(ctx, ai.ToolCatalogChangedPayload{ToolID: actionTool.ID, CatalogRevision: 4}); err != nil {
+	service.SetSettingProvider(toolSettingProvider(t, "tool-embed"))
+	if err = service.IndexCatalogDocument(ctx, actionTool.ID, 4, "tool-embed"); err != nil {
 		t.Fatal(err)
+	}
+	if err = guarded.WithContext(ctx).Where("tool_id=?", actionTool.ID).First(&actionDocument).Error; err != nil || actionDocument.IndexStatus != "ready" || actionDocument.EmbeddingAlias != "tool-embed" || actionDocument.EmbeddingDeploymentID != "embed-deployment" || actionDocument.EmbeddingDimensions != 2 || actionDocument.EmbeddingVector == nil || len(*actionDocument.EmbeddingVector) != 2 {
+		t.Fatalf("tool vector projection is invalid: %#v %v", actionDocument, err)
 	}
 	restrictedScope := ai.ToolScope{
 		ID:                      "scope-progressive",
@@ -331,6 +405,29 @@ VALUES (?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, 0, ?)`, restri
 	if items := searched.(ai.ToolSearchResponse).Items; len(items) != 1 || items[0].ID != actionTool.ID {
 		t.Fatalf("source/capability scope did not discover action tool: %#v", items)
 	}
+	semantic, err := service.Search(ctx, ai.ToolSearchRequest{ScopeID: restrictedScope.ID, Query: "完全不匹配的语义查询"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	semanticResponse := semantic.(ai.ToolSearchResponse)
+	if semanticResponse.Degraded || len(semanticResponse.Items) != 1 || semanticResponse.Items[0].ID != actionTool.ID {
+		t.Fatalf("vector-only tool search failed: %#v", semanticResponse)
+	}
+	for _, request := range embeddingRuntime.requests {
+		if request.Purpose != aimodelruntime.EmbeddingPurposeToolIndex || request.Preprocessing != aimodelruntime.EmbeddingPreprocessingCosineNorm {
+			t.Fatalf("unexpected governed embedding request: %#v", request)
+		}
+	}
+	service.SetEmbeddingRuntime(&fakeToolEmbeddingRuntime{err: errors.New("embedding unavailable")})
+	fallback, err := service.Search(ctx, ai.ToolSearchRequest{ScopeID: restrictedScope.ID, Query: "采购订单"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fallbackResponse := fallback.(ai.ToolSearchResponse)
+	if !fallbackResponse.Degraded || fallbackResponse.DegradeReason != "embedding_runtime" || len(fallbackResponse.Items) != 1 || fallbackResponse.Items[0].ID != actionTool.ID {
+		t.Fatalf("embedding failure did not preserve lexical fallback: %#v", fallbackResponse)
+	}
+	service.SetEmbeddingRuntime(embeddingRuntime)
 	var catalogEventsAfter int64
 	if err = db.Model(&outbox.Event{}).Where("event_type=?", "ai.tool_catalog.changed.v1").Count(&catalogEventsAfter).Error; err != nil || catalogEventsAfter != catalogEventsBefore {
 		t.Fatalf("tool search mutated catalog events: before=%d after=%d err=%v", catalogEventsBefore, catalogEventsAfter, err)
