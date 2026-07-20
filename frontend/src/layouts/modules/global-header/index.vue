@@ -9,6 +9,7 @@ import GlobalSearch from '../global-search/index.vue';
 import ThemeButton from './components/theme-button.vue';
 import UserAvatar from './components/user-avatar.vue';
 import NotificationBell from './components/notification-bell.vue';
+import AiWorkspaceLauncher from '../ai-workspace-launcher/index.vue';
 
 defineOptions({
   name: 'GlobalHeader'
@@ -39,6 +40,7 @@ const { isFullscreen, toggle } = useFullscreen();
       <GlobalBreadcrumb v-if="!appStore.isMobile" class="ml-12px" />
     </div>
     <div class="h-full flex-y-center justify-end">
+      <AiWorkspaceLauncher v-if="themeStore.layout.mode === 'horizontal'" location="header" />
       <GlobalSearch v-if="themeStore.header.globalSearch.visible" />
       <NotificationBell />
       <FullScreen v-if="!appStore.isMobile" :full="isFullscreen" @click="toggle" />

@@ -2,7 +2,11 @@ import type { ElegantConstRoute } from '@elegant-router/types';
 
 /** 将后端 component 路径转为 elegant view key，如 view.notification_list → notification_list，demo/hello → demo_hello */
 export function toViewKey(component?: string, id?: string): string {
-  const raw = (component || id || 'unknown').replace(/^\//, '').replace(/^view\./, '').replace(/\//g, '_').replace(/\./g, '_');
+  const raw = (component || id || 'unknown')
+    .replace(/^\//, '')
+    .replace(/^view\./, '')
+    .replace(/\//g, '_')
+    .replace(/\./g, '_');
   return raw;
 }
 
@@ -73,7 +77,9 @@ export function transformAinPMenusToRoutes(items: Api.Route.AinPMenu[]): Elegant
             i18nKey: titles.i18nKey as App.I18n.I18nKey | null,
             icon: item.icon || import.meta.env.VITE_MENU_ICON,
             order: item.order,
-            hideInMenu: Boolean(item.hide_in_menu)
+            hideInMenu: Boolean(item.hide_in_menu),
+            shellPlacement: item.placement || null,
+            immersive: Boolean(item.immersive)
           },
           children: childRoutes
         } as ElegantConstRoute;
@@ -100,7 +106,9 @@ export function transformAinPMenusToRoutes(items: Api.Route.AinPMenu[]): Elegant
               icon: item.icon || import.meta.env.VITE_MENU_ICON,
               order: item.order,
               hideInMenu: Boolean(item.hide_in_menu),
-              keepAlive: Boolean(item.keep_alive)
+              keepAlive: Boolean(item.keep_alive),
+              shellPlacement: item.placement || null,
+              immersive: Boolean(item.immersive)
             }
           } as ElegantConstRoute;
         }
@@ -127,7 +135,9 @@ export function transformAinPMenusToRoutes(items: Api.Route.AinPMenu[]): Elegant
                 icon: item.icon || import.meta.env.VITE_MENU_ICON,
                 order: item.order,
                 hideInMenu: Boolean(item.hide_in_menu),
-                keepAlive: Boolean(item.keep_alive)
+                keepAlive: Boolean(item.keep_alive),
+                shellPlacement: item.placement || null,
+                immersive: Boolean(item.immersive)
               }
             } as ElegantConstRoute
           ]
@@ -144,7 +154,9 @@ export function transformAinPMenusToRoutes(items: Api.Route.AinPMenu[]): Elegant
           icon: item.icon || import.meta.env.VITE_MENU_ICON,
           order: item.order,
           hideInMenu: Boolean(item.hide_in_menu),
-          keepAlive: Boolean(item.keep_alive)
+          keepAlive: Boolean(item.keep_alive),
+          shellPlacement: item.placement || null,
+          immersive: Boolean(item.immersive)
         }
       } as ElegantConstRoute;
     });
@@ -155,8 +167,6 @@ export function transformAinPMenusToRoutes(items: Api.Route.AinPMenu[]): Elegant
 
 /** 按钮 permission 列表（对齐 action.id） */
 export function extractButtonPermissions(buttons: Api.Route.AinPMenu[]): string[] {
-  const codes = buttons
-    .map(b => b.permission || b.bind_action || '')
-    .filter(Boolean);
+  const codes = buttons.map(b => b.permission || b.bind_action || '').filter(Boolean);
   return Array.from(new Set(codes));
 }

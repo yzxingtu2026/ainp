@@ -27,6 +27,8 @@ declare namespace Api {
       bind_action?: string;
       hide_in_menu?: boolean;
       keep_alive?: boolean;
+      placement?: 'global_ai_launcher';
+      immersive?: boolean;
       module?: string;
     }
 

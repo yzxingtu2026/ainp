@@ -680,3 +680,4 @@ ai.knowledge.retrieval_unavailable: 知识检索服务不可用
 ai.knowledge.retrieval_requires_enabled: 请先启用知识库再进行检索测试
 ai.knowledge.retrieval_index_not_ready: 知识库当前索引尚未就绪
 menu.ai.knowledge.title: 知识库
+menu.ai.workspace.title: AI 工作台

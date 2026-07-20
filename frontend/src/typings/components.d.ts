@@ -13,6 +13,7 @@ export {}
 declare module 'vue' {
   export interface GlobalComponents {
     AgentRunStatus: typeof import('./../components/ai/agent-run-status.vue')['default']
+    AiMascot: typeof import('./../components/ai/ai-mascot.vue')['default']
     AppProvider: typeof import('./../components/common/app-provider.vue')['default']
     AttachmentField: typeof import('./../components/common/attachment-field.vue')['default']
     AttachmentList: typeof import('./../components/common/attachment-list.vue')['default']
@@ -98,6 +99,8 @@ declare module 'vue' {
     NTag: typeof import('naive-ui')['NTag']
     NText: typeof import('naive-ui')['NText']
     NThing: typeof import('naive-ui')['NThing']
+    NTimeline: typeof import('naive-ui')['NTimeline']
+    NTimelineItem: typeof import('naive-ui')['NTimelineItem']
     NTooltip: typeof import('naive-ui')['NTooltip']
     NTree: typeof import('naive-ui')['NTree']
     NWatermark: typeof import('naive-ui')['NWatermark']
@@ -119,6 +122,7 @@ declare module 'vue' {
 // For TSX support
 declare global {
   const AgentRunStatus: typeof import('./../components/ai/agent-run-status.vue')['default']
+  const AiMascot: typeof import('./../components/ai/ai-mascot.vue')['default']
   const AppProvider: typeof import('./../components/common/app-provider.vue')['default']
   const AttachmentField: typeof import('./../components/common/attachment-field.vue')['default']
   const AttachmentList: typeof import('./../components/common/attachment-list.vue')['default']
@@ -204,6 +208,8 @@ declare global {
   const NTag: typeof import('naive-ui')['NTag']
   const NText: typeof import('naive-ui')['NText']
   const NThing: typeof import('naive-ui')['NThing']
+  const NTimeline: typeof import('naive-ui')['NTimeline']
+  const NTimelineItem: typeof import('naive-ui')['NTimelineItem']
   const NTooltip: typeof import('naive-ui')['NTooltip']
   const NTree: typeof import('naive-ui')['NTree']
   const NWatermark: typeof import('naive-ui')['NWatermark']

@@ -27,6 +27,7 @@ declare module "@elegant-router/types" {
     "ai_knowledge": "/ai/knowledge";
     "ai_models": "/ai/models";
     "ai_providers": "/ai/providers";
+    "ai_workspace": "/ai/workspace";
     "demo": "/demo";
     "demo_attachments": "/demo/attachments";
     "demo_hello": "/demo/hello";
@@ -123,6 +124,7 @@ declare module "@elegant-router/types" {
     | "ai_knowledge"
     | "ai_models"
     | "ai_providers"
+    | "ai_workspace"
     | "demo_attachments"
     | "demo_hello"
     | "home"

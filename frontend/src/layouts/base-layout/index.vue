@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent } from 'vue';
+import { useRoute } from 'vue-router';
 import { AdminLayout, LAYOUT_SCROLL_EL_ID } from '@sa/materials';
 import type { LayoutMode } from '@sa/materials';
 import { useAppStore } from '@/store/modules/app';
@@ -18,9 +19,11 @@ defineOptions({
 
 const appStore = useAppStore();
 const themeStore = useThemeStore();
+const route = useRoute();
 const { secondLevelMenus, childLevelMenus, isActiveFirstLevelMenuHasChildren } = provideMixMenuContext();
 
 const GlobalMenu = defineAsyncComponent(() => import('../modules/global-menu/index.vue'));
+const immersive = computed(() => Boolean(route.meta.immersive));
 
 const layoutMode = computed(() => {
   const vertical: LayoutMode = 'vertical';
@@ -126,13 +129,13 @@ function getSiderAndCollapsedWidth(isCollapsed: boolean) {
     :full-content="appStore.fullContent"
     :fixed-top="themeStore.fixedHeaderAndTab"
     :header-height="themeStore.header.height"
-    :tab-visible="themeStore.tab.visible"
+    :tab-visible="themeStore.tab.visible && !immersive"
     :tab-height="themeStore.tab.height"
     :content-class="appStore.contentXScrollable ? 'overflow-x-hidden' : ''"
     :sider-visible="siderVisible"
     :sider-width="siderWidth"
     :sider-collapsed-width="siderCollapsedWidth"
-    :footer-visible="themeStore.footer.visible"
+    :footer-visible="themeStore.footer.visible && !immersive"
     :footer-height="themeStore.footer.height"
     :fixed-footer="themeStore.footer.fixed"
     :right-footer="themeStore.footer.right"
@@ -147,7 +150,7 @@ function getSiderAndCollapsedWidth(isCollapsed: boolean) {
       <GlobalSider />
     </template>
     <GlobalMenu />
-    <GlobalContent />
+    <GlobalContent :show-padding="!immersive" />
     <ThemeDrawer />
     <template #footer>
       <GlobalFooter />
