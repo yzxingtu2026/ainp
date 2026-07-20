@@ -27,6 +27,7 @@ export const views: Record<LastLevelRouteKey, RouteComponent | (() => Promise<Ro
   ai_knowledge: () => import("@/views/ai/knowledge/index.vue"),
   ai_models: () => import("@/views/ai/models/index.vue"),
   ai_providers: () => import("@/views/ai/providers/index.vue"),
+  ai_workspace: () => import("@/views/ai/workspace/index.vue"),
   demo_attachments: () => import("@/views/demo/attachments/index.vue"),
   demo_hello: () => import("@/views/demo/hello/index.vue"),
   home: () => import("@/views/home/index.vue"),

@@ -15,7 +15,7 @@ func TestAIRegistrationTranslationKeysExist(t *testing.T) {
 		"capability.ai.name", "capability.ai.description",
 		"permission_group.ai.provider_management", "permission_group.ai.model_catalog", "permission_group.ai.agent_management",
 		"permission_group.ai.agent_slot_management", "permission_group.ai.agent_slot_preferences",
-		"menu.ai.root.title", "menu.ai.providers.title", "menu.ai.models.title", "menu.ai.agents.title", "menu.ai.knowledge.title",
+		"menu.ai.root.title", "menu.ai.providers.title", "menu.ai.models.title", "menu.ai.agents.title", "menu.ai.knowledge.title", "menu.ai.workspace.title",
 		"menu.ai.agent_slots.title",
 		"action.ai.agent_slot_list.name", "action.ai.agent_slot_list.description",
 		"action.ai.agent_slot_get.name", "action.ai.agent_slot_get.description",

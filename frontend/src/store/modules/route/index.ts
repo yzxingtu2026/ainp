@@ -83,6 +83,19 @@ export const useRouteStore = defineStore(SetupStoreId.Route, () => {
   const menus = ref<App.Global.Menu[]>([]);
   const searchMenus = computed(() => transformMenuToSearchMenus(menus.value));
 
+  const globalAiLauncherRoute = computed(() => {
+    function find(routes: ElegantConstRoute[]): ElegantConstRoute | null {
+      for (const route of routes) {
+        if (route.meta?.shellPlacement === 'global_ai_launcher') return route;
+        const child = find(route.children || []);
+        if (child) return child;
+      }
+      return null;
+    }
+
+    return find([...constantRoutes.value, ...authRoutes.value]);
+  });
+
   /** Get global menus */
   function getGlobalMenus(routes: ElegantConstRoute[]) {
     menus.value = getGlobalMenusByAuthRoutes(routes);
@@ -331,6 +344,7 @@ export const useRouteStore = defineStore(SetupStoreId.Route, () => {
     routeHome,
     menus,
     searchMenus,
+    globalAiLauncherRoute,
     updateGlobalMenusByLocale,
     cacheRoutes,
     excludeCacheRoutes,

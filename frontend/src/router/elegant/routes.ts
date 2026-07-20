@@ -108,6 +108,15 @@ export const generatedRoutes: GeneratedRoute[] = [
           i18nKey: 'route.ai_providers',
           hideInMenu: true
         }
+      },
+      {
+        name: 'ai_workspace',
+        path: '/ai/workspace',
+        component: 'view.ai_workspace',
+        meta: {
+          title: 'ai_workspace',
+          i18nKey: 'route.ai_workspace'
+        }
       }
     ]
   },

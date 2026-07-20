@@ -39,3 +39,16 @@ func TestRegistryPrunesDirectoryWithoutVisibleChildren(t *testing.T) {
 		t.Fatalf("empty operations directory must be hidden: %#v", items)
 	}
 }
+
+func TestRegistryValidatesShellPlacement(t *testing.T) {
+	r := menu.NewRegistry()
+	if err := r.Register(menu.Menu{ID: "workspace", Type: menu.TypeMenu, Placement: menu.PlacementGlobalAILauncher, Immersive: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Register(menu.Menu{ID: "bad-placement", Type: menu.TypeMenu, Placement: "sidebar_bottom"}); err == nil {
+		t.Fatal("expected unsupported placement to fail")
+	}
+	if err := r.Register(menu.Menu{ID: "bad-directory", Type: menu.TypeDirectory, Placement: menu.PlacementGlobalAILauncher}); err == nil {
+		t.Fatal("expected directory placement to fail")
+	}
+}

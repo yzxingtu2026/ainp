@@ -13,6 +13,7 @@ export {}
 declare module 'vue' {
   export interface GlobalComponents {
     AgentRunStatus: typeof import('./../components/ai/agent-run-status.vue')['default']
+    AiMascot: typeof import('./../components/ai/ai-mascot.vue')['default']
     AppProvider: typeof import('./../components/common/app-provider.vue')['default']
     AttachmentField: typeof import('./../components/common/attachment-field.vue')['default']
     AttachmentList: typeof import('./../components/common/attachment-list.vue')['default']
@@ -20,6 +21,7 @@ declare module 'vue' {
     AttachmentUpload: typeof import('./../components/common/attachment-upload.vue')['default']
     BetterScroll: typeof import('./../components/custom/better-scroll.vue')['default']
     ButtonIcon: typeof import('./../components/custom/button-icon.vue')['default']
+    ChatMessageList: typeof import('./../components/ai/chat-message-list.vue')['default']
     CodeSelect: typeof import('./../components/common/code-select.vue')['default']
     CodeTag: typeof import('./../components/common/code-tag.vue')['default']
     CountTo: typeof import('./../components/custom/count-to.vue')['default']
@@ -41,6 +43,7 @@ declare module 'vue' {
     LangSwitch: typeof import('./../components/common/lang-switch.vue')['default']
     LookForward: typeof import('./../components/custom/look-forward.vue')['default']
     MarkdownPromptEditor: typeof import('./../components/common/markdown-prompt-editor.vue')['default']
+    MarkdownRenderer: typeof import('./../components/ai/markdown-renderer.vue')['default']
     MemoryWorkbench: typeof import('./../components/memory-workbench/index.vue')['default']
     MenuToggler: typeof import('./../components/common/menu-toggler.vue')['default']
     NAlert: typeof import('naive-ui')['NAlert']
@@ -98,6 +101,8 @@ declare module 'vue' {
     NTag: typeof import('naive-ui')['NTag']
     NText: typeof import('naive-ui')['NText']
     NThing: typeof import('naive-ui')['NThing']
+    NTimeline: typeof import('naive-ui')['NTimeline']
+    NTimelineItem: typeof import('naive-ui')['NTimelineItem']
     NTooltip: typeof import('naive-ui')['NTooltip']
     NTree: typeof import('naive-ui')['NTree']
     NWatermark: typeof import('naive-ui')['NWatermark']
@@ -111,6 +116,8 @@ declare module 'vue' {
     TableColumnSetting: typeof import('./../components/advanced/table-column-setting.vue')['default']
     TableHeaderOperation: typeof import('./../components/advanced/table-header-operation.vue')['default']
     ThemeSchemaSwitch: typeof import('./../components/common/theme-schema-switch.vue')['default']
+    ToolActivityGroup: typeof import('./../components/ai/tool-activity-group.vue')['default']
+    ToolCallCard: typeof import('./../components/ai/tool-call-card.vue')['default']
     ToolConfirmationCard: typeof import('./../components/ai/tool-confirmation-card.vue')['default']
     WaveBg: typeof import('./../components/custom/wave-bg.vue')['default']
   }
@@ -119,6 +126,7 @@ declare module 'vue' {
 // For TSX support
 declare global {
   const AgentRunStatus: typeof import('./../components/ai/agent-run-status.vue')['default']
+  const AiMascot: typeof import('./../components/ai/ai-mascot.vue')['default']
   const AppProvider: typeof import('./../components/common/app-provider.vue')['default']
   const AttachmentField: typeof import('./../components/common/attachment-field.vue')['default']
   const AttachmentList: typeof import('./../components/common/attachment-list.vue')['default']
@@ -126,6 +134,7 @@ declare global {
   const AttachmentUpload: typeof import('./../components/common/attachment-upload.vue')['default']
   const BetterScroll: typeof import('./../components/custom/better-scroll.vue')['default']
   const ButtonIcon: typeof import('./../components/custom/button-icon.vue')['default']
+  const ChatMessageList: typeof import('./../components/ai/chat-message-list.vue')['default']
   const CodeSelect: typeof import('./../components/common/code-select.vue')['default']
   const CodeTag: typeof import('./../components/common/code-tag.vue')['default']
   const CountTo: typeof import('./../components/custom/count-to.vue')['default']
@@ -147,6 +156,7 @@ declare global {
   const LangSwitch: typeof import('./../components/common/lang-switch.vue')['default']
   const LookForward: typeof import('./../components/custom/look-forward.vue')['default']
   const MarkdownPromptEditor: typeof import('./../components/common/markdown-prompt-editor.vue')['default']
+  const MarkdownRenderer: typeof import('./../components/ai/markdown-renderer.vue')['default']
   const MemoryWorkbench: typeof import('./../components/memory-workbench/index.vue')['default']
   const MenuToggler: typeof import('./../components/common/menu-toggler.vue')['default']
   const NAlert: typeof import('naive-ui')['NAlert']
@@ -204,6 +214,8 @@ declare global {
   const NTag: typeof import('naive-ui')['NTag']
   const NText: typeof import('naive-ui')['NText']
   const NThing: typeof import('naive-ui')['NThing']
+  const NTimeline: typeof import('naive-ui')['NTimeline']
+  const NTimelineItem: typeof import('naive-ui')['NTimelineItem']
   const NTooltip: typeof import('naive-ui')['NTooltip']
   const NTree: typeof import('naive-ui')['NTree']
   const NWatermark: typeof import('naive-ui')['NWatermark']
@@ -217,6 +229,8 @@ declare global {
   const TableColumnSetting: typeof import('./../components/advanced/table-column-setting.vue')['default']
   const TableHeaderOperation: typeof import('./../components/advanced/table-header-operation.vue')['default']
   const ThemeSchemaSwitch: typeof import('./../components/common/theme-schema-switch.vue')['default']
+  const ToolActivityGroup: typeof import('./../components/ai/tool-activity-group.vue')['default']
+  const ToolCallCard: typeof import('./../components/ai/tool-call-card.vue')['default']
   const ToolConfirmationCard: typeof import('./../components/ai/tool-confirmation-card.vue')['default']
   const WaveBg: typeof import('./../components/custom/wave-bg.vue')['default']
 }

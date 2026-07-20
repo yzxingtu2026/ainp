@@ -11,9 +11,7 @@ import {
   materializeAIAgentPreview,
   startAIAgentRun
 } from '@/service/api';
-import { getAuthorization } from '@/service/request/shared';
-import { getServiceBaseURL } from '@/utils/service';
-import { localStg } from '@/utils/storage';
+import { agentRunEventDelta, subscribeAgentRun } from '@/service/ai-run-stream';
 
 export type BuilderPreviewStatus =
   | 'idle'
@@ -37,64 +35,6 @@ function messageText(msg: Api.AI.ConversationMessage): string {
     })
     .filter(Boolean)
     .join('\n');
-}
-
-function eventDeltaText(event: Api.AI.AgentRunEvent): string {
-  const payload = event.payload || {};
-  if (typeof payload.delta === 'string') return payload.delta;
-  if (typeof payload.text === 'string') return payload.text;
-  return '';
-}
-
-async function subscribeAgentRun(
-  runId: string,
-  afterSequence: number,
-  signal: AbortSignal,
-  onEvent: (event: Api.AI.AgentRunEvent) => void
-) {
-  const isProxy = import.meta.env.DEV && import.meta.env.VITE_HTTP_PROXY === 'Y';
-  const { baseURL } = getServiceBaseURL(import.meta.env, isProxy);
-  const response = await fetch(`${baseURL}/api/v1/ai/agent-runs/subscribe`, {
-    method: 'POST',
-    signal,
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: getAuthorization() || '',
-      'Accept-Language': localStg.get('lang') || 'zh-CN'
-    },
-    body: JSON.stringify({ id: runId, after_sequence: afterSequence, limit: 200 })
-  });
-  const contentType = response.headers.get('content-type') || '';
-  if (!response.ok || !response.body || !contentType.includes('text/event-stream')) {
-    let msg = $t('page.agentBuilder.previewSubscribeFailed');
-    try {
-      const envelope = await response.json();
-      if (typeof envelope?.message === 'string' && envelope.message) msg = envelope.message;
-    } catch {
-      /* ignore */
-    }
-    throw new Error(msg);
-  }
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const frames = buffer.split('\n\n');
-    buffer = frames.pop() || '';
-    for (const frame of frames) {
-      const line = frame.split('\n').find(item => item.startsWith('data: '));
-      if (!line) continue;
-      try {
-        const payload = JSON.parse(line.slice(6)) as Api.AI.AgentRunEvent;
-        onEvent(payload);
-      } catch {
-        /* ignore malformed frame */
-      }
-    }
-  }
 }
 
 export function useBuilderPreview(options: {
@@ -237,19 +177,23 @@ export function useBuilderPreview(options: {
         max_output_tokens: options.draft.max_output_tokens
       },
       tool_policy: {},
-      memory_policy: options.draft.memory_inherit ? undefined : {
-        enabled: options.draft.memory_enabled,
-        extraction_model_alias: options.draft.memory_extraction_alias,
-        consolidation_model_alias: options.draft.memory_consolidation_alias,
-        auto_save_low_sensitive: options.draft.memory_auto_save,
-        write_approval_mode: options.draft.memory_approval_mode,
-        agent_specific_scope: options.draft.memory_agent_scope,
-        max_candidates_per_turn: 8,
-        max_consolidation_items: 50,
-        max_recall_items: 10,
-        max_recall_tokens: 2000,
-        policy_version: '1', prompt_version: '1', schema_version: '1'
-      },
+      memory_policy: options.draft.memory_inherit
+        ? undefined
+        : {
+            enabled: options.draft.memory_enabled,
+            extraction_model_alias: options.draft.memory_extraction_alias,
+            consolidation_model_alias: options.draft.memory_consolidation_alias,
+            auto_save_low_sensitive: options.draft.memory_auto_save,
+            write_approval_mode: options.draft.memory_approval_mode,
+            agent_specific_scope: options.draft.memory_agent_scope,
+            max_candidates_per_turn: 8,
+            max_consolidation_items: 50,
+            max_recall_items: 10,
+            max_recall_tokens: 2000,
+            policy_version: '1',
+            prompt_version: '1',
+            schema_version: '1'
+          },
       revision: options.draft.revision
     });
     if (matError || !data) throw matError || new Error($t('page.agentBuilder.previewMaterializeFailed'));
@@ -341,7 +285,7 @@ export function useBuilderPreview(options: {
         scheduleSnapshot(runId, true);
         break;
       case 'run.delta':
-        appendStreamDelta(eventDeltaText(event));
+        appendStreamDelta(agentRunEventDelta(event));
         break;
       case 'run.waiting_confirmation':
       case 'run.paused':

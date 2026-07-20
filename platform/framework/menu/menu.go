@@ -12,6 +12,9 @@ const (
 	TypeDirectory = "directory"
 	TypeMenu      = "menu"
 	TypeButton    = "button"
+
+	PlacementDefault          = ""
+	PlacementGlobalAILauncher = "global_ai_launcher"
 )
 
 type Menu struct {
@@ -29,6 +32,8 @@ type Menu struct {
 	BindAction string     `json:"bind_action,omitempty"`
 	HideInMenu bool       `json:"hide_in_menu,omitempty"`
 	KeepAlive  bool       `json:"keep_alive,omitempty"`
+	Placement  string     `json:"placement,omitempty"`
+	Immersive  bool       `json:"immersive,omitempty"`
 	Module     string     `json:"module,omitempty"`
 	Surface    auth.Realm `json:"surface"`
 }
@@ -62,6 +67,12 @@ func (r *Registry) Register(m Menu) error {
 	}
 	if m.Icon != "" && !strings.Contains(m.Icon, ":") {
 		return fmt.Errorf("menu icon must be collection:name: %s", m.Icon)
+	}
+	if m.Placement != PlacementDefault && m.Placement != PlacementGlobalAILauncher {
+		return fmt.Errorf("invalid menu placement: %s", m.Placement)
+	}
+	if m.Placement != PlacementDefault && m.Type != TypeMenu {
+		return fmt.Errorf("menu placement requires menu type: %s", m.ID)
 	}
 	if _, exists := r.items[m.ID]; exists {
 		return fmt.Errorf("menu already registered: %s", m.ID)

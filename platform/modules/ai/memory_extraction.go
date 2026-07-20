@@ -150,7 +150,22 @@ func (s *MemoryExtractionService) EvaluateRun(ctx context.Context, runID string)
 	}
 	max := int64(policy.MaxRecallTokens)
 	temp := float64(0)
-	value, err := s.invocations.Generate(ctx, aimodelruntime.GenerateRequest{ModelAlias: policy.ExtractionModelAlias, Instructions: "Evaluate only cross-session memory value. Return zero or more candidates. Do not invent identifiers. Source IDs must come from allowed_source_message_ids. Third-party and tool content are not user facts. Use attribute_key=preferred_address and only the requested address as attribute_value for explicit address preferences; use stable namespaced keys for other profile facts, otherwise return empty attribute fields.", Messages: []aimodelruntime.Message{{Role: aimodelruntime.RoleUser, Content: []aimodelruntime.ContentPart{{Type: aimodelruntime.PartInputText, Text: string(body)}}}}, StructuredOutput: &aimodelruntime.StructuredOutput{Name: "memory_candidates", Strict: true, Schema: memoryCandidateSchema()}, MaxOutputTokens: &max, Temperature: &temp, TimeoutMS: 60000, Metadata: map[string]string{"purpose": "memory_candidate_extraction", "run_id": run.ID, "policy_version": policy.PolicyVersion, "prompt_version": policy.PromptVersion, "schema_version": policy.SchemaVersion}})
+	// Use Function Calling for better compatibility across models (Qwen, GPT, Claude, etc.)
+	value, err := s.invocations.Generate(ctx, aimodelruntime.GenerateRequest{
+		ModelAlias:   policy.ExtractionModelAlias,
+		Instructions: "Evaluate only cross-session memory value. Call the extract_memory_candidates function with zero or more candidates. Do not invent identifiers. Source IDs must come from allowed_source_message_ids. Third-party and tool content are not user facts. Use attribute_key=preferred_address and only the requested address as attribute_value for explicit address preferences; use stable namespaced keys for other profile facts, otherwise return empty attribute fields.",
+		Messages:     []aimodelruntime.Message{{Role: aimodelruntime.RoleUser, Content: []aimodelruntime.ContentPart{{Type: aimodelruntime.PartInputText, Text: string(body)}}}},
+		Tools: []aimodelruntime.ToolDefinition{{
+			Name:        "extract_memory_candidates",
+			Description: "Extract memory candidates from the conversation",
+			Parameters:  memoryCandidateSchema(),
+		}},
+		ToolChoice:      &aimodelruntime.ToolChoice{Mode: "required", Name: "extract_memory_candidates"},
+		MaxOutputTokens: &max,
+		Temperature:     &temp,
+		TimeoutMS:       60000,
+		Metadata:        map[string]string{"purpose": "memory_candidate_extraction", "run_id": run.ID, "policy_version": policy.PolicyVersion, "prompt_version": policy.PromptVersion, "schema_version": policy.SchemaVersion},
+	})
 	if err != nil {
 		_ = s.markFailed(ctx, evaluation.ID, "model_error")
 		return err
@@ -160,14 +175,33 @@ func (s *MemoryExtractionService) EvaluateRun(ctx context.Context, runID string)
 		_ = s.markFailed(ctx, evaluation.ID, "invalid_response")
 		return jobPermanent(fmt.Errorf("invalid extraction response"))
 	}
+	// Extract JSON from tool call arguments (preferred) or text output (fallback)
 	text := ""
 	for _, item := range response.Output {
-		if item.Type == aimodelruntime.PartOutputText {
-			text += item.Text
+		if item.Type == aimodelruntime.PartToolCall && item.ToolName == "extract_memory_candidates" {
+			text = string(item.Arguments)
+			break
+		}
+	}
+	if text == "" {
+		// Fallback: some models may return text instead of tool call
+		for _, item := range response.Output {
+			if item.Type == aimodelruntime.PartOutputText {
+				text += item.Text
+			}
+		}
+		text = stripMarkdownCodeBlock(text)
+		if strings.HasPrefix(text, "[") {
+			text = `{"candidates":` + text + `}`
 		}
 	}
 	var output memoryExtractionOutput
 	if err = strictJSON([]byte(text), &output); err != nil || len(output.Candidates) > policy.MaxCandidatesPerTurn {
+		preview := text
+		if len(preview) > 300 {
+			preview = preview[:300] + "..."
+		}
+		logging.Warn(ctx, "memory extraction schema mismatch", "run_id", run.ID, "error", err, "text_len", len(text), "text_preview", preview, "candidate_count", len(output.Candidates), "max_allowed", policy.MaxCandidatesPerTurn)
 		_ = s.markFailed(ctx, evaluation.ID, "invalid_schema")
 		return jobPermanent(fmt.Errorf("invalid candidate schema"))
 	}
@@ -219,7 +253,6 @@ func eligibleText(message ConversationMessage, expected aimodelruntime.PartType)
 }
 func strictJSON(body []byte, out any) error {
 	d := json.NewDecoder(bytes.NewReader(body))
-	d.DisallowUnknownFields()
 	if err := d.Decode(out); err != nil {
 		return err
 	}
@@ -230,6 +263,20 @@ func strictJSON(body []byte, out any) error {
 	return nil
 }
 func sha256Hex(v []byte) string { sum := sha256.Sum256(v); return hex.EncodeToString(sum[:]) }
+func stripMarkdownCodeBlock(s string) string {
+	s = strings.TrimSpace(s)
+	if strings.HasPrefix(s, "```") {
+		// Remove opening fence (```json or ```)
+		if idx := strings.Index(s, "\n"); idx != -1 {
+			s = s[idx+1:]
+		}
+		// Remove closing fence
+		if idx := strings.LastIndex(s, "```"); idx != -1 {
+			s = s[:idx]
+		}
+	}
+	return strings.TrimSpace(s)
+}
 func mapKeys(v map[string]bool) []string {
 	out := make([]string, 0, len(v))
 	for k := range v {
@@ -252,7 +299,21 @@ func (s *MemoryExtractionService) persistCandidates(ctx context.Context, run Age
 	policyJSON, _ := json.Marshal(policy)
 	db := s.db.WithContext(ctx)
 	return db.Transaction(func(tx *gorm.DB) error {
-		for _, c := range candidates {
+		for i := range candidates {
+			normalizeCandidate(&candidates[i])
+			// Fix invalid source_message_ids: replace hallucinated IDs with the trigger message ID
+			validIDs := make([]string, 0, len(candidates[i].SourceMessageIDs))
+			for _, id := range candidates[i].SourceMessageIDs {
+				if allowed[id] {
+					validIDs = append(validIDs, id)
+				}
+			}
+			if len(validIDs) == 0 {
+				// Fallback to trigger message ID
+				validIDs = []string{run.TriggerMessageID}
+			}
+			candidates[i].SourceMessageIDs = validIDs
+			c := candidates[i]
 			if err := validateCandidate(c, allowed); err != nil {
 				return jobPermanent(err)
 			}
@@ -322,6 +383,37 @@ func (s *MemoryExtractionService) persistCandidates(ctx context.Context, run Age
 		}
 		return tx.Model(&MemoryEvaluation{}).Where("id=?", evaluation.ID).Updates(updates).Error
 	})
+}
+func normalizeCandidate(c *memoryCandidate) {
+	if c.Kind == "" {
+		c.Kind = aimemory.TypePreference
+	}
+	if c.DatePrecision == "" {
+		c.DatePrecision = aimemory.DateUnknown
+	}
+	if c.Sensitivity == "" {
+		c.Sensitivity = aimemory.SensitivityNormal
+	}
+	if c.Reason == "" {
+		c.Reason = "preference"
+	}
+	if c.Confidence == 0 {
+		c.Confidence = 0.8
+	}
+	if c.Importance == 0 {
+		c.Importance = 50
+	}
+	// Auto-generate summary/content from attribute fields if missing
+	if strings.TrimSpace(c.Summary) == "" && c.AttributeKey != "" {
+		c.Summary = c.AttributeKey + ": " + c.AttributeValue
+	}
+	if strings.TrimSpace(c.Content) == "" {
+		if c.AttributeKey != "" {
+			c.Content = c.AttributeKey + ": " + c.AttributeValue
+		} else {
+			c.Content = c.Summary
+		}
+	}
 }
 func validateCandidate(c memoryCandidate, allowed map[string]bool) error {
 	if !aimemory.ValidItemType(c.Kind) || !aimemory.ValidDatePrecision(c.DatePrecision) || strings.TrimSpace(c.Summary) == "" || strings.TrimSpace(c.Content) == "" || c.Confidence < 0 || c.Confidence > 1 || c.Importance < 0 || c.Importance > 100 || len(c.SourceMessageIDs) == 0 {

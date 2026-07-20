@@ -51,6 +51,7 @@ type AssistantStream struct {
 	ID             string     `gorm:"primaryKey;size:64" json:"id"`
 	TenantID       string     `gorm:"size:64;not null;uniqueIndex:ux_ai_stream_idem,priority:1" json:"-"`
 	ConversationID string     `gorm:"size:64;not null;uniqueIndex:ux_ai_stream_idem,priority:2;index" json:"conversation_id"`
+	RunID          *string    `gorm:"size:64;index" json:"run_id,omitempty"`
 	IdempotencyKey string     `gorm:"size:191;not null;uniqueIndex:ux_ai_stream_idem,priority:3" json:"-"`
 	Status         string     `gorm:"size:16;not null;check:ck_ai_stream_status,status IN ('streaming','committed','failed','cancelled')" json:"status"`
 	MessageID      *string    `gorm:"size:64" json:"message_id,omitempty"`

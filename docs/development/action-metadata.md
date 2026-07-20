@@ -104,6 +104,8 @@ purchase_order_create    # 禁止缺少 capability 点分前缀（除非 capabil
 
 菜单按用户工作场景组织，PermissionGroup 按授权边界组织，两者不要求一一对应。配置类权限与运行运维类权限必须拆分，例如通知模板配置与通知投递运维即使位于相邻导航，也不得共用权限组。禁止将 Job、Outbox、通知投递合并为单一宽泛的运维权限组。
 
+应用壳级特殊入口仍由菜单 Metadata 驱动。`placement=global_ai_launcher` 表示该 `menu` 不进入普通滚动菜单，而由应用壳在垂直侧栏底部、水平顶栏或移动导航中自适应投影；它仍必须通过 `permission` / `bind_action` 服从后端权限过滤。`immersive=true` 表示路由隐藏普通页签、内容边距和 Footer。前端禁止根据菜单 ID、标题或 URL 猜测这些行为。
+
 安全敏感只读能力可显式启用审计，例如审计日志列表/详情使用独立 `system.operations.audit` PermissionGroup 且 `audit=true`；普通高频列表仍应显式 `audit=false`，避免审计噪声。
 
 ### HTTPMeta

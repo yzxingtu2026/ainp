@@ -214,18 +214,19 @@ func (s *AgentRuntimeService) Subscribe(ctx context.Context, r AgentRunEventsReq
 	if err != nil {
 		return nil, err
 	}
-	events := make(chan action.StreamEvent, 32)
+	events := make(chan action.StreamEvent, 128)
 	streamCtx, cancel := context.WithCancel(ctx)
 	go func() {
 		defer close(events)
 		cursor := r.AfterSequence
-		ticker := time.NewTicker(250 * time.Millisecond)
-		defer ticker.Stop()
+		poll := time.NewTicker(50 * time.Millisecond)
+		defer poll.Stop()
 		for {
 			var rows []AgentRunEvent
 			if e := s.db.WithContext(streamCtx).Where("run_id=? AND sequence>?", run.ID, cursor).Order("sequence ASC").Limit(200).Find(&rows).Error; e != nil {
 				return
 			}
+			terminal := false
 			for _, event := range rows {
 				cursor = event.Sequence
 				select {
@@ -233,18 +234,17 @@ func (s *AgentRuntimeService) Subscribe(ctx context.Context, r AgentRunEventsReq
 				case <-streamCtx.Done():
 					return
 				}
+				if event.Type == "run.completed" || event.Type == "run.failed" || event.Type == "run.cancelled" || event.Type == "run.waiting_confirmation" || event.Type == "run.paused" {
+					terminal = true
+				}
 			}
-			var current AgentRun
-			if s.db.WithContext(streamCtx).Select("status").Where("id=?", run.ID).First(&current).Error != nil {
-				return
-			}
-			if current.Status == "completed" || current.Status == "failed" || current.Status == "cancelled" || current.Status == "waiting_confirmation" || current.Status == "paused" {
+			if terminal {
 				return
 			}
 			select {
 			case <-streamCtx.Done():
 				return
-			case <-ticker.C:
+			case <-poll.C:
 			}
 		}
 	}()
@@ -395,7 +395,11 @@ func (s *AgentRuntimeService) appendEvent(ctx context.Context, tx *gorm.DB, run 
 		return err
 	}
 	body, _ := json.Marshal(payload)
-	return tx.Create(&AgentRunEvent{ID: uuid.NewString(), TenantID: run.TenantID, RunID: run.ID, Sequence: last + 1, Type: eventType, StepID: stepID, Payload: body}).Error
+	event := AgentRunEvent{ID: uuid.NewString(), TenantID: run.TenantID, RunID: run.ID, Sequence: last + 1, Type: eventType, StepID: stepID, Payload: body}
+	if err := tx.Create(&event).Error; err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s *AgentRuntimeService) claim(ctx context.Context, runID, worker string) (*AgentRun, error) {
@@ -622,7 +626,7 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 			if stepErr != nil {
 				return stepErr
 			}
-			streamID, e := s.conversations.Begin(ctx, run.ConversationID, "run-final:"+run.ID)
+			streamID, e := s.conversations.Begin(ctx, run.ConversationID, "run-final:"+run.ID, run.ID)
 			if e != nil {
 				return s.fail(ctx, run, "finalize_failed")
 			}

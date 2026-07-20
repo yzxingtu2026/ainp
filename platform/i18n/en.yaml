@@ -680,3 +680,4 @@ ai.knowledge.retrieval_unavailable: Knowledge retrieval service is unavailable
 ai.knowledge.retrieval_requires_enabled: Enable the knowledge base before testing retrieval
 ai.knowledge.retrieval_index_not_ready: The current knowledge index is not ready
 menu.ai.knowledge.title: Knowledge Bases
+menu.ai.workspace.title: AI Workspace

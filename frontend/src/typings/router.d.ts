@@ -50,6 +50,10 @@ declare module 'vue-router' {
     href?: string | null;
     /** Whether to hide the route in the menu */
     hideInMenu?: boolean | null;
+    /** Application-shell placement for routes rendered outside the ordinary menu. */
+    shellPlacement?: 'global_ai_launcher' | null;
+    /** Whether this route consumes the content area without ordinary page chrome. */
+    immersive?: boolean | null;
     /**
      * The menu key will be activated when entering the route
      *
