@@ -57,12 +57,15 @@ interface RenderedSystemItem {
   key: string;
   text: string;
 }
+/** run 分组内的有序段：文本段或工具操作段，用于按会话位置穿插渲染 */
+type RunSegment =
+  | { kind: 'text'; key: string; text: string }
+  | { kind: 'operations'; key: string; operations: ToolOperation[] };
 interface RenderedRunItem {
   kind: 'run';
   key: string;
   runId: string;
-  text: string;
-  operations: ToolOperation[];
+  segments: RunSegment[];
   live: boolean;
 }
 type RenderedItem = RenderedUserItem | RenderedSystemItem | RenderedRunItem;
@@ -88,9 +91,10 @@ const toolResultIndex = computed(() => {
 });
 
 /**
- * 按 run 分组渲染：同一次 run 的所有 assistant 消息合并为一个消息块
- * （文本拼接、工具操作合并为一组），避免逐条散落显示「已处理 1 个操作」；
- * user / system 消息单独渲染。流式文本追加到活跃 run 分组。
+ * 按 run 分组渲染：同一次 run 的 assistant 消息归为一个消息块（共用一个头像）。
+ * 运行中（live）按消息顺序穿插「文本段 / 工具操作段」，工具调用随会话位置实时展示；
+ * 结束后（settled）合并为一个文本段 + 一个工具汇总组（「已处理 N 个操作」）。
+ * user / system 消息单独渲染。
  */
 const renderedItems = computed<RenderedItem[]>(() => {
   const items: RenderedItem[] = [];
@@ -119,19 +123,20 @@ const renderedItems = computed<RenderedItem[]>(() => {
         kind: 'run',
         key: runId,
         runId,
-        text: '',
-        operations: [],
+        segments: [],
         live: runId === props.activeRunId
       };
       runGroups.set(runId, group);
       items.push(group);
     }
+    // 按消息内顺序追加段：先文本段，再该消息的工具操作段
     const text = messageText(message);
-    if (text) group.text = group.text ? `${group.text}\n\n${text}` : text;
+    if (text) group.segments.push({ kind: 'text', key: `${message.id}-text`, text });
+    const operations: ToolOperation[] = [];
     for (const part of message.content || []) {
       if (part.type !== 'tool_call') continue;
       const callId = part.tool_call_id || '';
-      group.operations.push({
+      operations.push({
         toolCallId: callId,
         toolName: part.tool_name || '',
         request: part.arguments,
@@ -139,28 +144,51 @@ const renderedItems = computed<RenderedItem[]>(() => {
         hasResult: Boolean(callId && resultIndex.has(callId))
       });
     }
+    if (operations.length > 0) {
+      group.segments.push({ kind: 'operations', key: `${message.id}-ops`, operations });
+    }
   }
 
-  // 流式文本追加到活跃 run 分组（尚无落库消息时新建分组承载）
-  if (props.activeRunId) {
-    let activeGroup = runGroups.get(props.activeRunId);
-    if (!activeGroup) {
-      activeGroup = {
-        kind: 'run',
-        key: props.activeRunId,
-        runId: props.activeRunId,
-        text: '',
-        operations: [],
-        live: true
-      };
-      runGroups.set(props.activeRunId, activeGroup);
-      items.push(activeGroup);
+  // 逐个 run 分组收尾：活跃 run 保持穿插并追加流式文本；已结束 run 合并为文本段 + 工具汇总段
+  for (const group of runGroups.values()) {
+    if (group.live) {
+      if (props.streamingText) {
+        const last = group.segments[group.segments.length - 1];
+        if (last && last.kind === 'text') {
+          last.text = `${last.text}\n\n${props.streamingText}`;
+        } else {
+          group.segments.push({ kind: 'text', key: 'streaming', text: props.streamingText });
+        }
+      }
+      continue;
     }
-    if (props.streamingText) {
-      activeGroup.text = activeGroup.text
-        ? `${activeGroup.text}\n\n${props.streamingText}`
-        : props.streamingText;
+    const texts: string[] = [];
+    const operations: ToolOperation[] = [];
+    for (const segment of group.segments) {
+      if (segment.kind === 'text') texts.push(segment.text);
+      else operations.push(...segment.operations);
     }
+    const merged: RunSegment[] = [];
+    if (texts.length > 0)
+      merged.push({ kind: 'text', key: `${group.runId}-text`, text: texts.join('\n\n') });
+    if (operations.length > 0)
+      merged.push({ kind: 'operations', key: `${group.runId}-ops`, operations });
+    group.segments = merged;
+  }
+
+  // 活跃 run 尚无落库消息时，新建分组承载流式文本
+  if (props.activeRunId && !runGroups.has(props.activeRunId)) {
+    const activeGroup: RenderedRunItem = {
+      kind: 'run',
+      key: props.activeRunId,
+      runId: props.activeRunId,
+      segments: props.streamingText
+        ? [{ kind: 'text', key: 'streaming', text: props.streamingText }]
+        : [],
+      live: true
+    };
+    runGroups.set(props.activeRunId, activeGroup);
+    items.push(activeGroup);
   }
 
   return items;
@@ -219,15 +247,17 @@ function onConfirmationResolved(status: 'approved' | 'rejected', result?: Api.AI
         </div>
       </article>
 
-      <article v-else-if="item.text || item.operations.length > 0" class="message message--assistant">
+      <article v-else-if="item.segments.length > 0" class="message message--assistant">
         <AiMascot :state="item.live ? 'working' : 'idle'" :size="36" :breathe="false" />
         <div class="message__content">
-          <MarkdownRenderer v-if="item.text" :content="item.text" />
-          <ToolActivityGroup
-            v-if="item.operations.length > 0"
-            :operations="item.operations"
-            :active="item.live"
-          />
+          <template v-for="segment in item.segments" :key="segment.key">
+            <MarkdownRenderer v-if="segment.kind === 'text'" :content="segment.text" />
+            <ToolActivityGroup
+              v-else
+              :operations="segment.operations"
+              :active="item.live"
+            />
+          </template>
         </div>
       </article>
     </template>
