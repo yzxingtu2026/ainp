@@ -129,7 +129,7 @@ func TestActionToolProviderUsesTypedSchemaAndRegistryInvoke(t *testing.T) {
 	handler := action.JSON(func(_ context.Context, r exposedRequest) (any, error) {
 		return map[string]any{"resource_id": r.ResourceID}, nil
 	})
-	err := actions.Register(action.Action{ID: "demo.read", Handler: handler, Meta: action.Metadata{Capability: "demo", Access: action.AccessAuthenticated, Name: "读取资源", AI: &action.AIMeta{ExposeTool: true, Risk: "low", SideEffect: "read", Summary: "读取指定资源", HumanDescription: "读取资源", InputSchema: action.SchemaFor[exposedRequest]()}}})
+	err := actions.Register(action.Action{ID: "demo.read", Handler: handler, Meta: action.Metadata{Capability: "demo", Access: action.AccessAuthenticated, Name: "读取资源", AI: &action.AIMeta{ExposeTool: true, Risk: "low", SideEffect: "read", Summary: "读取指定资源", HumanDescription: "读取资源", ResultSummary: "已读取资源", InputSchema: action.SchemaFor[exposedRequest]()}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,7 +204,9 @@ func TestToolRuntimePostgresLifecycleAndIsolation(t *testing.T) {
 	}
 	registry := aitool.NewRegistry()
 	executor := &fakeToolExecutor{}
-	provider := &fakeToolProvider{source: aitool.SourceAction, tools: []aitool.Definition{toolFixture("action:purchase.order_read", "读取采购单", "查询采购订单")}}
+	actionTool := toolFixture("action:purchase.order_read", "读取采购单", "查询采购订单")
+	actionTool.PermissionRefs = []string{"purchase.read"}
+	provider := &fakeToolProvider{source: aitool.SourceAction, tools: []aitool.Definition{actionTool}}
 	if err = registry.RegisterProvider(provider, executor); err != nil {
 		t.Fatal(err)
 	}
@@ -222,12 +224,37 @@ func TestToolRuntimePostgresLifecycleAndIsolation(t *testing.T) {
 	}
 	signer, _ := aitool.NewHandleSigner(strings.Repeat("s", 32))
 	service := ai.NewToolService(db, registry, signer, rt.Writer)
-	ctx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t1", UserID: "u1", SessionID: "s1", AuthVersion: 1, Realm: auth.RealmTenant, Permissions: []string{"*"}})
-	searched, err := service.Search(ctx, ai.ToolSearchRequest{Query: "采购订单"})
+	ctx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t1", UserID: "u1", SessionID: "s1", AuthVersion: 1, Realm: auth.RealmTenant, Permissions: []string{"purchase.read"}})
+	restrictedScope := ai.ToolScope{
+		ID:                      "scope-progressive",
+		TenantID:                "t1",
+		UserID:                  "u1",
+		Realm:                   string(auth.RealmTenant),
+		SessionID:               "s1",
+		AuthVersion:             1,
+		AllowedSourcesJSON:      json.RawMessage(`["action"]`),
+		AllowedCapabilitiesJSON: json.RawMessage(`["demo"]`),
+		AllowedToolsJSON:        json.RawMessage(`["meta:tool.search","meta:tool.load"]`),
+		LoadedToolsJSON:         json.RawMessage(`[]`),
+		ExpiresAt:               time.Now().Add(time.Hour),
+	}
+	tenantDB, err := tenantdata.TenantDB(ctx, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = tenantdata.TenantExec(tenantDB, `INSERT INTO ai_tool_scopes
+(tenant_id, id, user_id, realm, session_id, auth_version, allowed_sources_json, allowed_capabilities_json, allowed_tools_json, loaded_tools_json, schema_bytes, expires_at)
+VALUES (?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, 0, ?)`, restrictedScope.ID, restrictedScope.UserID, restrictedScope.Realm, restrictedScope.SessionID, restrictedScope.AuthVersion, restrictedScope.AllowedSourcesJSON, restrictedScope.AllowedCapabilitiesJSON, restrictedScope.AllowedToolsJSON, restrictedScope.LoadedToolsJSON, restrictedScope.ExpiresAt); err != nil {
+		t.Fatal(err)
+	}
+	searched, err := service.Search(ctx, ai.ToolSearchRequest{ScopeID: restrictedScope.ID, Query: "采购订单"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	scopeID := searched.(ai.ToolSearchResponse).ScopeID
+	if items := searched.(ai.ToolSearchResponse).Items; len(items) != 1 || items[0].ID != actionTool.ID {
+		t.Fatalf("source/capability scope did not discover action tool: %#v", items)
+	}
 	_, projected, err := service.ProjectModelTools(ctx, scopeID)
 	if err != nil || len(projected) != 2 || projected[0].Name != "meta__tool_search" || projected[1].Name != "meta__tool_load" {
 		t.Fatalf("initial projection must contain only search/load: %#v %v", projected, err)
@@ -266,6 +293,10 @@ func TestToolRuntimePostgresLifecycleAndIsolation(t *testing.T) {
 	}
 	if strings.Contains(string(events[0].PayloadJSON), "supplier_id") || strings.Contains(string(events[0].PayloadJSON), "s1") {
 		t.Fatalf("arguments leaked to outbox: %s", events[0].PayloadJSON)
+	}
+	revoked := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t1", UserID: "u1", SessionID: "s1", AuthVersion: 1, Realm: auth.RealmTenant})
+	if _, err = service.Execute(revoked, ai.ToolExecuteRequest{Handle: handle, ToolCallID: "call-revoked", Arguments: json.RawMessage(`{"supplier_id":"s1"}`)}); err == nil {
+		t.Fatal("permission revocation must invalidate an existing handle")
 	}
 	other := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t1", UserID: "u2", SessionID: "s2", AuthVersion: 1, Realm: auth.RealmTenant, Permissions: []string{"*"}})
 	if _, err = service.Load(other, ai.ToolLoadRequest{ScopeID: scopeID, ToolIDs: []string{"action:purchase.order_read"}}); err == nil {

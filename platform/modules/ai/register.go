@@ -191,6 +191,7 @@ func Register(a *app.App) error {
 	compactions.SetMemoryFlushHook(memoryExtraction)
 	a.ContextCompactor = compactions
 	agentRuntime := NewAgentRuntimeService(a.DB, conversations, invocations, tools, compactions, writer, a.Authorization, a.RuntimeContextProvider)
+	agentRuntime.SetAgentContracts(contracts)
 	agentRuntime.SetMemoryRetriever(memoryRetriever)
 	tools.SetConfirmationHooks(agentRuntime.OnConfirmationPending, agentRuntime.OnConfirmationDecided)
 	if err := RegisterAgentRuntime(a, agentRuntime); err != nil {
@@ -340,6 +341,6 @@ func Register(a *app.App) error {
 
 func NewBuiltinAgentContractRegistry() (*aiagent.Registry, error) {
 	contracts := aiagent.NewRegistry()
-	err := contracts.Register(aiagent.Contract{Key: "system.operations", Version: "1.0.0", Name: "系统运营助手", Description: "通过当前用户权限安全操作后台系统", BaseInstructions: prompt.MustGet("agent/system-operations"), RequiredModelCapabilities: []string{"chat", "tools"}, RequiredToolSelectors: []string{"meta:tool.search", "meta:tool.load"}, ConfigSchema: json.RawMessage(`{"type":"object","additionalProperties":false}`), SingletonScope: aiagent.SingletonTenant, ManagedFields: []string{"code", "source", "contract_key", "contract_version", "base_instructions", "visibility"}, UpgradePolicy: "managed-fields"})
+	err := contracts.Register(aiagent.Contract{Key: "system.operations", Version: "1.0.0", Name: "系统运营助手", Description: "通过当前用户权限安全操作后台系统", BaseInstructions: prompt.MustGet("agent/system-operations"), RequiredModelCapabilities: []string{"chat", "tools"}, RequiredToolSelectors: []string{"meta:tool.search", "meta:tool.load"}, AllowedToolSources: []string{"action"}, AllowedToolCapabilities: []string{"system", "operations"}, ConfigSchema: json.RawMessage(`{"type":"object","additionalProperties":false}`), SingletonScope: aiagent.SingletonTenant, ManagedFields: []string{"code", "source", "contract_key", "contract_version", "base_instructions", "visibility"}, UpgradePolicy: "managed-fields"})
 	return contracts, err
 }

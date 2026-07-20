@@ -31,7 +31,9 @@ func (s *Service) GetOrder(ctx context.Context, req OrderGetRequest) (any, error
 }
 ```
 
-注册 Action 时增加 `AIMeta`：
+生产 Action 必须显式完成 AI 分类：适合 Agent 使用的 Action 填写完整 `AIMeta`；暂不适合暴露的 Action 使用 `action.ExcludeFromAI("稳定原因")`。禁止以 `AI=nil` 作为长期排除清单，因为新增 Action 会在盘点中被静默遗漏。
+
+注册可暴露 Action 时增加 `AIMeta`：
 
 ```go
 if err := a.RegisterAction(action.Action{
@@ -45,9 +47,12 @@ if err := a.RegisterAction(action.Action{
             ExposeTool:          true,
             Summary:             "根据采购单 ID 查询当前用户有权访问的采购单",
             HumanDescription:    "读取指定采购单",
+            Tags:                []string{"采购单", "采购", "查询"},
             Risk:                "low",
             SideEffect:          "read",
+            ResultSummary:       "已返回当前用户有权查看的采购单",
             InputSchema:         action.SchemaFor[OrderGetRequest](),
+            OutputSchema:        action.SchemaFor[OrderView](),
         },
     },
 }); err != nil {
@@ -57,7 +62,15 @@ if err := a.RegisterAction(action.Action{
 
 系统自动投影为 `action:purchase.order_get`。搜索时沿用 Action permission，执行时只调用 `ActionRegistry.Invoke`，因此继续经过 realm、tenant、permission、DTO 验证、幂等和审计。
 
-不要手写一份与 DTO 平行的输入 Schema。`action.SchemaFor[T]()` 会映射 JSON 字段、required、min/max、oneof、嵌套对象和数组，并默认拒绝额外字段。
+不要手写一份与 DTO 平行的输入或输出 Schema。`action.SchemaFor[T]()` 会映射 JSON 字段、required、min/max、oneof、嵌套对象和数组，并默认拒绝额外字段。`ResultSummary` 只能描述结果类别，不得拼入参数、业务正文或敏感字段。
+
+暂不暴露时必须留下稳定理由：
+
+```go
+AI: action.ExcludeFromAI("installation and authentication bootstrap actions are not available to agents"),
+```
+
+排除原因应描述安全或产品边界，不能填写“尚未处理”“TODO”等临时状态。
 
 ### 写操作示例
 
@@ -66,10 +79,12 @@ AI: &action.AIMeta{
     ExposeTool:           true,
     Summary:              "创建采购订单",
     HumanDescription:     "创建一张新的采购订单",
+    ResultSummary:        "采购订单已创建",
     Risk:                 "medium",
     SideEffect:           "write",
     RequiresConfirmation: true,
     InputSchema:          action.SchemaFor[OrderCreateRequest](),
+    OutputSchema:         action.SchemaFor[OrderView](),
 }
 ```
 

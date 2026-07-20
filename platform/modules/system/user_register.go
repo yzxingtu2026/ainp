@@ -30,7 +30,7 @@ func registerUserActions(a *app.App, svc *UserService) error {
 				Capability: "system", Name: definition.name, NameKey: "action." + definition.id + ".name",
 				PermissionGroup: "system.user_management", PermissionGroupName: "用户管理", PermissionGroupNameKey: "permission_group.system.user_management",
 				Description: definition.description, DescriptionKey: "action." + definition.id + ".description",
-				Audit: &auditOn, HTTP: &action.HTTPMeta{Method: "POST", Path: definition.path},
+				Audit: &auditOn, AI: userActionAI(definition.id), HTTP: &action.HTTPMeta{Method: "POST", Path: definition.path},
 			},
 		}); err != nil {
 			return err

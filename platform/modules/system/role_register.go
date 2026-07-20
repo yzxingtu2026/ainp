@@ -30,7 +30,7 @@ func registerRoleActions(a *app.App, svc *RoleService) error {
 				Capability: "system", Name: definition.name, NameKey: "action." + definition.id + ".name",
 				PermissionGroup: "system.role_management", PermissionGroupName: "权限管理", PermissionGroupNameKey: "permission_group.system.role_management",
 				Description: definition.description, DescriptionKey: "action." + definition.id + ".description",
-				Audit: &auditOn, HTTP: &action.HTTPMeta{Method: "POST", Path: definition.path},
+				Audit: &auditOn, AI: roleActionAI(definition.id), HTTP: &action.HTTPMeta{Method: "POST", Path: definition.path},
 			},
 		}); err != nil {
 			return err

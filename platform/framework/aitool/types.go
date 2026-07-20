@@ -41,6 +41,7 @@ type Definition struct {
 	Name                 string          `json:"name"`
 	DescriptionForLLM    string          `json:"description_for_llm"`
 	DescriptionForHuman  string          `json:"description_for_human"`
+	ResultSummary        string          `json:"result_summary"`
 	Capability           string          `json:"capability"`
 	Tags                 []string        `json:"tags,omitempty"`
 	InputSchema          json.RawMessage `json:"input_schema"`

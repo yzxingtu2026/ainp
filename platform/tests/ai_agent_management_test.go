@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/database"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
+	"github.com/yzxingtu2026/ainp/platform/framework/prompt"
 	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"github.com/yzxingtu2026/ainp/platform/modules/ai"
 	"gorm.io/gorm"
@@ -98,12 +100,39 @@ func TestAgentContractRegistryFailClosed(t *testing.T) {
 		t.Fatal("non-namespaced selector must fail")
 	}
 	bad = c
+	bad.AllowedToolSources = []string{"database"}
+	if err := aiagent.NewRegistry().Register(bad); err == nil {
+		t.Fatal("unknown tool source must fail")
+	}
+	bad = c
+	bad.AllowedToolCapabilities = []string{"System Admin"}
+	if err := aiagent.NewRegistry().Register(bad); err == nil {
+		t.Fatal("invalid tool capability must fail")
+	}
+	bad = c
 	bad.ManagedFields = []string{"tenant_id"}
 	if err := aiagent.NewRegistry().Register(bad); err == nil {
 		t.Fatal("unsafe managed field must fail")
 	}
 	if got, ok := r.Get(c.Key, c.Version); !ok || got.Name != c.Name {
 		t.Fatalf("registered contract missing: %#v", got)
+	}
+}
+
+func TestSystemOperationsContractUsesProgressiveActionScope(t *testing.T) {
+	if err := prompt.LoadDir("../prompts"); err != nil {
+		t.Fatal(err)
+	}
+	registry, err := ai.NewBuiltinAgentContractRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract, ok := registry.Get("system.operations", "1.0.0")
+	if !ok {
+		t.Fatal("system.operations contract is not registered")
+	}
+	if !slices.Equal(contract.AllowedToolSources, []string{"action"}) || !slices.Equal(contract.AllowedToolCapabilities, []string{"system", "operations"}) {
+		t.Fatalf("unexpected progressive tool scope: %#v", contract)
 	}
 }
 

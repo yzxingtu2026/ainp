@@ -712,9 +712,17 @@ func toolVisible(ac *auth.Context, d aitool.Definition) bool {
 	return true
 }
 func scopeAllows(s *ToolScope, d aitool.Definition) bool {
-	return allowEmpty(decodeStrings(s.AllowedSourcesJSON), string(d.Source)) && allowEmpty(decodeStrings(s.AllowedCapabilitiesJSON), d.Capability) && allowEmpty(decodeStrings(s.AllowedToolsJSON), d.ID)
+	sources := decodeStrings(s.AllowedSourcesJSON)
+	capabilities := decodeStrings(s.AllowedCapabilitiesJSON)
+	tools := decodeStrings(s.AllowedToolsJSON)
+	if len(sources) == 0 && len(capabilities) == 0 && len(tools) == 0 {
+		return true
+	}
+	if contains(tools, d.ID) {
+		return true
+	}
+	return len(sources) > 0 && contains(sources, string(d.Source)) && (len(capabilities) == 0 || contains(capabilities, d.Capability))
 }
-func allowEmpty(v []string, x string) bool { return len(v) == 0 || contains(v, x) }
 func contains(v []string, x string) bool {
 	for _, item := range v {
 		if item == x {

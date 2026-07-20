@@ -12,7 +12,7 @@
 
 工具 ID 必须为 `{source}:{namespaced-id}`。首期实现 `meta` 与 `action`，`builtin/plugin/http/mcp` 只能通过同一 Provider/Executor 接口扩展。未知来源、重复 Provider、非法 Schema、缺少风险元数据均在注册或刷新时 fail-closed。
 
-AI Action 必须声明 `AIMeta.ExposeTool`，并使用 `action.SchemaFor[Request]()` 从同一个强类型 DTO 生成输入 Schema。Action Executor 只能调用 `ActionRegistry.Invoke`。
+生产 Action 必须显式分类为完整 `AIMeta.ExposeTool=true` 或带稳定原因的 `action.ExcludeFromAI(...)`。暴露项使用 `action.SchemaFor[Request/Response]()` 从强类型 DTO 生成输入/输出 Schema，并声明 tags、风险、副作用、确认策略与安全结果摘要。Action Executor 只能调用 `ActionRegistry.Invoke`。
 
 框架核心工具通过 `RuntimeSlot` 注册。Slot 同时声明稳定 Definition、`direct/progressive` 发现模式、动态投影、Executor、Step/Invocation 分类、预算类别与安全观测字段。`platform/modules/ai/tools/register.go` 是唯一显式聚合入口；每个核心工具位于独立子目录，例如 `tools/knowledge/slot.go`。生产启动不扫描源码、不使用 Go Plugin，也不依赖隐藏 `init()`。
 
@@ -23,6 +23,8 @@ Registry 按 Tool ID 稳定排序，并在启动时拒绝重复 Tool ID、重复
 ## Search、Scope 与 Handle
 
 搜索顺序为安全过滤、精确 ID/名称、关键词/FTS、可选 Embedding 融合。Embedding 不可用时必须退化；向量和搜索文档不是权限事实源。`ProjectModelTools`、`tool.search`、`tool.load`、Handle 执行和确认后执行统一调用 Registry 的动态投影协议，并重新应用 tenant、realm、user permission、Scope 白名单、启用状态和实时资源条件。动态投影只能收紧静态结果，不能把 Scope 外工具扩权加入候选。
+
+ToolScope 的授权由两类白名单组成：精确 `allowed_tools` 用于 meta、RuntimeSlot、显式 Binding 和已知特殊工具；`allowed_sources + allowed_capabilities` 用于渐进发现。工具满足精确 Tool 白名单，或同时满足来源与能力白名单时才进入 Scope；二者不是三重 AND。来源/能力授权只允许 search/load，未 load 的 Action Schema 不得进入模型初始工具列表。
 
 Handle 使用服务端签名并绑定 tenant、user、realm、session/auth version、scope、tool、runtime ref、schema hash 和 TTL。任何绑定变化、过期或 Schema 变化均拒绝。
 
