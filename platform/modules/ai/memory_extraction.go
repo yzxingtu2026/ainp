@@ -167,9 +167,17 @@ func (s *MemoryExtractionService) EvaluateRun(ctx context.Context, runID string)
 		}
 	}
 	text = stripMarkdownCodeBlock(text)
+	// Some models return a bare array instead of {"candidates": [...]}; wrap it.
+	if strings.HasPrefix(text, "[") {
+		text = `{"candidates":` + text + `}`
+	}
 	var output memoryExtractionOutput
 	if err = strictJSON([]byte(text), &output); err != nil || len(output.Candidates) > policy.MaxCandidatesPerTurn {
-		logging.Warn(ctx, "memory extraction schema mismatch", "run_id", run.ID, "error", err, "text_len", len(text), "model_alias", policy.ExtractionModelAlias)
+		preview := text
+		if len(preview) > 300 {
+			preview = preview[:300] + "..."
+		}
+		logging.Warn(ctx, "memory extraction schema mismatch", "run_id", run.ID, "error", err, "text_len", len(text), "text_preview", preview, "candidate_count", len(output.Candidates), "max_allowed", policy.MaxCandidatesPerTurn)
 		_ = s.markFailed(ctx, evaluation.ID, "invalid_schema")
 		return jobPermanent(fmt.Errorf("invalid candidate schema"))
 	}
@@ -267,7 +275,9 @@ func (s *MemoryExtractionService) persistCandidates(ctx context.Context, run Age
 	policyJSON, _ := json.Marshal(policy)
 	db := s.db.WithContext(ctx)
 	return db.Transaction(func(tx *gorm.DB) error {
-		for _, c := range candidates {
+		for i := range candidates {
+			normalizeCandidate(&candidates[i])
+			c := candidates[i]
 			if err := validateCandidate(c, allowed); err != nil {
 				return jobPermanent(err)
 			}
@@ -337,6 +347,37 @@ func (s *MemoryExtractionService) persistCandidates(ctx context.Context, run Age
 		}
 		return tx.Model(&MemoryEvaluation{}).Where("id=?", evaluation.ID).Updates(updates).Error
 	})
+}
+func normalizeCandidate(c *memoryCandidate) {
+	if c.Kind == "" {
+		c.Kind = aimemory.TypePreference
+	}
+	if c.DatePrecision == "" {
+		c.DatePrecision = aimemory.DateUnknown
+	}
+	if c.Sensitivity == "" {
+		c.Sensitivity = aimemory.SensitivityNormal
+	}
+	if c.Reason == "" {
+		c.Reason = "preference"
+	}
+	if c.Confidence == 0 {
+		c.Confidence = 0.8
+	}
+	if c.Importance == 0 {
+		c.Importance = 50
+	}
+	// Auto-generate summary/content from attribute fields if missing
+	if strings.TrimSpace(c.Summary) == "" && c.AttributeKey != "" {
+		c.Summary = c.AttributeKey + ": " + c.AttributeValue
+	}
+	if strings.TrimSpace(c.Content) == "" {
+		if c.AttributeKey != "" {
+			c.Content = c.AttributeKey + ": " + c.AttributeValue
+		} else {
+			c.Content = c.Summary
+		}
+	}
 }
 func validateCandidate(c memoryCandidate, allowed map[string]bool) error {
 	if !aimemory.ValidItemType(c.Kind) || !aimemory.ValidDatePrecision(c.DatePrecision) || strings.TrimSpace(c.Summary) == "" || strings.TrimSpace(c.Content) == "" || c.Confidence < 0 || c.Confidence > 1 || c.Importance < 0 || c.Importance > 100 || len(c.SourceMessageIDs) == 0 {
