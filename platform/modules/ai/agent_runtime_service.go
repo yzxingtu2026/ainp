@@ -622,7 +622,7 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 			if stepErr != nil {
 				return stepErr
 			}
-			streamID, e := s.conversations.Begin(ctx, run.ConversationID, "run-final:"+run.ID)
+			streamID, e := s.conversations.Begin(ctx, run.ConversationID, "run-final:"+run.ID, run.ID)
 			if e != nil {
 				return s.fail(ctx, run, "finalize_failed")
 			}

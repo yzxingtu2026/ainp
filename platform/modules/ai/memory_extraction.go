@@ -166,8 +166,10 @@ func (s *MemoryExtractionService) EvaluateRun(ctx context.Context, runID string)
 			text += item.Text
 		}
 	}
+	text = stripMarkdownCodeBlock(text)
 	var output memoryExtractionOutput
 	if err = strictJSON([]byte(text), &output); err != nil || len(output.Candidates) > policy.MaxCandidatesPerTurn {
+		logging.Warn(ctx, "memory extraction schema mismatch", "run_id", run.ID, "error", err, "text_len", len(text), "model_alias", policy.ExtractionModelAlias)
 		_ = s.markFailed(ctx, evaluation.ID, "invalid_schema")
 		return jobPermanent(fmt.Errorf("invalid candidate schema"))
 	}
@@ -219,7 +221,6 @@ func eligibleText(message ConversationMessage, expected aimodelruntime.PartType)
 }
 func strictJSON(body []byte, out any) error {
 	d := json.NewDecoder(bytes.NewReader(body))
-	d.DisallowUnknownFields()
 	if err := d.Decode(out); err != nil {
 		return err
 	}
@@ -230,6 +231,20 @@ func strictJSON(body []byte, out any) error {
 	return nil
 }
 func sha256Hex(v []byte) string { sum := sha256.Sum256(v); return hex.EncodeToString(sum[:]) }
+func stripMarkdownCodeBlock(s string) string {
+	s = strings.TrimSpace(s)
+	if strings.HasPrefix(s, "```") {
+		// Remove opening fence (```json or ```)
+		if idx := strings.Index(s, "\n"); idx != -1 {
+			s = s[idx+1:]
+		}
+		// Remove closing fence
+		if idx := strings.LastIndex(s, "```"); idx != -1 {
+			s = s[:idx]
+		}
+	}
+	return strings.TrimSpace(s)
+}
 func mapKeys(v map[string]bool) []string {
 	out := make([]string, 0, len(v))
 	for k := range v {

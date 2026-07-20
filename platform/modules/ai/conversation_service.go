@@ -541,7 +541,7 @@ func (s *ConversationService) GetSnapshot(ctx context.Context, id string) (*Cont
 	return &snap, nil
 }
 
-func (s *ConversationService) Begin(ctx context.Context, conversationID, idempotencyKey string) (string, error) {
+func (s *ConversationService) Begin(ctx context.Context, conversationID, idempotencyKey, runID string) (string, error) {
 	row, _, err := s.get(ctx, conversationID, true)
 	if err != nil {
 		return "", err
@@ -550,6 +550,9 @@ func (s *ConversationService) Begin(ctx context.Context, conversationID, idempot
 		return "", errs.New(errs.CodeValidation, "invalid assistant stream")
 	}
 	stream := AssistantStream{ID: uuid.NewString(), TenantID: row.TenantID, ConversationID: row.ID, IdempotencyKey: idempotencyKey, Status: "streaming"}
+	if strings.TrimSpace(runID) != "" {
+		stream.RunID = &runID
+	}
 	if err = s.db.WithContext(ctx).Create(&stream).Error; err != nil {
 		if e := s.db.WithContext(ctx).Where("conversation_id=? AND idempotency_key=?", row.ID, idempotencyKey).First(&stream).Error; e == nil {
 			return stream.ID, nil
@@ -641,7 +644,7 @@ func (s *ConversationService) Commit(ctx context.Context, streamID string, conte
 		payload, _ := json.Marshal(content)
 		now := time.Now().UTC()
 		sid := stream.ID
-		message := ConversationMessage{ID: uuid.NewString(), TenantID: stream.TenantID, ConversationID: stream.ConversationID, Role: "assistant", Status: "committed", Sequence: last + 1, StreamID: &sid, Content: payload, IdempotencyKey: "assistant-stream:" + stream.ID, CommittedAt: &now}
+		message := ConversationMessage{ID: uuid.NewString(), TenantID: stream.TenantID, ConversationID: stream.ConversationID, Role: "assistant", Status: "committed", Sequence: last + 1, RunID: locked.RunID, StreamID: &sid, Content: payload, IdempotencyKey: "assistant-stream:" + stream.ID, CommittedAt: &now}
 		if e := tx.Create(&message).Error; e != nil {
 			return e
 		}
