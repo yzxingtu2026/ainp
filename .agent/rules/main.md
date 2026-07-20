@@ -50,6 +50,7 @@
 - AI Agent Runtime 见 `ai-agent-runtime`（Run/Step 状态机、lease、Outbox→Job、确认暂停与可靠恢复）。
 - Trusted Runtime Context 见 `runtime-context`（服务端身份、Run 时间快照、Prompt 临时注入与消费边界）。
 - AI 长期记忆见 `ai-memory-runtime`（追加式时态事实、来源证据、投影与当前召回边界）。
+- 模型提示词管理见 `prompt-management`（Markdown 外置、启动校验、模板安全与原子热重载）。
 - 前端栈、图标协议见关联规则。
 - Copilot PR 语义审查见 `copilot-code-review`；它只负责中文语义反馈，不替代合并门禁与人工审批。
 
@@ -79,6 +80,7 @@
 - `ai-agent-runtime` → `docs/development/ai-agent-runtime.md`
 - `runtime-context` → `docs/development/runtime-context.md`
 - `ai-memory-runtime` → `docs/development/ai-memory-runtime.md`
+- `prompt-management` → `docs/development/prompt-management.md`
 - `icon-library` → `docs/development/icon-library.md`
 - `logging` → `docs/development/logging.md`
 - `api-response` → `docs/development/api-response.md`

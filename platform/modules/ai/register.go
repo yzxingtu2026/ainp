@@ -18,6 +18,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/capability"
 	"github.com/yzxingtu2026/ainp/platform/framework/menu"
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
+	"github.com/yzxingtu2026/ainp/platform/framework/prompt"
 	aitools "github.com/yzxingtu2026/ainp/platform/modules/ai/tools"
 	knowledgetool "github.com/yzxingtu2026/ainp/platform/modules/ai/tools/knowledge"
 	memorytool "github.com/yzxingtu2026/ainp/platform/modules/ai/tools/memory"
@@ -336,6 +337,6 @@ func Register(a *app.App) error {
 
 func NewBuiltinAgentContractRegistry() (*aiagent.Registry, error) {
 	contracts := aiagent.NewRegistry()
-	err := contracts.Register(aiagent.Contract{Key: "system.operations", Version: "1.0.0", Name: "系统运营助手", Description: "通过当前用户权限安全操作后台系统", BaseInstructions: "始终继承当前用户的租户、身份和权限。不得绕过鉴权、工具确认、租户隔离或数据安全策略。先搜索并加载必要工具，只执行完成当前任务所需的最少操作。", RequiredModelCapabilities: []string{"chat", "tools"}, RequiredToolSelectors: []string{"meta:tool.search", "meta:tool.load"}, ConfigSchema: json.RawMessage(`{"type":"object","additionalProperties":false}`), SingletonScope: aiagent.SingletonTenant, ManagedFields: []string{"code", "source", "contract_key", "contract_version", "base_instructions", "visibility"}, UpgradePolicy: "managed-fields"})
+	err := contracts.Register(aiagent.Contract{Key: "system.operations", Version: "1.0.0", Name: "系统运营助手", Description: "通过当前用户权限安全操作后台系统", BaseInstructions: prompt.MustGet("agent/system-operations"), RequiredModelCapabilities: []string{"chat", "tools"}, RequiredToolSelectors: []string{"meta:tool.search", "meta:tool.load"}, ConfigSchema: json.RawMessage(`{"type":"object","additionalProperties":false}`), SingletonScope: aiagent.SingletonTenant, ManagedFields: []string{"code", "source", "contract_key", "contract_version", "base_instructions", "visibility"}, UpgradePolicy: "managed-fields"})
 	return contracts, err
 }
