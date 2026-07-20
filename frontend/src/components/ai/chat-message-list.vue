@@ -1,26 +1,35 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { $t } from '@/locales';
 import type { ToolOperation } from './tool-activity';
 
 defineOptions({ name: 'ChatMessageList' });
 
+interface ThinkingHint {
+  icon: string;
+  text: string;
+  toolName?: string;
+}
+
 const props = withDefaults(
   defineProps<{
     messages: Api.AI.ConversationMessage[];
-    /** 流式输出中的增量文本 */
+    /** 流式输出中的增量文本（会被追加进活跃 run 分组） */
     streamingText?: string;
     /** 运行中且尚无输出时展示思考占位 */
     thinking?: boolean;
-    /** 所属运行是否仍在进行（决定工具组实时展示或折叠） */
-    runActive?: boolean;
+    /** 步骤感知的思考占位提示（图标 + 文案 + 可选工具名） */
+    thinkingHint?: ThinkingHint;
+    /** 当前活跃 run ID；对应 run 分组被标记为实时（工具实时展示 + 追加流式文本） */
+    activeRunId?: string;
     confirmations?: Api.AI.ToolConfirmation[];
     error?: string;
   }>(),
   {
     streamingText: '',
     thinking: false,
-    runActive: false,
+    thinkingHint: () => ({ icon: 'mdi:brain-outline', text: '' }),
+    activeRunId: '',
     confirmations: () => [],
     error: ''
   }
@@ -30,12 +39,33 @@ const emit = defineEmits<{
   confirmationResolved: [status: 'approved' | 'rejected', result?: Api.AI.ToolResult];
 }>();
 
-interface RenderedMessage {
-  message: Api.AI.ConversationMessage;
+/** thinkingHint 未提供或文案为空时的兜底提示 */
+const hint = computed<ThinkingHint>(() => {
+  const provided = props.thinkingHint;
+  if (provided && provided.text) return provided;
+  return { icon: 'mdi:brain-outline', text: $t('chat.thinkingThinking') };
+});
+
+interface RenderedUserItem {
+  kind: 'user';
+  key: string;
   text: string;
   imageCount: number;
-  operations: ToolOperation[];
 }
+interface RenderedSystemItem {
+  kind: 'system';
+  key: string;
+  text: string;
+}
+interface RenderedRunItem {
+  kind: 'run';
+  key: string;
+  runId: string;
+  text: string;
+  operations: ToolOperation[];
+  live: boolean;
+}
+type RenderedItem = RenderedUserItem | RenderedSystemItem | RenderedRunItem;
 
 function messageText(message: Api.AI.ConversationMessage): string {
   return (message.content || [])
@@ -57,29 +87,110 @@ const toolResultIndex = computed(() => {
   return index;
 });
 
-const renderedMessages = computed<RenderedMessage[]>(() =>
-  props.messages
-    .filter(message => message.role !== 'tool')
-    .map(message => {
-      const operations: ToolOperation[] = [];
-      let imageCount = 0;
-      for (const part of message.content || []) {
-        if (part.type === 'tool_call') {
-          const callId = part.tool_call_id || '';
-          operations.push({
-            toolCallId: callId,
-            toolName: part.tool_name || '',
-            request: part.arguments,
-            result: callId ? toolResultIndex.value.get(callId) : undefined,
-            hasResult: Boolean(callId && toolResultIndex.value.has(callId))
-          });
-        } else if (part.type === 'input_image') {
-          imageCount += 1;
-        }
-      }
-      return { message, text: messageText(message), imageCount, operations };
-    })
+/**
+ * 按 run 分组渲染：同一次 run 的所有 assistant 消息合并为一个消息块
+ * （文本拼接、工具操作合并为一组），避免逐条散落显示「已处理 1 个操作」；
+ * user / system 消息单独渲染。流式文本追加到活跃 run 分组。
+ */
+const renderedItems = computed<RenderedItem[]>(() => {
+  const items: RenderedItem[] = [];
+  const runGroups = new Map<string, RenderedRunItem>();
+  const resultIndex = toolResultIndex.value;
+
+  for (const message of props.messages) {
+    if (message.role === 'tool') continue;
+    if (message.role === 'user') {
+      items.push({
+        kind: 'user',
+        key: message.id,
+        text: messageText(message),
+        imageCount: (message.content || []).filter(part => part.type === 'input_image').length
+      });
+      continue;
+    }
+    if (message.role === 'system') {
+      items.push({ kind: 'system', key: message.id, text: messageText(message) });
+      continue;
+    }
+    const runId = message.run_id || `message-${message.id}`;
+    let group = runGroups.get(runId);
+    if (!group) {
+      group = {
+        kind: 'run',
+        key: runId,
+        runId,
+        text: '',
+        operations: [],
+        live: runId === props.activeRunId
+      };
+      runGroups.set(runId, group);
+      items.push(group);
+    }
+    const text = messageText(message);
+    if (text) group.text = group.text ? `${group.text}\n\n${text}` : text;
+    for (const part of message.content || []) {
+      if (part.type !== 'tool_call') continue;
+      const callId = part.tool_call_id || '';
+      group.operations.push({
+        toolCallId: callId,
+        toolName: part.tool_name || '',
+        request: part.arguments,
+        result: callId ? resultIndex.get(callId) : undefined,
+        hasResult: Boolean(callId && resultIndex.has(callId))
+      });
+    }
+  }
+
+  // 流式文本追加到活跃 run 分组（尚无落库消息时新建分组承载）
+  if (props.activeRunId) {
+    let activeGroup = runGroups.get(props.activeRunId);
+    if (!activeGroup) {
+      activeGroup = {
+        kind: 'run',
+        key: props.activeRunId,
+        runId: props.activeRunId,
+        text: '',
+        operations: [],
+        live: true
+      };
+      runGroups.set(props.activeRunId, activeGroup);
+      items.push(activeGroup);
+    }
+    if (props.streamingText) {
+      activeGroup.text = activeGroup.text
+        ? `${activeGroup.text}\n\n${props.streamingText}`
+        : props.streamingText;
+    }
+  }
+
+  return items;
+});
+
+/** 思考持续约 10 秒无步骤进展时，追加「耗时比预期稍久」提示 */
+const slowHint = ref(false);
+let slowTimer: number | null = null;
+function resetSlowTimer() {
+  slowHint.value = false;
+  if (slowTimer !== null) {
+    window.clearTimeout(slowTimer);
+    slowTimer = null;
+  }
+  if (props.thinking) {
+    slowTimer = window.setTimeout(() => {
+      slowHint.value = true;
+    }, 10000);
+  }
+}
+watch(() => props.thinking, resetSlowTimer, { immediate: true });
+watch(
+  () => `${hint.value.text}|${hint.value.toolName || ''}`,
+  () => {
+    if (props.thinking) resetSlowTimer();
+  }
 );
+onBeforeUnmount(() => {
+  if (slowTimer !== null) window.clearTimeout(slowTimer);
+});
 
 function onConfirmationResolved(status: 'approved' | 'rejected', result?: Api.AI.ToolResult) {
   emit('confirmationResolved', status, result);
@@ -88,43 +199,63 @@ function onConfirmationResolved(status: 'approved' | 'rejected', result?: Api.AI
 
 <template>
   <div class="chat-message-list">
-    <article
-      v-for="item in renderedMessages"
-      :key="item.message.id"
-      class="message"
-      :class="`message--${item.message.role}`"
-    >
-      <AiMascot v-if="item.message.role === 'assistant'" :size="36" :breathe="false" />
-      <div class="message__content">
-        <MarkdownRenderer v-if="item.text" :content="item.text" />
-        <NTag v-for="index in item.imageCount" :key="`image-${index}`" size="small" class="mt-6px">
-          <template #icon><SvgIcon icon="mdi:image-outline" /></template>
-          {{ $t('chat.imageAttachment') }}
-        </NTag>
-        <ToolActivityGroup v-if="item.operations.length > 0" :operations="item.operations" :active="runActive" />
-      </div>
-      <span v-if="item.message.role === 'user'" class="message__user-avatar" aria-hidden="true">
-        <SvgIcon icon="mdi:account" />
-      </span>
-    </article>
+    <template v-for="item in renderedItems" :key="item.key">
+      <article v-if="item.kind === 'user'" class="message message--user">
+        <div class="message__content">
+          <MarkdownRenderer v-if="item.text" :content="item.text" />
+          <NTag v-for="index in item.imageCount" :key="`image-${index}`" size="small" class="mt-6px">
+            <template #icon><SvgIcon icon="mdi:image-outline" /></template>
+            {{ $t('chat.imageAttachment') }}
+          </NTag>
+        </div>
+        <span class="message__user-avatar" aria-hidden="true">
+          <SvgIcon icon="mdi:account" />
+        </span>
+      </article>
+
+      <article v-else-if="item.kind === 'system'" class="message message--system">
+        <div class="message__content">
+          <MarkdownRenderer v-if="item.text" :content="item.text" />
+        </div>
+      </article>
+
+      <article v-else-if="item.text || item.operations.length > 0" class="message message--assistant">
+        <AiMascot :state="item.live ? 'working' : 'idle'" :size="36" :breathe="false" />
+        <div class="message__content">
+          <MarkdownRenderer v-if="item.text" :content="item.text" />
+          <ToolActivityGroup
+            v-if="item.operations.length > 0"
+            :operations="item.operations"
+            :active="item.live"
+          />
+        </div>
+      </article>
+    </template>
 
     <article v-if="thinking" class="message message--assistant">
       <span class="thinking-mascot">
         <AiMascot state="thinking" :size="36" :breathe="false" />
       </span>
       <div class="message__content">
-        <span class="thinking-bubble" role="status" :aria-label="$t('chat.thinking')">
-          <i class="thinking-bubble__dot"></i>
-          <i class="thinking-bubble__dot"></i>
-          <i class="thinking-bubble__dot"></i>
-        </span>
-      </div>
-    </article>
-
-    <article v-else-if="streamingText" class="message message--assistant">
-      <AiMascot state="working" :size="36" :breathe="false" />
-      <div class="message__content">
-        <MarkdownRenderer :content="streamingText" />
+        <div class="thinking-status" role="status" :aria-label="hint.text">
+          <span class="thinking-status__icon" aria-hidden="true">
+            <SvgIcon :icon="hint.icon" />
+          </span>
+          <Transition name="thinking-swap" mode="out-in">
+            <span :key="hint.text + (hint.toolName || '')" class="thinking-status__label">
+              {{ hint.text }}
+              <code v-if="hint.toolName" class="thinking-status__tool">{{ hint.toolName }}</code>
+            </span>
+          </Transition>
+          <span class="thinking-status__dots" aria-hidden="true">
+            <i class="thinking-status__dot"></i>
+            <i class="thinking-status__dot"></i>
+            <i class="thinking-status__dot"></i>
+          </span>
+        </div>
+        <Transition name="thinking-slow">
+          <p v-if="slowHint" class="thinking-slow-hint">{{ $t('chat.thinkingSlow') }}</p>
+        </Transition>
       </div>
     </article>
 
@@ -204,28 +335,106 @@ function onConfirmationResolved(status: 'approved' | 'rejected', result?: Api.AI
   }
 }
 
-.thinking-bubble {
+/* 步骤感知思考占位：图标 + 动态文案 + 跳动圆点，胶囊背景叠加缓慢流动微光 */
+.thinking-status {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 10px;
   border-radius: 999px;
   background: rgba(127, 127, 127, 0.1);
-  padding: 13px 16px;
+  padding: 11px 16px;
+  overflow: hidden;
 }
 
-.thinking-bubble__dot {
-  width: 7px;
-  height: 7px;
+.thinking-status::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 25%,
+    rgba(var(--primary-color), 0.09) 50%,
+    transparent 75%
+  );
+  background-size: 220% 100%;
+  animation: thinking-shimmer 2.4s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes thinking-shimmer {
+  0% {
+    background-position: 130% 0;
+  }
+  100% {
+    background-position: -130% 0;
+  }
+}
+
+.thinking-status__icon {
+  display: inline-flex;
+  flex: none;
+  color: rgba(var(--primary-color), 0.9);
+  font-size: 18px;
+  animation: thinking-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes thinking-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.12);
+  }
+}
+
+.thinking-status__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: rgba(var(--base-text-color), 0.85);
+  white-space: nowrap;
+}
+
+.thinking-status__tool {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1;
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: rgba(var(--primary-color), 0.12);
+  color: rgba(var(--primary-color), 1);
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.thinking-status__dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}
+
+.thinking-status__dot {
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: rgba(var(--primary-color), 0.75);
   animation: thinking-bounce 1.2s ease-in-out infinite;
 }
 
-.thinking-bubble__dot:nth-child(2) {
+.thinking-status__dot:nth-child(2) {
   animation-delay: 0.15s;
 }
 
-.thinking-bubble__dot:nth-child(3) {
+.thinking-status__dot:nth-child(3) {
   animation-delay: 0.3s;
 }
 
@@ -237,14 +446,48 @@ function onConfirmationResolved(status: 'approved' | 'rejected', result?: Api.AI
     opacity: 0.45;
   }
   30% {
-    transform: translateY(-5px);
+    transform: translateY(-4px);
     opacity: 1;
   }
 }
 
+/* 步骤切换时文案淡入上移过渡 */
+.thinking-swap-enter-active,
+.thinking-swap-leave-active {
+  transition:
+    opacity 0.22s ease,
+    transform 0.22s ease;
+}
+
+.thinking-swap-enter-from {
+  opacity: 0;
+  transform: translateY(5px);
+}
+
+.thinking-swap-leave-to {
+  opacity: 0;
+  transform: translateY(-5px);
+}
+
+.thinking-slow-hint {
+  margin: 8px 2px 0;
+  font-size: 12px;
+  color: rgba(127, 127, 127, 0.85);
+}
+
+.thinking-slow-enter-active {
+  transition: opacity 0.45s ease;
+}
+
+.thinking-slow-enter-from {
+  opacity: 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .thinking-mascot,
-  .thinking-bubble__dot {
+  .thinking-status__dot,
+  .thinking-status__icon,
+  .thinking-status::after {
     animation: none;
   }
 }

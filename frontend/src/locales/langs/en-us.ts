@@ -965,6 +965,13 @@ const local: App.I18n.Schema = {
   },
   chat: {
     thinking: 'Thinking',
+    thinkingThinking: 'Thinking',
+    thinkingContext: 'Organizing conversation context',
+    thinkingToolSearch: 'Searching available tools',
+    thinkingToolLoad: 'Loading tool definitions',
+    thinkingToolExecute: 'Calling',
+    thinkingFinalize: 'Composing final response',
+    thinkingSlow: 'Taking a bit longer than expected, please wait…',
     imageAttachment: 'Image attachment',
     toolProcessed: 'Processed {count} operations',
     toolCall: 'Tool call',

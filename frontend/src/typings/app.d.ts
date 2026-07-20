@@ -1127,6 +1127,13 @@ declare namespace App {
       };
       chat: {
         thinking: string;
+        thinkingThinking: string;
+        thinkingContext: string;
+        thinkingToolSearch: string;
+        thinkingToolLoad: string;
+        thinkingToolExecute: string;
+        thinkingFinalize: string;
+        thinkingSlow: string;
         imageAttachment: string;
         toolProcessed: string;
         toolCall: string;

@@ -957,6 +957,13 @@ const local: App.I18n.Schema = {
   },
   chat: {
     thinking: '思考中',
+    thinkingThinking: '正在思考',
+    thinkingContext: '正在整理对话上下文',
+    thinkingToolSearch: '正在检索可用工具',
+    thinkingToolLoad: '正在加载工具定义',
+    thinkingToolExecute: '正在调用',
+    thinkingFinalize: '正在组织最终回复',
+    thinkingSlow: '耗时比预期稍久，请稍候…',
     imageAttachment: '图片附件',
     toolProcessed: '已处理 {count} 个操作',
     toolCall: '工具调用',
