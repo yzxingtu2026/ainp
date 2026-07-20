@@ -246,6 +246,7 @@ const local: App.I18n.Schema = {
   route: {
     ai: 'AI Center',
     ai_agents: 'Agents',
+    'ai_agent-slots': 'AI Feature Configuration',
     ai_knowledge: 'Knowledge Bases',
     'ai_agent-builder': 'Agent Builder',
     ai_models: 'Model Catalog',

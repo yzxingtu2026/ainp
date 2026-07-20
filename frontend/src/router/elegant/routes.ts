@@ -61,6 +61,15 @@ export const generatedRoutes: GeneratedRoute[] = [
         }
       },
       {
+        name: 'ai_agent-slots',
+        path: '/ai/agent-slots',
+        component: 'view.ai_agent-slots',
+        meta: {
+          title: 'ai_agent-slots',
+          i18nKey: 'route.ai_agent-slots'
+        }
+      },
+      {
         name: 'ai_agents',
         path: '/ai/agents',
         component: 'view.ai_agents',

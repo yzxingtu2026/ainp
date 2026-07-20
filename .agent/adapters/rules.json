@@ -543,6 +543,12 @@
       "cursor": {"path": ".cursor/rules/agent-management.mdc", "frontmatter": {"description": "智能体 Contract、不可变 Version、ownership 与资源绑定边界", "alwaysApply": true}}
     },
     {
+      "id": "agent-slots",
+      "source": ".agent/rules/agent-slots.md",
+      "qoder": {"path": ".qoder/rules/agent-slots.md", "frontmatter": {"trigger": "always_on"}},
+      "cursor": {"path": ".cursor/rules/agent-slots.mdc", "frontmatter": {"description": "AI 业务功能默认智能体 Slot、分层覆盖、fail-closed 解析与固定 Version 边界", "alwaysApply": true}}
+    },
+    {
       "id": "ai-conversations",
       "source": ".agent/rules/ai-conversations.md",
       "qoder": {"path": ".qoder/rules/ai-conversations.md", "frontmatter": {"trigger": "always_on"}},

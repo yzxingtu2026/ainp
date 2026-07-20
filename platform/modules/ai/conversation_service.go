@@ -44,6 +44,11 @@ type ConversationCreateRequest struct {
 	Visibility     string `json:"visibility"`
 	Purpose        string `json:"purpose"`
 }
+type ConversationCreateForSlotRequest struct {
+	SlotKey    string `json:"slot_key" validate:"required"`
+	Title      string `json:"title"`
+	Visibility string `json:"visibility"`
+}
 type ConversationGetRequest struct {
 	ID string `json:"id" validate:"required"`
 }
@@ -209,6 +214,20 @@ func (s *ConversationService) Create(ctx context.Context, r ConversationCreateRe
 		return nil, dbError(err, "create conversation")
 	}
 	return row, nil
+}
+
+// CreateForSlot resolves and fixes the release version in one server-side request.
+func (s *ConversationService) CreateForSlot(slots *AgentSlotService) func(context.Context, ConversationCreateForSlotRequest) (any, error) {
+	return func(ctx context.Context, r ConversationCreateForSlotRequest) (any, error) {
+		resolved, err := slots.Resolve(ctx, AgentSlotGetRequest{SlotKey: r.SlotKey})
+		if err != nil {
+			return nil, err
+		}
+		if !resolved.Healthy || resolved.Agent == nil || resolved.AgentVersion == nil {
+			return nil, errs.New(errs.CodeConflict, "agent slot is unavailable")
+		}
+		return s.Create(ctx, ConversationCreateRequest{AgentID: resolved.Agent.ID, AgentVersionID: resolved.AgentVersion.ID, Title: r.Title, Visibility: r.Visibility, Purpose: ConversationPurposeWorkspace})
+	}
 }
 
 func (s *ConversationService) Update(ctx context.Context, r ConversationUpdateRequest) (any, error) {

@@ -86,6 +86,30 @@ declare namespace Api.AI {
     healthy: boolean;
     issues: AgentDiagnosticIssue[];
   }
+  interface AgentSlot {
+    key: string;
+    version: string;
+    module: string;
+    title: string;
+    description: string;
+    default_contract_key: string;
+    default_contract_version: string;
+    required_capabilities: string[];
+    tenant_override: boolean;
+    user_override: boolean;
+    fallback_policy: 'fail_closed';
+    upgrade_policy: 'pinned' | 'compatible';
+  }
+  interface AgentSlotResolution {
+    slot: AgentSlot;
+    agent?: Agent;
+    agent_version?: AgentVersion;
+    source: 'user' | 'tenant' | 'builtin';
+    healthy: boolean;
+    diagnostics: AgentDiagnosticIssue[];
+    binding_revision?: number;
+    preference_revision?: number;
+  }
   type ConversationVisibility = 'private' | 'tenant';
   type ConversationPurpose = 'workspace' | 'builder_preview';
   interface Conversation {
