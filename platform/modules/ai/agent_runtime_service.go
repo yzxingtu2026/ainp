@@ -267,13 +267,18 @@ func (s *AgentRuntimeService) Subscribe(ctx context.Context, r AgentRunEventsReq
 	if err != nil {
 		return nil, err
 	}
-	events := make(chan action.StreamEvent, 64)
+	events := make(chan action.StreamEvent, 128)
 	streamCtx, cancel := context.WithCancel(ctx)
 	go func() {
 		defer close(events)
 		cursor := r.AfterSequence
 
-		// Phase 1: DB catch-up for any missed events before subscribing to bus.
+		// IMPORTANT: Subscribe to bus BEFORE reading DB to avoid race condition.
+		// Events published between bus subscribe and DB read will be deduplicated.
+		busCh := s.eventBus.Subscribe(run.ID)
+		defer s.eventBus.Unsubscribe(run.ID, busCh)
+
+		// Phase 1: DB catch-up for any events already persisted.
 		var rows []AgentRunEvent
 		if e := s.db.WithContext(streamCtx).Where("run_id=? AND sequence>?", run.ID, cursor).Order("sequence ASC").Find(&rows).Error; e != nil {
 			return
@@ -287,11 +292,29 @@ func (s *AgentRuntimeService) Subscribe(ctx context.Context, r AgentRunEventsReq
 			}
 		}
 
-		// Phase 2: Subscribe to in-memory bus for real-time delivery.
-		busCh := s.eventBus.Subscribe(run.ID)
-		defer s.eventBus.Unsubscribe(run.ID, busCh)
+		// Drain any events that arrived on bus during Phase 1 DB read.
+		drainDone := false
+		for !drainDone {
+			select {
+			case event, ok := <-busCh:
+				if !ok {
+					return
+				}
+				if event.Sequence <= cursor {
+					continue // already delivered from DB
+				}
+				cursor = event.Sequence
+				select {
+				case events <- action.StreamEvent{Event: event.Type, Data: event}:
+				case <-streamCtx.Done():
+					return
+				}
+			default:
+				drainDone = true
+			}
+		}
 
-		// Terminal status check at lower frequency (only for end detection).
+		// Phase 2: Real-time delivery from bus.
 		statusTicker := time.NewTicker(2 * time.Second)
 		defer statusTicker.Stop()
 
@@ -301,7 +324,7 @@ func (s *AgentRuntimeService) Subscribe(ctx context.Context, r AgentRunEventsReq
 				return
 			case event, ok := <-busCh:
 				if !ok {
-					return // bus channel closed
+					return
 				}
 				if event.Sequence <= cursor {
 					continue // already delivered
@@ -312,18 +335,15 @@ func (s *AgentRuntimeService) Subscribe(ctx context.Context, r AgentRunEventsReq
 				case <-streamCtx.Done():
 					return
 				}
-				// Immediate terminal check on terminal events
 				if event.Type == "run.completed" || event.Type == "run.failed" || event.Type == "run.cancelled" || event.Type == "run.waiting_confirmation" || event.Type == "run.paused" {
 					return
 				}
 			case <-statusTicker.C:
-				// Fallback terminal check via DB
 				var current AgentRun
 				if s.db.WithContext(streamCtx).Select("status").Where("id=?", run.ID).First(&current).Error != nil {
 					return
 				}
 				if current.Status == "completed" || current.Status == "failed" || current.Status == "cancelled" || current.Status == "waiting_confirmation" || current.Status == "paused" {
-					// Catch up any final events from DB
 					var finalRows []AgentRunEvent
 					if e := s.db.WithContext(streamCtx).Where("run_id=? AND sequence>?", run.ID, cursor).Order("sequence ASC").Find(&finalRows).Error; e == nil {
 						for _, event := range finalRows {

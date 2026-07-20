@@ -213,6 +213,10 @@ func writeActionStream(c *gin.Context, stream action.StreamResult) {
 				return false
 			}
 			_, _ = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event.Event, payload)
+			// Explicit flush for real-time SSE delivery.
+			if flusher, ok := w.(http.Flusher); ok {
+				flusher.Flush()
+			}
 			return true
 		}
 	})
