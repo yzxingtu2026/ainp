@@ -271,6 +271,7 @@ export function useWorkspace() {
       images.value = [];
       messages.value.push(userMessage);
       await scrollToBottom();
+      status.value = 'running';
       const { data: started, error: runError } = await startAIAgentRun(
         { conversation_id: current.id, trigger_message_id: userMessage.id, budget: {} },
         idempotencyKey('workspace-run')

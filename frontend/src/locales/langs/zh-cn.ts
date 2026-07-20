@@ -460,6 +460,7 @@ const local: App.I18n.Schema = {
       suggestionNext: '根据我的工作内容给出下一步建议',
       imageAttachment: '图片附件',
       reconnecting: '连接中断，正在恢复运行状态…',
+      thinking: '思考中',
       disclaimer: 'AI 可能会出错，重要操作需要你的确认',
       noRun: '当前会话还没有运行记录',
       status: '状态',

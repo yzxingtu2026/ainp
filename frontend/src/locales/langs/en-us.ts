@@ -464,6 +464,7 @@ const local: App.I18n.Schema = {
       suggestionNext: 'Recommend my next step from my current work',
       imageAttachment: 'Image attachment',
       reconnecting: 'Connection interrupted. Recovering run state…',
+      thinking: 'Thinking',
       disclaimer: 'AI can make mistakes. Important actions require your confirmation.',
       noRun: 'This conversation has no run history yet',
       status: 'Status',

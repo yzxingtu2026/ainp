@@ -614,6 +614,7 @@ declare namespace App {
           suggestionNext: string;
           imageAttachment: string;
           reconnecting: string;
+          thinking: string;
           disclaimer: string;
           noRun: string;
           status: string;
