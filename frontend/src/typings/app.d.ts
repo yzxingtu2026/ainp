@@ -634,6 +634,8 @@ declare namespace App {
           runFailed: string;
           unavailableGeneric: string;
           reconnectFallback: string;
+          diagnosticContextWindow: string;
+          runFailure: string;
         };
         agentBuilder: {
           back: string;

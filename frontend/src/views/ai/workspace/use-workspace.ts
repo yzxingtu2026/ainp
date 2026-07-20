@@ -43,6 +43,20 @@ function isRunTerminal(status: Api.AI.AgentRunStatus) {
   return status === 'completed' || status === 'failed' || status === 'cancelled';
 }
 
+function diagnosticMessage(issue: Api.AI.AgentDiagnosticIssue) {
+  if (issue.code === 'model.context_window_missing') return $t('page.aiWorkspace.diagnosticContextWindow');
+  return issue.message;
+}
+
+function runFailureMessage(detail: Api.AI.AgentRunDetail) {
+  const failedStep = [...detail.steps].reverse().find(step => step.status === 'failed');
+  const reason = typeof failedStep?.output_summary?.reason === 'string' ? failedStep.output_summary.reason : '';
+  return $t('page.aiWorkspace.runFailure', {
+    category: detail.run.error_category || 'unknown',
+    reason: reason || failedStep?.error_category || 'unknown'
+  });
+}
+
 export function useWorkspace() {
   const status = ref<WorkspaceStatus>('loading');
   const error = ref('');
@@ -113,6 +127,7 @@ export function useWorkspace() {
     if (!data) return null;
     runDetail.value = data;
     applyRunStatus(data.run);
+    if (data.run.status === 'failed') error.value = runFailureMessage(data);
     if (data.run.status === 'waiting_confirmation' || data.run.status === 'paused') await refreshConfirmations();
     if (refreshContent || isRunTerminal(data.run.status)) {
       await refreshMessages();
@@ -318,7 +333,7 @@ export function useWorkspace() {
     const [slotResult] = await Promise.all([fetchAIAgentSlot('workspace.default'), loadConversations()]);
     slot.value = slotResult.data || null;
     if (slotResult.error || !slot.value) error.value = $t('page.aiWorkspace.slotResolveFailed');
-    else if (!slot.value.healthy) error.value = slot.value.diagnostics.map(item => item.message).join('；');
+    else if (!slot.value.healthy) error.value = slot.value.diagnostics.map(diagnosticMessage).join('；');
     status.value = slot.value?.healthy ? 'idle' : 'failed';
   }
 

@@ -839,8 +839,10 @@ func (s *AgentService) agentDiagnostics(ctx context.Context, row *Agent) AgentDi
 			issues = append(issues, AgentDiagnosticIssue{Code: "version.missing", Message: "current version is missing"})
 		} else if s.models == nil {
 			issues = append(issues, AgentDiagnosticIssue{Code: "model.unavailable", Message: "model resolver unavailable"})
-		} else if _, err = s.models.Resolve(ctx, v.ModelAlias, agentRuntimeModelRequirements()); err != nil {
-			issues = append(issues, AgentDiagnosticIssue{Code: "model.unavailable", Message: err.Error()})
+		} else if resolved, resolveErr := s.models.Resolve(ctx, v.ModelAlias, agentRuntimeModelRequirements()); resolveErr != nil {
+			issues = append(issues, AgentDiagnosticIssue{Code: "model.unavailable", Message: resolveErr.Error()})
+		} else if issue := runtimeModelLimitsIssue(resolved); issue != nil {
+			issues = append(issues, *issue)
 		} else {
 			var policy aimemory.Policy
 			if len(v.MemoryPolicy) > 0 && string(v.MemoryPolicy) != "{}" {
@@ -853,7 +855,7 @@ func (s *AgentService) agentDiagnostics(ctx context.Context, row *Agent) AgentDi
 							continue
 						}
 						seenAliases[alias] = true
-						if _, resolveErr := s.models.Resolve(ctx, alias, memoryModelRequirements()); resolveErr != nil {
+						if _, resolveErr = s.models.Resolve(ctx, alias, memoryModelRequirements()); resolveErr != nil {
 							issues = append(issues, AgentDiagnosticIssue{Code: "memory.model_unavailable", Resource: alias, Message: resolveErr.Error()})
 						}
 					}
@@ -867,6 +869,24 @@ func (s *AgentService) agentDiagnostics(ctx context.Context, row *Agent) AgentDi
 		}
 	}
 	return AgentDiagnostics{Healthy: len(issues) == 0, Issues: issues}
+}
+
+func runtimeModelLimitsIssue(resolved *aimodel.ResolvedModel) *AgentDiagnosticIssue {
+	if resolved == nil || resolved.Limits.ContextWindow <= 0 {
+		return &AgentDiagnosticIssue{
+			Code:     "model.context_window_missing",
+			Resource: resolvedDeploymentID(resolved),
+			Message:  "model context window is not configured",
+		}
+	}
+	return nil
+}
+
+func resolvedDeploymentID(resolved *aimodel.ResolvedModel) string {
+	if resolved == nil {
+		return ""
+	}
+	return resolved.DeploymentID
 }
 
 func (s *AgentService) ReconcileBuiltin(ctx context.Context, _ AgentEmptyRequest) (any, error) {

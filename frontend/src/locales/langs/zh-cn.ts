@@ -479,7 +479,9 @@ const local: App.I18n.Schema = {
       sendFailed: '发送消息失败',
       runFailed: '启动 AI 运行失败',
       unavailableGeneric: 'AI 工作台暂时不可用',
-      reconnectFallback: '连接中断，正在恢复'
+      reconnectFallback: '连接中断，正在恢复',
+      diagnosticContextWindow: '当前模型未配置上下文窗口，请先在 AI 中心的模型目录中填写供应商提供的实际值。',
+      runFailure: '运行失败：{category}（{reason}）'
     },
     agentBuilder: {
       back: '返回列表',

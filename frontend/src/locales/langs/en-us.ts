@@ -483,7 +483,10 @@ const local: App.I18n.Schema = {
       sendFailed: 'Could not send message',
       runFailed: 'Could not start AI run',
       unavailableGeneric: 'AI Workspace is temporarily unavailable',
-      reconnectFallback: 'Connection interrupted, recovering'
+      reconnectFallback: 'Connection interrupted, recovering',
+      diagnosticContextWindow:
+        'The current model has no context window configured. Enter the provider value in AI Center > Model Catalog.',
+      runFailure: 'Run failed: {category} ({reason})'
     },
     agentBuilder: {
       back: 'Back to list',
