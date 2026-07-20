@@ -7,9 +7,9 @@ import (
 
 type MemoryItem struct {
 	ID                 string                 `gorm:"primaryKey;size:64" json:"id"`
-	TenantID           string                 `gorm:"size:64;not null;uniqueIndex:ux_ai_memory_item_scope,priority:1;index:idx_ai_memory_current,priority:1" json:"-"`
-	UserID             string                 `gorm:"size:64;not null;uniqueIndex:ux_ai_memory_item_scope,priority:2;index:idx_ai_memory_current,priority:2" json:"user_id"`
-	AgentID            *string                `gorm:"size:64;uniqueIndex:ux_ai_memory_item_scope,priority:3" json:"agent_id,omitempty"`
+	TenantID           string                 `gorm:"size:64;not null;index:idx_ai_memory_scope,priority:1;index:idx_ai_memory_current,priority:1" json:"-"`
+	UserID             string                 `gorm:"size:64;not null;index:idx_ai_memory_scope,priority:2;index:idx_ai_memory_current,priority:2" json:"user_id"`
+	AgentID            *string                `gorm:"size:64;index:idx_ai_memory_scope,priority:3" json:"agent_id,omitempty"`
 	Type               aimemory.ItemType      `gorm:"size:24;not null;index:idx_ai_memory_current,priority:3" json:"type"`
 	Status             aimemory.ItemStatus    `gorm:"size:24;not null;index:idx_ai_memory_current,priority:4" json:"status"`
 	Summary            string                 `gorm:"size:512;not null" json:"summary"`

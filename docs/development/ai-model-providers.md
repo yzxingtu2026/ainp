@@ -6,7 +6,7 @@
 
 `Alias -> ModelResolver -> Deployment -> Provider -> ProviderTypeRegistry / CredentialCipher`
 
-模型列表发现、Generate/Stream 与 Embedding Runtime 已纳入平台能力；图片/音频生成、RAG 业务检索与完整 Workspace 仍按各自 Issue 交付。业务只能引用 Alias，不得旁路 Resolver。
+模型列表发现、Generate/Stream 与 Embedding Runtime 已纳入平台能力；图片/音频生成、RAG 业务检索与完整 Workspace 仍按各自 Issue 交付。业务只能引用 Alias，不得旁路 Resolver。Provider `protocol` 只描述线协议、认证和请求/响应格式，不代表具体模型能力。
 
 ## Provider Type
 
@@ -31,11 +31,13 @@ Provider 按 AuthContext 的 `tenant_id` 隔离。管理员提交的供应商凭
 
 Deployment 是管理员确认后的本地模型资产。远端发现结果只是候选，不得自动创建或启用 Deployment；远端缺少类型/能力时 UI 必须要求管理员确认。手工模型同样必须声明类型、能力和限制。
 
-稳定 model type：`chat`、`embedding`、`rerank`、`image`、`speech`、`transcription`。`vision` 是 chat 输入能力，不是 model type。有效能力始终为：
+稳定 model type：`chat`、`embedding`、`rerank`、`image`、`speech`、`transcription`。`vision` 是 chat 输入能力，不是 model type。通用 modality/feature 的有效能力为：
 
 `Provider Adapter 已实现能力 ∩ Deployment 声明能力`
 
 Resolver 再验证调用方 `CapabilityRequirements` 是否为有效能力的子集。非法 modality、feature 或负数 limit 拒绝保存。Embedding Deployment 可通过 `limits.dimensions` / `limits.max_dimensions` 声明默认维度与可覆盖上限；Runtime 在调用前强制校验。
+
+结构化输出能力独立于传输协议。Deployment 勾选 `structured_output` 时必须同时提供有序 `structured_output_strategies`，取消 feature 时策略必须为空。Runtime 再与所选 Adapter 的策略声明求交集；例如同样使用 OpenAI 线协议的 Deployment 可以分别声明 `openai_json_schema` 或 `response_only_function`。新增供应商复用现有协议时只新增 Provider 和 Deployment 能力；只有线协议、认证或消息格式不同才新增 Adapter。
 
 ## Alias 与解析
 

@@ -39,9 +39,8 @@ func TestMemoryCandidateStrictSchemaAndBoundedSources(t *testing.T) {
 		t.Fatal("out-of-range source must fail")
 	}
 	var output memoryExtractionOutput
-	// Unknown fields are now tolerated for LLM compatibility (strict mode relaxed).
-	if err := strictJSON([]byte(`{"candidates":[],"tenant_id":"invented"}`), &output); err != nil {
-		t.Fatalf("unknown fields must be tolerated: %v", err)
+	if err := strictJSON([]byte(`{"candidates":[],"tenant_id":"invented"}`), &output); err == nil {
+		t.Fatal("unknown fields must fail closed")
 	}
 	if schema := string(memoryCandidateSchema()); strings.Contains(schema, "tenant_id") || strings.Contains(schema, "user_id") || strings.Contains(schema, "run_id") {
 		t.Fatal("model schema must not accept authority identifiers")

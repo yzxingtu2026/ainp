@@ -79,7 +79,8 @@ func (r *ProviderTypeRegistry) List() []ProviderType {
 
 func RegisterBuiltinProviderTypes(r *ProviderTypeRegistry) error {
 	chat := Capabilities{InputModalities: []Modality{ModalityText, ModalityImage, ModalityAudio, ModalityFile}, OutputModalities: []Modality{ModalityText, ModalityAudio}, Features: []Feature{FeatureStreaming, FeatureToolCalling, FeatureParallelToolCalls, FeatureStructuredOutput, FeatureVision, FeatureEmbeddings, FeatureImageGeneration, FeatureAudioInput, FeatureAudioOutput}}
-	for _, v := range []ProviderType{{ProtocolOpenAI, "OpenAI", nil, true, chat}, {ProtocolAnthropic, "Anthropic", nil, true, Capabilities{InputModalities: []Modality{ModalityText, ModalityImage}, OutputModalities: []Modality{ModalityText}, Features: []Feature{FeatureStreaming, FeatureToolCalling, FeatureVision}}}, {ProtocolOpenAICompatible, "OpenAI Compatible", []ConfigField{{Key: "models_path", Type: "string"}}, true, chat}} {
+	compatible := Capabilities{InputModalities: []Modality{ModalityText}, OutputModalities: []Modality{ModalityText}, Features: []Feature{FeatureToolCalling, FeatureStructuredOutput, FeatureEmbeddings}}
+	for _, v := range []ProviderType{{ProtocolOpenAI, "OpenAI", nil, true, chat}, {ProtocolAnthropic, "Anthropic", nil, true, Capabilities{InputModalities: []Modality{ModalityText, ModalityImage}, OutputModalities: []Modality{ModalityText}, Features: []Feature{FeatureStreaming, FeatureToolCalling, FeatureStructuredOutput, FeatureVision}}}, {ProtocolOpenAICompatible, "OpenAI Compatible", []ConfigField{{Key: "models_path", Type: "string"}}, true, compatible}} {
 		if err := r.Register(v); err != nil {
 			return err
 		}

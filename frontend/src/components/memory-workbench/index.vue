@@ -106,7 +106,7 @@ async function saveCorrection() {
   if (!error) {
     correctionOpen.value = false;
     detailOpen.value = false;
-    await Promise.all([store.load(), store.loadProfile()]);
+    await Promise.all([store.load(), store.loadProfile(), store.loadPendingTotal()]);
     window.$message?.success('纠正已保存，历史记录已保留');
   }
 }
@@ -117,7 +117,7 @@ async function clearAll() {
   if (!error) {
     clearOpen.value = false;
     clearConfirm.value = '';
-    await Promise.all([store.load(), store.loadProfile()]);
+    await Promise.all([store.load(), store.loadProfile(), store.loadPendingTotal()]);
     window.$message?.success('已有记忆已退出召回');
   }
 }
@@ -133,7 +133,7 @@ function search() {
   store.load();
 }
 
-onMounted(() => Promise.all([store.load(), store.loadProfile(), loadPreference()]));
+onMounted(() => Promise.all([store.load(), store.loadProfile(), store.loadPendingTotal(), loadPreference()]));
 </script>
 
 <template>
@@ -196,8 +196,14 @@ onMounted(() => Promise.all([store.load(), store.loadProfile(), loadPreference()
           </div>
           <NSpin :show="store.loading">
             <section v-for="[date, items] in timeline" :key="date" class="mb-24px">
-              <h3 class="sticky top-0 z-1 bg-[var(--n-color)] py-8px text-16px">{{ date }}</h3>
-              <NList bordered>
+              <div class="timeline-date-header sticky top-0 z-1">
+                <div class="timeline-date-icon" aria-hidden="true">
+                  <SvgIcon :icon="date === '日期未知' ? 'ph:calendar-x' : 'ph:calendar-blank'" />
+                </div>
+                <NText strong class="timeline-date-label">{{ date }}</NText>
+                <NText depth="3" class="ml-auto text-13px">{{ items.length }} 条记忆</NText>
+              </div>
+              <NList bordered class="timeline-memory-list">
                 <NListItem v-for="item in items" :key="item.id" class="cursor-pointer" @click="show(item)">
                   <NThing :title="item.summary" :description="item.content">
                     <template #header-extra>
@@ -214,7 +220,7 @@ onMounted(() => Promise.all([store.load(), store.loadProfile(), loadPreference()
         <NTabPane name="pending">
           <template #tab>
             待确认
-            <NBadge :value="store.total" :max="99" />
+            <NBadge :value="store.pendingTotal" :max="99" :show="store.pendingTotal > 0" />
           </template>
           <NList v-if="pending.length" bordered>
             <NListItem v-for="item in pending" :key="item.id">
@@ -392,3 +398,40 @@ onMounted(() => Promise.all([store.load(), store.loadProfile(), loadPreference()
     </NModal>
   </div>
 </template>
+
+<style scoped>
+.timeline-date-header {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border: 1px solid rgb(var(--primary-color) / 16%);
+  border-radius: 6px;
+  background: rgb(var(--primary-color) / 6%);
+  backdrop-filter: blur(8px);
+}
+
+.timeline-date-icon {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  place-items: center;
+  border-radius: 6px;
+  background: rgb(var(--primary-color) / 12%);
+  color: rgb(var(--primary-color));
+  font-size: 16px;
+}
+
+.timeline-date-label {
+  font-size: 15px;
+  line-height: 1.4;
+}
+
+.timeline-memory-list {
+  margin-top: 8px;
+  overflow: hidden;
+  border-radius: 6px;
+}
+</style>

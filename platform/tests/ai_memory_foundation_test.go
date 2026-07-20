@@ -84,3 +84,14 @@ func TestMemoryMigrationDefinesTemporalTenantProjectionContract(t *testing.T) {
 		}
 	}
 }
+
+func TestMemoryItemScopeIndexAllowsMultipleFacts(t *testing.T) {
+	body, err := os.ReadFile("../migrations/0039_fix_memory_item_scope_index.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := string(body)
+	if !strings.Contains(sql, "DROP INDEX IF EXISTS ux_ai_memory_item_scope") || !strings.Contains(sql, "CREATE INDEX IF NOT EXISTS idx_ai_memory_scope") || strings.Contains(sql, "CREATE UNIQUE INDEX") {
+		t.Fatal("memory scope migration must replace the accidental unique index with a normal index")
+	}
+}

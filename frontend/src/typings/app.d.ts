@@ -1124,6 +1124,10 @@ declare namespace App {
         visionNeedsImage: string;
         modalities: Record<(typeof import('@/constants/ai').MODEL_MODALITIES)[number], string>;
         features: Record<(typeof import('@/constants/ai').MODEL_FEATURES)[number], string>;
+        structuredOutputStrategies: Record<
+          (typeof import('@/constants/ai').STRUCTURED_OUTPUT_STRATEGIES)[number],
+          string
+        >;
       };
       chat: {
         thinking: string;

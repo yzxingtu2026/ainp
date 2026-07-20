@@ -953,6 +953,14 @@ const local: App.I18n.Schema = {
       image_generation: '图像生成',
       audio_input: '音频输入',
       audio_output: '音频输出'
+    },
+    structuredOutputStrategies: {
+      openai_json_schema: 'OpenAI JSON Schema',
+      anthropic_output_config: 'Anthropic 输出配置',
+      constrained_decoding: '约束解码',
+      response_only_function: '仅响应函数',
+      json_mode: 'JSON 模式',
+      text_json: '文本 JSON'
     }
   },
   chat: {

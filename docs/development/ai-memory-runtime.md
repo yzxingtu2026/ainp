@@ -31,6 +31,8 @@ Memory Policy 包含开关、extraction/consolidation Alias、低敏自动保存
 
 模型输出只落 `candidate`，并保存 Evaluation、Agent Version、冻结 Policy、Invocation、prompt/schema version 与 arguments hash。候选不会自动变为 active。日志只记录 Run ID、安全计数、类型/敏感度分布、耗时和 Usage，禁止原文与候选正文。
 
+失败 Evaluation 可由具备 `ai.memory_extraction_recover` 权限的操作员受控恢复。单批最多 100 条，只重新入队当前租户的 `failed` 水位，幂等键绑定 Evaluation ID 与 attempts；Job 继续复用原 Evaluation，因此不得重复生成已完成候选。恢复结果和日志只记录选择数、入队数与稳定失败分类，不记录记忆正文。
+
 ## 治理、整理与投影
 
 Candidate 进入确定性治理：只有用户明确表达、normal、confidence ≥ 0.85、类型为 preference/fact 且冻结策略允许时才能自动 active；敏感、推断、低置信和事实冲突默认 pending_review，confidence < 0.2 才自动 rejected。模型 sensitivity/confidence 只能收紧，不能绕过这些门槛。治理决策保存 item revision、原因和幂等键；用户确认/reject/revoke 也必须用 revision 与幂等键。

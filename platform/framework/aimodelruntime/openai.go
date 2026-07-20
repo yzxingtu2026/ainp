@@ -17,6 +17,9 @@ func NewOpenAIAdapter(client HTTPClient) *OpenAIAdapter {
 	}
 	return &OpenAIAdapter{Client: client}
 }
+func (a *OpenAIAdapter) StructuredOutputStrategies() []StructuredOutputStrategy {
+	return []StructuredOutputStrategy{StructuredOutputOpenAIJSONSchema, StructuredOutputResponseFunction}
+}
 func (a *OpenAIAdapter) headers(key string) map[string]string {
 	return map[string]string{"Authorization": "Bearer " + key}
 }
@@ -26,6 +29,9 @@ func (a *OpenAIAdapter) payload(in AdapterRequest, stream bool) (map[string]any,
 	}
 	r := in.Request
 	p := map[string]any{"model": in.Model.RemoteModelID, "input": openAIInput(r.Messages), "stream": stream}
+	if in.DisableReasoning {
+		p["enable_thinking"] = false
+	}
 	if r.Instructions != "" {
 		p["instructions"] = r.Instructions
 	}
@@ -54,7 +60,20 @@ func (a *OpenAIAdapter) payload(in AdapterRequest, stream bool) (map[string]any,
 	if r.StructuredOutput != nil {
 		var schema any
 		_ = json.Unmarshal(r.StructuredOutput.Schema, &schema)
-		p["text"] = map[string]any{"format": map[string]any{"type": "json_schema", "name": r.StructuredOutput.Name, "description": r.StructuredOutput.Description, "schema": schema, "strict": r.StructuredOutput.Strict}}
+		switch in.StructuredOutputStrategy {
+		case StructuredOutputOpenAIJSONSchema:
+			p["text"] = map[string]any{"format": map[string]any{"type": "json_schema", "name": r.StructuredOutput.Name, "description": r.StructuredOutput.Description, "schema": schema, "strict": r.StructuredOutput.Strict}}
+		case StructuredOutputResponseFunction:
+			if len(r.Tools) > 0 {
+				return nil, &RuntimeError{Category: ErrorInvalidRequest, Message: "structured output cannot be combined with executable tools"}
+			}
+			p["tools"] = []any{map[string]any{"type": "function", "name": r.StructuredOutput.Name, "description": r.StructuredOutput.Description, "parameters": schema}}
+			// A single private response function plus "required" is supported by
+			// both OpenAI Responses and compatible providers such as DashScope.
+			p["tool_choice"] = "required"
+		default:
+			return nil, &RuntimeError{Category: ErrorCapabilityNotSupported, Message: "selected structured output strategy is not supported by openai adapter"}
+		}
 	}
 	return p, nil
 }
@@ -155,8 +174,15 @@ func (a *OpenAIAdapter) Generate(ctx context.Context, in AdapterRequest) (*Gener
 				}
 			}
 		case "function_call":
-			out.Output = append(out.Output, OutputItem{ID: item.ID, Type: PartToolCall, ToolCallID: item.CallID, ToolName: item.Name, Arguments: json.RawMessage(item.Arguments)})
-			out.FinishReason = FinishToolCall
+			if in.Request.StructuredOutput != nil && in.StructuredOutputStrategy == StructuredOutputResponseFunction {
+				if item.Name != in.Request.StructuredOutput.Name {
+					return nil, &RuntimeError{Category: ErrorResponseMismatch, Message: "structured response function name mismatch"}
+				}
+				out.Output = append(out.Output, OutputItem{ID: item.ID, Type: PartOutputText, Text: item.Arguments})
+			} else {
+				out.Output = append(out.Output, OutputItem{ID: item.ID, Type: PartToolCall, ToolCallID: item.CallID, ToolName: item.Name, Arguments: json.RawMessage(item.Arguments)})
+				out.FinishReason = FinishToolCall
+			}
 		}
 	}
 	if raw.Status == "incomplete" {

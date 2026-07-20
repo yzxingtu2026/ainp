@@ -15,6 +15,7 @@ require (
 
 require (
 	github.com/gen2brain/go-fitz v1.28.2
+	github.com/santhosh-tekuri/jsonschema/v5 v5.3.1
 	github.com/xuri/excelize/v2 v2.10.1
 )
 

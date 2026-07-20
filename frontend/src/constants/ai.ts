@@ -62,3 +62,11 @@ export const MODEL_FEATURES = [
   'audio_input',
   'audio_output'
 ] as const;
+export const STRUCTURED_OUTPUT_STRATEGIES = [
+  'openai_json_schema',
+  'anthropic_output_config',
+  'constrained_decoding',
+  'response_only_function',
+  'json_mode',
+  'text_json'
+] as const;

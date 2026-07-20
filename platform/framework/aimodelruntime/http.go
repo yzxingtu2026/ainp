@@ -8,7 +8,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
+
+	"github.com/yzxingtu2026/ainp/platform/framework/logging"
 )
 
 func defaultBaseURL(value, fallback string) string {
@@ -19,6 +22,7 @@ func defaultBaseURL(value, fallback string) string {
 }
 
 const maxProviderBody = 4 << 20
+const maxProviderDebugBody = 64 << 10
 
 type HTTPClient interface {
 	Do(*http.Request) (*http.Response, error)
@@ -44,17 +48,39 @@ func postJSON(ctx context.Context, client HTTPClient, url string, headers map[st
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		defer resp.Body.Close()
-		io.Copy(io.Discard, io.LimitReader(resp.Body, maxProviderBody))
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxProviderBody))
+		debugProviderBody(ctx, "model provider error body", resp.StatusCode, resp.Header.Get("Content-Type"), body)
 		return nil, classifyHTTPStatus(resp.StatusCode)
 	}
 	return resp, nil
 }
 func decodeBody(resp *http.Response, target any) error {
 	defer resp.Body.Close()
-	if err := json.NewDecoder(io.LimitReader(resp.Body, maxProviderBody)).Decode(target); err != nil {
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxProviderBody))
+	if err != nil {
+		return &RuntimeError{Category: ErrorProviderUnavailable, Message: "cannot read provider response", Retryable: false, Cause: err}
+	}
+	debugProviderBody(resp.Request.Context(), "model provider response body", resp.StatusCode, resp.Header.Get("Content-Type"), body)
+	if err := json.Unmarshal(body, target); err != nil {
 		return &RuntimeError{Category: ErrorProviderUnavailable, Message: "invalid provider response", Retryable: false, Cause: err}
 	}
 	return nil
+}
+
+func debugProviderBody(ctx context.Context, message string, status int, contentType string, body []byte) {
+	if !providerRawDebugEnabled() {
+		return
+	}
+	truncated := len(body) > maxProviderDebugBody
+	if truncated {
+		body = body[:maxProviderDebugBody]
+	}
+	logging.Debug(ctx, message, "status", status, "content_type", contentType, "truncated", truncated, "provider_body", string(body))
+}
+
+func providerRawDebugEnabled() bool {
+	value := strings.TrimSpace(os.Getenv("AINP_AI_PROVIDER_DEBUG_RAW"))
+	return value == "1" || strings.EqualFold(value, "true")
 }
 func classifyTransportError(ctx context.Context, err error) error {
 	if ctx.Err() != nil {

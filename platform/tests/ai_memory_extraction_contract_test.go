@@ -45,7 +45,7 @@ func TestMemoryExtractionMigrationAndReliableChainContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	code := string(register)
-	for _, expected := range []string{"agentRunTerminalEvent", "MemoryExtractionJobType", "MaxAttempts: 5", "job.Permanent"} {
+	for _, expected := range []string{"agentRunTerminalEvent", "MemoryExtractionJobType", "MaxAttempts: 5", "job.Permanent", "ActionMemoryExtractionRecover", "memory-recovery:"} {
 		if !strings.Contains(code, expected) {
 			t.Fatalf("reliable chain missing %q", expected)
 		}

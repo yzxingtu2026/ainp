@@ -183,6 +183,141 @@ func TestAnthropicMessagesFixtureMapping(t *testing.T) {
 	}
 }
 
+func TestAnthropicStructuredOutputUsesResponseOnlyFunction(t *testing.T) {
+	var body map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		_, _ = io.WriteString(w, `{"id":"msg_1","stop_reason":"tool_use","content":[{"type":"tool_use","id":"tool_1","name":"result","input":{"items":[]}}],"usage":{"input_tokens":8,"output_tokens":4}}`)
+	}))
+	defer server.Close()
+	req := fixtureAdapterRequest(server.URL, aimodel.ProtocolAnthropic)
+	req.Request.StructuredOutput = &aimodelruntime.StructuredOutput{Name: "result", Strict: true, Schema: json.RawMessage(`{"type":"object"}`)}
+	req.StructuredOutputStrategy = aimodelruntime.StructuredOutputResponseFunction
+	req.DisableReasoning = true
+	resp, err := aimodelruntime.NewAnthropicAdapter(server.Client()).Generate(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body["thinking"] != nil || body["tool_choice"].(map[string]any)["name"] != "result" || len(resp.Output) != 1 || resp.Output[0].Type != aimodelruntime.PartOutputText || resp.Output[0].Text != `{"items":[]}` {
+		t.Fatalf("response-only function was not normalized: body=%#v response=%#v", body, resp)
+	}
+}
+
+func TestAnthropicStructuredOutputUsesOutputConfig(t *testing.T) {
+	var body map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		_, _ = io.WriteString(w, `{"id":"msg_1","stop_reason":"end_turn","content":[{"type":"text","text":"{\"items\":[]}"}],"usage":{"input_tokens":8,"output_tokens":4}}`)
+	}))
+	defer server.Close()
+	req := fixtureAdapterRequest(server.URL, aimodel.ProtocolAnthropic)
+	req.Request.StructuredOutput = &aimodelruntime.StructuredOutput{Name: "result", Strict: true, Schema: json.RawMessage(`{"type":"object"}`)}
+	req.StructuredOutputStrategy = aimodelruntime.StructuredOutputAnthropicOutputConfig
+	resp, err := aimodelruntime.NewAnthropicAdapter(server.Client()).Generate(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, ok := body["output_config"].(map[string]any)
+	if !ok || config["format"] == nil || body["tools"] != nil || len(resp.Output) != 1 || resp.Output[0].Text != `{"items":[]}` {
+		t.Fatalf("anthropic output_config was not mapped: body=%#v response=%#v", body, resp)
+	}
+}
+
+func TestOpenAIStructuredOutputUsesResponseOnlyFunction(t *testing.T) {
+	var body map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		_, _ = io.WriteString(w, `{"id":"resp_1","status":"completed","output":[{"id":"call_1","type":"function_call","call_id":"fc_1","name":"result","arguments":"{\"items\":[]}"}],"usage":{"input_tokens":7,"output_tokens":3,"total_tokens":10}}`)
+	}))
+	defer server.Close()
+	req := fixtureAdapterRequest(server.URL, aimodel.ProtocolOpenAI)
+	req.Request.StructuredOutput = &aimodelruntime.StructuredOutput{Name: "result", Strict: true, Schema: json.RawMessage(`{"type":"object"}`)}
+	req.StructuredOutputStrategy = aimodelruntime.StructuredOutputResponseFunction
+	req.DisableReasoning = true
+	resp, err := aimodelruntime.NewOpenAIAdapter(server.Client()).Generate(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body["text"] != nil || body["tools"] == nil || body["tool_choice"] != "required" || body["enable_thinking"] != false || len(resp.Output) != 1 || resp.Output[0].Type != aimodelruntime.PartOutputText || resp.Output[0].Text != `{"items":[]}` {
+		t.Fatalf("openai response function was not normalized: body=%#v response=%#v", body, resp)
+	}
+}
+
+func TestOpenAICompatibleStructuredOutputStrategies(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		strategy aimodelruntime.StructuredOutputStrategy
+		response string
+	}{
+		{"function", aimodelruntime.StructuredOutputResponseFunction, `{"id":"c1","choices":[{"finish_reason":"tool_calls","message":{"tool_calls":[{"id":"t1","function":{"name":"result","arguments":"{\"items\":[]}"}}]}}],"usage":{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3}}`},
+		{"json_schema", aimodelruntime.StructuredOutputOpenAIJSONSchema, `{"id":"c1","choices":[{"finish_reason":"stop","message":{"content":"{\"items\":[]}"}}],"usage":{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3}}`},
+		{"json_mode", aimodelruntime.StructuredOutputJSONMode, `{"id":"c1","choices":[{"finish_reason":"stop","message":{"content":"{\"items\":[]}"}}],"usage":{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3}}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var body map[string]any
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_ = json.NewDecoder(r.Body).Decode(&body)
+				_, _ = io.WriteString(w, tc.response)
+			}))
+			defer server.Close()
+			req := fixtureAdapterRequest(server.URL, aimodel.ProtocolOpenAICompatible)
+			req.Request.StructuredOutput = &aimodelruntime.StructuredOutput{Name: "result", Strict: true, Schema: json.RawMessage(`{"type":"object"}`)}
+			req.StructuredOutputStrategy = tc.strategy
+			req.DisableReasoning = tc.strategy == aimodelruntime.StructuredOutputResponseFunction
+			resp, err := aimodelruntime.NewOpenAICompatibleAdapter(server.Client()).Generate(context.Background(), req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if resp.Output[0].Text != `{"items":[]}` {
+				t.Fatalf("unexpected normalized output: %#v", resp.Output)
+			}
+			if tc.strategy == aimodelruntime.StructuredOutputResponseFunction && body["tools"] == nil {
+				t.Fatal("function strategy did not emit private tools")
+			}
+			if tc.strategy == aimodelruntime.StructuredOutputResponseFunction && body["enable_thinking"] != false {
+				t.Fatal("function strategy must disable reasoning")
+			}
+			if tc.strategy != aimodelruntime.StructuredOutputResponseFunction && body["response_format"] == nil {
+				t.Fatal("response format strategy was not mapped")
+			}
+		})
+	}
+}
+
+func TestStructuredOutputStrategyUsesDeploymentAdapterIntersection(t *testing.T) {
+	contract := &aimodelruntime.StructuredOutput{Name: "result", Strict: true, Schema: json.RawMessage(`{"type":"object"}`)}
+	model := &aimodel.ResolvedModel{Protocol: aimodel.ProtocolOpenAI, Capabilities: aimodel.Capabilities{StructuredOutputStrategies: []aimodel.StructuredOutputStrategy{aimodel.StructuredOutputResponseOnlyFunction, aimodel.StructuredOutputOpenAIJSONSchema}}}
+	strategy, err := aimodelruntime.SelectStructuredOutputStrategy(model, aimodelruntime.NewOpenAIAdapter(nil), contract)
+	if err != nil || strategy != aimodelruntime.StructuredOutputResponseFunction {
+		t.Fatalf("deployment order must select response function first: strategy=%s err=%v", strategy, err)
+	}
+	model.Capabilities.StructuredOutputStrategies = []aimodel.StructuredOutputStrategy{aimodel.StructuredOutputAnthropicOutputConfig}
+	if _, err = aimodelruntime.SelectStructuredOutputStrategy(model, aimodelruntime.NewOpenAIAdapter(nil), contract); err == nil {
+		t.Fatal("deployment and adapter mismatch must fail closed")
+	}
+}
+
+func TestStructuredResponseValidationFailsClosed(t *testing.T) {
+	for _, response := range []*aimodelruntime.GenerateResponse{
+		{FinishReason: aimodelruntime.FinishLength, Output: []aimodelruntime.OutputItem{{Type: aimodelruntime.PartOutputText, Text: `{}`}}},
+		{FinishReason: aimodelruntime.FinishCompleted, Output: []aimodelruntime.OutputItem{{Type: aimodelruntime.PartOutputText, Text: `not-json`}}},
+		{FinishReason: aimodelruntime.FinishCompleted, Output: []aimodelruntime.OutputItem{{Type: aimodelruntime.PartToolCall}}},
+	} {
+		if err := aimodelruntime.ValidateStructuredResponse(response, &aimodelruntime.StructuredOutput{Name: "result", Schema: json.RawMessage(`{"type":"object"}`), Strict: true}); err == nil {
+			t.Fatalf("invalid structured response passed: %#v", response)
+		}
+	}
+	if err := aimodelruntime.ValidateStructuredResponse(&aimodelruntime.GenerateResponse{FinishReason: aimodelruntime.FinishCompleted, Output: []aimodelruntime.OutputItem{{Type: aimodelruntime.PartOutputText, Text: `{}`}}}, &aimodelruntime.StructuredOutput{Name: "result", Schema: json.RawMessage(`{"type":"object","required":["items"],"properties":{"items":{"type":"array"}},"additionalProperties":false}`), Strict: true}); err == nil {
+		t.Fatal("schema mismatch must fail closed")
+	}
+}
+
 func TestOpenAIStreamIgnoresInProgressAndValidatesSequence(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")

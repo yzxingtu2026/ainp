@@ -151,21 +151,15 @@ func (s *MemoryExtractionService) EvaluateRun(ctx context.Context, runID string)
 	}
 	max := int64(policy.MaxRecallTokens)
 	temp := float64(0)
-	// Use Function Calling for better compatibility across models (Qwen, GPT, Claude, etc.)
 	value, err := s.invocations.Generate(ctx, aimodelruntime.GenerateRequest{
-		ModelAlias:   policy.ExtractionModelAlias,
-		Instructions: prompt.MustGet("ai/memory-extraction"),
-		Messages:     []aimodelruntime.Message{{Role: aimodelruntime.RoleUser, Content: []aimodelruntime.ContentPart{{Type: aimodelruntime.PartInputText, Text: string(body)}}}},
-		Tools: []aimodelruntime.ToolDefinition{{
-			Name:        "extract_memory_candidates",
-			Description: "Extract memory candidates from the conversation",
-			Parameters:  memoryCandidateSchema(),
-		}},
-		ToolChoice:      &aimodelruntime.ToolChoice{Mode: "required", Name: "extract_memory_candidates"},
-		MaxOutputTokens: &max,
-		Temperature:     &temp,
-		TimeoutMS:       60000,
-		Metadata:        map[string]string{"purpose": "memory_candidate_extraction", "run_id": run.ID, "policy_version": policy.PolicyVersion, "prompt_version": policy.PromptVersion, "schema_version": policy.SchemaVersion},
+		ModelAlias:       policy.ExtractionModelAlias,
+		Instructions:     prompt.MustGet("ai/memory-extraction"),
+		Messages:         []aimodelruntime.Message{{Role: aimodelruntime.RoleUser, Content: []aimodelruntime.ContentPart{{Type: aimodelruntime.PartInputText, Text: string(body)}}}},
+		StructuredOutput: &aimodelruntime.StructuredOutput{Name: "extract_memory_candidates", Description: "Extract memory candidates from the conversation", Schema: memoryCandidateSchema(), Strict: true},
+		MaxOutputTokens:  &max,
+		Temperature:      &temp,
+		TimeoutMS:        60000,
+		Metadata:         map[string]string{"purpose": "memory_candidate_extraction", "run_id": run.ID, "policy_version": policy.PolicyVersion, "prompt_version": policy.PromptVersion, "schema_version": policy.SchemaVersion},
 	})
 	if err != nil {
 		_ = s.markFailed(ctx, evaluation.ID, "model_error")
@@ -176,33 +170,15 @@ func (s *MemoryExtractionService) EvaluateRun(ctx context.Context, runID string)
 		_ = s.markFailed(ctx, evaluation.ID, "invalid_response")
 		return jobPermanent(fmt.Errorf("invalid extraction response"))
 	}
-	// Extract JSON from tool call arguments (preferred) or text output (fallback)
 	text := ""
 	for _, item := range response.Output {
-		if item.Type == aimodelruntime.PartToolCall && item.ToolName == "extract_memory_candidates" {
-			text = string(item.Arguments)
-			break
-		}
-	}
-	if text == "" {
-		// Fallback: some models may return text instead of tool call
-		for _, item := range response.Output {
-			if item.Type == aimodelruntime.PartOutputText {
-				text += item.Text
-			}
-		}
-		text = stripMarkdownCodeBlock(text)
-		if strings.HasPrefix(text, "[") {
-			text = `{"candidates":` + text + `}`
+		if item.Type == aimodelruntime.PartOutputText {
+			text += item.Text
 		}
 	}
 	var output memoryExtractionOutput
 	if err = strictJSON([]byte(text), &output); err != nil || len(output.Candidates) > policy.MaxCandidatesPerTurn {
-		preview := text
-		if len(preview) > 300 {
-			preview = preview[:300] + "..."
-		}
-		logging.Warn(ctx, "memory extraction schema mismatch", "run_id", run.ID, "error", err, "text_len", len(text), "text_preview", preview, "candidate_count", len(output.Candidates), "max_allowed", policy.MaxCandidatesPerTurn)
+		logging.Warn(ctx, "memory extraction schema mismatch", "run_id", run.ID, "error", err, "text_len", len(text), "candidate_count", len(output.Candidates), "max_allowed", policy.MaxCandidatesPerTurn)
 		_ = s.markFailed(ctx, evaluation.ID, "invalid_schema")
 		return jobPermanent(fmt.Errorf("invalid candidate schema"))
 	}
@@ -254,6 +230,7 @@ func eligibleText(message ConversationMessage, expected aimodelruntime.PartType)
 }
 func strictJSON(body []byte, out any) error {
 	d := json.NewDecoder(bytes.NewReader(body))
+	d.DisallowUnknownFields()
 	if err := d.Decode(out); err != nil {
 		return err
 	}

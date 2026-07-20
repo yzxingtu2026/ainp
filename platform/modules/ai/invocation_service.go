@@ -85,6 +85,12 @@ func (s *InvocationService) Generate(ctx context.Context, req aimodelruntime.Gen
 		_ = s.finish(ctx, prepared.row, nil, aimodelruntime.FinishError, aimodelruntime.ErrorProviderUnavailable, "")
 		return nil, &aimodelruntime.RuntimeError{Category: aimodelruntime.ErrorProviderUnavailable, Message: "empty model response"}
 	}
+	if prepared.request.Request.StructuredOutput != nil {
+		if err := aimodelruntime.ValidateStructuredResponse(resp, prepared.request.Request.StructuredOutput); err != nil {
+			_ = s.finish(ctx, prepared.row, &resp.Usage, aimodelruntime.FinishError, runtimeErrorCategory(err), resp.ProviderRequestID)
+			return nil, err
+		}
+	}
 	if err := s.finish(ctx, prepared.row, &resp.Usage, resp.FinishReason, "", resp.ProviderRequestID); err != nil {
 		return nil, err
 	}
@@ -214,6 +220,9 @@ func (s *InvocationService) prepare(ctx context.Context, req aimodelruntime.Gene
 	if err := req.Validate(ctx); err != nil {
 		return nil, &aimodelruntime.RuntimeError{Category: aimodelruntime.ErrorInvalidRequest, Message: err.Error()}
 	}
+	if mode == "stream" && req.StructuredOutput != nil {
+		return nil, &aimodelruntime.RuntimeError{Category: aimodelruntime.ErrorCapabilityNotSupported, Message: "validated structured output is not supported in stream mode"}
+	}
 	if s.tools != nil {
 		if len(req.Tools) > 0 {
 			return nil, &aimodelruntime.RuntimeError{Category: aimodelruntime.ErrorInvalidRequest, Message: "tools must be loaded through tool_scope_id"}
@@ -236,6 +245,10 @@ func (s *InvocationService) prepare(ctx context.Context, req aimodelruntime.Gene
 	if !ok {
 		return nil, &aimodelruntime.RuntimeError{Category: aimodelruntime.ErrorCapabilityNotSupported, Message: "model provider protocol is not supported"}
 	}
+	strategy, err := aimodelruntime.SelectStructuredOutputStrategy(resolved, adapter, req.StructuredOutput)
+	if err != nil {
+		return nil, err
+	}
 	imageCount, imageBytes, imageData, err := s.resolveImages(ctx, &req)
 	if err != nil {
 		return nil, err
@@ -246,7 +259,7 @@ func (s *InvocationService) prepare(ctx context.Context, req aimodelruntime.Gene
 	}
 	now := time.Now().UTC()
 	modalities, _ := json.Marshal(requirements.InputModalities)
-	row := &ModelInvocation{ID: uuid.NewString(), TenantID: ac.TenantID, UserID: ac.UserID, SessionID: ac.SessionID, ModelAlias: req.ModelAlias, ProviderID: resolved.ProviderID, DeploymentID: resolved.DeploymentID, RemoteModelID: resolved.RemoteModelID, Mode: mode, Status: "running", StartedAt: now, RequestID: ac.RequestID, TraceID: ac.TraceID, InputModalitiesJSON: modalities, InputAttachmentCount: imageCount, InputAttachmentBytes: imageBytes}
+	row := &ModelInvocation{ID: uuid.NewString(), TenantID: ac.TenantID, UserID: ac.UserID, SessionID: ac.SessionID, ModelAlias: req.ModelAlias, ProviderID: resolved.ProviderID, DeploymentID: resolved.DeploymentID, RemoteModelID: resolved.RemoteModelID, Mode: mode, StructuredOutputStrategy: string(strategy), Status: "running", StartedAt: now, RequestID: ac.RequestID, TraceID: ac.TraceID, InputModalitiesJSON: modalities, InputAttachmentCount: imageCount, InputAttachmentBytes: imageBytes}
 	if v := strings.TrimSpace(req.Metadata["agent_id"]); v != "" {
 		row.AgentID = &v
 	}
@@ -257,7 +270,7 @@ func (s *InvocationService) prepare(ctx context.Context, req aimodelruntime.Gene
 		return nil, err
 	}
 	runCtx, cancel := context.WithTimeout(ctx, time.Duration(req.TimeoutMS)*time.Millisecond)
-	return &preparedInvocation{ctx: runCtx, cancel: cancel, adapter: adapter, request: aimodelruntime.AdapterRequest{Request: req, Model: resolved}, row: row, imageData: imageData}, nil
+	return &preparedInvocation{ctx: runCtx, cancel: cancel, adapter: adapter, request: aimodelruntime.AdapterRequest{Request: req, Model: resolved, StructuredOutputStrategy: strategy, DisableReasoning: strategy == aimodelruntime.StructuredOutputResponseFunction}, row: row, imageData: imageData}, nil
 }
 
 func (s *InvocationService) resolveImages(ctx context.Context, req *aimodelruntime.GenerateRequest) (int, int64, [][]byte, error) {

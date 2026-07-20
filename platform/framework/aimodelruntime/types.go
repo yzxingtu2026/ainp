@@ -1,11 +1,13 @@
 package aimodelruntime
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"time"
 
+	jsonschema "github.com/santhosh-tekuri/jsonschema/v5"
 	"github.com/yzxingtu2026/ainp/platform/framework/aimodel"
 )
 
@@ -167,6 +169,44 @@ type StructuredOutput struct {
 	Schema      json.RawMessage `json:"schema"`
 	Strict      bool            `json:"strict"`
 }
+type StructuredOutputStrategy = aimodel.StructuredOutputStrategy
+
+const (
+	StructuredOutputOpenAIJSONSchema      = aimodel.StructuredOutputOpenAIJSONSchema
+	StructuredOutputAnthropicOutputConfig = aimodel.StructuredOutputAnthropicOutputConfig
+	StructuredOutputConstrainedDecoding   = aimodel.StructuredOutputConstrainedDecoding
+	StructuredOutputResponseFunction      = aimodel.StructuredOutputResponseOnlyFunction
+	StructuredOutputJSONMode              = aimodel.StructuredOutputJSONMode
+	StructuredOutputTextJSON              = aimodel.StructuredOutputTextJSON
+)
+
+type StructuredOutputStrategyProvider interface {
+	StructuredOutputStrategies() []StructuredOutputStrategy
+}
+
+func SelectStructuredOutputStrategy(model *aimodel.ResolvedModel, adapter ModelAdapter, contract *StructuredOutput) (StructuredOutputStrategy, error) {
+	if contract == nil {
+		return "", nil
+	}
+	provider, ok := adapter.(StructuredOutputStrategyProvider)
+	if !ok {
+		return "", &RuntimeError{Category: ErrorCapabilityNotSupported, Message: "adapter does not support structured output"}
+	}
+	supported := map[StructuredOutputStrategy]bool{}
+	for _, strategy := range provider.StructuredOutputStrategies() {
+		supported[strategy] = true
+	}
+	for _, strategy := range model.Capabilities.StructuredOutputStrategies {
+		if supported[strategy] {
+			if contract.Strict && strategy == StructuredOutputTextJSON {
+				continue
+			}
+			return strategy, nil
+		}
+	}
+	return "", &RuntimeError{Category: ErrorCapabilityNotSupported, Message: "deployment and adapter have no compatible structured output strategy"}
+}
+
 type GenerateRequest struct {
 	ModelAlias       string                     `json:"model_alias" validate:"required"`
 	ToolScopeID      string                     `json:"tool_scope_id,omitempty"`
@@ -369,10 +409,46 @@ type EventStream interface {
 	Close() error
 }
 type AdapterRequest struct {
-	Request GenerateRequest
-	Model   *aimodel.ResolvedModel
+	Request                  GenerateRequest
+	Model                    *aimodel.ResolvedModel
+	StructuredOutputStrategy StructuredOutputStrategy
+	DisableReasoning         bool
 }
 type ModelAdapter interface {
 	Generate(context.Context, AdapterRequest) (*GenerateResponse, error)
 	Stream(context.Context, AdapterRequest) (EventStream, error)
+}
+
+func ValidateStructuredResponse(response *GenerateResponse, contract *StructuredOutput) error {
+	if response.FinishReason == FinishLength {
+		return &RuntimeError{Category: ErrorResponseMismatch, Message: "structured response was truncated"}
+	}
+	text := ""
+	for _, item := range response.Output {
+		if item.Type == PartRefusal {
+			return &RuntimeError{Category: ErrorContentFiltered, Message: "provider refused structured response"}
+		}
+		if item.Type != PartOutputText {
+			return &RuntimeError{Category: ErrorResponseMismatch, Message: "structured response contained a non-text item"}
+		}
+		text += item.Text
+	}
+	if !json.Valid([]byte(text)) {
+		return &RuntimeError{Category: ErrorResponseMismatch, Message: "provider returned invalid structured JSON"}
+	}
+	compiler := jsonschema.NewCompiler()
+	if err := compiler.AddResource("output.json", bytes.NewReader(contract.Schema)); err != nil {
+		return &RuntimeError{Category: ErrorInvalidRequest, Message: "structured output schema is invalid", Cause: err}
+	}
+	schema, err := compiler.Compile("output.json")
+	if err != nil {
+		return &RuntimeError{Category: ErrorInvalidRequest, Message: "structured output schema is invalid", Cause: err}
+	}
+	var value any
+	decoder := json.NewDecoder(bytes.NewBufferString(text))
+	decoder.UseNumber()
+	if err = decoder.Decode(&value); err != nil || schema.Validate(value) != nil {
+		return &RuntimeError{Category: ErrorResponseMismatch, Message: "provider response does not match structured output schema"}
+	}
+	return nil
 }
