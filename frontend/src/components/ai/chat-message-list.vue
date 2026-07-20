@@ -340,10 +340,10 @@ function onConfirmationResolved(status: 'approved' | 'rejected', result?: Api.AI
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   border-radius: 999px;
   background: rgba(127, 127, 127, 0.1);
-  padding: 11px 16px;
+  padding: 6px 12px;
   overflow: hidden;
 }
 
@@ -375,7 +375,7 @@ function onConfirmationResolved(status: 'approved' | 'rejected', result?: Api.AI
   display: inline-flex;
   flex: none;
   color: rgba(var(--primary-color), 0.9);
-  font-size: 18px;
+  font-size: 14px;
   animation: thinking-pulse 1.6s ease-in-out infinite;
 }
 
@@ -395,7 +395,7 @@ function onConfirmationResolved(status: 'approved' | 'rejected', result?: Api.AI
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 13.5px;
+  font-size: 12.5px;
   font-weight: 500;
   color: rgba(var(--base-text-color), 0.85);
   white-space: nowrap;
@@ -403,13 +403,13 @@ function onConfirmationResolved(status: 'approved' | 'rejected', result?: Api.AI
 
 .thinking-status__tool {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 12px;
+  font-size: 11px;
   line-height: 1;
-  padding: 3px 7px;
-  border-radius: 6px;
+  padding: 2px 6px;
+  border-radius: 5px;
   background: rgba(var(--primary-color), 0.12);
   color: rgba(var(--primary-color), 1);
-  max-width: 240px;
+  max-width: 220px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -418,13 +418,13 @@ function onConfirmationResolved(status: 'approved' | 'rejected', result?: Api.AI
 .thinking-status__dots {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
   flex: none;
 }
 
 .thinking-status__dot {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
   background: rgba(var(--primary-color), 0.75);
   animation: thinking-bounce 1.2s ease-in-out infinite;
@@ -446,7 +446,7 @@ function onConfirmationResolved(status: 'approved' | 'rejected', result?: Api.AI
     opacity: 0.45;
   }
   30% {
-    transform: translateY(-4px);
+    transform: translateY(-3px);
     opacity: 1;
   }
 }
