@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -32,6 +33,57 @@ const (
 	agentRunConfirmationTimeoutEvent = "ai.agent_run.confirmation_timeout.v1"
 )
 
+// runEventBus provides in-memory pub/sub for real-time SSE delivery.
+// Each run_id maps to a list of subscriber channels.
+type runEventBus struct {
+	mu          sync.RWMutex
+	subscribers map[string][]chan AgentRunEvent
+}
+
+func newRunEventBus() *runEventBus {
+	return &runEventBus{subscribers: make(map[string][]chan AgentRunEvent)}
+}
+
+// Subscribe returns a buffered channel that receives events for the given runID.
+func (b *runEventBus) Subscribe(runID string) chan AgentRunEvent {
+	ch := make(chan AgentRunEvent, 64)
+	b.mu.Lock()
+	b.subscribers[runID] = append(b.subscribers[runID], ch)
+	b.mu.Unlock()
+	return ch
+}
+
+// Unsubscribe removes and closes the channel.
+func (b *runEventBus) Unsubscribe(runID string, ch chan AgentRunEvent) {
+	b.mu.Lock()
+	subs := b.subscribers[runID]
+	for i, s := range subs {
+		if s == ch {
+			b.subscribers[runID] = append(subs[:i], subs[i+1:]...)
+			close(ch)
+			break
+		}
+	}
+	if len(b.subscribers[runID]) == 0 {
+		delete(b.subscribers, runID)
+	}
+	b.mu.Unlock()
+}
+
+// Publish sends an event to all subscribers of the run.
+func (b *runEventBus) Publish(event AgentRunEvent) {
+	b.mu.RLock()
+	subs := b.subscribers[event.RunID]
+	b.mu.RUnlock()
+	for _, ch := range subs {
+		select {
+		case ch <- event:
+		default:
+			// drop if subscriber is too slow
+		}
+	}
+}
+
 type AgentRuntimeService struct {
 	db              tenantdata.GuardedDatabase
 	conversations   *ConversationService
@@ -42,6 +94,7 @@ type AgentRuntimeService struct {
 	authorization   auth.AuthorizationProvider
 	runtimeContext  runtimecontext.Provider
 	memoryRetriever *MemoryRetrievalService
+	eventBus        *runEventBus
 	leaseDuration   time.Duration
 	now             func() time.Time
 }
@@ -58,7 +111,7 @@ func NewAgentRuntimeService(db *gorm.DB, c *ConversationService, i *InvocationSe
 	if len(runtimeContext) > 0 {
 		provider = runtimeContext[0]
 	}
-	return &AgentRuntimeService{db: tenantdata.GuardedDB(db), conversations: c, invocations: i, tools: t, compactor: compactor, writer: w, authorization: authorization, runtimeContext: provider, leaseDuration: 30 * time.Second, now: func() time.Time { return time.Now().UTC() }}
+	return &AgentRuntimeService{db: tenantdata.GuardedDB(db), conversations: c, invocations: i, tools: t, compactor: compactor, writer: w, authorization: authorization, runtimeContext: provider, eventBus: newRunEventBus(), leaseDuration: 30 * time.Second, now: func() time.Time { return time.Now().UTC() }}
 }
 
 type AgentRunStartRequest struct {
@@ -214,37 +267,75 @@ func (s *AgentRuntimeService) Subscribe(ctx context.Context, r AgentRunEventsReq
 	if err != nil {
 		return nil, err
 	}
-	events := make(chan action.StreamEvent, 32)
+	events := make(chan action.StreamEvent, 64)
 	streamCtx, cancel := context.WithCancel(ctx)
 	go func() {
 		defer close(events)
 		cursor := r.AfterSequence
-		ticker := time.NewTicker(250 * time.Millisecond)
-		defer ticker.Stop()
-		for {
-			var rows []AgentRunEvent
-			if e := s.db.WithContext(streamCtx).Where("run_id=? AND sequence>?", run.ID, cursor).Order("sequence ASC").Limit(200).Find(&rows).Error; e != nil {
+
+		// Phase 1: DB catch-up for any missed events before subscribing to bus.
+		var rows []AgentRunEvent
+		if e := s.db.WithContext(streamCtx).Where("run_id=? AND sequence>?", run.ID, cursor).Order("sequence ASC").Find(&rows).Error; e != nil {
+			return
+		}
+		for _, event := range rows {
+			cursor = event.Sequence
+			select {
+			case events <- action.StreamEvent{Event: event.Type, Data: event}:
+			case <-streamCtx.Done():
 				return
 			}
-			for _, event := range rows {
+		}
+
+		// Phase 2: Subscribe to in-memory bus for real-time delivery.
+		busCh := s.eventBus.Subscribe(run.ID)
+		defer s.eventBus.Unsubscribe(run.ID, busCh)
+
+		// Terminal status check at lower frequency (only for end detection).
+		statusTicker := time.NewTicker(2 * time.Second)
+		defer statusTicker.Stop()
+
+		for {
+			select {
+			case <-streamCtx.Done():
+				return
+			case event, ok := <-busCh:
+				if !ok {
+					return // bus channel closed
+				}
+				if event.Sequence <= cursor {
+					continue // already delivered
+				}
 				cursor = event.Sequence
 				select {
 				case events <- action.StreamEvent{Event: event.Type, Data: event}:
 				case <-streamCtx.Done():
 					return
 				}
-			}
-			var current AgentRun
-			if s.db.WithContext(streamCtx).Select("status").Where("id=?", run.ID).First(&current).Error != nil {
-				return
-			}
-			if current.Status == "completed" || current.Status == "failed" || current.Status == "cancelled" || current.Status == "waiting_confirmation" || current.Status == "paused" {
-				return
-			}
-			select {
-			case <-streamCtx.Done():
-				return
-			case <-ticker.C:
+				// Immediate terminal check on terminal events
+				if event.Type == "run.completed" || event.Type == "run.failed" || event.Type == "run.cancelled" || event.Type == "run.waiting_confirmation" || event.Type == "run.paused" {
+					return
+				}
+			case <-statusTicker.C:
+				// Fallback terminal check via DB
+				var current AgentRun
+				if s.db.WithContext(streamCtx).Select("status").Where("id=?", run.ID).First(&current).Error != nil {
+					return
+				}
+				if current.Status == "completed" || current.Status == "failed" || current.Status == "cancelled" || current.Status == "waiting_confirmation" || current.Status == "paused" {
+					// Catch up any final events from DB
+					var finalRows []AgentRunEvent
+					if e := s.db.WithContext(streamCtx).Where("run_id=? AND sequence>?", run.ID, cursor).Order("sequence ASC").Find(&finalRows).Error; e == nil {
+						for _, event := range finalRows {
+							select {
+							case events <- action.StreamEvent{Event: event.Type, Data: event}:
+							case <-streamCtx.Done():
+								return
+							}
+						}
+					}
+					return
+				}
 			}
 		}
 	}()
@@ -395,7 +486,14 @@ func (s *AgentRuntimeService) appendEvent(ctx context.Context, tx *gorm.DB, run 
 		return err
 	}
 	body, _ := json.Marshal(payload)
-	return tx.Create(&AgentRunEvent{ID: uuid.NewString(), TenantID: run.TenantID, RunID: run.ID, Sequence: last + 1, Type: eventType, StepID: stepID, Payload: body}).Error
+	event := AgentRunEvent{ID: uuid.NewString(), TenantID: run.TenantID, RunID: run.ID, Sequence: last + 1, Type: eventType, StepID: stepID, Payload: body}
+	if err := tx.Create(&event).Error; err != nil {
+		return err
+	}
+	// Publish to in-memory bus for real-time SSE delivery (zero-latency).
+	// Safe even within transaction: commit is nearly instant; phantom events on rollback are benign.
+	s.eventBus.Publish(event)
+	return nil
 }
 
 func (s *AgentRuntimeService) claim(ctx context.Context, runID, worker string) (*AgentRun, error) {
