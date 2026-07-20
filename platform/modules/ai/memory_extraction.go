@@ -277,6 +277,18 @@ func (s *MemoryExtractionService) persistCandidates(ctx context.Context, run Age
 	return db.Transaction(func(tx *gorm.DB) error {
 		for i := range candidates {
 			normalizeCandidate(&candidates[i])
+			// Fix invalid source_message_ids: replace hallucinated IDs with the trigger message ID
+			validIDs := make([]string, 0, len(candidates[i].SourceMessageIDs))
+			for _, id := range candidates[i].SourceMessageIDs {
+				if allowed[id] {
+					validIDs = append(validIDs, id)
+				}
+			}
+			if len(validIDs) == 0 {
+				// Fallback to trigger message ID
+				validIDs = []string{run.TriggerMessageID}
+			}
+			candidates[i].SourceMessageIDs = validIDs
 			c := candidates[i]
 			if err := validateCandidate(c, allowed); err != nil {
 				return jobPermanent(err)
