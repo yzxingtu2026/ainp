@@ -17,6 +17,9 @@ func NewOpenAICompatibleAdapter(client HTTPClient) *OpenAICompatibleAdapter {
 	}
 	return &OpenAICompatibleAdapter{Client: client}
 }
+func (a *OpenAICompatibleAdapter) StructuredOutputStrategies() []StructuredOutputStrategy {
+	return []StructuredOutputStrategy{StructuredOutputOpenAIJSONSchema, StructuredOutputResponseFunction, StructuredOutputJSONMode, StructuredOutputTextJSON}
+}
 
 func (a *OpenAICompatibleAdapter) payload(in AdapterRequest, stream bool) (map[string]any, StructuredOutputStrategy, error) {
 	r := in.Request
@@ -43,15 +46,12 @@ func (a *OpenAICompatibleAdapter) payload(in AdapterRequest, stream bool) (map[s
 			p["tool_choice"] = r.ToolChoice.Mode
 		}
 	}
-	strategy, err := StructuredOutputStrategyFor(in.Model, r.StructuredOutput)
-	if err != nil {
-		return nil, "", err
-	}
+	strategy := in.StructuredOutputStrategy
 	if r.StructuredOutput != nil {
 		var schema any
 		_ = json.Unmarshal(r.StructuredOutput.Schema, &schema)
 		switch strategy {
-		case StructuredOutputNativeJSONSchema:
+		case StructuredOutputOpenAIJSONSchema:
 			p["response_format"] = map[string]any{"type": "json_schema", "json_schema": map[string]any{"name": r.StructuredOutput.Name, "description": r.StructuredOutput.Description, "schema": schema, "strict": r.StructuredOutput.Strict}}
 		case StructuredOutputResponseFunction:
 			if len(r.Tools) > 0 {
@@ -62,6 +62,10 @@ func (a *OpenAICompatibleAdapter) payload(in AdapterRequest, stream bool) (map[s
 		case StructuredOutputJSONMode:
 			p["response_format"] = map[string]any{"type": "json_object"}
 			p["messages"] = append([]any{map[string]any{"role": "system", "content": "Return only JSON matching this schema: " + string(r.StructuredOutput.Schema)}}, p["messages"].([]any)...)
+		case StructuredOutputTextJSON:
+			p["messages"] = append([]any{map[string]any{"role": "system", "content": "Return only JSON matching this schema: " + string(r.StructuredOutput.Schema)}}, p["messages"].([]any)...)
+		default:
+			return nil, "", &RuntimeError{Category: ErrorCapabilityNotSupported, Message: "selected structured output strategy is not supported by openai-compatible adapter"}
 		}
 	}
 	return p, strategy, nil
@@ -135,7 +139,7 @@ func (a *OpenAICompatibleAdapter) Generate(ctx context.Context, in AdapterReques
 	choice := raw.Choices[0]
 	text := choice.Message.Content
 	if in.Request.StructuredOutput != nil {
-		strategy, _ := StructuredOutputStrategyFor(in.Model, in.Request.StructuredOutput)
+		strategy := in.StructuredOutputStrategy
 		if strategy == StructuredOutputResponseFunction {
 			if len(choice.Message.ToolCalls) != 1 || choice.Message.ToolCalls[0].Function.Name != in.Request.StructuredOutput.Name {
 				return nil, &RuntimeError{Category: ErrorResponseMismatch, Message: "structured response function mismatch"}

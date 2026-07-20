@@ -285,6 +285,10 @@ func validateDeployment(r DeploymentCreateRequest) error {
 	if err := r.Capabilities.Validate(); err != nil {
 		return errs.Validation(err.Error())
 	}
+	hasStructuredOutput := containsFeature(r.Capabilities.Features, aimodel.FeatureStructuredOutput)
+	if hasStructuredOutput != (len(r.Capabilities.StructuredOutputStrategies) > 0) {
+		return errs.Validation("structured_output feature and structured_output_strategies must be declared together")
+	}
 	if err := r.Limits.Validate(); err != nil {
 		return errs.Validation(err.Error())
 	}

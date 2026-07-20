@@ -9,32 +9,40 @@ import (
 type ModelType string
 type Modality string
 type Feature string
+type StructuredOutputStrategy string
 
 const (
-	ModelTypeChat            ModelType = "chat"
-	ModelTypeEmbedding       ModelType = "embedding"
-	ModelTypeRerank          ModelType = "rerank"
-	ModelTypeImage           ModelType = "image"
-	ModelTypeSpeech          ModelType = "speech"
-	ModelTypeTranscription   ModelType = "transcription"
-	ModalityText             Modality  = "text"
-	ModalityImage            Modality  = "image"
-	ModalityAudio            Modality  = "audio"
-	ModalityFile             Modality  = "file"
-	FeatureStreaming         Feature   = "streaming"
-	FeatureToolCalling       Feature   = "tool_calling"
-	FeatureParallelToolCalls Feature   = "parallel_tool_calls"
-	FeatureStructuredOutput  Feature   = "structured_output"
-	FeatureVision            Feature   = "vision"
-	FeatureEmbeddings        Feature   = "embeddings"
-	FeatureImageGeneration   Feature   = "image_generation"
-	FeatureAudioInput        Feature   = "audio_input"
-	FeatureAudioOutput       Feature   = "audio_output"
+	ModelTypeChat                         ModelType                = "chat"
+	ModelTypeEmbedding                    ModelType                = "embedding"
+	ModelTypeRerank                       ModelType                = "rerank"
+	ModelTypeImage                        ModelType                = "image"
+	ModelTypeSpeech                       ModelType                = "speech"
+	ModelTypeTranscription                ModelType                = "transcription"
+	ModalityText                          Modality                 = "text"
+	ModalityImage                         Modality                 = "image"
+	ModalityAudio                         Modality                 = "audio"
+	ModalityFile                          Modality                 = "file"
+	FeatureStreaming                      Feature                  = "streaming"
+	FeatureToolCalling                    Feature                  = "tool_calling"
+	FeatureParallelToolCalls              Feature                  = "parallel_tool_calls"
+	FeatureStructuredOutput               Feature                  = "structured_output"
+	FeatureVision                         Feature                  = "vision"
+	FeatureEmbeddings                     Feature                  = "embeddings"
+	FeatureImageGeneration                Feature                  = "image_generation"
+	FeatureAudioInput                     Feature                  = "audio_input"
+	FeatureAudioOutput                    Feature                  = "audio_output"
+	StructuredOutputOpenAIJSONSchema      StructuredOutputStrategy = "openai_json_schema"
+	StructuredOutputAnthropicOutputConfig StructuredOutputStrategy = "anthropic_output_config"
+	StructuredOutputConstrainedDecoding   StructuredOutputStrategy = "constrained_decoding"
+	StructuredOutputResponseOnlyFunction  StructuredOutputStrategy = "response_only_function"
+	StructuredOutputJSONMode              StructuredOutputStrategy = "json_mode"
+	StructuredOutputTextJSON              StructuredOutputStrategy = "text_json"
 )
 
 var validModelTypes = set(ModelTypeChat, ModelTypeEmbedding, ModelTypeRerank, ModelTypeImage, ModelTypeSpeech, ModelTypeTranscription)
 var validModalities = set(ModalityText, ModalityImage, ModalityAudio, ModalityFile)
 var validFeatures = set(FeatureStreaming, FeatureToolCalling, FeatureParallelToolCalls, FeatureStructuredOutput, FeatureVision, FeatureEmbeddings, FeatureImageGeneration, FeatureAudioInput, FeatureAudioOutput)
+var validStructuredOutputStrategies = set(StructuredOutputOpenAIJSONSchema, StructuredOutputAnthropicOutputConfig, StructuredOutputConstrainedDecoding, StructuredOutputResponseOnlyFunction, StructuredOutputJSONMode, StructuredOutputTextJSON)
 
 func set[T comparable](values ...T) map[T]struct{} {
 	out := make(map[T]struct{}, len(values))
@@ -46,11 +54,16 @@ func set[T comparable](values ...T) map[T]struct{} {
 func (v ModelType) Valid() bool { _, ok := validModelTypes[v]; return ok }
 func (v Modality) Valid() bool  { _, ok := validModalities[v]; return ok }
 func (v Feature) Valid() bool   { _, ok := validFeatures[v]; return ok }
+func (v StructuredOutputStrategy) Valid() bool {
+	_, ok := validStructuredOutputStrategies[v]
+	return ok
+}
 
 type Capabilities struct {
-	InputModalities  []Modality `json:"input_modalities"`
-	OutputModalities []Modality `json:"output_modalities"`
-	Features         []Feature  `json:"features"`
+	InputModalities            []Modality                 `json:"input_modalities"`
+	OutputModalities           []Modality                 `json:"output_modalities"`
+	Features                   []Feature                  `json:"features"`
+	StructuredOutputStrategies []StructuredOutputStrategy `json:"structured_output_strategies,omitempty"`
 }
 
 type Limits struct {
@@ -78,6 +91,13 @@ func (c Capabilities) Validate() error {
 			return fmt.Errorf("unknown feature: %s", v)
 		}
 	}
+	seenStrategies := map[StructuredOutputStrategy]bool{}
+	for _, v := range c.StructuredOutputStrategies {
+		if !v.Valid() || seenStrategies[v] {
+			return fmt.Errorf("invalid structured output strategy: %s", v)
+		}
+		seenStrategies[v] = true
+	}
 	return nil
 }
 func (l Limits) Validate() error {
@@ -101,11 +121,11 @@ func (r CapabilityRequirements) Validate() error {
 	if !r.ModelType.Valid() {
 		return fmt.Errorf("invalid model type: %s", r.ModelType)
 	}
-	return (Capabilities{r.InputModalities, r.OutputModalities, r.Features}).Validate()
+	return (Capabilities{InputModalities: r.InputModalities, OutputModalities: r.OutputModalities, Features: r.Features}).Validate()
 }
 
 func Intersect(left, right Capabilities) Capabilities {
-	return Capabilities{InputModalities: intersect(left.InputModalities, right.InputModalities), OutputModalities: intersect(left.OutputModalities, right.OutputModalities), Features: intersect(left.Features, right.Features)}
+	return Capabilities{InputModalities: intersect(left.InputModalities, right.InputModalities), OutputModalities: intersect(left.OutputModalities, right.OutputModalities), Features: intersect(left.Features, right.Features), StructuredOutputStrategies: append([]StructuredOutputStrategy(nil), right.StructuredOutputStrategies...)}
 }
 func Satisfies(have Capabilities, req CapabilityRequirements) bool {
 	return contains(have.InputModalities, req.InputModalities) && contains(have.OutputModalities, req.OutputModalities) && contains(have.Features, req.Features)

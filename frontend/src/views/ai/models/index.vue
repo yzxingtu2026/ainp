@@ -1,9 +1,15 @@
 <script setup lang="tsx">
-import { computed, h, onMounted, reactive, ref } from 'vue';
+import { computed, h, onMounted, reactive, ref, watch } from 'vue';
 import type { DataTableColumns } from 'naive-ui';
 import { NButton, NPopconfirm, NSpace, NTag } from 'naive-ui';
 import { $t } from '@/locales';
-import { AI_ACTIONS, MODEL_FEATURES, MODEL_MODALITIES, MODEL_TYPES } from '@/constants/ai';
+import {
+  AI_ACTIONS,
+  MODEL_FEATURES,
+  MODEL_MODALITIES,
+  MODEL_TYPES,
+  STRUCTURED_OUTPUT_STRATEGIES
+} from '@/constants/ai';
 import {
   createAIDeployment,
   deleteAIAlias,
@@ -40,6 +46,7 @@ const form = reactive({
   input_modalities: ['text'] as string[],
   output_modalities: ['text'] as string[],
   features: [] as string[],
+  structured_output_strategies: [] as string[],
   context_window: null as number | null,
   max_output_tokens: null as number | null
 });
@@ -54,6 +61,19 @@ const importType = ref('chat');
 const importInputModalities = ref<string[]>(['text']);
 const importOutputModalities = ref<string[]>(['text']);
 const importFeatures = ref<string[]>([]);
+const importStructuredOutputStrategies = ref<string[]>([]);
+watch(
+  () => form.features.includes('structured_output'),
+  enabled => {
+    if (!enabled) form.structured_output_strategies = [];
+  }
+);
+watch(
+  () => importFeatures.value.includes('structured_output'),
+  enabled => {
+    if (!enabled) importStructuredOutputStrategies.value = [];
+  }
+);
 const importCandidates = computed(() => {
   const keyword = remoteKeyword.value.trim().toLowerCase();
   return remoteModels.value.filter(
@@ -72,6 +92,9 @@ function modalityLabel(modality: string) {
 }
 function invalidVisionConfig(input: string[], features: string[]) {
   return features.includes('vision') && !input.includes('image');
+}
+function invalidStructuredOutputConfig(features: string[], strategies: string[]) {
+  return features.includes('structured_output') !== strategies.length > 0;
 }
 async function load() {
   loading.value = true;
@@ -105,6 +128,7 @@ function openEditor(row?: Api.AI.Deployment) {
           input_modalities: [...(row.capabilities_json.input_modalities || [])],
           output_modalities: [...(row.capabilities_json.output_modalities || [])],
           features: [...(row.capabilities_json.features || [])],
+          structured_output_strategies: [...(row.capabilities_json.structured_output_strategies || [])],
           context_window: row.limits_json.context_window || null,
           max_output_tokens: row.limits_json.max_output_tokens || null
         }
@@ -117,6 +141,7 @@ function openEditor(row?: Api.AI.Deployment) {
           input_modalities: ['text'],
           output_modalities: ['text'],
           features: [],
+          structured_output_strategies: [],
           context_window: null,
           max_output_tokens: null
         }
@@ -128,13 +153,18 @@ async function save() {
     window.$message?.warning($t('aiModel.visionNeedsImage'));
     return;
   }
+  if (invalidStructuredOutputConfig(form.features, form.structured_output_strategies)) {
+    window.$message?.warning('结构化输出能力与策略必须同时配置');
+    return;
+  }
   const common = {
     display_name: form.display_name,
     model_type: form.model_type,
     capabilities: {
       input_modalities: form.input_modalities,
       output_modalities: form.output_modalities,
-      features: form.features
+      features: form.features,
+      structured_output_strategies: form.structured_output_strategies
     },
     limits: { context_window: form.context_window || 0, max_output_tokens: form.max_output_tokens || 0 },
     config: {}
@@ -193,6 +223,10 @@ async function importSelected() {
     window.$message?.warning($t('aiModel.visionNeedsImage'));
     return;
   }
+  if (invalidStructuredOutputConfig(importFeatures.value, importStructuredOutputStrategies.value)) {
+    window.$message?.warning('结构化输出能力与策略必须同时配置');
+    return;
+  }
   const selected = new Set(selectedRemote.value.map(String));
   const items = remoteModels.value
     .filter(x => selected.has(x.id))
@@ -205,7 +239,8 @@ async function importSelected() {
       capabilities: {
         input_modalities: importInputModalities.value,
         output_modalities: importOutputModalities.value,
-        features: importFeatures.value
+        features: importFeatures.value,
+        structured_output_strategies: importStructuredOutputStrategies.value
       },
       limits: { context_window: 0, max_output_tokens: 0 },
       status: 'enabled',
@@ -320,6 +355,7 @@ const columns = computed<DataTableColumns<Api.AI.Deployment>>(() => [
 ]);
 onMounted(load);
 </script>
+
 <template>
   <div class="flex-col-stretch gap-16px">
     <NCard title="模型目录" :bordered="false">
@@ -386,6 +422,13 @@ onMounted(load);
             <NSpace><NCheckbox v-for="x in MODEL_FEATURES" :key="x" :value="x" :label="featureLabel(x)" /></NSpace>
           </NCheckboxGroup>
         </NFormItem>
+        <NFormItem v-if="form.features.includes('structured_output')" label="输出策略">
+          <NSelect
+            v-model:value="form.structured_output_strategies"
+            multiple
+            :options="STRUCTURED_OUTPUT_STRATEGIES.map(x => ({ label: x, value: x }))"
+          />
+        </NFormItem>
         <NAlert
           v-if="invalidVisionConfig(form.input_modalities, form.features)"
           type="warning"
@@ -425,6 +468,15 @@ onMounted(load);
       <NCheckboxGroup v-model:value="importFeatures" class="mb-12px" :disabled="discoveryLoading">
         <NSpace><NCheckbox v-for="x in MODEL_FEATURES" :key="x" :value="x" :label="featureLabel(x)" /></NSpace>
       </NCheckboxGroup>
+      <div v-if="importFeatures.includes('structured_output')" class="mb-8px">结构化输出策略</div>
+      <NSelect
+        v-if="importFeatures.includes('structured_output')"
+        v-model:value="importStructuredOutputStrategies"
+        multiple
+        class="mb-12px"
+        :disabled="discoveryLoading"
+        :options="STRUCTURED_OUTPUT_STRATEGIES.map(x => ({ label: x, value: x }))"
+      />
       <NAlert
         v-if="invalidVisionConfig(importInputModalities, importFeatures)"
         type="warning"

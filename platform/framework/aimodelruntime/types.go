@@ -169,39 +169,42 @@ type StructuredOutput struct {
 	Schema      json.RawMessage `json:"schema"`
 	Strict      bool            `json:"strict"`
 }
-type StructuredOutputStrategy string
+type StructuredOutputStrategy = aimodel.StructuredOutputStrategy
 
 const (
-	StructuredOutputNativeJSONSchema StructuredOutputStrategy = "native_json_schema"
-	StructuredOutputResponseFunction StructuredOutputStrategy = "response_only_function"
-	StructuredOutputJSONMode         StructuredOutputStrategy = "json_mode"
-	StructuredOutputTextJSON         StructuredOutputStrategy = "text_json"
+	StructuredOutputOpenAIJSONSchema      = aimodel.StructuredOutputOpenAIJSONSchema
+	StructuredOutputAnthropicOutputConfig = aimodel.StructuredOutputAnthropicOutputConfig
+	StructuredOutputConstrainedDecoding   = aimodel.StructuredOutputConstrainedDecoding
+	StructuredOutputResponseFunction      = aimodel.StructuredOutputResponseOnlyFunction
+	StructuredOutputJSONMode              = aimodel.StructuredOutputJSONMode
+	StructuredOutputTextJSON              = aimodel.StructuredOutputTextJSON
 )
 
-func StructuredOutputStrategyFor(model *aimodel.ResolvedModel, contract *StructuredOutput) (StructuredOutputStrategy, error) {
+type StructuredOutputStrategyProvider interface {
+	StructuredOutputStrategies() []StructuredOutputStrategy
+}
+
+func SelectStructuredOutputStrategy(model *aimodel.ResolvedModel, adapter ModelAdapter, contract *StructuredOutput) (StructuredOutputStrategy, error) {
 	if contract == nil {
 		return "", nil
 	}
-	switch model.Protocol {
-	case aimodel.ProtocolOpenAI:
-		return StructuredOutputNativeJSONSchema, nil
-	case aimodel.ProtocolAnthropic:
-		return StructuredOutputResponseFunction, nil
-	case aimodel.ProtocolOpenAICompatible:
-		value, _ := model.Config["structured_output_strategy"].(string)
-		strategy := StructuredOutputStrategy(value)
-		if strategy == "" {
-			strategy = StructuredOutputResponseFunction
-		}
-		switch strategy {
-		case StructuredOutputNativeJSONSchema, StructuredOutputResponseFunction, StructuredOutputJSONMode, StructuredOutputTextJSON:
+	provider, ok := adapter.(StructuredOutputStrategyProvider)
+	if !ok {
+		return "", &RuntimeError{Category: ErrorCapabilityNotSupported, Message: "adapter does not support structured output"}
+	}
+	supported := map[StructuredOutputStrategy]bool{}
+	for _, strategy := range provider.StructuredOutputStrategies() {
+		supported[strategy] = true
+	}
+	for _, strategy := range model.Capabilities.StructuredOutputStrategies {
+		if supported[strategy] {
 			if contract.Strict && strategy == StructuredOutputTextJSON {
-				return "", &RuntimeError{Category: ErrorCapabilityNotSupported, Message: "strict structured output requires a constrained strategy"}
+				continue
 			}
 			return strategy, nil
 		}
 	}
-	return "", &RuntimeError{Category: ErrorCapabilityNotSupported, Message: "structured output strategy is not supported"}
+	return "", &RuntimeError{Category: ErrorCapabilityNotSupported, Message: "deployment and adapter have no compatible structured output strategy"}
 }
 
 type GenerateRequest struct {
@@ -406,8 +409,9 @@ type EventStream interface {
 	Close() error
 }
 type AdapterRequest struct {
-	Request GenerateRequest
-	Model   *aimodel.ResolvedModel
+	Request                  GenerateRequest
+	Model                    *aimodel.ResolvedModel
+	StructuredOutputStrategy StructuredOutputStrategy
 }
 type ModelAdapter interface {
 	Generate(context.Context, AdapterRequest) (*GenerateResponse, error)

@@ -243,7 +243,12 @@ declare namespace Api.AI {
     remote_model_id: string;
     display_name: string;
     model_type: string;
-    capabilities_json: { input_modalities: string[]; output_modalities: string[]; features: string[] };
+    capabilities_json: {
+      input_modalities: string[];
+      output_modalities: string[];
+      features: string[];
+      structured_output_strategies?: string[];
+    };
     limits_json: { context_window?: number; max_output_tokens?: number };
     status: Status;
     created_at: string;

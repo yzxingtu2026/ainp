@@ -241,13 +241,13 @@ func (s *InvocationService) prepare(ctx context.Context, req aimodelruntime.Gene
 	if err != nil {
 		return nil, err
 	}
-	strategy, err := aimodelruntime.StructuredOutputStrategyFor(resolved, req.StructuredOutput)
-	if err != nil {
-		return nil, err
-	}
 	adapter, ok := s.adapters.Get(resolved.Protocol)
 	if !ok {
 		return nil, &aimodelruntime.RuntimeError{Category: aimodelruntime.ErrorCapabilityNotSupported, Message: "model provider protocol is not supported"}
+	}
+	strategy, err := aimodelruntime.SelectStructuredOutputStrategy(resolved, adapter, req.StructuredOutput)
+	if err != nil {
+		return nil, err
 	}
 	imageCount, imageBytes, imageData, err := s.resolveImages(ctx, &req)
 	if err != nil {
@@ -270,7 +270,7 @@ func (s *InvocationService) prepare(ctx context.Context, req aimodelruntime.Gene
 		return nil, err
 	}
 	runCtx, cancel := context.WithTimeout(ctx, time.Duration(req.TimeoutMS)*time.Millisecond)
-	return &preparedInvocation{ctx: runCtx, cancel: cancel, adapter: adapter, request: aimodelruntime.AdapterRequest{Request: req, Model: resolved}, row: row, imageData: imageData}, nil
+	return &preparedInvocation{ctx: runCtx, cancel: cancel, adapter: adapter, request: aimodelruntime.AdapterRequest{Request: req, Model: resolved, StructuredOutputStrategy: strategy}, row: row, imageData: imageData}, nil
 }
 
 func (s *InvocationService) resolveImages(ctx context.Context, req *aimodelruntime.GenerateRequest) (int, int64, [][]byte, error) {
