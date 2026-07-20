@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/yzxingtu2026/ainp/platform/framework/action"
+	"github.com/yzxingtu2026/ainp/platform/framework/agentslot"
 	"github.com/yzxingtu2026/ainp/platform/framework/aiagent"
 	"github.com/yzxingtu2026/ainp/platform/framework/aiknowledge"
 	"github.com/yzxingtu2026/ainp/platform/framework/aimodel"
@@ -41,8 +42,6 @@ const (
 	ActionAliasUpsert                  = "ai.alias_upsert"
 	ActionAliasDelete                  = "ai.alias_delete"
 	ActionProviderTypes                = "ai.provider_type_list"
-	ActionModelGenerate                = "ai.model_generate"
-	ActionModelStream                  = "ai.model_stream"
 	ActionToolSearch                   = "ai.tool_search"
 	ActionToolLoad                     = "ai.tool_load"
 	ActionToolExecute                  = "ai.tool_execute"
@@ -66,9 +65,18 @@ const (
 	ActionAgentToolUnbind              = "ai.agent_tool_unbind"
 	ActionAgentDiagnostics             = "ai.agent_diagnostics_get"
 	ActionAgentBuiltinReconcile        = "ai.agent_builtin_reconcile"
+	ActionAgentSlotList                = "ai.agent_slot_list"
+	ActionAgentSlotGet                 = "ai.agent_slot_get"
+	ActionAgentSlotUpdate              = "ai.agent_slot_update"
+	ActionAgentSlotReset               = "ai.agent_slot_reset"
+	ActionAgentSlotReconcile           = "ai.agent_slot_reconcile"
+	ActionAgentSlotPreferenceGet       = "ai.agent_slot_preference_get"
+	ActionAgentSlotPreferenceUpdate    = "ai.agent_slot_preference_update"
+	ActionAgentSlotPreferenceReset     = "ai.agent_slot_preference_reset"
 	ActionConversationList             = "ai.conversation_list"
 	ActionConversationGet              = "ai.conversation_get"
 	ActionConversationCreate           = "ai.conversation_create"
+	ActionConversationCreateForSlot    = "ai.conversation_create_for_slot"
 	ActionConversationUpdate           = "ai.conversation_update"
 	ActionConversationArchive          = "ai.conversation_archive"
 	ActionConversationRestore          = "ai.conversation_restore"
@@ -148,6 +156,11 @@ func Register(a *app.App) error {
 	}
 	a.AgentContracts = contracts
 	agents := NewAgentService(a.DB, contracts, svc, toolRegistry)
+	slotRegistry := agentslot.NewRegistry(contracts)
+	if err := slotRegistry.Register(agentslot.Slot{Key: WorkspaceDefaultSlot, Version: "1.0.0", Module: "workspace", Title: "默认 AI 工作台", Description: "AI 工作台新会话使用的默认智能体", DefaultContractKey: "system.operations", DefaultContractVersion: "1.0.0", RequiredCapabilities: []string{"chat", "tools"}, TenantOverride: true, UserOverride: true, FallbackPolicy: agentslot.FallbackFailClosed, UpgradePolicy: agentslot.UpgradeCompatible}); err != nil {
+		return err
+	}
+	slots := NewAgentSlotService(a.DB, slotRegistry, agents)
 	agents.SetMemoryPolicyProvider(a.SettingValues)
 	knowledge := NewKnowledgeService(a.DB, svc, agents, a.AttachmentResourceLinker)
 	parserRegistry, err := aiknowledge.NewDefaultParserRegistry(aiknowledge.DefaultParseLimits())
@@ -199,8 +212,6 @@ func Register(a *app.App) error {
 		{ActionProviderList, "/api/v1/ai/providers/list", "供应商列表", "ai.provider_management", "模型供应商", action.JSON(svc.ListProviders)}, {ActionProviderGet, "/api/v1/ai/providers/get", "供应商详情", "ai.provider_management", "模型供应商", action.JSON(svc.GetProvider)}, {ActionProviderCreate, "/api/v1/ai/providers/create", "创建供应商", "ai.provider_management", "模型供应商", action.JSON(svc.CreateProvider)}, {ActionProviderUpdate, "/api/v1/ai/providers/update", "更新供应商", "ai.provider_management", "模型供应商", action.JSON(svc.UpdateProvider)}, {ActionProviderStatus, "/api/v1/ai/providers/status/update", "更新供应商状态", "ai.provider_management", "模型供应商", action.JSON(svc.UpdateProviderStatus)}, {ActionProviderDiscover, "/api/v1/ai/providers/discover-models", "发现远端模型", "ai.provider_management", "模型供应商", action.JSON(svc.Discover)},
 		{ActionDeploymentList, "/api/v1/ai/deployments/list", "模型目录", "ai.model_catalog", "模型目录", action.JSON(svc.ListDeployments)}, {ActionDeploymentGet, "/api/v1/ai/deployments/get", "模型详情", "ai.model_catalog", "模型目录", action.JSON(svc.GetDeployment)}, {ActionDeploymentCreate, "/api/v1/ai/deployments/create", "创建模型", "ai.model_catalog", "模型目录", action.JSON(svc.CreateDeployment)}, {ActionDeploymentImport, "/api/v1/ai/deployments/import", "导入模型", "ai.model_catalog", "模型目录", action.JSON(svc.ImportDeployments)}, {ActionDeploymentUpdate, "/api/v1/ai/deployments/update", "更新模型", "ai.model_catalog", "模型目录", action.JSON(svc.UpdateDeployment)}, {ActionDeploymentStatus, "/api/v1/ai/deployments/status/update", "更新模型状态", "ai.model_catalog", "模型目录", action.JSON(svc.UpdateDeploymentStatus)}, {ActionDeploymentDelete, "/api/v1/ai/deployments/delete", "删除模型", "ai.model_catalog", "模型目录", action.JSON(svc.DeleteDeployment)},
 		{ActionAliasList, "/api/v1/ai/aliases/list", "Alias 列表", "ai.model_catalog", "模型目录", action.JSON(svc.ListAliases)}, {ActionAliasUpsert, "/api/v1/ai/aliases/upsert", "绑定 Alias", "ai.model_catalog", "模型目录", action.JSON(svc.UpsertAlias)}, {ActionAliasDelete, "/api/v1/ai/aliases/delete", "删除 Alias", "ai.model_catalog", "模型目录", action.JSON(svc.DeleteAlias)},
-		{ActionModelGenerate, "/api/v1/ai/models/generate", "模型生成", "ai.model_runtime", "模型调用", action.JSON(invocations.Generate)},
-		{ActionModelStream, "/api/v1/ai/models/stream", "模型流式生成", "ai.model_runtime", "模型调用", action.JSON(invocations.Stream)},
 		{ActionToolSearch, "/api/v1/ai/tools/search", "搜索工具", "ai.tool_runtime", "工具运行时", action.JSON(tools.Search)},
 		{ActionToolLoad, "/api/v1/ai/tools/load", "加载工具", "ai.tool_runtime", "工具运行时", action.JSON(tools.Load)},
 		{ActionToolExecute, "/api/v1/ai/tools/execute", "执行已加载工具", "ai.tool_runtime", "工具运行时", action.JSON(tools.Execute)},
@@ -224,9 +235,18 @@ func Register(a *app.App) error {
 		{ActionAgentToolUnbind, "/api/v1/ai/agent-tools/unbind", "解绑智能体工具", "ai.agent_management", "智能体", action.JSON(agents.UnbindTool)},
 		{ActionAgentDiagnostics, "/api/v1/ai/agents/diagnostics", "智能体诊断", "ai.agent_management", "智能体", action.JSON(agents.Diagnostics)},
 		{ActionAgentBuiltinReconcile, "/api/v1/ai/agents/builtin/reconcile", "同步内置智能体", "ai.agent_management", "智能体", action.JSON(agents.ReconcileBuiltin)},
+		{ActionAgentSlotList, "/api/v1/ai/agent-slots/list", "AI 功能配置列表", "ai.agent_slot_management", "AI 功能配置", action.JSON(slots.List)},
+		{ActionAgentSlotGet, "/api/v1/ai/agent-slots/get", "AI 功能配置详情", "ai.agent_slot_management", "AI 功能配置", action.JSON(slots.Get)},
+		{ActionAgentSlotUpdate, "/api/v1/ai/agent-slots/update", "配置业务功能智能体", "ai.agent_slot_management", "AI 功能配置", action.JSON(slots.Update)},
+		{ActionAgentSlotReset, "/api/v1/ai/agent-slots/reset", "恢复业务功能系统默认", "ai.agent_slot_management", "AI 功能配置", action.JSON(slots.Reset)},
+		{ActionAgentSlotReconcile, "/api/v1/ai/agent-slots/reconcile", "同步内置 AI 功能", "ai.agent_slot_management", "AI 功能配置", action.JSON(slots.Reconcile)},
+		{ActionAgentSlotPreferenceGet, "/api/v1/ai/agent-slot-preferences/get", "读取个人默认智能体", "ai.agent_slot_preferences", "AI 功能偏好", action.JSON(slots.Get)},
+		{ActionAgentSlotPreferenceUpdate, "/api/v1/ai/agent-slot-preferences/update", "设置个人默认智能体", "ai.agent_slot_preferences", "AI 功能偏好", action.JSON(slots.UpdatePreference)},
+		{ActionAgentSlotPreferenceReset, "/api/v1/ai/agent-slot-preferences/reset", "恢复个人默认智能体", "ai.agent_slot_preferences", "AI 功能偏好", action.JSON(slots.ResetPreference)},
 		{ActionConversationList, "/api/v1/ai/conversations/list", "会话列表", "ai.conversation", "AI 会话", action.JSON(conversations.List)},
 		{ActionConversationGet, "/api/v1/ai/conversations/get", "会话详情", "ai.conversation", "AI 会话", action.JSON(conversations.Get)},
 		{ActionConversationCreate, "/api/v1/ai/conversations/create", "创建会话", "ai.conversation", "AI 会话", action.JSON(conversations.Create)},
+		{ActionConversationCreateForSlot, "/api/v1/ai/conversations/create-for-slot", "按业务功能创建会话", "ai.conversation", "AI 会话", action.JSON(conversations.CreateForSlot(slots))},
 		{ActionConversationUpdate, "/api/v1/ai/conversations/update", "更新会话", "ai.conversation", "AI 会话", action.JSON(conversations.Update)},
 		{ActionConversationArchive, "/api/v1/ai/conversations/archive", "归档会话", "ai.conversation", "AI 会话", action.JSON(conversations.Archive)},
 		{ActionConversationRestore, "/api/v1/ai/conversations/restore", "恢复会话", "ai.conversation", "AI 会话", action.JSON(conversations.Restore)},
@@ -240,6 +260,9 @@ func Register(a *app.App) error {
 	for _, d := range defs {
 		access := action.AccessMode("")
 		if strings.HasPrefix(d.id, "ai.tool_") {
+			access = action.AccessAuthenticated
+		}
+		if strings.HasPrefix(d.id, "ai.agent_slot_preference_") || d.id == ActionConversationCreateForSlot {
 			access = action.AccessAuthenticated
 		}
 		if err := a.RegisterAction(action.Action{ID: d.id, Handler: d.handler, Meta: action.Metadata{Capability: "ai", Access: access, Name: d.name, NameKey: "action." + d.id + ".name", Description: d.name, DescriptionKey: "action." + d.id + ".description", PermissionGroup: d.group, PermissionGroupName: d.groupName, PermissionGroupNameKey: "permission_group." + d.group, Audit: &auditOn, HTTP: &action.HTTPMeta{Method: "POST", Path: d.path}}}); err != nil {
@@ -297,9 +320,9 @@ func Register(a *app.App) error {
 		{ID: "ai.root", Title: "AI 中心", TitleKey: "menu.ai.root.title", Icon: "mdi:creation-outline", Type: menu.TypeDirectory, Module: "ai", Order: 20},
 		{ID: "ai.providers", ParentID: "ai.root", Title: "模型供应商", TitleKey: "menu.ai.providers.title", Icon: "mdi:server-network", Type: menu.TypeMenu, Path: "/ai/providers", Component: "ai/providers", Permission: ActionProviderList, BindAction: ActionProviderList, Module: "ai", Order: 1},
 		{ID: "ai.models", ParentID: "ai.root", Title: "模型目录", TitleKey: "menu.ai.models.title", Icon: "mdi:database-search-outline", Type: menu.TypeMenu, Path: "/ai/models", Component: "ai/models", Permission: ActionDeploymentList, BindAction: ActionDeploymentList, Module: "ai", Order: 2},
-		{ID: "ai.runtime", ParentID: "ai.root", Title: "模型调试", TitleKey: "menu.ai.runtime.title", Icon: "mdi:message-text-fast-outline", Type: menu.TypeMenu, Path: "/ai/runtime", Component: "ai/runtime", Permission: ActionModelGenerate, BindAction: ActionModelGenerate, Module: "ai", Order: 3},
 		{ID: "ai.agents", ParentID: "ai.root", Title: "智能体", TitleKey: "menu.ai.agents.title", Icon: "mdi:robot-outline", Type: menu.TypeMenu, Path: "/ai/agents", Component: "ai/agents", Permission: ActionAgentList, BindAction: ActionAgentList, Module: "ai", Order: 4},
-		{ID: "ai.knowledge", ParentID: "ai.root", Title: "知识库", TitleKey: "menu.ai.knowledge.title", Icon: "mdi:bookshelf", Type: menu.TypeMenu, Path: "/ai/knowledge", Component: "ai/knowledge", Permission: ActionKnowledgeBaseList, BindAction: ActionKnowledgeBaseList, Module: "ai", Order: 5},
+		{ID: "ai.agent_slots", ParentID: "ai.root", Title: "AI 功能配置", TitleKey: "menu.ai.agent_slots.title", Icon: "mdi:tune-variant", Type: menu.TypeMenu, Path: "/ai/agent-slots", Component: "ai/agent-slots", Permission: ActionAgentSlotList, BindAction: ActionAgentSlotList, Module: "ai", Order: 5},
+		{ID: "ai.knowledge", ParentID: "ai.root", Title: "知识库", TitleKey: "menu.ai.knowledge.title", Icon: "mdi:bookshelf", Type: menu.TypeMenu, Path: "/ai/knowledge", Component: "ai/knowledge", Permission: ActionKnowledgeBaseList, BindAction: ActionKnowledgeBaseList, Module: "ai", Order: 6},
 		// HideInMenu：不进侧栏，但必须出现在 /menus 结果中，供动态路由注册 Agent Builder
 		{ID: "ai.agent_builder", ParentID: "ai.root", Title: "智能体编排工作台", TitleKey: "menu.ai.agent_builder.title", Icon: "mdi:application-edit-outline", Type: menu.TypeMenu, Path: "/ai/agent-builder", Component: "ai/agent-builder", Permission: ActionAgentList, BindAction: ActionAgentList, Module: "ai", Order: 6, HideInMenu: true},
 	} {

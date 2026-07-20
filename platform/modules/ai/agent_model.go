@@ -72,5 +72,5 @@ type AgentToolBinding struct {
 func (AgentToolBinding) TableName() string { return "ai_agent_tool_bindings" }
 
 func AutoMigrateAgents(db *gorm.DB) error {
-	return db.AutoMigrate(&Agent{}, &AgentVersion{}, &AgentToolBinding{})
+	return db.AutoMigrate(&Agent{}, &AgentVersion{}, &AgentToolBinding{}, &AgentSlotBinding{}, &AgentSlotPreference{})
 }

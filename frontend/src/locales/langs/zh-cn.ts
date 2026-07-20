@@ -233,8 +233,8 @@ const local: App.I18n.Schema = {
       root: { title: 'AI 中心' },
       providers: { title: '模型供应商' },
       models: { title: '模型目录' },
-      runtime: { title: '模型调试' },
       agents: { title: '智能体' },
+      agent_slots: { title: 'AI 功能配置' },
       knowledge: { title: '知识库' },
       agent_builder: { title: '智能体编排工作台' }
     }
@@ -242,11 +242,11 @@ const local: App.I18n.Schema = {
   route: {
     ai: 'AI 中心',
     ai_agents: '智能体',
+    'ai_agent-slots': 'AI 功能配置',
     ai_knowledge: '知识库',
     'ai_agent-builder': '智能体编排工作台',
     ai_models: '模型目录',
     ai_providers: '模型供应商',
-    ai_runtime: '模型调试',
     login: '登录',
     403: '无权限',
     404: '页面不存在',
@@ -903,26 +903,6 @@ const local: App.I18n.Schema = {
       audio_input: '音频输入',
       audio_output: '音频输出'
     }
-  },
-  aiRuntime: {
-    title: '模型调试',
-    modelAlias: '模型别名',
-    prompt: '提示词',
-    promptPlaceholder: '输入一条测试消息',
-    generate: '生成',
-    stream: '流式生成',
-    output: '输出',
-    emptyOutput: '暂无输出',
-    requestFailed: '模型调用失败',
-    images: '图片输入',
-    chooseImages: '选择或上传图片',
-    removeImage: '移除图片',
-    imagesOnly: '仅支持选择已就绪的图片附件',
-    visionUnsupported: '当前模型别名不支持图片输入',
-    streamingUnsupported: '当前模型别名未启用流式输出能力',
-    detailAuto: '自动细节',
-    detailLow: '低细节',
-    detailHigh: '高细节'
   },
   toolConfirmation: {
     title: '敏感工具执行确认',

@@ -29,8 +29,6 @@ export const fetchAIAliases = () => post<Api.AI.Alias[]>('aliases/list');
 export const upsertAIAlias = (code: string, deploymentId: string) =>
   post<Api.AI.Alias>('aliases/upsert', { code, deployment_id: deploymentId });
 export const deleteAIAlias = (code: string) => post<{ deleted: boolean }>('aliases/delete', { code });
-export const generateAIModel = (data: Record<string, unknown>) =>
-  post<Api.AI.GenerateResponse>('models/generate', data);
 export const searchAITools = (data: Record<string, unknown>) => post<Api.AI.ToolSearchResponse>('tools/search', data);
 export const loadAITools = (data: Record<string, unknown>) => post<Api.AI.ToolLoadResponse>('tools/load', data);
 export const executeAITool = (data: Record<string, unknown>) => post<Api.AI.ToolResult>('tools/execute', data);
@@ -65,6 +63,17 @@ export const unbindAIAgentTool = (agentId: string, toolId: string) =>
 export const fetchAIAgentDiagnostics = (id: string) => post<Api.AI.AgentDiagnostics>('agents/diagnostics', { id });
 export const reconcileBuiltinAIAgent = () =>
   post<{ created: boolean; agent: Api.AI.Agent }>('agents/builtin/reconcile');
+export const fetchAIAgentSlots = (params: Record<string, unknown>) =>
+  post<Api.AI.Page<Api.AI.AgentSlotResolution>>('agent-slots/list', params);
+export const fetchAIAgentSlot = (slotKey: string) =>
+  post<Api.AI.AgentSlotResolution>('agent-slots/get', { slot_key: slotKey });
+export const updateAIAgentSlot = (slotKey: string, agentId: string, revision = 0) =>
+  post<Api.AI.AgentSlotResolution>('agent-slots/update', { slot_key: slotKey, agent_id: agentId, revision });
+export const resetAIAgentSlot = (slotKey: string, revision: number) =>
+  post<Api.AI.AgentSlotResolution>('agent-slots/reset', { slot_key: slotKey, revision });
+export const reconcileAIAgentSlots = () => post<{ changed: boolean }>('agent-slots/reconcile');
+export const createAIConversationForSlot = (slotKey: string, data: Record<string, unknown> = {}) =>
+  post<Api.AI.Conversation>('conversations/create-for-slot', { slot_key: slotKey, ...data });
 export const fetchAIConversations = (params: Record<string, unknown> = {}) =>
   post<Api.AI.Page<Api.AI.Conversation>>('conversations/list', params);
 export const fetchAIConversation = (id: string) => post<Api.AI.Conversation>('conversations/get', { id });

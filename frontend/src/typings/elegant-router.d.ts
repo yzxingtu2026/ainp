@@ -22,11 +22,11 @@ declare module "@elegant-router/types" {
     "500": "/500";
     "ai": "/ai";
     "ai_agent-builder": "/ai/agent-builder";
+    "ai_agent-slots": "/ai/agent-slots";
     "ai_agents": "/ai/agents";
     "ai_knowledge": "/ai/knowledge";
     "ai_models": "/ai/models";
     "ai_providers": "/ai/providers";
-    "ai_runtime": "/ai/runtime";
     "demo": "/demo";
     "demo_attachments": "/demo/attachments";
     "demo_hello": "/demo/hello";
@@ -118,11 +118,11 @@ declare module "@elegant-router/types" {
     | "login"
     | "setup"
     | "ai_agent-builder"
+    | "ai_agent-slots"
     | "ai_agents"
     | "ai_knowledge"
     | "ai_models"
     | "ai_providers"
-    | "ai_runtime"
     | "demo_attachments"
     | "demo_hello"
     | "home"

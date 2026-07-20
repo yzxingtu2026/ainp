@@ -89,7 +89,7 @@ func (s *InvocationService) Generate(ctx context.Context, req aimodelruntime.Gen
 		return nil, err
 	}
 	resp.InvocationID = prepared.row.ID
-	// 返回值类型，避免 Action/Runtime 对 *GenerateResponse 断言失败。
+	// 返回值类型，避免 Agent Runtime 等内部调用方对 *GenerateResponse 断言失败。
 	return *resp, nil
 }
 
