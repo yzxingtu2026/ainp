@@ -80,6 +80,34 @@ export function useWorkspace() {
     return 'idle';
   });
 
+  /** 当前 run 已落库的 assistant 输出文本（按消息顺序拼接 output_text） */
+  const persistedRunText = computed(() => {
+    const runId = runDetail.value?.run.id;
+    if (!runId) return '';
+    return messages.value
+      .filter(message => message.role === 'assistant' && message.run_id === runId)
+      .map(message =>
+        (message.content || [])
+          .filter(part => part.type === 'output_text')
+          .map(part => part.text || '')
+          .join('')
+      )
+      .join('');
+  });
+
+  /**
+   * 扣除已落库部分后的流式文本。
+   * 模型每轮输出会一边发 run.delta（累积为 streamingText）一边在本轮结束后将同文本落库为 assistant 消息，
+   * refreshMessages 拉回后若不清理会造成重复渲染；这里减去已落库前缀，
+   * 只保留尚未落库的当前轮输出（工具执行等待期间为空，配合思考动画占位）。
+   */
+  const displayStreamingText = computed(() => {
+    const persisted = persistedRunText.value;
+    const raw = streamingText.value;
+    if (persisted && raw.startsWith(persisted)) return raw.slice(persisted.length);
+    return raw;
+  });
+
   async function scrollToBottom() {
     await nextTick();
     if (messageListEl.value) messageListEl.value.scrollTop = messageListEl.value.scrollHeight;
@@ -352,7 +380,7 @@ export function useWorkspace() {
     messages,
     confirmations,
     runDetail,
-    streamingText,
+    displayStreamingText,
     input,
     images,
     busy,

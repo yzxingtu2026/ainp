@@ -23,7 +23,7 @@ const renameTitle = ref('');
 const renameTarget = ref<Api.AI.Conversation | null>(null);
 
 const runActive = computed(() => workspace.status.value === 'running' || workspace.status.value === 'reconnecting');
-const aiThinking = computed(() => runActive.value && !workspace.streamingText.value);
+const aiThinking = computed(() => runActive.value && !workspace.displayStreamingText.value);
 const agentName = computed(() => workspace.slot.value?.agent?.name || $t('page.aiWorkspace.assistant'));
 const greetingName = computed(() => authStore.userInfo.userName || $t('page.aiWorkspace.assistant'));
 const suggestions = computed(() => [
@@ -168,7 +168,7 @@ onMounted(() => void workspace.initialize());
         <ChatMessageList
           v-else
           :messages="workspace.messages.value"
-          :streaming-text="workspace.streamingText.value"
+          :streaming-text="workspace.displayStreamingText.value"
           :thinking="aiThinking"
           :run-active="runActive"
           :confirmations="workspace.confirmations.value"
