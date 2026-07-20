@@ -6,7 +6,7 @@
 
 `ToolRegistry` 是完整工具定义的服务端事实源，不等于模型 Prompt。启用工具的模型调用固定注入 `tool.search`、`tool.load`，并可按运行时资源条件投影少量核心工具；`tool.search` 返回最多 10 个不含完整 Schema 的安全候选，`tool.load` 受单次数量、Scope 总量和 32 KiB Schema 预算限制。后续模型请求只投影当前 ToolScope 已加载或满足动态安全条件的真实 Tool Definition。
 
-调用方使用 `enable_tools=true` 创建新 Scope，后续携带返回的 `tool_scope_id`。禁止直接提交 `tools` 绕过 Registry。`tool.execute` 是服务端内部协议，不是常驻模型工具。
+调用方使用 `enable_tools=true` 创建新 Scope，后续携带返回的 `tool_scope_id`。禁止直接提交 `tools` 绕过 Registry。结构化输出的 response-only function 是 Model Adapter 私有输出约束，不进入 Registry、Scope、Handle、Confirmation、Step 或执行事实，也不得由业务调用方通过 `Tools/ToolChoice` 构造。`tool.execute` 是服务端内部协议，不是常驻模型工具。
 
 ## Registry 与 Provider
 

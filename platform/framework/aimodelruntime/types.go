@@ -1,11 +1,13 @@
 package aimodelruntime
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"time"
 
+	jsonschema "github.com/santhosh-tekuri/jsonschema/v5"
 	"github.com/yzxingtu2026/ainp/platform/framework/aimodel"
 )
 
@@ -167,6 +169,41 @@ type StructuredOutput struct {
 	Schema      json.RawMessage `json:"schema"`
 	Strict      bool            `json:"strict"`
 }
+type StructuredOutputStrategy string
+
+const (
+	StructuredOutputNativeJSONSchema StructuredOutputStrategy = "native_json_schema"
+	StructuredOutputResponseFunction StructuredOutputStrategy = "response_only_function"
+	StructuredOutputJSONMode         StructuredOutputStrategy = "json_mode"
+	StructuredOutputTextJSON         StructuredOutputStrategy = "text_json"
+)
+
+func StructuredOutputStrategyFor(model *aimodel.ResolvedModel, contract *StructuredOutput) (StructuredOutputStrategy, error) {
+	if contract == nil {
+		return "", nil
+	}
+	switch model.Protocol {
+	case aimodel.ProtocolOpenAI:
+		return StructuredOutputNativeJSONSchema, nil
+	case aimodel.ProtocolAnthropic:
+		return StructuredOutputResponseFunction, nil
+	case aimodel.ProtocolOpenAICompatible:
+		value, _ := model.Config["structured_output_strategy"].(string)
+		strategy := StructuredOutputStrategy(value)
+		if strategy == "" {
+			strategy = StructuredOutputResponseFunction
+		}
+		switch strategy {
+		case StructuredOutputNativeJSONSchema, StructuredOutputResponseFunction, StructuredOutputJSONMode, StructuredOutputTextJSON:
+			if contract.Strict && strategy == StructuredOutputTextJSON {
+				return "", &RuntimeError{Category: ErrorCapabilityNotSupported, Message: "strict structured output requires a constrained strategy"}
+			}
+			return strategy, nil
+		}
+	}
+	return "", &RuntimeError{Category: ErrorCapabilityNotSupported, Message: "structured output strategy is not supported"}
+}
+
 type GenerateRequest struct {
 	ModelAlias       string                     `json:"model_alias" validate:"required"`
 	ToolScopeID      string                     `json:"tool_scope_id,omitempty"`
@@ -375,4 +412,38 @@ type AdapterRequest struct {
 type ModelAdapter interface {
 	Generate(context.Context, AdapterRequest) (*GenerateResponse, error)
 	Stream(context.Context, AdapterRequest) (EventStream, error)
+}
+
+func ValidateStructuredResponse(response *GenerateResponse, contract *StructuredOutput) error {
+	if response.FinishReason == FinishLength {
+		return &RuntimeError{Category: ErrorResponseMismatch, Message: "structured response was truncated"}
+	}
+	text := ""
+	for _, item := range response.Output {
+		if item.Type == PartRefusal {
+			return &RuntimeError{Category: ErrorContentFiltered, Message: "provider refused structured response"}
+		}
+		if item.Type != PartOutputText {
+			return &RuntimeError{Category: ErrorResponseMismatch, Message: "structured response contained a non-text item"}
+		}
+		text += item.Text
+	}
+	if !json.Valid([]byte(text)) {
+		return &RuntimeError{Category: ErrorResponseMismatch, Message: "provider returned invalid structured JSON"}
+	}
+	compiler := jsonschema.NewCompiler()
+	if err := compiler.AddResource("output.json", bytes.NewReader(contract.Schema)); err != nil {
+		return &RuntimeError{Category: ErrorInvalidRequest, Message: "structured output schema is invalid", Cause: err}
+	}
+	schema, err := compiler.Compile("output.json")
+	if err != nil {
+		return &RuntimeError{Category: ErrorInvalidRequest, Message: "structured output schema is invalid", Cause: err}
+	}
+	var value any
+	decoder := json.NewDecoder(bytes.NewBufferString(text))
+	decoder.UseNumber()
+	if err = decoder.Decode(&value); err != nil || schema.Validate(value) != nil {
+		return &RuntimeError{Category: ErrorResponseMismatch, Message: "provider response does not match structured output schema"}
+	}
+	return nil
 }

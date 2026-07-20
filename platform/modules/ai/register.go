@@ -117,6 +117,9 @@ func Register(a *app.App) error {
 	if err := adapters.Register(aimodel.ProtocolAnthropic, aimodelruntime.NewAnthropicAdapter(nil)); err != nil {
 		return err
 	}
+	if err := adapters.Register(aimodel.ProtocolOpenAICompatible, aimodelruntime.NewOpenAICompatibleAdapter(nil)); err != nil {
+		return err
+	}
 	embeddingAdapters := aimodelruntime.NewEmbeddingAdapterRegistry()
 	if err := embeddingAdapters.Register(aimodel.ProtocolOpenAI, aimodelruntime.NewOpenAIEmbeddingAdapter(nil)); err != nil {
 		return err

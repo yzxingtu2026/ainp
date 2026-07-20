@@ -91,6 +91,15 @@ func (a *AnthropicAdapter) payload(in AdapterRequest, stream bool) (map[string]a
 		}
 		p["tool_choice"] = choice
 	}
+	if r.StructuredOutput != nil {
+		if len(r.Tools) > 0 {
+			return nil, &RuntimeError{Category: ErrorInvalidRequest, Message: "structured output cannot be combined with executable tools on anthropic"}
+		}
+		var schema any
+		_ = json.Unmarshal(r.StructuredOutput.Schema, &schema)
+		p["tools"] = []any{map[string]any{"name": r.StructuredOutput.Name, "description": r.StructuredOutput.Description, "input_schema": schema}}
+		p["tool_choice"] = map[string]any{"type": "tool", "name": r.StructuredOutput.Name, "disable_parallel_tool_use": true}
+	}
 	return p, nil
 }
 
@@ -130,6 +139,12 @@ func (a *AnthropicAdapter) Generate(ctx context.Context, in AdapterRequest) (*Ge
 		id := raw.ID + "-" + strconv.Itoa(i)
 		if c.Type == "text" {
 			out.Output = append(out.Output, OutputItem{ID: id, Type: PartOutputText, Text: c.Text})
+		} else if c.Type == "tool_use" && in.Request.StructuredOutput != nil {
+			if c.Name != in.Request.StructuredOutput.Name {
+				return nil, &RuntimeError{Category: ErrorResponseMismatch, Message: "structured response function name mismatch"}
+			}
+			out.Output = append(out.Output, OutputItem{ID: id, Type: PartOutputText, Text: string(c.Input)})
+			out.FinishReason = FinishCompleted
 		} else if c.Type == "tool_use" {
 			out.Output = append(out.Output, OutputItem{ID: id, Type: PartToolCall, ToolCallID: c.ID, ToolName: c.Name, Arguments: c.Input})
 		}
