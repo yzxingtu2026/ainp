@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -19,7 +18,6 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
 	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 const toolCatalogChangedEvent = "ai.tool_catalog.changed.v1"
@@ -33,6 +31,7 @@ type ToolService struct {
 	signer                *aitool.HandleSigner
 	writer                outbox.Writer
 	embeddings            aitool.EmbeddingService
+	catalogProjectionSync bool
 	onConfirmationPending func(context.Context, *gorm.DB, *ToolConfirmation) error
 	onConfirmationDecided func(context.Context, *ToolConfirmation) error
 }
@@ -44,6 +43,9 @@ func NewToolService(db *gorm.DB, r *aitool.Registry, signer *aitool.HandleSigner
 	return &ToolService{db: tenantdata.GuardedDB(db), registry: r, signer: signer, writer: w}
 }
 func (s *ToolService) SetEmbeddingService(v aitool.EmbeddingService) { s.embeddings = v }
+func (s *ToolService) SetCatalogProjectionSynchronous(enabled bool) {
+	s.catalogProjectionSync = enabled
+}
 func (s *ToolService) SetConfirmationHooks(pending func(context.Context, *gorm.DB, *ToolConfirmation) error, decided func(context.Context, *ToolConfirmation) error) {
 	s.onConfirmationPending, s.onConfirmationDecided = pending, decided
 }
@@ -151,9 +153,6 @@ func (s *ToolService) Search(ctx context.Context, r ToolSearchRequest) (any, err
 	}
 	scope, err := s.scope(ctx, ac, r.ScopeID)
 	if err != nil {
-		return nil, err
-	}
-	if err = s.syncCatalog(ctx, ac.TenantID); err != nil {
 		return nil, err
 	}
 	definitions := s.registry.List()
@@ -527,43 +526,6 @@ func (s *ToolService) scope(ctx context.Context, ac *auth.Context, id string) (*
 	}
 	return &v, nil
 }
-func (s *ToolService) syncCatalog(ctx context.Context, tenantID string) error {
-	for _, d := range s.registry.List() {
-		var existing ToolCatalog
-		lookup := s.db.WithContext(ctx).Where("tool_id=?", d.ID).First(&existing).Error
-		changed := errors.Is(lookup, gorm.ErrRecordNotFound) || existing.SchemaHash != d.SchemaHash || existing.Status != d.Status || existing.Name != d.Name || existing.Summary != d.DescriptionForLLM || existing.Risk != string(d.Risk) || existing.SideEffect != string(d.SideEffect)
-		if lookup != nil && !errors.Is(lookup, gorm.ErrRecordNotFound) {
-			return lookup
-		}
-		if !changed {
-			continue
-		}
-		row := ToolCatalog{ID: uuid.NewString(), TenantID: tenantID, ToolID: d.ID, Source: string(d.Source), Name: d.Name, Capability: d.Capability, Summary: d.DescriptionForLLM, TagsJSON: jsonBytes(d.Tags), Risk: string(d.Risk), SideEffect: string(d.SideEffect), SchemaVersion: d.SchemaVersion, SchemaHash: d.SchemaHash, Status: d.Status}
-		doc := ToolSearchDocument{ID: uuid.NewString(), TenantID: tenantID, ToolID: d.ID, SearchText: strings.Join(append([]string{d.ID, d.Name, d.DescriptionForLLM, d.Capability}, d.Tags...), " "), InputHintsJSON: jsonBytes([]string{}), IndexStatus: "ready", UpdatedAt: time.Now().UTC()}
-		write := func(tx *gorm.DB, w outbox.Writer) error {
-			if err := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "tenant_id"}, {Name: "tool_id"}}, DoUpdates: clause.AssignmentColumns([]string{"source", "name", "capability", "summary", "tags_json", "risk", "side_effect", "schema_version", "schema_hash", "status", "updated_at"})}).Create(&row).Error; err != nil {
-				return err
-			}
-			if err := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "tenant_id"}, {Name: "tool_id"}}, DoUpdates: clause.AssignmentColumns([]string{"search_text", "input_hints_json", "index_status", "updated_at"})}).Create(&doc).Error; err != nil {
-				return err
-			}
-			if w != nil {
-				_, err := w.Append(ctx, tx, outbox.AppendInput{EventType: toolCatalogChangedEvent, AggregateType: "ai_tool_catalog", AggregateID: d.ID, AggregateVersion: int64(d.SchemaVersion), Payload: map[string]any{"tool_id": d.ID, "source": d.Source, "schema_version": d.SchemaVersion, "schema_hash": d.SchemaHash, "status": d.Status}})
-				return err
-			}
-			return nil
-		}
-		if s.writer != nil {
-			if err := outbox.WithinTx(ctx, s.db.WithContext(ctx), s.writer, write); err != nil {
-				return err
-			}
-		} else if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error { return write(tx, nil) }); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func (s *ToolService) mergeFTS(ctx context.Context, ac *auth.Context, scope *ToolScope, r ToolSearchRequest, current []aitool.Candidate) []aitool.Candidate {
 	if strings.TrimSpace(r.Query) == "" {
 		return current
@@ -574,7 +536,7 @@ func (s *ToolService) mergeFTS(ctx context.Context, ac *auth.Context, scope *Too
 	}
 	rows, err := tenantdata.TenantRaw[struct {
 		ToolID string `gorm:"column:tool_id"`
-	}](tdb, "SELECT tool_id FROM ai_tool_search_documents WHERE tenant_id = ? AND to_tsvector('simple', search_text) @@ plainto_tsquery('simple', ?) ORDER BY ts_rank(to_tsvector('simple', search_text), plainto_tsquery('simple', ?)) DESC LIMIT 10", r.Query, r.Query)
+	}](tdb, "SELECT tool_id FROM ai_tool_search_documents WHERE tenant_id = ? AND index_status = 'ready' AND to_tsvector('simple', search_text) @@ plainto_tsquery('simple', ?) ORDER BY ts_rank(to_tsvector('simple', search_text), plainto_tsquery('simple', ?)) DESC LIMIT 10", r.Query, r.Query)
 	if err != nil {
 		return current
 	}

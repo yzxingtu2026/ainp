@@ -250,7 +250,7 @@ func search(ctx context.Context, definitions []Definition, query, capability str
 		if score <= 0 {
 			continue
 		}
-		out = append(out, Candidate{ID: d.ID, Name: d.Name, Summary: d.DescriptionForLLM, Source: d.Source, Capability: d.Capability, Risk: d.Risk, SideEffect: d.SideEffect, InputHints: inputHints(d.InputSchema), Score: score})
+		out = append(out, Candidate{ID: d.ID, Name: d.Name, Summary: d.DescriptionForLLM, Source: d.Source, Capability: d.Capability, Risk: d.Risk, SideEffect: d.SideEffect, InputHints: InputHints(d.InputSchema), Score: score})
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Score == out[j].Score {
@@ -263,7 +263,7 @@ func search(ctx context.Context, definitions []Definition, query, capability str
 	}
 	return out, nil
 }
-func inputHints(schema json.RawMessage) []string {
+func InputHints(schema json.RawMessage) []string {
 	var v struct {
 		Properties map[string]any `json:"properties"`
 	}

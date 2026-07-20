@@ -68,6 +68,7 @@ type App struct {
 	KnowledgeChunker         aiknowledge.Chunker
 	KnowledgeRetriever       aiknowledge.KnowledgeRetriever
 	AgentTenantInitializer   func(context.Context, *gorm.DB, string, string) error
+	ToolCatalogInitializer   func(context.Context, string, string) error
 	ModelResolver            aimodel.Resolver
 	AIAssetResolver          aimodelruntime.AssetResolver
 	EmbeddingRuntime         aimodelruntime.EmbeddingRuntime

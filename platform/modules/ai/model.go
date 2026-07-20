@@ -111,6 +111,7 @@ type ToolCatalog struct {
 	SchemaVersion int             `gorm:"not null"`
 	SchemaHash    string          `gorm:"size:64;not null"`
 	Status        string          `gorm:"size:16;not null"`
+	Revision      uint64          `gorm:"not null;default:1"`
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
 }
@@ -118,14 +119,16 @@ type ToolCatalog struct {
 func (ToolCatalog) TableName() string { return "ai_tool_catalog" }
 
 type ToolSearchDocument struct {
-	ID             string          `gorm:"primaryKey;size:64"`
-	TenantID       string          `gorm:"size:64;not null;uniqueIndex:ux_ai_tool_search_tenant_tool"`
-	ToolID         string          `gorm:"size:255;not null;uniqueIndex:ux_ai_tool_search_tenant_tool"`
-	SearchText     string          `gorm:"type:text;not null"`
-	InputHintsJSON json.RawMessage `gorm:"type:jsonb;not null;default:'[]'"`
-	IndexStatus    string          `gorm:"size:16;not null"`
-	EmbeddingModel string          `gorm:"size:128"`
-	UpdatedAt      time.Time
+	ID              string          `gorm:"primaryKey;size:64"`
+	TenantID        string          `gorm:"size:64;not null;uniqueIndex:ux_ai_tool_search_tenant_tool"`
+	ToolID          string          `gorm:"size:255;not null;uniqueIndex:ux_ai_tool_search_tenant_tool"`
+	SearchText      string          `gorm:"type:text;not null"`
+	InputHintsJSON  json.RawMessage `gorm:"type:jsonb;not null;default:'[]'"`
+	IndexStatus     string          `gorm:"size:16;not null"`
+	CatalogRevision uint64          `gorm:"not null;default:1"`
+	EmbeddingModel  string          `gorm:"size:128"`
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
 func (ToolSearchDocument) TableName() string { return "ai_tool_search_documents" }

@@ -163,6 +163,19 @@ func TestSchemaForRejectsAdditionalProperties(t *testing.T) {
 	}
 }
 
+func TestToolCatalogLifecycleMigrationContract(t *testing.T) {
+	body, err := os.ReadFile("../migrations/0040_ai_tool_catalog_lifecycle.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(body)
+	for _, required := range []string{"ai_tool_catalog", "revision", "ai_tool_search_documents", "catalog_revision", "idx_ai_tool_search_status"} {
+		if !strings.Contains(text, required) {
+			t.Fatalf("tool catalog lifecycle migration missing %s", required)
+		}
+	}
+}
+
 func TestToolRuntimePostgresLifecycleAndIsolation(t *testing.T) {
 	dsn := os.Getenv("AINP_TEST_DATABASE_DSN")
 	if dsn == "" {
@@ -225,6 +238,65 @@ func TestToolRuntimePostgresLifecycleAndIsolation(t *testing.T) {
 	signer, _ := aitool.NewHandleSigner(strings.Repeat("s", 32))
 	service := ai.NewToolService(db, registry, signer, rt.Writer)
 	ctx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t1", UserID: "u1", SessionID: "s1", AuthVersion: 1, Realm: auth.RealmTenant, Permissions: []string{"purchase.read"}})
+	guarded := tenantdata.GuardedDB(db)
+	reconciled, err := service.ReconcileCatalog(ctx)
+	if err != nil || reconciled.Created != 3 {
+		t.Fatalf("initial catalog reconcile failed: %#v %v", reconciled, err)
+	}
+	var actionCatalog ai.ToolCatalog
+	if err = guarded.WithContext(ctx).Where("tool_id=?", actionTool.ID).First(&actionCatalog).Error; err != nil || actionCatalog.Revision != 1 || actionCatalog.Status != "enabled" {
+		t.Fatalf("unexpected action catalog: %#v %v", actionCatalog, err)
+	}
+	var actionDocument ai.ToolSearchDocument
+	if err = guarded.WithContext(ctx).Where("tool_id=?", actionTool.ID).First(&actionDocument).Error; err != nil || actionDocument.IndexStatus != "pending" || actionDocument.CatalogRevision != 1 {
+		t.Fatalf("unexpected pending search document: %#v %v", actionDocument, err)
+	}
+	if err = service.MarkCatalogDocumentReady(ctx, ai.ToolCatalogChangedPayload{ToolID: actionTool.ID, CatalogRevision: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err = guarded.WithContext(ctx).Where("tool_id=?", actionTool.ID).First(&actionDocument).Error; err != nil || actionDocument.IndexStatus != "ready" {
+		t.Fatalf("search document was not projected: %#v %v", actionDocument, err)
+	}
+	reconciled, err = service.ReconcileCatalog(ctx)
+	if err != nil || reconciled.Unchanged != 3 || reconciled.Created != 0 || reconciled.Updated != 0 {
+		t.Fatalf("idempotent reconcile changed catalog: %#v %v", reconciled, err)
+	}
+	provider.tools[0].DescriptionForLLM = "查询采购订单详情"
+	reconciled, err = service.ReconcileCatalog(ctx)
+	if err != nil || reconciled.Updated != 1 {
+		t.Fatalf("catalog update was not detected: %#v %v", reconciled, err)
+	}
+	if err = guarded.WithContext(ctx).Where("tool_id=?", actionTool.ID).First(&actionCatalog).Error; err != nil || actionCatalog.Revision != 2 {
+		t.Fatalf("catalog revision did not advance: %#v %v", actionCatalog, err)
+	}
+	if err = service.MarkCatalogDocumentReady(ctx, ai.ToolCatalogChangedPayload{ToolID: actionTool.ID, CatalogRevision: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err = guarded.WithContext(ctx).Where("tool_id=?", actionTool.ID).First(&actionDocument).Error; err != nil || actionDocument.IndexStatus != "pending" || actionDocument.CatalogRevision != 2 {
+		t.Fatalf("stale event overwrote current projection: %#v %v", actionDocument, err)
+	}
+	if err = service.MarkCatalogDocumentReady(ctx, ai.ToolCatalogChangedPayload{ToolID: actionTool.ID, CatalogRevision: 2}); err != nil {
+		t.Fatal(err)
+	}
+	provider.tools = nil
+	reconciled, err = service.ReconcileCatalog(ctx)
+	if err != nil || reconciled.Disabled != 1 {
+		t.Fatalf("removed tool was not disabled: %#v %v", reconciled, err)
+	}
+	if err = guarded.WithContext(ctx).Where("tool_id=?", actionTool.ID).First(&actionCatalog).Error; err != nil || actionCatalog.Revision != 3 || actionCatalog.Status != "disabled" {
+		t.Fatalf("removed catalog state is invalid: %#v %v", actionCatalog, err)
+	}
+	if err = guarded.WithContext(ctx).Where("tool_id=?", actionTool.ID).First(&actionDocument).Error; err != nil || actionDocument.IndexStatus != "stale" || actionDocument.CatalogRevision != 3 {
+		t.Fatalf("removed search document is not stale: %#v %v", actionDocument, err)
+	}
+	provider.tools = []aitool.Definition{actionTool}
+	reconciled, err = service.ReconcileCatalog(ctx)
+	if err != nil || reconciled.Updated != 1 {
+		t.Fatalf("restored tool was not reactivated: %#v %v", reconciled, err)
+	}
+	if err = service.MarkCatalogDocumentReady(ctx, ai.ToolCatalogChangedPayload{ToolID: actionTool.ID, CatalogRevision: 4}); err != nil {
+		t.Fatal(err)
+	}
 	restrictedScope := ai.ToolScope{
 		ID:                      "scope-progressive",
 		TenantID:                "t1",
@@ -247,6 +319,10 @@ func TestToolRuntimePostgresLifecycleAndIsolation(t *testing.T) {
 VALUES (?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, 0, ?)`, restrictedScope.ID, restrictedScope.UserID, restrictedScope.Realm, restrictedScope.SessionID, restrictedScope.AuthVersion, restrictedScope.AllowedSourcesJSON, restrictedScope.AllowedCapabilitiesJSON, restrictedScope.AllowedToolsJSON, restrictedScope.LoadedToolsJSON, restrictedScope.ExpiresAt); err != nil {
 		t.Fatal(err)
 	}
+	var catalogEventsBefore int64
+	if err = db.Model(&outbox.Event{}).Where("event_type=?", "ai.tool_catalog.changed.v1").Count(&catalogEventsBefore).Error; err != nil {
+		t.Fatal(err)
+	}
 	searched, err := service.Search(ctx, ai.ToolSearchRequest{ScopeID: restrictedScope.ID, Query: "采购订单"})
 	if err != nil {
 		t.Fatal(err)
@@ -254,6 +330,10 @@ VALUES (?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, 0, ?)`, restri
 	scopeID := searched.(ai.ToolSearchResponse).ScopeID
 	if items := searched.(ai.ToolSearchResponse).Items; len(items) != 1 || items[0].ID != actionTool.ID {
 		t.Fatalf("source/capability scope did not discover action tool: %#v", items)
+	}
+	var catalogEventsAfter int64
+	if err = db.Model(&outbox.Event{}).Where("event_type=?", "ai.tool_catalog.changed.v1").Count(&catalogEventsAfter).Error; err != nil || catalogEventsAfter != catalogEventsBefore {
+		t.Fatalf("tool search mutated catalog events: before=%d after=%d err=%v", catalogEventsBefore, catalogEventsAfter, err)
 	}
 	_, projected, err := service.ProjectModelTools(ctx, scopeID)
 	if err != nil || len(projected) != 2 || projected[0].Name != "meta__tool_search" || projected[1].Name != "meta__tool_load" {
@@ -301,5 +381,19 @@ VALUES (?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, 0, ?)`, restri
 	other := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t1", UserID: "u2", SessionID: "s2", AuthVersion: 1, Realm: auth.RealmTenant, Permissions: []string{"*"}})
 	if _, err = service.Load(other, ai.ToolLoadRequest{ScopeID: scopeID, ToolIDs: []string{"action:purchase.order_read"}}); err == nil {
 		t.Fatal("cross-user scope access must fail")
+	}
+	ctxT2 := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t2", UserID: "u2", SessionID: "s2", AuthVersion: 1, Realm: auth.RealmTenant, Permissions: []string{"purchase.read"}})
+	if reconciled, err = service.ReconcileCatalog(ctxT2); err != nil || reconciled.Created != 3 {
+		t.Fatalf("second tenant catalog reconcile failed: %#v %v", reconciled, err)
+	}
+	for tenantID, tenantCtx := range map[string]context.Context{"t1": ctx, "t2": ctxT2} {
+		tdb, tenantErr := tenantdata.TenantDB(tenantCtx, db)
+		if tenantErr != nil {
+			t.Fatal(tenantErr)
+		}
+		rows, tenantErr := tenantdata.TenantRaw[struct{ Count int64 }](tdb, "SELECT COUNT(*) AS count FROM ai_tool_catalog WHERE tenant_id = ?")
+		if tenantErr != nil || len(rows) != 1 || rows[0].Count != 3 {
+			t.Fatalf("tenant %s catalog isolation failed: %#v %v", tenantID, rows, tenantErr)
+		}
 	}
 }

@@ -193,7 +193,7 @@ if err := a.ToolRegistry.RegisterProvider(
 
 核心 Slot 不按 Source 共享 Executor。Registry 根据 Tool ID 定位 Slot Executor，因此多个 `builtin` Slot 可以独立注册、投影和执行，且不会互相覆盖。
 
-Registry 在搜索、加载和模型投影前刷新，因此后注册的 Action/插件可以被发现。定义重复、Source 不匹配、非法 ID 或 Schema 会使刷新失败，不能静默跳过。
+Registry 在搜索、加载和模型投影前刷新，因此后注册的 Action/插件可以被发现。定义重复、Source 不匹配、非法 ID 或 Schema 会使刷新失败，不能静默跳过。新增或变更生产 Tool 后，应用启动和新租户初始化会自动 Reconcile Catalog；运行中动态注册来源必须显式触发同一 Reconcile，禁止依赖首次搜索写库。当前租户可通过 `ai.tool_catalog_rebuild` 做幂等修复。
 
 ## 命名规范
 

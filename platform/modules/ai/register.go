@@ -15,6 +15,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/aimodelruntime"
 	"github.com/yzxingtu2026/ainp/platform/framework/aitool"
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
+	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/capability"
 	"github.com/yzxingtu2026/ainp/platform/framework/menu"
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
@@ -23,6 +24,7 @@ import (
 	knowledgetool "github.com/yzxingtu2026/ainp/platform/modules/ai/tools/knowledge"
 	memorytool "github.com/yzxingtu2026/ainp/platform/modules/ai/tools/memory"
 	"github.com/yzxingtu2026/ainp/platform/modules/system"
+	"gorm.io/gorm"
 )
 
 const (
@@ -49,6 +51,7 @@ const (
 	ActionToolConfirmationList         = "ai.tool_confirmation_list"
 	ActionToolConfirmationApprove      = "ai.tool_confirmation_approve"
 	ActionToolConfirmationReject       = "ai.tool_confirmation_reject"
+	ActionToolCatalogRebuild           = "ai.tool_catalog_rebuild"
 	ActionAgentList                    = "ai.agent_list"
 	ActionAgentGet                     = "ai.agent_get"
 	ActionAgentCreate                  = "ai.agent_create"
@@ -152,6 +155,19 @@ func Register(a *app.App) error {
 		return err
 	}
 	tools := NewToolService(a.DB, toolRegistry, handleSigner, writer)
+	tools.SetCatalogProjectionSynchronous(a.Outbox == nil || !a.Outbox.Enabled)
+	if a.Outbox != nil {
+		if err := a.Outbox.RegisterHandler(outbox.HandlerFunc{HandlerName: "ai.project_tool_search_document", Types: []string{toolCatalogChangedEvent}, Fn: func(ctx context.Context, env outbox.Envelope) error {
+			var payload ToolCatalogChangedPayload
+			if err := json.Unmarshal(env.Payload, &payload); err != nil {
+				return err
+			}
+			ctx = auth.WithContext(ctx, &auth.Context{Authenticated: true, TenantID: env.TenantID, UserID: env.ActorID, Realm: auth.Realm(env.Realm), RequestID: env.CorrelationID, Client: "outbox"})
+			return tools.MarkCatalogDocumentReady(ctx, payload)
+		}}); err != nil {
+			return err
+		}
+	}
 	invocations.SetToolProjector(tools)
 	a.ToolRegistry = toolRegistry
 	contracts, err := NewBuiltinAgentContractRegistry()
@@ -206,7 +222,17 @@ func Register(a *app.App) error {
 	if err := RegisterMemoryExtraction(a, memoryExtraction, memoryGovernance); err != nil {
 		return err
 	}
-	a.AgentTenantInitializer = agents.ReconcileBuiltinForTenant
+	a.ToolCatalogInitializer = func(ctx context.Context, tenantID, actorID string) error {
+		_, err := tools.ReconcileCatalogForTenant(ctx, tenantID, actorID)
+		return err
+	}
+	a.AgentTenantInitializer = func(ctx context.Context, db *gorm.DB, tenantID, userID string) error {
+		if err := agents.ReconcileBuiltinForTenant(ctx, db, tenantID, userID); err != nil {
+			return err
+		}
+		_, err := tools.ReconcileCatalogForTenant(ctx, tenantID, userID)
+		return err
+	}
 	auditOn := true
 	type def struct {
 		id, path, name, group, groupName string
@@ -223,6 +249,7 @@ func Register(a *app.App) error {
 		{ActionToolConfirmationList, "/api/v1/ai/tool-confirmations/list", "待确认工具列表", "ai.tool_runtime", "工具运行时", action.JSON(tools.ListConfirmations)},
 		{ActionToolConfirmationApprove, "/api/v1/ai/tool-confirmations/approve", "批准本次工具执行", "ai.tool_runtime", "工具运行时", action.JSON(tools.Approve)},
 		{ActionToolConfirmationReject, "/api/v1/ai/tool-confirmations/reject", "拒绝本次工具执行", "ai.tool_runtime", "工具运行时", action.JSON(tools.Reject)},
+		{ActionToolCatalogRebuild, "/api/v1/ai/tools/catalog/rebuild", "重建工具目录", "ai.tool_runtime", "工具运行时", action.JSON(func(ctx context.Context, _ struct{}) (any, error) { return tools.ReconcileCatalog(ctx) })},
 		{ActionAgentList, "/api/v1/ai/agents/list", "智能体列表", "ai.agent_management", "智能体", action.JSON(agents.List)},
 		{ActionAgentGet, "/api/v1/ai/agents/get", "智能体详情", "ai.agent_management", "智能体", action.JSON(agents.Get)},
 		{ActionAgentCreate, "/api/v1/ai/agents/create", "创建智能体", "ai.agent_management", "智能体", action.JSON(agents.Create)},

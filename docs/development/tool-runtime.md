@@ -18,6 +18,10 @@ Action 是否暴露以注册处的 `Metadata.AI` 为唯一事实源：仅 `AIMet
 
 Registry 按 Tool ID 稳定排序，并在启动时拒绝重复 Tool ID、重复 RuntimeRef、非法发现模式或非法元数据。新增 Slot 只允许新增工具目录并在聚合入口增加注册项，不得修改 `ToolService`、`AgentRuntimeService` 或已有工具实现。
 
+Tool Catalog 是完整 Registry 的租户级派生事实，不是权限事实源。应用完成全部模块注册后为已有租户执行幂等 Reconcile，新租户初始化时同步投影；运维可调用 `ai.tool_catalog_rebuild` 修复当前租户。`tool.search` 只读 Registry、Catalog/Search Document 与 Scope，禁止在请求路径刷新或写入 Catalog。
+
+Reconcile 按 Tool ID 比较完整安全定义：新增和变更写入 Catalog，Registry 中已移除的 Tool 保留事实行但标记 `disabled`。每次有效变化推进单调 `catalog.revision`，并在同一事务写 `ai.tool_catalog.changed.v1`；事件 `aggregate_version` 等于 Catalog revision。Search Document 绑定 `catalog_revision`：启用定义变更后进入 `pending`，词法投影完成后进入 `ready`，停用或移除立即进入 `stale`。Handler 只处理仍匹配当前 revision 的事件，重复或乱序事件不得覆盖新状态。`failed` 保留给后续索引任务记录终态，修复 Action 可再次生成新 revision。
+
 核心 `builtin:knowledge.search` 是首个直接投影 Slot，但只在当前 Agent 至少存在一个绑定、当前 actor 可读、enabled 且索引 ready 的知识库时可用。动态描述只能列出这些候选的名称、用途和稳定 ID，不得暴露 tenant、对象存储字段或无权资源。
 
 ## Search、Scope 与 Handle
