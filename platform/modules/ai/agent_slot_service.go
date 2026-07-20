@@ -2,7 +2,6 @@ package ai
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"sync"
 
@@ -88,6 +87,19 @@ func slotUnavailable(code, message string, slot agentslot.Slot, source string) *
 	return &AgentSlotResolution{Slot: slot, Source: source, Healthy: false, Diagnostics: []AgentDiagnosticIssue{{Code: code, Message: message}}}
 }
 
+func optionalSlotRecord[T any](repo *tenantdata.Repository[T], where any, args ...any) (T, bool, error) {
+	rows, err := repo.Find(where, args...)
+	if err != nil {
+		var zero T
+		return zero, false, err
+	}
+	if len(rows) == 0 {
+		var zero T
+		return zero, false, nil
+	}
+	return rows[0], true, nil
+}
+
 func (s *AgentSlotService) resolveAgent(ctx context.Context, slot agentslot.Slot, agentID, source string) (*AgentSlotResolution, error) {
 	ac, _ := slotActor(ctx)
 	repos, err := newAgentRepositories(ctx, s.db)
@@ -128,7 +140,11 @@ func (s *AgentSlotService) Resolve(ctx context.Context, r AgentSlotGetRequest) (
 	prefs, _ := tenantdata.NewTenantRepository[AgentSlotPreference](tdb)
 	bindings, _ := tenantdata.NewTenantRepository[AgentSlotBinding](tdb)
 	if slot.UserOverride {
-		if pref, e := prefs.First("user_id=? AND slot_key=?", ac.UserID, slot.Key); e == nil {
+		pref, found, lookupErr := optionalSlotRecord(prefs, "user_id=? AND slot_key=?", ac.UserID, slot.Key)
+		if lookupErr != nil {
+			return nil, lookupErr
+		}
+		if found {
 			result, e := s.resolveAgent(ctx, slot, pref.AgentID, "user")
 			if result != nil {
 				result.PreferenceRevision = pref.Revision
@@ -137,7 +153,11 @@ func (s *AgentSlotService) Resolve(ctx context.Context, r AgentSlotGetRequest) (
 		}
 	}
 	if slot.TenantOverride {
-		if binding, e := bindings.First("slot_key=?", slot.Key); e == nil {
+		binding, found, lookupErr := optionalSlotRecord(bindings, "slot_key=?", slot.Key)
+		if lookupErr != nil {
+			return nil, lookupErr
+		}
+		if found {
 			result, e := s.resolveAgent(ctx, slot, binding.AgentID, "tenant")
 			if result != nil {
 				result.BindingRevision = binding.Revision
@@ -226,8 +246,11 @@ func (s *AgentSlotService) Update(ctx context.Context, r AgentSlotMutationReques
 		return nil, err
 	}
 	repo, _ := tenantdata.NewTenantRepository[AgentSlotBinding](tdb)
-	row, qerr := repo.First("slot_key=?", slot.Key)
-	if errors.Is(qerr, gorm.ErrRecordNotFound) {
+	row, found, qerr := optionalSlotRecord(repo, "slot_key=?", slot.Key)
+	if qerr != nil {
+		return nil, qerr
+	}
+	if !found {
 		if r.Revision != 0 {
 			return nil, errs.New(errs.CodeConflict, "agent slot binding revision conflict")
 		}
@@ -236,9 +259,6 @@ func (s *AgentSlotService) Update(ctx context.Context, r AgentSlotMutationReques
 			return nil, err
 		}
 		return s.Resolve(ctx, AgentSlotGetRequest{SlotKey: slot.Key})
-	}
-	if qerr != nil {
-		return nil, qerr
 	}
 	if row.Revision != r.Revision {
 		return nil, errs.New(errs.CodeConflict, "agent slot binding revision conflict")
@@ -313,8 +333,11 @@ func (s *AgentSlotService) mutatePreference(ctx context.Context, r AgentSlotMuta
 		return nil, err
 	}
 	repo, _ := tenantdata.NewTenantRepository[AgentSlotPreference](tdb)
-	row, qerr := repo.First("user_id=? AND slot_key=?", ac.UserID, slot.Key)
-	if errors.Is(qerr, gorm.ErrRecordNotFound) {
+	row, found, qerr := optionalSlotRecord(repo, "user_id=? AND slot_key=?", ac.UserID, slot.Key)
+	if qerr != nil {
+		return nil, qerr
+	}
+	if !found {
 		if r.Revision != 0 {
 			return nil, errs.New(errs.CodeConflict, "agent slot preference revision conflict")
 		}
@@ -323,9 +346,6 @@ func (s *AgentSlotService) mutatePreference(ctx context.Context, r AgentSlotMuta
 			return nil, err
 		}
 		return s.Resolve(ctx, AgentSlotGetRequest{SlotKey: slot.Key})
-	}
-	if qerr != nil {
-		return nil, qerr
 	}
 	if row.Revision != r.Revision {
 		return nil, errs.New(errs.CodeConflict, "agent slot preference revision conflict")
