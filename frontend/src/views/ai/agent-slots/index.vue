@@ -13,7 +13,14 @@ import { useAuthStore } from '@/store/modules/auth';
 defineOptions({ name: 'AIAgentSlots' });
 const auth = useAuthStore();
 const can = (permission: string) => auth.userInfo.buttons.includes(permission) || auth.userInfo.buttons.includes('*');
-const query = reactive({ page: 1, page_size: 20, keyword: '', module: '', status: '', source: '' });
+const query = reactive<{
+  page: number;
+  page_size: number;
+  keyword: string;
+  module: string;
+  status: string | null;
+  source: string | null;
+}>({ page: 1, page_size: 20, keyword: '', module: '', status: null, source: null });
 const rows = ref<Api.AI.AgentSlotResolution[]>([]);
 const total = ref(0);
 const loading = ref(false);
@@ -31,6 +38,10 @@ async function load() {
     rows.value = data?.items || [];
     total.value = data?.total || 0;
   } finally { loading.value = false; }
+}
+async function search() {
+  query.page = 1;
+  await load();
 }
 async function configure(row: Api.AI.AgentSlotResolution) {
   selected.value = row;
@@ -57,11 +68,11 @@ onMounted(load);
 
 <template>
   <div class="flex-col-stretch gap-16px">
-    <div class="flex flex-wrap items-center gap-12px">
-      <NInput v-model:value="query.keyword" class="w-240px" clearable placeholder="搜索业务功能" @keyup.enter="load" />
-      <NSelect v-model:value="query.status" class="w-140px" clearable placeholder="状态" :options="[{ label: '健康', value: 'healthy' }, { label: '异常', value: 'unhealthy' }]" />
-      <NSelect v-model:value="query.source" class="w-160px" clearable placeholder="配置来源" :options="[{ label: '租户指定', value: 'tenant' }, { label: '系统默认', value: 'builtin' }, { label: '用户偏好', value: 'user' }]" />
-      <NButton @click="load">查询</NButton>
+    <div class="slot-toolbar">
+      <NInput v-model:value="query.keyword" class="slot-toolbar__search" clearable placeholder="搜索业务功能" @keyup.enter="search" />
+      <NSelect v-model:value="query.status" class="slot-toolbar__status" clearable placeholder="筛选当前状态" :options="[{ label: '健康', value: 'healthy' }, { label: '异常', value: 'unhealthy' }]" />
+      <NSelect v-model:value="query.source" class="slot-toolbar__source" clearable placeholder="筛选配置来源" :options="[{ label: '租户指定', value: 'tenant' }, { label: '系统默认', value: 'builtin' }, { label: '用户偏好', value: 'user' }]" />
+      <NButton @click="search">查询</NButton>
       <NButton v-if="can(AI_ACTIONS.agentSlotReconcile)" @click="reconcile">同步内置功能</NButton>
     </div>
 
@@ -105,3 +116,36 @@ onMounted(load);
     </NDrawer>
   </div>
 </template>
+
+<style scoped>
+.slot-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.slot-toolbar__search {
+  flex: 0 1 360px;
+  min-width: 240px;
+}
+
+.slot-toolbar__status {
+  flex: 0 0 160px;
+}
+
+.slot-toolbar__source {
+  flex: 0 0 180px;
+}
+
+@media (max-width: 640px) {
+  .slot-toolbar__search {
+    flex-basis: 100%;
+  }
+
+  .slot-toolbar__status,
+  .slot-toolbar__source {
+    flex: 1 1 160px;
+  }
+}
+</style>
