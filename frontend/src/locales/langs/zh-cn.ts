@@ -447,6 +447,7 @@ const local: App.I18n.Schema = {
       archive: '归档',
       actions: '会话操作',
       openConversations: '打开会话列表',
+      collapseConversations: '折叠会话列表',
       runDetails: '运行详情',
       memory: '我的记忆',
       newChat: '新会话',

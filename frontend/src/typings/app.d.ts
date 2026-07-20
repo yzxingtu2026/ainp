@@ -601,6 +601,7 @@ declare namespace App {
           archive: string;
           actions: string;
           openConversations: string;
+          collapseConversations: string;
           runDetails: string;
           memory: string;
           newChat: string;

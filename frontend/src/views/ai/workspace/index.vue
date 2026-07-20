@@ -17,6 +17,7 @@ const router = useRouter();
 const workspace = useWorkspace();
 
 const conversationsVisible = ref(false);
+const conversationPanelCollapsed = ref(true);
 const detailsVisible = ref(false);
 const renameVisible = ref(false);
 const renameTitle = ref('');
@@ -62,7 +63,7 @@ onMounted(() => void workspace.initialize());
 
 <template>
   <div class="ai-workspace">
-    <aside v-if="!appStore.isMobile" class="ai-workspace__sidebar">
+    <aside v-if="!appStore.isMobile && !conversationPanelCollapsed" class="ai-workspace__sidebar">
       <ConversationPanel
         :active="workspace.activeConversations.value"
         :archived="workspace.archivedConversations.value"
@@ -85,6 +86,15 @@ onMounted(() => void workspace.initialize());
           @click="conversationsVisible = true"
         >
           <SvgIcon icon="mdi:menu" />
+        </button>
+        <button
+          v-else
+          type="button"
+          class="ai-workspace__header-button"
+          :title="conversationPanelCollapsed ? $t('page.aiWorkspace.openConversations') : $t('page.aiWorkspace.collapseConversations')"
+          @click="conversationPanelCollapsed = !conversationPanelCollapsed"
+        >
+          <SvgIcon :icon="conversationPanelCollapsed ? 'mdi:menu-open' : 'mdi:menu-close'" />
         </button>
         <div class="min-w-0 flex-1">
           <div class="truncate text-14px font-600">

@@ -451,6 +451,7 @@ const local: App.I18n.Schema = {
       archive: 'Archive',
       actions: 'Conversation actions',
       openConversations: 'Open conversations',
+      collapseConversations: 'Collapse conversations',
       runDetails: 'Run details',
       memory: 'My memory',
       newChat: 'New conversation',
