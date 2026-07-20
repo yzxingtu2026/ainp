@@ -10,6 +10,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/aimemory"
 	"github.com/yzxingtu2026/ainp/platform/framework/aimodelruntime"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
+	"github.com/yzxingtu2026/ainp/platform/framework/prompt"
 	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"gorm.io/gorm"
 )
@@ -87,7 +88,7 @@ func (s *MemoryConsolidationService) Consolidate(ctx context.Context, userID str
 	body, _ := json.Marshal(map[string]any{"items": input, "policy_version": policy.PolicyVersion})
 	max := int64(policy.MaxRecallTokens)
 	temp := float64(0)
-	value, err := s.invocations.Generate(ctx, aimodelruntime.GenerateRequest{ModelAlias: policy.ConsolidationModelAlias, Instructions: "Propose only a consolidation plan. Never delete, activate, supersede, revoke, or mutate facts. Use only supplied item IDs and exact revisions. Return no-op when uncertain.", Messages: []aimodelruntime.Message{{Role: aimodelruntime.RoleUser, Content: []aimodelruntime.ContentPart{{Type: aimodelruntime.PartInputText, Text: string(body)}}}}, StructuredOutput: &aimodelruntime.StructuredOutput{Name: "memory_consolidation_plan", Strict: true, Schema: consolidationPlanSchema()}, MaxOutputTokens: &max, Temperature: &temp, TimeoutMS: 60000, Metadata: map[string]string{"purpose": "memory_consolidation", "policy_version": policy.PolicyVersion}})
+	value, err := s.invocations.Generate(ctx, aimodelruntime.GenerateRequest{ModelAlias: policy.ConsolidationModelAlias, Instructions: prompt.MustGet("ai/memory-consolidation"), Messages: []aimodelruntime.Message{{Role: aimodelruntime.RoleUser, Content: []aimodelruntime.ContentPart{{Type: aimodelruntime.PartInputText, Text: string(body)}}}}, StructuredOutput: &aimodelruntime.StructuredOutput{Name: "memory_consolidation_plan", Strict: true, Schema: consolidationPlanSchema()}, MaxOutputTokens: &max, Temperature: &temp, TimeoutMS: 60000, Metadata: map[string]string{"purpose": "memory_consolidation", "policy_version": policy.PolicyVersion}})
 	if err != nil {
 		_ = s.fail(ctx, batch.ID, owner, "model_error")
 		return err

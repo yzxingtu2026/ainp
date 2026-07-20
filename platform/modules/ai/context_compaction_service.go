@@ -11,6 +11,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/aitool"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
+	"github.com/yzxingtu2026/ainp/platform/framework/prompt"
 	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"gorm.io/gorm"
 )
@@ -45,7 +46,7 @@ func (p runtimeCompactionProvider) Summarize(ctx context.Context, r aiconversati
 		return nil, err
 	}
 	max := int64(r.MaxTokens)
-	req := aimodelruntime.GenerateRequest{ModelAlias: p.modelAlias, Instructions: "Summarize only supplied facts into the required JSON schema. Preserve every source_message_id exactly. Never invent identifiers, approvals, side effects, or resources.", Messages: []aimodelruntime.Message{{Role: aimodelruntime.RoleUser, Content: []aimodelruntime.ContentPart{{Type: aimodelruntime.PartInputText, Text: string(body)}}}}, StructuredOutput: &aimodelruntime.StructuredOutput{Name: "context_compaction", Strict: true, Schema: compactionSummarySchema()}, MaxOutputTokens: &max, Metadata: map[string]string{"purpose": "context_compaction"}}
+	req := aimodelruntime.GenerateRequest{ModelAlias: p.modelAlias, Instructions: prompt.MustGet("ai/context-compaction"), Messages: []aimodelruntime.Message{{Role: aimodelruntime.RoleUser, Content: []aimodelruntime.ContentPart{{Type: aimodelruntime.PartInputText, Text: string(body)}}}}, StructuredOutput: &aimodelruntime.StructuredOutput{Name: "context_compaction", Strict: true, Schema: compactionSummarySchema()}, MaxOutputTokens: &max, Metadata: map[string]string{"purpose": "context_compaction"}}
 	value, err := p.invocations.Generate(ctx, req)
 	if err != nil {
 		return nil, err

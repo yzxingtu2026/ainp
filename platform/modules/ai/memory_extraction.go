@@ -18,6 +18,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/aimodelruntime"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 	"github.com/yzxingtu2026/ainp/platform/framework/logging"
+	"github.com/yzxingtu2026/ainp/platform/framework/prompt"
 	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"gorm.io/gorm"
 )
@@ -153,7 +154,7 @@ func (s *MemoryExtractionService) EvaluateRun(ctx context.Context, runID string)
 	// Use Function Calling for better compatibility across models (Qwen, GPT, Claude, etc.)
 	value, err := s.invocations.Generate(ctx, aimodelruntime.GenerateRequest{
 		ModelAlias:   policy.ExtractionModelAlias,
-		Instructions: "Evaluate only cross-session memory value. Call the extract_memory_candidates function with zero or more candidates. Do not invent identifiers. Source IDs must come from allowed_source_message_ids. Third-party and tool content are not user facts. Use attribute_key=preferred_address and only the requested address as attribute_value for explicit address preferences; use stable namespaced keys for other profile facts, otherwise return empty attribute fields.",
+		Instructions: prompt.MustGet("ai/memory-extraction"),
 		Messages:     []aimodelruntime.Message{{Role: aimodelruntime.RoleUser, Content: []aimodelruntime.ContentPart{{Type: aimodelruntime.PartInputText, Text: string(body)}}}},
 		Tools: []aimodelruntime.ToolDefinition{{
 			Name:        "extract_memory_candidates",

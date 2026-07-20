@@ -69,6 +69,10 @@ func main() {
 
 func runSetupMode(ctx context.Context, cfg *config.Config, st *state.State) {
 	logging.Info(ctx, "starting in setup mode", "addr", cfg.Server.Addr)
+	if err := boot.LoadPrompts(); err != nil {
+		logging.Error(ctx, "load prompts failed", err)
+		os.Exit(1)
+	}
 	boot.LoadI18n(cfg)
 	tokens, err := auth.NewTokenService(cfg.Auth.JWT.Secret, cfg.Auth.JWT.Issuer, cfg.Auth.JWT.Duration())
 	if err != nil {

@@ -15,6 +15,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/job"
 	"github.com/yzxingtu2026/ainp/platform/framework/logging"
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
+	"github.com/yzxingtu2026/ainp/platform/framework/prompt"
 	"github.com/yzxingtu2026/ainp/platform/framework/state"
 	"github.com/yzxingtu2026/ainp/platform/framework/storage"
 	"github.com/yzxingtu2026/ainp/platform/modules/ai"
@@ -29,6 +30,26 @@ type Platform struct {
 	Config *config.Config
 	DB     *gorm.DB
 	App    *app.App
+}
+
+// LoadPrompts loads and validates all runtime model prompts.
+func LoadPrompts() error {
+	if err := prompt.LoadDir("prompts"); err != nil {
+		return fmt.Errorf("prompt load: %w", err)
+	}
+	for _, key := range []string{
+		"ai/memory-extraction",
+		"ai/memory-consolidation",
+		"ai/context-compaction",
+		"ai/trusted-runtime-context",
+		"ai/untrusted-user-memory",
+		"agent/system-operations",
+	} {
+		if prompt.Get(key) == "" {
+			return fmt.Errorf("prompt load: required prompt %q is missing", key)
+		}
+	}
+	return nil
 }
 
 // LoadI18n loads translation files from config.
@@ -48,6 +69,9 @@ func LoadI18n(cfg *config.Config) {
 // OpenInstalled opens DB, migrates, seeds, and registers modules for an installed instance.
 func OpenInstalled(ctx context.Context, cfg *config.Config) (*Platform, error) {
 	if err := cfg.Validate(true); err != nil {
+		return nil, err
+	}
+	if err := LoadPrompts(); err != nil {
 		return nil, err
 	}
 	LoadI18n(cfg)
