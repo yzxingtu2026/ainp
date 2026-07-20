@@ -239,6 +239,7 @@ const local: App.I18n.Schema = {
       models: { title: 'Model Catalog' },
       runtime: { title: 'Model Debugger' },
       agents: { title: 'Agents' },
+      agent_slots: { title: 'AI Feature Configuration' },
       knowledge: { title: 'Knowledge Bases' },
       agent_builder: { title: 'Agent Builder' }
     }

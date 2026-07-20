@@ -495,6 +495,7 @@ declare namespace App {
           models: { title: string };
           runtime: { title: string };
           agents: { title: string };
+          agent_slots: { title: string };
           knowledge: { title: string };
           agent_builder: { title: string };
         };

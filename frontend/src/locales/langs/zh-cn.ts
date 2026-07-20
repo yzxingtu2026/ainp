@@ -235,6 +235,7 @@ const local: App.I18n.Schema = {
       models: { title: '模型目录' },
       runtime: { title: '模型调试' },
       agents: { title: '智能体' },
+      agent_slots: { title: 'AI 功能配置' },
       knowledge: { title: '知识库' },
       agent_builder: { title: '智能体编排工作台' }
     }
