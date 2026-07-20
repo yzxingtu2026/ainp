@@ -458,9 +458,7 @@ const local: App.I18n.Schema = {
       suggestionExceptions: '汇总系统中值得关注的异常情况',
       suggestionFeature: '帮我查找一个业务功能并说明如何使用',
       suggestionNext: '根据我的工作内容给出下一步建议',
-      imageAttachment: '图片附件',
       reconnecting: '连接中断，正在恢复运行状态…',
-      thinking: '思考中',
       disclaimer: 'AI 可能会出错，重要操作需要你的确认',
       noRun: '当前会话还没有运行记录',
       status: '状态',
@@ -956,6 +954,18 @@ const local: App.I18n.Schema = {
       audio_input: '音频输入',
       audio_output: '音频输出'
     }
+  },
+  chat: {
+    thinking: '思考中',
+    imageAttachment: '图片附件',
+    toolProcessed: '已处理 {count} 个操作',
+    toolCall: '工具调用',
+    toolRunning: '执行中',
+    toolSuccess: '已完成',
+    toolFailed: '执行失败',
+    toolWaiting: '等待结果',
+    toolArguments: '调用参数',
+    toolResult: '执行结果'
   },
   toolConfirmation: {
     title: '敏感工具执行确认',

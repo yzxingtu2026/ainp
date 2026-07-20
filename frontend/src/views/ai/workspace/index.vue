@@ -4,7 +4,6 @@ import { useRouter } from 'vue-router';
 import { useAppStore } from '@/store/modules/app';
 import { useAuthStore } from '@/store/modules/auth';
 import { $t } from '@/locales';
-import PreviewMarkdown from '../agent-builder/modules/preview-markdown.vue';
 import ConversationPanel from './modules/conversation-panel.vue';
 import WorkspaceComposer from './modules/workspace-composer.vue';
 import { useWorkspace } from './use-workspace';
@@ -166,70 +165,16 @@ onMounted(() => void workspace.initialize());
           </div>
         </div>
 
-        <div v-else class="message-list">
-          <article
-            v-for="message in workspace.messages.value"
-            :key="message.id"
-            class="message"
-            :class="`message--${message.role}`"
-          >
-            <AiMascot v-if="message.role === 'assistant'" :size="36" :breathe="false" />
-            <div class="message__content">
-              <PreviewMarkdown
-                v-if="workspace.workspaceMessageText(message)"
-                :content="workspace.workspaceMessageText(message)"
-              />
-              <template v-for="(part, index) in message.content" :key="`${message.id}-${index}`">
-                <NCode
-                  v-if="part.type === 'tool_call' || part.type === 'tool_result'"
-                  :code="JSON.stringify(part.type === 'tool_call' ? part.arguments : part.result, null, 2)"
-                  language="json"
-                  word-wrap
-                  class="mt-8px block max-w-full"
-                />
-                <NTag v-else-if="part.type === 'input_image'" size="small" class="mt-6px">
-                  <template #icon><SvgIcon icon="mdi:image-outline" /></template>
-                  {{ $t('page.aiWorkspace.imageAttachment') }}
-                </NTag>
-              </template>
-            </div>
-            <span v-if="message.role === 'user'" class="message__user-avatar" aria-hidden="true">
-              <SvgIcon icon="mdi:account" />
-            </span>
-          </article>
-
-          <article v-if="aiThinking" class="message message--assistant">
-            <span class="thinking-mascot">
-              <AiMascot state="thinking" :size="36" :breathe="false" />
-            </span>
-            <div class="message__content">
-              <span class="thinking-bubble" role="status" :aria-label="$t('page.aiWorkspace.thinking')">
-                <i class="thinking-bubble__dot"></i>
-                <i class="thinking-bubble__dot"></i>
-                <i class="thinking-bubble__dot"></i>
-              </span>
-            </div>
-          </article>
-
-          <article v-else-if="workspace.streamingText.value" class="message message--assistant">
-            <AiMascot state="working" :size="36" :breathe="false" />
-            <div class="message__content">
-              <PreviewMarkdown :content="workspace.streamingText.value" />
-            </div>
-          </article>
-
-          <ToolConfirmationCard
-            v-for="confirmation in workspace.confirmations.value"
-            :key="confirmation.id"
-            :confirmation="confirmation"
-            class="mx-auto my-12px"
-            @resolved="workspace.onConfirmationResolved"
-          />
-
-          <NAlert v-if="workspace.error.value" type="error" class="mx-auto mt-12px max-w-760px" closable>
-            {{ workspace.error.value }}
-          </NAlert>
-        </div>
+        <ChatMessageList
+          v-else
+          :messages="workspace.messages.value"
+          :streaming-text="workspace.streamingText.value"
+          :thinking="aiThinking"
+          :run-active="runActive"
+          :confirmations="workspace.confirmations.value"
+          :error="workspace.error.value"
+          @confirmation-resolved="workspace.onConfirmationResolved"
+        />
       </section>
 
       <footer class="ai-workspace__composer">
@@ -474,110 +419,9 @@ onMounted(() => void workspace.initialize());
   background: rgba(var(--primary-color), 0.06);
 }
 
-.message-list {
-  width: min(920px, 100%);
-  margin: 0 auto;
-  padding: 28px 24px 80px;
-}
-.message {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  margin: 18px 0;
-}
-.message--user {
-  justify-content: flex-end;
-}
-.message__content {
-  min-width: 0;
-  max-width: min(720px, 85%);
-  overflow-wrap: anywhere;
-}
-.message--user .message__content {
-  border-radius: 8px;
-  background: rgba(var(--primary-color), 0.12);
-  padding: 10px 14px;
-}
-.message--assistant .message__content {
-  padding-top: 6px;
-}
-
-.message__user-avatar {
-  width: 36px;
-  height: 36px;
-  flex: none;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  background: rgba(127, 127, 127, 0.16);
-  color: rgba(127, 127, 127, 0.95);
-  font-size: 22px;
-}
-
-.thinking-mascot {
-  display: inline-flex;
-  flex: none;
-  animation: thinking-float 1.8s ease-in-out infinite;
-}
-@keyframes thinking-float {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-3px);
-  }
-}
-
-.thinking-bubble {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  border-radius: 999px;
-  background: rgba(127, 127, 127, 0.1);
-  padding: 13px 16px;
-}
-.thinking-bubble__dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: rgba(var(--primary-color), 0.75);
-  animation: thinking-bounce 1.2s ease-in-out infinite;
-}
-.thinking-bubble__dot:nth-child(2) {
-  animation-delay: 0.15s;
-}
-.thinking-bubble__dot:nth-child(3) {
-  animation-delay: 0.3s;
-}
-@keyframes thinking-bounce {
-  0%,
-  60%,
-  100% {
-    transform: translateY(0);
-    opacity: 0.45;
-  }
-  30% {
-    transform: translateY(-5px);
-    opacity: 1;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .thinking-mascot,
-  .thinking-bubble__dot {
-    animation: none;
-  }
-}
-
 @media (max-width: 640px) {
   .ai-workspace__composer {
     padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
-  }
-  .message-list {
-    padding: 18px 14px 60px;
-  }
-  .message__content {
-    max-width: calc(100% - 44px);
   }
   .welcome {
     justify-content: flex-start;

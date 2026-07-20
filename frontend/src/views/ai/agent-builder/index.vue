@@ -51,7 +51,7 @@ import MarkdownPromptEditor from '@/components/common/markdown-prompt-editor.vue
 import AgentKnowledgePickerModal from './modules/agent-knowledge-picker-modal.vue';
 import AgentToolPickerModal from './modules/agent-tool-picker-modal.vue';
 import PreviewComposer from './modules/preview-composer.vue';
-import PreviewMarkdown from './modules/preview-markdown.vue';
+import PreviewMarkdown from '@/components/ai/markdown-renderer.vue';
 import PreviewMessageImages from './modules/preview-message-images.vue';
 import PreviewToolCallCard from './modules/preview-tool-call-card.vue';
 import { useBuilderPreview } from './use-builder-preview';

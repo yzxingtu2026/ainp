@@ -31,14 +31,6 @@ function idempotencyKey(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-export function workspaceMessageText(message: Api.AI.ConversationMessage): string {
-  return (message.content || [])
-    .filter(part => part.type === 'input_text' || part.type === 'output_text')
-    .map(part => part.text || '')
-    .filter(Boolean)
-    .join('\n');
-}
-
 function isRunTerminal(status: Api.AI.AgentRunStatus) {
   return status === 'completed' || status === 'failed' || status === 'cancelled';
 }
@@ -143,7 +135,10 @@ export function useWorkspace() {
 
   function startPolling(runId: string) {
     stopPolling();
-    pollTimer = window.setInterval(() => void refreshRun(runId), 2500);
+    pollTimer = window.setInterval(() => {
+      void refreshRun(runId);
+      void refreshMessages();
+    }, 2500);
   }
 
   function handleEvent(runId: string, event: Api.AI.AgentRunEvent) {
@@ -161,7 +156,11 @@ export function useWorkspace() {
       void refreshRun(runId, true);
       return;
     }
-    if (event.type.startsWith('step.') || event.type.startsWith('run.')) void refreshRun(runId);
+    if (event.type.startsWith('step.') || event.type.startsWith('run.')) {
+      void refreshRun(runId);
+      // 工具调用/结果消息随 step 事件实时写入后端，同步拉取以便对话区实时展示工具活动
+      void refreshMessages();
+    }
   }
 
   async function watchRun(runId: string, afterSequence = 0) {
@@ -368,7 +367,6 @@ export function useWorkspace() {
     renameConversation,
     archiveConversation,
     restoreConversation,
-    onConfirmationResolved,
-    workspaceMessageText
+    onConfirmationResolved
   };
 }

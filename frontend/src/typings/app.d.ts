@@ -612,9 +612,7 @@ declare namespace App {
           suggestionExceptions: string;
           suggestionFeature: string;
           suggestionNext: string;
-          imageAttachment: string;
           reconnecting: string;
-          thinking: string;
           disclaimer: string;
           noRun: string;
           status: string;
@@ -1126,6 +1124,18 @@ declare namespace App {
         visionNeedsImage: string;
         modalities: Record<(typeof import('@/constants/ai').MODEL_MODALITIES)[number], string>;
         features: Record<(typeof import('@/constants/ai').MODEL_FEATURES)[number], string>;
+      };
+      chat: {
+        thinking: string;
+        imageAttachment: string;
+        toolProcessed: string;
+        toolCall: string;
+        toolRunning: string;
+        toolSuccess: string;
+        toolFailed: string;
+        toolWaiting: string;
+        toolArguments: string;
+        toolResult: string;
       };
       toolConfirmation: {
         title: string;
