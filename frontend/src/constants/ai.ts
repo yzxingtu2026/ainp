@@ -13,8 +13,6 @@ export const AI_ACTIONS = {
   aliasList: 'ai.alias_list',
   aliasUpsert: 'ai.alias_upsert',
   aliasDelete: 'ai.alias_delete',
-  modelGenerate: 'ai.model_generate',
-  modelStream: 'ai.model_stream',
   agentList: 'ai.agent_list',
   agentGet: 'ai.agent_get',
   agentCreate: 'ai.agent_create',

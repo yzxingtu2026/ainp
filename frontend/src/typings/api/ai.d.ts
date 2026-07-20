@@ -264,20 +264,6 @@ declare namespace Api.AI {
     metadata_confirmed: boolean;
     imported: boolean;
   }
-  interface GenerateResponse {
-    id: string;
-    model: { alias: string; deployment_id: string; protocol: string; remote_model_id: string };
-    output: Array<{
-      id: string;
-      type: string;
-      text?: string;
-      tool_name?: string;
-      tool_call_id?: string;
-      arguments?: unknown;
-    }>;
-    finish_reason: string;
-    usage: Record<string, number | null | boolean>;
-  }
   interface ToolCandidate {
     id: string;
     name: string;

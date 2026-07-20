@@ -29,8 +29,6 @@ export const fetchAIAliases = () => post<Api.AI.Alias[]>('aliases/list');
 export const upsertAIAlias = (code: string, deploymentId: string) =>
   post<Api.AI.Alias>('aliases/upsert', { code, deployment_id: deploymentId });
 export const deleteAIAlias = (code: string) => post<{ deleted: boolean }>('aliases/delete', { code });
-export const generateAIModel = (data: Record<string, unknown>) =>
-  post<Api.AI.GenerateResponse>('models/generate', data);
 export const searchAITools = (data: Record<string, unknown>) => post<Api.AI.ToolSearchResponse>('tools/search', data);
 export const loadAITools = (data: Record<string, unknown>) => post<Api.AI.ToolLoadResponse>('tools/load', data);
 export const executeAITool = (data: Record<string, unknown>) => post<Api.AI.ToolResult>('tools/execute', data);

@@ -237,7 +237,6 @@ const local: App.I18n.Schema = {
       root: { title: 'AI Center' },
       providers: { title: 'Model Providers' },
       models: { title: 'Model Catalog' },
-      runtime: { title: 'Model Debugger' },
       agents: { title: 'Agents' },
       agent_slots: { title: 'AI Feature Configuration' },
       knowledge: { title: 'Knowledge Bases' },
@@ -252,7 +251,6 @@ const local: App.I18n.Schema = {
     'ai_agent-builder': 'Agent Builder',
     ai_models: 'Model Catalog',
     ai_providers: 'Model Providers',
-    ai_runtime: 'Model Debugger',
     login: 'Login',
     403: 'No Permission',
     404: 'Page Not Found',
@@ -912,26 +910,6 @@ const local: App.I18n.Schema = {
       audio_input: 'Audio Input',
       audio_output: 'Audio Output'
     }
-  },
-  aiRuntime: {
-    title: 'Model Debugger',
-    modelAlias: 'Model Alias',
-    prompt: 'Prompt',
-    promptPlaceholder: 'Enter a test message',
-    generate: 'Generate',
-    stream: 'Stream',
-    output: 'Output',
-    emptyOutput: 'No output',
-    requestFailed: 'Model request failed',
-    images: 'Image input',
-    chooseImages: 'Choose or upload images',
-    removeImage: 'Remove image',
-    imagesOnly: 'Only ready image attachments are supported',
-    visionUnsupported: 'The selected model alias does not support image input',
-    streamingUnsupported: 'Streaming is not enabled for the selected model alias',
-    detailAuto: 'Auto detail',
-    detailLow: 'Low detail',
-    detailHigh: 'High detail'
   },
   toolConfirmation: {
     title: 'Sensitive Tool Confirmation',

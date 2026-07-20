@@ -43,8 +43,7 @@ export function setupElegantRouter() {
         'ai_agents',
         'ai_agent-builder',
         'ai_models',
-        'ai_providers',
-        'ai_runtime'
+        'ai_providers'
       ];
 
       const meta: Partial<RouteMeta> = {

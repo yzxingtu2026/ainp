@@ -493,7 +493,6 @@ declare namespace App {
           root: { title: string };
           providers: { title: string };
           models: { title: string };
-          runtime: { title: string };
           agents: { title: string };
           agent_slots: { title: string };
           knowledge: { title: string };
@@ -1075,26 +1074,6 @@ declare namespace App {
         visionNeedsImage: string;
         modalities: Record<(typeof import('@/constants/ai').MODEL_MODALITIES)[number], string>;
         features: Record<(typeof import('@/constants/ai').MODEL_FEATURES)[number], string>;
-      };
-      aiRuntime: {
-        title: string;
-        modelAlias: string;
-        prompt: string;
-        promptPlaceholder: string;
-        generate: string;
-        stream: string;
-        output: string;
-        emptyOutput: string;
-        requestFailed: string;
-        images: string;
-        chooseImages: string;
-        removeImage: string;
-        imagesOnly: string;
-        visionUnsupported: string;
-        streamingUnsupported: string;
-        detailAuto: string;
-        detailLow: string;
-        detailHigh: string;
       };
       toolConfirmation: {
         title: string;

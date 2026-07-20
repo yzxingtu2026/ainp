@@ -108,16 +108,6 @@ export const generatedRoutes: GeneratedRoute[] = [
           i18nKey: 'route.ai_providers',
           hideInMenu: true
         }
-      },
-      {
-        name: 'ai_runtime',
-        path: '/ai/runtime',
-        component: 'view.ai_runtime',
-        meta: {
-          title: 'ai_runtime',
-          i18nKey: 'route.ai_runtime',
-          hideInMenu: true
-        }
       }
     ]
   },
