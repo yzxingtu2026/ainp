@@ -961,6 +961,14 @@ const local: App.I18n.Schema = {
       image_generation: 'Image Generation',
       audio_input: 'Audio Input',
       audio_output: 'Audio Output'
+    },
+    structuredOutputStrategies: {
+      openai_json_schema: 'OpenAI JSON Schema',
+      anthropic_output_config: 'Anthropic Output Config',
+      constrained_decoding: 'Constrained Decoding',
+      response_only_function: 'Response-only Function',
+      json_mode: 'JSON Mode',
+      text_json: 'Text JSON'
     }
   },
   chat: {

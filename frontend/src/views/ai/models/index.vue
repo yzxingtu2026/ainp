@@ -86,6 +86,10 @@ function featureLabel(feature: string) {
   const known = MODEL_FEATURES.find(item => item === feature);
   return known ? $t(`aiModel.features.${known}`) : feature;
 }
+function strategyLabel(strategy: string) {
+  const known = STRUCTURED_OUTPUT_STRATEGIES.find(item => item === strategy);
+  return known ? $t(`aiModel.structuredOutputStrategies.${known}`) : strategy;
+}
 function modalityLabel(modality: string) {
   const known = MODEL_MODALITIES.find(item => item === modality);
   return known ? $t(`aiModel.modalities.${known}`) : modality;
@@ -426,7 +430,7 @@ onMounted(load);
           <NSelect
             v-model:value="form.structured_output_strategies"
             multiple
-            :options="STRUCTURED_OUTPUT_STRATEGIES.map(x => ({ label: x, value: x }))"
+            :options="STRUCTURED_OUTPUT_STRATEGIES.map(x => ({ label: strategyLabel(x), value: x }))"
           />
         </NFormItem>
         <NAlert
@@ -475,7 +479,7 @@ onMounted(load);
         multiple
         class="mb-12px"
         :disabled="discoveryLoading"
-        :options="STRUCTURED_OUTPUT_STRATEGIES.map(x => ({ label: x, value: x }))"
+        :options="STRUCTURED_OUTPUT_STRATEGIES.map(x => ({ label: strategyLabel(x), value: x }))"
       />
       <NAlert
         v-if="invalidVisionConfig(importInputModalities, importFeatures)"
