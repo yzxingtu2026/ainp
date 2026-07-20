@@ -109,6 +109,22 @@ func TestSettingCustomValuesSchemaConstraints(t *testing.T) {
 	}
 }
 
+func TestSettingRemoteSelectSchemaConstraints(t *testing.T) {
+	categories := map[string]setting.Category{"general": {Key: "general", Title: "General", Icon: "mdi:cog", Surface: auth.RealmTenant}}
+	definition := setting.Definition{Key: "general.remote", CategoryKey: "general", Title: "Remote", Scope: setting.ScopeTenant, Surface: auth.RealmTenant, SchemaVersion: 1, Fields: []setting.Field{{Key: "alias", Type: setting.FieldRemoteSelect, Label: "Alias", Default: "", RemoteSource: &setting.RemoteOptionSource{Endpoint: "/api/v1/ai/aliases/list", LabelField: "code", ValueField: "code"}}}}
+	if err := setting.ValidateDefinition(definition, categories); err != nil {
+		t.Fatalf("valid remote select rejected: %v", err)
+	}
+	definition.Fields[0].RemoteSource.Endpoint = "https://example.com/options"
+	if err := setting.ValidateDefinition(definition, categories); err == nil {
+		t.Fatal("external remote source endpoint must fail")
+	}
+	definition.Fields[0].Type = setting.FieldText
+	if err := setting.ValidateDefinition(definition, categories); err == nil {
+		t.Fatal("remote source on non-remote field must fail")
+	}
+}
+
 func TestSettingVisibleWhenRegistrationAndValidation(t *testing.T) {
 	reg := setting.NewRegistry()
 	if err := reg.RegisterCategory(setting.Category{

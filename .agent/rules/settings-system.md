@@ -9,6 +9,7 @@
 - `profile.runtime_preferences` 经类型化 `UserSettingService.Preferences` 读取；IANA 时区服务端校验，审计只记 key/revision，不记值。
 - `general.runtime_defaults` 只承载租户 timezone/locale 回退；可信 Runtime Context 必须按 user → tenant → system 解析来源。
 - `multi_select` 自定义值必须由字段显式开启 `allow_custom_values`，并优先配置 `custom_value_pattern`；禁止全局放开任意选项。
+- `remote_select` 必须声明同源 `/api/v1/...` endpoint、固定参数与 label/value 映射；选项接口自行执行 Action 权限和租户隔离，禁止前端按 Setting key 写业务分支。
 - 字段关联显隐只用声明式 `visible_when`（同组兄弟字段 + `eq`/`in`）；禁止表达式/脚本；隐藏字段跳过必填校验且保留值。
 - 启动配置（DSN/JWT/端口）不得纳入设置系统；Setting 不承载状态/业务字典。
 - `ai.memory_policy` 只由 Settings Action 管理；Agent 模块经类型化 Provider 读取并在发布时冻结，禁止直接读写设置表或散落 JSON。

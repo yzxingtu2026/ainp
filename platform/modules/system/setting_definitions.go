@@ -33,8 +33,11 @@ func registerExampleSettings(a *app.App) error {
 }
 
 func registerToolSearchSetting(a *app.App) error {
-	maxAliasLength := 64
-	return a.RegisterSettingDefinition(setting.Definition{Key: aitool.SettingKeySearch, CategoryKey: "ai", Title: "工具语义检索", Description: "配置工具目录和查询使用的 Embedding Model Alias；留空时降级为词法检索", Scope: setting.ScopeTenant, Surface: auth.RealmTenant, Permission: ActionSettingList, Order: 20, SchemaVersion: 1, Fields: []setting.Field{{Key: aitool.SettingFieldModelAlias, Type: setting.FieldText, Label: "Embedding Model Alias", Default: "", MaxLength: &maxAliasLength}}})
+	return a.RegisterSettingDefinition(setting.Definition{Key: aitool.SettingKeySearch, CategoryKey: "ai", Title: "工具语义检索", TitleKey: "setting.definition.ai.tool_search.title", Description: "配置工具目录和查询使用的 Embedding Model Alias；留空时降级为词法检索", DescriptionKey: "setting.definition.ai.tool_search.description", Scope: setting.ScopeTenant, Surface: auth.RealmTenant, Permission: ActionSettingList, Order: 20, SchemaVersion: 1, Fields: []setting.Field{{Key: aitool.SettingFieldModelAlias, Type: setting.FieldRemoteSelect, Label: "Embedding 模型 Alias", LabelKey: "setting.field.ai.tool_search.embedding_model_alias.label", Default: "", RemoteSource: aliasRemoteSource("embedding")}}})
+}
+
+func aliasRemoteSource(modelType string) *setting.RemoteOptionSource {
+	return &setting.RemoteOptionSource{Endpoint: "/api/v1/ai/aliases/list", Params: map[string]any{"model_type": modelType}, LabelField: "code", ValueField: "code"}
 }
 
 func registerMemoryPolicySetting(a *app.App) error {
@@ -45,8 +48,8 @@ func registerMemoryPolicySetting(a *app.App) error {
 	d := aimemory.SystemDefaultPolicy()
 	return a.RegisterSettingDefinition(setting.Definition{Key: aimemory.SettingKeyPolicyDefaults, CategoryKey: "ai", Title: "长期记忆默认策略", Description: "Agent Version 未覆盖时使用的租户默认值", Scope: setting.ScopeTenant, Surface: auth.RealmTenant, Permission: ActionSettingList, Order: 10, SchemaVersion: 1, Fields: []setting.Field{
 		{Key: "enabled", Type: setting.FieldBoolean, Label: "启用长期记忆", Default: d.Enabled},
-		{Key: "extraction_model_alias", Type: setting.FieldText, Label: "记忆处理模型 Alias", Default: d.ExtractionModelAlias, Required: true},
-		{Key: "consolidation_model_alias", Type: setting.FieldText, Label: "整理模型 Alias", Default: ""},
+		{Key: "extraction_model_alias", Type: setting.FieldRemoteSelect, Label: "记忆处理模型 Alias", LabelKey: "setting.field.ai.memory_policy.extraction_model_alias.label", Default: d.ExtractionModelAlias, Required: true, RemoteSource: aliasRemoteSource("chat")},
+		{Key: "consolidation_model_alias", Type: setting.FieldRemoteSelect, Label: "整理模型 Alias", LabelKey: "setting.field.ai.memory_policy.consolidation_model_alias.label", Default: "", RemoteSource: aliasRemoteSource("chat")},
 		{Key: "auto_save_low_sensitive", Type: setting.FieldBoolean, Label: "低敏候选自动保存", Default: d.AutoSaveLowSensitive},
 		{Key: "write_approval_mode", Type: setting.FieldSelect, Label: "写入审批", Default: string(d.WriteApprovalMode), Required: true, Options: []setting.FieldOption{{Value: "always", Label: "始终审批"}, {Value: "sensitive_only", Label: "仅敏感内容"}, {Value: "never", Label: "无需审批"}}},
 		{Key: "agent_specific_scope", Type: setting.FieldBoolean, Label: "Agent 专属作用域", Default: false},
