@@ -150,7 +150,22 @@ func (s *MemoryExtractionService) EvaluateRun(ctx context.Context, runID string)
 	}
 	max := int64(policy.MaxRecallTokens)
 	temp := float64(0)
-	value, err := s.invocations.Generate(ctx, aimodelruntime.GenerateRequest{ModelAlias: policy.ExtractionModelAlias, Instructions: "Evaluate only cross-session memory value. Return zero or more candidates. Do not invent identifiers. Source IDs must come from allowed_source_message_ids. Third-party and tool content are not user facts. Use attribute_key=preferred_address and only the requested address as attribute_value for explicit address preferences; use stable namespaced keys for other profile facts, otherwise return empty attribute fields.", Messages: []aimodelruntime.Message{{Role: aimodelruntime.RoleUser, Content: []aimodelruntime.ContentPart{{Type: aimodelruntime.PartInputText, Text: string(body)}}}}, StructuredOutput: &aimodelruntime.StructuredOutput{Name: "memory_candidates", Strict: true, Schema: memoryCandidateSchema()}, MaxOutputTokens: &max, Temperature: &temp, TimeoutMS: 60000, Metadata: map[string]string{"purpose": "memory_candidate_extraction", "run_id": run.ID, "policy_version": policy.PolicyVersion, "prompt_version": policy.PromptVersion, "schema_version": policy.SchemaVersion}})
+	// Use Function Calling for better compatibility across models (Qwen, GPT, Claude, etc.)
+	value, err := s.invocations.Generate(ctx, aimodelruntime.GenerateRequest{
+		ModelAlias:   policy.ExtractionModelAlias,
+		Instructions: "Evaluate only cross-session memory value. Call the extract_memory_candidates function with zero or more candidates. Do not invent identifiers. Source IDs must come from allowed_source_message_ids. Third-party and tool content are not user facts. Use attribute_key=preferred_address and only the requested address as attribute_value for explicit address preferences; use stable namespaced keys for other profile facts, otherwise return empty attribute fields.",
+		Messages:     []aimodelruntime.Message{{Role: aimodelruntime.RoleUser, Content: []aimodelruntime.ContentPart{{Type: aimodelruntime.PartInputText, Text: string(body)}}}},
+		Tools: []aimodelruntime.ToolDefinition{{
+			Name:        "extract_memory_candidates",
+			Description: "Extract memory candidates from the conversation",
+			Parameters:  memoryCandidateSchema(),
+		}},
+		ToolChoice:      &aimodelruntime.ToolChoice{Mode: "required", Name: "extract_memory_candidates"},
+		MaxOutputTokens: &max,
+		Temperature:     &temp,
+		TimeoutMS:       60000,
+		Metadata:        map[string]string{"purpose": "memory_candidate_extraction", "run_id": run.ID, "policy_version": policy.PolicyVersion, "prompt_version": policy.PromptVersion, "schema_version": policy.SchemaVersion},
+	})
 	if err != nil {
 		_ = s.markFailed(ctx, evaluation.ID, "model_error")
 		return err
@@ -160,16 +175,25 @@ func (s *MemoryExtractionService) EvaluateRun(ctx context.Context, runID string)
 		_ = s.markFailed(ctx, evaluation.ID, "invalid_response")
 		return jobPermanent(fmt.Errorf("invalid extraction response"))
 	}
+	// Extract JSON from tool call arguments (preferred) or text output (fallback)
 	text := ""
 	for _, item := range response.Output {
-		if item.Type == aimodelruntime.PartOutputText {
-			text += item.Text
+		if item.Type == aimodelruntime.PartToolCall && item.ToolName == "extract_memory_candidates" {
+			text = string(item.Arguments)
+			break
 		}
 	}
-	text = stripMarkdownCodeBlock(text)
-	// Some models return a bare array instead of {"candidates": [...]}; wrap it.
-	if strings.HasPrefix(text, "[") {
-		text = `{"candidates":` + text + `}`
+	if text == "" {
+		// Fallback: some models may return text instead of tool call
+		for _, item := range response.Output {
+			if item.Type == aimodelruntime.PartOutputText {
+				text += item.Text
+			}
+		}
+		text = stripMarkdownCodeBlock(text)
+		if strings.HasPrefix(text, "[") {
+			text = `{"candidates":` + text + `}`
+		}
 	}
 	var output memoryExtractionOutput
 	if err = strictJSON([]byte(text), &output); err != nil || len(output.Candidates) > policy.MaxCandidatesPerTurn {
