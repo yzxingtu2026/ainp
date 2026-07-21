@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"unicode"
 )
 
 type Registry struct {
@@ -177,6 +178,34 @@ func (r *Registry) SlotIDs() []string {
 	sort.Strings(out)
 	return out
 }
+
+// IsBindable reports whether a tool may be persisted in an AgentToolBinding.
+func (r *Registry) IsBindable(id string) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	d, ok := r.tools[id]
+	return ok && d.Status == "enabled" && d.BindingMode == BindingOptional
+}
+
+func (r *Registry) BindingGroup(id string) []Definition {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	d, ok := r.tools[id]
+	if !ok {
+		return nil
+	}
+	if d.BindingGroup == "" {
+		return []Definition{d}
+	}
+	out := make([]Definition, 0, 2)
+	for _, candidate := range r.tools {
+		if candidate.BindingGroup == d.BindingGroup {
+			out = append(out, candidate)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
+}
 func (r *Registry) List() []Definition {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -190,6 +219,8 @@ func (r *Registry) List() []Definition {
 func schemaHash(d Definition) string {
 	copy := d
 	copy.SchemaHash = ""
+	copy.TitleForHuman = ""
+	copy.DescriptionForHuman = ""
 	b, _ := json.Marshal(copy)
 	b = append(b, []byte(d.RuntimeRef)...)
 	v := sha256.Sum256(b)
@@ -197,16 +228,16 @@ func schemaHash(d Definition) string {
 }
 
 // Search 面向模型常驻 tool.search：默认 5、硬顶 10，避免把全量目录塞进上下文。
-func Search(ctx context.Context, definitions []Definition, query, capability string, source Source, limit int, visible func(Definition) bool, embeddings EmbeddingService) ([]Candidate, error) {
-	return search(ctx, definitions, query, capability, source, limit, 5, 10, visible, embeddings)
+func Search(ctx context.Context, definitions []Definition, query, capability string, source Source, limit int, visible func(Definition) bool) ([]Candidate, error) {
+	return search(ctx, definitions, query, capability, source, limit, 5, 10, visible)
 }
 
 // Browse 面向管理端工具选择器：默认 50、硬顶 100，便于在弹窗中浏览已注册工具。
 func Browse(ctx context.Context, definitions []Definition, query, capability string, source Source, limit int, visible func(Definition) bool) ([]Candidate, error) {
-	return search(ctx, definitions, query, capability, source, limit, 50, 100, visible, nil)
+	return search(ctx, definitions, query, capability, source, limit, 50, 100, visible)
 }
 
-func search(ctx context.Context, definitions []Definition, query, capability string, source Source, limit, defaultLimit, maxLimit int, visible func(Definition) bool, embeddings EmbeddingService) ([]Candidate, error) {
+func search(ctx context.Context, definitions []Definition, query, capability string, source Source, limit, defaultLimit, maxLimit int, visible func(Definition) bool) ([]Candidate, error) {
 	if limit <= 0 {
 		limit = defaultLimit
 	}
@@ -221,17 +252,10 @@ func search(ctx context.Context, definitions []Definition, query, capability str
 		}
 		eligible = append(eligible, d)
 	}
-	vector := map[string]float64{}
-	if embeddings != nil {
-		scores, err := embeddings.Scores(ctx, q, eligible)
-		if err == nil {
-			vector = scores
-		}
-	}
 	out := make([]Candidate, 0, len(eligible))
 	for _, d := range eligible {
 		text := strings.ToLower(strings.Join(append([]string{d.ID, d.Name, d.DescriptionForLLM, d.Capability}, d.Tags...), " "))
-		score := vector[d.ID] * 0.25
+		score := 0.0
 		if q == "" {
 			score += 0.1
 		} else {
@@ -240,7 +264,7 @@ func search(ctx context.Context, definitions []Definition, query, capability str
 			} else if strings.Contains(text, q) {
 				score += 0.7
 			} else {
-				for _, term := range strings.Fields(q) {
+				for _, term := range LexicalTerms(q) {
 					if strings.Contains(text, term) {
 						score += 0.12
 					}
@@ -250,7 +274,7 @@ func search(ctx context.Context, definitions []Definition, query, capability str
 		if score <= 0 {
 			continue
 		}
-		out = append(out, Candidate{ID: d.ID, Name: d.Name, Summary: d.DescriptionForLLM, Source: d.Source, Capability: d.Capability, Risk: d.Risk, SideEffect: d.SideEffect, InputHints: inputHints(d.InputSchema), Score: score})
+		out = append(out, Candidate{ID: d.ID, Name: d.Name, Summary: d.DescriptionForLLM, Source: d.Source, Capability: d.Capability, Risk: d.Risk, SideEffect: d.SideEffect, InputHints: InputHints(d.InputSchema), BindingMode: d.BindingMode, LoadingMode: d.LoadingMode, BindingGroup: d.BindingGroup, Score: score})
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Score == out[j].Score {
@@ -263,7 +287,41 @@ func search(ctx context.Context, definitions []Definition, query, capability str
 	}
 	return out, nil
 }
-func inputHints(schema json.RawMessage) []string {
+
+func LexicalTerms(value string) []string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	seen := map[string]bool{}
+	terms := make([]string, 0, 16)
+	add := func(term string) {
+		term = strings.TrimSpace(term)
+		if term == "" || seen[term] || len(terms) >= 32 {
+			return
+		}
+		seen[term] = true
+		terms = append(terms, term)
+	}
+	for _, field := range strings.Fields(value) {
+		add(field)
+		runes := []rune(field)
+		for i := 0; i+1 < len(runes); i++ {
+			if unicode.Is(unicode.Han, runes[i]) && unicode.Is(unicode.Han, runes[i+1]) {
+				add(string(runes[i : i+2]))
+			}
+		}
+	}
+	return terms
+}
+
+func SearchDocumentText(definition Definition) string {
+	parts := append([]string{definition.ID, definition.Name, definition.DescriptionForLLM, definition.Capability}, definition.Tags...)
+	terms := make([]string, 0, len(parts)*2)
+	for _, part := range parts {
+		terms = append(terms, part)
+		terms = append(terms, LexicalTerms(part)...)
+	}
+	return strings.Join(terms, " ")
+}
+func InputHints(schema json.RawMessage) []string {
 	var v struct {
 		Properties map[string]any `json:"properties"`
 	}

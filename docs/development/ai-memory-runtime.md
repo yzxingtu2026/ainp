@@ -52,7 +52,7 @@ active 变化只在事实事务写安全的 `ai.memory.item.changed` Outbox。�
 - relative date 由 Run Time Snapshot 解析为确定性 UTC/local 范围；`local_date` 与 occurred range 语义分开。
 - 自动 Recall Hook 只注入 normal 的 fact/context/event，受 Agent Version `max_recall_items/max_recall_tokens` 和用户 `auto_memory_enabled` 限制；当前称呼继续由强类型 profile 确定性解析。
 - 注入使用 `UNTRUSTED USER MEMORY` user-level reference section；Snapshot 仅保存 item/evidence revision refs，不保存正文或向量。
-- 唯一主动检索入口为 direct Slot `builtin:memory.search`；只读，禁止 add/update/delete Tool。
+- 唯一主动检索入口为 direct Slot `builtin:memory.search`；它必须先作为 Agent Tool 有效绑定，再在长期记忆启用且运行上下文满足时条件投影。该工具只读，禁止 add/update/delete Tool。
 
 第二阶段 consolidation 按 tenant+user 唯一批次和 lease 串行运行，使用冻结 consolidation Alias。模型输入仅含受控摘要、attribute、revision、recall/importance/validity；输出只允许 noop/duplicate/conflict/summary plan。应用层复核 item scope 与 revision 后只追加关系、保存计划和水位，禁止模型 activate/supersede/revoke/delete。
 

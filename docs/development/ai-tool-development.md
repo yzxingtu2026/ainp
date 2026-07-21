@@ -31,7 +31,9 @@ func (s *Service) GetOrder(ctx context.Context, req OrderGetRequest) (any, error
 }
 ```
 
-注册 Action 时增加 `AIMeta`：
+Action 是否暴露以其注册处的 `Metadata.AI` 为唯一事实源。适合 Agent 使用的 Action 填写完整 `AIMeta`；不暴露的 Action 保持 `AI=nil`，由 `ActionProvider` 默认忽略。禁止新增 `action_ai_inventory.go`、Action ID switch 或其他与 Registry 平行的手工暴露清单。
+
+注册可暴露 Action 时增加 `AIMeta`：
 
 ```go
 if err := a.RegisterAction(action.Action{
@@ -45,9 +47,12 @@ if err := a.RegisterAction(action.Action{
             ExposeTool:          true,
             Summary:             "根据采购单 ID 查询当前用户有权访问的采购单",
             HumanDescription:    "读取指定采购单",
+            Tags:                []string{"采购单", "采购", "查询"},
             Risk:                "low",
             SideEffect:          "read",
+            ResultSummary:       "已返回当前用户有权查看的采购单",
             InputSchema:         action.SchemaFor[OrderGetRequest](),
+            OutputSchema:        action.SchemaFor[OrderView](),
         },
     },
 }); err != nil {
@@ -57,7 +62,9 @@ if err := a.RegisterAction(action.Action{
 
 系统自动投影为 `action:purchase.order_get`。搜索时沿用 Action permission，执行时只调用 `ActionRegistry.Invoke`，因此继续经过 realm、tenant、permission、DTO 验证、幂等和审计。
 
-不要手写一份与 DTO 平行的输入 Schema。`action.SchemaFor[T]()` 会映射 JSON 字段、required、min/max、oneof、嵌套对象和数组，并默认拒绝额外字段。
+不要手写一份与 DTO 平行的输入或输出 Schema。`action.SchemaFor[T]()` 会映射 JSON 字段、required、min/max、oneof、嵌套对象和数组，并默认拒绝额外字段。`ResultSummary` 只能描述结果类别，不得拼入参数、业务正文或敏感字段。
+
+未声明 `AIMeta` 的 Action 不会进入 Tool Registry，也不会被 `tool.search`、`tool.load` 或模型调用。需要新增暴露能力时，直接修改该 Action 的注册定义并补齐契约测试，不同步维护第二份 ID 清单。
 
 ### 写操作示例
 
@@ -66,10 +73,12 @@ AI: &action.AIMeta{
     ExposeTool:           true,
     Summary:              "创建采购订单",
     HumanDescription:     "创建一张新的采购订单",
+    ResultSummary:        "采购订单已创建",
     Risk:                 "medium",
     SideEffect:           "write",
     RequiresConfirmation: true,
     InputSchema:          action.SchemaFor[OrderCreateRequest](),
+    OutputSchema:         action.SchemaFor[OrderView](),
 }
 ```
 
@@ -117,7 +126,8 @@ func weatherDefinition() aitool.Definition {
     return aitool.Definition{
         ID:                  "builtin:weather.current",
         Source:              aitool.SourceBuiltin,
-        Name:                "查询实时天气",
+        Name:                "weather.current",
+        TitleForHuman:       "实时天气查询",
         DescriptionForLLM:   "查询指定城市当前的天气情况",
         DescriptionForHuman: "访问天气服务读取实时天气",
         Capability:          "weather",
@@ -126,6 +136,8 @@ func weatherDefinition() aitool.Definition {
         Risk:                aitool.RiskLow,
         SideEffect:          aitool.SideEffectExternal,
         RequiresConfirmation: true,
+        BindingMode:         aitool.BindingOptional,
+        LoadingMode:         aitool.LoadingDirect,
         RuntimeRef:          "weather.current",
         SchemaVersion:       1,
         Status:              "enabled",
@@ -184,7 +196,7 @@ if err := a.ToolRegistry.RegisterProvider(
 
 核心 Slot 不按 Source 共享 Executor。Registry 根据 Tool ID 定位 Slot Executor，因此多个 `builtin` Slot 可以独立注册、投影和执行，且不会互相覆盖。
 
-Registry 在搜索、加载和模型投影前刷新，因此后注册的 Action/插件可以被发现。定义重复、Source 不匹配、非法 ID 或 Schema 会使刷新失败，不能静默跳过。
+Registry 在搜索、加载和模型投影前刷新，因此后注册的 Action/插件可以被发现。定义重复、Source 不匹配、非法 ID 或 Schema 会使刷新失败，不能静默跳过。新增或变更生产 Tool 后，应用启动和新租户初始化会自动 Reconcile Catalog；运行中动态注册来源必须显式触发同一 Reconcile，禁止依赖首次搜索写库。当前租户可通过 `ai.tool_catalog_rebuild` 做幂等修复。
 
 ## 命名规范
 
@@ -200,7 +212,8 @@ mcp:github.create_issue
 
 - ID 使用小写字母、数字、下划线、连字符和点。
 - ID 一旦发布应保持稳定；改名按删除旧工具、新增工具处理。
-- `Name` 面向人类，`DescriptionForLLM` 面向检索和模型选择。
+- `Name` 是稳定工具名，`DescriptionForLLM` 面向检索和模型选择；`TitleForHuman` / `DescriptionForHuman` 是插件自带的人类展示契约。框架不要求插件注册平台 i18n key，管理界面不得直接展示 LLM 描述。
+- Human 展示文案不参与 Schema Hash、Handle 或 Embedding 文档；修改展示文案不得改变工具执行契约。
 - 描述应说明何时使用、必要输入和主要结果，不写 Credential、Endpoint 或内部实现。
 - `SchemaVersion` 从 1 开始；契约变化时递增。
 

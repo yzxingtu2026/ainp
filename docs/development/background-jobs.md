@@ -54,6 +54,8 @@ jobs:
 
 附件缩略图（#36）：上传 `ready` → Outbox `attachment.ready.v1` → 入队 `attachment.generate_thumb`（`file` 队列）→ 写入派生对象；详见 `docs/development/attachments.md`。
 
+工具语义索引：`ai.tool_catalog.changed.v1` → `ai.tool_catalog.embed`（`ai` 队列）→ 统一 Embedding Runtime → revision/provenance 条件写入 pgvector。重复事件使用 `tool_id + catalog_revision` 幂等键；旧 Job 不得覆盖新版 Search Document。
+
 ## 非目标
 
 管理前端、完整 Scheduler UI、Workflow/DAG、Redis Cluster、具体转码/AI Job 实现、exactly-once。

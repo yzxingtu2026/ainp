@@ -23,6 +23,7 @@ import (
 	knowledgetool "github.com/yzxingtu2026/ainp/platform/modules/ai/tools/knowledge"
 	memorytool "github.com/yzxingtu2026/ainp/platform/modules/ai/tools/memory"
 	"github.com/yzxingtu2026/ainp/platform/modules/system"
+	"gorm.io/gorm"
 )
 
 const (
@@ -49,6 +50,7 @@ const (
 	ActionToolConfirmationList         = "ai.tool_confirmation_list"
 	ActionToolConfirmationApprove      = "ai.tool_confirmation_approve"
 	ActionToolConfirmationReject       = "ai.tool_confirmation_reject"
+	ActionToolCatalogRebuild           = "ai.tool_catalog_rebuild"
 	ActionAgentList                    = "ai.agent_list"
 	ActionAgentGet                     = "ai.agent_get"
 	ActionAgentCreate                  = "ai.agent_create"
@@ -152,6 +154,12 @@ func Register(a *app.App) error {
 		return err
 	}
 	tools := NewToolService(a.DB, toolRegistry, handleSigner, writer)
+	tools.SetEmbeddingRuntime(a.EmbeddingRuntime)
+	tools.SetSettingProvider(a.SettingValues)
+	tools.SetCatalogProjectionSynchronous(a.Outbox == nil || !a.Outbox.Enabled)
+	if err := RegisterToolCatalogEmbedding(a, tools); err != nil {
+		return err
+	}
 	invocations.SetToolProjector(tools)
 	a.ToolRegistry = toolRegistry
 	contracts, err := NewBuiltinAgentContractRegistry()
@@ -191,6 +199,7 @@ func Register(a *app.App) error {
 	compactions.SetMemoryFlushHook(memoryExtraction)
 	a.ContextCompactor = compactions
 	agentRuntime := NewAgentRuntimeService(a.DB, conversations, invocations, tools, compactions, writer, a.Authorization, a.RuntimeContextProvider)
+	agentRuntime.SetAgentContracts(contracts)
 	agentRuntime.SetMemoryRetriever(memoryRetriever)
 	tools.SetConfirmationHooks(agentRuntime.OnConfirmationPending, agentRuntime.OnConfirmationDecided)
 	if err := RegisterAgentRuntime(a, agentRuntime); err != nil {
@@ -205,7 +214,17 @@ func Register(a *app.App) error {
 	if err := RegisterMemoryExtraction(a, memoryExtraction, memoryGovernance); err != nil {
 		return err
 	}
-	a.AgentTenantInitializer = agents.ReconcileBuiltinForTenant
+	a.ToolCatalogInitializer = func(ctx context.Context, tenantID, actorID string) error {
+		_, err := tools.ReconcileCatalogForTenant(ctx, tenantID, actorID)
+		return err
+	}
+	a.AgentTenantInitializer = func(ctx context.Context, db *gorm.DB, tenantID, userID string) error {
+		if err := agents.ReconcileBuiltinForTenant(ctx, db, tenantID, userID); err != nil {
+			return err
+		}
+		_, err := tools.ReconcileCatalogForTenant(ctx, tenantID, userID)
+		return err
+	}
 	auditOn := true
 	type def struct {
 		id, path, name, group, groupName string
@@ -222,6 +241,7 @@ func Register(a *app.App) error {
 		{ActionToolConfirmationList, "/api/v1/ai/tool-confirmations/list", "待确认工具列表", "ai.tool_runtime", "工具运行时", action.JSON(tools.ListConfirmations)},
 		{ActionToolConfirmationApprove, "/api/v1/ai/tool-confirmations/approve", "批准本次工具执行", "ai.tool_runtime", "工具运行时", action.JSON(tools.Approve)},
 		{ActionToolConfirmationReject, "/api/v1/ai/tool-confirmations/reject", "拒绝本次工具执行", "ai.tool_runtime", "工具运行时", action.JSON(tools.Reject)},
+		{ActionToolCatalogRebuild, "/api/v1/ai/tools/catalog/rebuild", "重建工具目录", "ai.tool_runtime", "工具运行时", action.JSON(func(ctx context.Context, _ struct{}) (any, error) { return tools.ReconcileCatalog(ctx, true) })},
 		{ActionAgentList, "/api/v1/ai/agents/list", "智能体列表", "ai.agent_management", "智能体", action.JSON(agents.List)},
 		{ActionAgentGet, "/api/v1/ai/agents/get", "智能体详情", "ai.agent_management", "智能体", action.JSON(agents.Get)},
 		{ActionAgentCreate, "/api/v1/ai/agents/create", "创建智能体", "ai.agent_management", "智能体", action.JSON(agents.Create)},
@@ -285,7 +305,7 @@ func Register(a *app.App) error {
 	if err := aitools.RegisterBuiltins(toolRegistry, knowledgetool.New(knowledgeTool.Project, knowledgeTool), memorytool.New(memoryRuntimeTool.Project, memoryRuntimeTool)); err != nil {
 		return err
 	}
-	meta := []aitool.Definition{{ID: "meta:tool.search", Source: aitool.SourceMeta, Name: "tool.search", DescriptionForLLM: "Search visible tools by intent and return compact candidates", DescriptionForHuman: "搜索当前用户可用的工具", Capability: "ai", InputSchema: action.SchemaFor[aitool.MetaSearchInput](), Risk: aitool.RiskLow, SideEffect: aitool.SideEffectRead, RuntimeRef: "tool.search", SchemaVersion: 1, Status: "enabled"}, {ID: "meta:tool.load", Source: aitool.SourceMeta, Name: "tool.load", DescriptionForLLM: "Load a small number of candidate tools into the current scope", DescriptionForHuman: "将候选工具加载到当前调用范围", Capability: "ai", InputSchema: action.SchemaFor[aitool.MetaLoadInput](), Risk: aitool.RiskLow, SideEffect: aitool.SideEffectRead, RuntimeRef: "tool.load", SchemaVersion: 1, Status: "enabled"}}
+	meta := []aitool.Definition{{ID: "meta:tool.search", Source: aitool.SourceMeta, Name: "tool.search", TitleForHuman: "工具搜索", DescriptionForLLM: "Search visible tools by intent and return compact candidates", DescriptionForHuman: "按意图搜索当前智能体可用的工具", Capability: "ai", InputSchema: action.SchemaFor[aitool.MetaSearchInput](), Risk: aitool.RiskLow, SideEffect: aitool.SideEffectRead, BindingMode: aitool.BindingOptional, LoadingMode: aitool.LoadingDirect, BindingGroup: "tool_discovery", RuntimeRef: "tool.search", SchemaVersion: 1, Status: "enabled"}, {ID: "meta:tool.load", Source: aitool.SourceMeta, Name: "tool.load", TitleForHuman: "工具加载", DescriptionForLLM: "Load a small number of candidate tools into the current scope", DescriptionForHuman: "将少量候选工具加载到当前运行范围", Capability: "ai", InputSchema: action.SchemaFor[aitool.MetaLoadInput](), Risk: aitool.RiskLow, SideEffect: aitool.SideEffectRead, BindingMode: aitool.BindingOptional, LoadingMode: aitool.LoadingDirect, BindingGroup: "tool_discovery", RuntimeRef: "tool.load", SchemaVersion: 1, Status: "enabled"}}
 	metaExec := aitool.ExecuteFunc(func(ctx context.Context, t aitool.LoadedTool, args json.RawMessage) (*aitool.Result, error) {
 		switch t.Definition.ID {
 		case "meta:tool.search":
@@ -340,6 +360,6 @@ func Register(a *app.App) error {
 
 func NewBuiltinAgentContractRegistry() (*aiagent.Registry, error) {
 	contracts := aiagent.NewRegistry()
-	err := contracts.Register(aiagent.Contract{Key: "system.operations", Version: "1.0.0", Name: "系统运营助手", Description: "通过当前用户权限安全操作后台系统", BaseInstructions: prompt.MustGet("agent/system-operations"), RequiredModelCapabilities: []string{"chat", "tools"}, RequiredToolSelectors: []string{"meta:tool.search", "meta:tool.load"}, ConfigSchema: json.RawMessage(`{"type":"object","additionalProperties":false}`), SingletonScope: aiagent.SingletonTenant, ManagedFields: []string{"code", "source", "contract_key", "contract_version", "base_instructions", "visibility"}, UpgradePolicy: "managed-fields"})
+	err := contracts.Register(aiagent.Contract{Key: "system.operations", Version: "1.0.0", Name: "系统运营助手", Description: "通过当前用户权限安全操作后台系统", BaseInstructions: prompt.MustGet("agent/system-operations"), RequiredModelCapabilities: []string{"chat", "tools"}, RequiredToolSelectors: []string{"meta:tool.search", "meta:tool.load"}, AllowedToolSources: []string{"action"}, AllowedToolCapabilities: []string{"system", "operations"}, ConfigSchema: json.RawMessage(`{"type":"object","additionalProperties":false}`), SingletonScope: aiagent.SingletonTenant, ManagedFields: []string{"code", "source", "contract_key", "contract_version", "base_instructions", "visibility"}, UpgradePolicy: "managed-fields"})
 	return contracts, err
 }

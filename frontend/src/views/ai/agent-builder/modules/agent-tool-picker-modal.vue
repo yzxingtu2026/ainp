@@ -103,6 +103,12 @@ function close() {
               <template #header-extra>
                 <NSpace align="center">
                   <NTag size="small">{{ tool.source }}</NTag>
+                  <NTag v-if="tool.binding_group === 'tool_discovery'" size="small" type="info">
+                    {{ $t('page.agentBuilder.toolDiscovery') }}
+                  </NTag>
+                  <NTag v-if="tool.loading_mode === 'conditional'" size="small" type="info">
+                    {{ $t('page.agentBuilder.conditionalLoading') }}
+                  </NTag>
                   <NTag size="small" :type="riskType(tool.risk)">
                     {{ $t(`toolConfirmation.risk.${tool.risk}` as App.I18n.I18nKey) }}
                   </NTag>

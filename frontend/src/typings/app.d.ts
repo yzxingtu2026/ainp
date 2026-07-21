@@ -698,6 +698,8 @@ declare namespace App {
           noToolCandidates: string;
           requiredTool: string;
           requiredToolReadonly: string;
+          conditionalLoading: string;
+          toolDiscovery: string;
           bind: string;
           bound: string;
           unbind: string;

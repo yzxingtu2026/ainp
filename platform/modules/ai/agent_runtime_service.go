@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/yzxingtu2026/ainp/platform/framework/action"
+	"github.com/yzxingtu2026/ainp/platform/framework/aiagent"
 	"github.com/yzxingtu2026/ainp/platform/framework/aiagentruntime"
 	"github.com/yzxingtu2026/ainp/platform/framework/aiconversation"
 	"github.com/yzxingtu2026/ainp/platform/framework/aimemory"
@@ -43,12 +44,17 @@ type AgentRuntimeService struct {
 	authorization   auth.AuthorizationProvider
 	runtimeContext  runtimecontext.Provider
 	memoryRetriever *MemoryRetrievalService
+	contracts       *aiagent.Registry
 	leaseDuration   time.Duration
 	now             func() time.Time
 }
 
 func (s *AgentRuntimeService) SetMemoryRetriever(retriever *MemoryRetrievalService) {
 	s.memoryRetriever = retriever
+}
+
+func (s *AgentRuntimeService) SetAgentContracts(contracts *aiagent.Registry) {
+	s.contracts = contracts
 }
 
 func NewAgentRuntimeService(db *gorm.DB, c *ConversationService, i *InvocationService, t *ToolService, compactor aiconversation.ContextCompactor, w outbox.Writer, authorization auth.AuthorizationProvider, runtimeContext ...runtimecontext.Provider) *AgentRuntimeService {
@@ -1068,15 +1074,32 @@ func (s *AgentRuntimeService) ensureToolScope(ctx context.Context, run *AgentRun
 	if err != nil {
 		return "", err
 	}
-	allowed := []string{"meta:tool.search", "meta:tool.load"}
-	if s.tools.registry != nil {
-		allowed = append(allowed, s.tools.registry.SlotIDs()...)
-	}
+	allowed := []string{}
+	allowedSources := []string{}
+	allowedCapabilities := []string{}
 	for _, b := range bindings {
-		allowed = append(allowed, b.ToolID)
+		if s.tools.registry.IsBindable(b.ToolID) {
+			allowed = append(allowed, b.ToolID)
+		}
+	}
+	if s.contracts != nil && agent.ContractKey != "" {
+		if contract, ok := s.contracts.Get(agent.ContractKey, agent.ContractVersion); ok {
+			for _, id := range contract.RequiredToolSelectors {
+				group := s.tools.registry.BindingGroup(id)
+				if len(group) == 0 {
+					allowed = append(allowed, id)
+					continue
+				}
+				for _, member := range group {
+					allowed = append(allowed, member.ID)
+				}
+			}
+			allowedSources = append(allowedSources, contract.AllowedToolSources...)
+			allowedCapabilities = append(allowedCapabilities, contract.AllowedToolCapabilities...)
+		}
 	}
 	rid := run.ID
-	scope := ToolScope{ID: uuid.NewString(), TenantID: run.TenantID, UserID: run.UserID, Realm: string(auth.RealmTenant), SessionID: run.SessionID, AuthVersion: run.AuthVersion, AgentRunID: &rid, AllowedToolsJSON: jsonBytes(allowed), AllowedSourcesJSON: jsonBytes([]string{}), AllowedCapabilitiesJSON: jsonBytes([]string{}), LoadedToolsJSON: jsonBytes([]string{}), ExpiresAt: s.now().Add(30 * time.Minute)}
+	scope := ToolScope{ID: uuid.NewString(), TenantID: run.TenantID, UserID: run.UserID, Realm: string(auth.RealmTenant), SessionID: run.SessionID, AuthVersion: run.AuthVersion, AgentRunID: &rid, AllowedToolsJSON: jsonBytes(allowed), AllowedSourcesJSON: jsonBytes(allowedSources), AllowedCapabilitiesJSON: jsonBytes(allowedCapabilities), LoadedToolsJSON: jsonBytes([]string{}), ExpiresAt: s.now().Add(30 * time.Minute)}
 	return scope.ID, s.db.WithContext(ctx).Create(&scope).Error
 }
 

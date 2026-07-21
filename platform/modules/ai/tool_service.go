@@ -5,8 +5,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -17,10 +17,12 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
+	"github.com/yzxingtu2026/ainp/platform/framework/setting"
 	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
+
+var toolCapabilityPattern = regexp.MustCompile(`^[a-z][a-z0-9_.-]*$`)
 
 const toolCatalogChangedEvent = "ai.tool_catalog.changed.v1"
 const toolInvocationFinishedEvent = "ai.tool_invocation.finished.v1"
@@ -32,7 +34,9 @@ type ToolService struct {
 	registry              *aitool.Registry
 	signer                *aitool.HandleSigner
 	writer                outbox.Writer
-	embeddings            aitool.EmbeddingService
+	embeddings            aimodelruntime.EmbeddingRuntime
+	settings              *setting.Provider
+	catalogProjectionSync bool
 	onConfirmationPending func(context.Context, *gorm.DB, *ToolConfirmation) error
 	onConfirmationDecided func(context.Context, *ToolConfirmation) error
 }
@@ -43,7 +47,11 @@ func NewToolService(db *gorm.DB, r *aitool.Registry, signer *aitool.HandleSigner
 	}
 	return &ToolService{db: tenantdata.GuardedDB(db), registry: r, signer: signer, writer: w}
 }
-func (s *ToolService) SetEmbeddingService(v aitool.EmbeddingService) { s.embeddings = v }
+func (s *ToolService) SetEmbeddingRuntime(v aimodelruntime.EmbeddingRuntime) { s.embeddings = v }
+func (s *ToolService) SetSettingProvider(v *setting.Provider)                { s.settings = v }
+func (s *ToolService) SetCatalogProjectionSynchronous(enabled bool) {
+	s.catalogProjectionSync = enabled
+}
 func (s *ToolService) SetConfirmationHooks(pending func(context.Context, *gorm.DB, *ToolConfirmation) error, decided func(context.Context, *ToolConfirmation) error) {
 	s.onConfirmationPending, s.onConfirmationDecided = pending, decided
 }
@@ -60,8 +68,7 @@ func (s *ToolService) ProjectModelTools(ctx context.Context, scopeID string) (st
 	if err != nil {
 		return "", nil, err
 	}
-	ids := append([]string{"meta:tool.search", "meta:tool.load"}, s.registry.DirectSlotIDs()...)
-	ids = append(ids, decodeStrings(scope.LoadedToolsJSON)...)
+	ids := append(decodeStrings(scope.AllowedToolsJSON), decodeStrings(scope.LoadedToolsJSON)...)
 	out := make([]aimodelruntime.ToolDefinition, 0, len(ids))
 	seen := map[string]bool{}
 	for _, id := range ids {
@@ -93,8 +100,10 @@ type ToolSearchRequest struct {
 	Limit      int           `json:"limit,omitempty"`
 }
 type ToolSearchResponse struct {
-	ScopeID string             `json:"scope_id"`
-	Items   []aitool.Candidate `json:"items"`
+	ScopeID       string             `json:"scope_id"`
+	Items         []aitool.Candidate `json:"items"`
+	Degraded      bool               `json:"degraded"`
+	DegradeReason string             `json:"degrade_reason,omitempty"`
 }
 type ToolLoadRequest struct {
 	ScopeID string   `json:"scope_id" validate:"required"`
@@ -125,6 +134,9 @@ func (r ToolSearchRequest) Validate(context.Context) error {
 			return fmt.Errorf("unknown tool source")
 		}
 	}
+	if r.Capability != "" && !toolCapabilityPattern.MatchString(r.Capability) {
+		return fmt.Errorf("capability must be a stable capability code")
+	}
 	if r.Limit < 0 || r.Limit > 10 {
 		return fmt.Errorf("limit must be between 1 and 10")
 	}
@@ -142,6 +154,9 @@ func (r ToolLoadRequest) Validate(context.Context) error {
 }
 
 func (s *ToolService) Search(ctx context.Context, r ToolSearchRequest) (any, error) {
+	if err := r.Validate(ctx); err != nil {
+		return nil, err
+	}
 	if err := s.registry.Refresh(ctx); err != nil {
 		return nil, err
 	}
@@ -151,9 +166,6 @@ func (s *ToolService) Search(ctx context.Context, r ToolSearchRequest) (any, err
 	}
 	scope, err := s.scope(ctx, ac, r.ScopeID)
 	if err != nil {
-		return nil, err
-	}
-	if err = s.syncCatalog(ctx, ac.TenantID); err != nil {
 		return nil, err
 	}
 	definitions := s.registry.List()
@@ -171,13 +183,13 @@ func (s *ToolService) Search(ctx context.Context, r ToolSearchRequest) (any, err
 		projected = append(projected, definition)
 		visibleIDs[definition.ID] = true
 	}
-	items, err := aitool.Search(ctx, projected, r.Query, r.Capability, r.Source, r.Limit, func(d aitool.Definition) bool { return scopeAllows(scope, d) && toolVisible(ac, d) }, s.embeddings)
+	items, err := aitool.Search(ctx, projected, r.Query, r.Capability, r.Source, r.Limit, func(d aitool.Definition) bool { return scopeAllows(scope, d) && toolVisible(ac, d) })
 	if err != nil {
 		return nil, err
 	}
-	items = s.mergeFTS(ctx, ac, scope, r, items)
+	items, degraded, degradeReason := s.mergeHybrid(ctx, ac, scope, r, items)
 	items = slices.DeleteFunc(items, func(item aitool.Candidate) bool { return !visibleIDs[item.ID] })
-	return ToolSearchResponse{ScopeID: scope.ID, Items: items}, nil
+	return ToolSearchResponse{ScopeID: scope.ID, Items: items, Degraded: degraded, DegradeReason: degradeReason}, nil
 }
 func (s *ToolService) Load(ctx context.Context, r ToolLoadRequest) (any, error) {
 	if err := s.registry.Refresh(ctx); err != nil {
@@ -527,43 +539,6 @@ func (s *ToolService) scope(ctx context.Context, ac *auth.Context, id string) (*
 	}
 	return &v, nil
 }
-func (s *ToolService) syncCatalog(ctx context.Context, tenantID string) error {
-	for _, d := range s.registry.List() {
-		var existing ToolCatalog
-		lookup := s.db.WithContext(ctx).Where("tool_id=?", d.ID).First(&existing).Error
-		changed := errors.Is(lookup, gorm.ErrRecordNotFound) || existing.SchemaHash != d.SchemaHash || existing.Status != d.Status || existing.Name != d.Name || existing.Summary != d.DescriptionForLLM || existing.Risk != string(d.Risk) || existing.SideEffect != string(d.SideEffect)
-		if lookup != nil && !errors.Is(lookup, gorm.ErrRecordNotFound) {
-			return lookup
-		}
-		if !changed {
-			continue
-		}
-		row := ToolCatalog{ID: uuid.NewString(), TenantID: tenantID, ToolID: d.ID, Source: string(d.Source), Name: d.Name, Capability: d.Capability, Summary: d.DescriptionForLLM, TagsJSON: jsonBytes(d.Tags), Risk: string(d.Risk), SideEffect: string(d.SideEffect), SchemaVersion: d.SchemaVersion, SchemaHash: d.SchemaHash, Status: d.Status}
-		doc := ToolSearchDocument{ID: uuid.NewString(), TenantID: tenantID, ToolID: d.ID, SearchText: strings.Join(append([]string{d.ID, d.Name, d.DescriptionForLLM, d.Capability}, d.Tags...), " "), InputHintsJSON: jsonBytes([]string{}), IndexStatus: "ready", UpdatedAt: time.Now().UTC()}
-		write := func(tx *gorm.DB, w outbox.Writer) error {
-			if err := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "tenant_id"}, {Name: "tool_id"}}, DoUpdates: clause.AssignmentColumns([]string{"source", "name", "capability", "summary", "tags_json", "risk", "side_effect", "schema_version", "schema_hash", "status", "updated_at"})}).Create(&row).Error; err != nil {
-				return err
-			}
-			if err := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "tenant_id"}, {Name: "tool_id"}}, DoUpdates: clause.AssignmentColumns([]string{"search_text", "input_hints_json", "index_status", "updated_at"})}).Create(&doc).Error; err != nil {
-				return err
-			}
-			if w != nil {
-				_, err := w.Append(ctx, tx, outbox.AppendInput{EventType: toolCatalogChangedEvent, AggregateType: "ai_tool_catalog", AggregateID: d.ID, AggregateVersion: int64(d.SchemaVersion), Payload: map[string]any{"tool_id": d.ID, "source": d.Source, "schema_version": d.SchemaVersion, "schema_hash": d.SchemaHash, "status": d.Status}})
-				return err
-			}
-			return nil
-		}
-		if s.writer != nil {
-			if err := outbox.WithinTx(ctx, s.db.WithContext(ctx), s.writer, write); err != nil {
-				return err
-			}
-		} else if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error { return write(tx, nil) }); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func (s *ToolService) mergeFTS(ctx context.Context, ac *auth.Context, scope *ToolScope, r ToolSearchRequest, current []aitool.Candidate) []aitool.Candidate {
 	if strings.TrimSpace(r.Query) == "" {
 		return current
@@ -572,9 +547,13 @@ func (s *ToolService) mergeFTS(ctx context.Context, ac *auth.Context, scope *Too
 	if err != nil {
 		return current
 	}
+	lexicalQuery := strings.Join(aitool.LexicalTerms(r.Query), " ")
+	if lexicalQuery == "" {
+		return current
+	}
 	rows, err := tenantdata.TenantRaw[struct {
 		ToolID string `gorm:"column:tool_id"`
-	}](tdb, "SELECT tool_id FROM ai_tool_search_documents WHERE tenant_id = ? AND to_tsvector('simple', search_text) @@ plainto_tsquery('simple', ?) ORDER BY ts_rank(to_tsvector('simple', search_text), plainto_tsquery('simple', ?)) DESC LIMIT 10", r.Query, r.Query)
+	}](tdb, "SELECT tool_id FROM ai_tool_search_documents WHERE tenant_id = ? AND index_status = 'ready' AND to_tsvector('simple', search_text) @@ plainto_tsquery('simple', ?) ORDER BY ts_rank(to_tsvector('simple', search_text), plainto_tsquery('simple', ?)) DESC LIMIT 10", lexicalQuery, lexicalQuery)
 	if err != nil {
 		return current
 	}
@@ -591,7 +570,7 @@ func (s *ToolService) mergeFTS(ctx context.Context, ac *auth.Context, scope *Too
 		if !ok || !scopeAllows(scope, d) || !toolVisible(ac, d) {
 			continue
 		}
-		extra, _ := aitool.Search(ctx, []aitool.Definition{d}, "", r.Capability, r.Source, 1, func(aitool.Definition) bool { return true }, nil)
+		extra, _ := aitool.Search(ctx, []aitool.Definition{d}, "", r.Capability, r.Source, 1, func(aitool.Definition) bool { return true })
 		if len(extra) > 0 {
 			extra[0].Score = .5
 			current = append(current, extra[0])
@@ -712,9 +691,19 @@ func toolVisible(ac *auth.Context, d aitool.Definition) bool {
 	return true
 }
 func scopeAllows(s *ToolScope, d aitool.Definition) bool {
-	return allowEmpty(decodeStrings(s.AllowedSourcesJSON), string(d.Source)) && allowEmpty(decodeStrings(s.AllowedCapabilitiesJSON), d.Capability) && allowEmpty(decodeStrings(s.AllowedToolsJSON), d.ID)
+	sources := decodeStrings(s.AllowedSourcesJSON)
+	capabilities := decodeStrings(s.AllowedCapabilitiesJSON)
+	tools := decodeStrings(s.AllowedToolsJSON)
+	if len(sources) == 0 && len(capabilities) == 0 && len(tools) == 0 {
+		return true
+	}
+	// Actions are progressively authorized only by the Contract's source and
+	// capability scope. A stale AgentToolBinding must never make one exact.
+	if contains(tools, d.ID) && d.Source != aitool.SourceAction {
+		return true
+	}
+	return len(sources) > 0 && contains(sources, string(d.Source)) && (len(capabilities) == 0 || contains(capabilities, d.Capability))
 }
-func allowEmpty(v []string, x string) bool { return len(v) == 0 || contains(v, x) }
 func contains(v []string, x string) bool {
 	for _, item := range v {
 		if item == x {

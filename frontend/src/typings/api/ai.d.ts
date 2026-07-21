@@ -69,6 +69,11 @@ declare namespace Api.AI {
     status: string;
     created_by: string;
     created_at: string;
+    required: boolean;
+    name?: string;
+    binding_mode?: 'forbidden' | 'optional';
+    loading_mode?: 'direct' | 'conditional' | 'progressive';
+    binding_group?: string;
   }
   interface AgentKnowledgeBinding {
     id: string;
@@ -278,12 +283,16 @@ declare namespace Api.AI {
     risk: string;
     side_effect: string;
     input_hints: string[];
+    binding_mode: 'forbidden' | 'optional';
+    loading_mode: 'direct' | 'conditional' | 'progressive';
+    binding_group?: string;
     score: number;
   }
   interface ToolDefinition {
     id: string;
     source: string;
     name: string;
+    title_for_human: string;
     description_for_llm: string;
     description_for_human: string;
     capability: string;
@@ -293,6 +302,9 @@ declare namespace Api.AI {
     risk: string;
     side_effect: string;
     requires_confirmation: boolean;
+    binding_mode: 'forbidden' | 'optional';
+    loading_mode: 'direct' | 'conditional' | 'progressive';
+    binding_group?: string;
     schema_version: number;
     schema_hash: string;
     status: string;

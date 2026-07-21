@@ -32,7 +32,7 @@ Agent Contract（代码注册的能力与安全契约）
 
 ## Agent Builder
 
-智能体编排工作台（Agent Builder）是面向创建者与租户管理员的配置/调试入口，路由为 `/ai/agent-builder`（列表 `/ai/agents` 负责入口跳转）。Builder 复用本层 Action：创建、元数据更新、版本发布、工具绑定与 diagnostics；`agent_get` 额外返回只读 Contract 覆盖字段：`base_instructions`、`managed_fields`、`required_tool_selectors`。编排页左栏整栏为租户指令（人设提示词）编辑区，使用 Markdown 语法高亮编辑器（CodeMirror）；**不展示** Contract `base_instructions`（由代码契约托管，运行时自动合成），也不提供用户指令或 Run 指令字段。工具绑定在中间栏仅展示已绑定摘要；搜索/浏览已注册工具并选择绑定通过独立弹窗（`AgentToolPickerModal`）完成，管理端 Browse 上限 100，与模型侧 `tool.search` 硬顶 10 分离。
+智能体编排工作台（Agent Builder）是面向创建者与租户管理员的配置/调试入口，路由为 `/ai/agent-builder`（列表 `/ai/agents` 负责入口跳转）。Builder 复用本层 Action：创建、元数据更新、版本发布、工具绑定与 diagnostics；`agent_get` 额外返回只读 Contract 覆盖字段：`base_instructions`、`managed_fields`、`required_tool_selectors`。编排页左栏整栏为租户指令（人设提示词）编辑区，使用 Markdown 语法高亮编辑器（CodeMirror）；**不展示** Contract `base_instructions`（由代码契约托管，运行时自动合成），也不提供用户指令或 Run 指令字段。工具绑定在中间栏展示“Contract 必选 + 用户可选”的有效绑定；Contract 必选项不复制为数据库事实且不可移除。候选搜索、绑定写入、有效列表与 Run Scope 统一读取 Tool Definition 的 `binding_mode` / `loading_mode`。Action 声明 `forbidden + progressive`，只能由 Contract source/capability Scope 经已绑定的 `tool.search` / `tool.load` 发现；Meta Tool 可选绑定且搜索/加载以 `binding_group=tool_discovery` 原子处理；`knowledge.search` / `memory.search` 可选绑定并标记 `conditional`，只有实时资源与权限条件满足时才投影。管理端 Browse 上限 100，模型侧 `tool.search` 硬顶 10。
 
 「保存基本信息」经 `ai.agent_update` 同时写入名称/描述与 Builder 草稿运行配置（`has_draft` + `draft_tenant_instructions` / `draft_model_alias` / `draft_generation_config` / `draft_tool_policy`），**不**创建 release Version、**不**晋升 `current_version`。Workspace 与正式 Run 仍只消费 current Version；草稿仅供 Builder 回填编辑器与预览物化。点「发布新版本」创建 `kind=release` 并清空草稿后，新配置才对正式会话生效。
 

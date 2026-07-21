@@ -12,24 +12,33 @@ import (
 type Source string
 type Risk string
 type SideEffect string
+type BindingMode string
+type LoadingMode string
 
 const (
-	SourceMeta            Source     = "meta"
-	SourceAction          Source     = "action"
-	SourceBuiltin         Source     = "builtin"
-	SourcePlugin          Source     = "plugin"
-	SourceHTTP            Source     = "http"
-	SourceMCP             Source     = "mcp"
-	RiskLow               Risk       = "low"
-	RiskMedium            Risk       = "medium"
-	RiskHigh              Risk       = "high"
-	RiskCritical          Risk       = "critical"
-	SideEffectNone        SideEffect = "none"
-	SideEffectRead        SideEffect = "read"
-	SideEffectWrite       SideEffect = "write"
-	SideEffectExternal    SideEffect = "external"
-	SideEffectPaid        SideEffect = "paid"
-	SideEffectDestructive SideEffect = "destructive"
+	SettingKeySearch                   = "ai.tool_search"
+	SettingFieldModelAlias             = "embedding_model_alias"
+	SourceMeta             Source      = "meta"
+	SourceAction           Source      = "action"
+	SourceBuiltin          Source      = "builtin"
+	SourcePlugin           Source      = "plugin"
+	SourceHTTP             Source      = "http"
+	SourceMCP              Source      = "mcp"
+	RiskLow                Risk        = "low"
+	RiskMedium             Risk        = "medium"
+	RiskHigh               Risk        = "high"
+	RiskCritical           Risk        = "critical"
+	SideEffectNone         SideEffect  = "none"
+	SideEffectRead         SideEffect  = "read"
+	SideEffectWrite        SideEffect  = "write"
+	SideEffectExternal     SideEffect  = "external"
+	SideEffectPaid         SideEffect  = "paid"
+	SideEffectDestructive  SideEffect  = "destructive"
+	BindingForbidden       BindingMode = "forbidden"
+	BindingOptional        BindingMode = "optional"
+	LoadingDirect          LoadingMode = "direct"
+	LoadingConditional     LoadingMode = "conditional"
+	LoadingProgressive     LoadingMode = "progressive"
 )
 
 var toolIDPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]*:[a-z][a-z0-9_.-]*$`)
@@ -39,8 +48,10 @@ type Definition struct {
 	ID                   string          `json:"id"`
 	Source               Source          `json:"source"`
 	Name                 string          `json:"name"`
+	TitleForHuman        string          `json:"title_for_human"`
 	DescriptionForLLM    string          `json:"description_for_llm"`
 	DescriptionForHuman  string          `json:"description_for_human"`
+	ResultSummary        string          `json:"result_summary"`
 	Capability           string          `json:"capability"`
 	Tags                 []string        `json:"tags,omitempty"`
 	InputSchema          json.RawMessage `json:"input_schema"`
@@ -48,6 +59,9 @@ type Definition struct {
 	Risk                 Risk            `json:"risk"`
 	SideEffect           SideEffect      `json:"side_effect"`
 	RequiresConfirmation bool            `json:"requires_confirmation"`
+	BindingMode          BindingMode     `json:"binding_mode"`
+	LoadingMode          LoadingMode     `json:"loading_mode"`
+	BindingGroup         string          `json:"binding_group,omitempty"`
 	PermissionRefs       []string        `json:"permission_refs,omitempty"`
 	RuntimeRef           string          `json:"-"`
 	SchemaVersion        int             `json:"schema_version"`
@@ -62,7 +76,7 @@ func (d Definition) Validate() error {
 	if !toolIDPattern.MatchString(d.ID) || !strings.HasPrefix(d.ID, string(d.Source)+":") {
 		return fmt.Errorf("invalid namespaced tool id")
 	}
-	if d.Name == "" || d.DescriptionForLLM == "" || d.DescriptionForHuman == "" || d.Capability == "" || d.RuntimeRef == "" {
+	if d.Name == "" || d.TitleForHuman == "" || d.DescriptionForLLM == "" || d.DescriptionForHuman == "" || d.Capability == "" || d.RuntimeRef == "" {
 		return fmt.Errorf("tool definition fields are required")
 	}
 	if !json.Valid(d.InputSchema) || (len(d.OutputSchema) > 0 && !json.Valid(d.OutputSchema)) {
@@ -71,6 +85,12 @@ func (d Definition) Validate() error {
 	if !slices.Contains([]Risk{RiskLow, RiskMedium, RiskHigh, RiskCritical}, d.Risk) || !slices.Contains([]SideEffect{SideEffectNone, SideEffectRead, SideEffectWrite, SideEffectExternal, SideEffectPaid, SideEffectDestructive}, d.SideEffect) {
 		return fmt.Errorf("invalid risk or side effect")
 	}
+	if !slices.Contains([]BindingMode{BindingForbidden, BindingOptional}, d.BindingMode) || !slices.Contains([]LoadingMode{LoadingDirect, LoadingConditional, LoadingProgressive}, d.LoadingMode) {
+		return fmt.Errorf("invalid binding or loading mode")
+	}
+	if d.BindingGroup != "" && !observationFieldPattern.MatchString(d.BindingGroup) {
+		return fmt.Errorf("invalid binding group")
+	}
 	if d.SchemaVersion < 1 || (d.Status != "enabled" && d.Status != "disabled") {
 		return fmt.Errorf("invalid schema version or status")
 	}
@@ -78,15 +98,18 @@ func (d Definition) Validate() error {
 }
 
 type Candidate struct {
-	ID         string     `json:"id"`
-	Name       string     `json:"name"`
-	Summary    string     `json:"summary"`
-	Source     Source     `json:"source"`
-	Capability string     `json:"capability"`
-	Risk       Risk       `json:"risk"`
-	SideEffect SideEffect `json:"side_effect"`
-	InputHints []string   `json:"input_hints"`
-	Score      float64    `json:"score"`
+	ID           string      `json:"id"`
+	Name         string      `json:"name"`
+	Summary      string      `json:"summary"`
+	Source       Source      `json:"source"`
+	Capability   string      `json:"capability"`
+	Risk         Risk        `json:"risk"`
+	SideEffect   SideEffect  `json:"side_effect"`
+	InputHints   []string    `json:"input_hints"`
+	BindingMode  BindingMode `json:"binding_mode"`
+	LoadingMode  LoadingMode `json:"loading_mode"`
+	BindingGroup string      `json:"binding_group,omitempty"`
+	Score        float64     `json:"score"`
 }
 type LoadedTool struct {
 	Definition Definition `json:"definition"`
@@ -111,10 +134,6 @@ type Provider interface {
 type Executor interface {
 	Execute(context.Context, LoadedTool, json.RawMessage) (*Result, error)
 }
-type EmbeddingService interface {
-	Scores(context.Context, string, []Definition) (map[string]float64, error)
-}
-
 type DiscoveryMode string
 
 const (
@@ -181,10 +200,10 @@ type RuntimeSlot interface {
 }
 
 type MetaSearchInput struct {
-	Query      string `json:"query" validate:"required,max=512"`
-	Capability string `json:"capability,omitempty"`
-	Source     Source `json:"source,omitempty"`
-	Limit      int    `json:"limit,omitempty"`
+	Query      string `json:"query" validate:"required,max=512" description:"Natural-language search intent. Put business terms here."`
+	Capability string `json:"capability,omitempty" description:"Optional exact capability code such as system or operations. Omit when unknown; do not use natural language."`
+	Source     Source `json:"source,omitempty" validate:"omitempty,oneof=meta action builtin plugin http mcp" description:"Optional exact tool source. Use action for governed application Actions; omit when unknown."`
+	Limit      int    `json:"limit,omitempty" validate:"omitempty,min=1,max=10" description:"Maximum candidates to return, from 1 to 10."`
 }
 type MetaLoadInput struct {
 	ToolIDs []string `json:"tool_ids" validate:"required,min=1,max=3"`

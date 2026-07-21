@@ -4,6 +4,7 @@ import type { FormInst, FormRules, MenuOption } from 'naive-ui';
 import { $t } from '@/locales';
 import { SYSTEM_ACTIONS } from '@/constants/system';
 import SvgIcon from '@/components/custom/svg-icon.vue';
+import RemoteSelect from '@/components/common/remote-select.vue';
 import { fetchSettingList, resetSetting, updateSetting } from '@/service/api';
 import { useAuthStore } from '@/store/modules/auth';
 
@@ -298,6 +299,11 @@ onMounted(loadSettings);
                     filterable
                     :tag="field.allow_custom_values"
                     :options="selectOptions(field)"
+                  />
+                  <RemoteSelect
+                    v-else-if="field.type === 'remote_select' && field.remote_source"
+                    v-model:value="(formModel[field.key] as string)"
+                    :source="field.remote_source"
                   />
                   <NColorPicker
                     v-else-if="field.type === 'color'"

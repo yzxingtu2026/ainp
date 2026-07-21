@@ -2,6 +2,7 @@ package ai
 
 import (
 	"encoding/json"
+	"github.com/yzxingtu2026/ainp/platform/framework/aitool"
 	"gorm.io/gorm"
 	"time"
 )
@@ -59,14 +60,19 @@ type AgentVersion struct {
 func (AgentVersion) TableName() string { return "ai_agent_versions" }
 
 type AgentToolBinding struct {
-	ID        string    `gorm:"primaryKey;size:64" json:"id"`
-	TenantID  string    `gorm:"size:64;not null;uniqueIndex:ux_ai_agent_tool" json:"-"`
-	AgentID   string    `gorm:"size:64;not null;uniqueIndex:ux_ai_agent_tool;index" json:"agent_id"`
-	ToolID    string    `gorm:"size:255;not null;uniqueIndex:ux_ai_agent_tool" json:"tool_id"`
-	Source    string    `gorm:"size:32;not null" json:"source"`
-	Status    string    `gorm:"size:16;not null" json:"status"`
-	CreatedBy string    `gorm:"size:64;not null" json:"created_by"`
-	CreatedAt time.Time `json:"created_at"`
+	ID           string             `gorm:"primaryKey;size:64" json:"id"`
+	TenantID     string             `gorm:"size:64;not null;uniqueIndex:ux_ai_agent_tool" json:"-"`
+	AgentID      string             `gorm:"size:64;not null;uniqueIndex:ux_ai_agent_tool;index" json:"agent_id"`
+	ToolID       string             `gorm:"size:255;not null;uniqueIndex:ux_ai_agent_tool" json:"tool_id"`
+	Source       string             `gorm:"size:32;not null" json:"source"`
+	Status       string             `gorm:"size:16;not null" json:"status"`
+	CreatedBy    string             `gorm:"size:64;not null" json:"created_by"`
+	CreatedAt    time.Time          `json:"created_at"`
+	Required     bool               `gorm:"-" json:"required"`
+	Name         string             `gorm:"-" json:"name,omitempty"`
+	BindingMode  aitool.BindingMode `gorm:"-" json:"binding_mode,omitempty"`
+	LoadingMode  aitool.LoadingMode `gorm:"-" json:"loading_mode,omitempty"`
+	BindingGroup string             `gorm:"-" json:"binding_group,omitempty"`
 }
 
 func (AgentToolBinding) TableName() string { return "ai_agent_tool_bindings" }

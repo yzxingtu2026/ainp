@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/yzxingtu2026/ainp/platform/framework/audit"
@@ -46,6 +47,8 @@ type AIMeta struct {
 	RequiresConfirmation bool
 	Summary              string
 	HumanDescription     string
+	Tags                 []string
+	ResultSummary        string
 	InputSchema          json.RawMessage
 	OutputSchema         json.RawMessage
 }
@@ -196,6 +199,9 @@ func (r *Registry) Register(a Action) error {
 func validateAIMeta(actionID string, meta *AIMeta) error {
 	if meta.Summary == "" || meta.HumanDescription == "" {
 		return fmt.Errorf("action %s: AI summary and human description are required", actionID)
+	}
+	if strings.TrimSpace(meta.ResultSummary) == "" {
+		return fmt.Errorf("action %s: AI result summary is required", actionID)
 	}
 	switch meta.Risk {
 	case "low", "medium", "high", "critical":

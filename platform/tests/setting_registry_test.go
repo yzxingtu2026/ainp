@@ -3,6 +3,7 @@ package tests
 import (
 	"testing"
 
+	"github.com/yzxingtu2026/ainp/platform/framework/aimemory"
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/config"
@@ -106,6 +107,22 @@ func TestSettingCustomValuesSchemaConstraints(t *testing.T) {
 	}}
 	if err := setting.ValidateDefinition(base, category); err == nil {
 		t.Fatal("custom_value_pattern without allow_custom_values must fail")
+	}
+}
+
+func TestSettingRemoteSelectSchemaConstraints(t *testing.T) {
+	categories := map[string]setting.Category{"general": {Key: "general", Title: "General", Icon: "mdi:cog", Surface: auth.RealmTenant}}
+	definition := setting.Definition{Key: "general.remote", CategoryKey: "general", Title: "Remote", Scope: setting.ScopeTenant, Surface: auth.RealmTenant, SchemaVersion: 1, Fields: []setting.Field{{Key: "alias", Type: setting.FieldRemoteSelect, Label: "Alias", Default: "", RemoteSource: &setting.RemoteOptionSource{Endpoint: "/api/v1/ai/aliases/list", LabelField: "code", ValueField: "code"}}}}
+	if err := setting.ValidateDefinition(definition, categories); err != nil {
+		t.Fatalf("valid remote select rejected: %v", err)
+	}
+	definition.Fields[0].RemoteSource.Endpoint = "https://example.com/options"
+	if err := setting.ValidateDefinition(definition, categories); err == nil {
+		t.Fatal("external remote source endpoint must fail")
+	}
+	definition.Fields[0].Type = setting.FieldText
+	if err := setting.ValidateDefinition(definition, categories); err == nil {
+		t.Fatal("remote source on non-remote field must fail")
 	}
 }
 
@@ -242,6 +259,18 @@ func TestSettingActionsAndMenuAreRegistered(t *testing.T) {
 		registered, ok := application.Actions.Get(actionID)
 		if !ok || registered.Meta.Access != "authenticated" {
 			t.Fatalf("authenticated profile action not registered: %s", actionID)
+		}
+	}
+	memoryPolicy, ok := application.Settings.GetDefinition(aimemory.SettingKeyPolicyDefaults)
+	if !ok {
+		t.Fatal("memory policy setting definition was not registered")
+	}
+	for _, field := range memoryPolicy.Fields {
+		if field.Key == "enabled" {
+			continue
+		}
+		if field.VisibleWhen == nil || field.VisibleWhen.Field != "enabled" || field.VisibleWhen.Eq != true {
+			t.Fatalf("memory policy field %s must be visible only when enabled", field.Key)
 		}
 	}
 	attachmentDef, ok := application.Settings.GetDefinition(system.SettingKeyAttachmentUploadPolicy)

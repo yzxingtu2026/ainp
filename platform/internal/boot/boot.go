@@ -18,6 +18,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/prompt"
 	"github.com/yzxingtu2026/ainp/platform/framework/state"
 	"github.com/yzxingtu2026/ainp/platform/framework/storage"
+	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"github.com/yzxingtu2026/ainp/platform/modules/ai"
 	"github.com/yzxingtu2026/ainp/platform/modules/demo"
 	"github.com/yzxingtu2026/ainp/platform/modules/operations"
@@ -176,6 +177,30 @@ func OpenInstalled(ctx context.Context, cfg *config.Config) (*Platform, error) {
 	if err := demo.Register(application); err != nil {
 		return nil, fmt.Errorf("register demo: %w", err)
 	}
+	if err := reconcileToolCatalogs(ctx, db, application); err != nil {
+		return nil, fmt.Errorf("reconcile tool catalogs: %w", err)
+	}
 
 	return &Platform{Config: cfg, DB: db, App: application}, nil
+}
+
+func reconcileToolCatalogs(ctx context.Context, db *gorm.DB, application *app.App) error {
+	if application.ToolCatalogInitializer == nil {
+		return nil
+	}
+	systemCtx := auth.WithContext(ctx, &auth.Context{Authenticated: true, Realm: auth.RealmPlatform, IsSystemOperator: true, UserID: "system:tool-catalog", Client: "bootstrap"})
+	sdb, err := tenantdata.SystemDB(systemCtx, db)
+	if err != nil {
+		return err
+	}
+	tenants, err := tenantdata.SystemRaw[tenantdata.Tenant](sdb, "SELECT * FROM tenants WHERE status IN (?, ?)", "enabled", "disabled")
+	if err != nil {
+		return err
+	}
+	for _, tenant := range tenants {
+		if err := application.ToolCatalogInitializer(ctx, tenant.ID, "system:tool-catalog"); err != nil {
+			return fmt.Errorf("tenant %s: %w", tenant.ID, err)
+		}
+	}
+	return nil
 }

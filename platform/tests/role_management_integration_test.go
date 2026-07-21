@@ -40,6 +40,13 @@ func TestRoleManagementActionsAndMenuAreRegistered(t *testing.T) {
 		if registered.Meta.PermissionGroup != "system.role_management" {
 			t.Fatalf("role action permission group = %q", registered.Meta.PermissionGroup)
 		}
+		shouldExpose := actionID == system.ActionRoleList || actionID == system.ActionRoleGet || actionID == system.ActionPermissionCatalog
+		if shouldExpose && (registered.Meta.AI == nil || !registered.Meta.AI.ExposeTool) {
+			t.Fatalf("role action %s must expose a complete AI contract", actionID)
+		}
+		if !shouldExpose && registered.Meta.AI != nil {
+			t.Fatalf("role action %s must remain unavailable to AI", actionID)
+		}
 	}
 	for _, actionID := range []string{
 		"system.auth_me", "system.auth_permissions",

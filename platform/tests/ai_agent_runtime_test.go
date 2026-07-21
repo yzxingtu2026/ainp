@@ -146,7 +146,7 @@ func TestAgentRuntimeUsesSlotMetadataWithoutBusinessToolBranches(t *testing.T) {
 		t.Fatal(err)
 	}
 	src := string(body)
-	for _, expected := range []string{"SlotIDs()", "SlotMetadata(toolID)", "metadata.Observations"} {
+	for _, expected := range []string{"contract.RequiredToolSelectors", "registry.IsBindable(b.ToolID)", "SlotMetadata(toolID)", "metadata.Observations"} {
 		if !strings.Contains(src, expected) {
 			t.Fatalf("agent slot integration missing %q", expected)
 		}
@@ -185,7 +185,7 @@ func TestKnowledgeToolIsRegisteredAndKeepsChunkTextOutOfFacts(t *testing.T) {
 	if !strings.Contains(string(toolService), `result_json`) || !strings.Contains(string(toolService), `Summary: result.Summary`) {
 		t.Fatal("tool invocation must persist a redacted result summary")
 	}
-	for _, expected := range []string{"DirectSlotIDs()", "s.registry.Project", "ExecutorFor", "SlotMetadata"} {
+	for _, expected := range []string{"scope.AllowedToolsJSON", "s.registry.Project", "ExecutorFor", "SlotMetadata"} {
 		if !strings.Contains(string(toolService), expected) {
 			t.Fatalf("tool service must consume slot registry through %q", expected)
 		}

@@ -38,6 +38,13 @@ func TestUserManagementActionsAndMenuAreRegistered(t *testing.T) {
 		if registered.Meta.PermissionGroup != "system.user_management" {
 			t.Fatalf("user action permission group = %q", registered.Meta.PermissionGroup)
 		}
+		shouldExpose := actionID == system.ActionUserList || actionID == system.ActionUserGet
+		if shouldExpose && (registered.Meta.AI == nil || !registered.Meta.AI.ExposeTool) {
+			t.Fatalf("user action %s must expose a complete AI contract", actionID)
+		}
+		if !shouldExpose && registered.Meta.AI != nil {
+			t.Fatalf("user action %s must remain unavailable to AI", actionID)
+		}
 	}
 	foundMenu := false
 	for _, registered := range application.Menus.List() {

@@ -11,6 +11,8 @@
 - `0036_agent_slots.sql` 创建租户 Agent Slot 绑定与用户偏好表；Slot Definition 和系统默认仍由代码注册，迁移不写业务数据。
 - `0038_structured_output_strategy.sql` 为模型调用账本增加结构化输出安全策略名称，不保存 Schema、Prompt 或响应正文。
 - `0039_fix_memory_item_scope_index.sql` 删除误建的用户-Agent 唯一索引并改为普通查询索引，允许同一作用域保存多条追加式记忆事实。
+- `0040_ai_tool_catalog_lifecycle.sql` 为 Tool Catalog 和 Search Document 增加单调 revision 与索引状态查询结构。
+- `0041_ai_tool_vector_search.sql` 为工具搜索增加 pgvector 载荷及 Alias、Deployment、维度、预处理和 Schema provenance。
 - `0005_attachments.sql` 创建 `attachments` / `attachment_links` 与状态 CHECK；附件策略与 AccessPolicy 由代码注册。
 - `0011_audit_log_indexes.sql` 为租户审计时间线、Action 与资源筛选增加复合索引。
 - `0012_authentication_sessions.sql` 创建统一认证身份、challenge 与轮换会话表；旧 JWT 缺少 `sid`，升级后需重新登录。

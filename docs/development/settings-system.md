@@ -14,8 +14,9 @@
 - `RegisterCategory` / `RegisterDefinition`（经 `app.App`）
 - Category / Definition key 全局唯一；Definition 必须引用已注册 Category
 - tenant surface 启用 `tenant` 与 `user` scope；`platform` scope 仍保留未启用
-- 字段类型：`text` / `textarea` / `number` / `boolean` / `select` / `multi_select` / `color`
+- 字段类型：`text` / `textarea` / `number` / `boolean` / `select` / `multi_select` / `remote_select` / `color`
 - `multi_select` 默认只接受注册选项；确有业务需要时可显式启用 `allow_custom_values`，并用 `custom_value_pattern` 限制自定义值格式
+- `remote_select` 必须声明同源 `/api/v1/...` 选项 endpoint、固定参数和 label/value 字段映射；endpoint 自身负责 Action 权限与租户隔离，禁止前端按 Setting key 硬编码业务请求
 - 图标：Iconify `collection:name`，默认 `mdi`
 - 启动期拒绝：重复 key、未知分类、非法类型、重复字段、无效默认值、非法 surface、非法 `visible_when`
 
@@ -70,6 +71,8 @@ VisibleWhen: &setting.VisibleWhen{Field: "mode", In: []any{"a", "b"}}
 
 长期记忆租户默认值注册为 `ai.memory_policy`。Agent 模块只能通过注入的 `setting.Provider` 读取并类型化解析；管理员修改默认值不会改写已经发布的 Agent Version。
 
+Tool Runtime 语义检索 Alias 注册为 `ai.tool_search.embedding_model_alias`。空值明确表示词法降级；修改 Alias 后调用 `ai.tool_catalog_rebuild` 生成新 revision 并重建向量，禁止直接修改 Search Document provenance。
+
 ### 业务侧（统一只读）
 
 - 底层：`platform/framework/setting.Provider.Get(ctx, tenantID, settingKey)`（默认值合并 + 可选缓存）
@@ -81,6 +84,7 @@ VisibleWhen: &setting.VisibleWhen{Field: "mode", In: []any{"a", "b"}}
 
 - 页面：`/system/settings` 按 Category 导航 + Definition 动态表单
 - 禁止后端下发组件路径/脚本；特殊控件仅通过前端白名单 Renderer 扩展
+- 远程下拉由 `remote_source` Schema 驱动并在首次聚焦时加载；只接受后端注册的同源 API，选项接口必须返回受当前用户权限和租户约束的数据
 - 动态表单仅在字段声明 `allow_custom_values` 时开放多选自定义项；其他多选仍保持注册选项白名单
 - 当前用户从头像菜单进入 `/system/profile`；基本资料、对话偏好、记忆与隐私、账号安全用 `?tab=` 深链，不进入管理员设置页面。
 

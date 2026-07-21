@@ -48,23 +48,24 @@ type settingResetRequest struct {
 }
 
 type SettingFieldView struct {
-	Key                string                `json:"key"`
-	Type               setting.FieldType     `json:"type"`
-	Label              string                `json:"label"`
-	LabelKey           string                `json:"label_key,omitempty"`
-	Description        string                `json:"description,omitempty"`
-	DescriptionKey     string                `json:"description_key,omitempty"`
-	Required           bool                  `json:"required"`
-	Default            any                   `json:"default,omitempty"`
-	MinLength          *int                  `json:"min_length,omitempty"`
-	MaxLength          *int                  `json:"max_length,omitempty"`
-	Min                *float64              `json:"min,omitempty"`
-	Max                *float64              `json:"max,omitempty"`
-	Step               *float64              `json:"step,omitempty"`
-	Options            []setting.FieldOption `json:"options,omitempty"`
-	AllowCustomValues  bool                  `json:"allow_custom_values,omitempty"`
-	CustomValuePattern string                `json:"custom_value_pattern,omitempty"`
-	VisibleWhen        *setting.VisibleWhen  `json:"visible_when,omitempty"`
+	Key                string                      `json:"key"`
+	Type               setting.FieldType           `json:"type"`
+	Label              string                      `json:"label"`
+	LabelKey           string                      `json:"label_key,omitempty"`
+	Description        string                      `json:"description,omitempty"`
+	DescriptionKey     string                      `json:"description_key,omitempty"`
+	Required           bool                        `json:"required"`
+	Default            any                         `json:"default,omitempty"`
+	MinLength          *int                        `json:"min_length,omitempty"`
+	MaxLength          *int                        `json:"max_length,omitempty"`
+	Min                *float64                    `json:"min,omitempty"`
+	Max                *float64                    `json:"max,omitempty"`
+	Step               *float64                    `json:"step,omitempty"`
+	Options            []setting.FieldOption       `json:"options,omitempty"`
+	RemoteSource       *setting.RemoteOptionSource `json:"remote_source,omitempty"`
+	AllowCustomValues  bool                        `json:"allow_custom_values,omitempty"`
+	CustomValuePattern string                      `json:"custom_value_pattern,omitempty"`
+	VisibleWhen        *setting.VisibleWhen        `json:"visible_when,omitempty"`
 }
 
 type SettingDefinitionView struct {
@@ -282,7 +283,7 @@ func toDefinitionView(lang string, eff *setting.Effective) SettingDefinitionView
 			Description: localizedDefinition(lang, field.DescriptionKey, field.Description), DescriptionKey: field.DescriptionKey,
 			Required: field.Required, Default: field.Default,
 			MinLength: field.MinLength, MaxLength: field.MaxLength, Min: field.Min, Max: field.Max, Step: field.Step,
-			Options: localizedOpts, AllowCustomValues: field.AllowCustomValues,
+			Options: localizedOpts, RemoteSource: field.RemoteSource, AllowCustomValues: field.AllowCustomValues,
 			CustomValuePattern: field.CustomValuePattern, VisibleWhen: field.VisibleWhen,
 		})
 	}

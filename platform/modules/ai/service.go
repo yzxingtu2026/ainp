@@ -428,13 +428,34 @@ func (s *Service) DeleteDeployment(ctx context.Context, r IDRequest) (any, error
 	}
 	return map[string]any{"deleted": true}, nil
 }
-func (s *Service) ListAliases(ctx context.Context, _ struct{}) (any, error) {
+
+type AliasListRequest struct {
+	ModelType string `json:"model_type"`
+}
+
+func (s *Service) ListAliases(ctx context.Context, r AliasListRequest) (any, error) {
 	_, e := tenant(ctx)
 	if e != nil {
 		return nil, e
 	}
+	if r.ModelType != "" && !aimodel.ModelType(r.ModelType).Valid() {
+		return nil, errs.ValidationKey("common.validation_failed", "invalid model type", errs.FieldError{Field: "model_type", Message: "invalid model type", MessageKey: "validation.invalid"})
+	}
 	var rows []Alias
-	e = s.db.WithContext(ctx).Order("code").Find(&rows).Error
+	query := s.db.WithContext(ctx).Model(&Alias{})
+	if r.ModelType != "" {
+		var deploymentIDs []string
+		if e = s.db.WithContext(ctx).Model(&Deployment{}).
+			Where("model_type = ? AND status = ?", r.ModelType, "enabled").
+			Pluck("id", &deploymentIDs).Error; e != nil {
+			return nil, dbError(e, "list alias deployments")
+		}
+		if len(deploymentIDs) == 0 {
+			return []Alias{}, nil
+		}
+		query = query.Where("deployment_id IN ?", deploymentIDs)
+	}
+	e = query.Order("code").Find(&rows).Error
 	return rows, dbError(e, "list aliases")
 }
 func (s *Service) UpsertAlias(ctx context.Context, r AliasUpsertRequest) (any, error) {

@@ -17,7 +17,7 @@ type fakeRuntimeSlot struct {
 }
 
 func (s *fakeRuntimeSlot) Definition() aitool.Definition {
-	return aitool.Definition{ID: s.id, Source: aitool.SourceBuiltin, Name: s.id, DescriptionForLLM: "fake tool", DescriptionForHuman: "fake tool", Capability: "test", InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false}`), Risk: aitool.RiskLow, SideEffect: aitool.SideEffectRead, RuntimeRef: s.runtimeRef, SchemaVersion: 1, Status: "enabled"}
+	return aitool.Definition{ID: s.id, Source: aitool.SourceBuiltin, Name: s.id, TitleForHuman: s.id, DescriptionForLLM: "fake tool", DescriptionForHuman: "fake tool", Capability: "test", InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false}`), Risk: aitool.RiskLow, SideEffect: aitool.SideEffectRead, BindingMode: aitool.BindingOptional, LoadingMode: aitool.LoadingConditional, RuntimeRef: s.runtimeRef, SchemaVersion: 1, Status: "enabled"}
 }
 func (s *fakeRuntimeSlot) DiscoveryMode() aitool.DiscoveryMode {
 	if s.direct {
@@ -55,6 +55,9 @@ func TestRuntimeToolSlotsAreStableComposableAndExecutable(t *testing.T) {
 	}
 	if direct := r.DirectSlotIDs(); len(direct) != 1 || direct[0] != a.id {
 		t.Fatalf("direct slots mismatch: %#v", direct)
+	}
+	if !r.IsBindable(a.id) || !r.IsBindable(b.id) {
+		t.Fatal("runtime slots explicitly marked optional must be bindable")
 	}
 	projected, visible, err := r.Project(context.Background(), aitool.RuntimeScope{UserID: "u1"}, items[0])
 	if err != nil || !visible || !strings.HasSuffix(projected.DescriptionForLLM, ":u1") {

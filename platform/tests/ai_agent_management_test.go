@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/database"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
+	"github.com/yzxingtu2026/ainp/platform/framework/prompt"
 	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"github.com/yzxingtu2026/ainp/platform/modules/ai"
 	"gorm.io/gorm"
@@ -98,12 +100,93 @@ func TestAgentContractRegistryFailClosed(t *testing.T) {
 		t.Fatal("non-namespaced selector must fail")
 	}
 	bad = c
+	bad.AllowedToolSources = []string{"database"}
+	if err := aiagent.NewRegistry().Register(bad); err == nil {
+		t.Fatal("unknown tool source must fail")
+	}
+	bad = c
+	bad.AllowedToolCapabilities = []string{"System Admin"}
+	if err := aiagent.NewRegistry().Register(bad); err == nil {
+		t.Fatal("invalid tool capability must fail")
+	}
+	bad = c
 	bad.ManagedFields = []string{"tenant_id"}
 	if err := aiagent.NewRegistry().Register(bad); err == nil {
 		t.Fatal("unsafe managed field must fail")
 	}
 	if got, ok := r.Get(c.Key, c.Version); !ok || got.Name != c.Name {
 		t.Fatalf("registered contract missing: %#v", got)
+	}
+}
+
+func TestSystemOperationsContractUsesProgressiveActionScope(t *testing.T) {
+	if err := prompt.LoadDir("../prompts"); err != nil {
+		t.Fatal(err)
+	}
+	registry, err := ai.NewBuiltinAgentContractRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract, ok := registry.Get("system.operations", "1.0.0")
+	if !ok {
+		t.Fatal("system.operations contract is not registered")
+	}
+	if !slices.Equal(contract.AllowedToolSources, []string{"action"}) || !slices.Equal(contract.AllowedToolCapabilities, []string{"system", "operations"}) {
+		t.Fatalf("unexpected progressive tool scope: %#v", contract)
+	}
+}
+
+func TestAgentToolSearchOnlyReturnsBindableTools(t *testing.T) {
+	registry := aitool.NewRegistry()
+	actionTool := toolFixture("action:system.user_list", "用户列表", "查询系统用户列表")
+	metaTool := actionTool
+	metaTool.ID = "meta:tool.search"
+	metaTool.Source = aitool.SourceMeta
+	metaTool.Name = "tool.search"
+	metaTool.TitleForHuman = "工具搜索"
+	metaTool.DescriptionForHuman = "按意图搜索工具"
+	metaTool.RuntimeRef = "tool.search"
+	metaTool.BindingMode = aitool.BindingOptional
+	metaTool.LoadingMode = aitool.LoadingDirect
+	metaTool.BindingGroup = "tool_discovery"
+	pluginTool := actionTool
+	pluginTool.ID = "plugin:crm.customer_list"
+	pluginTool.Source = aitool.SourcePlugin
+	pluginTool.BindingMode = aitool.BindingOptional
+	pluginTool.LoadingMode = aitool.LoadingDirect
+	pluginTool.RuntimeRef = "crm.customer_list"
+	if err := registry.RegisterProvider(&fakeToolProvider{source: aitool.SourceAction, tools: []aitool.Definition{actionTool}}, &fakeToolExecutor{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.RegisterProvider(&fakeToolProvider{source: aitool.SourcePlugin, tools: []aitool.Definition{pluginTool}}, &fakeToolExecutor{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.RegisterProvider(&fakeToolProvider{source: aitool.SourceMeta, tools: []aitool.Definition{metaTool}}, &fakeToolExecutor{}); err != nil {
+		t.Fatal(err)
+	}
+	slot := &fakeRuntimeSlot{id: "builtin:knowledge.search", runtimeRef: "knowledge.search", direct: true, visible: true}
+	if err := registry.RegisterSlot(slot); err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	service := ai.NewAgentService(nil, aiagent.NewRegistry(), nil, registry)
+	ctx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "tenant-a", UserID: "user-a", Realm: auth.RealmTenant})
+	value, err := service.SearchTools(ctx, ai.AgentToolSearchRequest{Limit: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	items := value.([]aitool.Candidate)
+	ids := make([]string, 0, len(items))
+	for _, item := range items {
+		ids = append(ids, item.ID)
+	}
+	if !slices.Equal(ids, []string{slot.id, metaTool.ID, pluginTool.ID}) {
+		t.Fatalf("agent binding candidates must include declared meta/slot/plugin and exclude actions: %#v", items)
+	}
+	if items[1].Name != metaTool.TitleForHuman || items[1].Summary != metaTool.DescriptionForHuman {
+		t.Fatalf("agent binding candidate must use human display contract: %#v", items[1])
 	}
 }
 

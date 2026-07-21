@@ -549,6 +549,8 @@ const local: App.I18n.Schema = {
       noToolCandidates: 'No matching tools',
       requiredTool: 'Contract required',
       requiredToolReadonly: 'Contract required tools cannot be unbound',
+      conditionalLoading: 'Loaded on demand',
+      toolDiscovery: 'Progressive discovery',
       bind: 'Bind',
       bound: 'Bound',
       unbind: 'Unbind',
