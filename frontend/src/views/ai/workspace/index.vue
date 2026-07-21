@@ -1,8 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useAppStore } from '@/store/modules/app';
-import { useAiAssistantStore } from '@/store/modules/ai-assistant';
 import { $t } from '@/locales';
 import ConversationPanel from './modules/conversation-panel.vue';
 import { useWorkspace } from './use-workspace';
@@ -10,7 +9,6 @@ import { useWorkspace } from './use-workspace';
 defineOptions({ name: 'AIWorkspace' });
 
 const appStore = useAppStore();
-const aiAssistantStore = useAiAssistantStore();
 const router = useRouter();
 const workspace = useWorkspace();
 
@@ -39,8 +37,6 @@ async function confirmRename() {
   await workspace.renameConversation(renameTarget.value, renameTitle.value.trim());
   renameVisible.value = false;
 }
-
-onMounted(() => void aiAssistantStore.consumeWorkspaceMessage());
 </script>
 
 <template>
@@ -123,19 +119,6 @@ onMounted(() => void aiAssistantStore.consumeWorkspaceMessage());
           {{ $t('page.aiWorkspace.memory') }}
         </NTooltip>
       </header>
-
-      <NAlert
-        v-if="aiAssistantStore.pendingWorkspaceMessage?.status === 'failed'"
-        type="error"
-        class="ai-workspace__handoff-error"
-      >
-        <div class="flex items-center justify-between gap-12px">
-          <span>{{ $t('page.home.handoffFailed') }}</span>
-          <NButton size="small" @click="aiAssistantStore.consumeWorkspaceMessage">
-            {{ $t('page.home.retry') }}
-          </NButton>
-        </div>
-      </NAlert>
 
       <AiConversationSurface density="workspace" />
     </main>
@@ -244,10 +227,6 @@ onMounted(() => void aiAssistantStore.consumeWorkspaceMessage());
   flex: 1;
   display: flex;
   flex-direction: column;
-}
-
-.ai-workspace__handoff-error {
-  margin: 12px 16px 0;
 }
 
 .ai-workspace__header {

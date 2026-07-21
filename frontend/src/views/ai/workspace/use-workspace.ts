@@ -311,8 +311,8 @@ function createAiConversationController() {
     return data;
   }
 
-  async function send(idempotencySeed?: string) {
-    if (!canSend.value) return false;
+  async function send() {
+    if (!canSend.value) return;
     const text = input.value.trim();
     const selectedImages = [...images.value];
     busy.value = true;
@@ -333,7 +333,7 @@ function createAiConversationController() {
       }
       const { data: userMessage, error: messageError } = await createAIMessage(
         { conversation_id: current.id, role: 'user', content },
-        idempotencySeed ? `workspace-message-${idempotencySeed}` : idempotencyKey('workspace-message')
+        idempotencyKey('workspace-message')
       );
       if (messageError || !userMessage) throw messageError || new Error($t('page.aiWorkspace.sendFailed'));
       input.value = '';
@@ -348,16 +348,14 @@ function createAiConversationController() {
           budget: {},
           page_context: capturePageContext()
         },
-        idempotencySeed ? `workspace-run-${idempotencySeed}` : idempotencyKey('workspace-run')
+        idempotencyKey('workspace-run')
       );
       if (runError || !started) throw runError || new Error($t('page.aiWorkspace.runFailed'));
       runDetail.value = { run: started, steps: [] };
-      void watchRun(started.id);
-      return true;
+      await watchRun(started.id);
     } catch (cause) {
       status.value = 'failed';
       error.value = cause instanceof Error ? cause.message : $t('page.aiWorkspace.unavailableGeneric');
-      return false;
     } finally {
       busy.value = false;
     }
