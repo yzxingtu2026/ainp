@@ -69,9 +69,13 @@ VisibleWhen: &setting.VisibleWhen{Field: "mode", In: []any{"a", "b"}}
 - 职责：权限、Schema 校验（含 `visible_when`）、revision 乐观锁、审计、缓存失效
 - **禁止**：Handler/业务直接操作 `tenant_setting_values`，或绕过 Service 调用 `ValueStore`
 
+设置保存或重置后的模块派生更新统一通过 `setting.ChangeRegistry` 订阅稳定 setting key。`SettingService` 在提交、缓存失效后同步发布只含 tenant/user/key/operation 的变更通知；订阅方只能刷新自身派生状态，不得读取设置明文日志、反向写设置或扩展请求权限。Hook 失败记录结构化错误但不把已经提交的设置伪装为回滚成功，模块必须通过状态接口暴露后续恢复或重建入口。
+
 长期记忆租户默认值注册为 `ai.memory_policy`。Agent 模块只能通过注入的 `setting.Provider` 读取并类型化解析；管理员修改默认值不会改写已经发布的 Agent Version。
 
 Tool Runtime 语义检索 Alias 注册为 `ai.tool_search.embedding_model_alias`。空值明确表示词法降级；修改 Alias 后调用 `ai.tool_catalog_rebuild` 生成新 revision 并重建向量，禁止直接修改 Search Document provenance。
+
+Navigation 语义检索 Alias 注册为 `ai.navigation_search.embedding_model_alias`。保存或重置后由 Change Hook 立即 reconcile，并经 Outbox → Job 异步更新；设置页面展示 disabled/not_indexed/pending/ready/failed/degraded，允许具有 `system.setting_update` 权限的用户立即重建。
 
 ### 业务侧（统一只读）
 

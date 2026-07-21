@@ -79,7 +79,8 @@ export function transformAinPMenusToRoutes(items: Api.Route.AinPMenu[]): Elegant
             order: item.order,
             hideInMenu: Boolean(item.hide_in_menu),
             shellPlacement: item.placement || null,
-            immersive: Boolean(item.immersive)
+            immersive: Boolean(item.immersive),
+            backendMenuId: item.id
           },
           children: childRoutes
         } as ElegantConstRoute;
@@ -108,7 +109,8 @@ export function transformAinPMenusToRoutes(items: Api.Route.AinPMenu[]): Elegant
               hideInMenu: Boolean(item.hide_in_menu),
               keepAlive: Boolean(item.keep_alive),
               shellPlacement: item.placement || null,
-              immersive: Boolean(item.immersive)
+              immersive: Boolean(item.immersive),
+              backendMenuId: item.id
             }
           } as ElegantConstRoute;
         }
@@ -137,7 +139,8 @@ export function transformAinPMenusToRoutes(items: Api.Route.AinPMenu[]): Elegant
                 hideInMenu: Boolean(item.hide_in_menu),
                 keepAlive: Boolean(item.keep_alive),
                 shellPlacement: item.placement || null,
-                immersive: Boolean(item.immersive)
+                immersive: Boolean(item.immersive),
+                backendMenuId: item.id
               }
             } as ElegantConstRoute
           ]
@@ -156,7 +159,8 @@ export function transformAinPMenusToRoutes(items: Api.Route.AinPMenu[]): Elegant
           hideInMenu: Boolean(item.hide_in_menu),
           keepAlive: Boolean(item.keep_alive),
           shellPlacement: item.placement || null,
-          immersive: Boolean(item.immersive)
+          immersive: Boolean(item.immersive),
+          backendMenuId: item.id
         }
       } as ElegantConstRoute;
     });

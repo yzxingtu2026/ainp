@@ -15,13 +15,17 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/aimodelruntime"
 	"github.com/yzxingtu2026/ainp/platform/framework/aitool"
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
+	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/capability"
+	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 	"github.com/yzxingtu2026/ainp/platform/framework/menu"
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
 	"github.com/yzxingtu2026/ainp/platform/framework/prompt"
+	"github.com/yzxingtu2026/ainp/platform/framework/setting"
 	aitools "github.com/yzxingtu2026/ainp/platform/modules/ai/tools"
 	knowledgetool "github.com/yzxingtu2026/ainp/platform/modules/ai/tools/knowledge"
 	memorytool "github.com/yzxingtu2026/ainp/platform/modules/ai/tools/memory"
+	navigationtool "github.com/yzxingtu2026/ainp/platform/modules/ai/tools/navigation"
 	"github.com/yzxingtu2026/ainp/platform/modules/system"
 	"gorm.io/gorm"
 )
@@ -51,6 +55,10 @@ const (
 	ActionToolConfirmationApprove      = "ai.tool_confirmation_approve"
 	ActionToolConfirmationReject       = "ai.tool_confirmation_reject"
 	ActionToolCatalogRebuild           = "ai.tool_catalog_rebuild"
+	ActionToolIndexStatus              = "ai.tool_index_status"
+	ActionToolIndexRebuild             = "ai.tool_index_rebuild"
+	ActionNavigationIndexStatus        = "ai.navigation_index_status"
+	ActionNavigationIndexRebuild       = "ai.navigation_index_rebuild"
 	ActionAgentList                    = "ai.agent_list"
 	ActionAgentGet                     = "ai.agent_get"
 	ActionAgentCreate                  = "ai.agent_create"
@@ -135,7 +143,7 @@ func Register(a *app.App) error {
 			return err
 		}
 		writer = a.Outbox.Writer
-		for _, eventType := range []string{toolCatalogChangedEvent, toolInvocationFinishedEvent} {
+		for _, eventType := range []string{toolCatalogChangedEvent, toolInvocationFinishedEvent, navigationDocumentChangedEvent} {
 			if err := a.Outbox.RegisterDefinition(outbox.Definition{EventType: eventType, SchemaVersion: 1}); err != nil {
 				return err
 			}
@@ -158,6 +166,11 @@ func Register(a *app.App) error {
 	tools.SetSettingProvider(a.SettingValues)
 	tools.SetCatalogProjectionSynchronous(a.Outbox == nil || !a.Outbox.Enabled)
 	if err := RegisterToolCatalogEmbedding(a, tools); err != nil {
+		return err
+	}
+	navigationSearch := NewNavigationSearchService(a.DB, a.Menus, a.PageHelp, a.SettingValues, a.EmbeddingRuntime, writer)
+	a.Menus.SetSemanticSearcher(navigationSearch)
+	if err := RegisterNavigationEmbedding(a, navigationSearch); err != nil {
 		return err
 	}
 	invocations.SetToolProjector(tools)
@@ -218,12 +231,38 @@ func Register(a *app.App) error {
 		_, err := tools.ReconcileCatalogForTenant(ctx, tenantID, actorID)
 		return err
 	}
+	a.NavigationInitializer = func(ctx context.Context, tenantID, actorID string) error {
+		if err := navigationSearch.ReconcileForTenant(ctx, tenantID); err != nil {
+			return err
+		}
+		if a.Outbox == nil || a.Outbox.Enabled {
+			return nil
+		}
+		// Indexing is best-effort when background runtimes are disabled; lexical
+		// navigation must remain available even if the embedding provider fails.
+		_ = navigationSearch.IndexPending(auth.WithContext(ctx, &auth.Context{Authenticated: true, TenantID: tenantID, UserID: actorID, Realm: auth.RealmTenant, Client: "navigation-reconciler"}), tenantID)
+		return nil
+	}
+	if err := a.SettingChanges.Register(menu.SettingKeySemanticSearch, func(ctx context.Context, change setting.Change) error {
+		return a.NavigationInitializer(ctx, change.TenantID, change.UserID)
+	}); err != nil {
+		return err
+	}
+	if err := a.SettingChanges.Register(aitool.SettingKeySearch, func(ctx context.Context, change setting.Change) error {
+		_, err := tools.ReconcileCatalogForTenant(ctx, change.TenantID, change.UserID)
+		return err
+	}); err != nil {
+		return err
+	}
 	a.AgentTenantInitializer = func(ctx context.Context, db *gorm.DB, tenantID, userID string) error {
 		if err := agents.ReconcileBuiltinForTenant(ctx, db, tenantID, userID); err != nil {
 			return err
 		}
 		_, err := tools.ReconcileCatalogForTenant(ctx, tenantID, userID)
-		return err
+		if err != nil {
+			return err
+		}
+		return a.NavigationInitializer(ctx, tenantID, userID)
 	}
 	auditOn := true
 	type def struct {
@@ -242,6 +281,45 @@ func Register(a *app.App) error {
 		{ActionToolConfirmationApprove, "/api/v1/ai/tool-confirmations/approve", "批准本次工具执行", "ai.tool_runtime", "工具运行时", action.JSON(tools.Approve)},
 		{ActionToolConfirmationReject, "/api/v1/ai/tool-confirmations/reject", "拒绝本次工具执行", "ai.tool_runtime", "工具运行时", action.JSON(tools.Reject)},
 		{ActionToolCatalogRebuild, "/api/v1/ai/tools/catalog/rebuild", "重建工具目录", "ai.tool_runtime", "工具运行时", action.JSON(func(ctx context.Context, _ struct{}) (any, error) { return tools.ReconcileCatalog(ctx, true) })},
+		{ActionToolIndexStatus, "/api/v1/ai/tools/index/status", "工具索引状态", "ai.tool_runtime", "工具运行时", action.JSON(func(ctx context.Context, _ struct{}) (any, error) {
+			ac := auth.MustFromContext(ctx)
+			if !ac.HasPermission(system.ActionSettingList) {
+				return nil, errs.NewKey(errs.CodeForbidden, "common.forbidden", "forbidden")
+			}
+			return tools.IndexStatus(ctx)
+		})},
+		{ActionToolIndexRebuild, "/api/v1/ai/tools/index/rebuild", "重建工具索引", "ai.tool_runtime", "工具运行时", action.JSON(func(ctx context.Context, _ struct{}) (any, error) {
+			ac := auth.MustFromContext(ctx)
+			if !ac.HasPermission(system.ActionSettingUpdate) {
+				return nil, errs.NewKey(errs.CodeForbidden, "common.forbidden", "forbidden")
+			}
+			if _, err := tools.ReconcileCatalog(ctx, true); err != nil {
+				return nil, err
+			}
+			return tools.IndexStatus(ctx)
+		})},
+		{ActionNavigationIndexStatus, "/api/v1/ai/navigation/index/status", "导航索引状态", "ai.navigation", "功能导航", action.JSON(func(ctx context.Context, _ struct{}) (any, error) {
+			ac := auth.MustFromContext(ctx)
+			if !ac.HasPermission(system.ActionSettingList) {
+				return nil, errs.NewKey(errs.CodeForbidden, "common.forbidden", "forbidden")
+			}
+			return navigationSearch.IndexStatus(ctx, ac.TenantID)
+		})},
+		{ActionNavigationIndexRebuild, "/api/v1/ai/navigation/index/rebuild", "重建导航索引", "ai.navigation", "功能导航", action.JSON(func(ctx context.Context, _ struct{}) (any, error) {
+			ac := auth.MustFromContext(ctx)
+			if !ac.HasPermission(system.ActionSettingUpdate) {
+				return nil, errs.NewKey(errs.CodeForbidden, "common.forbidden", "forbidden")
+			}
+			if err := navigationSearch.ReconcileForTenant(ctx, ac.TenantID, true); err != nil {
+				return nil, err
+			}
+			if a.Outbox != nil && !a.Outbox.Enabled {
+				if err := navigationSearch.IndexPending(ctx, ac.TenantID); err != nil {
+					return nil, err
+				}
+			}
+			return navigationSearch.IndexStatus(ctx, ac.TenantID)
+		})},
 		{ActionAgentList, "/api/v1/ai/agents/list", "智能体列表", "ai.agent_management", "智能体", action.JSON(agents.List)},
 		{ActionAgentGet, "/api/v1/ai/agents/get", "智能体详情", "ai.agent_management", "智能体", action.JSON(agents.Get)},
 		{ActionAgentCreate, "/api/v1/ai/agents/create", "创建智能体", "ai.agent_management", "智能体", action.JSON(agents.Create)},
@@ -283,7 +361,7 @@ func Register(a *app.App) error {
 	}
 	for _, d := range defs {
 		access := action.AccessMode("")
-		if strings.HasPrefix(d.id, "ai.tool_") {
+		if strings.HasPrefix(d.id, "ai.tool_") || strings.HasPrefix(d.id, "ai.navigation_index_") {
 			access = action.AccessAuthenticated
 		}
 		if strings.HasPrefix(d.id, "ai.agent_slot_preference_") || d.id == ActionConversationCreateForSlot {
@@ -302,7 +380,7 @@ func Register(a *app.App) error {
 	if err := toolRegistry.RegisterProvider(&aitool.ActionProvider{Actions: a.Actions}, &aitool.ActionExecutor{Actions: a.Actions}); err != nil {
 		return err
 	}
-	if err := aitools.RegisterBuiltins(toolRegistry, knowledgetool.New(knowledgeTool.Project, knowledgeTool), memorytool.New(memoryRuntimeTool.Project, memoryRuntimeTool)); err != nil {
+	if err := aitools.RegisterBuiltins(toolRegistry, knowledgetool.New(knowledgeTool.Project, knowledgeTool), memorytool.New(memoryRuntimeTool.Project, memoryRuntimeTool), navigationtool.New(a.Menus), navigationtool.NewHelp(a.Menus, a.PageHelp)); err != nil {
 		return err
 	}
 	meta := []aitool.Definition{{ID: "meta:tool.search", Source: aitool.SourceMeta, Name: "tool.search", TitleForHuman: "工具搜索", DescriptionForLLM: "Search visible tools by intent and return compact candidates", DescriptionForHuman: "按意图搜索当前智能体可用的工具", Capability: "ai", InputSchema: action.SchemaFor[aitool.MetaSearchInput](), Risk: aitool.RiskLow, SideEffect: aitool.SideEffectRead, BindingMode: aitool.BindingOptional, LoadingMode: aitool.LoadingDirect, BindingGroup: "tool_discovery", RuntimeRef: "tool.search", SchemaVersion: 1, Status: "enabled"}, {ID: "meta:tool.load", Source: aitool.SourceMeta, Name: "tool.load", TitleForHuman: "工具加载", DescriptionForLLM: "Load a small number of candidate tools into the current scope", DescriptionForHuman: "将少量候选工具加载到当前运行范围", Capability: "ai", InputSchema: action.SchemaFor[aitool.MetaLoadInput](), Risk: aitool.RiskLow, SideEffect: aitool.SideEffectRead, BindingMode: aitool.BindingOptional, LoadingMode: aitool.LoadingDirect, BindingGroup: "tool_discovery", RuntimeRef: "tool.load", SchemaVersion: 1, Status: "enabled"}}
@@ -360,6 +438,6 @@ func Register(a *app.App) error {
 
 func NewBuiltinAgentContractRegistry() (*aiagent.Registry, error) {
 	contracts := aiagent.NewRegistry()
-	err := contracts.Register(aiagent.Contract{Key: "system.operations", Version: "1.0.0", Name: "系统运营助手", Description: "通过当前用户权限安全操作后台系统", BaseInstructions: prompt.MustGet("agent/system-operations"), RequiredModelCapabilities: []string{"chat", "tools"}, RequiredToolSelectors: []string{"meta:tool.search", "meta:tool.load"}, AllowedToolSources: []string{"action"}, AllowedToolCapabilities: []string{"system", "operations"}, ConfigSchema: json.RawMessage(`{"type":"object","additionalProperties":false}`), SingletonScope: aiagent.SingletonTenant, ManagedFields: []string{"code", "source", "contract_key", "contract_version", "base_instructions", "visibility"}, UpgradePolicy: "managed-fields"})
+	err := contracts.Register(aiagent.Contract{Key: "system.operations", Version: "1.0.0", Name: "系统运营助手", Description: "通过当前用户权限安全操作后台系统", BaseInstructions: prompt.MustGet("agent/system-operations"), RequiredModelCapabilities: []string{"chat", "tools"}, RequiredToolSelectors: []string{"meta:tool.search", "meta:tool.load", navigationtool.ToolID, navigationtool.HelpToolID}, AllowedToolSources: []string{"action"}, AllowedToolCapabilities: []string{"system", "operations"}, ConfigSchema: json.RawMessage(`{"type":"object","additionalProperties":false}`), SingletonScope: aiagent.SingletonTenant, ManagedFields: []string{"code", "source", "contract_key", "contract_version", "base_instructions", "visibility"}, UpgradePolicy: "managed-fields"})
 	return contracts, err
 }

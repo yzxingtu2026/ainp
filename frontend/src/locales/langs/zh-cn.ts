@@ -630,7 +630,35 @@ const local: App.I18n.Schema = {
       required: '必填',
       reset: '重置为默认',
       resetConfirm: '确认删除租户覆盖并恢复代码默认值？',
-      resetSuccess: '已重置为默认值'
+      resetSuccess: '已重置为默认值',
+      navigationIndex: {
+        title: '导航索引',
+        summary: '共 {total}，就绪 {ready}，处理中 {pending}，失败 {failed}',
+        rebuild: '立即重建',
+        rebuildQueued: '导航索引重建已触发',
+        states: {
+          disabled: '未启用',
+          not_indexed: '未建立',
+          pending: '处理中',
+          ready: '已就绪',
+          failed: '失败',
+          degraded: '部分可用'
+        }
+      },
+      toolIndex: {
+        title: '工具索引',
+        summary: '共 {total}，就绪 {ready}，处理中 {pending}，失败 {failed}',
+        rebuild: '立即重建',
+        rebuildQueued: '工具索引重建已触发',
+        states: {
+          disabled: '未启用',
+          not_indexed: '未建立',
+          pending: '处理中',
+          ready: '已就绪',
+          failed: '失败',
+          degraded: '部分可用'
+        }
+      }
     },
     attachment: {
       demoTitle: '附件组件联调',
@@ -986,7 +1014,15 @@ const local: App.I18n.Schema = {
     toolFailed: '执行失败',
     toolWaiting: '等待结果',
     toolArguments: '调用参数',
-    toolResult: '执行结果'
+    toolResult: '执行结果',
+    navigationSearching: '正在查找可访问的功能页面',
+    navigationProcessed: '已完成 {count} 次页面检索',
+    navigationEmpty: '没有找到可访问的功能页面',
+    navigationOpen: '打开页面',
+    navigationUnavailable: '该页面当前不可用或权限已变更',
+    navigationSearchError: '无法加载功能搜索结果，请稍后重试',
+    navigationOffline: '当前处于离线状态，联网后可搜索系统功能',
+    navigationDegraded: '搜索服务已降级，当前展示词法匹配结果'
   },
   toolConfirmation: {
     title: '敏感工具执行确认',

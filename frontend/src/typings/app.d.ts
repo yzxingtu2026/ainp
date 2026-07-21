@@ -777,6 +777,20 @@ declare namespace App {
           reset: string;
           resetConfirm: string;
           resetSuccess: string;
+          navigationIndex: {
+            title: string;
+            summary: string;
+            rebuild: string;
+            rebuildQueued: string;
+            states: Record<Api.Setting.NavigationIndexState, string>;
+          };
+          toolIndex: {
+            title: string;
+            summary: string;
+            rebuild: string;
+            rebuildQueued: string;
+            states: Record<Api.Setting.NavigationIndexState, string>;
+          };
         };
         attachment: {
           demoTitle: string;
@@ -1153,6 +1167,14 @@ declare namespace App {
         toolWaiting: string;
         toolArguments: string;
         toolResult: string;
+        navigationSearching: string;
+        navigationProcessed: string;
+        navigationEmpty: string;
+        navigationOpen: string;
+        navigationUnavailable: string;
+        navigationSearchError: string;
+        navigationOffline: string;
+        navigationDegraded: string;
       };
       toolConfirmation: {
         title: string;

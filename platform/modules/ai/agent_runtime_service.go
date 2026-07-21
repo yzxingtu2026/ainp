@@ -607,6 +607,11 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 	if err != nil {
 		return s.fail(ctx, run, "runtime_context_failed")
 	}
+	if trustedContext.Locale != "" {
+		localizedActor := *auth.MustFromContext(ctx)
+		localizedActor.Language = trustedContext.Locale
+		ctx = auth.WithContext(ctx, &localizedActor)
+	}
 	ctx = runtimecontext.WithTrusted(ctx, trustedContext)
 	scopeID, err := s.ensureToolScope(ctx, run, &agent)
 	if err != nil {

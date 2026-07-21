@@ -2,11 +2,34 @@ package menu
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 )
+
+const (
+	maxNavigationDescriptionLength = 240
+	maxNavigationTermLength        = 80
+	maxNavigationTerms             = 20
+	maxNavigationHelpRefLength     = 160
+)
+
+var navigationI18nKeyPattern = regexp.MustCompile(`^[a-z0-9]+(?:[._-][a-z0-9]+)*$`)
+
+// NavigationMetadata enriches a Menu registry entry for navigation search.
+// Searchable is only required for hidden menus; ordinary menu nodes are searchable by default.
+type NavigationMetadata struct {
+	Searchable     *bool    `json:"searchable,omitempty"`
+	Description    string   `json:"description,omitempty"`
+	DescriptionKey string   `json:"description_key,omitempty"`
+	Keywords       []string `json:"keywords,omitempty"`
+	KeywordKeys    []string `json:"keyword_keys,omitempty"`
+	UseCases       []string `json:"use_cases,omitempty"`
+	UseCaseKeys    []string `json:"use_case_keys,omitempty"`
+	HelpRef        string   `json:"help_ref,omitempty"`
+}
 
 const (
 	TypeDirectory = "directory"
@@ -18,29 +41,33 @@ const (
 )
 
 type Menu struct {
-	ID         string     `json:"id"`
-	ParentID   string     `json:"parent_id,omitempty"`
-	Title      string     `json:"title"`
-	TitleKey   string     `json:"title_key,omitempty"`
-	Icon       string     `json:"icon,omitempty"`
-	LocalIcon  string     `json:"local_icon,omitempty"`
-	Order      int        `json:"order"`
-	Type       string     `json:"type"`
-	Path       string     `json:"path,omitempty"`
-	Component  string     `json:"component,omitempty"`
-	Permission string     `json:"permission,omitempty"`
-	BindAction string     `json:"bind_action,omitempty"`
-	HideInMenu bool       `json:"hide_in_menu,omitempty"`
-	KeepAlive  bool       `json:"keep_alive,omitempty"`
-	Placement  string     `json:"placement,omitempty"`
-	Immersive  bool       `json:"immersive,omitempty"`
-	Module     string     `json:"module,omitempty"`
-	Surface    auth.Realm `json:"surface"`
+	ID         string              `json:"id"`
+	ParentID   string              `json:"parent_id,omitempty"`
+	Title      string              `json:"title"`
+	TitleKey   string              `json:"title_key,omitempty"`
+	Icon       string              `json:"icon,omitempty"`
+	LocalIcon  string              `json:"local_icon,omitempty"`
+	Order      int                 `json:"order"`
+	Type       string              `json:"type"`
+	Path       string              `json:"path,omitempty"`
+	Component  string              `json:"component,omitempty"`
+	Permission string              `json:"permission,omitempty"`
+	BindAction string              `json:"bind_action,omitempty"`
+	HideInMenu bool                `json:"hide_in_menu,omitempty"`
+	KeepAlive  bool                `json:"keep_alive,omitempty"`
+	Placement  string              `json:"placement,omitempty"`
+	Immersive  bool                `json:"immersive,omitempty"`
+	Module     string              `json:"module,omitempty"`
+	Surface    auth.Realm          `json:"surface"`
+	Navigation *NavigationMetadata `json:"navigation,omitempty"`
 }
 
 type Registry struct {
-	items map[string]Menu
+	items    map[string]Menu
+	semantic SemanticSearcher
 }
+
+func (r *Registry) SetSemanticSearcher(searcher SemanticSearcher) { r.semantic = searcher }
 
 func NewRegistry() *Registry {
 	return &Registry{items: make(map[string]Menu)}
@@ -74,11 +101,68 @@ func (r *Registry) Register(m Menu) error {
 	if m.Placement != PlacementDefault && m.Type != TypeMenu {
 		return fmt.Errorf("menu placement requires menu type: %s", m.ID)
 	}
+	if err := validateNavigation(m); err != nil {
+		return err
+	}
 	if _, exists := r.items[m.ID]; exists {
 		return fmt.Errorf("menu already registered: %s", m.ID)
 	}
 	r.items[m.ID] = m
 	return nil
+}
+
+func validateNavigation(m Menu) error {
+	meta := m.Navigation
+	if meta == nil {
+		return nil
+	}
+	if meta.Searchable != nil && *meta.Searchable {
+		if m.Type != TypeMenu || strings.TrimSpace(m.Path) == "" {
+			return fmt.Errorf("searchable navigation requires menu type and path: %s", m.ID)
+		}
+		if hasPathParameters(m.Path) {
+			return fmt.Errorf("searchable navigation path must be stable: %s", m.ID)
+		}
+	}
+	if len([]rune(meta.Description)) > maxNavigationDescriptionLength {
+		return fmt.Errorf("navigation description too long: %s", m.ID)
+	}
+	if len(meta.HelpRef) > maxNavigationHelpRefLength {
+		return fmt.Errorf("navigation help_ref too long: %s", m.ID)
+	}
+	if err := validateNavigationKey(m.ID, meta.DescriptionKey); err != nil {
+		return err
+	}
+	for field, values := range map[string][]string{
+		"keywords": meta.Keywords, "keyword_keys": meta.KeywordKeys,
+		"use_cases": meta.UseCases, "use_case_keys": meta.UseCaseKeys,
+	} {
+		if len(values) > maxNavigationTerms {
+			return fmt.Errorf("navigation %s has too many values: %s", field, m.ID)
+		}
+		for _, value := range values {
+			if strings.TrimSpace(value) == "" || len([]rune(value)) > maxNavigationTermLength {
+				return fmt.Errorf("invalid navigation %s value: %s", field, m.ID)
+			}
+			if strings.HasSuffix(field, "_keys") {
+				if err := validateNavigationKey(m.ID, value); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func validateNavigationKey(menuID, key string) error {
+	if key != "" && !navigationI18nKeyPattern.MatchString(key) {
+		return fmt.Errorf("invalid navigation i18n key for %s: %s", menuID, key)
+	}
+	return nil
+}
+
+func hasPathParameters(path string) bool {
+	return strings.ContainsAny(path, ":*{}[]")
 }
 
 func (r *Registry) List() []Menu {

@@ -636,7 +636,35 @@ const local: App.I18n.Schema = {
       required: 'Required',
       reset: 'Reset to defaults',
       resetConfirm: 'Delete tenant overrides and restore code defaults?',
-      resetSuccess: 'Settings reset to defaults'
+      resetSuccess: 'Settings reset to defaults',
+      navigationIndex: {
+        title: 'Navigation index',
+        summary: '{total} total, {ready} ready, {pending} pending, {failed} failed',
+        rebuild: 'Rebuild now',
+        rebuildQueued: 'Navigation index rebuild triggered',
+        states: {
+          disabled: 'Disabled',
+          not_indexed: 'Not indexed',
+          pending: 'Pending',
+          ready: 'Ready',
+          failed: 'Failed',
+          degraded: 'Partially available'
+        }
+      },
+      toolIndex: {
+        title: 'Tool index',
+        summary: '{total} total, {ready} ready, {pending} pending, {failed} failed',
+        rebuild: 'Rebuild now',
+        rebuildQueued: 'Tool index rebuild triggered',
+        states: {
+          disabled: 'Disabled',
+          not_indexed: 'Not indexed',
+          pending: 'Pending',
+          ready: 'Ready',
+          failed: 'Failed',
+          degraded: 'Partially available'
+        }
+      }
     },
     attachment: {
       demoTitle: 'Attachment Components',
@@ -994,7 +1022,15 @@ const local: App.I18n.Schema = {
     toolFailed: 'Failed',
     toolWaiting: 'Waiting for result',
     toolArguments: 'Arguments',
-    toolResult: 'Result'
+    toolResult: 'Result',
+    navigationSearching: 'Finding accessible application pages',
+    navigationProcessed: 'Completed {count} page searches',
+    navigationEmpty: 'No accessible application pages found',
+    navigationOpen: 'Open page',
+    navigationUnavailable: 'This page is unavailable or your access has changed',
+    navigationSearchError: 'Could not load feature search results. Try again later.',
+    navigationOffline: 'You are offline. Reconnect to search application features.',
+    navigationDegraded: 'Search is degraded; showing lexical matches'
   },
   toolConfirmation: {
     title: 'Sensitive Tool Confirmation',

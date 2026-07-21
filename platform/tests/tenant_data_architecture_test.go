@@ -50,6 +50,7 @@ var tenantModelClassifications = map[string]tenantModelClassification{
 	"modules/ai/model.go:Alias":                                          {Registered: true},
 	"modules/ai/model.go:Deployment":                                     {Registered: true},
 	"modules/ai/model.go:ModelInvocation":                                {Registered: true},
+	"modules/ai/model.go:NavigationSearchDocument":                       {Registered: true},
 	"modules/ai/model.go:Provider":                                       {Registered: true},
 	"modules/ai/model.go:ToolCatalog":                                    {Registered: true},
 	"modules/ai/model.go:ToolConfirmation":                               {Registered: true},

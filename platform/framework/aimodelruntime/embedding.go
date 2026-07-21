@@ -15,24 +15,26 @@ type EmbeddingPurpose string
 type EmbeddingPreprocessing string
 
 const (
-	EmbeddingPurposeToolIndex           EmbeddingPurpose = "tool_index"
-	EmbeddingPurposeKnowledgeIngestion  EmbeddingPurpose = "knowledge_ingestion"
-	EmbeddingPurposeKnowledgeQuery      EmbeddingPurpose = "knowledge_query"
-	EmbeddingPurposeMemory              EmbeddingPurpose = "memory"
-	EmbeddingPurposeOther               EmbeddingPurpose = "other"
+	EmbeddingPurposeToolIndex           EmbeddingPurpose       = "tool_index"
+	EmbeddingPurposeNavigationIndex     EmbeddingPurpose       = "navigation_index"
+	EmbeddingPurposeNavigationQuery     EmbeddingPurpose       = "navigation_query"
+	EmbeddingPurposeKnowledgeIngestion  EmbeddingPurpose       = "knowledge_ingestion"
+	EmbeddingPurposeKnowledgeQuery      EmbeddingPurpose       = "knowledge_query"
+	EmbeddingPurposeMemory              EmbeddingPurpose       = "memory"
+	EmbeddingPurposeOther               EmbeddingPurpose       = "other"
 	EmbeddingPreprocessingNone          EmbeddingPreprocessing = "none"
 	EmbeddingPreprocessingCosineNorm    EmbeddingPreprocessing = "cosine_normalize"
-	EmbeddingPreprocessingVersionNone   = "none"
-	EmbeddingPreprocessingVersionCosine = "cosine_normalize.v1"
+	EmbeddingPreprocessingVersionNone                          = "none"
+	EmbeddingPreprocessingVersionCosine                        = "cosine_normalize.v1"
 
-	MaxEmbeddingItems          = 2048
-	MaxEmbeddingItemBytes      = 32 * 1024
-	MaxEmbeddingBatchBytes     = 2 * 1024 * 1024
+	MaxEmbeddingItems           = 2048
+	MaxEmbeddingItemBytes       = 32 * 1024
+	MaxEmbeddingBatchBytes      = 2 * 1024 * 1024
 	MaxEmbeddingEstimatedTokens = 300_000
-	MaxEmbeddingVectorElements = 16 * 1024 * 1024
-	DefaultEmbeddingTimeoutMS  = 60_000
-	OpenAIEmbeddingBatchItems  = 2048
-	OpenAICompatibleBatchItems = 10
+	MaxEmbeddingVectorElements  = 16 * 1024 * 1024
+	DefaultEmbeddingTimeoutMS   = 60_000
+	OpenAIEmbeddingBatchItems   = 2048
+	OpenAICompatibleBatchItems  = 10
 )
 
 type EmbeddingItem struct {
@@ -41,13 +43,13 @@ type EmbeddingItem struct {
 }
 
 type EmbeddingRequest struct {
-	ModelAlias     string                  `json:"model_alias"`
-	Inputs         []EmbeddingItem         `json:"inputs"`
-	Dimensions     *int                    `json:"dimensions,omitempty"`
-	Purpose        EmbeddingPurpose        `json:"purpose"`
-	TimeoutMS      int64                   `json:"timeout_ms,omitempty"`
-	Preprocessing  EmbeddingPreprocessing  `json:"preprocessing,omitempty"`
-	Metadata       map[string]string       `json:"metadata,omitempty"`
+	ModelAlias    string                 `json:"model_alias"`
+	Inputs        []EmbeddingItem        `json:"inputs"`
+	Dimensions    *int                   `json:"dimensions,omitempty"`
+	Purpose       EmbeddingPurpose       `json:"purpose"`
+	TimeoutMS     int64                  `json:"timeout_ms,omitempty"`
+	Preprocessing EmbeddingPreprocessing `json:"preprocessing,omitempty"`
+	Metadata      map[string]string      `json:"metadata,omitempty"`
 }
 
 type EmbeddingVector struct {
@@ -57,16 +59,16 @@ type EmbeddingVector struct {
 }
 
 type EmbeddingResponse struct {
-	Model                 ModelSummary `json:"model"`
-	Vectors               []EmbeddingVector `json:"vectors"`
-	Dimensions            int          `json:"dimensions"`
-	Usage                 Usage        `json:"usage"`
-	ProviderRequestID     string       `json:"-"`
-	SubBatchCount         int          `json:"sub_batch_count"`
-	InputItemCount        int          `json:"input_item_count"`
-	InputTextBytes        int64        `json:"input_text_bytes"`
-	Preprocessing         EmbeddingPreprocessing `json:"preprocessing"`
-	PreprocessingVersion  string       `json:"preprocessing_version"`
+	Model                ModelSummary           `json:"model"`
+	Vectors              []EmbeddingVector      `json:"vectors"`
+	Dimensions           int                    `json:"dimensions"`
+	Usage                Usage                  `json:"usage"`
+	ProviderRequestID    string                 `json:"-"`
+	SubBatchCount        int                    `json:"sub_batch_count"`
+	InputItemCount       int                    `json:"input_item_count"`
+	InputTextBytes       int64                  `json:"input_text_bytes"`
+	Preprocessing        EmbeddingPreprocessing `json:"preprocessing"`
+	PreprocessingVersion string                 `json:"preprocessing_version"`
 }
 
 type EmbeddingAdapterRequest struct {
@@ -180,7 +182,7 @@ func (r EmbeddingRequest) Validate(context.Context) error {
 
 func validEmbeddingPurpose(v EmbeddingPurpose) bool {
 	switch v {
-	case EmbeddingPurposeToolIndex, EmbeddingPurposeKnowledgeIngestion, EmbeddingPurposeKnowledgeQuery, EmbeddingPurposeMemory, EmbeddingPurposeOther:
+	case EmbeddingPurposeToolIndex, EmbeddingPurposeNavigationIndex, EmbeddingPurposeNavigationQuery, EmbeddingPurposeKnowledgeIngestion, EmbeddingPurposeKnowledgeQuery, EmbeddingPurposeMemory, EmbeddingPurposeOther:
 		return true
 	default:
 		return false

@@ -78,6 +78,7 @@ export const useRouteStore = defineStore(SetupStoreId.Route, () => {
   }
 
   const removeRouteFns: (() => void)[] = [];
+  const navigationRouteVersion = ref(0);
 
   /** Global menus */
   const menus = ref<App.Global.Menu[]>([]);
@@ -258,6 +259,8 @@ export const useRouteStore = defineStore(SetupStoreId.Route, () => {
     getGlobalMenus(sortRoutes);
 
     getCacheRoutes(vueRoutes);
+
+    navigationRouteVersion.value += 1;
   }
 
   /**
@@ -331,6 +334,14 @@ export const useRouteStore = defineStore(SetupStoreId.Route, () => {
     return getSelectedMenuKeyPathByKey(selectedKey, menus.value);
   }
 
+  /** Revalidate a server navigation result against the currently mounted dynamic route table. */
+  function isNavigationTargetAvailable(menuId: string, path: string) {
+    void navigationRouteVersion.value;
+    if (!menuId || !path.startsWith('/') || path.startsWith('//')) return false;
+    const resolved = router.resolve(path);
+    return resolved.path === path && resolved.matched.some(record => record.meta.backendMenuId === menuId);
+  }
+
   async function onRouteSwitchWhenLoggedIn() {
     // some global init logic when logged in and switch route
   }
@@ -357,6 +368,7 @@ export const useRouteStore = defineStore(SetupStoreId.Route, () => {
     setIsInitAuthRoute,
     getIsAuthRouteExist,
     getSelectedMenuKeyPath,
+    isNavigationTargetAvailable,
     onRouteSwitchWhenLoggedIn,
     onRouteSwitchWhenNotLoggedIn
   };

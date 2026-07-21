@@ -120,3 +120,11 @@ export function fetchGetUserRoutes() {
 export function fetchIsRouteExist(_routeName: string) {
   return Promise.resolve({ data: true, error: null, response: null });
 }
+
+/** Search the current authenticated Menu Registry projection. */
+export function fetchNavigationSearch(query: string, limit = 5) {
+  return request<Api.Route.NavigationSearchData>({
+    url: '/api/v1/navigation/search',
+    params: { query, limit }
+  });
+}

@@ -75,5 +75,18 @@ declare namespace Api {
     interface ListResult {
       categories: Category[];
     }
+
+    type NavigationIndexState = 'disabled' | 'not_indexed' | 'pending' | 'ready' | 'failed' | 'degraded';
+    interface NavigationIndexStatus {
+      state: NavigationIndexState;
+      model_alias?: string;
+      total: number;
+      pending: number;
+      ready: number;
+      failed: number;
+      stale: number;
+      last_updated_at?: string;
+    }
+    type ToolIndexStatus = NavigationIndexStatus;
   }
 }

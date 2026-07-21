@@ -15,6 +15,7 @@
 - `0041_ai_tool_vector_search.sql` 为工具搜索增加 pgvector 载荷及 Alias、Deployment、维度、预处理和 Schema provenance。
 - `0042_agent_action_audit_context.sql` 固定 Agent Run 的 origin request/trace，并为 Action Audit 增加 Run 与 ToolInvocation 关联字段。
 - `0043_page_context.sql` 为 Agent Run 增加不可变 Page Context 安全快照，并为 ContextSnapshot 增加最小引用投影。
+- `0044_navigation_search.sql` 创建独立 Navigation Search Document 与 pgvector provenance 索引；不复用 Tool Catalog 表，也不保存菜单 path 或权限事实。
 - `0005_attachments.sql` 创建 `attachments` / `attachment_links` 与状态 CHECK；附件策略与 AccessPolicy 由代码注册。
 - `0011_audit_log_indexes.sql` 为租户审计时间线、Action 与资源筛选增加复合索引。
 - `0012_authentication_sessions.sql` 创建统一认证身份、challenge 与轮换会话表；旧 JWT 缺少 `sid`，升级后需重新登录。

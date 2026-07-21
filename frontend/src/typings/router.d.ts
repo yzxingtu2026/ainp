@@ -54,6 +54,8 @@ declare module 'vue-router' {
     shellPlacement?: 'global_ai_launcher' | null;
     /** Whether this route consumes the content area without ordinary page chrome. */
     immersive?: boolean | null;
+    /** Stable Menu Registry ID used to validate trusted navigation results. */
+    backendMenuId?: string | null;
     /**
      * The menu key will be activated when entering the route
      *

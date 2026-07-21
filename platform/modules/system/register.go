@@ -12,6 +12,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/capability"
 	"github.com/yzxingtu2026/ainp/platform/framework/i18n"
 	"github.com/yzxingtu2026/ainp/platform/framework/menu"
+	systemhelp "github.com/yzxingtu2026/ainp/platform/modules/system/help"
 	"github.com/yzxingtu2026/ainp/platform/modules/system/jobs"
 )
 
@@ -92,6 +93,7 @@ func Register(a *app.App) error {
 		return err
 	}
 	settingSvc := NewSettingService(a.DB, a.Settings)
+	settingSvc.SetChangeRegistry(a.SettingChanges)
 	a.SettingValues = settingSvc.Provider()
 	if err := registerSettingActions(a, settingSvc); err != nil {
 		return err
@@ -273,6 +275,12 @@ func Register(a *app.App) error {
 		ID: MenuUserManagement, ParentID: "system.root", Title: "用户管理", TitleKey: "menu.system.users.title",
 		Icon: "mdi:account-outline", Type: menu.TypeMenu, Path: "/system/users", Component: "system/users",
 		Permission: ActionUserList, BindAction: ActionUserList, Module: "system", Order: 2,
+		Navigation: &menu.NavigationMetadata{
+			Description: "管理租户用户、账号状态和基础资料", DescriptionKey: "navigation.system.users.description",
+			Keywords: []string{"账号", "成员"}, KeywordKeys: []string{"navigation.system.users.keywords"},
+			UseCases: []string{"新增或停用用户"}, UseCaseKeys: []string{"navigation.system.users.use_cases"},
+			HelpRef: "embedded:system/help/system.users.zh-CN.md",
+		},
 	}); err != nil {
 		return err
 	}
@@ -281,6 +289,12 @@ func Register(a *app.App) error {
 		ID: MenuRoleManagement, ParentID: "system.root", Title: "角色管理", TitleKey: "menu.system.roles.title",
 		Icon: "mdi:shield-account-outline", Type: menu.TypeMenu, Path: "/system/roles", Component: "system/roles",
 		Permission: ActionRoleList, BindAction: ActionRoleList, Module: "system", Order: 3,
+		Navigation: &menu.NavigationMetadata{
+			Description: "配置角色及其功能权限", DescriptionKey: "navigation.system.roles.description",
+			Keywords: []string{"权限", "授权"}, KeywordKeys: []string{"navigation.system.roles.keywords"},
+			UseCases: []string{"为角色分配权限"}, UseCaseKeys: []string{"navigation.system.roles.use_cases"},
+			HelpRef: "embedded:system/help/system.roles.zh-CN.md",
+		},
 	}); err != nil {
 		return err
 	}
@@ -289,6 +303,12 @@ func Register(a *app.App) error {
 		ID: MenuSettingManagement, ParentID: "system.root", Title: "系统设置", TitleKey: "menu.system.settings.title",
 		Icon: "mdi:tune-vertical", Type: menu.TypeMenu, Path: "/system/settings", Component: "system/settings",
 		Permission: ActionSettingList, BindAction: ActionSettingList, Module: "system", Order: 4,
+		Navigation: &menu.NavigationMetadata{
+			Description: "查看和维护系统配置项", DescriptionKey: "navigation.system.settings.description",
+			Keywords: []string{"配置", "参数"}, KeywordKeys: []string{"navigation.system.settings.keywords"},
+			UseCases: []string{"修改系统配置"}, UseCaseKeys: []string{"navigation.system.settings.use_cases"},
+			HelpRef: "embedded:system/help/system.settings.zh-CN.md",
+		},
 	}); err != nil {
 		return err
 	}
@@ -304,6 +324,8 @@ func Register(a *app.App) error {
 	if err := registerNotificationActions(a); err != nil {
 		return err
 	}
-
-	return nil
+	if err := systemhelp.Register(a.PageHelp); err != nil {
+		return fmt.Errorf("register page help: %w", err)
+	}
+	return a.PageHelp.ValidateMenus(a.Menus)
 }

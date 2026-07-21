@@ -181,8 +181,32 @@ func OpenInstalled(ctx context.Context, cfg *config.Config) (*Platform, error) {
 	if err := reconcileToolCatalogs(ctx, db, application); err != nil {
 		return nil, fmt.Errorf("reconcile tool catalogs: %w", err)
 	}
+	if err := reconcileNavigationCatalogs(ctx, db, application); err != nil {
+		return nil, fmt.Errorf("reconcile navigation catalogs: %w", err)
+	}
 
 	return &Platform{Config: cfg, DB: db, App: application}, nil
+}
+
+func reconcileNavigationCatalogs(ctx context.Context, db *gorm.DB, application *app.App) error {
+	if application.NavigationInitializer == nil {
+		return nil
+	}
+	systemCtx := auth.WithContext(ctx, &auth.Context{Authenticated: true, Realm: auth.RealmPlatform, IsSystemOperator: true, UserID: "system:navigation-catalog", Client: "bootstrap"})
+	sdb, err := tenantdata.SystemDB(systemCtx, db)
+	if err != nil {
+		return err
+	}
+	tenants, err := tenantdata.SystemRaw[tenantdata.Tenant](sdb, "SELECT * FROM tenants WHERE status IN (?, ?)", "enabled", "disabled")
+	if err != nil {
+		return err
+	}
+	for _, tenant := range tenants {
+		if err := application.NavigationInitializer(ctx, tenant.ID, "system:navigation-catalog"); err != nil {
+			return fmt.Errorf("tenant %s: %w", tenant.ID, err)
+		}
+	}
+	return nil
 }
 
 func reconcileToolCatalogs(ctx context.Context, db *gorm.DB, application *app.App) error {
