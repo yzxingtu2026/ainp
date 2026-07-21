@@ -13,6 +13,7 @@ export {}
 declare module 'vue' {
   export interface GlobalComponents {
     AgentRunStatus: typeof import('./../components/ai/agent-run-status.vue')['default']
+    AiConversationSurface: typeof import('./../components/ai/ai-conversation-surface.vue')['default']
     AiMascot: typeof import('./../components/ai/ai-mascot.vue')['default']
     AppProvider: typeof import('./../components/common/app-provider.vue')['default']
     AttachmentField: typeof import('./../components/common/attachment-field.vue')['default']
@@ -127,6 +128,7 @@ declare module 'vue' {
 // For TSX support
 declare global {
   const AgentRunStatus: typeof import('./../components/ai/agent-run-status.vue')['default']
+  const AiConversationSurface: typeof import('./../components/ai/ai-conversation-surface.vue')['default']
   const AiMascot: typeof import('./../components/ai/ai-mascot.vue')['default']
   const AppProvider: typeof import('./../components/common/app-provider.vue')['default']
   const AttachmentField: typeof import('./../components/common/attachment-field.vue')['default']

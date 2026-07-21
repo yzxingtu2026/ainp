@@ -99,7 +99,7 @@ const visible = computed(() => {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  background: rgb(var(--container-color));
+  background: rgb(var(--container-bg-color));
 }
 .conversation-panel__top {
   flex: none;
@@ -125,7 +125,7 @@ const visible = computed(() => {
   cursor: pointer;
 }
 .conversation-panel__tabs button.active {
-  background: rgb(var(--container-color));
+  background: rgb(var(--container-bg-color));
   box-shadow: 0 1px 4px rgba(25, 31, 46, 0.1);
   font-weight: 600;
 }

@@ -10,7 +10,7 @@ Page Context 描述用户发送消息时所在页面的受限语义。它是服�
   -> Prompt 临时注入 + Tool Search 候选排序
 ```
 
-前端应用壳只调用 `capturePageContext()`；业务页面通过 `usePageContextProvider()` 注册类型化 Provider。禁止全局 AI 组件读取 DOM、组件实例或路由字符串推断业务语义。Provider 在 mounted/activated 注册，在 deactivated/unmount 注销；未注册页面返回空上下文并保持通用对话。
+前端应用壳只调用 `capturePageContext()`；业务页面通过 `usePageContextProvider()` 注册类型化 Provider。禁止全局 AI 组件读取 DOM、组件实例或路由字符串推断业务语义。Provider 在 mounted/activated 注册，在 deactivated/unmount 注销；捕获时还必须校验 Provider 的 `route_name` 与当前激活路由一致，避免 keep-alive 或转场时序残留旧页面上下文。未注册页面返回空上下文并保持通用对话。
 
 ## Envelope 边界
 
@@ -26,7 +26,7 @@ Page Context 描述用户发送消息时所在页面的受限语义。它是服�
 
 每个 page type 必须显式注册 Resolver。Resolver 从 AuthContext 取得 tenant/user/realm/permission，通过 TenantDB/Repository 重查资源并校验 revision，输出 `trusted_refs`、`safe_summary`、server-owned `tool_hints` 与稳定 `warnings`。
 
-资源不存在、跨租户、撤权或 revision 冲突统一返回 page context unavailable，不泄露资源是否存在。首批 Resolver 为 `system.users` 和 `operations.audit-logs`，覆盖 list/detail/create/edit。
+资源不存在、跨租户、撤权或 revision 冲突统一返回 page context unavailable，不泄露资源是否存在。当前 Resolver 包括 `system.users`、`system.roles` 和 `operations.audit-logs`，覆盖 list/detail/create/edit。
 
 ## Run 与 Prompt
 

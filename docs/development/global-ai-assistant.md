@@ -1,0 +1,32 @@
+# 全局 AI 助手
+
+全局 AI 助手是应用壳级 Conversation 入口。Header 图标打开右侧面板，Sider 底部入口仍进入完整 `/ai/workspace`。两者复用同一服务端 Conversation/Run 协议、同一 controller 和同一 Conversation Surface。
+
+## 所有权
+
+- `useAiConversationController()` 是应用生命周期单例，唯一负责 Conversation、Message、SSE、Run cursor、轮询、确认、附件、幂等和 Page Context 发送时捕获。
+- `AiConversationSurface` 统一渲染消息、流式/thinking、工具活动/确认、错误、空状态和 Composer，只提供 workspace/sidebar 密度变体。
+- `ai-assistant` Pinia Store 只管理面板 visible 与 conversation/history/run 二级视图，不复制协议状态。
+- Workspace、全局侧边栏只负责布局。禁止在任一容器新增第二套 send/watch/reconnect/message merge。
+
+## 应用壳与入口
+
+Header launcher 在所有 layout mode 中显示，但仍以动态路由中 `shellPlacement=global_ai_launcher` 为权限事实；点击只开关面板，不修改当前业务路由。Sider launcher 始终跳转 Workspace。
+
+桌面面板宽度限制为 400px 至 `min(640px, 48vw)`，固定在应用壳右侧；窄屏为全屏分层页。面板没有 Page Context 区域，不展示 resource/capability/tag/Tool ID。Escape、关闭和展开后恢复触发入口焦点，reduced-motion 禁用转场。
+
+## 生命周期与恢复
+
+关闭面板或切换路由只卸载视图，controller、草稿、Conversation 和 Run 保留。应用只在 sessionStorage 保存当前 Conversation ID；刷新后重新读取服务端 Message、最新 Run 和 cursor，不持久化草稿、消息、Prompt 或 Page Context。
+
+登出、认证失效或 AI launcher 权限撤销调用 `resetStore()`：abort SSE、停止轮询并清空 Conversation、草稿、附件、Run 和 session Conversation ID，禁止跨身份泄漏。
+
+## 二级视图
+
+History 复用 `ConversationPanel`，支持新建、选择、重命名、归档与恢复。Run 详情在面板内部展示安全状态和 Step 时间线，不嵌套 Drawer。展开 Workspace 复用当前 controller，保留 Conversation、草稿和可恢复 Run。
+
+## 测试
+
+- 架构门禁验证单 controller/Surface、入口行为、身份清理、禁止 Context 暴露和仅持久化 Conversation ID。
+- typecheck/build 验证所有布局共享组件编译。
+- 手工联调覆盖所有 layout mode、业务表单/滚动保持、桌面/移动、Page Context 发送、SSE/停止/重连、历史/Run、刷新恢复、权限撤销与登出。

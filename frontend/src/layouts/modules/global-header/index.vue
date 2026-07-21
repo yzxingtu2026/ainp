@@ -40,7 +40,7 @@ const { isFullscreen, toggle } = useFullscreen();
       <GlobalBreadcrumb v-if="!appStore.isMobile" class="ml-12px" />
     </div>
     <div class="h-full flex-y-center justify-end">
-      <AiWorkspaceLauncher v-if="themeStore.layout.mode === 'horizontal'" location="header" />
+      <AiWorkspaceLauncher location="header" />
       <GlobalSearch v-if="themeStore.header.globalSearch.visible" />
       <NotificationBell />
       <FullScreen v-if="!appStore.isMobile" :full="isFullscreen" @click="toggle" />
