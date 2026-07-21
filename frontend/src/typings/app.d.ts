@@ -323,6 +323,7 @@ declare namespace App {
         add: string;
         addSuccess: string;
         backToHome: string;
+        back: string;
         batchDelete: string;
         cancel: string;
         close: string;
@@ -607,12 +608,15 @@ declare namespace App {
           newChat: string;
           greeting: string;
           ready: string;
+          readyShort: string;
+          expandWorkspace: string;
           unavailable: string;
           suggestionPriority: string;
           suggestionExceptions: string;
           suggestionFeature: string;
           suggestionNext: string;
           reconnecting: string;
+          offline: string;
           disclaimer: string;
           noRun: string;
           status: string;

@@ -1,17 +1,14 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useAppStore } from '@/store/modules/app';
-import { useAuthStore } from '@/store/modules/auth';
 import { $t } from '@/locales';
 import ConversationPanel from './modules/conversation-panel.vue';
-import WorkspaceComposer from './modules/workspace-composer.vue';
 import { useWorkspace } from './use-workspace';
 
 defineOptions({ name: 'AIWorkspace' });
 
 const appStore = useAppStore();
-const authStore = useAuthStore();
 const router = useRouter();
 const workspace = useWorkspace();
 
@@ -22,16 +19,7 @@ const renameVisible = ref(false);
 const renameTitle = ref('');
 const renameTarget = ref<Api.AI.Conversation | null>(null);
 
-const runActive = computed(() => workspace.status.value === 'running' || workspace.status.value === 'reconnecting');
-const aiThinking = computed(() => runActive.value && !workspace.displayStreamingText.value);
 const agentName = computed(() => workspace.slot.value?.agent?.name || $t('page.aiWorkspace.assistant'));
-const greetingName = computed(() => authStore.userInfo.userName || $t('page.aiWorkspace.assistant'));
-const suggestions = computed(() => [
-  $t('page.aiWorkspace.suggestionPriority'),
-  $t('page.aiWorkspace.suggestionExceptions'),
-  $t('page.aiWorkspace.suggestionFeature'),
-  $t('page.aiWorkspace.suggestionNext')
-]);
 
 function chooseConversation(item: Api.AI.Conversation) {
   void workspace.selectConversation(item);
@@ -50,15 +38,6 @@ async function confirmRename() {
   renameVisible.value = false;
 }
 
-function useSuggestion(value: string) {
-  workspace.input.value = value;
-}
-
-function setMessageListElement(element: unknown) {
-  workspace.messageListEl.value = element instanceof HTMLElement ? element : null;
-}
-
-onMounted(() => void workspace.initialize());
 </script>
 
 <template>
@@ -138,63 +117,7 @@ onMounted(() => void workspace.initialize());
         </NTooltip>
       </header>
 
-      <section :ref="setMessageListElement" class="ai-workspace__messages">
-        <div v-if="workspace.status.value === 'loading'" class="h-full flex-center">
-          <NSpin size="large" />
-        </div>
-
-        <div v-else-if="!workspace.conversation.value && workspace.messages.value.length === 0" class="welcome">
-          <AiMascot :state="workspace.mascotState.value" :size="132" />
-          <h1>{{ $t('page.aiWorkspace.greeting', { name: greetingName }) }}</h1>
-          <p v-if="workspace.slot.value?.healthy">
-            {{ $t('page.aiWorkspace.ready', { agent: agentName }) }}
-          </p>
-          <NAlert v-else type="error" class="max-w-560px" :show-icon="true">
-            {{ workspace.error.value || $t('page.aiWorkspace.unavailable') }}
-          </NAlert>
-          <div class="welcome__suggestions">
-            <button
-              v-for="suggestion in suggestions"
-              :key="suggestion"
-              type="button"
-              @click="useSuggestion(suggestion)"
-            >
-              {{ suggestion }}
-              <SvgIcon icon="mdi:arrow-up-right" />
-            </button>
-          </div>
-        </div>
-
-        <ChatMessageList
-          v-else
-          :messages="workspace.messages.value"
-          :streaming-text="workspace.displayStreamingText.value"
-          :thinking="aiThinking"
-          :thinking-hint="workspace.thinkingHint.value"
-          :active-run-id="workspace.activeRunId.value"
-          :confirmations="workspace.confirmations.value"
-          :error="workspace.error.value"
-          @confirmation-resolved="workspace.onConfirmationResolved"
-        />
-      </section>
-
-      <footer class="ai-workspace__composer">
-        <div v-if="workspace.status.value === 'reconnecting'" class="mb-6px text-center text-12px text-warning">
-          {{ $t('page.aiWorkspace.reconnecting') }}
-        </div>
-        <WorkspaceComposer
-          v-model="workspace.input.value"
-          v-model:images="workspace.images.value"
-          :disabled="!workspace.slot.value?.healthy"
-          :can-send="workspace.canSend.value"
-          :active="runActive"
-          @send="workspace.send"
-          @stop="workspace.stop"
-        />
-        <div class="mt-7px text-center text-11px text-gray-400">
-          {{ $t('page.aiWorkspace.disclaimer') }}
-        </div>
-      </footer>
+      <AiConversationSurface density="workspace" />
     </main>
 
     <NDrawer v-model:show="conversationsVisible" placement="left" width="min(88vw, 320px)">
@@ -361,75 +284,5 @@ onMounted(() => void workspace.initialize());
   border-color: rgba(var(--primary-color), 0.5);
   background: rgba(var(--primary-color), 0.07);
   color: rgb(var(--primary-color));
-}
-.ai-workspace__messages {
-  min-height: 0;
-  flex: 1;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-}
-.ai-workspace__composer {
-  flex: none;
-  padding: 12px 20px 10px;
-}
-
-.welcome {
-  min-height: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  padding: 36px 24px;
-}
-
-.welcome h1 {
-  margin: 0;
-  font-size: clamp(22px, 3vw, 32px);
-  font-weight: 650;
-  letter-spacing: 0;
-  text-align: center;
-}
-.welcome p {
-  margin: 0;
-  color: rgba(127, 127, 127, 0.9);
-}
-.welcome__suggestions {
-  width: min(680px, 100%);
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  margin-top: 22px;
-}
-.welcome__suggestions button {
-  min-height: 54px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  border: 1px solid rgba(127, 127, 127, 0.18);
-  border-radius: 6px;
-  background: rgba(var(--container-color), 0.72);
-  padding: 10px 14px;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.welcome__suggestions button:hover {
-  border-color: rgba(var(--primary-color), 0.45);
-  background: rgba(var(--primary-color), 0.06);
-}
-
-@media (max-width: 640px) {
-  .ai-workspace__composer {
-    padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
-  }
-  .welcome {
-    justify-content: flex-start;
-    padding-top: 54px;
-  }
-  .welcome__suggestions {
-    grid-template-columns: 1fr;
-  }
 }
 </style>

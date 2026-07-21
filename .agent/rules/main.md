@@ -50,6 +50,7 @@
 - AI Agent Runtime 见 `ai-agent-runtime`（Run/Step 状态机、lease、Outbox→Job、确认暂停与可靠恢复）。
 - Trusted Runtime Context 见 `runtime-context`（服务端身份、Run 时间快照、Prompt 临时注入与消费边界）。
 - Page Context 见 `page-context`（页面 Provider、服务端 Resolver、Run 不可变快照与工具推荐不扩权）。
+- 全局 AI 助手见 `global-ai-assistant`（应用壳入口、单例 controller、共享 Surface 与身份清理）。
 - AI 长期记忆见 `ai-memory-runtime`（追加式时态事实、来源证据、投影与当前召回边界）。
 - 模型提示词管理见 `prompt-management`（Markdown 外置、启动校验、模板安全与原子热重载）。
 - 前端栈、图标协议见关联规则。
@@ -81,6 +82,7 @@
 - `ai-agent-runtime` → `docs/development/ai-agent-runtime.md`
 - `runtime-context` → `docs/development/runtime-context.md`
 - `page-context` → `docs/development/page-context.md`
+- `global-ai-assistant` → `docs/development/global-ai-assistant.md`
 - `ai-memory-runtime` → `docs/development/ai-memory-runtime.md`
 - `prompt-management` → `docs/development/prompt-management.md`
 - `icon-library` → `docs/development/icon-library.md`

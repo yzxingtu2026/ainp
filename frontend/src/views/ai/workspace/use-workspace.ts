@@ -1,4 +1,4 @@
-import { computed, nextTick, onBeforeUnmount, ref } from 'vue';
+import { computed, nextTick, ref } from 'vue';
 import {
   archiveAIConversation,
   cancelAIAgentRun,
@@ -28,6 +28,17 @@ export type WorkspaceStatus =
   | 'failed'
   | 'cancelled';
 
+const activeConversationStorageKey = 'ainp:ai-assistant:conversation-id';
+
+function storedConversationId() {
+  return window.sessionStorage.getItem(activeConversationStorageKey) || '';
+}
+
+function storeConversationId(id?: string) {
+  if (id) window.sessionStorage.setItem(activeConversationStorageKey, id);
+  else window.sessionStorage.removeItem(activeConversationStorageKey);
+}
+
 function idempotencyKey(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
@@ -50,7 +61,7 @@ function runFailureMessage(detail: Api.AI.AgentRunDetail) {
   });
 }
 
-export function useWorkspace() {
+function createAiConversationController() {
   const status = ref<WorkspaceStatus>('loading');
   const error = ref('');
   const slot = ref<Api.AI.AgentSlotResolution | null>(null);
@@ -69,6 +80,8 @@ export function useWorkspace() {
   let abort: AbortController | null = null;
   let eventCursor = 0;
   let pollTimer: number | null = null;
+  let initialized = false;
+  let initializePromise: Promise<void> | null = null;
 
   const canSend = computed(() =>
     Boolean(slot.value?.healthy && !busy.value && (input.value.trim() || images.value.length > 0))
@@ -249,6 +262,7 @@ export function useWorkspace() {
     abort?.abort();
     stopPolling();
     conversation.value = item;
+    storeConversationId(item.id);
     messages.value = [];
     runDetail.value = null;
     confirmations.value = [];
@@ -276,6 +290,7 @@ export function useWorkspace() {
     abort?.abort();
     stopPolling();
     conversation.value = null;
+    storeConversationId();
     messages.value = [];
     confirmations.value = [];
     runDetail.value = null;
@@ -294,6 +309,7 @@ export function useWorkspace() {
     });
     if (createError || !data) throw createError || new Error($t('page.aiWorkspace.createFailed'));
     conversation.value = data;
+    storeConversationId(data.id);
     activeConversations.value.unshift(data);
     return data;
   }
@@ -390,19 +406,58 @@ export function useWorkspace() {
   }
 
   async function initialize() {
-    status.value = 'loading';
-    error.value = '';
-    const [slotResult] = await Promise.all([fetchAIAgentSlot('workspace.default'), loadConversations()]);
-    slot.value = slotResult.data || null;
-    if (slotResult.error || !slot.value) error.value = $t('page.aiWorkspace.slotResolveFailed');
-    else if (!slot.value.healthy) error.value = slot.value.diagnostics.map(diagnosticMessage).join('；');
-    status.value = slot.value?.healthy ? 'idle' : 'failed';
+    if (initialized) return;
+    if (initializePromise) return initializePromise;
+    initializePromise = (async () => {
+      status.value = 'loading';
+      error.value = '';
+      const [slotResult] = await Promise.all([fetchAIAgentSlot('workspace.default'), loadConversations()]);
+      slot.value = slotResult.data || null;
+      if (slotResult.error || !slot.value) error.value = $t('page.aiWorkspace.slotResolveFailed');
+      else if (!slot.value.healthy) error.value = slot.value.diagnostics.map(diagnosticMessage).join('；');
+      initialized = true;
+      const previousId = storedConversationId();
+      const previous = activeConversations.value.find(item => item.id === previousId);
+      if (previous) await selectConversation(previous);
+      else {
+        if (previousId) storeConversationId();
+        status.value = slot.value?.healthy ? 'idle' : 'failed';
+      }
+    })();
+    try {
+      await initializePromise;
+    } finally {
+      initializePromise = null;
+    }
   }
 
-  onBeforeUnmount(() => {
+  function dispose() {
     abort?.abort();
+    abort = null;
     stopPolling();
-  });
+  }
+
+  function reset() {
+    dispose();
+    initialized = false;
+    initializePromise = null;
+    eventCursor = 0;
+    status.value = 'loading';
+    error.value = '';
+    slot.value = null;
+    activeConversations.value = [];
+    archivedConversations.value = [];
+    conversation.value = null;
+    messages.value = [];
+    confirmations.value = [];
+    runDetail.value = null;
+    streamingText.value = '';
+    input.value = '';
+    images.value = [];
+    busy.value = false;
+    messageListEl.value = null;
+    storeConversationId();
+  }
 
   return {
     status,
@@ -431,6 +486,19 @@ export function useWorkspace() {
     renameConversation,
     archiveConversation,
     restoreConversation,
-    onConfirmationResolved
+    onConfirmationResolved,
+    dispose,
+    reset
   };
 }
+
+export type AiConversationController = ReturnType<typeof createAiConversationController>;
+
+let sharedController: AiConversationController | null = null;
+
+export function useAiConversationController() {
+  sharedController ||= createAiConversationController();
+  return sharedController;
+}
+
+export const useWorkspace = useAiConversationController;

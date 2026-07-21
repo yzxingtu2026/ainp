@@ -9,6 +9,7 @@ import { SetupStoreId } from '@/enum';
 import { $t } from '@/locales';
 import { useRouteStore } from '../route';
 import { useTabStore } from '../tab';
+import { useAiAssistantStore } from '../ai-assistant';
 import { clearAuthStorage, getToken } from './shared';
 
 export const useAuthStore = defineStore(SetupStoreId.Auth, () => {
@@ -16,6 +17,7 @@ export const useAuthStore = defineStore(SetupStoreId.Auth, () => {
   const authStore = useAuthStore();
   const routeStore = useRouteStore();
   const tabStore = useTabStore();
+  const aiAssistantStore = useAiAssistantStore();
   const { toLogin, redirectFromLogin } = useRouterPush(false);
   const { loading: loginLoading, startLoading, endLoading } = useLoading();
 
@@ -44,6 +46,8 @@ export const useAuthStore = defineStore(SetupStoreId.Auth, () => {
     recordUserId();
 
     clearAuthStorage();
+
+    aiAssistantStore.resetStore();
 
     authStore.$reset();
 

@@ -11,6 +11,7 @@ import GlobalTab from '../modules/global-tab/index.vue';
 import GlobalContent from '../modules/global-content/index.vue';
 import GlobalFooter from '../modules/global-footer/index.vue';
 import ThemeDrawer from '../modules/theme-drawer/index.vue';
+import GlobalAiAssistant from '../modules/global-ai-assistant/index.vue';
 import { provideMixMenuContext } from '../modules/global-menu/context';
 
 defineOptions({
@@ -151,6 +152,7 @@ function getSiderAndCollapsedWidth(isCollapsed: boolean) {
     </template>
     <GlobalMenu />
     <GlobalContent :show-padding="!immersive" />
+    <GlobalAiAssistant />
     <ThemeDrawer />
     <template #footer>
       <GlobalFooter />
