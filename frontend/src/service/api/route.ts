@@ -122,7 +122,7 @@ export function fetchIsRouteExist(_routeName: string) {
 }
 
 /** Search the current authenticated Menu Registry projection. */
-export function fetchNavigationSearch(query: string, limit = 20) {
+export function fetchNavigationSearch(query: string, limit = 5) {
   return request<Api.Route.NavigationSearchData>({
     url: '/api/v1/navigation/search',
     params: { query, limit }

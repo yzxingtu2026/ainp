@@ -42,7 +42,7 @@ async function search() {
     return;
   }
   loading.value = true;
-  const { data, error: requestError } = await fetchNavigationSearch(query, 20);
+  const { data, error: requestError } = await fetchNavigationSearch(query);
   if (sequence !== requestSequence) return;
   loading.value = false;
   error.value = Boolean(requestError) || !data;
