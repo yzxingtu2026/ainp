@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/yzxingtu2026/ainp/platform/framework/action"
@@ -13,6 +15,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/codeset"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 	"github.com/yzxingtu2026/ainp/platform/framework/i18n"
+	"github.com/yzxingtu2026/ainp/platform/framework/logging"
 	"github.com/yzxingtu2026/ainp/platform/framework/menu"
 	"github.com/yzxingtu2026/ainp/platform/framework/middleware"
 	"github.com/yzxingtu2026/ainp/platform/framework/response"
@@ -90,6 +93,41 @@ func New(opts Options) *gin.Engine {
 			"items":   items,
 			"buttons": buttons,
 		})
+	})
+
+	r.GET("/api/v1/navigation/search", func(c *gin.Context) {
+		if err := action.RequireAuthenticated(c.Request.Context()); err != nil {
+			response.Fail(c, err)
+			return
+		}
+		startedAt := time.Now()
+		query := c.Query("query")
+		limit := 0
+		if rawLimit := c.Query("limit"); rawLimit != "" {
+			parsed, err := strconv.Atoi(rawLimit)
+			if err != nil {
+				response.Fail(c, errs.NewKey(errs.CodeValidation, "navigation.invalid_limit", "navigation limit must be an integer"))
+				return
+			}
+			limit = parsed
+		}
+		ac := auth.MustFromContext(c.Request.Context())
+		results, err := menu.NewSearchService(opts.Menus).Search(menu.SearchOptions{
+			Realm: ac.Realm, Language: ac.Language, HasPermission: ac.HasPermission,
+			Query: query, Limit: limit,
+		})
+		if err != nil {
+			response.Fail(c, errs.NewKey(errs.CodeValidation, "navigation.invalid_query", err.Error()))
+			return
+		}
+		matchTypes := make(map[string]int)
+		for _, result := range results {
+			matchTypes[result.MatchType]++
+		}
+		logging.Info(c.Request.Context(), "navigation search completed",
+			"query_length", len([]rune(query)), "result_count", len(results),
+			"match_types", matchTypes, "duration_ms", time.Since(startedAt).Milliseconds())
+		response.OK(c, gin.H{"items": results})
 	})
 
 	if opts.CodeSets != nil {

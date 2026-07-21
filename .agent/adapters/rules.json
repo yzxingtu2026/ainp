@@ -589,6 +589,12 @@
       "source": ".agent/rules/global-ai-assistant.md",
       "qoder": {"path": ".qoder/rules/global-ai-assistant.md", "frontmatter": {"trigger": "always_on"}},
       "cursor": {"path": ".cursor/rules/global-ai-assistant.mdc", "frontmatter": {"description": "应用壳全局 AI 入口、单例会话 controller、共享 Surface 与身份清理", "alwaysApply": true}}
+    },
+    {
+      "id": "navigation-search",
+      "source": ".agent/rules/navigation-search.md",
+      "qoder": {"path": ".qoder/rules/navigation-search.md", "frontmatter": {"trigger": "always_on"}},
+      "cursor": {"path": ".cursor/rules/navigation-search.mdc", "frontmatter": {"description": "Menu Registry 派生导航目录、实时授权词法检索与可信路径", "alwaysApply": true}}
     }
   ]
 }
