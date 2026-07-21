@@ -37,7 +37,6 @@ async function confirmRename() {
   await workspace.renameConversation(renameTarget.value, renameTitle.value.trim());
   renameVisible.value = false;
 }
-
 </script>
 
 <template>
@@ -66,7 +65,11 @@ async function confirmRename() {
         v-if="!appStore.isMobile"
         type="button"
         class="ai-workspace__collapse-handle"
-        :title="conversationPanelCollapsed ? $t('page.aiWorkspace.openConversations') : $t('page.aiWorkspace.collapseConversations')"
+        :title="
+          conversationPanelCollapsed
+            ? $t('page.aiWorkspace.openConversations')
+            : $t('page.aiWorkspace.collapseConversations')
+        "
         @click="conversationPanelCollapsed = !conversationPanelCollapsed"
       >
         <SvgIcon :icon="conversationPanelCollapsed ? 'mdi:menu-close' : 'mdi:menu-open'" />

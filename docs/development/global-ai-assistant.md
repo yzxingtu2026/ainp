@@ -15,6 +15,14 @@ Header launcher 在所有 layout mode 中显示，但仍以动态路由中 `shel
 
 桌面面板宽度限制为 400px 至 `min(640px, 48vw)`，固定在应用壳右侧；窄屏为全屏分层页。面板没有 Page Context 区域，不展示 resource/capability/tag/Tool ID。Escape、关闭和展开后恢复触发入口焦点，reduced-motion 禁用转场。
 
+首页只提供进入 Workspace 的明确命令，不承载 Prompt 输入、Conversation 或待发送消息。点击“开始工作”只执行可信路由跳转；首页不得创建第二个 controller，不得通过 URL、Hash 或浏览器历史传递对话内容。
+
+首页模块宫格只投影 `routeStore.menus` 中具有可见子菜单的一级目录，目标取稳定顺序下首个授权叶子路由。标题、图标和路径均继承实时 Menu Registry 投影；权限、身份或菜单变化后不得使用平行缓存或硬编码模块列表。
+
+“继续工作”只聚合当前用户待确认的 AI 工具调用与 Tab Store 中仍打开的授权页面。页面入口每次渲染均重新匹配当前菜单投影；权限撤销或菜单下线后立即消失。框架没有通用待办协议时禁止使用示例待办、伪造截止时间或业务动态占位。
+
+首页专属机器人只表达页面交互状态：首次进入打招呼，默认坐下，长时间无操作冥想，聚焦“开始工作”时思考，点击后短暂跳动并导航。动画使用固定画布，后台标签页暂停空闲计时，`prefers-reduced-motion` 使用静态姿态；该组件不得替换 Workspace 的 `AiMascot` 状态协议。
+
 ## 生命周期与恢复
 
 关闭面板或切换路由只卸载视图，controller、草稿、Conversation 和 Run 保留。应用只在 sessionStorage 保存当前 Conversation ID；刷新后重新读取服务端 Message、最新 Run 和 cursor，不持久化草稿、消息、Prompt 或 Page Context。

@@ -134,14 +134,11 @@ function createAiConversationController() {
     const steps = runDetail.value?.steps || [];
     const running = [...steps].reverse().find(step => step.status === 'running' || step.status === 'waiting');
     if (!running) return { icon: 'mdi:brain-outline', text: $t('chat.thinkingThinking') };
-    if (running.type === 'context_assemble')
-      return { icon: 'mdi:file-tree-outline', text: $t('chat.thinkingContext') };
+    if (running.type === 'context_assemble') return { icon: 'mdi:file-tree-outline', text: $t('chat.thinkingContext') };
     if (running.type === 'tool_search') return { icon: 'mdi:magnify', text: $t('chat.thinkingToolSearch') };
-    if (running.type === 'tool_load')
-      return { icon: 'mdi:package-variant-outline', text: $t('chat.thinkingToolLoad') };
+    if (running.type === 'tool_load') return { icon: 'mdi:package-variant-outline', text: $t('chat.thinkingToolLoad') };
     if (running.type === 'tool_execute') {
-      const toolName =
-        typeof running.input_summary?.tool_name === 'string' ? running.input_summary.tool_name : '';
+      const toolName = typeof running.input_summary?.tool_name === 'string' ? running.input_summary.tool_name : '';
       return { icon: 'mdi:api', text: $t('chat.thinkingToolExecute'), toolName };
     }
     if (running.type === 'finalize')

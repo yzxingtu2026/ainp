@@ -40,5 +40,13 @@ export const useAiAssistantStore = defineStore(SetupStoreId.AiAssistant, () => {
     controller.reset();
   }
 
-  return { visible, view, open, close, toggle, show, resetStore };
+  return {
+    visible,
+    view,
+    open,
+    close,
+    toggle,
+    show,
+    resetStore
+  };
 });
