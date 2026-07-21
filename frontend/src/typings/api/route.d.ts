@@ -36,5 +36,22 @@ declare namespace Api {
       items: AinPMenu[];
       buttons: AinPMenu[];
     }
+
+    interface NavigationSearchResult {
+      menu_id: string;
+      title: string;
+      description?: string;
+      breadcrumb: string[];
+      path: string;
+      icon?: string;
+      local_icon?: string;
+      match_type: 'title' | 'breadcrumb' | 'keyword' | 'description' | 'use_case';
+      match_summary: string;
+    }
+
+    interface NavigationSearchData {
+      items: NavigationSearchResult[];
+      degraded: boolean;
+    }
   }
 }

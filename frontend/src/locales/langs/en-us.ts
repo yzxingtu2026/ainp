@@ -994,7 +994,14 @@ const local: App.I18n.Schema = {
     toolFailed: 'Failed',
     toolWaiting: 'Waiting for result',
     toolArguments: 'Arguments',
-    toolResult: 'Result'
+    toolResult: 'Result',
+    navigationSearching: 'Finding accessible application pages',
+    navigationEmpty: 'No accessible application pages found',
+    navigationOpen: 'Open page',
+    navigationUnavailable: 'This page is unavailable or your access has changed',
+    navigationSearchError: 'Could not load feature search results. Try again later.',
+    navigationOffline: 'You are offline. Reconnect to search application features.',
+    navigationDegraded: 'Search is degraded; showing lexical matches'
   },
   toolConfirmation: {
     title: 'Sensitive Tool Confirmation',

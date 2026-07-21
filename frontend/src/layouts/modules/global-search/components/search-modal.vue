@@ -1,10 +1,11 @@
 <script lang="ts" setup>
 import { computed, ref, shallowRef } from 'vue';
 import { useRouter } from 'vue-router';
-import { onKeyStroke, useDebounceFn } from '@vueuse/core';
+import { onKeyStroke, useDebounceFn, useOnline } from '@vueuse/core';
 import { useRouteStore } from '@/store/modules/route';
 import { useAppStore } from '@/store/modules/app';
 import { $t } from '@/locales';
+import { fetchNavigationSearch } from '@/service/api';
 import SearchResult from './search-result.vue';
 import SearchFooter from './search-footer.vue';
 
@@ -15,22 +16,39 @@ const appStore = useAppStore();
 const routeStore = useRouteStore();
 
 const isMobile = computed(() => appStore.isMobile);
+const online = useOnline();
 
 const keyword = ref('');
 const activePath = ref('');
-const resultOptions = shallowRef<App.Global.Menu[]>([]);
+const resultOptions = shallowRef<Api.Route.NavigationSearchResult[]>([]);
+const loading = ref(false);
+const error = ref(false);
+const degraded = ref(false);
+let requestSequence = 0;
 
 const handleSearch = useDebounceFn(search, 300);
 
 const visible = defineModel<boolean>('show', { required: true });
 
-function search() {
-  resultOptions.value = routeStore.searchMenus.filter(menu => {
-    const trimKeyword = keyword.value.toLocaleLowerCase().trim();
-    const title = (menu.i18nKey ? $t(menu.i18nKey) : menu.label).toLocaleLowerCase();
-    return trimKeyword && title.includes(trimKeyword);
-  });
-  activePath.value = resultOptions.value[0]?.routePath ?? '';
+async function search() {
+  const query = keyword.value.trim();
+  const sequence = ++requestSequence;
+  error.value = false;
+  degraded.value = false;
+  if (!query) {
+    loading.value = false;
+    resultOptions.value = [];
+    activePath.value = '';
+    return;
+  }
+  loading.value = true;
+  const { data, error: requestError } = await fetchNavigationSearch(query, 20);
+  if (sequence !== requestSequence) return;
+  loading.value = false;
+  error.value = Boolean(requestError) || !data;
+  degraded.value = Boolean(data?.degraded);
+  resultOptions.value = data?.items || [];
+  activePath.value = resultOptions.value[0]?.path ?? '';
 }
 
 function handleClose() {
@@ -39,6 +57,9 @@ function handleClose() {
     visible.value = false;
     resultOptions.value = [];
     keyword.value = '';
+    loading.value = false;
+    error.value = false;
+    degraded.value = false;
   }, 200);
 }
 
@@ -52,7 +73,7 @@ function handleUp() {
 
   const activeIndex = index === 0 ? length - 1 : index - 1;
 
-  activePath.value = resultOptions.value[activeIndex].routePath;
+  activePath.value = resultOptions.value[activeIndex].path;
 }
 
 /** key down */
@@ -65,18 +86,23 @@ function handleDown() {
 
   const activeIndex = index === length - 1 ? 0 : index + 1;
 
-  activePath.value = resultOptions.value[activeIndex].routePath;
+  activePath.value = resultOptions.value[activeIndex].path;
 }
 
 function getActivePathIndex() {
-  return resultOptions.value.findIndex(item => item.routePath === activePath.value);
+  return resultOptions.value.findIndex(item => item.path === activePath.value);
 }
 
 /** key enter */
 function handleEnter() {
   if (resultOptions.value?.length === 0 || activePath.value === '') return;
+  const target = resultOptions.value.find(item => item.path === activePath.value);
+  if (!target || !routeStore.isNavigationTargetAvailable(target.menu_id, target.path)) {
+    window.$message?.warning($t('chat.navigationUnavailable'));
+    return;
+  }
   handleClose();
-  router.push(activePath.value);
+  router.push(target.path);
 }
 
 function registerShortcut() {
@@ -111,8 +137,18 @@ registerShortcut();
     </NInputGroup>
 
     <div class="mt-20px">
-      <NEmpty v-if="resultOptions.length === 0" :description="$t('common.noData')" />
-      <SearchResult v-else v-model:path="activePath" :options="resultOptions" @enter="handleEnter" />
+      <div v-if="loading" class="h-120px flex-center"><NSpin /></div>
+      <NResult
+        v-else-if="error"
+        status="error"
+        :title="$t('common.error')"
+        :description="online ? $t('chat.navigationSearchError') : $t('chat.navigationOffline')"
+      />
+      <template v-else>
+        <NAlert v-if="degraded" type="warning" class="mb-10px">{{ $t('chat.navigationDegraded') }}</NAlert>
+        <NEmpty v-if="resultOptions.length === 0" :description="$t('common.noData')" />
+        <SearchResult v-else v-model:path="activePath" :options="resultOptions" @enter="handleEnter" />
+      </template>
     </div>
     <template #footer>
       <SearchFooter v-if="!isMobile" />

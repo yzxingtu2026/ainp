@@ -1153,6 +1153,13 @@ declare namespace App {
         toolWaiting: string;
         toolArguments: string;
         toolResult: string;
+        navigationSearching: string;
+        navigationEmpty: string;
+        navigationOpen: string;
+        navigationUnavailable: string;
+        navigationSearchError: string;
+        navigationOffline: string;
+        navigationDegraded: string;
       };
       toolConfirmation: {
         title: string;

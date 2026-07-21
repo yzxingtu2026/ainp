@@ -134,6 +134,9 @@ func TestSystemOperationsContractUsesProgressiveActionScope(t *testing.T) {
 	if !slices.Equal(contract.AllowedToolSources, []string{"action"}) || !slices.Equal(contract.AllowedToolCapabilities, []string{"system", "operations"}) {
 		t.Fatalf("unexpected progressive tool scope: %#v", contract)
 	}
+	if !slices.Contains(contract.RequiredToolSelectors, "builtin:navigation.search") {
+		t.Fatalf("default system agent must receive direct navigation search: %#v", contract.RequiredToolSelectors)
+	}
 }
 
 func TestAgentToolSearchOnlyReturnsBindableTools(t *testing.T) {

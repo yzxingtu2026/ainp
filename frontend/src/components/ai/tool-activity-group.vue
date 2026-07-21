@@ -14,8 +14,16 @@ const props = defineProps<{
 const expanded = ref(false);
 
 const visible = computed(() => props.active || expanded.value);
+const navigationOperations = computed(() =>
+  props.operations.filter(operation => operation.toolName === 'builtin__navigation_search')
+);
+const regularOperations = computed(() =>
+  props.operations.filter(operation => operation.toolName !== 'builtin__navigation_search')
+);
 
-const allSettled = computed(() => props.operations.length > 0 && props.operations.every(op => op.hasResult));
+const allSettled = computed(
+  () => regularOperations.value.length > 0 && regularOperations.value.every(op => op.hasResult)
+);
 
 // 运行结束后自动收起为汇总行
 watch(
@@ -28,8 +36,14 @@ watch(
 
 <template>
   <div v-if="operations.length > 0" class="tool-activity">
+    <NavigationResultCard
+      v-for="operation in navigationOperations"
+      :key="operation.toolCallId || operation.toolName"
+      :result="operation.result"
+      :pending="active && !operation.hasResult"
+    />
     <button
-      v-if="!active"
+      v-if="!active && regularOperations.length > 0"
       type="button"
       class="tool-activity__summary"
       @click="expanded = !expanded"
@@ -44,16 +58,18 @@ watch(
     </button>
 
     <template v-else>
-      <div class="tool-activity__live">
+      <div v-if="regularOperations.length > 0" class="tool-activity__live">
         <SvgIcon icon="mdi:lightning-bolt-outline" />
-        <span>{{ allSettled ? $t('chat.toolProcessed', { count: operations.length }) : $t('chat.toolCall') }}</span>
+        <span>
+          {{ allSettled ? $t('chat.toolProcessed', { count: regularOperations.length }) : $t('chat.toolCall') }}
+        </span>
       </div>
     </template>
 
     <Transition name="tool-activity-expand">
-      <div v-if="visible" class="tool-activity__items">
+      <div v-if="visible && regularOperations.length > 0" class="tool-activity__items">
         <ToolCallCard
-          v-for="operation in operations"
+          v-for="operation in regularOperations"
           :key="operation.toolCallId || operation.toolName"
           :tool-name="operation.toolName"
           :request="operation.request"
@@ -82,7 +98,9 @@ watch(
   color: rgba(127, 127, 127, 1);
   font-size: 12px;
   cursor: pointer;
-  transition: background 0.2s ease, color 0.2s ease;
+  transition:
+    background 0.2s ease,
+    color 0.2s ease;
 }
 
 .tool-activity__summary:hover {

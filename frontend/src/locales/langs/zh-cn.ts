@@ -986,7 +986,14 @@ const local: App.I18n.Schema = {
     toolFailed: '执行失败',
     toolWaiting: '等待结果',
     toolArguments: '调用参数',
-    toolResult: '执行结果'
+    toolResult: '执行结果',
+    navigationSearching: '正在查找可访问的功能页面',
+    navigationEmpty: '没有找到可访问的功能页面',
+    navigationOpen: '打开页面',
+    navigationUnavailable: '该页面当前不可用或权限已变更',
+    navigationSearchError: '无法加载功能搜索结果，请稍后重试',
+    navigationOffline: '当前处于离线状态，联网后可搜索系统功能',
+    navigationDegraded: '搜索服务已降级，当前展示词法匹配结果'
   },
   toolConfirmation: {
     title: '敏感工具执行确认',

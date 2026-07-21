@@ -127,7 +127,7 @@ func New(opts Options) *gin.Engine {
 		logging.Info(c.Request.Context(), "navigation search completed",
 			"query_length", len([]rune(query)), "result_count", len(results),
 			"match_types", matchTypes, "duration_ms", time.Since(startedAt).Milliseconds())
-		response.OK(c, gin.H{"items": results})
+		response.OK(c, gin.H{"items": results, "degraded": false})
 	})
 
 	if opts.CodeSets != nil {
