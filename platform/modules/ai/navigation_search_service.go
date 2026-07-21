@@ -358,7 +358,6 @@ func (s *NavigationSearchService) SearchNavigation(ctx context.Context, request 
 	for _, id := range request.AllowedMenuIDs {
 		args = append(args, id)
 	}
-	args = append(args, PGVector(response.Vectors[0].Vector))
 	query := fmt.Sprintf(`WITH trusted_tenant AS (SELECT ?::text tenant_id), query_vector AS (SELECT ?::public.vector value) SELECT d.menu_id, MAX(1-(d.embedding_vector OPERATOR(public.<=>) q.value)) AS score FROM navigation_search_documents d CROSS JOIN trusted_tenant tt CROSS JOIN query_vector q WHERE d.tenant_id=tt.tenant_id AND d.index_status='ready' AND d.embedding_vector IS NOT NULL AND d.locale IN (?, 'zh-CN') AND d.embedding_alias=? AND d.embedding_deployment_id=? AND d.embedding_dimensions=? AND d.embedding_preprocessing=? AND d.embedding_schema_version=? AND d.menu_id IN (%s) GROUP BY d.menu_id ORDER BY score DESC, d.menu_id ASC LIMIT 20`, placeholders)
 	rows, err := tenantdata.TenantRaw[navigationVectorCandidate](tdb, query, args...)
 	if err != nil {

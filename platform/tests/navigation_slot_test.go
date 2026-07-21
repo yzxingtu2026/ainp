@@ -1,4 +1,4 @@
-package navigation
+package tests
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/aitool"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/menu"
+	navigationtool "github.com/yzxingtu2026/ainp/platform/modules/ai/tools/navigation"
 )
 
 func TestSlotProjectsAndSearchesFromTrustedAuthContext(t *testing.T) {
@@ -21,7 +22,7 @@ func TestSlotProjectsAndSearchesFromTrustedAuthContext(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	slot := New(registry)
+	slot := navigationtool.New(registry)
 	ac := &auth.Context{TenantID: "tenant-1", UserID: "user-1", SessionID: "session-1", Realm: auth.RealmTenant, AuthVersion: 4, Permissions: []string{"user.list"}, Authenticated: true}
 	ctx := auth.WithContext(context.Background(), ac)
 	scope := aitool.RuntimeScope{TenantID: ac.TenantID, UserID: ac.UserID, SessionID: ac.SessionID, Realm: string(ac.Realm), AuthVersion: ac.AuthVersion}
@@ -50,7 +51,7 @@ func TestSlotProjectsAndSearchesFromTrustedAuthContext(t *testing.T) {
 }
 
 func TestSlotRejectsModelSuppliedInvalidBudget(t *testing.T) {
-	slot := New(menu.NewRegistry())
+	slot := navigationtool.New(menu.NewRegistry())
 	ctx := auth.WithContext(context.Background(), &auth.Context{TenantID: "tenant-1", UserID: "user-1", Realm: auth.RealmTenant, Authenticated: true})
 	result, err := slot.Execute(ctx, aitool.LoadedTool{}, json.RawMessage(`{"query":"users","limit":6}`))
 	if err != nil {
@@ -76,7 +77,7 @@ func TestHelpSlotReauthorizesAndRejectsArbitraryPaths(t *testing.T) {
 	if err = help.Register(document); err != nil {
 		t.Fatal(err)
 	}
-	slot := NewHelp(registry, help)
+	slot := navigationtool.NewHelp(registry, help)
 	ctx := auth.WithContext(context.Background(), &auth.Context{TenantID: "tenant-1", UserID: "user-1", Realm: auth.RealmTenant, Authenticated: true, Permissions: []string{"user.list"}, Language: "zh-CN"})
 	result, err := slot.Execute(ctx, aitool.LoadedTool{}, json.RawMessage(`{"menu_id":"system.users","use_case":"新增用户"}`))
 	if err != nil {
