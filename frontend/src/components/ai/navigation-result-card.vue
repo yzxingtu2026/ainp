@@ -36,7 +36,7 @@ const items = computed(() => {
       if (item) unique.set(`${item.menu_id}:${item.path}`, item);
     }
   }
-  return Array.from(unique.values());
+  return Array.from(unique.values()).slice(0, 3);
 });
 
 function available(item: Api.Route.NavigationSearchResult) {

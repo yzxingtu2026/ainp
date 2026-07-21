@@ -16,7 +16,7 @@ const (
 	SettingFieldModelAlias   = "embedding_model_alias"
 	DefaultSearchLimit       = 20
 	MaxSearchLimit           = 20
-	MaxToolSearchLimit       = 5
+	MaxToolSearchLimit       = 3
 	MaxSearchQueryRunes      = 200
 )
 

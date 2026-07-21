@@ -30,7 +30,7 @@ func TestSlotProjectsAndSearchesFromTrustedAuthContext(t *testing.T) {
 		t.Fatalf("projection failed: visible=%v err=%v", visible, err)
 	}
 
-	result, err := slot.Execute(ctx, aitool.LoadedTool{}, json.RawMessage(`{"query":"管理","limit":5}`))
+	result, err := slot.Execute(ctx, aitool.LoadedTool{}, json.RawMessage(`{"query":"管理","limit":3}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,12 +53,41 @@ func TestSlotProjectsAndSearchesFromTrustedAuthContext(t *testing.T) {
 func TestSlotRejectsModelSuppliedInvalidBudget(t *testing.T) {
 	slot := navigationtool.New(menu.NewRegistry())
 	ctx := auth.WithContext(context.Background(), &auth.Context{TenantID: "tenant-1", UserID: "user-1", Realm: auth.RealmTenant, Authenticated: true})
-	result, err := slot.Execute(ctx, aitool.LoadedTool{}, json.RawMessage(`{"query":"users","limit":6}`))
+	result, err := slot.Execute(ctx, aitool.LoadedTool{}, json.RawMessage(`{"query":"users","limit":4}`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if result.Status != "failed" || result.ErrorCategory != "invalid_request" {
 		t.Fatalf("unexpected result: %#v", result)
+	}
+}
+
+func TestSlotDefaultsToThreeNavigationCandidates(t *testing.T) {
+	registry := menu.NewRegistry()
+	if err := registry.Register(menu.Menu{ID: "system.root", Title: "系统", Type: menu.TypeDirectory}); err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range []menu.Menu{
+		{ID: "system.users", Title: "用户管理", Path: "/system/users"},
+		{ID: "system.roles", Title: "角色管理", Path: "/system/roles"},
+		{ID: "system.settings", Title: "系统管理", Path: "/system/settings"},
+		{ID: "system.audit", Title: "审计管理", Path: "/system/audit"},
+	} {
+		item.ParentID = "system.root"
+		item.Type = menu.TypeMenu
+		if err := registry.Register(item); err != nil {
+			t.Fatal(err)
+		}
+	}
+	slot := navigationtool.New(registry)
+	ctx := auth.WithContext(context.Background(), &auth.Context{TenantID: "tenant-1", UserID: "user-1", Realm: auth.RealmTenant, Authenticated: true})
+	result, err := slot.Execute(ctx, aitool.LoadedTool{}, json.RawMessage(`{"query":"管理"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, ok := result.Data.(map[string]any)
+	if !ok || data["returned_count"] != 3 {
+		t.Fatalf("navigation candidate count must default to 3: %#v", result)
 	}
 }
 

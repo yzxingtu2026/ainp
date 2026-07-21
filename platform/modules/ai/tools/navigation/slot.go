@@ -15,7 +15,7 @@ const ToolID = "builtin:navigation.search"
 
 type SearchInput struct {
 	Query string `json:"query" validate:"required,max=200" description:"Natural-language description of the page or feature the user wants to find."`
-	Limit int    `json:"limit,omitempty" validate:"omitempty,min=1,max=5" description:"Maximum navigation results, from 1 to 5."`
+	Limit int    `json:"limit,omitempty" validate:"omitempty,min=1,max=3" description:"Maximum navigation results, from 1 to 3."`
 }
 
 type Slot struct{ search *menu.SearchService }
