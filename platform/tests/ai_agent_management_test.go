@@ -139,14 +139,31 @@ func TestSystemOperationsContractUsesProgressiveActionScope(t *testing.T) {
 func TestAgentToolSearchOnlyReturnsBindableTools(t *testing.T) {
 	registry := aitool.NewRegistry()
 	actionTool := toolFixture("action:system.user_list", "用户列表", "查询系统用户列表")
+	metaTool := actionTool
+	metaTool.ID = "meta:tool.search"
+	metaTool.Source = aitool.SourceMeta
+	metaTool.Name = "tool.search"
+	metaTool.RuntimeRef = "tool.search"
+	metaTool.BindingMode = aitool.BindingOptional
+	metaTool.LoadingMode = aitool.LoadingDirect
+	metaTool.BindingGroup = "tool_discovery"
 	pluginTool := actionTool
 	pluginTool.ID = "plugin:crm.customer_list"
 	pluginTool.Source = aitool.SourcePlugin
+	pluginTool.BindingMode = aitool.BindingOptional
+	pluginTool.LoadingMode = aitool.LoadingDirect
 	pluginTool.RuntimeRef = "crm.customer_list"
 	if err := registry.RegisterProvider(&fakeToolProvider{source: aitool.SourceAction, tools: []aitool.Definition{actionTool}}, &fakeToolExecutor{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := registry.RegisterProvider(&fakeToolProvider{source: aitool.SourcePlugin, tools: []aitool.Definition{pluginTool}}, &fakeToolExecutor{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.RegisterProvider(&fakeToolProvider{source: aitool.SourceMeta, tools: []aitool.Definition{metaTool}}, &fakeToolExecutor{}); err != nil {
+		t.Fatal(err)
+	}
+	slot := &fakeRuntimeSlot{id: "builtin:knowledge.search", runtimeRef: "knowledge.search", direct: true, visible: true}
+	if err := registry.RegisterSlot(slot); err != nil {
 		t.Fatal(err)
 	}
 	if err := registry.Refresh(context.Background()); err != nil {
@@ -159,8 +176,12 @@ func TestAgentToolSearchOnlyReturnsBindableTools(t *testing.T) {
 		t.Fatal(err)
 	}
 	items := value.([]aitool.Candidate)
-	if len(items) != 1 || items[0].ID != pluginTool.ID {
-		t.Fatalf("agent binding candidates must exclude actions: %#v", items)
+	ids := make([]string, 0, len(items))
+	for _, item := range items {
+		ids = append(ids, item.ID)
+	}
+	if !slices.Equal(ids, []string{slot.id, metaTool.ID, pluginTool.ID}) {
+		t.Fatalf("agent binding candidates must include declared meta/slot/plugin and exclude actions: %#v", items)
 	}
 }
 

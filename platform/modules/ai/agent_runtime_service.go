@@ -1074,12 +1074,9 @@ func (s *AgentRuntimeService) ensureToolScope(ctx context.Context, run *AgentRun
 	if err != nil {
 		return "", err
 	}
-	allowed := []string{"meta:tool.search", "meta:tool.load"}
+	allowed := []string{}
 	allowedSources := []string{}
 	allowedCapabilities := []string{}
-	if s.tools.registry != nil {
-		allowed = append(allowed, s.tools.registry.SlotIDs()...)
-	}
 	for _, b := range bindings {
 		if s.tools.registry.IsBindable(b.ToolID) {
 			allowed = append(allowed, b.ToolID)
@@ -1087,6 +1084,16 @@ func (s *AgentRuntimeService) ensureToolScope(ctx context.Context, run *AgentRun
 	}
 	if s.contracts != nil && agent.ContractKey != "" {
 		if contract, ok := s.contracts.Get(agent.ContractKey, agent.ContractVersion); ok {
+			for _, id := range contract.RequiredToolSelectors {
+				group := s.tools.registry.BindingGroup(id)
+				if len(group) == 0 {
+					allowed = append(allowed, id)
+					continue
+				}
+				for _, member := range group {
+					allowed = append(allowed, member.ID)
+				}
+			}
 			allowedSources = append(allowedSources, contract.AllowedToolSources...)
 			allowedCapabilities = append(allowedCapabilities, contract.AllowedToolCapabilities...)
 		}

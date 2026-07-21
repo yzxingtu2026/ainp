@@ -544,6 +544,8 @@ const local: App.I18n.Schema = {
       noToolCandidates: '没有匹配的工具',
       requiredTool: 'Contract 必需',
       requiredToolReadonly: 'Contract 必需工具不可解绑',
+      conditionalLoading: '自动按需加载',
+      toolDiscovery: '渐进工具发现',
       bind: '绑定',
       bound: '已绑定',
       unbind: '解绑',

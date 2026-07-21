@@ -12,26 +12,33 @@ import (
 type Source string
 type Risk string
 type SideEffect string
+type BindingMode string
+type LoadingMode string
 
 const (
-	SettingKeySearch                  = "ai.tool_search"
-	SettingFieldModelAlias            = "embedding_model_alias"
-	SourceMeta             Source     = "meta"
-	SourceAction           Source     = "action"
-	SourceBuiltin          Source     = "builtin"
-	SourcePlugin           Source     = "plugin"
-	SourceHTTP             Source     = "http"
-	SourceMCP              Source     = "mcp"
-	RiskLow                Risk       = "low"
-	RiskMedium             Risk       = "medium"
-	RiskHigh               Risk       = "high"
-	RiskCritical           Risk       = "critical"
-	SideEffectNone         SideEffect = "none"
-	SideEffectRead         SideEffect = "read"
-	SideEffectWrite        SideEffect = "write"
-	SideEffectExternal     SideEffect = "external"
-	SideEffectPaid         SideEffect = "paid"
-	SideEffectDestructive  SideEffect = "destructive"
+	SettingKeySearch                   = "ai.tool_search"
+	SettingFieldModelAlias             = "embedding_model_alias"
+	SourceMeta             Source      = "meta"
+	SourceAction           Source      = "action"
+	SourceBuiltin          Source      = "builtin"
+	SourcePlugin           Source      = "plugin"
+	SourceHTTP             Source      = "http"
+	SourceMCP              Source      = "mcp"
+	RiskLow                Risk        = "low"
+	RiskMedium             Risk        = "medium"
+	RiskHigh               Risk        = "high"
+	RiskCritical           Risk        = "critical"
+	SideEffectNone         SideEffect  = "none"
+	SideEffectRead         SideEffect  = "read"
+	SideEffectWrite        SideEffect  = "write"
+	SideEffectExternal     SideEffect  = "external"
+	SideEffectPaid         SideEffect  = "paid"
+	SideEffectDestructive  SideEffect  = "destructive"
+	BindingForbidden       BindingMode = "forbidden"
+	BindingOptional        BindingMode = "optional"
+	LoadingDirect          LoadingMode = "direct"
+	LoadingConditional     LoadingMode = "conditional"
+	LoadingProgressive     LoadingMode = "progressive"
 )
 
 var toolIDPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]*:[a-z][a-z0-9_.-]*$`)
@@ -51,6 +58,9 @@ type Definition struct {
 	Risk                 Risk            `json:"risk"`
 	SideEffect           SideEffect      `json:"side_effect"`
 	RequiresConfirmation bool            `json:"requires_confirmation"`
+	BindingMode          BindingMode     `json:"binding_mode"`
+	LoadingMode          LoadingMode     `json:"loading_mode"`
+	BindingGroup         string          `json:"binding_group,omitempty"`
 	PermissionRefs       []string        `json:"permission_refs,omitempty"`
 	RuntimeRef           string          `json:"-"`
 	SchemaVersion        int             `json:"schema_version"`
@@ -74,6 +84,12 @@ func (d Definition) Validate() error {
 	if !slices.Contains([]Risk{RiskLow, RiskMedium, RiskHigh, RiskCritical}, d.Risk) || !slices.Contains([]SideEffect{SideEffectNone, SideEffectRead, SideEffectWrite, SideEffectExternal, SideEffectPaid, SideEffectDestructive}, d.SideEffect) {
 		return fmt.Errorf("invalid risk or side effect")
 	}
+	if !slices.Contains([]BindingMode{BindingForbidden, BindingOptional}, d.BindingMode) || !slices.Contains([]LoadingMode{LoadingDirect, LoadingConditional, LoadingProgressive}, d.LoadingMode) {
+		return fmt.Errorf("invalid binding or loading mode")
+	}
+	if d.BindingGroup != "" && !observationFieldPattern.MatchString(d.BindingGroup) {
+		return fmt.Errorf("invalid binding group")
+	}
 	if d.SchemaVersion < 1 || (d.Status != "enabled" && d.Status != "disabled") {
 		return fmt.Errorf("invalid schema version or status")
 	}
@@ -81,15 +97,18 @@ func (d Definition) Validate() error {
 }
 
 type Candidate struct {
-	ID         string     `json:"id"`
-	Name       string     `json:"name"`
-	Summary    string     `json:"summary"`
-	Source     Source     `json:"source"`
-	Capability string     `json:"capability"`
-	Risk       Risk       `json:"risk"`
-	SideEffect SideEffect `json:"side_effect"`
-	InputHints []string   `json:"input_hints"`
-	Score      float64    `json:"score"`
+	ID           string      `json:"id"`
+	Name         string      `json:"name"`
+	Summary      string      `json:"summary"`
+	Source       Source      `json:"source"`
+	Capability   string      `json:"capability"`
+	Risk         Risk        `json:"risk"`
+	SideEffect   SideEffect  `json:"side_effect"`
+	InputHints   []string    `json:"input_hints"`
+	BindingMode  BindingMode `json:"binding_mode"`
+	LoadingMode  LoadingMode `json:"loading_mode"`
+	BindingGroup string      `json:"binding_group,omitempty"`
+	Score        float64     `json:"score"`
 }
 type LoadedTool struct {
 	Definition Definition `json:"definition"`

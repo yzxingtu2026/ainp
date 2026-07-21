@@ -66,7 +66,7 @@ Knowledge Runtime 管理租户知识库、附件来源、不可变索引版本�
 - exact/FTS 与 pgvector 分路受限召回，按固定权重融合并以 Chunk ID 稳定打破同分；`top_k`、候选倍数、Document filter 与上下文 token 总量都有硬上限。
 - Query Embedding 必须经统一 Embedding Runtime，deployment、dimensions 与 IndexVersion 完全匹配；Runtime 不可用时可降级 FTS，返回的模型事实异常则 fail-closed。
 - Citation 只包含稳定 Base/Document/Chunk/Index、source revision、来源位置、标题与 attachment ID；回查重新鉴权并复核当前指针，不返回正文，来源变化后标记 stale。
-- Agent 绑定仅提供候选 Base ID。Agent Run 默认采用 `tool_only` 策略，不得在每个 Model Step 前固定召回；只有模型调用 `knowledge.search` 时才按当前 actor 执行 Retriever。
+- Agent 知识库绑定仅提供候选 Base ID；`knowledge.search` 还必须在 Agent Builder 中作为 Tool 有效绑定。Agent Run 默认采用 `tool_only` 策略，不得在每个 Model Step 前固定召回；只有工具已绑定、至少一个候选库实时可用且模型调用 `knowledge.search` 时，才按当前 actor 执行 Retriever。
 - `knowledge.search` 未指定 Base 时在全部当前可用绑定库内统一召回，指定 Base/Document 只能与绑定和权限范围求交；全局 TopK、稳定去重、Score Threshold 与上下文 Token Budget 不得按库数量线性扩大。
 - Tool Result 正文必须包装为 `UNTRUSTED KNOWLEDGE REFERENCES`，禁止拼入 system/developer instructions。空结果返回结构化事实，模型可继续回答、澄清或改写查询，不得伪造引用。
 - 同一 Run 对完全相同的 actor、auth version、绑定/索引版本、query、filters 和检索配置复用结果；每次复用前仍重验候选与权限。单 Run 知识检索另设硬上限，并同时计入 Tool Call、Step 与 Token 预算。

@@ -68,8 +68,7 @@ func (s *ToolService) ProjectModelTools(ctx context.Context, scopeID string) (st
 	if err != nil {
 		return "", nil, err
 	}
-	ids := append([]string{"meta:tool.search", "meta:tool.load"}, s.registry.DirectSlotIDs()...)
-	ids = append(ids, decodeStrings(scope.LoadedToolsJSON)...)
+	ids := append(decodeStrings(scope.AllowedToolsJSON), decodeStrings(scope.LoadedToolsJSON)...)
 	out := make([]aimodelruntime.ToolDefinition, 0, len(ids))
 	seen := map[string]bool{}
 	for _, id := range ids {

@@ -4,6 +4,7 @@
 - 模型调用通过 `enable_tools/tool_scope_id` 投影已加载真实 Schema，禁止客户端直接提交 `tools` 绕过 Registry。
 - `tool.search` 的 source/capability 仅接受稳定代码精确过滤；Schema 必须声明 source 枚举与语义，Service 在 API/Agent Runtime 所有入口自行校验，非法过滤禁止静默空结果。
 - Tool ID 必须 namespaced；Provider/Executor 统一注册，未知来源、重复、非法 Schema 与缺失风险元数据 fail-closed。
+- Definition 必须显式声明 `binding_mode` 与 `loading_mode`；绑定组必须原子处理。Runtime 只投影 Contract 必选与用户可选有效绑定，禁止全局默认注入 Meta/Slot。
 - 核心工具必须实现独立 `RuntimeSlot` 并经 `platform/modules/ai/tools/register.go` 显式聚合；禁止扫描源码、Go Plugin、隐藏 `init()`，禁止在 ToolService/Agent Runtime 增加业务 Tool ID 分支。
 - Action 是否暴露以注册处的 `Metadata.AI` 为唯一事实源；仅 `AIMeta.ExposeTool=true` 自动投影，`AI=nil` 默认不暴露。输入/输出 Schema 必须由同一强类型 DTO 生成，Action Tool 只经 `ActionRegistry.Invoke`，禁止维护平行暴露清单。
 - Scope 精确 Tool 与来源/能力白名单按“精确命中或来源+能力命中”授权，但 Action 禁止通过精确 Binding 授权，只能命中 Contract 来源+能力；来源/能力只开放渐进 search/load，禁止未 load Schema 进入模型初始投影。

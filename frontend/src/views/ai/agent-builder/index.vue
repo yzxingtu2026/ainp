@@ -812,13 +812,19 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
                       <NListItem v-for="binding in boundTools" :key="binding.id">
                         <NSpace justify="space-between" class="w-full">
                           <NSpace>
-                            <span>{{ binding.tool_id }}</span>
-                            <NTag v-if="requiredTools.has(binding.tool_id)" size="small" type="warning">
+							<span>{{ binding.name || binding.tool_id }}</span>
+							<NTag v-if="binding.required" size="small" type="warning">
                               {{ $t('page.agentBuilder.requiredTool') }}
                             </NTag>
+							<NTag v-if="binding.loading_mode === 'conditional'" size="small" type="info">
+							  {{ $t('page.agentBuilder.conditionalLoading') }}
+							</NTag>
+							<NTag v-if="binding.binding_group === 'tool_discovery'" size="small" type="info">
+							  {{ $t('page.agentBuilder.toolDiscovery') }}
+							</NTag>
                           </NSpace>
                           <NButton
-                            v-if="can(AI_ACTIONS.agentToolUnbind) && !requiredTools.has(binding.tool_id)"
+							v-if="can(AI_ACTIONS.agentToolUnbind) && !binding.required"
                             size="small"
                             type="error"
                             ghost

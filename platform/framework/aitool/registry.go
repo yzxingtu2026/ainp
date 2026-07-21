@@ -180,17 +180,31 @@ func (r *Registry) SlotIDs() []string {
 }
 
 // IsBindable reports whether a tool may be persisted in an AgentToolBinding.
-// Action and meta tools are governed by runtime Scope, while Runtime Slots
-// carry their own discovery policy and are projected automatically.
 func (r *Registry) IsBindable(id string) bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	d, ok := r.tools[id]
-	if !ok || d.Status != "enabled" || d.Source == SourceAction || d.Source == SourceMeta {
-		return false
+	return ok && d.Status == "enabled" && d.BindingMode == BindingOptional
+}
+
+func (r *Registry) BindingGroup(id string) []Definition {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	d, ok := r.tools[id]
+	if !ok {
+		return nil
 	}
-	_, isSlot := r.slots[id]
-	return !isSlot
+	if d.BindingGroup == "" {
+		return []Definition{d}
+	}
+	out := make([]Definition, 0, 2)
+	for _, candidate := range r.tools {
+		if candidate.BindingGroup == d.BindingGroup {
+			out = append(out, candidate)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
 }
 func (r *Registry) List() []Definition {
 	r.mu.RLock()
@@ -258,7 +272,7 @@ func search(ctx context.Context, definitions []Definition, query, capability str
 		if score <= 0 {
 			continue
 		}
-		out = append(out, Candidate{ID: d.ID, Name: d.Name, Summary: d.DescriptionForLLM, Source: d.Source, Capability: d.Capability, Risk: d.Risk, SideEffect: d.SideEffect, InputHints: InputHints(d.InputSchema), Score: score})
+		out = append(out, Candidate{ID: d.ID, Name: d.Name, Summary: d.DescriptionForLLM, Source: d.Source, Capability: d.Capability, Risk: d.Risk, SideEffect: d.SideEffect, InputHints: InputHints(d.InputSchema), BindingMode: d.BindingMode, LoadingMode: d.LoadingMode, BindingGroup: d.BindingGroup, Score: score})
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Score == out[j].Score {

@@ -88,7 +88,7 @@ func toolSettingProvider(t *testing.T, alias string) *setting.Provider {
 }
 
 func toolFixture(id, name, summary string) aitool.Definition {
-	return aitool.Definition{ID: id, Source: aitool.SourceAction, Name: name, DescriptionForLLM: summary, DescriptionForHuman: summary, Capability: "demo", Tags: []string{"采购", "订单"}, InputSchema: json.RawMessage(`{"type":"object","properties":{"supplier_id":{"type":"string"}},"required":["supplier_id"]}`), Risk: aitool.RiskLow, SideEffect: aitool.SideEffectRead, RuntimeRef: strings.TrimPrefix(id, "action:"), SchemaVersion: 1, Status: "enabled"}
+	return aitool.Definition{ID: id, Source: aitool.SourceAction, Name: name, DescriptionForLLM: summary, DescriptionForHuman: summary, Capability: "demo", Tags: []string{"采购", "订单"}, InputSchema: json.RawMessage(`{"type":"object","properties":{"supplier_id":{"type":"string"}},"required":["supplier_id"]}`), Risk: aitool.RiskLow, SideEffect: aitool.SideEffectRead, BindingMode: aitool.BindingForbidden, LoadingMode: aitool.LoadingProgressive, RuntimeRef: strings.TrimPrefix(id, "action:"), SchemaVersion: 1, Status: "enabled"}
 }
 
 func TestToolRegistryRejectsDuplicateProviderAndInvalidDefinition(t *testing.T) {
@@ -243,6 +243,8 @@ func TestToolRegistryBindablePolicy(t *testing.T) {
 	pluginTool := actionTool
 	pluginTool.ID = "plugin:crm.customer_list"
 	pluginTool.Source = aitool.SourcePlugin
+	pluginTool.BindingMode = aitool.BindingOptional
+	pluginTool.LoadingMode = aitool.LoadingDirect
 	pluginTool.RuntimeRef = "crm.customer_list"
 	if err := registry.RegisterProvider(&fakeToolProvider{source: aitool.SourceAction, tools: []aitool.Definition{actionTool}}, &fakeToolExecutor{}); err != nil {
 		t.Fatal(err)
@@ -331,8 +333,8 @@ func TestToolRuntimePostgresLifecycleAndIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	meta := []aitool.Definition{
-		{ID: "meta:tool.search", Source: aitool.SourceMeta, Name: "tool.search", DescriptionForLLM: "Search visible tools by intent and return compact candidates", DescriptionForHuman: "搜索当前用户可用的工具", Capability: "ai", InputSchema: action.SchemaFor[aitool.MetaSearchInput](), Risk: aitool.RiskLow, SideEffect: aitool.SideEffectRead, RuntimeRef: "tool.search", SchemaVersion: 1, Status: "enabled"},
-		{ID: "meta:tool.load", Source: aitool.SourceMeta, Name: "tool.load", DescriptionForLLM: "Load a small number of candidate tools into the current scope", DescriptionForHuman: "将候选工具加载到当前调用范围", Capability: "ai", InputSchema: action.SchemaFor[aitool.MetaLoadInput](), Risk: aitool.RiskLow, SideEffect: aitool.SideEffectRead, RuntimeRef: "tool.load", SchemaVersion: 1, Status: "enabled"},
+		{ID: "meta:tool.search", Source: aitool.SourceMeta, Name: "tool.search", DescriptionForLLM: "Search visible tools by intent and return compact candidates", DescriptionForHuman: "搜索当前用户可用的工具", Capability: "ai", InputSchema: action.SchemaFor[aitool.MetaSearchInput](), Risk: aitool.RiskLow, SideEffect: aitool.SideEffectRead, BindingMode: aitool.BindingOptional, LoadingMode: aitool.LoadingDirect, BindingGroup: "tool_discovery", RuntimeRef: "tool.search", SchemaVersion: 1, Status: "enabled"},
+		{ID: "meta:tool.load", Source: aitool.SourceMeta, Name: "tool.load", DescriptionForLLM: "Load a small number of candidate tools into the current scope", DescriptionForHuman: "将候选工具加载到当前调用范围", Capability: "ai", InputSchema: action.SchemaFor[aitool.MetaLoadInput](), Risk: aitool.RiskLow, SideEffect: aitool.SideEffectRead, BindingMode: aitool.BindingOptional, LoadingMode: aitool.LoadingDirect, BindingGroup: "tool_discovery", RuntimeRef: "tool.load", SchemaVersion: 1, Status: "enabled"},
 	}
 	if err = registry.RegisterProvider(&aitool.StaticProvider{ProviderSource: aitool.SourceMeta, Definitions: meta}, aitool.ExecuteFunc(func(context.Context, aitool.LoadedTool, json.RawMessage) (*aitool.Result, error) {
 		return &aitool.Result{Status: "completed"}, nil

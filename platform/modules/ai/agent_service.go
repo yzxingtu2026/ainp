@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"slices"
 	"strings"
 
 	"github.com/google/uuid"
@@ -758,12 +759,41 @@ func (s *AgentService) BindTool(ctx context.Context, r AgentBindRequest) (any, e
 	if !ok || tool.Status != "enabled" || !s.tools.IsBindable(r.ToolID) {
 		return nil, errs.New(errs.CodeNotFound, "tool not found")
 	}
-	binding := AgentToolBinding{ID: uuid.NewString(), AgentID: row.ID, ToolID: tool.ID, Source: string(tool.Source), Status: "enabled", CreatedBy: ac.UserID}
 	repos, e := newAgentRepositories(ctx, s.db)
 	if e != nil {
 		return nil, e
 	}
-	e = repos.tools.Create(&binding)
+	group := s.tools.BindingGroup(tool.ID)
+	var binding AgentToolBinding
+	e = repos.transaction(func(tx *agentRepositories) error {
+		existing, err := tx.tools.Find("agent_id=?", row.ID)
+		if err != nil {
+			return err
+		}
+		bound := make(map[string]AgentToolBinding, len(existing))
+		for _, item := range existing {
+			bound[item.ToolID] = item
+		}
+		for _, member := range group {
+			if !s.tools.IsBindable(member.ID) {
+				return errs.New(errs.CodeNotFound, "tool not found")
+			}
+			if current, ok := bound[member.ID]; ok {
+				if member.ID == tool.ID {
+					binding = current
+				}
+				continue
+			}
+			created := AgentToolBinding{ID: uuid.NewString(), AgentID: row.ID, ToolID: member.ID, Source: string(member.Source), Status: "enabled", CreatedBy: ac.UserID}
+			if err = tx.tools.Create(&created); err != nil {
+				return err
+			}
+			if member.ID == tool.ID {
+				binding = created
+			}
+		}
+		return nil
+	})
 	if e != nil {
 		return nil, dbError(e, "bind tool")
 	}
@@ -774,16 +804,23 @@ func (s *AgentService) UnbindTool(ctx context.Context, r AgentUnbindRequest) (an
 	if e != nil {
 		return nil, e
 	}
-	for _, required := range s.requiredTools(row) {
-		if required == r.ToolID {
+	group := s.tools.BindingGroup(r.ToolID)
+	if len(group) == 0 {
+		return nil, errs.New(errs.CodeNotFound, "tool not found")
+	}
+	requiredSet := stringSet(s.requiredTools(row))
+	ids := make([]string, 0, len(group))
+	for _, member := range group {
+		if requiredSet[member.ID] {
 			return nil, errs.New(errs.CodeForbidden, "required contract tool cannot be unbound")
 		}
+		ids = append(ids, member.ID)
 	}
 	repos, e := newAgentRepositories(ctx, s.db)
 	if e != nil {
 		return nil, e
 	}
-	res := repos.tools.DeleteWhere("agent_id=? AND tool_id=?", row.ID, r.ToolID)
+	res := repos.tools.DeleteWhere("agent_id=? AND tool_id IN ?", row.ID, ids)
 	if res.Error != nil {
 		return nil, res.Error
 	}
@@ -802,13 +839,47 @@ func (s *AgentService) ListTools(ctx context.Context, r IDRequest) (any, error) 
 	if e != nil {
 		return nil, e
 	}
-	visible := make([]AgentToolBinding, 0, len(rows))
+	visible := make([]AgentToolBinding, 0, len(rows)+len(s.requiredTools(row)))
+	seen := map[string]bool{}
 	for _, binding := range rows {
 		if s.tools.IsBindable(binding.ToolID) {
-			visible = append(visible, binding)
+			visible = append(visible, s.bindingView(binding, false))
+			seen[binding.ToolID] = true
 		}
 	}
+	for _, id := range s.requiredTools(row) {
+		if seen[id] {
+			for i := range visible {
+				if visible[i].ToolID == id {
+					visible[i].Required = true
+				}
+			}
+			continue
+		}
+		tool, ok := s.tools.Get(id)
+		if !ok || tool.Status != "enabled" {
+			continue
+		}
+		visible = append(visible, s.bindingView(AgentToolBinding{ID: "contract:" + row.ID + ":" + id, AgentID: row.ID, ToolID: id, Source: string(tool.Source), Status: "enabled", CreatedBy: "contract"}, true))
+	}
+	slices.SortFunc(visible, func(a, b AgentToolBinding) int { return strings.Compare(a.ToolID, b.ToolID) })
 	return visible, nil
+}
+
+func (s *AgentService) bindingView(binding AgentToolBinding, required bool) AgentToolBinding {
+	binding.Required = required
+	if tool, ok := s.tools.Get(binding.ToolID); ok {
+		binding.Name, binding.BindingMode, binding.LoadingMode, binding.BindingGroup = tool.Name, tool.BindingMode, tool.LoadingMode, tool.BindingGroup
+	}
+	return binding
+}
+
+func stringSet(values []string) map[string]bool {
+	out := make(map[string]bool, len(values))
+	for _, value := range values {
+		out[value] = true
+	}
+	return out
 }
 func (s *AgentService) SearchTools(ctx context.Context, r AgentToolSearchRequest) (any, error) {
 	if _, e := agentActor(ctx); e != nil {
@@ -822,7 +893,24 @@ func (s *AgentService) requiredTools(row *Agent) []string {
 		return nil
 	}
 	if c, ok := s.contracts.Get(row.ContractKey, row.ContractVersion); ok {
-		return c.RequiredToolSelectors
+		seen := map[string]bool{}
+		out := make([]string, 0, len(c.RequiredToolSelectors))
+		for _, id := range c.RequiredToolSelectors {
+			group := s.tools.BindingGroup(id)
+			if len(group) == 0 {
+				if !seen[id] {
+					seen[id], out = true, append(out, id)
+				}
+				continue
+			}
+			for _, member := range group {
+				if !seen[member.ID] {
+					seen[member.ID], out = true, append(out, member.ID)
+				}
+			}
+		}
+		slices.Sort(out)
+		return out
 	}
 	return nil
 }
