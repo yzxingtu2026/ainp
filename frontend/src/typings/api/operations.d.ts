@@ -115,6 +115,9 @@ declare namespace Api {
       action_id: string;
       result: string;
       request_id: string;
+      trace_id?: string | null;
+      agent_run_id?: string | null;
+      tool_invocation_id?: string | null;
       permission: string;
       error_code: number;
       resource_type: string;

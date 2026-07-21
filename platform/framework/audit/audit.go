@@ -9,22 +9,25 @@ import (
 )
 
 type Record struct {
-	ID           string    `gorm:"primaryKey;size:64" json:"id"`
-	OccurredAt   time.Time `gorm:"index" json:"occurred_at"`
-	TenantID     string    `gorm:"size:64;index" json:"tenant_id"`
-	Realm        string    `gorm:"size:32;index" json:"realm"`
-	UserID       string    `gorm:"size:64;index" json:"user_id"`
-	ActorType    string    `gorm:"size:32" json:"actor_type"`
-	ActionID     string    `gorm:"size:128;index" json:"action_id"`
-	Result       string    `gorm:"size:16" json:"result"`
-	RequestID    string    `gorm:"size:64;index" json:"request_id"`
-	Permission   string    `gorm:"size:128" json:"permission"`
-	ErrorCode    int       `json:"error_code"`
-	ResourceType string    `gorm:"size:64" json:"resource_type"`
-	ResourceID   string    `gorm:"size:64" json:"resource_id"`
-	Client       string    `gorm:"size:32" json:"client"`
-	Summary      string    `gorm:"size:512" json:"summary"`
-	Replay       bool      `gorm:"default:false" json:"replay"`
+	ID               string    `gorm:"primaryKey;size:64" json:"id"`
+	OccurredAt       time.Time `gorm:"index" json:"occurred_at"`
+	TenantID         string    `gorm:"size:64;index" json:"tenant_id"`
+	Realm            string    `gorm:"size:32;index" json:"realm"`
+	UserID           string    `gorm:"size:64;index" json:"user_id"`
+	ActorType        string    `gorm:"size:32" json:"actor_type"`
+	ActionID         string    `gorm:"size:128;index" json:"action_id"`
+	Result           string    `gorm:"size:16" json:"result"`
+	RequestID        string    `gorm:"size:64;index" json:"request_id"`
+	TraceID          *string   `gorm:"size:64;index" json:"trace_id,omitempty"`
+	AgentRunID       *string   `gorm:"size:64;index" json:"agent_run_id,omitempty"`
+	ToolInvocationID *string   `gorm:"size:64;index" json:"tool_invocation_id,omitempty"`
+	Permission       string    `gorm:"size:128" json:"permission"`
+	ErrorCode        int       `json:"error_code"`
+	ResourceType     string    `gorm:"size:64" json:"resource_type"`
+	ResourceID       string    `gorm:"size:64" json:"resource_id"`
+	Client           string    `gorm:"size:32" json:"client"`
+	Summary          string    `gorm:"size:512" json:"summary"`
+	Replay           bool      `gorm:"default:false" json:"replay"`
 }
 
 func (Record) TableName() string { return "audit_logs" }

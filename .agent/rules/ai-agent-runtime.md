@@ -5,6 +5,7 @@
 - Run/Step 状态迁移 fail-closed；重复 Job/事件/Step/工具副作用/最终消息必须幂等。
 - Worker 必须使用行锁 + lease；有效 lease 和终态重复投递 no-op，只有过期 lease 可接管。
 - 每次执行/恢复重新加载当前用户授权；禁止平台管理员身份、长期全权限 token 或跳过 confirmation。
+- Run 创建时固定 origin request/trace；执行、重试和确认恢复沿用该关联并设置 `client=agent`，不得继承 Job/Outbox client。Action Audit 与 ToolInvocation 共享关联 ID 并记录可信 Run/Invocation 引用。
 - `purpose=builder_preview` 才允许 draft agent 执行；workspace 禁止 preview Version；非 builder 路径不得放宽 enabled。
 - 模型只经统一 Model Runtime，Agent 输出必须消费真实 Stream delta，禁止完整 Generate 后切片伪流式；工具只经 Tool Runtime，压缩只经 ContextCompactor。
 - ToolConfirmation 暂停时释放 lease；恢复必须校验 auth、permission、Agent/Tool/Schema、参数 hash、会话 revision 与 Snapshot。

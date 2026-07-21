@@ -68,6 +68,50 @@ func TestTrustedRuntimeContextMigrationPostgres(t *testing.T) {
 	}
 }
 
+func TestAgentActionAuditContextMigrationPostgres(t *testing.T) {
+	dsn := os.Getenv("AINP_TEST_DATABASE_DSN")
+	if dsn == "" {
+		t.Skip("AINP_TEST_DATABASE_DSN is not set")
+	}
+	admin, err := database.Open(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	schema := "ainp_agent_audit_migration_" + uuid.NewString()[:8]
+	if err = admin.Exec(fmt.Sprintf(`CREATE SCHEMA %q`, schema)).Error; err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = admin.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE`, schema)).Error })
+	db, err := database.Open(dsn + " search_path=" + schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = db.Exec(`CREATE TABLE ai_agent_runs (id varchar(64) PRIMARY KEY, tenant_id varchar(64) NOT NULL)`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err = db.Exec(`CREATE TABLE audit_logs (id varchar(64) PRIMARY KEY, tenant_id varchar(64) NOT NULL)`).Error; err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile("../migrations/0042_agent_action_audit_context.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = db.Exec(string(body)).Error; err != nil {
+		t.Fatal(err)
+	}
+	// The migration must remain idempotent for startup retries.
+	if err = db.Exec(string(body)).Error; err != nil {
+		t.Fatal(err)
+	}
+	var count int64
+	if err = db.Raw(`SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=current_schema() AND ((table_name='ai_agent_runs' AND column_name IN ('origin_request_id','trace_id')) OR (table_name='audit_logs' AND column_name IN ('trace_id','agent_run_id','tool_invocation_id')))`).Scan(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 5 {
+		t.Fatalf("agent audit context columns=%d, want 5", count)
+	}
+}
+
 func TestAgentStepStateMachineAndBudget(t *testing.T) {
 	if err := aiagentruntime.ValidateStepTransition(aiagentruntime.StepPending, aiagentruntime.StepRunning); err != nil {
 		t.Fatal(err)
@@ -137,6 +181,34 @@ func TestAgentRunOutboxEnqueueInjectsAuthFromEnvelope(t *testing.T) {
 		if !strings.Contains(src, expected) {
 			t.Fatalf("agent run outbox handler missing %q", expected)
 		}
+	}
+}
+
+func TestAgentActionAuditContextIsCanonicalAndPersisted(t *testing.T) {
+	migration, err := os.ReadFile("../migrations/0042_agent_action_audit_context.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{"origin_request_id", "trace_id", "agent_run_id", "tool_invocation_id"} {
+		if !strings.Contains(string(migration), expected) {
+			t.Fatalf("agent audit migration missing %q", expected)
+		}
+	}
+	runtimeSource, err := os.ReadFile("../modules/ai/agent_runtime_service.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{"OriginRequestID: ac.RequestID", "TraceID: traceID", "traceID = ac.RequestID", `Client: "agent"`, "AgentRunID: run.ID"} {
+		if !strings.Contains(string(runtimeSource), expected) {
+			t.Fatalf("agent execution context missing %q", expected)
+		}
+	}
+	toolSource, err := os.ReadFile("../modules/ai/tool_service.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(toolSource), "invocationContext.ToolInvocationID = inv.ID") {
+		t.Fatal("tool invocation ID is not injected into Action execution context")
 	}
 }
 

@@ -52,6 +52,8 @@ System
 | `roles` | 否 | 角色列表（日志/展示） |
 | `session_id` | 否 | 会话 |
 | `client` | 否 | `web` / `mcp` / `agent` / `job` |
+| `agent_run_id` | 否 | Agent Runtime 注入的可信 Run 关联，只用于审计/观测 |
+| `tool_invocation_id` | 否 | Tool Runtime 注入的可信调用关联，只用于审计/观测 |
 | `is_system_operator` | 否 | 仅 System 入口可为 true |
 
 **禁止**业务代码自行 `WithValue` 篡改 `tenant_id` / `user_id` / `is_system_operator`。

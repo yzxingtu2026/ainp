@@ -12,6 +12,7 @@
 - Realm 仅 `tenant` / `platform`；当前登录固定 tenant。缺 tenant 必须报错，跨租户只走经 platform realm + system operator 校验的 SystemDB。
 - 预留租户绑定自定义域名（Phase 1 可不实现）。
 - tenant 日志查询只使用声明可信 tenant filter 的 Provider，tenant_id 由 AuthContext 注入；混合租户或数据库原始日志必须 fail-closed。
+- `agent_run_id` / `tool_invocation_id` 仅由 Agent/Tool Runtime 可信注入，用于审计和观测，不参与授权，也不接受客户端、模型或工具参数上报。
 - tenant-owned/global/可信基础设施 Model 必须显式登记或分类；已登记 tenant-owned Model 只允许经 `TenantDB` Repository 或 `GuardedDatabase` 访问。裸 DB、缺失上下文、冲突 TenantID 必须 fail-closed；详见 `tenant-data-access`。
 
 详规：`docs/development/auth-context.md`
