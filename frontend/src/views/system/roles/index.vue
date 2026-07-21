@@ -17,6 +17,7 @@ import {
 import { useAuthStore } from '@/store/modules/auth';
 import { formatDateTime } from '@/utils/datetime';
 import { pageAfterDelete } from '@/hooks/common/table';
+import { usePageContextProvider } from '@/composables/page-context';
 
 defineOptions({ name: 'SystemRoles' });
 
@@ -35,6 +36,22 @@ const catalog = ref<Api.Role.PermissionGroup[]>([]);
 const selectedPermissions = ref<string[]>([]);
 const permissionKeyword = ref('');
 const expandedPermissionNodes = ref<Array<string | number>>([]);
+
+usePageContextProvider(() => {
+  const editorMode = editorVisible.value ? (editing.value ? 'edit' : 'create') : null;
+  const selected = editing.value && (editorMode === 'edit' || permissionsVisible.value) ? editing.value : null;
+  return {
+    schema_version: '1.0',
+    page_type: 'system.roles',
+    route_name: 'system_roles',
+    mode: selected ? 'edit' : editorMode || 'list',
+    resource_refs: selected
+      ? [{ resource_type: 'system.role', resource_id: selected.id, revision: selected.updated_at }]
+      : undefined,
+    ui_state:
+      !selected && editorMode === null ? { keyword: query.keyword || '', status: query.status || '' } : undefined
+  };
+});
 
 const statusOptions = computed(() => [
   { label: $t('page.role.enabled'), value: ACTIVATION_STATUS.enabled },

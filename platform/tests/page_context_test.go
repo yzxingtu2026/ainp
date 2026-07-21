@@ -103,6 +103,51 @@ func TestSystemUserPageContextRevalidatesPermissionTenantAndRevision(t *testing.
 	}
 }
 
+func TestSystemRolePageContextRevalidatesPermissionTenantAndRevision(t *testing.T) {
+	db := openOutboxTestDB(t)
+	if err := system.AutoMigrate(db); err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range []tenant.Tenant{{ID: "t1", Name: "Tenant 1", Status: status.ActivationEnabled}, {ID: "t2", Name: "Tenant 2", Status: status.ActivationEnabled}} {
+		if err := db.Create(&row).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	application := app.New(&config.Config{}, db, nil, nil)
+	attachStorage(t, application)
+	if err := system.Register(application); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	for _, role := range []model.Role{
+		{ID: "r1", TenantID: "t1", Code: "operator", Name: "Operator", Status: status.ActivationEnabled, UpdatedAt: now},
+		{ID: "r2", TenantID: "t2", Code: "auditor", Name: "Auditor", Status: status.ActivationEnabled, UpdatedAt: now},
+	} {
+		if err := db.Create(&role).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	envelope := pagecontext.Envelope{SchemaVersion: pagecontext.SchemaVersion, PageType: system.PageTypeSystemRoles, RouteName: "system_roles", Mode: "edit", ResourceRefs: []pagecontext.ResourceRef{{ResourceType: "system.role", ResourceID: "r1", Revision: now.Format(time.RFC3339Nano)}}}
+	allowed := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t1", Realm: auth.RealmTenant, UserID: "viewer", Permissions: []string{system.ActionRoleGet}})
+	resolved, err := application.PageContexts.Resolve(allowed, envelope)
+	if err != nil || len(resolved.TrustedRefs) != 1 || resolved.PageType != system.PageTypeSystemRoles {
+		t.Fatalf("trusted role projection failed: %#v %v", resolved, err)
+	}
+	denied := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t1", Realm: auth.RealmTenant, UserID: "viewer"})
+	if _, err := application.PageContexts.Resolve(denied, envelope); err == nil {
+		t.Fatal("role page context without permission must fail")
+	}
+	envelope.ResourceRefs[0].ResourceID = "r2"
+	if _, err := application.PageContexts.Resolve(allowed, envelope); err == nil {
+		t.Fatal("cross-tenant role reference must fail opaquely")
+	}
+	envelope.ResourceRefs[0].ResourceID = "r1"
+	envelope.ResourceRefs[0].Revision = now.Add(-time.Second).Format(time.RFC3339Nano)
+	if _, err := application.PageContexts.Resolve(allowed, envelope); err == nil {
+		t.Fatal("stale role revision must fail")
+	}
+}
+
 func TestPageContextBoostsOnlyVisibleToolCandidates(t *testing.T) {
 	db := openOutboxTestDB(t)
 	if err := system.AutoMigrate(db); err != nil {
@@ -219,6 +264,11 @@ func TestPageContextFrontendUsesRegistryWithoutDOMOrPromptAssembly(t *testing.T)
 	}
 	if !strings.Contains(string(workspace), "capturePageContext()") {
 		t.Fatal("Agent Run start does not capture the registered page context")
+	}
+	for _, expected := range []string{"useRoute()", "snapshot.route_name !== String(route.name || '')"} {
+		if !strings.Contains(string(registry), expected) {
+			t.Fatalf("page context provider is not bound to the active route: missing %q", expected)
+		}
 	}
 	if strings.Contains(string(workspace), "page_type: 'system.users'") {
 		t.Fatal("global AI consumer contains a business page branch")

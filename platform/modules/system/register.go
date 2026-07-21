@@ -79,6 +79,9 @@ func Register(a *app.App) error {
 	if err := a.PageContexts.Register(PageTypeSystemUsers, userPageContextResolver{db: a.DB}); err != nil {
 		return err
 	}
+	if err := a.PageContexts.Register(PageTypeSystemRoles, rolePageContextResolver{db: a.DB}); err != nil {
+		return err
+	}
 	if err := registerRuntimePreferencesSetting(a); err != nil {
 		return err
 	}
