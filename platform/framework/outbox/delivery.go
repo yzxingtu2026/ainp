@@ -9,6 +9,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/status"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	gormlogger "gorm.io/gorm/logger"
 )
 
 // DeliveryStore tracks per (event_id, handler_name) processing for at-least-once idempotency.
@@ -38,7 +39,8 @@ func (s *gormDeliveryStore) RunHandler(ctx context.Context, env Envelope, h Hand
 	}
 	now := time.Now().UTC()
 	var existing Delivery
-	err := s.db.WithContext(ctx).Where("event_id = ? AND handler_name = ?", env.ID, h.Name()).First(&existing).Error
+	lookupDB := s.db.Session(&gorm.Session{Logger: s.db.Logger.LogMode(gormlogger.Silent)}).WithContext(ctx)
+	err := lookupDB.Where("event_id = ? AND handler_name = ?", env.ID, h.Name()).First(&existing).Error
 	if err == nil && existing.Status == status.DeliverySucceeded {
 		return nil
 	}
@@ -59,7 +61,7 @@ func (s *gormDeliveryStore) RunHandler(ctx context.Context, env Envelope, h Hand
 		if createErr := s.db.WithContext(ctx).Create(&existing).Error; createErr != nil {
 			// concurrent insert: re-check success
 			var again Delivery
-			if s.db.WithContext(ctx).Where("event_id = ? AND handler_name = ?", env.ID, h.Name()).First(&again).Error == nil {
+			if lookupDB.Where("event_id = ? AND handler_name = ?", env.ID, h.Name()).First(&again).Error == nil {
 				if again.Status == status.DeliverySucceeded {
 					return nil
 				}

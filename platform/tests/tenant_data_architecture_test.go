@@ -94,7 +94,6 @@ var tenantArchitectureExceptions = map[string]tenantArchitectureException{
 	"framework/job/migrate.go:ensureConstraints:Exec":                   {Reason: "schema migration maintains database constraints", Risk: "startup migration only"},
 	"framework/outbox/delivery.go:ListByEvent:Find":                     {Reason: "dispatcher loads handler delivery facts for one trusted event", Risk: "private dispatcher capability"},
 	"framework/outbox/delivery.go:RunHandler:Create":                    {Reason: "dispatcher creates an idempotent delivery fact", Risk: "private dispatcher capability"},
-	"framework/outbox/delivery.go:RunHandler:First":                     {Reason: "dispatcher resolves one delivery fact by event and handler", Risk: "private dispatcher capability"},
 	"framework/outbox/delivery.go:RunHandler:Save":                      {Reason: "dispatcher advances a claimed delivery state", Risk: "private dispatcher capability"},
 	"framework/outbox/delivery.go:RunHandler:Updates":                   {Reason: "dispatcher records terminal delivery state", Risk: "private dispatcher capability"},
 	"framework/outbox/dispatcher.go:markFailure:Updates":                {Reason: "dispatcher records publish failure for a claimed event", Risk: "private dispatcher capability"},

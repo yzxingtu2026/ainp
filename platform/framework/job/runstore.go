@@ -12,6 +12,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/status"
 	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"gorm.io/gorm"
+	gormlogger "gorm.io/gorm/logger"
 )
 
 const maxErrorLen = 512
@@ -173,7 +174,8 @@ func CreateIdempotent(ctx context.Context, db *gorm.DB, run *Run) (*Run, bool, e
 		return run, true, nil
 	}
 	var existing Run
-	err := db.WithContext(ctx).
+	lookupDB := db.Session(&gorm.Session{Logger: db.Logger.LogMode(gormlogger.Silent)}).WithContext(ctx)
+	err := lookupDB.
 		Where("tenant_id = ? AND job_type = ? AND idempotency_key = ?", run.TenantID, run.JobType, run.IdempotencyKey).
 		First(&existing).Error
 	if err == nil {
@@ -184,7 +186,7 @@ func CreateIdempotent(ctx context.Context, db *gorm.DB, run *Run) (*Run, bool, e
 	}
 	if err := db.WithContext(ctx).Create(run).Error; err != nil {
 		var again Run
-		if e2 := db.WithContext(ctx).
+		if e2 := lookupDB.
 			Where("tenant_id = ? AND job_type = ? AND idempotency_key = ?", run.TenantID, run.JobType, run.IdempotencyKey).
 			First(&again).Error; e2 == nil {
 			return &again, false, nil
