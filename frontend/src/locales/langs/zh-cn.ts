@@ -988,6 +988,7 @@ const local: App.I18n.Schema = {
     toolArguments: '调用参数',
     toolResult: '执行结果',
     navigationSearching: '正在查找可访问的功能页面',
+    navigationProcessed: '已完成 {count} 次页面检索',
     navigationEmpty: '没有找到可访问的功能页面',
     navigationOpen: '打开页面',
     navigationUnavailable: '该页面当前不可用或权限已变更',

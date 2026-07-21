@@ -996,6 +996,7 @@ const local: App.I18n.Schema = {
     toolArguments: 'Arguments',
     toolResult: 'Result',
     navigationSearching: 'Finding accessible application pages',
+    navigationProcessed: 'Completed {count} page searches',
     navigationEmpty: 'No accessible application pages found',
     navigationOpen: 'Open page',
     navigationUnavailable: 'This page is unavailable or your access has changed',

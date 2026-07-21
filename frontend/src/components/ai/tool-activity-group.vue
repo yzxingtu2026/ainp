@@ -12,6 +12,7 @@ const props = defineProps<{
 }>();
 
 const expanded = ref(false);
+const navigationExpanded = ref(false);
 
 const visible = computed(() => props.active || expanded.value);
 const navigationOperations = computed(() =>
@@ -20,6 +21,7 @@ const navigationOperations = computed(() =>
 const regularOperations = computed(() =>
   props.operations.filter(operation => operation.toolName !== 'builtin__navigation_search')
 );
+const navigationVisible = computed(() => props.active || navigationExpanded.value);
 
 const allSettled = computed(
   () => regularOperations.value.length > 0 && regularOperations.value.every(op => op.hasResult)
@@ -29,19 +31,43 @@ const allSettled = computed(
 watch(
   () => props.active,
   value => {
-    if (!value) expanded.value = false;
+    if (!value) {
+      expanded.value = false;
+      navigationExpanded.value = false;
+    }
   }
 );
 </script>
 
 <template>
   <div v-if="operations.length > 0" class="tool-activity">
-    <NavigationResultCard
-      v-for="operation in navigationOperations"
-      :key="operation.toolCallId || operation.toolName"
-      :result="operation.result"
-      :pending="active && !operation.hasResult"
-    />
+    <div v-if="navigationOperations.length > 0" class="tool-activity__navigation">
+      <button
+        v-if="!active"
+        type="button"
+        class="tool-activity__summary"
+        @click="navigationExpanded = !navigationExpanded"
+      >
+        <SvgIcon icon="mdi:map-search-outline" class="tool-activity__summary-icon" />
+        <span>{{ $t('chat.navigationProcessed', { count: navigationOperations.length }) }}</span>
+        <SvgIcon
+          icon="mdi:chevron-right"
+          class="tool-activity__summary-chevron"
+          :class="{ 'tool-activity__summary-chevron--open': navigationExpanded }"
+        />
+      </button>
+      <div v-else class="tool-activity__live">
+        <SvgIcon icon="mdi:map-search-outline" />
+        <span>{{ $t('chat.navigationSearching') }}</span>
+      </div>
+      <Transition name="tool-activity-expand">
+        <NavigationResultCard
+          v-if="navigationVisible"
+          :result="navigationOperations.map(operation => operation.result)"
+          :pending="active && navigationOperations.some(operation => !operation.hasResult)"
+        />
+      </Transition>
+    </div>
     <button
       v-if="!active && regularOperations.length > 0"
       type="button"
@@ -49,7 +75,7 @@ watch(
       @click="expanded = !expanded"
     >
       <SvgIcon icon="mdi:format-list-checks" class="tool-activity__summary-icon" />
-      <span>{{ $t('chat.toolProcessed', { count: operations.length }) }}</span>
+      <span>{{ $t('chat.toolProcessed', { count: regularOperations.length }) }}</span>
       <SvgIcon
         icon="mdi:chevron-right"
         class="tool-activity__summary-chevron"
@@ -85,6 +111,11 @@ watch(
 <style scoped>
 .tool-activity {
   margin-top: 8px;
+}
+
+.tool-activity__navigation + .tool-activity__summary,
+.tool-activity__navigation + .tool-activity__live {
+  margin-top: 6px;
 }
 
 .tool-activity__summary {

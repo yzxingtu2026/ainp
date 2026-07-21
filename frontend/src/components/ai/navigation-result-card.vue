@@ -7,7 +7,7 @@ import { $t } from '@/locales';
 defineOptions({ name: 'NavigationResultCard' });
 
 const props = defineProps<{
-  result: unknown;
+  result: unknown | unknown[];
   pending?: boolean;
 }>();
 
@@ -27,10 +27,16 @@ function parseItem(value: unknown): Api.Route.NavigationSearchResult | null {
 }
 
 const items = computed(() => {
-  if (!isRecord(props.result) || !isRecord(props.result.data) || !Array.isArray(props.result.data.items)) return [];
-  return props.result.data.items
-    .map(parseItem)
-    .filter((item): item is Api.Route.NavigationSearchResult => item !== null);
+  const results = Array.isArray(props.result) ? props.result : [props.result];
+  const unique = new Map<string, Api.Route.NavigationSearchResult>();
+  for (const result of results) {
+    if (!isRecord(result) || !isRecord(result.data) || !Array.isArray(result.data.items)) continue;
+    for (const value of result.data.items) {
+      const item = parseItem(value);
+      if (item) unique.set(`${item.menu_id}:${item.path}`, item);
+    }
+  }
+  return Array.from(unique.values());
 });
 
 function available(item: Api.Route.NavigationSearchResult) {

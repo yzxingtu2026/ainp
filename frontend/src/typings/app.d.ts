@@ -1154,6 +1154,7 @@ declare namespace App {
         toolArguments: string;
         toolResult: string;
         navigationSearching: string;
+        navigationProcessed: string;
         navigationEmpty: string;
         navigationOpen: string;
         navigationUnavailable: string;
