@@ -152,6 +152,16 @@ func Register(a *app.App) error {
 	invocations := NewInvocationService(a.DB, svc, adapters, writer)
 	invocations.SetEmbeddingAdapters(embeddingAdapters)
 	invocations.SetAssetResolver(a.AIAssetResolver)
+	personalization := NewPersonalizationService(a.DB, a.SettingValues, writer, invocations)
+	if err := RegisterPersonalization(a, personalization); err != nil {
+		return err
+	}
+	if err := a.SettingChanges.Register(AssistantPersonalizationSettingKey, func(ctx context.Context, _ setting.Change) error {
+		_, err := personalization.Rebuild(ctx, struct{}{})
+		return err
+	}); err != nil {
+		return err
+	}
 	a.EmbeddingRuntime = invocations
 	if err := invocations.RecoverStale(context.Background(), 10*time.Minute); err != nil {
 		return err

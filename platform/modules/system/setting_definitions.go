@@ -33,7 +33,10 @@ func registerExampleSettings(a *app.App) error {
 	if err := registerToolSearchSetting(a); err != nil {
 		return err
 	}
-	return registerNavigationSearchSetting(a)
+	if err := registerNavigationSearchSetting(a); err != nil {
+		return err
+	}
+	return registerAssistantPersonalizationSetting(a)
 }
 
 func registerToolSearchSetting(a *app.App) error {
@@ -42,6 +45,13 @@ func registerToolSearchSetting(a *app.App) error {
 
 func registerNavigationSearchSetting(a *app.App) error {
 	return a.RegisterSettingDefinition(setting.Definition{Key: menu.SettingKeySemanticSearch, CategoryKey: "ai", Title: "导航语义检索", Description: "配置功能导航索引和查询使用的 Embedding Model Alias；留空时无损降级为词法检索", Scope: setting.ScopeTenant, Surface: auth.RealmTenant, Permission: ActionSettingList, Order: 30, SchemaVersion: 1, Fields: []setting.Field{{Key: menu.SettingFieldModelAlias, Type: setting.FieldRemoteSelect, Label: "Embedding 模型 Alias", Default: "", RemoteSource: aliasRemoteSource("embedding")}}})
+}
+
+func registerAssistantPersonalizationSetting(a *app.App) error {
+	return a.RegisterSettingDefinition(setting.Definition{Key: "ai.assistant_personalization", CategoryKey: "ai", Title: "个性化欢迎语", Description: "为首页、AI 工作台和全局助手异步生成统一欢迎语与推荐问题", Scope: setting.ScopeTenant, Surface: auth.RealmTenant, Permission: ActionSettingList, Order: 40, SchemaVersion: 1, Fields: []setting.Field{
+		{Key: "enabled", Type: setting.FieldBoolean, Label: "启用个性化欢迎语", Default: false},
+		{Key: "model_alias", Type: setting.FieldRemoteSelect, Label: "助手个性化模型 Alias", Default: "", Required: true, RemoteSource: aliasRemoteSource("chat"), VisibleWhen: &setting.VisibleWhen{Field: "enabled", Eq: true}},
+	}})
 }
 
 func aliasRemoteSource(modelType string) *setting.RemoteOptionSource {

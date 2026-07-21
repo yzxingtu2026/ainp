@@ -7,6 +7,7 @@ import { useRouteStore } from '@/store/modules/route';
 import { useTabStore } from '@/store/modules/tab';
 import { formatDateTime } from '@/utils/datetime';
 import { $t } from '@/locales';
+import { useAssistantPersonalization } from '@/composables/use-assistant-personalization';
 import HomeRobot from './modules/home-robot.vue';
 
 defineOptions({ name: 'Home' });
@@ -29,6 +30,7 @@ const router = useRouter();
 const authStore = useAuthStore();
 const routeStore = useRouteStore();
 const tabStore = useTabStore();
+const personalization = useAssistantPersonalization();
 const confirmations = ref<Api.AI.ToolConfirmation[]>([]);
 const continueLoading = ref(true);
 const robotMode = ref<RobotMode>(null);
@@ -44,7 +46,7 @@ const greetingPeriod = computed(() => {
 });
 
 const greeting = computed(() =>
-  $t('page.home.greeting', {
+  personalization.greeting.value || $t('page.home.greeting', {
     period: greetingPeriod.value,
     name: authStore.userInfo.userName || $t('page.home.defaultUser')
   })
@@ -164,9 +166,15 @@ function setThinking(active: boolean) {
 function startWork() {
   if (navigating.value) return;
   navigating.value = true;
+  personalization.freeze();
   robotMode.value = 'jumping';
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   navigationTimer = window.setTimeout(() => void router.push('/ai/workspace'), reducedMotion ? 0 : 350);
+}
+
+function openSuggestion(prompt: string) {
+  personalization.choose(prompt);
+  startWork();
 }
 
 async function loadContinueWork() {
@@ -179,7 +187,10 @@ async function loadContinueWork() {
   }
 }
 
-onMounted(() => void loadContinueWork());
+onMounted(() => {
+  void loadContinueWork();
+  void personalization.load(`${authStore.userInfo.userId || ''}`);
+});
 onBeforeUnmount(() => {
   if (navigationTimer !== null) window.clearTimeout(navigationTimer);
 });
@@ -207,6 +218,17 @@ onBeforeUnmount(() => {
           <template #icon><SvgIcon icon="mdi:play" /></template>
           {{ $t('page.home.startWork') }}
         </NButton>
+        <div v-if="personalization.suggestions.value.length" class="home-welcome__suggestions">
+          <button
+            v-for="suggestion in personalization.suggestions.value.slice(0, 4)"
+            :key="suggestion.prompt"
+            type="button"
+            @click="openSuggestion(suggestion.prompt)"
+          >
+            <span>{{ suggestion.title }}</span>
+            <SvgIcon icon="mdi:arrow-up-right" />
+          </button>
+        </div>
       </div>
       <HomeRobot :mode="robotMode" />
     </section>
@@ -328,6 +350,35 @@ onBeforeUnmount(() => {
 .home-welcome__start {
   min-width: 132px;
   border-radius: 6px;
+}
+
+.home-welcome__suggestions {
+  max-width: 660px;
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.home-welcome__suggestions button {
+  min-width: 0;
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid rgb(var(--base-text-color) / 12%);
+  border-radius: 6px;
+  background: rgb(var(--container-bg-color));
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.home-welcome__suggestions span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .home-section {
@@ -534,6 +585,10 @@ onBeforeUnmount(() => {
     max-width: 260px;
     margin: 10px 0 20px;
     font-size: 13px;
+  }
+
+  .home-welcome__suggestions {
+    grid-template-columns: 1fr;
   }
 
   .continue-panel {

@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted } from 'vue';
+import { computed, onBeforeUnmount, onMounted, watch } from 'vue';
 import { useOnline } from '@vueuse/core';
 import { useAuthStore } from '@/store/modules/auth';
 import { $t } from '@/locales';
+import { useAssistantPersonalization } from '@/composables/use-assistant-personalization';
 import WorkspaceComposer from '@/views/ai/workspace/modules/workspace-composer.vue';
 import { useAiConversationController } from '@/views/ai/workspace/use-workspace';
 
@@ -12,17 +13,27 @@ const props = withDefaults(defineProps<{ density?: 'workspace' | 'sidebar' }>(),
 const authStore = useAuthStore();
 const controller = useAiConversationController();
 const online = useOnline();
+const personalization = useAssistantPersonalization();
 const runActive = computed(() => controller.status.value === 'running' || controller.status.value === 'reconnecting');
 const thinking = computed(() => runActive.value && !controller.displayStreamingText.value);
 const agentName = computed(() => controller.slot.value?.agent?.name || $t('page.aiWorkspace.assistant'));
 const greetingName = computed(() => authStore.userInfo.userName || $t('page.aiWorkspace.assistant'));
-const suggestions = computed(() =>
+const fallbackSuggestions = computed(() =>
   [
     $t('page.aiWorkspace.suggestionPriority'),
     $t('page.aiWorkspace.suggestionExceptions'),
     $t('page.aiWorkspace.suggestionFeature'),
     $t('page.aiWorkspace.suggestionNext')
   ].slice(0, props.density === 'sidebar' ? 3 : 4)
+);
+const suggestions = computed(() =>
+  (personalization.suggestions.value.length
+    ? personalization.suggestions.value.map(item => item.prompt)
+    : fallbackSuggestions.value
+  ).slice(0, props.density === 'sidebar' ? 3 : 4)
+);
+const welcomeGreeting = computed(() =>
+  personalization.greeting.value || $t('page.aiWorkspace.greeting', { name: greetingName.value })
 );
 
 let surfaceElement: HTMLElement | null = null;
@@ -33,10 +44,19 @@ function setMessageListElement(element: unknown) {
 }
 
 function useSuggestion(value: string) {
+  personalization.freeze();
   controller.input.value = value;
 }
 
-onMounted(() => void controller.initialize());
+watch([controller.input, controller.conversation], ([input, conversation]) => {
+  if (input || conversation) personalization.freeze();
+});
+onMounted(() => {
+  void controller.initialize();
+  void personalization.load(`${authStore.userInfo.userId || ''}`);
+  const pendingPrompt = personalization.consumePrompt();
+  if (pendingPrompt && !controller.conversation.value) controller.input.value = pendingPrompt;
+});
 onBeforeUnmount(() => {
   if (controller.messageListEl.value === surfaceElement) controller.messageListEl.value = null;
 });
@@ -53,7 +73,7 @@ onBeforeUnmount(() => {
         class="ai-conversation-surface__welcome"
       >
         <AiMascot :state="controller.mascotState.value" :size="density === 'sidebar' ? 76 : 132" />
-        <h2>{{ $t('page.aiWorkspace.greeting', { name: greetingName }) }}</h2>
+        <h2>{{ welcomeGreeting }}</h2>
         <p v-if="controller.slot.value?.healthy">{{ $t('page.aiWorkspace.ready', { agent: agentName }) }}</p>
         <NAlert v-else type="error" :show-icon="true">
           {{ controller.error.value || $t('page.aiWorkspace.unavailable') }}
