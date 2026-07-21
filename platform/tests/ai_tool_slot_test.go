@@ -17,7 +17,7 @@ type fakeRuntimeSlot struct {
 }
 
 func (s *fakeRuntimeSlot) Definition() aitool.Definition {
-	return aitool.Definition{ID: s.id, Source: aitool.SourceBuiltin, Name: s.id, DescriptionForLLM: "fake tool", DescriptionForHuman: "fake tool", Capability: "test", InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false}`), Risk: aitool.RiskLow, SideEffect: aitool.SideEffectRead, BindingMode: aitool.BindingOptional, LoadingMode: aitool.LoadingConditional, RuntimeRef: s.runtimeRef, SchemaVersion: 1, Status: "enabled"}
+	return aitool.Definition{ID: s.id, Source: aitool.SourceBuiltin, Name: s.id, TitleForHuman: s.id, DescriptionForLLM: "fake tool", DescriptionForHuman: "fake tool", Capability: "test", InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false}`), Risk: aitool.RiskLow, SideEffect: aitool.SideEffectRead, BindingMode: aitool.BindingOptional, LoadingMode: aitool.LoadingConditional, RuntimeRef: s.runtimeRef, SchemaVersion: 1, Status: "enabled"}
 }
 func (s *fakeRuntimeSlot) DiscoveryMode() aitool.DiscoveryMode {
 	if s.direct {

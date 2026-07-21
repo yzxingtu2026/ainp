@@ -10,7 +10,7 @@
 
 ## Registry 与 Provider
 
-工具 ID 必须为 `{source}:{namespaced-id}`。Definition 必须显式声明 `binding_mode=forbidden|optional` 与 `loading_mode=direct|conditional|progressive`；需要原子绑定的工具用稳定 `binding_group` 聚合。首期实现 `meta` 与 `action`，`builtin/plugin/http/mcp` 只能通过同一 Provider/Executor 接口扩展。未知来源、重复 Provider、非法 Schema、缺少风险或绑定/加载元数据均在注册或刷新时 fail-closed。
+工具 ID 必须为 `{source}:{namespaced-id}`。Definition 必须分别声明稳定 `Name` / `DescriptionForLLM` 与插件自带的 `TitleForHuman` / `DescriptionForHuman`；框架不要求插件预注册平台 i18n key，管理界面只展示 Human 契约，Human 文案不参与 Schema Hash、Handle 或 Embedding 文档。Definition 还必须显式声明 `binding_mode=forbidden|optional` 与 `loading_mode=direct|conditional|progressive`；需要原子绑定的工具用稳定 `binding_group` 聚合。首期实现 `meta` 与 `action`，`builtin/plugin/http/mcp` 只能通过同一 Provider/Executor 接口扩展。未知来源、重复 Provider、非法 Schema、缺少 Human/风险/绑定/加载元数据均在注册或刷新时 fail-closed。
 
 Action 是否暴露以注册处的 `Metadata.AI` 为唯一事实源：仅 `AIMeta.ExposeTool=true` 自动投影为 Action Tool，`AI=nil` 默认不暴露。暴露项使用 `action.SchemaFor[Request/Response]()` 从强类型 DTO 生成输入/输出 Schema，并声明 tags、风险、副作用、确认策略与安全结果摘要。禁止维护 `action_ai_inventory.go` 等平行暴露清单；Action Executor 只能调用 `ActionRegistry.Invoke`。
 

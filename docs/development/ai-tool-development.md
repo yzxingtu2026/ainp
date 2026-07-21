@@ -126,7 +126,8 @@ func weatherDefinition() aitool.Definition {
     return aitool.Definition{
         ID:                  "builtin:weather.current",
         Source:              aitool.SourceBuiltin,
-        Name:                "查询实时天气",
+        Name:                "weather.current",
+        TitleForHuman:       "实时天气查询",
         DescriptionForLLM:   "查询指定城市当前的天气情况",
         DescriptionForHuman: "访问天气服务读取实时天气",
         Capability:          "weather",
@@ -135,6 +136,8 @@ func weatherDefinition() aitool.Definition {
         Risk:                aitool.RiskLow,
         SideEffect:          aitool.SideEffectExternal,
         RequiresConfirmation: true,
+        BindingMode:         aitool.BindingOptional,
+        LoadingMode:         aitool.LoadingDirect,
         RuntimeRef:          "weather.current",
         SchemaVersion:       1,
         Status:              "enabled",
@@ -209,7 +212,8 @@ mcp:github.create_issue
 
 - ID 使用小写字母、数字、下划线、连字符和点。
 - ID 一旦发布应保持稳定；改名按删除旧工具、新增工具处理。
-- `Name` 面向人类，`DescriptionForLLM` 面向检索和模型选择。
+- `Name` 是稳定工具名，`DescriptionForLLM` 面向检索和模型选择；`TitleForHuman` / `DescriptionForHuman` 是插件自带的人类展示契约。框架不要求插件注册平台 i18n key，管理界面不得直接展示 LLM 描述。
+- Human 展示文案不参与 Schema Hash、Handle 或 Embedding 文档；修改展示文案不得改变工具执行契约。
 - 描述应说明何时使用、必要输入和主要结果，不写 Credential、Endpoint 或内部实现。
 - `SchemaVersion` 从 1 开始；契约变化时递增。
 

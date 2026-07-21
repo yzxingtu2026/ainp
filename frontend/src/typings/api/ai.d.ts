@@ -292,6 +292,7 @@ declare namespace Api.AI {
     id: string;
     source: string;
     name: string;
+    title_for_human: string;
     description_for_llm: string;
     description_for_human: string;
     capability: string;

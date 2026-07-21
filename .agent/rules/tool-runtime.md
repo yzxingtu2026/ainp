@@ -4,6 +4,7 @@
 - 模型调用通过 `enable_tools/tool_scope_id` 投影已加载真实 Schema，禁止客户端直接提交 `tools` 绕过 Registry。
 - `tool.search` 的 source/capability 仅接受稳定代码精确过滤；Schema 必须声明 source 枚举与语义，Service 在 API/Agent Runtime 所有入口自行校验，非法过滤禁止静默空结果。
 - Tool ID 必须 namespaced；Provider/Executor 统一注册，未知来源、重复、非法 Schema 与缺失风险元数据 fail-closed。
+- Tool Definition 分离稳定 `Name`/`DescriptionForLLM` 与插件自带 `TitleForHuman`/`DescriptionForHuman`；管理界面只展示 Human 契约，插件无需注册平台 i18n key，Human 文案不得进入 Schema Hash/Handle/Embedding 文档。
 - Definition 必须显式声明 `binding_mode` 与 `loading_mode`；绑定组必须原子处理。Runtime 只投影 Contract 必选与用户可选有效绑定，禁止全局默认注入 Meta/Slot。
 - 核心工具必须实现独立 `RuntimeSlot` 并经 `platform/modules/ai/tools/register.go` 显式聚合；禁止扫描源码、Go Plugin、隐藏 `init()`，禁止在 ToolService/Agent Runtime 增加业务 Tool ID 分支。
 - Action 是否暴露以注册处的 `Metadata.AI` 为唯一事实源；仅 `AIMeta.ExposeTool=true` 自动投影，`AI=nil` 默认不暴露。输入/输出 Schema 必须由同一强类型 DTO 生成，Action Tool 只经 `ActionRegistry.Invoke`，禁止维护平行暴露清单。

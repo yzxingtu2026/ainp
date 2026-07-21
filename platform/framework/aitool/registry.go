@@ -219,6 +219,8 @@ func (r *Registry) List() []Definition {
 func schemaHash(d Definition) string {
 	copy := d
 	copy.SchemaHash = ""
+	copy.TitleForHuman = ""
+	copy.DescriptionForHuman = ""
 	b, _ := json.Marshal(copy)
 	b = append(b, []byte(d.RuntimeRef)...)
 	v := sha256.Sum256(b)

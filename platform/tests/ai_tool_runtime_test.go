@@ -88,7 +88,7 @@ func toolSettingProvider(t *testing.T, alias string) *setting.Provider {
 }
 
 func toolFixture(id, name, summary string) aitool.Definition {
-	return aitool.Definition{ID: id, Source: aitool.SourceAction, Name: name, DescriptionForLLM: summary, DescriptionForHuman: summary, Capability: "demo", Tags: []string{"采购", "订单"}, InputSchema: json.RawMessage(`{"type":"object","properties":{"supplier_id":{"type":"string"}},"required":["supplier_id"]}`), Risk: aitool.RiskLow, SideEffect: aitool.SideEffectRead, BindingMode: aitool.BindingForbidden, LoadingMode: aitool.LoadingProgressive, RuntimeRef: strings.TrimPrefix(id, "action:"), SchemaVersion: 1, Status: "enabled"}
+	return aitool.Definition{ID: id, Source: aitool.SourceAction, Name: name, TitleForHuman: name, DescriptionForLLM: summary, DescriptionForHuman: summary, Capability: "demo", Tags: []string{"采购", "订单"}, InputSchema: json.RawMessage(`{"type":"object","properties":{"supplier_id":{"type":"string"}},"required":["supplier_id"]}`), Risk: aitool.RiskLow, SideEffect: aitool.SideEffectRead, BindingMode: aitool.BindingForbidden, LoadingMode: aitool.LoadingProgressive, RuntimeRef: strings.TrimPrefix(id, "action:"), SchemaVersion: 1, Status: "enabled"}
 }
 
 func TestToolRegistryRejectsDuplicateProviderAndInvalidDefinition(t *testing.T) {
@@ -108,17 +108,39 @@ func TestToolRegistryRejectsDuplicateProviderAndInvalidDefinition(t *testing.T) 
 		t.Fatal("tool missing")
 	}
 	before, _ := r.Get("action:purchase.order_create")
+	p.tools[0].TitleForHuman = "新展示标题"
+	p.tools[0].DescriptionForHuman = "新的展示描述"
+	if err := r.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	displayChanged, _ := r.Get("action:purchase.order_create")
+	if before.SchemaHash != displayChanged.SchemaHash {
+		t.Fatal("human display metadata must not invalidate handles")
+	}
 	p.tools[0].Risk = aitool.RiskHigh
 	if err := r.Refresh(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	after, _ := r.Get("action:purchase.order_create")
-	if before.SchemaHash == after.SchemaHash {
+	if displayChanged.SchemaHash == after.SchemaHash {
 		t.Fatal("security metadata change must invalidate handles")
 	}
 	p.tools[0].ID = "not-namespaced"
 	if err := r.Refresh(context.Background()); err == nil {
 		t.Fatal("invalid tool must fail")
+	}
+}
+
+func TestToolDefinitionRequiresHumanDisplayContract(t *testing.T) {
+	definition := toolFixture("action:demo.read", "读取资源", "读取指定资源")
+	definition.TitleForHuman = ""
+	if err := definition.Validate(); err == nil {
+		t.Fatal("tool definition without title_for_human must fail")
+	}
+	definition.TitleForHuman = "读取资源"
+	definition.DescriptionForHuman = ""
+	if err := definition.Validate(); err == nil {
+		t.Fatal("tool definition without description_for_human must fail")
 	}
 }
 
@@ -333,8 +355,8 @@ func TestToolRuntimePostgresLifecycleAndIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	meta := []aitool.Definition{
-		{ID: "meta:tool.search", Source: aitool.SourceMeta, Name: "tool.search", DescriptionForLLM: "Search visible tools by intent and return compact candidates", DescriptionForHuman: "搜索当前用户可用的工具", Capability: "ai", InputSchema: action.SchemaFor[aitool.MetaSearchInput](), Risk: aitool.RiskLow, SideEffect: aitool.SideEffectRead, BindingMode: aitool.BindingOptional, LoadingMode: aitool.LoadingDirect, BindingGroup: "tool_discovery", RuntimeRef: "tool.search", SchemaVersion: 1, Status: "enabled"},
-		{ID: "meta:tool.load", Source: aitool.SourceMeta, Name: "tool.load", DescriptionForLLM: "Load a small number of candidate tools into the current scope", DescriptionForHuman: "将候选工具加载到当前调用范围", Capability: "ai", InputSchema: action.SchemaFor[aitool.MetaLoadInput](), Risk: aitool.RiskLow, SideEffect: aitool.SideEffectRead, BindingMode: aitool.BindingOptional, LoadingMode: aitool.LoadingDirect, BindingGroup: "tool_discovery", RuntimeRef: "tool.load", SchemaVersion: 1, Status: "enabled"},
+		{ID: "meta:tool.search", Source: aitool.SourceMeta, Name: "tool.search", TitleForHuman: "工具搜索", DescriptionForLLM: "Search visible tools by intent and return compact candidates", DescriptionForHuman: "搜索当前用户可用的工具", Capability: "ai", InputSchema: action.SchemaFor[aitool.MetaSearchInput](), Risk: aitool.RiskLow, SideEffect: aitool.SideEffectRead, BindingMode: aitool.BindingOptional, LoadingMode: aitool.LoadingDirect, BindingGroup: "tool_discovery", RuntimeRef: "tool.search", SchemaVersion: 1, Status: "enabled"},
+		{ID: "meta:tool.load", Source: aitool.SourceMeta, Name: "tool.load", TitleForHuman: "工具加载", DescriptionForLLM: "Load a small number of candidate tools into the current scope", DescriptionForHuman: "将候选工具加载到当前调用范围", Capability: "ai", InputSchema: action.SchemaFor[aitool.MetaLoadInput](), Risk: aitool.RiskLow, SideEffect: aitool.SideEffectRead, BindingMode: aitool.BindingOptional, LoadingMode: aitool.LoadingDirect, BindingGroup: "tool_discovery", RuntimeRef: "tool.load", SchemaVersion: 1, Status: "enabled"},
 	}
 	if err = registry.RegisterProvider(&aitool.StaticProvider{ProviderSource: aitool.SourceMeta, Definitions: meta}, aitool.ExecuteFunc(func(context.Context, aitool.LoadedTool, json.RawMessage) (*aitool.Result, error) {
 		return &aitool.Result{Status: "completed"}, nil

@@ -869,7 +869,8 @@ func (s *AgentService) ListTools(ctx context.Context, r IDRequest) (any, error) 
 func (s *AgentService) bindingView(binding AgentToolBinding, required bool) AgentToolBinding {
 	binding.Required = required
 	if tool, ok := s.tools.Get(binding.ToolID); ok {
-		binding.Name, binding.BindingMode, binding.LoadingMode, binding.BindingGroup = tool.Name, tool.BindingMode, tool.LoadingMode, tool.BindingGroup
+		binding.Name = tool.TitleForHuman
+		binding.BindingMode, binding.LoadingMode, binding.BindingGroup = tool.BindingMode, tool.LoadingMode, tool.BindingGroup
 	}
 	return binding
 }
@@ -886,7 +887,11 @@ func (s *AgentService) SearchTools(ctx context.Context, r AgentToolSearchRequest
 		return nil, e
 	}
 	// 管理端绑定弹窗走 Browse；模型侧 meta:tool.search 仍使用硬顶 10 的 Search。
-	return aitool.Browse(ctx, s.tools.List(), r.Query, r.Capability, r.Source, r.Limit, func(d aitool.Definition) bool { return s.tools.IsBindable(d.ID) })
+	definitions := s.tools.List()
+	for i := range definitions {
+		definitions[i].Name, definitions[i].DescriptionForLLM = definitions[i].TitleForHuman, definitions[i].DescriptionForHuman
+	}
+	return aitool.Browse(ctx, definitions, r.Query, r.Capability, r.Source, r.Limit, func(d aitool.Definition) bool { return s.tools.IsBindable(d.ID) })
 }
 func (s *AgentService) requiredTools(row *Agent) []string {
 	if row.ContractKey == "" {

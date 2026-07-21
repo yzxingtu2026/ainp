@@ -48,6 +48,7 @@ type Definition struct {
 	ID                   string          `json:"id"`
 	Source               Source          `json:"source"`
 	Name                 string          `json:"name"`
+	TitleForHuman        string          `json:"title_for_human"`
 	DescriptionForLLM    string          `json:"description_for_llm"`
 	DescriptionForHuman  string          `json:"description_for_human"`
 	ResultSummary        string          `json:"result_summary"`
@@ -75,7 +76,7 @@ func (d Definition) Validate() error {
 	if !toolIDPattern.MatchString(d.ID) || !strings.HasPrefix(d.ID, string(d.Source)+":") {
 		return fmt.Errorf("invalid namespaced tool id")
 	}
-	if d.Name == "" || d.DescriptionForLLM == "" || d.DescriptionForHuman == "" || d.Capability == "" || d.RuntimeRef == "" {
+	if d.Name == "" || d.TitleForHuman == "" || d.DescriptionForLLM == "" || d.DescriptionForHuman == "" || d.Capability == "" || d.RuntimeRef == "" {
 		return fmt.Errorf("tool definition fields are required")
 	}
 	if !json.Valid(d.InputSchema) || (len(d.OutputSchema) > 0 && !json.Valid(d.OutputSchema)) {

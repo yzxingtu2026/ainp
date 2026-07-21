@@ -143,6 +143,8 @@ func TestAgentToolSearchOnlyReturnsBindableTools(t *testing.T) {
 	metaTool.ID = "meta:tool.search"
 	metaTool.Source = aitool.SourceMeta
 	metaTool.Name = "tool.search"
+	metaTool.TitleForHuman = "工具搜索"
+	metaTool.DescriptionForHuman = "按意图搜索工具"
 	metaTool.RuntimeRef = "tool.search"
 	metaTool.BindingMode = aitool.BindingOptional
 	metaTool.LoadingMode = aitool.LoadingDirect
@@ -182,6 +184,9 @@ func TestAgentToolSearchOnlyReturnsBindableTools(t *testing.T) {
 	}
 	if !slices.Equal(ids, []string{slot.id, metaTool.ID, pluginTool.ID}) {
 		t.Fatalf("agent binding candidates must include declared meta/slot/plugin and exclude actions: %#v", items)
+	}
+	if items[1].Name != metaTool.TitleForHuman || items[1].Summary != metaTool.DescriptionForHuman {
+		t.Fatalf("agent binding candidate must use human display contract: %#v", items[1])
 	}
 }
 
