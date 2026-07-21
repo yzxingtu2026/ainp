@@ -3,6 +3,7 @@ package operations
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	"github.com/yzxingtu2026/ainp/platform/framework/action"
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
@@ -51,6 +52,12 @@ func Register(a *app.App, deliveries NotificationDeliveryService) error {
 		return err
 	}
 	if err := registerAuditLogActions(a); err != nil {
+		return err
+	}
+	if a.PageContexts == nil {
+		return fmt.Errorf("page context registry is required")
+	}
+	if err := a.PageContexts.Register(PageTypeAuditLogs, auditPageContextResolver{db: a.DB}); err != nil {
 		return err
 	}
 	if deliveries != nil {

@@ -16,6 +16,7 @@ import {
 } from '@/service/api';
 import { agentRunEventDelta, subscribeAgentRun } from '@/service/ai-run-stream';
 import { $t } from '@/locales';
+import { capturePageContext } from '@/composables/page-context';
 
 export type WorkspaceStatus =
   | 'idle'
@@ -328,7 +329,12 @@ export function useWorkspace() {
       await scrollToBottom();
       status.value = 'running';
       const { data: started, error: runError } = await startAIAgentRun(
-        { conversation_id: current.id, trigger_message_id: userMessage.id, budget: {} },
+        {
+          conversation_id: current.id,
+          trigger_message_id: userMessage.id,
+          budget: {},
+          page_context: capturePageContext()
+        },
         idempotencyKey('workspace-run')
       );
       if (runError || !started) throw runError || new Error($t('page.aiWorkspace.runFailed'));

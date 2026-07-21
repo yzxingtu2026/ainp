@@ -35,6 +35,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/menu"
 	"github.com/yzxingtu2026/ainp/platform/framework/notification"
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
+	"github.com/yzxingtu2026/ainp/platform/framework/pagecontext"
 	"github.com/yzxingtu2026/ainp/platform/framework/permission"
 	"github.com/yzxingtu2026/ainp/platform/framework/runtimecontext"
 	"github.com/yzxingtu2026/ainp/platform/framework/setting"
@@ -81,6 +82,7 @@ type App struct {
 	Jobs                     *job.Runtime
 	Notifications            *notification.DefinitionRegistry
 	LogProviders             *logcenter.Registry
+	PageContexts             *pagecontext.Registry
 	NotificationRenderer     *notification.Renderer
 	OnHTTP                   func(engine *gin.Engine)
 	Auditor                  audit.Recorder
@@ -121,6 +123,7 @@ func New(cfg *config.Config, db *gorm.DB, auditor audit.Recorder, tokens *auth.T
 		AttachmentPolicies:   attachment.NewPolicyRegistry(),
 		Notifications:        notification.NewDefinitionRegistry(),
 		LogProviders:         logcenter.NewRegistry(),
+		PageContexts:         pagecontext.NewRegistry(),
 		NotificationRenderer: notification.NewRenderer(),
 		Auditor:              auditor,
 		Installed:            true,

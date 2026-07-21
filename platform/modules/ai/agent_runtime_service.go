@@ -18,7 +18,9 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/aitool"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
+	"github.com/yzxingtu2026/ainp/platform/framework/logging"
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
+	"github.com/yzxingtu2026/ainp/platform/framework/pagecontext"
 	"github.com/yzxingtu2026/ainp/platform/framework/pagination"
 	"github.com/yzxingtu2026/ainp/platform/framework/prompt"
 	"github.com/yzxingtu2026/ainp/platform/framework/runtimecontext"
@@ -43,6 +45,7 @@ type AgentRuntimeService struct {
 	writer          outbox.Writer
 	authorization   auth.AuthorizationProvider
 	runtimeContext  runtimecontext.Provider
+	pageContexts    *pagecontext.Registry
 	memoryRetriever *MemoryRetrievalService
 	contracts       *aiagent.Registry
 	leaseDuration   time.Duration
@@ -57,7 +60,7 @@ func (s *AgentRuntimeService) SetAgentContracts(contracts *aiagent.Registry) {
 	s.contracts = contracts
 }
 
-func NewAgentRuntimeService(db *gorm.DB, c *ConversationService, i *InvocationService, t *ToolService, compactor aiconversation.ContextCompactor, w outbox.Writer, authorization auth.AuthorizationProvider, runtimeContext ...runtimecontext.Provider) *AgentRuntimeService {
+func NewAgentRuntimeService(db *gorm.DB, c *ConversationService, i *InvocationService, t *ToolService, compactor aiconversation.ContextCompactor, w outbox.Writer, authorization auth.AuthorizationProvider, pageContexts *pagecontext.Registry, runtimeContext ...runtimecontext.Provider) *AgentRuntimeService {
 	if err := registerAgentRuntimeTenantModels(); err != nil {
 		panic(err)
 	}
@@ -65,14 +68,23 @@ func NewAgentRuntimeService(db *gorm.DB, c *ConversationService, i *InvocationSe
 	if len(runtimeContext) > 0 {
 		provider = runtimeContext[0]
 	}
-	return &AgentRuntimeService{db: tenantdata.GuardedDB(db), conversations: c, invocations: i, tools: t, compactor: compactor, writer: w, authorization: authorization, runtimeContext: provider, leaseDuration: 30 * time.Second, now: func() time.Time { return time.Now().UTC() }}
+	return &AgentRuntimeService{db: tenantdata.GuardedDB(db), conversations: c, invocations: i, tools: t, compactor: compactor, writer: w, authorization: authorization, runtimeContext: provider, pageContexts: pageContexts, leaseDuration: 30 * time.Second, now: func() time.Time { return time.Now().UTC() }}
 }
 
 type AgentRunStartRequest struct {
 	ConversationID   string                `json:"conversation_id" validate:"required"`
 	TriggerMessageID string                `json:"trigger_message_id" validate:"required"`
 	Budget           aiagentruntime.Budget `json:"budget"`
+	PageContext      *pagecontext.Envelope `json:"page_context,omitempty"`
 }
+
+func (r AgentRunStartRequest) Validate(context.Context) error {
+	if r.PageContext != nil {
+		return r.PageContext.Validate()
+	}
+	return nil
+}
+
 type AgentRunIDRequest struct {
 	ID       string `json:"id" validate:"required"`
 	Revision uint64 `json:"revision,omitempty"`
@@ -116,6 +128,12 @@ func (s *AgentRuntimeService) Start(ctx context.Context, r AgentRunStartRequest)
 	if key == "" {
 		return nil, errs.New(errs.CodeIdempotencyKeyRequired, "idempotency key required")
 	}
+	var existingRun AgentRun
+	if existingErr := s.db.WithContext(ctx).Where("user_id=? AND idempotency_key=?", ac.UserID, key).First(&existingRun).Error; existingErr == nil {
+		return existingRun, nil
+	} else if !errors.Is(existingErr, gorm.ErrRecordNotFound) {
+		return nil, existingErr
+	}
 	conversation, _, err := s.conversations.get(ctx, r.ConversationID, true)
 	if err != nil {
 		return nil, err
@@ -138,11 +156,25 @@ WHERE tenant_id=? AND conversation_id=? AND id=? AND role=? AND status=? LIMIT 1
 		return nil, errs.New(errs.CodeValidation, err.Error())
 	}
 	budgetJSON, _ := json.Marshal(budget)
+	pageContextJSON := json.RawMessage(`{}`)
+	pageContextType, pageContextStatus, pageContextBytes := "", "none", 0
+	if r.PageContext != nil {
+		if s.pageContexts == nil {
+			return nil, errs.New(errs.CodeValidation, "page context is unavailable")
+		}
+		resolved, resolveErr := s.pageContexts.Resolve(ctx, *r.PageContext)
+		if resolveErr != nil {
+			return nil, errs.New(errs.CodeValidation, "page context is unavailable")
+		}
+		pageContextJSON, _ = json.Marshal(resolved)
+		pageContextType, pageContextStatus, pageContextBytes = resolved.PageType, "resolved", len(pageContextJSON)
+		logging.Info(ctx, "page context resolved", "page_type", resolved.PageType, "mode", resolved.Mode, "snapshot_bytes", pageContextBytes, "trusted_ref_count", len(resolved.TrustedRefs))
+	}
 	traceID := strings.TrimSpace(ac.TraceID)
 	if traceID == "" {
 		traceID = ac.RequestID
 	}
-	run := AgentRun{ID: uuid.NewString(), TenantID: ac.TenantID, UserID: ac.UserID, ConversationID: conversation.ID, ConversationRevision: conversation.Revision, TriggerMessageID: trigger.ID, AgentVersionID: conversation.AgentVersionID, SessionID: ac.SessionID, AuthVersion: ac.AuthVersion, OriginRequestID: ac.RequestID, TraceID: traceID, Status: string(aiagentruntime.RunQueued), BudgetJSON: budgetJSON, IdempotencyKey: key, Revision: 1}
+	run := AgentRun{ID: uuid.NewString(), TenantID: ac.TenantID, UserID: ac.UserID, ConversationID: conversation.ID, ConversationRevision: conversation.Revision, TriggerMessageID: trigger.ID, AgentVersionID: conversation.AgentVersionID, SessionID: ac.SessionID, AuthVersion: ac.AuthVersion, OriginRequestID: ac.RequestID, TraceID: traceID, PageContextJSON: pageContextJSON, PageContextType: pageContextType, PageContextStatus: pageContextStatus, PageContextBytes: pageContextBytes, Status: string(aiagentruntime.RunQueued), BudgetJSON: budgetJSON, IdempotencyKey: key, Revision: 1}
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if e := tx.Where("user_id=? AND idempotency_key=?", ac.UserID, key).First(&run).Error; e == nil {
 			return nil
@@ -152,7 +184,7 @@ WHERE tenant_id=? AND conversation_id=? AND id=? AND role=? AND status=? LIMIT 1
 		if e := tx.Create(&run).Error; e != nil {
 			return e
 		}
-		if e := s.appendEvent(ctx, tx, &run, "run.queued", nil, map[string]any{"conversation_revision": conversation.Revision}); e != nil {
+		if e := s.appendEvent(ctx, tx, &run, "run.queued", nil, map[string]any{"conversation_revision": conversation.Revision, "page_context_status": pageContextStatus, "page_type": pageContextType, "page_context_bytes": pageContextBytes}); e != nil {
 			return e
 		}
 		if s.writer != nil {
@@ -173,7 +205,15 @@ func (s *AgentRuntimeService) Get(ctx context.Context, r AgentRunIDRequest) (any
 	if err = s.db.WithContext(ctx).Where("run_id=?", run.ID).Order("step_index ASC").Find(&steps).Error; err != nil {
 		return nil, err
 	}
-	return map[string]any{"run": run, "steps": steps}, nil
+	return map[string]any{"run": run, "steps": steps, "page_context": safePageContextProjection(run.PageContextJSON)}, nil
+}
+
+func safePageContextProjection(raw json.RawMessage) any {
+	snapshot, err := pageContextSnapshot(raw)
+	if err != nil || snapshot == nil {
+		return nil
+	}
+	return map[string]any{"schema_version": snapshot.SchemaVersion, "page_type": snapshot.PageType, "route_name": snapshot.RouteName, "mode": snapshot.Mode, "trusted_refs": snapshot.TrustedRefs, "warnings": snapshot.Warnings}
 }
 func (s *AgentRuntimeService) List(ctx context.Context, r AgentRunListRequest) (any, error) {
 	ac, err := runActor(ctx)
@@ -517,6 +557,13 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 		return s.fail(ctx, run, "authorization_changed")
 	}
 	ctx = auth.WithContext(ctx, &auth.Context{RequestID: run.OriginRequestID, TraceID: run.TraceID, TenantID: snapshot.TenantID, UserID: snapshot.UserID, SessionID: snapshot.SessionID, OrgID: snapshot.OrgID, DeptID: snapshot.DeptID, Roles: snapshot.Roles, Permissions: snapshot.Permissions, AuthVersion: snapshot.AuthVersion, Realm: auth.RealmTenant, Client: "agent", AgentRunID: run.ID, Authenticated: true})
+	pageSnapshot, pageErr := pageContextSnapshot(run.PageContextJSON)
+	if pageErr != nil {
+		return s.fail(ctx, run, "page_context_invalid")
+	}
+	if pageSnapshot != nil {
+		ctx = pagecontext.WithSnapshot(ctx, pageSnapshot)
+	}
 	var budget aiagentruntime.Budget
 	if json.Unmarshal(run.BudgetJSON, &budget) != nil {
 		return s.fail(ctx, run, "invalid_budget")
@@ -579,6 +626,7 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 		run.ContextSnapshotID = snapshotID
 		if snapshotID != nil {
 			_ = s.attachRuntimeContextRefs(ctx, *snapshotID, trustedContext)
+			_ = s.attachPageContextRefs(ctx, *snapshotID, pageSnapshot)
 		}
 		messages, recallRefs := s.injectMemoryRecall(ctx, run, version, messages, trustedContext)
 		if snapshotID != nil && len(recallRefs) > 0 {
@@ -714,6 +762,10 @@ func (s *AgentRuntimeService) heartbeatLease(ctx context.Context, cancel context
 }
 
 func (s *AgentRuntimeService) runtimeMessages(ctx context.Context, run *AgentRun, modelAlias string, budget aiagentruntime.Budget, trusted *runtimecontext.TrustedRuntimeContext) ([]aimodelruntime.Message, *string, error) {
+	pageSnapshot, err := pageContextSnapshot(run.PageContextJSON)
+	if err != nil {
+		return nil, nil, err
+	}
 	assembleStep, stepErr := s.newStep(ctx, run, aiagentruntime.StepContextAssemble, map[string]any{"conversation_revision": s.currentConversationRevision(ctx, run)})
 	if stepErr != nil {
 		return nil, nil, stepErr
@@ -769,14 +821,65 @@ func (s *AgentRuntimeService) runtimeMessages(ctx context.Context, run *AgentRun
 			for _, m := range payload.RetainedMessages {
 				messages = append(messages, aimodelruntime.Message{Role: m.Role, Content: m.Content})
 			}
-			return injectTrustedRuntimeContext(messages, trusted), &id, nil
+			return injectPageContext(injectTrustedRuntimeContext(messages, trusted), pageSnapshot), &id, nil
 		}
 	}
 	messages := make([]aimodelruntime.Message, 0, len(assembly.Messages))
 	for _, m := range assembly.Messages {
 		messages = append(messages, aimodelruntime.Message{Role: m.Role, Content: m.Content})
 	}
-	return injectTrustedRuntimeContext(messages, trusted), nil, nil
+	return injectPageContext(injectTrustedRuntimeContext(messages, trusted), pageSnapshot), nil, nil
+}
+
+func (s *AgentRuntimeService) attachPageContextRefs(ctx context.Context, snapshotID string, snapshot *pagecontext.Snapshot) error {
+	if snapshot == nil {
+		return nil
+	}
+	refs := map[string]any{"schema_version": snapshot.SchemaVersion, "page_type": snapshot.PageType, "mode": snapshot.Mode, "trusted_refs": snapshot.TrustedRefs}
+	body, _ := json.Marshal(refs)
+	res := s.db.WithContext(ctx).Model(&ContextSnapshot{}).Where("id=? AND page_context_refs = '{}'::jsonb", snapshotID).Update("page_context_refs", body)
+	if res.Error != nil || res.RowsAffected == 1 {
+		return res.Error
+	}
+	var current ContextSnapshot
+	if err := s.db.WithContext(ctx).Select("page_context_refs").Where("id=?", snapshotID).First(&current).Error; err != nil {
+		return err
+	}
+	if string(current.PageContextRefs) != string(body) {
+		return fmt.Errorf("snapshot page context refs conflict")
+	}
+	return nil
+}
+
+func pageContextSnapshot(raw json.RawMessage) (*pagecontext.Snapshot, error) {
+	if len(raw) == 0 || string(raw) == "{}" {
+		return nil, nil
+	}
+	var snapshot pagecontext.Snapshot
+	if err := json.Unmarshal(raw, &snapshot); err != nil || snapshot.SchemaVersion != pagecontext.SchemaVersion || snapshot.PageType == "" {
+		return nil, fmt.Errorf("invalid page context snapshot")
+	}
+	return &snapshot, nil
+}
+
+func injectPageContext(messages []aimodelruntime.Message, snapshot *pagecontext.Snapshot) []aimodelruntime.Message {
+	if snapshot == nil {
+		return messages
+	}
+	body, _ := json.Marshal(snapshot)
+	section := aimodelruntime.Message{Role: aimodelruntime.RoleDeveloper, Content: []aimodelruntime.ContentPart{{Type: aimodelruntime.PartInputText, Text: prompt.Render("ai/page-context", map[string]any{"Payload": string(body)})}}}
+	index := len(messages)
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role == aimodelruntime.RoleUser {
+			index = i
+			break
+		}
+	}
+	out := make([]aimodelruntime.Message, 0, len(messages)+1)
+	out = append(out, messages[:index]...)
+	out = append(out, section)
+	out = append(out, messages[index:]...)
+	return out
 }
 
 func (s *AgentRuntimeService) resolveRuntimeContext(ctx context.Context, run *AgentRun, conversation *Conversation, agent *Agent) (*runtimecontext.TrustedRuntimeContext, error) {

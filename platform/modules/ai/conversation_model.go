@@ -97,6 +97,7 @@ type ContextSnapshot struct {
 	Payload                json.RawMessage `gorm:"type:jsonb;not null" json:"payload"`
 	RuntimeContextRefs     json.RawMessage `gorm:"type:jsonb;not null;default:'{}'" json:"runtime_context_refs,omitempty"`
 	MemoryRecallRefs       json.RawMessage `gorm:"type:jsonb;not null;default:'[]'" json:"memory_recall_refs,omitempty"`
+	PageContextRefs        json.RawMessage `gorm:"type:jsonb;not null;default:'{}'" json:"page_context_refs,omitempty"`
 	IdempotencyKey         string          `gorm:"size:191;not null;uniqueIndex:ux_ai_snapshot_idem,priority:3" json:"-"`
 	CreatedAt              time.Time       `json:"created_at"`
 	Current                bool            `gorm:"-" json:"is_current"`

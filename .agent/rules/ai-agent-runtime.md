@@ -13,4 +13,5 @@
 - 事件 cursor 单调且 tenant/run 隔离；日志、Outbox、Step/Event 禁止 Secret、Handle、完整敏感参数、压缩摘要与供应商原始响应。
 - Agent Run 使用知识时只能把 Agent binding 当候选范围，并通过统一 `KnowledgeRetriever` 按当前 actor 重鉴权；结果必须以 user 级不可信参考注入，禁止进入 system/developer instructions。
 - Run 第一次执行必须经统一 RuntimeContextProvider 固定 Time Snapshot；恢复/重试复用快照，可信上下文只临时注入 Prompt 尾部并与不可信记忆分层。
+- 可选 Page Context 必须在 Run Start 经显式 Resolver 重解析并固定安全快照；恢复/重试禁止漂移，只临时注入触发 user message 附近，不写 canonical Message。
 - 自动 Memory Recall 必须使用 frozen Agent Policy 与用户开关，受条数/Token/敏感等级限制；无结果不注入，Snapshot 只存 provenance refs。
