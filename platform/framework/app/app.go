@@ -54,6 +54,7 @@ type App struct {
 	Capabilities             *capability.Registry
 	Actions                  *action.Registry
 	Menus                    *menu.Registry
+	PageHelp                 *menu.HelpRegistry
 	CodeSets                 *codeset.Registry
 	Settings                 *setting.Registry
 	SettingValues            *setting.Provider
@@ -70,6 +71,7 @@ type App struct {
 	KnowledgeRetriever       aiknowledge.KnowledgeRetriever
 	AgentTenantInitializer   func(context.Context, *gorm.DB, string, string) error
 	ToolCatalogInitializer   func(context.Context, string, string) error
+	NavigationInitializer    func(context.Context, string, string) error
 	ModelResolver            aimodel.Resolver
 	AIAssetResolver          aimodelruntime.AssetResolver
 	EmbeddingRuntime         aimodelruntime.EmbeddingRuntime
@@ -117,6 +119,7 @@ func New(cfg *config.Config, db *gorm.DB, auditor audit.Recorder, tokens *auth.T
 		Capabilities:         capability.NewRegistry(),
 		Actions:              actions,
 		Menus:                menu.NewRegistry(),
+		PageHelp:             menu.NewHelpRegistry(),
 		CodeSets:             codeSets,
 		Settings:             setting.NewRegistry(),
 		StateMachines:        statemachine.NewRegistry(),

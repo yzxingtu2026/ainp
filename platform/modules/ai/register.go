@@ -15,6 +15,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/aimodelruntime"
 	"github.com/yzxingtu2026/ainp/platform/framework/aitool"
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
+	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/capability"
 	"github.com/yzxingtu2026/ainp/platform/framework/menu"
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
@@ -136,7 +137,7 @@ func Register(a *app.App) error {
 			return err
 		}
 		writer = a.Outbox.Writer
-		for _, eventType := range []string{toolCatalogChangedEvent, toolInvocationFinishedEvent} {
+		for _, eventType := range []string{toolCatalogChangedEvent, toolInvocationFinishedEvent, navigationDocumentChangedEvent} {
 			if err := a.Outbox.RegisterDefinition(outbox.Definition{EventType: eventType, SchemaVersion: 1}); err != nil {
 				return err
 			}
@@ -159,6 +160,11 @@ func Register(a *app.App) error {
 	tools.SetSettingProvider(a.SettingValues)
 	tools.SetCatalogProjectionSynchronous(a.Outbox == nil || !a.Outbox.Enabled)
 	if err := RegisterToolCatalogEmbedding(a, tools); err != nil {
+		return err
+	}
+	navigationSearch := NewNavigationSearchService(a.DB, a.Menus, a.PageHelp, a.SettingValues, a.EmbeddingRuntime, writer)
+	a.Menus.SetSemanticSearcher(navigationSearch)
+	if err := RegisterNavigationEmbedding(a, navigationSearch); err != nil {
 		return err
 	}
 	invocations.SetToolProjector(tools)
@@ -219,12 +225,27 @@ func Register(a *app.App) error {
 		_, err := tools.ReconcileCatalogForTenant(ctx, tenantID, actorID)
 		return err
 	}
+	a.NavigationInitializer = func(ctx context.Context, tenantID, actorID string) error {
+		if err := navigationSearch.ReconcileForTenant(ctx, tenantID); err != nil {
+			return err
+		}
+		if a.Outbox == nil || a.Outbox.Enabled {
+			return nil
+		}
+		// Indexing is best-effort when background runtimes are disabled; lexical
+		// navigation must remain available even if the embedding provider fails.
+		_ = navigationSearch.IndexPending(auth.WithContext(ctx, &auth.Context{Authenticated: true, TenantID: tenantID, UserID: actorID, Realm: auth.RealmTenant, Client: "navigation-reconciler"}), tenantID)
+		return nil
+	}
 	a.AgentTenantInitializer = func(ctx context.Context, db *gorm.DB, tenantID, userID string) error {
 		if err := agents.ReconcileBuiltinForTenant(ctx, db, tenantID, userID); err != nil {
 			return err
 		}
 		_, err := tools.ReconcileCatalogForTenant(ctx, tenantID, userID)
-		return err
+		if err != nil {
+			return err
+		}
+		return a.NavigationInitializer(ctx, tenantID, userID)
 	}
 	auditOn := true
 	type def struct {
@@ -303,7 +324,7 @@ func Register(a *app.App) error {
 	if err := toolRegistry.RegisterProvider(&aitool.ActionProvider{Actions: a.Actions}, &aitool.ActionExecutor{Actions: a.Actions}); err != nil {
 		return err
 	}
-	if err := aitools.RegisterBuiltins(toolRegistry, knowledgetool.New(knowledgeTool.Project, knowledgeTool), memorytool.New(memoryRuntimeTool.Project, memoryRuntimeTool), navigationtool.New(a.Menus)); err != nil {
+	if err := aitools.RegisterBuiltins(toolRegistry, knowledgetool.New(knowledgeTool.Project, knowledgeTool), memorytool.New(memoryRuntimeTool.Project, memoryRuntimeTool), navigationtool.New(a.Menus), navigationtool.NewHelp(a.Menus, a.PageHelp)); err != nil {
 		return err
 	}
 	meta := []aitool.Definition{{ID: "meta:tool.search", Source: aitool.SourceMeta, Name: "tool.search", TitleForHuman: "工具搜索", DescriptionForLLM: "Search visible tools by intent and return compact candidates", DescriptionForHuman: "按意图搜索当前智能体可用的工具", Capability: "ai", InputSchema: action.SchemaFor[aitool.MetaSearchInput](), Risk: aitool.RiskLow, SideEffect: aitool.SideEffectRead, BindingMode: aitool.BindingOptional, LoadingMode: aitool.LoadingDirect, BindingGroup: "tool_discovery", RuntimeRef: "tool.search", SchemaVersion: 1, Status: "enabled"}, {ID: "meta:tool.load", Source: aitool.SourceMeta, Name: "tool.load", TitleForHuman: "工具加载", DescriptionForLLM: "Load a small number of candidate tools into the current scope", DescriptionForHuman: "将少量候选工具加载到当前运行范围", Capability: "ai", InputSchema: action.SchemaFor[aitool.MetaLoadInput](), Risk: aitool.RiskLow, SideEffect: aitool.SideEffectRead, BindingMode: aitool.BindingOptional, LoadingMode: aitool.LoadingDirect, BindingGroup: "tool_discovery", RuntimeRef: "tool.load", SchemaVersion: 1, Status: "enabled"}}
@@ -361,6 +382,6 @@ func Register(a *app.App) error {
 
 func NewBuiltinAgentContractRegistry() (*aiagent.Registry, error) {
 	contracts := aiagent.NewRegistry()
-	err := contracts.Register(aiagent.Contract{Key: "system.operations", Version: "1.0.0", Name: "系统运营助手", Description: "通过当前用户权限安全操作后台系统", BaseInstructions: prompt.MustGet("agent/system-operations"), RequiredModelCapabilities: []string{"chat", "tools"}, RequiredToolSelectors: []string{"meta:tool.search", "meta:tool.load", navigationtool.ToolID}, AllowedToolSources: []string{"action"}, AllowedToolCapabilities: []string{"system", "operations"}, ConfigSchema: json.RawMessage(`{"type":"object","additionalProperties":false}`), SingletonScope: aiagent.SingletonTenant, ManagedFields: []string{"code", "source", "contract_key", "contract_version", "base_instructions", "visibility"}, UpgradePolicy: "managed-fields"})
+	err := contracts.Register(aiagent.Contract{Key: "system.operations", Version: "1.0.0", Name: "系统运营助手", Description: "通过当前用户权限安全操作后台系统", BaseInstructions: prompt.MustGet("agent/system-operations"), RequiredModelCapabilities: []string{"chat", "tools"}, RequiredToolSelectors: []string{"meta:tool.search", "meta:tool.load", navigationtool.ToolID, navigationtool.HelpToolID}, AllowedToolSources: []string{"action"}, AllowedToolCapabilities: []string{"system", "operations"}, ConfigSchema: json.RawMessage(`{"type":"object","additionalProperties":false}`), SingletonScope: aiagent.SingletonTenant, ManagedFields: []string{"code", "source", "contract_key", "contract_version", "base_instructions", "visibility"}, UpgradePolicy: "managed-fields"})
 	return contracts, err
 }

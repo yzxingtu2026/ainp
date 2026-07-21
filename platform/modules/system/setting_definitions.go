@@ -6,6 +6,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
 	"github.com/yzxingtu2026/ainp/platform/framework/attachment"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
+	"github.com/yzxingtu2026/ainp/platform/framework/menu"
 	"github.com/yzxingtu2026/ainp/platform/framework/setting"
 )
 
@@ -29,11 +30,18 @@ func registerExampleSettings(a *app.App) error {
 	if err := registerMemoryPolicySetting(a); err != nil {
 		return err
 	}
-	return registerToolSearchSetting(a)
+	if err := registerToolSearchSetting(a); err != nil {
+		return err
+	}
+	return registerNavigationSearchSetting(a)
 }
 
 func registerToolSearchSetting(a *app.App) error {
 	return a.RegisterSettingDefinition(setting.Definition{Key: aitool.SettingKeySearch, CategoryKey: "ai", Title: "工具语义检索", TitleKey: "setting.definition.ai.tool_search.title", Description: "配置工具目录和查询使用的 Embedding Model Alias；留空时降级为词法检索", DescriptionKey: "setting.definition.ai.tool_search.description", Scope: setting.ScopeTenant, Surface: auth.RealmTenant, Permission: ActionSettingList, Order: 20, SchemaVersion: 1, Fields: []setting.Field{{Key: aitool.SettingFieldModelAlias, Type: setting.FieldRemoteSelect, Label: "Embedding 模型 Alias", LabelKey: "setting.field.ai.tool_search.embedding_model_alias.label", Default: "", RemoteSource: aliasRemoteSource("embedding")}}})
+}
+
+func registerNavigationSearchSetting(a *app.App) error {
+	return a.RegisterSettingDefinition(setting.Definition{Key: menu.SettingKeySemanticSearch, CategoryKey: "ai", Title: "导航语义检索", Description: "配置功能导航索引和查询使用的 Embedding Model Alias；留空时无损降级为词法检索", Scope: setting.ScopeTenant, Surface: auth.RealmTenant, Permission: ActionSettingList, Order: 30, SchemaVersion: 1, Fields: []setting.Field{{Key: menu.SettingFieldModelAlias, Type: setting.FieldRemoteSelect, Label: "Embedding 模型 Alias", Default: "", RemoteSource: aliasRemoteSource("embedding")}}})
 }
 
 func aliasRemoteSource(modelType string) *setting.RemoteOptionSource {

@@ -140,6 +140,33 @@ type ToolSearchDocument struct {
 
 func (ToolSearchDocument) TableName() string { return "ai_tool_search_documents" }
 
+type NavigationSearchDocument struct {
+	ID                     string    `gorm:"primaryKey;size:64"`
+	TenantID               string    `gorm:"size:64;not null;uniqueIndex:ux_navigation_document"`
+	MenuID                 string    `gorm:"size:128;not null;uniqueIndex:ux_navigation_document"`
+	DocumentKind           string    `gorm:"size:16;not null;uniqueIndex:ux_navigation_document"`
+	Locale                 string    `gorm:"size:16;not null;uniqueIndex:ux_navigation_document"`
+	UseCase                string    `gorm:"size:160;not null;default:'';uniqueIndex:ux_navigation_document"`
+	Title                  string    `gorm:"size:255;not null"`
+	Content                string    `gorm:"type:text;not null"`
+	HelpVersion            string    `gorm:"size:32;not null;default:''"`
+	ContentHash            string    `gorm:"size:64;not null"`
+	IndexStatus            string    `gorm:"size:16;not null"`
+	CatalogRevision        uint64    `gorm:"not null;default:1"`
+	EmbeddingModel         string    `gorm:"size:128"`
+	EmbeddingAlias         string    `gorm:"size:64"`
+	EmbeddingDeploymentID  string    `gorm:"size:64"`
+	EmbeddingDimensions    int       `gorm:"not null;default:0"`
+	EmbeddingPreprocessing string    `gorm:"size:32"`
+	EmbeddingSchemaVersion int       `gorm:"not null;default:0"`
+	EmbeddingVector        *PGVector `gorm:"type:public.vector" json:"-"`
+	VectorUpdatedAt        *time.Time
+	CreatedAt              time.Time
+	UpdatedAt              time.Time
+}
+
+func (NavigationSearchDocument) TableName() string { return "navigation_search_documents" }
+
 type ToolScope struct {
 	ID                      string          `gorm:"primaryKey;size:64" json:"id"`
 	TenantID                string          `gorm:"size:64;not null;index" json:"-"`
@@ -218,6 +245,9 @@ func AutoMigrate(db *gorm.DB) error {
 	if err := registerMemoryTenantModels(); err != nil {
 		return err
 	}
+	if err := registerNavigationTenantModels(); err != nil {
+		return err
+	}
 	if db.Migrator().HasTable(&Provider{}) && db.Migrator().HasColumn(&Provider{}, "credential_ref") && !db.Migrator().HasColumn(&Provider{}, "credential_ciphertext") {
 		if err := db.Exec(`ALTER TABLE ai_providers ADD COLUMN credential_ciphertext text NOT NULL DEFAULT ''`).Error; err != nil {
 			return err
@@ -232,7 +262,7 @@ func AutoMigrate(db *gorm.DB) error {
 			return err
 		}
 	}
-	if err := db.AutoMigrate(&Provider{}, &Deployment{}, &Alias{}, &ModelInvocation{}, &ToolCatalog{}, &ToolSearchDocument{}, &ToolScope{}, &ToolConfirmation{}, &ToolInvocation{}, &Agent{}, &AgentVersion{}, &AgentToolBinding{}, &AgentSlotBinding{}, &AgentSlotPreference{}, &Conversation{}, &ConversationMessage{}, &AssistantStream{}, &AssistantStreamDelta{}, &ContextSnapshot{}, &AgentRun{}, &AgentStep{}, &AgentRunEvent{}, &MemoryItem{}, &MemoryItemVersion{}, &MemoryEvidence{}, &MemoryProjection{}, &MemoryDaySummary{}, &MemoryCurrentProfile{}, &MemoryEvaluation{}, &MemoryGovernanceDecision{}, &MemoryRelation{}, &MemoryConsolidationBatch{}); err != nil {
+	if err := db.AutoMigrate(&Provider{}, &Deployment{}, &Alias{}, &ModelInvocation{}, &ToolCatalog{}, &ToolSearchDocument{}, &NavigationSearchDocument{}, &ToolScope{}, &ToolConfirmation{}, &ToolInvocation{}, &Agent{}, &AgentVersion{}, &AgentToolBinding{}, &AgentSlotBinding{}, &AgentSlotPreference{}, &Conversation{}, &ConversationMessage{}, &AssistantStream{}, &AssistantStreamDelta{}, &ContextSnapshot{}, &AgentRun{}, &AgentStep{}, &AgentRunEvent{}, &MemoryItem{}, &MemoryItemVersion{}, &MemoryEvidence{}, &MemoryProjection{}, &MemoryDaySummary{}, &MemoryCurrentProfile{}, &MemoryEvaluation{}, &MemoryGovernanceDecision{}, &MemoryRelation{}, &MemoryConsolidationBatch{}); err != nil {
 		return err
 	}
 	return AutoMigrateKnowledge(db)

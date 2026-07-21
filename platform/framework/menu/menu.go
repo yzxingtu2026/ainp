@@ -63,8 +63,11 @@ type Menu struct {
 }
 
 type Registry struct {
-	items map[string]Menu
+	items    map[string]Menu
+	semantic SemanticSearcher
 }
+
+func (r *Registry) SetSemanticSearcher(searcher SemanticSearcher) { r.semantic = searcher }
 
 func NewRegistry() *Registry {
 	return &Registry{items: make(map[string]Menu)}

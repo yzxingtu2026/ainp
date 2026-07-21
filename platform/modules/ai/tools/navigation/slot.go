@@ -60,8 +60,9 @@ func (s *Slot) Execute(ctx context.Context, _ aitool.LoadedTool, arguments json.
 	if !ac.Authenticated || ac.TenantID == "" || ac.UserID == "" {
 		return &aitool.Result{Status: "failed", Summary: "authorization changed", ErrorCategory: "authorization_changed"}, nil
 	}
-	results, err := s.search.Search(menu.SearchOptions{
-		Realm: ac.Realm, Language: ac.Language, HasPermission: ac.HasPermission,
+	results, semantic, err := s.search.SearchContext(ctx, menu.SearchOptions{
+		TenantID: ac.TenantID,
+		Realm:    ac.Realm, Language: ac.Language, HasPermission: ac.HasPermission,
 		Query: input.Query, Limit: input.Limit, MaxLimit: menu.MaxToolSearchLimit,
 	})
 	if err != nil {
@@ -69,6 +70,6 @@ func (s *Slot) Execute(ctx context.Context, _ aitool.LoadedTool, arguments json.
 	}
 	return &aitool.Result{
 		Status: "completed", Summary: "navigation search completed",
-		Data: map[string]any{"items": results, "returned_count": len(results)},
+		Data: map[string]any{"items": results, "returned_count": len(results), "degraded": semantic.Degraded, "degraded_reason": semantic.Reason},
 	}, nil
 }

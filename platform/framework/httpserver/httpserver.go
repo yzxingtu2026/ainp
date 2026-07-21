@@ -112,7 +112,8 @@ func New(opts Options) *gin.Engine {
 			limit = parsed
 		}
 		ac := auth.MustFromContext(c.Request.Context())
-		results, err := menu.NewSearchService(opts.Menus).Search(menu.SearchOptions{
+		results, semantic, err := menu.NewSearchService(opts.Menus).SearchContext(c.Request.Context(), menu.SearchOptions{
+			TenantID: ac.TenantID,
 			Realm: ac.Realm, Language: ac.Language, HasPermission: ac.HasPermission,
 			Query: query, Limit: limit,
 		})
@@ -127,7 +128,7 @@ func New(opts Options) *gin.Engine {
 		logging.Info(c.Request.Context(), "navigation search completed",
 			"query_length", len([]rune(query)), "result_count", len(results),
 			"match_types", matchTypes, "duration_ms", time.Since(startedAt).Milliseconds())
-		response.OK(c, gin.H{"items": results, "degraded": false})
+		response.OK(c, gin.H{"items": results, "degraded": semantic.Degraded, "degraded_reason": semantic.Reason})
 	})
 
 	if opts.CodeSets != nil {

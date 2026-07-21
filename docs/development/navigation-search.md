@@ -34,4 +34,20 @@ Navigation Catalog 是从 Menu Registry 实时派生的授权搜索视图。Menu
 
 ## 阶段边界
 
-阶段一、二只使用内存派生目录与确定性词法排序，不引入数据库镜像或 Embedding。第三阶段的语义索引仍必须复用本服务的授权投影，并保持 Navigation Catalog 与 Action Tool Catalog 独立。
+阶段一、二只使用内存派生目录与确定性词法排序，不引入数据库镜像或 Embedding。
+
+## 独立语义索引
+
+第三阶段使用 `navigation_search_documents`，不得复用 `ai_tool_search_documents`。索引源只来自 Menu Registry 元数据和已提交审核的 Page Help；表中不保存 path、权限清单、DOM、页面正文、用户数据或未提交表单。路径、层级与图标仍在每次返回时由当前 Menu Registry 投影。
+
+索引与查询分别使用 `navigation_index`、`navigation_query` purpose，并记录 Alias、Deployment、维度、预处理、Schema Version、Catalog Revision 与内容哈希。内容或 provenance 变化会令文档重新进入 pending，并在同一事务追加 `ai.navigation_document.changed.v1` Outbox 事件，再由 `ai.navigation.embed` Job 幂等构建向量；下线文档标记 stale。Embedding 未配置、调用失败、维度或 provenance 不匹配、向量表不可用时，搜索必须保留词法结果并返回稳定降级原因。
+
+向量 SQL 必须先接收当前 AuthContext 经 Menu Registry 计算出的允许 `menu_id` 集合，并在同一查询中限制候选；禁止全局向量召回后再过滤。向量结果只提供候选分数，最终 DTO 和 path 仍由 `menu.SearchService` 生成。
+
+## Page Help 规范
+
+业务模块的操作帮助使用随代码提交的 Markdown，并通过 `embed.FS` 编译进 Go 二进制。frontmatter 只允许 `menu_id`、SemVer `version`、`locale`、`use_cases` 和 `permission_refs`；禁止声明 path。正文必须包含一级标题，单文件上限 32 KiB，同一菜单与 locale 不得重复。
+
+`menu.HelpRegistry` 在启动注册期校验菜单存在、可搜索以及 permission ref 与菜单权限一致。帮助是 Git 审核后的事实源，不得从 DOM、组件实例或运行时页面抓取；AI 可以辅助起草，但生成内容必须经过代码评审后提交。
+
+`builtin:navigation.help` 只接受 `navigation.search` 返回的稳定 `menu_id`、可选受信 use case 与 locale。执行时重新校验当前 realm、permission 和菜单状态，返回 Markdown、版本与来源引用。帮助只用于说明，不得自动点击、填写、提交或触发 Action。

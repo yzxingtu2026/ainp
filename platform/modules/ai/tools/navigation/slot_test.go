@@ -60,3 +60,38 @@ func TestSlotRejectsModelSuppliedInvalidBudget(t *testing.T) {
 		t.Fatalf("unexpected result: %#v", result)
 	}
 }
+
+func TestHelpSlotReauthorizesAndRejectsArbitraryPaths(t *testing.T) {
+	registry := menu.NewRegistry()
+	for _, item := range []menu.Menu{{ID: "system.root", Title: "系统", Type: menu.TypeDirectory}, {ID: "system.users", ParentID: "system.root", Title: "用户管理", Type: menu.TypeMenu, Path: "/system/users", Permission: "user.list"}} {
+		if err := registry.Register(item); err != nil {
+			t.Fatal(err)
+		}
+	}
+	document, err := menu.ParseHelpDocument("system.users.zh-CN.md", []byte("---\nmenu_id: system.users\nversion: 1.0.0\nlocale: zh-CN\nuse_cases: [新增用户]\npermission_refs: [user.list]\n---\n# 用户管理\n\n## 新增用户\n1. 新增"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	help := menu.NewHelpRegistry()
+	if err = help.Register(document); err != nil {
+		t.Fatal(err)
+	}
+	slot := NewHelp(registry, help)
+	ctx := auth.WithContext(context.Background(), &auth.Context{TenantID: "tenant-1", UserID: "user-1", Realm: auth.RealmTenant, Authenticated: true, Permissions: []string{"user.list"}, Language: "zh-CN"})
+	result, err := slot.Execute(ctx, aitool.LoadedTool{}, json.RawMessage(`{"menu_id":"system.users","use_case":"新增用户"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != "completed" {
+		t.Fatalf("unexpected result: %#v", result)
+	}
+	result, _ = slot.Execute(ctx, aitool.LoadedTool{}, json.RawMessage(`{"menu_id":"../../system.users"}`))
+	if result.ErrorCategory != "invalid_request" {
+		t.Fatalf("path input must fail: %#v", result)
+	}
+	revoked := auth.WithContext(context.Background(), &auth.Context{TenantID: "tenant-1", UserID: "user-1", Realm: auth.RealmTenant, Authenticated: true})
+	result, _ = slot.Execute(revoked, aitool.LoadedTool{}, json.RawMessage(`{"menu_id":"system.users"}`))
+	if result.ErrorCategory != "authorization_changed" {
+		t.Fatalf("revoked permission must fail: %#v", result)
+	}
+}

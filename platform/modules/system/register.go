@@ -12,6 +12,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/capability"
 	"github.com/yzxingtu2026/ainp/platform/framework/i18n"
 	"github.com/yzxingtu2026/ainp/platform/framework/menu"
+	systemhelp "github.com/yzxingtu2026/ainp/platform/modules/system/help"
 	"github.com/yzxingtu2026/ainp/platform/modules/system/jobs"
 )
 
@@ -277,6 +278,7 @@ func Register(a *app.App) error {
 			Description: "管理租户用户、账号状态和基础资料", DescriptionKey: "navigation.system.users.description",
 			Keywords: []string{"账号", "成员"}, KeywordKeys: []string{"navigation.system.users.keywords"},
 			UseCases: []string{"新增或停用用户"}, UseCaseKeys: []string{"navigation.system.users.use_cases"},
+			HelpRef: "embedded:system/help/system.users.zh-CN.md",
 		},
 	}); err != nil {
 		return err
@@ -290,6 +292,7 @@ func Register(a *app.App) error {
 			Description: "配置角色及其功能权限", DescriptionKey: "navigation.system.roles.description",
 			Keywords: []string{"权限", "授权"}, KeywordKeys: []string{"navigation.system.roles.keywords"},
 			UseCases: []string{"为角色分配权限"}, UseCaseKeys: []string{"navigation.system.roles.use_cases"},
+			HelpRef: "embedded:system/help/system.roles.zh-CN.md",
 		},
 	}); err != nil {
 		return err
@@ -303,6 +306,7 @@ func Register(a *app.App) error {
 			Description: "查看和维护系统配置项", DescriptionKey: "navigation.system.settings.description",
 			Keywords: []string{"配置", "参数"}, KeywordKeys: []string{"navigation.system.settings.keywords"},
 			UseCases: []string{"修改系统配置"}, UseCaseKeys: []string{"navigation.system.settings.use_cases"},
+			HelpRef: "embedded:system/help/system.settings.zh-CN.md",
 		},
 	}); err != nil {
 		return err
@@ -319,6 +323,8 @@ func Register(a *app.App) error {
 	if err := registerNotificationActions(a); err != nil {
 		return err
 	}
-
-	return nil
+	if err := systemhelp.Register(a.PageHelp); err != nil {
+		return fmt.Errorf("register page help: %w", err)
+	}
+	return a.PageHelp.ValidateMenus(a.Menus)
 }

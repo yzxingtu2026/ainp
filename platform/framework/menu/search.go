@@ -1,6 +1,7 @@
 package menu
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
@@ -11,13 +12,33 @@ import (
 )
 
 const (
-	DefaultSearchLimit  = 20
-	MaxSearchLimit      = 20
-	MaxToolSearchLimit  = 5
-	MaxSearchQueryRunes = 200
+	SettingKeySemanticSearch = "ai.navigation_search"
+	SettingFieldModelAlias   = "embedding_model_alias"
+	DefaultSearchLimit       = 20
+	MaxSearchLimit           = 20
+	MaxToolSearchLimit       = 5
+	MaxSearchQueryRunes      = 200
 )
 
+type SemanticCandidate struct {
+	MenuID string
+	Score  float64
+}
+type SemanticSearchResult struct {
+	Candidates []SemanticCandidate
+	Degraded   bool
+	Reason     string
+}
+type SemanticSearcher interface {
+	SearchNavigation(context.Context, SemanticSearchRequest) SemanticSearchResult
+}
+type SemanticSearchRequest struct {
+	TenantID, Query, Language string
+	AllowedMenuIDs            []string
+}
+
 type SearchOptions struct {
+	TenantID      string
 	Realm         auth.Realm
 	Language      string
 	HasPermission func(string) bool
@@ -38,31 +59,59 @@ type SearchResult struct {
 	MatchSummary string   `json:"match_summary"`
 }
 
-type SearchService struct{ registry *Registry }
+type SearchService struct {
+	registry *Registry
+	semantic SemanticSearcher
+}
 
-func NewSearchService(registry *Registry) *SearchService { return &SearchService{registry: registry} }
+func NewSearchService(registry *Registry) *SearchService {
+	return &SearchService{registry: registry, semantic: registry.semantic}
+}
+func (s *SearchService) SetSemanticSearcher(searcher SemanticSearcher) { s.semantic = searcher }
+
+// SearchableMenus is the realm-scoped registry source used to build indexes.
+// User permissions are intentionally applied later, before every query.
+func (s *SearchService) SearchableMenus(realm auth.Realm) []Menu {
+	visible := s.registry.TreeForUser(realm, func(string) bool { return true })
+	byID := make(map[string]Menu, len(visible))
+	for _, item := range visible {
+		byID[item.ID] = item
+	}
+	out := make([]Menu, 0, len(visible))
+	for _, item := range visible {
+		if isSearchableMenu(item) && hasCompleteParentChain(item, byID) {
+			out = append(out, item)
+		}
+	}
+	return out
+}
 
 func (s *SearchService) Search(opts SearchOptions) ([]SearchResult, error) {
+	results, _, err := s.SearchContext(context.Background(), opts)
+	return results, err
+}
+
+func (s *SearchService) SearchContext(ctx context.Context, opts SearchOptions) ([]SearchResult, SemanticSearchResult, error) {
 	query := normalizeSearchText(opts.Query)
 	if query == "" {
-		return nil, fmt.Errorf("navigation query is required")
+		return nil, SemanticSearchResult{}, fmt.Errorf("navigation query is required")
 	}
 	if len([]rune(opts.Query)) > MaxSearchQueryRunes {
-		return nil, fmt.Errorf("navigation query is too long")
+		return nil, SemanticSearchResult{}, fmt.Errorf("navigation query is too long")
 	}
 	maxLimit := opts.MaxLimit
 	if maxLimit == 0 {
 		maxLimit = MaxSearchLimit
 	}
 	if maxLimit < 1 || maxLimit > MaxSearchLimit {
-		return nil, fmt.Errorf("invalid navigation maximum limit")
+		return nil, SemanticSearchResult{}, fmt.Errorf("invalid navigation maximum limit")
 	}
 	limit := opts.Limit
 	if limit == 0 {
 		limit = maxLimit
 	}
 	if limit < 1 || limit > maxLimit {
-		return nil, fmt.Errorf("navigation limit must be between 1 and %d", maxLimit)
+		return nil, SemanticSearchResult{}, fmt.Errorf("navigation limit must be between 1 and %d", maxLimit)
 	}
 
 	hasPermission := opts.HasPermission
@@ -80,10 +129,12 @@ func (s *SearchService) Search(opts SearchOptions) ([]SearchResult, error) {
 		order  int
 	}
 	matches := make([]scoredResult, 0)
+	searchableByID := make(map[string]Menu)
 	for _, item := range visible {
 		if !isSearchableMenu(item) || !hasCompleteParentChain(item, byID) {
 			continue
 		}
+		searchableByID[item.ID] = item
 		title := localize(opts.Language, item.Title, item.TitleKey)
 		breadcrumb := buildBreadcrumb(item, byID, opts.Language)
 		description, terms := navigationTerms(item.Navigation, opts.Language)
@@ -98,6 +149,38 @@ func (s *SearchService) Search(opts SearchOptions) ([]SearchResult, error) {
 			Path: item.Path, Icon: item.Icon, LocalIcon: item.LocalIcon,
 			MatchType: matchType, MatchSummary: "matched " + matchType,
 		}, score: score, order: item.Order})
+	}
+	semantic := SemanticSearchResult{}
+	if s.semantic != nil && strings.TrimSpace(opts.TenantID) != "" {
+		allowed := make([]string, 0, len(searchableByID))
+		for id := range searchableByID {
+			allowed = append(allowed, id)
+		}
+		sort.Strings(allowed)
+		semantic = s.semantic.SearchNavigation(ctx, SemanticSearchRequest{TenantID: opts.TenantID, Query: opts.Query, Language: opts.Language, AllowedMenuIDs: allowed})
+		existing := map[string]int{}
+		for i := range matches {
+			existing[matches[i].result.MenuID] = i
+		}
+		for rank, candidate := range semantic.Candidates {
+			item, allowed := searchableByID[candidate.MenuID]
+			if !allowed {
+				continue
+			}
+			bonus := 220 - rank*5
+			if bonus < 1 {
+				bonus = 1
+			}
+			if index, ok := existing[item.ID]; ok {
+				matches[index].score += bonus
+				matches[index].result.MatchType = "hybrid"
+				matches[index].result.MatchSummary = "matched hybrid"
+				continue
+			}
+			title := localize(opts.Language, item.Title, item.TitleKey)
+			description, _ := navigationTerms(item.Navigation, opts.Language)
+			matches = append(matches, scoredResult{result: SearchResult{MenuID: item.ID, Title: title, Description: description, Breadcrumb: buildBreadcrumb(item, byID, opts.Language), Path: item.Path, Icon: item.Icon, LocalIcon: item.LocalIcon, MatchType: "semantic", MatchSummary: "matched semantic"}, score: bonus, order: item.Order})
+		}
 	}
 	sort.SliceStable(matches, func(i, j int) bool {
 		if matches[i].score != matches[j].score {
@@ -115,7 +198,7 @@ func (s *SearchService) Search(opts SearchOptions) ([]SearchResult, error) {
 	for i := range matches {
 		results[i] = matches[i].result
 	}
-	return results, nil
+	return results, semantic, nil
 }
 
 func hasCompleteParentChain(item Menu, byID map[string]Menu) bool {
