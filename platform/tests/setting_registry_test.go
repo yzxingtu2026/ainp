@@ -3,6 +3,7 @@ package tests
 import (
 	"testing"
 
+	"github.com/yzxingtu2026/ainp/platform/framework/aimemory"
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/config"
@@ -258,6 +259,18 @@ func TestSettingActionsAndMenuAreRegistered(t *testing.T) {
 		registered, ok := application.Actions.Get(actionID)
 		if !ok || registered.Meta.Access != "authenticated" {
 			t.Fatalf("authenticated profile action not registered: %s", actionID)
+		}
+	}
+	memoryPolicy, ok := application.Settings.GetDefinition(aimemory.SettingKeyPolicyDefaults)
+	if !ok {
+		t.Fatal("memory policy setting definition was not registered")
+	}
+	for _, field := range memoryPolicy.Fields {
+		if field.Key == "enabled" {
+			continue
+		}
+		if field.VisibleWhen == nil || field.VisibleWhen.Field != "enabled" || field.VisibleWhen.Eq != true {
+			t.Fatalf("memory policy field %s must be visible only when enabled", field.Key)
 		}
 	}
 	attachmentDef, ok := application.Settings.GetDefinition(system.SettingKeyAttachmentUploadPolicy)
