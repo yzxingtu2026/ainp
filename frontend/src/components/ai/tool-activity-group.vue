@@ -21,7 +21,26 @@ const navigationOperations = computed(() =>
 const regularOperations = computed(() =>
   props.operations.filter(operation => operation.toolName !== 'builtin__navigation_search')
 );
-const navigationVisible = computed(() => props.active || navigationExpanded.value);
+
+function resultHasNavigationItem(result: unknown) {
+  if (!result || typeof result !== 'object' || Array.isArray(result)) return false;
+  const data = (result as Record<string, unknown>).data;
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return false;
+  const items = (data as Record<string, unknown>).items;
+  return (
+    Array.isArray(items) &&
+    items.some(item => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) return false;
+      const value = item as Record<string, unknown>;
+      return typeof value.menu_id === 'string' && typeof value.path === 'string';
+    })
+  );
+}
+
+const navigationHasResults = computed(() =>
+  navigationOperations.value.some(operation => resultHasNavigationItem(operation.result))
+);
+const navigationVisible = computed(() => props.active || navigationHasResults.value || navigationExpanded.value);
 
 const allSettled = computed(
   () => regularOperations.value.length > 0 && regularOperations.value.every(op => op.hasResult)
@@ -43,7 +62,7 @@ watch(
   <div v-if="operations.length > 0" class="tool-activity">
     <div v-if="navigationOperations.length > 0" class="tool-activity__navigation">
       <button
-        v-if="!active"
+        v-if="!active && !navigationHasResults"
         type="button"
         class="tool-activity__summary"
         @click="navigationExpanded = !navigationExpanded"
@@ -56,7 +75,7 @@ watch(
           :class="{ 'tool-activity__summary-chevron--open': navigationExpanded }"
         />
       </button>
-      <div v-else class="tool-activity__live">
+      <div v-else-if="active" class="tool-activity__live">
         <SvgIcon icon="mdi:map-search-outline" />
         <span>{{ $t('chat.navigationSearching') }}</span>
       </div>
