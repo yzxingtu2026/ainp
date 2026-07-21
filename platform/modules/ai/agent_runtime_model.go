@@ -17,6 +17,10 @@ type AgentRun struct {
 	AuthVersion          uint64          `gorm:"not null" json:"auth_version"`
 	OriginRequestID      string          `gorm:"size:64;not null;default:'';index" json:"request_id,omitempty"`
 	TraceID              string          `gorm:"size:64;not null;default:'';index" json:"trace_id,omitempty"`
+	PageContextJSON      json.RawMessage `gorm:"type:jsonb;not null;default:'{}'" json:"-"`
+	PageContextType      string          `gorm:"size:64;not null;default:'';index" json:"page_context_type,omitempty"`
+	PageContextStatus    string          `gorm:"size:16;not null;default:'none'" json:"page_context_status"`
+	PageContextBytes     int             `gorm:"not null;default:0" json:"page_context_bytes"`
 	ContextSnapshotID    *string         `gorm:"size:64" json:"context_snapshot_id,omitempty"`
 	EvaluatedAtUTC       *time.Time      `json:"evaluated_at_utc,omitempty"`
 	Timezone             string          `gorm:"size:64;not null;default:''" json:"timezone,omitempty"`

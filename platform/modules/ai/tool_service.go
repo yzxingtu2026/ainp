@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"regexp"
 	"slices"
+	"sort"
 	"strings"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
+	"github.com/yzxingtu2026/ainp/platform/framework/pagecontext"
 	"github.com/yzxingtu2026/ainp/platform/framework/setting"
 	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"gorm.io/gorm"
@@ -183,13 +185,71 @@ func (s *ToolService) Search(ctx context.Context, r ToolSearchRequest) (any, err
 		projected = append(projected, definition)
 		visibleIDs[definition.ID] = true
 	}
-	items, err := aitool.Search(ctx, projected, r.Query, r.Capability, r.Source, r.Limit, func(d aitool.Definition) bool { return scopeAllows(scope, d) && toolVisible(ac, d) })
+	requestedLimit := r.Limit
+	if requestedLimit <= 0 {
+		requestedLimit = 5
+	}
+	searchRequest := r
+	if _, ok := pagecontext.FromContext(ctx); ok {
+		searchRequest.Limit = 10
+	}
+	items, err := aitool.Search(ctx, projected, searchRequest.Query, searchRequest.Capability, searchRequest.Source, searchRequest.Limit, func(d aitool.Definition) bool { return scopeAllows(scope, d) && toolVisible(ac, d) })
 	if err != nil {
 		return nil, err
 	}
-	items, degraded, degradeReason := s.mergeHybrid(ctx, ac, scope, r, items)
+	items, degraded, degradeReason := s.mergeHybrid(ctx, ac, scope, searchRequest, items)
 	items = slices.DeleteFunc(items, func(item aitool.Candidate) bool { return !visibleIDs[item.ID] })
+	items = s.boostPageContextCandidates(ctx, items)
+	if len(items) > requestedLimit {
+		items = items[:requestedLimit]
+	}
 	return ToolSearchResponse{ScopeID: scope.ID, Items: items, Degraded: degraded, DegradeReason: degradeReason}, nil
+}
+
+func (s *ToolService) boostPageContextCandidates(ctx context.Context, items []aitool.Candidate) []aitool.Candidate {
+	snapshot, ok := pagecontext.FromContext(ctx)
+	if !ok || len(items) == 0 {
+		return items
+	}
+	capabilities := make(map[string]bool, len(snapshot.ToolHints.Capabilities))
+	tags := make(map[string]bool, len(snapshot.ToolHints.Tags))
+	for _, value := range snapshot.ToolHints.Capabilities {
+		capabilities[value] = true
+	}
+	for _, value := range snapshot.ToolHints.Tags {
+		tags[value] = true
+	}
+	for i := range items {
+		definition, exists := s.registry.Get(items[i].ID)
+		if !exists {
+			continue
+		}
+		if capabilities[definition.Capability] {
+			items[i].Score += 0.25
+		}
+		for _, tag := range definition.Tags {
+			if tags[strings.ToLower(tag)] || tags[tag] {
+				items[i].Score += 0.1
+				break
+			}
+		}
+		text := strings.ToLower(strings.Join(append([]string{definition.Name, definition.DescriptionForLLM}, definition.Tags...), " "))
+		for _, query := range snapshot.ToolHints.Queries {
+			for _, term := range aitool.LexicalTerms(query) {
+				if strings.Contains(text, term) {
+					items[i].Score += 0.02
+					break
+				}
+			}
+		}
+	}
+	sort.SliceStable(items, func(i, j int) bool {
+		if items[i].Score == items[j].Score {
+			return items[i].ID < items[j].ID
+		}
+		return items[i].Score > items[j].Score
+	})
+	return items
 }
 func (s *ToolService) Load(ctx context.Context, r ToolLoadRequest) (any, error) {
 	if err := s.registry.Refresh(ctx); err != nil {

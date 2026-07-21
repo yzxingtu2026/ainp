@@ -7,6 +7,7 @@ import { ACTIVATION_STATUS } from '@/constants/codeset';
 import { SYSTEM_ACTIONS } from '@/constants/system';
 import { $t } from '@/locales';
 import { formatDateTime } from '@/utils/datetime';
+import { usePageContextProvider } from '@/composables/page-context';
 import {
   createUser,
   fetchRoleList,
@@ -46,6 +47,24 @@ const form = reactive({
 });
 const rolesForm = reactive({ role_ids: [] as string[] });
 const passwordForm = reactive({ password: '', confirm_password: '' });
+
+usePageContextProvider(() => {
+  const editorMode = editorVisible.value ? (editing.value ? 'edit' : 'create') : null;
+  const selected = editorMode === 'edit' ? editing.value : null;
+  return {
+    schema_version: '1.0',
+    page_type: 'system.users',
+    route_name: 'system_users',
+    mode: editorMode || 'list',
+    resource_refs: selected
+      ? [{ resource_type: 'system.user', resource_id: selected.id, revision: selected.updated_at }]
+      : undefined,
+    ui_state:
+      editorMode === null
+        ? { keyword: query.keyword || '', status: query.status || '', role_id: query.role_id || '' }
+        : undefined
+  };
+});
 
 const statusOptions = computed(() => [
   { label: $t('page.user.enabled'), value: ACTIVATION_STATUS.enabled },

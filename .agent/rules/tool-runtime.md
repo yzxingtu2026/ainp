@@ -3,6 +3,7 @@
 - 完整 ToolRegistry 只在服务端；模型固定工具为 `tool.search`、`tool.load`，核心工具仅在运行时资源条件满足时动态投影；禁止全量 Schema 或常驻 `tool.execute`。
 - 模型调用通过 `enable_tools/tool_scope_id` 投影已加载真实 Schema，禁止客户端直接提交 `tools` 绕过 Registry。
 - `tool.search` 的 source/capability 仅接受稳定代码精确过滤；Schema 必须声明 source 枚举与语义，Service 在 API/Agent Runtime 所有入口自行校验，非法过滤禁止静默空结果。
+- Page Context hints 只能在 Registry/Scope/permission/realm/enabled 过滤后排序可见候选，禁止扩大 allowed scope、自动 load Schema 或绕过 Handle/确认/执行重鉴权。
 - Tool ID 必须 namespaced；Provider/Executor 统一注册，未知来源、重复、非法 Schema 与缺失风险元数据 fail-closed。
 - Tool Definition 分离稳定 `Name`/`DescriptionForLLM` 与插件自带 `TitleForHuman`/`DescriptionForHuman`；管理界面只展示 Human 契约，插件无需注册平台 i18n key，Human 文案不得进入 Schema Hash/Handle/Embedding 文档。
 - Definition 必须显式声明 `binding_mode` 与 `loading_mode`；绑定组必须原子处理。Runtime 只投影 Contract 必选与用户可选有效绑定，禁止全局默认注入 Meta/Slot。

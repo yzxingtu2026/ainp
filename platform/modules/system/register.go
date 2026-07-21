@@ -73,6 +73,12 @@ func Register(a *app.App) error {
 	if err := registerUserActions(a, userSvc); err != nil {
 		return err
 	}
+	if a.PageContexts == nil {
+		return fmt.Errorf("page context registry is required")
+	}
+	if err := a.PageContexts.Register(PageTypeSystemUsers, userPageContextResolver{db: a.DB}); err != nil {
+		return err
+	}
 	if err := registerRuntimePreferencesSetting(a); err != nil {
 		return err
 	}

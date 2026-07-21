@@ -169,6 +169,22 @@ declare namespace Api.AI {
     max_duration_seconds: number;
     max_tokens: number;
   }
+  interface PageContextResourceRef {
+    resource_type: string;
+    resource_id: string;
+    revision?: string;
+  }
+  interface PageContextEnvelope {
+    schema_version: '1.0';
+    page_type: string;
+    route_name: string;
+    mode: 'list' | 'detail' | 'create' | 'edit';
+    resource_refs?: PageContextResourceRef[];
+    ui_state?: Record<string, string | number | boolean | null | Array<string | number | boolean | null>>;
+    title?: string;
+    summary?: string;
+    tool_hints?: { capabilities?: string[]; tags?: string[]; queries?: string[] };
+  }
   interface AgentRun {
     id: string;
     user_id: string;
@@ -191,6 +207,9 @@ declare namespace Api.AI {
     updated_at: string;
     started_at?: string;
     finished_at?: string;
+    page_context_type?: string;
+    page_context_status: 'none' | 'resolved';
+    page_context_bytes: number;
   }
   interface AgentStep {
     id: string;

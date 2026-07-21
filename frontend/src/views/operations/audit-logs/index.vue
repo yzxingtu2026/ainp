@@ -19,6 +19,7 @@ import {
 import { $t } from '@/locales';
 import { fetchAuditLogDetail, fetchAuditLogList } from '@/service/api';
 import { formatDateTime } from '@/utils/datetime';
+import { usePageContextProvider } from '@/composables/page-context';
 
 defineOptions({ name: 'OperationsAuditLogs' });
 const loading = ref(false);
@@ -39,6 +40,26 @@ const query = reactive({
   request_id: '',
   client: ''
 });
+usePageContextProvider(() => ({
+  schema_version: '1.0',
+  page_type: 'operations.audit-logs',
+  route_name: 'operations_audit-logs',
+  mode: drawer.value && detail.value ? 'detail' : 'list',
+  resource_refs:
+    drawer.value && detail.value
+      ? [{ resource_type: 'operations.audit-log', resource_id: detail.value.id, revision: detail.value.occurred_at }]
+      : undefined,
+  ui_state:
+    drawer.value && detail.value
+      ? undefined
+      : {
+          actor_type: query.actor_type,
+          action_id: query.action_id,
+          result: query.result,
+          resource_type: query.resource_type,
+          client: query.client
+        }
+}));
 const actor = (row: Api.Operations.AuditLog) => {
   const identity = [row.actor_type, row.user_id].filter(Boolean).join(': ');
   return row.actor_name ? `${row.actor_name} (${identity})` : identity || '-';

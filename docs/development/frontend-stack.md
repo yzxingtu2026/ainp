@@ -37,6 +37,8 @@ Soybean Admin（壳）
 
 分页表格统一使用 `hooks/common/table.ts`：API 请求为 `page/page_size`，响应为 `items/total/page/page_size`；筛选提交、重置或页大小变化回到第一页。类型化筛选定义只描述控件和序列化，不包含 SQL 字段、操作符或授权逻辑。
 
+业务页面通过 `src/composables/page-context.ts` 的 `usePageContextProvider()` 注册当前页面的受限语义；全局 AI 发送时只调用 `capturePageContext()` 获取一次快照。禁止全局组件读取 DOM/组件实例或按路由字符串维护业务分支，禁止 Provider 上传未提交表单、密码、Token 或隐藏状态。Provider 必须正确处理 mounted/activated/deactivated/unmount 生命周期。完整协议见 `page-context.md`。
+
 开始前端任务前确认：
 
 - [ ] 未引入其他后台脚手架作为主壳

@@ -577,6 +577,12 @@
       "source": ".agent/rules/runtime-context.md",
       "qoder": {"path": ".qoder/rules/runtime-context.md", "frontmatter": {"trigger": "always_on"}},
       "cursor": {"path": ".cursor/rules/runtime-context.mdc", "frontmatter": {"description": "服务端可信身份、Run 时间快照、Prompt 临时注入与消费边界", "alwaysApply": true}}
+    },
+    {
+      "id": "page-context",
+      "source": ".agent/rules/page-context.md",
+      "qoder": {"path": ".qoder/rules/page-context.md", "frontmatter": {"trigger": "always_on"}},
+      "cursor": {"path": ".cursor/rules/page-context.mdc", "frontmatter": {"description": "页面 Provider、服务端 Resolver、Run 不可变快照与工具推荐不扩权", "alwaysApply": true}}
     }
   ]
 }

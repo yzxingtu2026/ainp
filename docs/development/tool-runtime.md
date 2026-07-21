@@ -32,6 +32,8 @@ Reconcile 按 Tool ID 比较完整安全定义：新增和变更写入 Catalog�
 
 模型侧 `tool.search` 的 `source` / `capability` 是可选的稳定代码精确过滤器，不是自然语言检索词；不确定时必须省略并只填写 `query`。Meta Tool Schema 必须暴露 source 枚举和字段说明，`ToolService.Search` 必须在所有入口自行校验，非法过滤不得静默返回空结果。
 
+Page Context 的 server-owned tool hints 只能在 Registry 投影、ToolScope、当前用户 permission/realm/enabled 过滤完成后提高可见候选排序。Hints 不得并入 allowed sources/capabilities/tools，不得自动 load Schema 或绕过 Handle、确认与 execute 重鉴权。详见 `page-context.md`。
+
 中文降级会为安全发现文本生成有上限的 Unicode 双字词，避免仅依赖 PostgreSQL `simple` 分词。exact/名称命中始终优先；词法/FTS 与 provenance 匹配的 vector 候选使用确定性 RRF 融合，最后再应用权限、Scope 和动态投影。Embedding 设置、调用或索引不可用时响应标记 degraded，但 exact + lexical/FTS 仍返回结果。
 
 ToolScope 的授权由两类白名单组成：精确 `allowed_tools` 用于 meta、RuntimeSlot、合法显式 Binding 和已知特殊工具；`allowed_sources + allowed_capabilities` 用于渐进发现。非 Action 工具满足精确 Tool 白名单，或同时满足来源与能力白名单时才进入 Scope；Action 禁止通过精确 Binding 授权，只能命中 Contract 的来源与能力白名单。来源/能力授权只允许 search/load，未 load 的 Action Schema 不得进入模型初始工具列表。

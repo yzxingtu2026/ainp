@@ -43,6 +43,7 @@ func LoadPrompts() error {
 		"ai/memory-consolidation",
 		"ai/context-compaction",
 		"ai/trusted-runtime-context",
+		"ai/page-context",
 		"ai/untrusted-user-memory",
 		"agent/system-operations",
 	} {
