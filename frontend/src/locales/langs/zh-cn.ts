@@ -630,7 +630,21 @@ const local: App.I18n.Schema = {
       required: '必填',
       reset: '重置为默认',
       resetConfirm: '确认删除租户覆盖并恢复代码默认值？',
-      resetSuccess: '已重置为默认值'
+      resetSuccess: '已重置为默认值',
+      navigationIndex: {
+        title: '导航索引',
+        summary: '共 {total}，就绪 {ready}，处理中 {pending}，失败 {failed}',
+        rebuild: '立即重建',
+        rebuildQueued: '导航索引重建已触发',
+        states: {
+          disabled: '未启用',
+          not_indexed: '未建立',
+          pending: '处理中',
+          ready: '已就绪',
+          failed: '失败',
+          degraded: '部分可用'
+        }
+      }
     },
     attachment: {
       demoTitle: '附件组件联调',

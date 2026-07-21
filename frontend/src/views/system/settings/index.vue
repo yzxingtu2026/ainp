@@ -1,11 +1,17 @@
 <script setup lang="tsx">
-import { computed, h, onMounted, reactive, ref, watch } from 'vue';
+import { computed, h, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import type { FormInst, FormRules, MenuOption } from 'naive-ui';
 import { $t } from '@/locales';
 import { SYSTEM_ACTIONS } from '@/constants/system';
 import SvgIcon from '@/components/custom/svg-icon.vue';
 import RemoteSelect from '@/components/common/remote-select.vue';
-import { fetchSettingList, resetSetting, updateSetting } from '@/service/api';
+import {
+  fetchNavigationIndexStatus,
+  fetchSettingList,
+  rebuildNavigationIndex,
+  resetSetting,
+  updateSetting
+} from '@/service/api';
 import { useAuthStore } from '@/store/modules/auth';
 
 defineOptions({ name: 'SystemSettings' });
@@ -20,6 +26,58 @@ const formRef = ref<FormInst | null>(null);
 const formModel = reactive<Record<string, unknown>>({});
 const baseline = ref<Record<string, unknown>>({});
 const current = ref<Api.Setting.Definition | null>(null);
+const navigationIndexStatus = ref<Api.Setting.NavigationIndexStatus | null>(null);
+const indexStatusLoading = ref(false);
+const rebuildingIndex = ref(false);
+let indexPollTimer: ReturnType<typeof setTimeout> | undefined;
+let indexRequestSequence = 0;
+
+const isNavigationSearchSetting = computed(() => current.value?.key === 'ai.navigation_search');
+const navigationStateType = computed(() => {
+  const state = navigationIndexStatus.value?.state;
+  if (state === 'ready') return 'success';
+  if (state === 'failed') return 'error';
+  if (state === 'pending' || state === 'degraded') return 'warning';
+  return 'default';
+});
+
+function clearIndexPoll() {
+  if (indexPollTimer) clearTimeout(indexPollTimer);
+  indexPollTimer = undefined;
+}
+
+async function loadNavigationIndexStatus(scheduleNext = true) {
+  clearIndexPoll();
+  if (!isNavigationSearchSetting.value) {
+    navigationIndexStatus.value = null;
+    return;
+  }
+  const sequence = ++indexRequestSequence;
+  indexStatusLoading.value = true;
+  try {
+    const { data, error } = await fetchNavigationIndexStatus();
+    if (sequence !== indexRequestSequence || error || !data) return;
+    navigationIndexStatus.value = data;
+    if (scheduleNext && data.state === 'pending') indexPollTimer = setTimeout(loadNavigationIndexStatus, 2000);
+  } finally {
+    if (sequence === indexRequestSequence) indexStatusLoading.value = false;
+  }
+}
+
+async function handleRebuildNavigationIndex() {
+  if (!can(SYSTEM_ACTIONS.settingUpdate)) return;
+  rebuildingIndex.value = true;
+  try {
+    const { data, error } = await rebuildNavigationIndex();
+    if (!error && data) {
+      navigationIndexStatus.value = data;
+      window.$message?.success($t('page.setting.navigationIndex.rebuildQueued'));
+      loadNavigationIndexStatus();
+    }
+  } finally {
+    rebuildingIndex.value = false;
+  }
+}
 
 function can(permission: string) {
   return authStore.userInfo.buttons.includes(permission) || authStore.userInfo.buttons.includes('*');
@@ -42,9 +100,7 @@ const isDirty = computed(() => {
 
 const showActions = computed(
   () =>
-    isDirty.value &&
-    Boolean(current.value) &&
-    (can(SYSTEM_ACTIONS.settingUpdate) || can(SYSTEM_ACTIONS.settingReset))
+    isDirty.value && Boolean(current.value) && (can(SYSTEM_ACTIONS.settingUpdate) || can(SYSTEM_ACTIONS.settingReset))
 );
 
 const formRules = computed<FormRules>(() => {
@@ -178,6 +234,11 @@ watch(activeDefinitionKey, key => {
   applyDefinition(definition);
 });
 
+watch(
+  () => current.value?.key,
+  () => loadNavigationIndexStatus()
+);
+
 async function handleSave() {
   if (!current.value || !can(SYSTEM_ACTIONS.settingUpdate)) return;
   await formRef.value?.validate();
@@ -218,6 +279,7 @@ function selectOptions(field: Api.Setting.Field) {
 }
 
 onMounted(loadSettings);
+onBeforeUnmount(clearIndexPoll);
 </script>
 
 <template>
@@ -245,7 +307,9 @@ onMounted(loadSettings);
         <div class="min-w-0 flex-1">
           <NSpace v-if="activeCategory" class="mb-12px" vertical :size="8">
             <div class="text-16px font-600">{{ activeCategory.title }}</div>
-            <div v-if="activeCategory.description" class="text-13px text-gray-500">{{ activeCategory.description }}</div>
+            <div v-if="activeCategory.description" class="text-13px text-gray-500">
+              {{ activeCategory.description }}
+            </div>
             <NTabs
               v-if="activeCategory.definitions.length > 1"
               type="line"
@@ -259,6 +323,27 @@ onMounted(loadSettings);
           </NSpace>
 
           <template v-if="current">
+            <NAlert v-if="isNavigationSearchSetting" class="mb-16px" :show-icon="false">
+              <div class="flex flex-wrap items-center justify-between gap-12px">
+                <div class="flex flex-wrap items-center gap-8px">
+                  <span class="font-500">{{ $t('page.setting.navigationIndex.title') }}</span>
+                  <NTag :type="navigationStateType" size="small">
+                    {{ $t(`page.setting.navigationIndex.states.${navigationIndexStatus?.state || 'not_indexed'}`) }}
+                  </NTag>
+                  <span v-if="navigationIndexStatus" class="text-12px text-gray-500">
+                    {{ $t('page.setting.navigationIndex.summary', navigationIndexStatus) }}
+                  </span>
+                </div>
+                <NButton
+                  size="small"
+                  :loading="rebuildingIndex || indexStatusLoading"
+                  :disabled="!can(SYSTEM_ACTIONS.settingUpdate) || isDirty"
+                  @click="handleRebuildNavigationIndex"
+                >
+                  {{ $t('page.setting.navigationIndex.rebuild') }}
+                </NButton>
+              </div>
+            </NAlert>
             <NForm ref="formRef" :model="formModel" :rules="formRules" label-placement="left" label-width="140">
               <NFormItem
                 v-for="field in current.fields.filter(item => isFieldVisible(item.key))"

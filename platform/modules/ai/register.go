@@ -17,9 +17,11 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/capability"
+	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 	"github.com/yzxingtu2026/ainp/platform/framework/menu"
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
 	"github.com/yzxingtu2026/ainp/platform/framework/prompt"
+	"github.com/yzxingtu2026/ainp/platform/framework/setting"
 	aitools "github.com/yzxingtu2026/ainp/platform/modules/ai/tools"
 	knowledgetool "github.com/yzxingtu2026/ainp/platform/modules/ai/tools/knowledge"
 	memorytool "github.com/yzxingtu2026/ainp/platform/modules/ai/tools/memory"
@@ -53,6 +55,8 @@ const (
 	ActionToolConfirmationApprove      = "ai.tool_confirmation_approve"
 	ActionToolConfirmationReject       = "ai.tool_confirmation_reject"
 	ActionToolCatalogRebuild           = "ai.tool_catalog_rebuild"
+	ActionNavigationIndexStatus        = "ai.navigation_index_status"
+	ActionNavigationIndexRebuild       = "ai.navigation_index_rebuild"
 	ActionAgentList                    = "ai.agent_list"
 	ActionAgentGet                     = "ai.agent_get"
 	ActionAgentCreate                  = "ai.agent_create"
@@ -237,6 +241,11 @@ func Register(a *app.App) error {
 		_ = navigationSearch.IndexPending(auth.WithContext(ctx, &auth.Context{Authenticated: true, TenantID: tenantID, UserID: actorID, Realm: auth.RealmTenant, Client: "navigation-reconciler"}), tenantID)
 		return nil
 	}
+	if err := a.SettingChanges.Register(menu.SettingKeySemanticSearch, func(ctx context.Context, change setting.Change) error {
+		return a.NavigationInitializer(ctx, change.TenantID, change.UserID)
+	}); err != nil {
+		return err
+	}
 	a.AgentTenantInitializer = func(ctx context.Context, db *gorm.DB, tenantID, userID string) error {
 		if err := agents.ReconcileBuiltinForTenant(ctx, db, tenantID, userID); err != nil {
 			return err
@@ -264,6 +273,28 @@ func Register(a *app.App) error {
 		{ActionToolConfirmationApprove, "/api/v1/ai/tool-confirmations/approve", "批准本次工具执行", "ai.tool_runtime", "工具运行时", action.JSON(tools.Approve)},
 		{ActionToolConfirmationReject, "/api/v1/ai/tool-confirmations/reject", "拒绝本次工具执行", "ai.tool_runtime", "工具运行时", action.JSON(tools.Reject)},
 		{ActionToolCatalogRebuild, "/api/v1/ai/tools/catalog/rebuild", "重建工具目录", "ai.tool_runtime", "工具运行时", action.JSON(func(ctx context.Context, _ struct{}) (any, error) { return tools.ReconcileCatalog(ctx, true) })},
+		{ActionNavigationIndexStatus, "/api/v1/ai/navigation/index/status", "导航索引状态", "ai.navigation", "功能导航", action.JSON(func(ctx context.Context, _ struct{}) (any, error) {
+			ac := auth.MustFromContext(ctx)
+			if !ac.HasPermission(system.ActionSettingList) {
+				return nil, errs.NewKey(errs.CodeForbidden, "common.forbidden", "forbidden")
+			}
+			return navigationSearch.IndexStatus(ctx, ac.TenantID)
+		})},
+		{ActionNavigationIndexRebuild, "/api/v1/ai/navigation/index/rebuild", "重建导航索引", "ai.navigation", "功能导航", action.JSON(func(ctx context.Context, _ struct{}) (any, error) {
+			ac := auth.MustFromContext(ctx)
+			if !ac.HasPermission(system.ActionSettingUpdate) {
+				return nil, errs.NewKey(errs.CodeForbidden, "common.forbidden", "forbidden")
+			}
+			if err := navigationSearch.ReconcileForTenant(ctx, ac.TenantID, true); err != nil {
+				return nil, err
+			}
+			if a.Outbox != nil && !a.Outbox.Enabled {
+				if err := navigationSearch.IndexPending(ctx, ac.TenantID); err != nil {
+					return nil, err
+				}
+			}
+			return navigationSearch.IndexStatus(ctx, ac.TenantID)
+		})},
 		{ActionAgentList, "/api/v1/ai/agents/list", "智能体列表", "ai.agent_management", "智能体", action.JSON(agents.List)},
 		{ActionAgentGet, "/api/v1/ai/agents/get", "智能体详情", "ai.agent_management", "智能体", action.JSON(agents.Get)},
 		{ActionAgentCreate, "/api/v1/ai/agents/create", "创建智能体", "ai.agent_management", "智能体", action.JSON(agents.Create)},
@@ -305,7 +336,7 @@ func Register(a *app.App) error {
 	}
 	for _, d := range defs {
 		access := action.AccessMode("")
-		if strings.HasPrefix(d.id, "ai.tool_") {
+		if strings.HasPrefix(d.id, "ai.tool_") || strings.HasPrefix(d.id, "ai.navigation_index_") {
 			access = action.AccessAuthenticated
 		}
 		if strings.HasPrefix(d.id, "ai.agent_slot_preference_") || d.id == ActionConversationCreateForSlot {

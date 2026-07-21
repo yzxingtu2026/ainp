@@ -42,6 +42,8 @@ Navigation Catalog 是从 Menu Registry 实时派生的授权搜索视图。Menu
 
 索引与查询分别使用 `navigation_index`、`navigation_query` purpose，并记录 Alias、Deployment、维度、预处理、Schema Version、Catalog Revision 与内容哈希。内容或 provenance 变化会令文档重新进入 pending，并在同一事务追加 `ai.navigation_document.changed.v1` Outbox 事件，再由 `ai.navigation.embed` Job 幂等构建向量；下线文档标记 stale。Embedding 未配置、调用失败、维度或 provenance 不匹配、向量表不可用时，搜索必须保留词法结果并返回稳定降级原因。
 
+`ai.navigation_search` 保存或重置后通过 `setting.ChangeRegistry` 立即执行当前租户 reconcile，不依赖后端重启。设置页调用受现有设置权限保护的状态与重建入口，展示 disabled/not_indexed/pending/ready/failed/degraded；pending 状态短轮询，手动重建强制提升 Catalog Revision 并重新进入同一 Outbox/Job 链路。
+
 向量 SQL 必须先接收当前 AuthContext 经 Menu Registry 计算出的允许 `menu_id` 集合，并在同一查询中限制候选；禁止全局向量召回后再过滤。向量结果只提供候选分数，最终 DTO 和 path 仍由 `menu.SearchService` 生成。
 
 ## Page Help 规范

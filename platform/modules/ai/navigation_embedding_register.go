@@ -16,7 +16,9 @@ import (
 const NavigationEmbeddingJobType = "ai.navigation.embed"
 
 type navigationEmbeddingJobPayload struct {
-	TenantID string `json:"tenant_id"`
+	DocumentID      string `json:"document_id"`
+	CatalogRevision uint64 `json:"catalog_revision"`
+	ModelAlias      string `json:"model_alias"`
 }
 
 func RegisterNavigationEmbedding(a *app.App, navigation *NavigationSearchService) error {
@@ -29,12 +31,16 @@ func RegisterNavigationEmbedding(a *app.App, navigation *NavigationSearchService
 			return job.Permanent(errors.New("trusted JobRun unavailable"))
 		}
 		var payload navigationEmbeddingJobPayload
-		if json.Unmarshal(run.PayloadJSON, &payload) != nil || payload.TenantID == "" || payload.TenantID != run.TenantID {
+		if json.Unmarshal(run.PayloadJSON, &payload) != nil || payload.DocumentID == "" || payload.CatalogRevision == 0 || payload.ModelAlias == "" {
 			return job.Permanent(errors.New("trusted JobRun payload invalid"))
 		}
 		ctx = auth.WithContext(ctx, &auth.Context{Authenticated: true, TenantID: run.TenantID, UserID: run.CreatedBy, Realm: auth.RealmTenant, RequestID: run.CorrelationID, Client: "job"})
 		_ = reporter.Progress(ctx, 10, "navigation.embedding")
-		if err = navigation.IndexPending(ctx, run.TenantID); err != nil {
+		if err = navigation.IndexDocument(ctx, payload.DocumentID, payload.CatalogRevision, payload.ModelAlias); err != nil {
+			if errors.Is(err, ErrNavigationEmbeddingSuperseded) {
+				_ = reporter.Progress(ctx, 100, "navigation.superseded")
+				return nil
+			}
 			return job.Retryable(errors.New("navigation embedding failed"))
 		}
 		_ = reporter.Progress(ctx, 100, "navigation.ready")
@@ -48,10 +54,21 @@ func RegisterNavigationEmbedding(a *app.App, navigation *NavigationSearchService
 			return errors.New("navigation document event payload invalid")
 		}
 		ctx = auth.WithContext(ctx, &auth.Context{Authenticated: true, TenantID: env.TenantID, UserID: env.ActorID, Realm: auth.RealmTenant, RequestID: env.CorrelationID, Client: "outbox"})
-		if !a.Jobs.Enabled {
-			return navigation.IndexPending(ctx, env.TenantID)
+		alias, err := navigation.embeddingAlias(ctx, env.TenantID)
+		if err != nil {
+			return err
 		}
-		_, err := a.Jobs.Enqueuer.Enqueue(ctx, job.EnqueueInput{Type: NavigationEmbeddingJobType, IdempotencyKey: "navigation:" + changed.DocumentID + ":" + fmt.Sprint(changed.CatalogRevision), CausationID: env.ID, Payload: navigationEmbeddingJobPayload{TenantID: env.TenantID}})
+		if alias == "" {
+			return nil
+		}
+		if !a.Jobs.Enabled {
+			err := navigation.IndexDocument(ctx, changed.DocumentID, changed.CatalogRevision, alias)
+			if errors.Is(err, ErrNavigationEmbeddingSuperseded) {
+				return nil
+			}
+			return err
+		}
+		_, err = a.Jobs.Enqueuer.Enqueue(ctx, job.EnqueueInput{Type: NavigationEmbeddingJobType, IdempotencyKey: "navigation:" + changed.DocumentID + ":" + fmt.Sprint(changed.CatalogRevision), CausationID: env.ID, Payload: navigationEmbeddingJobPayload{DocumentID: changed.DocumentID, CatalogRevision: changed.CatalogRevision, ModelAlias: alias}})
 		return err
 	}})
 }

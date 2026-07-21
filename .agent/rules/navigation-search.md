@@ -11,5 +11,6 @@
 - 点击搜索结果或历史卡片前必须用当前动态路由复核 `menu_id + path`，只允许 Vue Router 内部跳转；撤权、路由卸载或结果过期时禁用。
 - 语义检索必须使用独立 `navigation_search_documents` 与 `navigation_index/navigation_query` purpose；先由 Registry 计算授权 menu_id 集合，再在向量 SQL 内限制候选，异常时无损降级到词法检索。
 - Page Help 必须是模块内版本化 Markdown，经 `embed.FS` 打包和注册期校验；frontmatter 禁止 path，内容禁止 DOM/运行时抓取。`navigation.help` 只接受可信 menu_id/use case，读取时重新鉴权且永不执行页面动作。
+- `ai.navigation_search` 保存/重置必须通过 Setting Change Hook 立即 reconcile；状态与手动重建复用设置权限，前端明确展示 disabled/not_indexed/pending/ready/failed/degraded。
 
 详规：`docs/development/navigation-search.md`

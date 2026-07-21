@@ -4,11 +4,29 @@ const SETTING_API = {
   list: '/api/v1/system/settings/list',
   get: '/api/v1/system/settings/get',
   update: '/api/v1/system/settings/update',
-  reset: '/api/v1/system/settings/reset'
+  reset: '/api/v1/system/settings/reset',
+  navigationIndexStatus: '/api/v1/ai/navigation/index/status',
+  navigationIndexRebuild: '/api/v1/ai/navigation/index/rebuild'
 } as const;
 
 export function fetchSettingList() {
   return request<Api.Setting.ListResult>({ url: SETTING_API.list, method: 'post', data: {} });
+}
+
+export function fetchNavigationIndexStatus() {
+  return request<Api.Setting.NavigationIndexStatus>({
+    url: SETTING_API.navigationIndexStatus,
+    method: 'post',
+    data: {}
+  });
+}
+
+export function rebuildNavigationIndex() {
+  return request<Api.Setting.NavigationIndexStatus>({
+    url: SETTING_API.navigationIndexRebuild,
+    method: 'post',
+    data: {}
+  });
 }
 
 export function fetchSetting(key: string) {

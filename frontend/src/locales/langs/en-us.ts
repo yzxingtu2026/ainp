@@ -636,7 +636,21 @@ const local: App.I18n.Schema = {
       required: 'Required',
       reset: 'Reset to defaults',
       resetConfirm: 'Delete tenant overrides and restore code defaults?',
-      resetSuccess: 'Settings reset to defaults'
+      resetSuccess: 'Settings reset to defaults',
+      navigationIndex: {
+        title: 'Navigation index',
+        summary: '{total} total, {ready} ready, {pending} pending, {failed} failed',
+        rebuild: 'Rebuild now',
+        rebuildQueued: 'Navigation index rebuild triggered',
+        states: {
+          disabled: 'Disabled',
+          not_indexed: 'Not indexed',
+          pending: 'Pending',
+          ready: 'Ready',
+          failed: 'Failed',
+          degraded: 'Partially available'
+        }
+      }
     },
     attachment: {
       demoTitle: 'Attachment Components',

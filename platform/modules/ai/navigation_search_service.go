@@ -23,6 +23,8 @@ import (
 const navigationEmbeddingSchemaVersion = 1
 const navigationDocumentChangedEvent = "ai.navigation_document.changed.v1"
 
+var ErrNavigationEmbeddingSuperseded = errors.New("navigation embedding request is superseded")
+
 type NavigationDocumentChangedPayload struct {
 	DocumentID      string `json:"document_id"`
 	CatalogRevision uint64 `json:"catalog_revision"`
@@ -61,7 +63,7 @@ func navigationDocumentHash(parts ...string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func (s *NavigationSearchService) ReconcileForTenant(ctx context.Context, tenantID string) error {
+func (s *NavigationSearchService) ReconcileForTenant(ctx context.Context, tenantID string, force ...bool) error {
 	if strings.TrimSpace(tenantID) == "" {
 		return errors.New("tenant id is required")
 	}
@@ -71,6 +73,7 @@ func (s *NavigationSearchService) ReconcileForTenant(ctx context.Context, tenant
 		return err
 	}
 	desired := make([]NavigationSearchDocument, 0)
+	forceRebuild := len(force) > 0 && force[0]
 	for _, item := range menu.NewSearchService(s.menus).SearchableMenus(auth.RealmTenant) {
 		description := ""
 		terms := []string{}
@@ -106,7 +109,8 @@ func (s *NavigationSearchService) ReconcileForTenant(ctx context.Context, tenant
 				row.CreatedAt = current.CreatedAt
 				row.CatalogRevision = current.CatalogRevision
 				provenanceReady := alias != "" && current.EmbeddingAlias == alias && current.EmbeddingDeploymentID != "" && current.EmbeddingDimensions > 0 && current.EmbeddingSchemaVersion == navigationEmbeddingSchemaVersion && current.EmbeddingPreprocessing == aimodelruntime.EmbeddingPreprocessingVersionCosine && current.EmbeddingVector != nil
-				if current.ContentHash == row.ContentHash && (alias == "" || provenanceReady) {
+				lexicalReady := alias == "" && current.EmbeddingAlias == "" && current.EmbeddingVector == nil && current.IndexStatus == "ready"
+				if !forceRebuild && current.ContentHash == row.ContentHash && (lexicalReady || provenanceReady) {
 					continue
 				}
 				row.CatalogRevision++
@@ -134,6 +138,62 @@ func (s *NavigationSearchService) ReconcileForTenant(ctx context.Context, tenant
 	})
 }
 
+type NavigationIndexStatus struct {
+	State         string     `json:"state"`
+	ModelAlias    string     `json:"model_alias,omitempty"`
+	Total         int        `json:"total"`
+	Pending       int        `json:"pending"`
+	Ready         int        `json:"ready"`
+	Failed        int        `json:"failed"`
+	Stale         int        `json:"stale"`
+	LastUpdatedAt *time.Time `json:"last_updated_at,omitempty"`
+}
+
+func (s *NavigationSearchService) IndexStatus(ctx context.Context, tenantID string) (NavigationIndexStatus, error) {
+	status := NavigationIndexStatus{}
+	alias, err := s.embeddingAlias(ctx, tenantID)
+	if err != nil {
+		return status, err
+	}
+	status.ModelAlias = alias
+	var documents []NavigationSearchDocument
+	if err = s.db.WithContext(ctx).Order("updated_at DESC").Find(&documents).Error; err != nil {
+		return status, err
+	}
+	status.Total = len(documents)
+	for i, document := range documents {
+		if i == 0 {
+			updated := document.UpdatedAt
+			status.LastUpdatedAt = &updated
+		}
+		switch document.IndexStatus {
+		case "pending":
+			status.Pending++
+		case "ready":
+			status.Ready++
+		case "failed":
+			status.Failed++
+		case "stale":
+			status.Stale++
+		}
+	}
+	switch {
+	case alias == "":
+		status.State = "disabled"
+	case status.Total == 0:
+		status.State = "not_indexed"
+	case status.Pending > 0:
+		status.State = "pending"
+	case status.Failed > 0 && status.Ready == 0:
+		status.State = "failed"
+	case status.Failed > 0 || status.Stale > 0:
+		status.State = "degraded"
+	default:
+		status.State = "ready"
+	}
+	return status, nil
+}
+
 func navigationDocumentKey(row NavigationSearchDocument) string {
 	return strings.Join([]string{row.MenuID, row.DocumentKind, row.Locale, row.UseCase}, "\x00")
 }
@@ -148,20 +208,44 @@ func (s *NavigationSearchService) IndexPending(ctx context.Context, tenantID str
 		return err
 	}
 	for _, document := range documents {
-		response, embedErr := s.embeddings.Embed(ctx, aimodelruntime.EmbeddingRequest{ModelAlias: alias, Inputs: []aimodelruntime.EmbeddingItem{{ID: document.ID, Text: document.Content}}, Purpose: aimodelruntime.EmbeddingPurposeNavigationIndex, Preprocessing: aimodelruntime.EmbeddingPreprocessingCosineNorm})
-		if embedErr != nil || response == nil || response.Dimensions <= 0 || response.Model.DeploymentID == "" || len(response.Vectors) != 1 || len(response.Vectors[0].Vector) != response.Dimensions || response.PreprocessingVersion != aimodelruntime.EmbeddingPreprocessingVersionCosine {
-			_ = s.db.WithContext(ctx).Model(&NavigationSearchDocument{}).Where("id = ? AND catalog_revision = ?", document.ID, document.CatalogRevision).Update("index_status", "failed").Error
-			if embedErr != nil {
-				return embedErr
-			}
-			return errors.New("navigation embedding provenance is invalid")
-		}
-		now := time.Now().UTC()
-		vector := PGVector(response.Vectors[0].Vector)
-		updates := map[string]any{"embedding_alias": alias, "embedding_model": response.Model.RemoteModelID, "embedding_deployment_id": response.Model.DeploymentID, "embedding_dimensions": response.Dimensions, "embedding_preprocessing": response.PreprocessingVersion, "embedding_schema_version": navigationEmbeddingSchemaVersion, "embedding_vector": &vector, "vector_updated_at": now, "index_status": "ready"}
-		if err := s.db.WithContext(ctx).Model(&NavigationSearchDocument{}).Where("id = ? AND catalog_revision = ?", document.ID, document.CatalogRevision).Updates(updates).Error; err != nil {
+		if err := s.IndexDocument(ctx, document.ID, document.CatalogRevision, alias); err != nil && !errors.Is(err, ErrNavigationEmbeddingSuperseded) {
 			return err
 		}
+	}
+	return nil
+}
+
+func (s *NavigationSearchService) IndexDocument(ctx context.Context, documentID string, revision uint64, alias string) error {
+	currentAlias, err := s.embeddingAlias(ctx, auth.MustFromContext(ctx).TenantID)
+	if err != nil {
+		return err
+	}
+	if alias == "" || currentAlias != alias {
+		return ErrNavigationEmbeddingSuperseded
+	}
+	if s.embeddings == nil {
+		return errors.New("navigation embedding runtime is unavailable")
+	}
+	var document NavigationSearchDocument
+	if err = s.db.WithContext(ctx).Where("id = ? AND catalog_revision = ? AND index_status IN ?", documentID, revision, []string{"pending", "failed"}).First(&document).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrNavigationEmbeddingSuperseded
+		}
+		return err
+	}
+	response, embedErr := s.embeddings.Embed(ctx, aimodelruntime.EmbeddingRequest{ModelAlias: alias, Inputs: []aimodelruntime.EmbeddingItem{{ID: document.ID, Text: document.Content}}, Purpose: aimodelruntime.EmbeddingPurposeNavigationIndex, Preprocessing: aimodelruntime.EmbeddingPreprocessingCosineNorm})
+	if embedErr != nil || response == nil || response.Dimensions <= 0 || response.Model.DeploymentID == "" || len(response.Vectors) != 1 || len(response.Vectors[0].Vector) != response.Dimensions || response.PreprocessingVersion != aimodelruntime.EmbeddingPreprocessingVersionCosine {
+		_ = s.db.WithContext(ctx).Model(&NavigationSearchDocument{}).Where("id = ? AND catalog_revision = ?", document.ID, document.CatalogRevision).Update("index_status", "failed").Error
+		if embedErr != nil {
+			return embedErr
+		}
+		return errors.New("navigation embedding provenance is invalid")
+	}
+	now := time.Now().UTC()
+	vector := PGVector(response.Vectors[0].Vector)
+	updates := map[string]any{"embedding_alias": alias, "embedding_model": response.Model.RemoteModelID, "embedding_deployment_id": response.Model.DeploymentID, "embedding_dimensions": response.Dimensions, "embedding_preprocessing": response.PreprocessingVersion, "embedding_schema_version": navigationEmbeddingSchemaVersion, "embedding_vector": &vector, "vector_updated_at": now, "index_status": "ready"}
+	if err := s.db.WithContext(ctx).Model(&NavigationSearchDocument{}).Where("id = ? AND catalog_revision = ?", document.ID, document.CatalogRevision).Updates(updates).Error; err != nil {
+		return err
 	}
 	return nil
 }

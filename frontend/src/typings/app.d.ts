@@ -777,6 +777,13 @@ declare namespace App {
           reset: string;
           resetConfirm: string;
           resetSuccess: string;
+          navigationIndex: {
+            title: string;
+            summary: string;
+            rebuild: string;
+            rebuildQueued: string;
+            states: Record<Api.Setting.NavigationIndexState, string>;
+          };
         };
         attachment: {
           demoTitle: string;

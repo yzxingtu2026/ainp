@@ -58,6 +58,7 @@ type App struct {
 	CodeSets                 *codeset.Registry
 	Settings                 *setting.Registry
 	SettingValues            *setting.Provider
+	SettingChanges           *setting.ChangeRegistry
 	RuntimeContextProvider   runtimecontext.Provider
 	StateMachines            *statemachine.Registry
 	AIProviderTypes          *aimodel.ProviderTypeRegistry
@@ -122,6 +123,7 @@ func New(cfg *config.Config, db *gorm.DB, auditor audit.Recorder, tokens *auth.T
 		PageHelp:             menu.NewHelpRegistry(),
 		CodeSets:             codeSets,
 		Settings:             setting.NewRegistry(),
+		SettingChanges:       setting.NewChangeRegistry(),
 		StateMachines:        statemachine.NewRegistry(),
 		AttachmentPolicies:   attachment.NewPolicyRegistry(),
 		Notifications:        notification.NewDefinitionRegistry(),

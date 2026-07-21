@@ -8,6 +8,7 @@ import (
 
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
+	"github.com/yzxingtu2026/ainp/platform/framework/logging"
 	"github.com/yzxingtu2026/ainp/platform/framework/setting"
 	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"gorm.io/gorm"
@@ -18,6 +19,7 @@ type SettingService struct {
 	registry *setting.Registry
 	provider *setting.Provider
 	store    setting.ValueStore
+	changes  *setting.ChangeRegistry
 }
 
 func NewSettingService(db *gorm.DB, registry *setting.Registry) *SettingService {
@@ -30,7 +32,17 @@ func NewSettingService(db *gorm.DB, registry *setting.Registry) *SettingService 
 	}
 }
 
-func (s *SettingService) Provider() *setting.Provider { return s.provider }
+func (s *SettingService) Provider() *setting.Provider                       { return s.provider }
+func (s *SettingService) SetChangeRegistry(changes *setting.ChangeRegistry) { s.changes = changes }
+
+func (s *SettingService) notifyChange(ctx context.Context, change setting.Change) {
+	if s.changes == nil {
+		return
+	}
+	if err := s.changes.Notify(ctx, change); err != nil {
+		logging.Error(ctx, "setting post-commit change handler failed", err, "setting_key", change.Key, "operation", change.Operation)
+	}
+}
 
 type settingKeyRequest struct {
 	Key string `json:"key"`
@@ -198,6 +210,7 @@ func (s *SettingService) Update(ctx context.Context, input json.RawMessage) (any
 		return nil, mapSettingError(err)
 	}
 	s.provider.Invalidate(tenantID, req.Key)
+	s.notifyChange(ctx, setting.Change{TenantID: tenantID, UserID: userID, Key: req.Key, Operation: setting.ChangeUpdated})
 	eff := &setting.Effective{
 		Definition: def, Values: stored.Values, Revision: stored.Revision,
 		SchemaVersion: stored.SchemaVersion, Source: "tenant",
@@ -206,7 +219,7 @@ func (s *SettingService) Update(ctx context.Context, input json.RawMessage) (any
 }
 
 func (s *SettingService) Reset(ctx context.Context, input json.RawMessage) (any, error) {
-	tenantID, _, err := tenantIdentity(ctx)
+	tenantID, userID, err := tenantIdentity(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -230,6 +243,7 @@ func (s *SettingService) Reset(ctx context.Context, input json.RawMessage) (any,
 		return nil, mapSettingError(err)
 	}
 	s.provider.Invalidate(tenantID, req.Key)
+	s.notifyChange(ctx, setting.Change{TenantID: tenantID, UserID: userID, Key: req.Key, Operation: setting.ChangeReset})
 	eff, err := s.provider.Get(ctx, tenantID, req.Key)
 	if err != nil {
 		return nil, mapSettingError(err)
