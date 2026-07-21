@@ -197,7 +197,7 @@ async function confirmRename() {
   flex: none;
   overflow: hidden;
   border-right: 1px solid rgba(127, 127, 127, 0.15);
-  background: rgb(var(--container-color));
+  background: rgb(var(--container-bg-color));
   visibility: visible;
   transition:
     width 0.3s cubic-bezier(0.4, 0, 0.2, 1),
@@ -234,7 +234,7 @@ async function confirmRename() {
   gap: 8px;
   border-bottom: 1px solid rgba(127, 127, 127, 0.13);
   padding: 0 16px;
-  background: rgba(var(--container-color), 0.94);
+  background: rgb(var(--container-bg-color) / 94%);
 }
 
 .ai-workspace__header-button {
@@ -267,7 +267,7 @@ async function confirmRename() {
   border: 1px solid rgba(127, 127, 127, 0.18);
   border-left: 0;
   border-radius: 0 14px 14px 0;
-  background: rgb(var(--container-color));
+  background: rgb(var(--container-bg-color));
   color: rgba(127, 127, 127, 0.85);
   font-size: 18px;
   cursor: pointer;

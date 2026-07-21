@@ -151,7 +151,7 @@ onBeforeUnmount(() => {
   gap: 8px;
   border: 1px solid rgba(127, 127, 127, 0.16);
   border-radius: 6px;
-  background: rgb(var(--container-color));
+  background: rgb(var(--container-bg-color));
   padding: 9px 12px;
   color: inherit;
   text-align: left;
@@ -164,7 +164,7 @@ onBeforeUnmount(() => {
 .ai-conversation-surface__composer {
   flex: none;
   padding: 10px clamp(14px, 3vw, 42px) 16px;
-  background: rgb(var(--container-color));
+  background: rgb(var(--container-bg-color));
 }
 .ai-conversation-surface--sidebar .ai-conversation-surface__messages {
   padding: 12px 14px 18px;

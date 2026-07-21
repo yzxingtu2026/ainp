@@ -130,7 +130,7 @@ function selectImages(items: Api.Attachment.Item[]) {
   gap: 8px;
   border: 1px solid rgba(127, 127, 127, 0.22);
   border-radius: 28px;
-  background: rgb(var(--container-color));
+  background: rgb(var(--container-bg-color));
   padding: 7px;
   box-shadow: 0 8px 28px rgba(25, 31, 46, 0.1);
 }

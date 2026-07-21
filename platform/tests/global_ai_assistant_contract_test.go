@@ -36,6 +36,7 @@ func TestGlobalAiAssistantShellLifecycleAndLaunchers(t *testing.T) {
 	header := readFrontendContract(t, "layouts/modules/global-header/index.vue")
 	launcher := readFrontendContract(t, "layouts/modules/ai-workspace-launcher/index.vue")
 	base := readFrontendContract(t, "layouts/base-layout/index.vue")
+	panel := readFrontendContract(t, "layouts/modules/global-ai-assistant/index.vue")
 	store := readFrontendContract(t, "store/modules/ai-assistant/index.ts")
 	authStore := readFrontendContract(t, "store/modules/auth/index.ts")
 
@@ -47,6 +48,11 @@ func TestGlobalAiAssistantShellLifecycleAndLaunchers(t *testing.T) {
 	}
 	if !strings.Contains(base, "<GlobalAiAssistant />") {
 		t.Fatal("global AI assistant must be mounted at the application shell")
+	}
+	for _, expected := range []string{`<Teleport to="body">`, "z-index: 10000", "isolation: isolate", "background: rgb(var(--container-bg-color))"} {
+		if !strings.Contains(panel, expected) {
+			t.Fatalf("global AI assistant must stay above shell stacking contexts with an opaque surface: missing %q", expected)
+		}
 	}
 	for _, expected := range []string{"controller.reset()", "returnFocus", "view.value = 'conversation'"} {
 		if !strings.Contains(store, expected) {
