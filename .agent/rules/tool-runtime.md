@@ -2,10 +2,11 @@
 
 - 完整 ToolRegistry 只在服务端；模型固定工具为 `tool.search`、`tool.load`，核心工具仅在运行时资源条件满足时动态投影；禁止全量 Schema 或常驻 `tool.execute`。
 - 模型调用通过 `enable_tools/tool_scope_id` 投影已加载真实 Schema，禁止客户端直接提交 `tools` 绕过 Registry。
+- `tool.search` 的 source/capability 仅接受稳定代码精确过滤；Schema 必须声明 source 枚举与语义，Service 在 API/Agent Runtime 所有入口自行校验，非法过滤禁止静默空结果。
 - Tool ID 必须 namespaced；Provider/Executor 统一注册，未知来源、重复、非法 Schema 与缺失风险元数据 fail-closed。
 - 核心工具必须实现独立 `RuntimeSlot` 并经 `platform/modules/ai/tools/register.go` 显式聚合；禁止扫描源码、Go Plugin、隐藏 `init()`，禁止在 ToolService/Agent Runtime 增加业务 Tool ID 分支。
 - Action 是否暴露以注册处的 `Metadata.AI` 为唯一事实源；仅 `AIMeta.ExposeTool=true` 自动投影，`AI=nil` 默认不暴露。输入/输出 Schema 必须由同一强类型 DTO 生成，Action Tool 只经 `ActionRegistry.Invoke`，禁止维护平行暴露清单。
-- Scope 精确 Tool 与来源/能力白名单按“精确命中或来源+能力命中”授权；来源/能力只开放渐进 search/load，禁止未 load Schema 进入模型初始投影。
+- Scope 精确 Tool 与来源/能力白名单按“精确命中或来源+能力命中”授权，但 Action 禁止通过精确 Binding 授权，只能命中 Contract 来源+能力；来源/能力只开放渐进 search/load，禁止未 load Schema 进入模型初始投影。
 - Catalog 在模块注册完成、新租户初始化或显式 rebuild 时幂等投影；请求路径禁止写 Catalog。变更以单调 revision 同事务写 Outbox，移除/停用立即 stale，重复/乱序事件不得覆盖当前 Search Document。
 - 语义索引只经统一 Embedding Runtime（`purpose=tool_index`）和 Outbox→Job 写 pgvector；Alias、deployment、dimensions、preprocessing、schema/revision 必须匹配。失败自动降级 exact + 中文词法/FTS，混合排序不得先于权限和 Scope 过滤。
 - search/load/execute 每次重新应用 tenant、realm、permission、Scope 与启用状态；Embedding/索引绝不是权限事实源。

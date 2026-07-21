@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -20,6 +21,8 @@ import (
 	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"gorm.io/gorm"
 )
+
+var toolCapabilityPattern = regexp.MustCompile(`^[a-z][a-z0-9_.-]*$`)
 
 const toolCatalogChangedEvent = "ai.tool_catalog.changed.v1"
 const toolInvocationFinishedEvent = "ai.tool_invocation.finished.v1"
@@ -132,6 +135,9 @@ func (r ToolSearchRequest) Validate(context.Context) error {
 			return fmt.Errorf("unknown tool source")
 		}
 	}
+	if r.Capability != "" && !toolCapabilityPattern.MatchString(r.Capability) {
+		return fmt.Errorf("capability must be a stable capability code")
+	}
 	if r.Limit < 0 || r.Limit > 10 {
 		return fmt.Errorf("limit must be between 1 and 10")
 	}
@@ -149,6 +155,9 @@ func (r ToolLoadRequest) Validate(context.Context) error {
 }
 
 func (s *ToolService) Search(ctx context.Context, r ToolSearchRequest) (any, error) {
+	if err := r.Validate(ctx); err != nil {
+		return nil, err
+	}
 	if err := s.registry.Refresh(ctx); err != nil {
 		return nil, err
 	}
@@ -689,7 +698,9 @@ func scopeAllows(s *ToolScope, d aitool.Definition) bool {
 	if len(sources) == 0 && len(capabilities) == 0 && len(tools) == 0 {
 		return true
 	}
-	if contains(tools, d.ID) {
+	// Actions are progressively authorized only by the Contract's source and
+	// capability scope. A stale AgentToolBinding must never make one exact.
+	if contains(tools, d.ID) && d.Source != aitool.SourceAction {
 		return true
 	}
 	return len(sources) > 0 && contains(sources, string(d.Source)) && (len(capabilities) == 0 || contains(capabilities, d.Capability))

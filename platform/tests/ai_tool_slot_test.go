@@ -56,6 +56,9 @@ func TestRuntimeToolSlotsAreStableComposableAndExecutable(t *testing.T) {
 	if direct := r.DirectSlotIDs(); len(direct) != 1 || direct[0] != a.id {
 		t.Fatalf("direct slots mismatch: %#v", direct)
 	}
+	if r.IsBindable(a.id) || r.IsBindable(b.id) {
+		t.Fatal("runtime slots must not enter agent tool bindings")
+	}
 	projected, visible, err := r.Project(context.Background(), aitool.RuntimeScope{UserID: "u1"}, items[0])
 	if err != nil || !visible || !strings.HasSuffix(projected.DescriptionForLLM, ":u1") {
 		t.Fatalf("dynamic projection failed: %#v %v %v", projected, visible, err)

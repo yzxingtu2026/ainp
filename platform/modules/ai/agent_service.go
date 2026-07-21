@@ -755,7 +755,7 @@ func (s *AgentService) BindTool(ctx context.Context, r AgentBindRequest) (any, e
 		return nil, e
 	}
 	tool, ok := s.tools.Get(r.ToolID)
-	if !ok || tool.Status != "enabled" {
+	if !ok || tool.Status != "enabled" || !s.tools.IsBindable(r.ToolID) {
 		return nil, errs.New(errs.CodeNotFound, "tool not found")
 	}
 	binding := AgentToolBinding{ID: uuid.NewString(), AgentID: row.ID, ToolID: tool.ID, Source: string(tool.Source), Status: "enabled", CreatedBy: ac.UserID}
@@ -799,14 +799,23 @@ func (s *AgentService) ListTools(ctx context.Context, r IDRequest) (any, error) 
 		return nil, e
 	}
 	rows, e := repos.tools.Where("agent_id=?", row.ID).Order("tool_id").Find("1=1")
-	return rows, e
+	if e != nil {
+		return nil, e
+	}
+	visible := make([]AgentToolBinding, 0, len(rows))
+	for _, binding := range rows {
+		if s.tools.IsBindable(binding.ToolID) {
+			visible = append(visible, binding)
+		}
+	}
+	return visible, nil
 }
 func (s *AgentService) SearchTools(ctx context.Context, r AgentToolSearchRequest) (any, error) {
 	if _, e := agentActor(ctx); e != nil {
 		return nil, e
 	}
 	// 管理端绑定弹窗走 Browse；模型侧 meta:tool.search 仍使用硬顶 10 的 Search。
-	return aitool.Browse(ctx, s.tools.List(), r.Query, r.Capability, r.Source, r.Limit, func(d aitool.Definition) bool { return d.Status == "enabled" })
+	return aitool.Browse(ctx, s.tools.List(), r.Query, r.Capability, r.Source, r.Limit, func(d aitool.Definition) bool { return s.tools.IsBindable(d.ID) })
 }
 func (s *AgentService) requiredTools(row *Agent) []string {
 	if row.ContractKey == "" {

@@ -178,6 +178,20 @@ func (r *Registry) SlotIDs() []string {
 	sort.Strings(out)
 	return out
 }
+
+// IsBindable reports whether a tool may be persisted in an AgentToolBinding.
+// Action and meta tools are governed by runtime Scope, while Runtime Slots
+// carry their own discovery policy and are projected automatically.
+func (r *Registry) IsBindable(id string) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	d, ok := r.tools[id]
+	if !ok || d.Status != "enabled" || d.Source == SourceAction || d.Source == SourceMeta {
+		return false
+	}
+	_, isSlot := r.slots[id]
+	return !isSlot
+}
 func (r *Registry) List() []Definition {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

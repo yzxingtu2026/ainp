@@ -1081,7 +1081,9 @@ func (s *AgentRuntimeService) ensureToolScope(ctx context.Context, run *AgentRun
 		allowed = append(allowed, s.tools.registry.SlotIDs()...)
 	}
 	for _, b := range bindings {
-		allowed = append(allowed, b.ToolID)
+		if s.tools.registry.IsBindable(b.ToolID) {
+			allowed = append(allowed, b.ToolID)
+		}
 	}
 	if s.contracts != nil && agent.ContractKey != "" {
 		if contract, ok := s.contracts.Get(agent.ContractKey, agent.ContractVersion); ok {

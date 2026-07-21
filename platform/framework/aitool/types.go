@@ -180,10 +180,10 @@ type RuntimeSlot interface {
 }
 
 type MetaSearchInput struct {
-	Query      string `json:"query" validate:"required,max=512"`
-	Capability string `json:"capability,omitempty"`
-	Source     Source `json:"source,omitempty"`
-	Limit      int    `json:"limit,omitempty"`
+	Query      string `json:"query" validate:"required,max=512" description:"Natural-language search intent. Put business terms here."`
+	Capability string `json:"capability,omitempty" description:"Optional exact capability code such as system or operations. Omit when unknown; do not use natural language."`
+	Source     Source `json:"source,omitempty" validate:"omitempty,oneof=meta action builtin plugin http mcp" description:"Optional exact tool source. Use action for governed application Actions; omit when unknown."`
+	Limit      int    `json:"limit,omitempty" validate:"omitempty,min=1,max=10" description:"Maximum candidates to return, from 1 to 10."`
 }
 type MetaLoadInput struct {
 	ToolIDs []string `json:"tool_ids" validate:"required,min=1,max=3"`

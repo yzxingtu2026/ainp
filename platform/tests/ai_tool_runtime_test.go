@@ -222,6 +222,45 @@ func TestSchemaForRejectsAdditionalProperties(t *testing.T) {
 	}
 }
 
+func TestMetaToolSearchSchemaGuidesStableFilters(t *testing.T) {
+	schema := string(action.SchemaFor[aitool.MetaSearchInput]())
+	for _, expected := range []string{`"enum":["meta","action","builtin","plugin","http","mcp"]`, `"description":"Optional exact capability code`, `"maximum":10`} {
+		if !strings.Contains(schema, expected) {
+			t.Fatalf("meta tool search schema missing %s: %s", expected, schema)
+		}
+	}
+	if err := (ai.ToolSearchRequest{Query: "用户列表", Source: aitool.Source("tools")}).Validate(context.Background()); err == nil {
+		t.Fatal("unknown source must fail before searching")
+	}
+	if err := (ai.ToolSearchRequest{Query: "用户列表", Capability: "查询系统用户列表"}).Validate(context.Background()); err == nil {
+		t.Fatal("natural-language capability must fail before searching")
+	}
+}
+
+func TestToolRegistryBindablePolicy(t *testing.T) {
+	registry := aitool.NewRegistry()
+	actionTool := toolFixture("action:system.user_list", "用户列表", "查询系统用户列表")
+	pluginTool := actionTool
+	pluginTool.ID = "plugin:crm.customer_list"
+	pluginTool.Source = aitool.SourcePlugin
+	pluginTool.RuntimeRef = "crm.customer_list"
+	if err := registry.RegisterProvider(&fakeToolProvider{source: aitool.SourceAction, tools: []aitool.Definition{actionTool}}, &fakeToolExecutor{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.RegisterProvider(&fakeToolProvider{source: aitool.SourcePlugin, tools: []aitool.Definition{pluginTool}}, &fakeToolExecutor{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if registry.IsBindable(actionTool.ID) {
+		t.Fatal("action tool must not be bindable")
+	}
+	if !registry.IsBindable(pluginTool.ID) {
+		t.Fatal("provider plugin tool should be bindable")
+	}
+}
+
 func TestToolCatalogLifecycleMigrationContract(t *testing.T) {
 	body, err := os.ReadFile("../migrations/0040_ai_tool_catalog_lifecycle.sql")
 	if err != nil {

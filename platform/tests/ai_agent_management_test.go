@@ -136,6 +136,34 @@ func TestSystemOperationsContractUsesProgressiveActionScope(t *testing.T) {
 	}
 }
 
+func TestAgentToolSearchOnlyReturnsBindableTools(t *testing.T) {
+	registry := aitool.NewRegistry()
+	actionTool := toolFixture("action:system.user_list", "用户列表", "查询系统用户列表")
+	pluginTool := actionTool
+	pluginTool.ID = "plugin:crm.customer_list"
+	pluginTool.Source = aitool.SourcePlugin
+	pluginTool.RuntimeRef = "crm.customer_list"
+	if err := registry.RegisterProvider(&fakeToolProvider{source: aitool.SourceAction, tools: []aitool.Definition{actionTool}}, &fakeToolExecutor{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.RegisterProvider(&fakeToolProvider{source: aitool.SourcePlugin, tools: []aitool.Definition{pluginTool}}, &fakeToolExecutor{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	service := ai.NewAgentService(nil, aiagent.NewRegistry(), nil, registry)
+	ctx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "tenant-a", UserID: "user-a", Realm: auth.RealmTenant})
+	value, err := service.SearchTools(ctx, ai.AgentToolSearchRequest{Limit: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	items := value.([]aitool.Candidate)
+	if len(items) != 1 || items[0].ID != pluginTool.ID {
+		t.Fatalf("agent binding candidates must exclude actions: %#v", items)
+	}
+}
+
 func openAgentManagementTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	dsn := os.Getenv("AINP_TEST_DATABASE_DSN")

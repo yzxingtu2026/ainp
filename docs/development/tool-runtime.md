@@ -30,9 +30,11 @@ Reconcile 按 Tool ID 比较完整安全定义：新增和变更写入 Catalog�
 
 搜索顺序为安全过滤、精确 ID/名称、关键词/FTS、可选 Embedding 融合。Embedding 不可用时必须退化；向量和搜索文档不是权限事实源。`ProjectModelTools`、`tool.search`、`tool.load`、Handle 执行和确认后执行统一调用 Registry 的动态投影协议，并重新应用 tenant、realm、user permission、Scope 白名单、启用状态和实时资源条件。动态投影只能收紧静态结果，不能把 Scope 外工具扩权加入候选。
 
+模型侧 `tool.search` 的 `source` / `capability` 是可选的稳定代码精确过滤器，不是自然语言检索词；不确定时必须省略并只填写 `query`。Meta Tool Schema 必须暴露 source 枚举和字段说明，`ToolService.Search` 必须在所有入口自行校验，非法过滤不得静默返回空结果。
+
 中文降级会为安全发现文本生成有上限的 Unicode 双字词，避免仅依赖 PostgreSQL `simple` 分词。exact/名称命中始终优先；词法/FTS 与 provenance 匹配的 vector 候选使用确定性 RRF 融合，最后再应用权限、Scope 和动态投影。Embedding 设置、调用或索引不可用时响应标记 degraded，但 exact + lexical/FTS 仍返回结果。
 
-ToolScope 的授权由两类白名单组成：精确 `allowed_tools` 用于 meta、RuntimeSlot、显式 Binding 和已知特殊工具；`allowed_sources + allowed_capabilities` 用于渐进发现。工具满足精确 Tool 白名单，或同时满足来源与能力白名单时才进入 Scope；二者不是三重 AND。来源/能力授权只允许 search/load，未 load 的 Action Schema 不得进入模型初始工具列表。
+ToolScope 的授权由两类白名单组成：精确 `allowed_tools` 用于 meta、RuntimeSlot、合法显式 Binding 和已知特殊工具；`allowed_sources + allowed_capabilities` 用于渐进发现。非 Action 工具满足精确 Tool 白名单，或同时满足来源与能力白名单时才进入 Scope；Action 禁止通过精确 Binding 授权，只能命中 Contract 的来源与能力白名单。来源/能力授权只允许 search/load，未 load 的 Action Schema 不得进入模型初始工具列表。
 
 Handle 使用服务端签名并绑定 tenant、user、realm、session/auth version、scope、tool、runtime ref、schema hash 和 TTL。任何绑定变化、过期或 Schema 变化均拒绝。
 

@@ -38,6 +38,9 @@ func schemaForType(t reflect.Type) map[string]any {
 				name = f.Name
 			}
 			fieldSchema := schemaForType(f.Type)
+			if description := strings.TrimSpace(f.Tag.Get("description")); description != "" {
+				fieldSchema["description"] = description
+			}
 			properties[name] = fieldSchema
 			validateTag := f.Tag.Get("validate")
 			applyValidation(fieldSchema, validateTag, f.Type)
