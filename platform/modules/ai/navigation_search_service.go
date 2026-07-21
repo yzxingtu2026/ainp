@@ -25,9 +25,25 @@ const navigationDocumentChangedEvent = "ai.navigation_document.changed.v1"
 
 var ErrNavigationEmbeddingSuperseded = errors.New("navigation embedding request is superseded")
 
-type NavigationDocumentChangedPayload struct {
+type NavigationDocumentRef struct {
 	DocumentID      string `json:"document_id"`
 	CatalogRevision uint64 `json:"catalog_revision"`
+}
+
+type NavigationDocumentsChangedPayload struct {
+	Documents       []NavigationDocumentRef `json:"documents,omitempty"`
+	DocumentID      string                  `json:"document_id,omitempty"`
+	CatalogRevision uint64                  `json:"catalog_revision,omitempty"`
+}
+
+func (p NavigationDocumentsChangedPayload) documentRefs() []NavigationDocumentRef {
+	if len(p.Documents) > 0 {
+		return p.Documents
+	}
+	if p.DocumentID != "" && p.CatalogRevision > 0 {
+		return []NavigationDocumentRef{{DocumentID: p.DocumentID, CatalogRevision: p.CatalogRevision}}
+	}
+	return nil
 }
 
 type NavigationSearchService struct {
@@ -101,6 +117,7 @@ func (s *NavigationSearchService) ReconcileForTenant(ctx context.Context, tenant
 			byKey[navigationDocumentKey(row)] = row
 		}
 		seen := map[string]bool{}
+		changed := make([]NavigationDocumentRef, 0)
 		for _, row := range desired {
 			key := navigationDocumentKey(row)
 			seen[key] = true
@@ -121,10 +138,8 @@ func (s *NavigationSearchService) ReconcileForTenant(ctx context.Context, tenant
 			if err := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "tenant_id"}, {Name: "menu_id"}, {Name: "document_kind"}, {Name: "locale"}, {Name: "use_case"}}, DoUpdates: clause.AssignmentColumns([]string{"title", "content", "help_version", "content_hash", "index_status", "catalog_revision", "embedding_model", "embedding_alias", "embedding_deployment_id", "embedding_dimensions", "embedding_preprocessing", "embedding_schema_version", "embedding_vector", "vector_updated_at", "updated_at"})}).Create(&row).Error; err != nil {
 				return err
 			}
-			if alias != "" && s.writer != nil {
-				if _, err := s.writer.Append(ctx, tx, outbox.AppendInput{EventType: navigationDocumentChangedEvent, AggregateType: "navigation_search_document", AggregateID: row.ID, AggregateVersion: int64(row.CatalogRevision), Payload: NavigationDocumentChangedPayload{DocumentID: row.ID, CatalogRevision: row.CatalogRevision}}); err != nil {
-					return err
-				}
+			if alias != "" {
+				changed = append(changed, NavigationDocumentRef{DocumentID: row.ID, CatalogRevision: row.CatalogRevision})
 			}
 		}
 		for key, row := range byKey {
@@ -132,6 +147,11 @@ func (s *NavigationSearchService) ReconcileForTenant(ctx context.Context, tenant
 				if err := tx.Model(&NavigationSearchDocument{}).Where("id = ?", row.ID).Update("index_status", "stale").Error; err != nil {
 					return err
 				}
+			}
+		}
+		if len(changed) > 0 && s.writer != nil {
+			if _, err := s.writer.Append(ctx, tx, outbox.AppendInput{EventType: navigationDocumentChangedEvent, AggregateType: "navigation_search_catalog", AggregateID: tenantID, AggregateVersion: time.Now().UTC().UnixNano(), Payload: NavigationDocumentsChangedPayload{Documents: changed}}); err != nil {
+				return err
 			}
 		}
 		return nil
@@ -200,22 +220,32 @@ func navigationDocumentKey(row NavigationSearchDocument) string {
 
 func (s *NavigationSearchService) IndexPending(ctx context.Context, tenantID string) error {
 	alias, err := s.embeddingAlias(ctx, tenantID)
-	if err != nil || alias == "" || s.embeddings == nil {
+	if err != nil || alias == "" {
 		return err
+	}
+	if s.embeddings == nil {
+		return errors.New("navigation embedding runtime is unavailable")
 	}
 	var documents []NavigationSearchDocument
 	if err := s.db.WithContext(ctx).Where("index_status IN ?", []string{"pending", "failed"}).Find(&documents).Error; err != nil {
 		return err
 	}
-	for _, document := range documents {
-		if err := s.IndexDocument(ctx, document.ID, document.CatalogRevision, alias); err != nil && !errors.Is(err, ErrNavigationEmbeddingSuperseded) {
-			return err
-		}
+	refs := make([]NavigationDocumentRef, len(documents))
+	for i, document := range documents {
+		refs[i] = NavigationDocumentRef{DocumentID: document.ID, CatalogRevision: document.CatalogRevision}
 	}
-	return nil
+	err = s.IndexDocuments(ctx, refs, alias)
+	if errors.Is(err, ErrNavigationEmbeddingSuperseded) {
+		return nil
+	}
+	return err
 }
 
 func (s *NavigationSearchService) IndexDocument(ctx context.Context, documentID string, revision uint64, alias string) error {
+	return s.IndexDocuments(ctx, []NavigationDocumentRef{{DocumentID: documentID, CatalogRevision: revision}}, alias)
+}
+
+func (s *NavigationSearchService) IndexDocuments(ctx context.Context, refs []NavigationDocumentRef, alias string) error {
 	currentAlias, err := s.embeddingAlias(ctx, auth.MustFromContext(ctx).TenantID)
 	if err != nil {
 		return err
@@ -226,28 +256,74 @@ func (s *NavigationSearchService) IndexDocument(ctx context.Context, documentID 
 	if s.embeddings == nil {
 		return errors.New("navigation embedding runtime is unavailable")
 	}
-	var document NavigationSearchDocument
-	if err = s.db.WithContext(ctx).Where("id = ? AND catalog_revision = ? AND index_status IN ?", documentID, revision, []string{"pending", "failed"}).First(&document).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return ErrNavigationEmbeddingSuperseded
+	requested := make(map[string]uint64, len(refs))
+	ids := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		if ref.DocumentID != "" && ref.CatalogRevision > 0 {
+			requested[ref.DocumentID] = ref.CatalogRevision
+			ids = append(ids, ref.DocumentID)
 		}
+	}
+	if len(ids) == 0 {
+		return ErrNavigationEmbeddingSuperseded
+	}
+	var loaded []NavigationSearchDocument
+	if err = s.db.WithContext(ctx).Where("id IN ? AND index_status IN ?", ids, []string{"pending", "failed"}).Order("id").Find(&loaded).Error; err != nil {
 		return err
 	}
-	response, embedErr := s.embeddings.Embed(ctx, aimodelruntime.EmbeddingRequest{ModelAlias: alias, Inputs: []aimodelruntime.EmbeddingItem{{ID: document.ID, Text: document.Content}}, Purpose: aimodelruntime.EmbeddingPurposeNavigationIndex, Preprocessing: aimodelruntime.EmbeddingPreprocessingCosineNorm})
-	if embedErr != nil || response == nil || response.Dimensions <= 0 || response.Model.DeploymentID == "" || len(response.Vectors) != 1 || len(response.Vectors[0].Vector) != response.Dimensions || response.PreprocessingVersion != aimodelruntime.EmbeddingPreprocessingVersionCosine {
-		_ = s.db.WithContext(ctx).Model(&NavigationSearchDocument{}).Where("id = ? AND catalog_revision = ?", document.ID, document.CatalogRevision).Update("index_status", "failed").Error
+	documents := make([]NavigationSearchDocument, 0, len(loaded))
+	inputs := make([]aimodelruntime.EmbeddingItem, 0, len(loaded))
+	for _, document := range loaded {
+		if requested[document.ID] != document.CatalogRevision {
+			continue
+		}
+		documents = append(documents, document)
+		inputs = append(inputs, aimodelruntime.EmbeddingItem{ID: document.ID, Text: document.Content})
+	}
+	if len(documents) == 0 {
+		return ErrNavigationEmbeddingSuperseded
+	}
+	response, embedErr := s.embeddings.Embed(ctx, aimodelruntime.EmbeddingRequest{ModelAlias: alias, Inputs: inputs, Purpose: aimodelruntime.EmbeddingPurposeNavigationIndex, Preprocessing: aimodelruntime.EmbeddingPreprocessingCosineNorm})
+	valid := embedErr == nil && response != nil && response.Dimensions > 0 && response.Model.DeploymentID != "" && len(response.Vectors) == len(documents) && response.PreprocessingVersion == aimodelruntime.EmbeddingPreprocessingVersionCosine
+	vectors := make(map[string][]float32, len(documents))
+	if valid {
+		for _, vector := range response.Vectors {
+			if len(vector.Vector) != response.Dimensions || vectors[vector.ID] != nil {
+				valid = false
+				break
+			}
+			vectors[vector.ID] = vector.Vector
+		}
+		if len(vectors) != len(documents) {
+			valid = false
+		}
+		for _, document := range documents {
+			if len(vectors[document.ID]) != response.Dimensions {
+				valid = false
+				break
+			}
+		}
+	}
+	if !valid {
+		for _, document := range documents {
+			_ = s.db.WithContext(ctx).Model(&NavigationSearchDocument{}).Where("id = ? AND catalog_revision = ?", document.ID, document.CatalogRevision).Update("index_status", "failed").Error
+		}
 		if embedErr != nil {
 			return embedErr
 		}
 		return errors.New("navigation embedding provenance is invalid")
 	}
 	now := time.Now().UTC()
-	vector := PGVector(response.Vectors[0].Vector)
-	updates := map[string]any{"embedding_alias": alias, "embedding_model": response.Model.RemoteModelID, "embedding_deployment_id": response.Model.DeploymentID, "embedding_dimensions": response.Dimensions, "embedding_preprocessing": response.PreprocessingVersion, "embedding_schema_version": navigationEmbeddingSchemaVersion, "embedding_vector": &vector, "vector_updated_at": now, "index_status": "ready"}
-	if err := s.db.WithContext(ctx).Model(&NavigationSearchDocument{}).Where("id = ? AND catalog_revision = ?", document.ID, document.CatalogRevision).Updates(updates).Error; err != nil {
-		return err
-	}
-	return nil
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for _, document := range documents {
+			vector := PGVector(vectors[document.ID])
+			updates := map[string]any{"embedding_alias": alias, "embedding_model": response.Model.RemoteModelID, "embedding_deployment_id": response.Model.DeploymentID, "embedding_dimensions": response.Dimensions, "embedding_preprocessing": response.PreprocessingVersion, "embedding_schema_version": navigationEmbeddingSchemaVersion, "embedding_vector": &vector, "vector_updated_at": now, "index_status": "ready"}
+			if err := tx.Model(&NavigationSearchDocument{}).Where("id = ? AND catalog_revision = ? AND index_status IN ?", document.ID, document.CatalogRevision, []string{"pending", "failed"}).Updates(updates).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 type navigationVectorCandidate struct {

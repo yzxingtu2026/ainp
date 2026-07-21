@@ -40,7 +40,7 @@ Navigation Catalog 是从 Menu Registry 实时派生的授权搜索视图。Menu
 
 第三阶段使用 `navigation_search_documents`，不得复用 `ai_tool_search_documents`。索引源只来自 Menu Registry 元数据和已提交审核的 Page Help；表中不保存 path、权限清单、DOM、页面正文、用户数据或未提交表单。路径、层级与图标仍在每次返回时由当前 Menu Registry 投影。
 
-索引与查询分别使用 `navigation_index`、`navigation_query` purpose，并记录 Alias、Deployment、维度、预处理、Schema Version、Catalog Revision 与内容哈希。内容或 provenance 变化会令文档重新进入 pending，并在同一事务追加 `ai.navigation_document.changed.v1` Outbox 事件，再由 `ai.navigation.embed` Job 幂等构建向量；下线文档标记 stale。Embedding 未配置、调用失败、维度或 provenance 不匹配、向量表不可用时，搜索必须保留词法结果并返回稳定降级原因。
+索引与查询分别使用 `navigation_index`、`navigation_query` purpose，并记录 Alias、Deployment、维度、预处理、Schema Version、Catalog Revision 与内容哈希。一次 reconcile 将全部变化文档汇总进同一个 `ai.navigation_document.changed.v1` Outbox 事件，再由单个 `ai.navigation.embed` Job 通过一次批量 Embedding 请求构建向量；文档 ID + revision 仍逐项校验和幂等落库。禁止按文档创建独立 Job，避免菜单数量直接放大任务运行记录。下线文档标记 stale。Embedding 未配置、调用失败、维度或 provenance 不匹配、向量表不可用时，搜索必须保留词法结果并返回稳定降级原因。
 
 `ai.navigation_search` 保存或重置后通过 `setting.ChangeRegistry` 立即执行当前租户 reconcile，不依赖后端重启。设置页调用受现有设置权限保护的状态与重建入口，展示 disabled/not_indexed/pending/ready/failed/degraded；pending 状态短轮询，手动重建强制提升 Catalog Revision 并重新进入同一 Outbox/Job 链路。
 

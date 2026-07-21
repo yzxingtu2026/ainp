@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
@@ -16,9 +15,14 @@ import (
 const NavigationEmbeddingJobType = "ai.navigation.embed"
 
 type navigationEmbeddingJobPayload struct {
-	DocumentID      string `json:"document_id"`
-	CatalogRevision uint64 `json:"catalog_revision"`
-	ModelAlias      string `json:"model_alias"`
+	Documents       []NavigationDocumentRef `json:"documents,omitempty"`
+	DocumentID      string                  `json:"document_id,omitempty"`
+	CatalogRevision uint64                  `json:"catalog_revision,omitempty"`
+	ModelAlias      string                  `json:"model_alias"`
+}
+
+func (p navigationEmbeddingJobPayload) documentRefs() []NavigationDocumentRef {
+	return NavigationDocumentsChangedPayload{Documents: p.Documents, DocumentID: p.DocumentID, CatalogRevision: p.CatalogRevision}.documentRefs()
 }
 
 func RegisterNavigationEmbedding(a *app.App, navigation *NavigationSearchService) error {
@@ -31,12 +35,12 @@ func RegisterNavigationEmbedding(a *app.App, navigation *NavigationSearchService
 			return job.Permanent(errors.New("trusted JobRun unavailable"))
 		}
 		var payload navigationEmbeddingJobPayload
-		if json.Unmarshal(run.PayloadJSON, &payload) != nil || payload.DocumentID == "" || payload.CatalogRevision == 0 || payload.ModelAlias == "" {
+		if json.Unmarshal(run.PayloadJSON, &payload) != nil || len(payload.documentRefs()) == 0 || payload.ModelAlias == "" {
 			return job.Permanent(errors.New("trusted JobRun payload invalid"))
 		}
 		ctx = auth.WithContext(ctx, &auth.Context{Authenticated: true, TenantID: run.TenantID, UserID: run.CreatedBy, Realm: auth.RealmTenant, RequestID: run.CorrelationID, Client: "job"})
 		_ = reporter.Progress(ctx, 10, "navigation.embedding")
-		if err = navigation.IndexDocument(ctx, payload.DocumentID, payload.CatalogRevision, payload.ModelAlias); err != nil {
+		if err = navigation.IndexDocuments(ctx, payload.documentRefs(), payload.ModelAlias); err != nil {
 			if errors.Is(err, ErrNavigationEmbeddingSuperseded) {
 				_ = reporter.Progress(ctx, 100, "navigation.superseded")
 				return nil
@@ -49,8 +53,8 @@ func RegisterNavigationEmbedding(a *app.App, navigation *NavigationSearchService
 		return err
 	}
 	return a.Outbox.RegisterHandler(outbox.HandlerFunc{HandlerName: "ai.enqueue_navigation_embedding", Types: []string{navigationDocumentChangedEvent}, Fn: func(ctx context.Context, env outbox.Envelope) error {
-		var changed NavigationDocumentChangedPayload
-		if json.Unmarshal(env.Payload, &changed) != nil || changed.DocumentID == "" || changed.CatalogRevision == 0 {
+		var changed NavigationDocumentsChangedPayload
+		if json.Unmarshal(env.Payload, &changed) != nil || len(changed.documentRefs()) == 0 {
 			return errors.New("navigation document event payload invalid")
 		}
 		ctx = auth.WithContext(ctx, &auth.Context{Authenticated: true, TenantID: env.TenantID, UserID: env.ActorID, Realm: auth.RealmTenant, RequestID: env.CorrelationID, Client: "outbox"})
@@ -62,13 +66,13 @@ func RegisterNavigationEmbedding(a *app.App, navigation *NavigationSearchService
 			return nil
 		}
 		if !a.Jobs.Enabled {
-			err := navigation.IndexDocument(ctx, changed.DocumentID, changed.CatalogRevision, alias)
+			err := navigation.IndexDocuments(ctx, changed.documentRefs(), alias)
 			if errors.Is(err, ErrNavigationEmbeddingSuperseded) {
 				return nil
 			}
 			return err
 		}
-		_, err = a.Jobs.Enqueuer.Enqueue(ctx, job.EnqueueInput{Type: NavigationEmbeddingJobType, IdempotencyKey: "navigation:" + changed.DocumentID + ":" + fmt.Sprint(changed.CatalogRevision), CausationID: env.ID, Payload: navigationEmbeddingJobPayload{DocumentID: changed.DocumentID, CatalogRevision: changed.CatalogRevision, ModelAlias: alias}})
+		_, err = a.Jobs.Enqueuer.Enqueue(ctx, job.EnqueueInput{Type: NavigationEmbeddingJobType, IdempotencyKey: "navigation-batch:" + env.ID, CausationID: env.ID, Payload: navigationEmbeddingJobPayload{Documents: changed.documentRefs(), ModelAlias: alias}})
 		return err
 	}})
 }
