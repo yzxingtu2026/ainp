@@ -134,14 +134,11 @@ function createAiConversationController() {
     const steps = runDetail.value?.steps || [];
     const running = [...steps].reverse().find(step => step.status === 'running' || step.status === 'waiting');
     if (!running) return { icon: 'mdi:brain-outline', text: $t('chat.thinkingThinking') };
-    if (running.type === 'context_assemble')
-      return { icon: 'mdi:file-tree-outline', text: $t('chat.thinkingContext') };
+    if (running.type === 'context_assemble') return { icon: 'mdi:file-tree-outline', text: $t('chat.thinkingContext') };
     if (running.type === 'tool_search') return { icon: 'mdi:magnify', text: $t('chat.thinkingToolSearch') };
-    if (running.type === 'tool_load')
-      return { icon: 'mdi:package-variant-outline', text: $t('chat.thinkingToolLoad') };
+    if (running.type === 'tool_load') return { icon: 'mdi:package-variant-outline', text: $t('chat.thinkingToolLoad') };
     if (running.type === 'tool_execute') {
-      const toolName =
-        typeof running.input_summary?.tool_name === 'string' ? running.input_summary.tool_name : '';
+      const toolName = typeof running.input_summary?.tool_name === 'string' ? running.input_summary.tool_name : '';
       return { icon: 'mdi:api', text: $t('chat.thinkingToolExecute'), toolName };
     }
     if (running.type === 'finalize')
@@ -314,8 +311,8 @@ function createAiConversationController() {
     return data;
   }
 
-  async function send() {
-    if (!canSend.value) return;
+  async function send(idempotencySeed?: string) {
+    if (!canSend.value) return false;
     const text = input.value.trim();
     const selectedImages = [...images.value];
     busy.value = true;
@@ -336,7 +333,7 @@ function createAiConversationController() {
       }
       const { data: userMessage, error: messageError } = await createAIMessage(
         { conversation_id: current.id, role: 'user', content },
-        idempotencyKey('workspace-message')
+        idempotencySeed ? `workspace-message-${idempotencySeed}` : idempotencyKey('workspace-message')
       );
       if (messageError || !userMessage) throw messageError || new Error($t('page.aiWorkspace.sendFailed'));
       input.value = '';
@@ -351,14 +348,16 @@ function createAiConversationController() {
           budget: {},
           page_context: capturePageContext()
         },
-        idempotencyKey('workspace-run')
+        idempotencySeed ? `workspace-run-${idempotencySeed}` : idempotencyKey('workspace-run')
       );
       if (runError || !started) throw runError || new Error($t('page.aiWorkspace.runFailed'));
       runDetail.value = { run: started, steps: [] };
-      await watchRun(started.id);
+      void watchRun(started.id);
+      return true;
     } catch (cause) {
       status.value = 'failed';
       error.value = cause instanceof Error ? cause.message : $t('page.aiWorkspace.unavailableGeneric');
+      return false;
     } finally {
       busy.value = false;
     }

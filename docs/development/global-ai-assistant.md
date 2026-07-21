@@ -15,6 +15,10 @@ Header launcher 在所有 layout mode 中显示，但仍以动态路由中 `shel
 
 桌面面板宽度限制为 400px 至 `min(640px, 48vw)`，固定在应用壳右侧；窄屏为全屏分层页。面板没有 Page Context 区域，不展示 resource/capability/tag/Tool ID。Escape、关闭和展开后恢复触发入口焦点，reduced-motion 禁用转场。
 
+首页只负责把用户意图写入 `ai-assistant` Store 的一次性 `PendingWorkspaceMessage` 并跳转 Workspace。消息必须带客户端唯一 ID，并以该 ID 生成 Message 与 Run 的幂等键；只有默认 Slot 初始化健康且 Run 创建成功后才能清除。初始化或发送失败时保留原文并在 Workspace 提供重试，首页不得创建第二个 controller 或通过 URL、Hash、浏览器历史传递原文。
+
+首页模块宫格只投影 `routeStore.menus` 中具有可见子菜单的一级目录，目标取稳定顺序下首个授权叶子路由。标题、图标和路径均继承实时 Menu Registry 投影；权限、身份或菜单变化后不得使用平行缓存或硬编码模块列表。
+
 ## 生命周期与恢复
 
 关闭面板或切换路由只卸载视图，controller、草稿、Conversation 和 Run 保留。应用只在 sessionStorage 保存当前 Conversation ID；刷新后重新读取服务端 Message、最新 Run 和 cursor，不持久化草稿、消息、Prompt 或 Page Context。

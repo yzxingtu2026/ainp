@@ -825,33 +825,25 @@ const local: App.I18n.Schema = {
       }
     },
     home: {
-      branchDesc:
-        'For the convenience of everyone in developing and updating the merge, we have streamlined the code of the main branch, only retaining the homepage menu, and the rest of the content has been moved to the example branch for maintenance. The preview address displays the content of the example branch.',
-      greeting: 'Good morning, {userName}, today is another day full of vitality!',
-      weatherDesc: 'Today is cloudy to clear, 20℃ - 25℃!',
-      projectCount: 'Project Count',
-      todo: 'Todo',
-      message: 'Message',
-      downloadCount: 'Download Count',
-      registerCount: 'Register Count',
-      schedule: 'Work and rest Schedule',
-      study: 'Study',
-      work: 'Work',
-      rest: 'Rest',
-      entertainment: 'Entertainment',
-      visitCount: 'Visit Count',
-      turnover: 'Turnover',
-      dealCount: 'Deal Count',
-      projectNews: {
-        title: 'Project News',
-        moreNews: 'More News',
-        desc1: 'Soybean created the open source project soybean-admin on May 28, 2021!',
-        desc2: 'Yanbowe submitted a bug to soybean-admin, the multi-tab bar will not adapt.',
-        desc3: 'Soybean is ready to do sufficient preparation for the release of soybean-admin!',
-        desc4: 'Soybean is busy writing project documentation for soybean-admin!',
-        desc5: 'Soybean just wrote some of the workbench pages casually, and it was enough to see!'
-      },
-      creativity: 'Creativity'
+      greeting: '{period}, {name}. What would you like to work on?',
+      periodLateNight: 'Working late',
+      periodMorning: 'Good morning',
+      periodAfternoon: 'Good afternoon',
+      periodEvening: 'Good evening',
+      defaultUser: 'there',
+      welcomeSubtitle: 'Start with a question or open a work module available to you.',
+      inputPlaceholder: 'Ask AI, find a feature, or describe what you want to accomplish…',
+      send: 'Send to AI Workspace',
+      suggestionFind: 'Help me find a feature',
+      suggestionSummarize: 'Summarize what I should work on next',
+      suggestionPlan: 'Break down an implementation plan',
+      suggestionHelp: 'Show me what I can do here',
+      modulesTitle: 'Work modules',
+      modulesSubtitle: 'Updated from your current access',
+      noModules: 'No work modules are currently available',
+      retry: 'Retry',
+      handoffFailed:
+        'Your message was not sent. The AI assistant is unavailable or failed to initialize, and the original content has been kept.'
     },
     setup: {
       title: 'Setup Wizard',
