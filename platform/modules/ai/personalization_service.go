@@ -141,7 +141,7 @@ func (s *PersonalizationService) Generate(ctx context.Context, user, slot string
 	if e != nil {
 		return e
 	}
-	r, ok := raw.(*aimodelruntime.GenerateResponse)
+	r, ok := asGenerateResponse(raw)
 	if !ok {
 		return fmt.Errorf("personalization runtime response invalid")
 	}
