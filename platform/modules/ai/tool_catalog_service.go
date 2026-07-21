@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/yzxingtu2026/ainp/platform/framework/aimodelruntime"
@@ -21,6 +22,17 @@ type ToolCatalogReconcileResult struct {
 	Updated   int `json:"updated"`
 	Disabled  int `json:"disabled"`
 	Unchanged int `json:"unchanged"`
+}
+
+type ToolIndexStatus struct {
+	State         string     `json:"state"`
+	ModelAlias    string     `json:"model_alias,omitempty"`
+	Total         int        `json:"total"`
+	Pending       int        `json:"pending"`
+	Ready         int        `json:"ready"`
+	Failed        int        `json:"failed"`
+	Stale         int        `json:"stale"`
+	LastUpdatedAt *time.Time `json:"last_updated_at,omitempty"`
 }
 
 type ToolCatalogChangedPayload struct {
@@ -124,6 +136,51 @@ func (s *ToolService) ReconcileCatalog(ctx context.Context, force ...bool) (Tool
 func (s *ToolService) ReconcileCatalogForTenant(ctx context.Context, tenantID, actorID string) (ToolCatalogReconcileResult, error) {
 	ctx = auth.WithContext(ctx, &auth.Context{Authenticated: true, Realm: auth.RealmTenant, TenantID: tenantID, UserID: actorID, Client: "tool-catalog-reconciler"})
 	return s.ReconcileCatalog(ctx)
+}
+
+func (s *ToolService) IndexStatus(ctx context.Context) (ToolIndexStatus, error) {
+	status := ToolIndexStatus{}
+	alias, err := s.embeddingAlias(ctx)
+	if err != nil {
+		return status, err
+	}
+	status.ModelAlias = alias
+	var documents []ToolSearchDocument
+	if err = s.db.WithContext(ctx).Order("updated_at DESC").Find(&documents).Error; err != nil {
+		return status, err
+	}
+	status.Total = len(documents)
+	for i, document := range documents {
+		if i == 0 {
+			updated := document.UpdatedAt
+			status.LastUpdatedAt = &updated
+		}
+		switch document.IndexStatus {
+		case "pending":
+			status.Pending++
+		case "ready":
+			status.Ready++
+		case "failed":
+			status.Failed++
+		case "stale":
+			status.Stale++
+		}
+	}
+	switch {
+	case alias == "":
+		status.State = "disabled"
+	case status.Total == 0:
+		status.State = "not_indexed"
+	case status.Pending > 0:
+		status.State = "pending"
+	case status.Failed > 0 && status.Ready == 0:
+		status.State = "failed"
+	case status.Failed > 0 || status.Stale > 0:
+		status.State = "degraded"
+	default:
+		status.State = "ready"
+	}
+	return status, nil
 }
 
 func (s *ToolService) MarkCatalogDocumentReady(ctx context.Context, payload ToolCatalogChangedPayload) error {

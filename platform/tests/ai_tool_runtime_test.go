@@ -376,6 +376,10 @@ func TestToolRuntimePostgresLifecycleAndIsolation(t *testing.T) {
 	if err != nil || reconciled.Created != 3 {
 		t.Fatalf("initial catalog reconcile failed: %#v %v", reconciled, err)
 	}
+	indexStatus, err := service.IndexStatus(ctx)
+	if err != nil || indexStatus.State != "disabled" || indexStatus.Total != 3 || indexStatus.Pending != 3 {
+		t.Fatalf("unexpected disabled tool index status: %#v %v", indexStatus, err)
+	}
 	var actionCatalog ai.ToolCatalog
 	if err = guarded.WithContext(ctx).Where("tool_id=?", actionTool.ID).First(&actionCatalog).Error; err != nil || actionCatalog.Revision != 1 || actionCatalog.Status != "enabled" {
 		t.Fatalf("unexpected action catalog: %#v %v", actionCatalog, err)
@@ -430,6 +434,10 @@ func TestToolRuntimePostgresLifecycleAndIsolation(t *testing.T) {
 	service.SetSettingProvider(toolSettingProvider(t, "tool-embed"))
 	if err = service.IndexCatalogDocument(ctx, actionTool.ID, 4, "tool-embed"); err != nil {
 		t.Fatal(err)
+	}
+	indexStatus, err = service.IndexStatus(ctx)
+	if err != nil || indexStatus.State != "pending" || indexStatus.ModelAlias != "tool-embed" || indexStatus.Ready != 1 || indexStatus.Pending != 2 {
+		t.Fatalf("unexpected active tool index status: %#v %v", indexStatus, err)
 	}
 	if err = guarded.WithContext(ctx).Where("tool_id=?", actionTool.ID).First(&actionDocument).Error; err != nil || actionDocument.IndexStatus != "ready" || actionDocument.EmbeddingAlias != "tool-embed" || actionDocument.EmbeddingDeploymentID != "embed-deployment" || actionDocument.EmbeddingDimensions != 2 || actionDocument.EmbeddingVector == nil || len(*actionDocument.EmbeddingVector) != 2 {
 		t.Fatalf("tool vector projection is invalid: %#v %v", actionDocument, err)

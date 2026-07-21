@@ -87,5 +87,6 @@ declare namespace Api {
       stale: number;
       last_updated_at?: string;
     }
+    type ToolIndexStatus = NavigationIndexStatus;
   }
 }

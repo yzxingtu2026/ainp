@@ -784,6 +784,13 @@ declare namespace App {
             rebuildQueued: string;
             states: Record<Api.Setting.NavigationIndexState, string>;
           };
+          toolIndex: {
+            title: string;
+            summary: string;
+            rebuild: string;
+            rebuildQueued: string;
+            states: Record<Api.Setting.NavigationIndexState, string>;
+          };
         };
         attachment: {
           demoTitle: string;

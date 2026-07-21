@@ -8,7 +8,9 @@ import RemoteSelect from '@/components/common/remote-select.vue';
 import {
   fetchNavigationIndexStatus,
   fetchSettingList,
+  fetchToolIndexStatus,
   rebuildNavigationIndex,
+  rebuildToolIndex,
   resetSetting,
   updateSetting
 } from '@/service/api';
@@ -26,15 +28,20 @@ const formRef = ref<FormInst | null>(null);
 const formModel = reactive<Record<string, unknown>>({});
 const baseline = ref<Record<string, unknown>>({});
 const current = ref<Api.Setting.Definition | null>(null);
-const navigationIndexStatus = ref<Api.Setting.NavigationIndexStatus | null>(null);
+const semanticIndexStatus = ref<Api.Setting.NavigationIndexStatus | null>(null);
 const indexStatusLoading = ref(false);
 const rebuildingIndex = ref(false);
 let indexPollTimer: ReturnType<typeof setTimeout> | undefined;
 let indexRequestSequence = 0;
 
 const isNavigationSearchSetting = computed(() => current.value?.key === 'ai.navigation_search');
+const isToolSearchSetting = computed(() => current.value?.key === 'ai.tool_search');
+const isSemanticSearchSetting = computed(() => isNavigationSearchSetting.value || isToolSearchSetting.value);
+const indexTranslationKey = computed(() =>
+  isToolSearchSetting.value ? 'page.setting.toolIndex' : 'page.setting.navigationIndex'
+);
 const navigationStateType = computed(() => {
-  const state = navigationIndexStatus.value?.state;
+  const state = semanticIndexStatus.value?.state;
   if (state === 'ready') return 'success';
   if (state === 'failed') return 'error';
   if (state === 'pending' || state === 'degraded') return 'warning';
@@ -48,16 +55,17 @@ function clearIndexPoll() {
 
 async function loadNavigationIndexStatus(scheduleNext = true) {
   clearIndexPoll();
-  if (!isNavigationSearchSetting.value) {
-    navigationIndexStatus.value = null;
+  if (!isSemanticSearchSetting.value) {
+    semanticIndexStatus.value = null;
     return;
   }
   const sequence = ++indexRequestSequence;
   indexStatusLoading.value = true;
   try {
-    const { data, error } = await fetchNavigationIndexStatus();
+    const request = isToolSearchSetting.value ? fetchToolIndexStatus : fetchNavigationIndexStatus;
+    const { data, error } = await request();
     if (sequence !== indexRequestSequence || error || !data) return;
-    navigationIndexStatus.value = data;
+    semanticIndexStatus.value = data;
     if (scheduleNext && data.state === 'pending') indexPollTimer = setTimeout(loadNavigationIndexStatus, 2000);
   } finally {
     if (sequence === indexRequestSequence) indexStatusLoading.value = false;
@@ -68,10 +76,11 @@ async function handleRebuildNavigationIndex() {
   if (!can(SYSTEM_ACTIONS.settingUpdate)) return;
   rebuildingIndex.value = true;
   try {
-    const { data, error } = await rebuildNavigationIndex();
+    const request = isToolSearchSetting.value ? rebuildToolIndex : rebuildNavigationIndex;
+    const { data, error } = await request();
     if (!error && data) {
-      navigationIndexStatus.value = data;
-      window.$message?.success($t('page.setting.navigationIndex.rebuildQueued'));
+      semanticIndexStatus.value = data;
+      window.$message?.success($t(`${indexTranslationKey.value}.rebuildQueued`));
       loadNavigationIndexStatus();
     }
   } finally {
@@ -323,15 +332,15 @@ onBeforeUnmount(clearIndexPoll);
           </NSpace>
 
           <template v-if="current">
-            <NAlert v-if="isNavigationSearchSetting" class="mb-16px" :show-icon="false">
+            <NAlert v-if="isSemanticSearchSetting" class="mb-16px" :show-icon="false">
               <div class="flex flex-wrap items-center justify-between gap-12px">
                 <div class="flex flex-wrap items-center gap-8px">
-                  <span class="font-500">{{ $t('page.setting.navigationIndex.title') }}</span>
+                  <span class="font-500">{{ $t(`${indexTranslationKey}.title`) }}</span>
                   <NTag :type="navigationStateType" size="small">
-                    {{ $t(`page.setting.navigationIndex.states.${navigationIndexStatus?.state || 'not_indexed'}`) }}
+                    {{ $t(`${indexTranslationKey}.states.${semanticIndexStatus?.state || 'not_indexed'}`) }}
                   </NTag>
-                  <span v-if="navigationIndexStatus" class="text-12px text-gray-500">
-                    {{ $t('page.setting.navigationIndex.summary', navigationIndexStatus) }}
+                  <span v-if="semanticIndexStatus" class="text-12px text-gray-500">
+                    {{ $t(`${indexTranslationKey}.summary`, semanticIndexStatus) }}
                   </span>
                 </div>
                 <NButton
@@ -340,7 +349,7 @@ onBeforeUnmount(clearIndexPoll);
                   :disabled="!can(SYSTEM_ACTIONS.settingUpdate) || isDirty"
                   @click="handleRebuildNavigationIndex"
                 >
-                  {{ $t('page.setting.navigationIndex.rebuild') }}
+                  {{ $t(`${indexTranslationKey}.rebuild`) }}
                 </NButton>
               </div>
             </NAlert>

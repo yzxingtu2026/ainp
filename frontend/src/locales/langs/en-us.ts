@@ -650,6 +650,20 @@ const local: App.I18n.Schema = {
           failed: 'Failed',
           degraded: 'Partially available'
         }
+      },
+      toolIndex: {
+        title: 'Tool index',
+        summary: '{total} total, {ready} ready, {pending} pending, {failed} failed',
+        rebuild: 'Rebuild now',
+        rebuildQueued: 'Tool index rebuild triggered',
+        states: {
+          disabled: 'Disabled',
+          not_indexed: 'Not indexed',
+          pending: 'Pending',
+          ready: 'Ready',
+          failed: 'Failed',
+          degraded: 'Partially available'
+        }
       }
     },
     attachment: {

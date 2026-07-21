@@ -55,6 +55,8 @@ const (
 	ActionToolConfirmationApprove      = "ai.tool_confirmation_approve"
 	ActionToolConfirmationReject       = "ai.tool_confirmation_reject"
 	ActionToolCatalogRebuild           = "ai.tool_catalog_rebuild"
+	ActionToolIndexStatus              = "ai.tool_index_status"
+	ActionToolIndexRebuild             = "ai.tool_index_rebuild"
 	ActionNavigationIndexStatus        = "ai.navigation_index_status"
 	ActionNavigationIndexRebuild       = "ai.navigation_index_rebuild"
 	ActionAgentList                    = "ai.agent_list"
@@ -246,6 +248,12 @@ func Register(a *app.App) error {
 	}); err != nil {
 		return err
 	}
+	if err := a.SettingChanges.Register(aitool.SettingKeySearch, func(ctx context.Context, change setting.Change) error {
+		_, err := tools.ReconcileCatalogForTenant(ctx, change.TenantID, change.UserID)
+		return err
+	}); err != nil {
+		return err
+	}
 	a.AgentTenantInitializer = func(ctx context.Context, db *gorm.DB, tenantID, userID string) error {
 		if err := agents.ReconcileBuiltinForTenant(ctx, db, tenantID, userID); err != nil {
 			return err
@@ -273,6 +281,23 @@ func Register(a *app.App) error {
 		{ActionToolConfirmationApprove, "/api/v1/ai/tool-confirmations/approve", "批准本次工具执行", "ai.tool_runtime", "工具运行时", action.JSON(tools.Approve)},
 		{ActionToolConfirmationReject, "/api/v1/ai/tool-confirmations/reject", "拒绝本次工具执行", "ai.tool_runtime", "工具运行时", action.JSON(tools.Reject)},
 		{ActionToolCatalogRebuild, "/api/v1/ai/tools/catalog/rebuild", "重建工具目录", "ai.tool_runtime", "工具运行时", action.JSON(func(ctx context.Context, _ struct{}) (any, error) { return tools.ReconcileCatalog(ctx, true) })},
+		{ActionToolIndexStatus, "/api/v1/ai/tools/index/status", "工具索引状态", "ai.tool_runtime", "工具运行时", action.JSON(func(ctx context.Context, _ struct{}) (any, error) {
+			ac := auth.MustFromContext(ctx)
+			if !ac.HasPermission(system.ActionSettingList) {
+				return nil, errs.NewKey(errs.CodeForbidden, "common.forbidden", "forbidden")
+			}
+			return tools.IndexStatus(ctx)
+		})},
+		{ActionToolIndexRebuild, "/api/v1/ai/tools/index/rebuild", "重建工具索引", "ai.tool_runtime", "工具运行时", action.JSON(func(ctx context.Context, _ struct{}) (any, error) {
+			ac := auth.MustFromContext(ctx)
+			if !ac.HasPermission(system.ActionSettingUpdate) {
+				return nil, errs.NewKey(errs.CodeForbidden, "common.forbidden", "forbidden")
+			}
+			if _, err := tools.ReconcileCatalog(ctx, true); err != nil {
+				return nil, err
+			}
+			return tools.IndexStatus(ctx)
+		})},
 		{ActionNavigationIndexStatus, "/api/v1/ai/navigation/index/status", "导航索引状态", "ai.navigation", "功能导航", action.JSON(func(ctx context.Context, _ struct{}) (any, error) {
 			ac := auth.MustFromContext(ctx)
 			if !ac.HasPermission(system.ActionSettingList) {

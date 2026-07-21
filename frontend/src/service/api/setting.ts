@@ -5,6 +5,8 @@ const SETTING_API = {
   get: '/api/v1/system/settings/get',
   update: '/api/v1/system/settings/update',
   reset: '/api/v1/system/settings/reset',
+  toolIndexStatus: '/api/v1/ai/tools/index/status',
+  toolIndexRebuild: '/api/v1/ai/tools/index/rebuild',
   navigationIndexStatus: '/api/v1/ai/navigation/index/status',
   navigationIndexRebuild: '/api/v1/ai/navigation/index/rebuild'
 } as const;
@@ -19,6 +21,14 @@ export function fetchNavigationIndexStatus() {
     method: 'post',
     data: {}
   });
+}
+
+export function fetchToolIndexStatus() {
+  return request<Api.Setting.ToolIndexStatus>({ url: SETTING_API.toolIndexStatus, method: 'post', data: {} });
+}
+
+export function rebuildToolIndex() {
+  return request<Api.Setting.ToolIndexStatus>({ url: SETTING_API.toolIndexRebuild, method: 'post', data: {} });
 }
 
 export function rebuildNavigationIndex() {
