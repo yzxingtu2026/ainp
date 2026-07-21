@@ -138,7 +138,11 @@ WHERE tenant_id=? AND conversation_id=? AND id=? AND role=? AND status=? LIMIT 1
 		return nil, errs.New(errs.CodeValidation, err.Error())
 	}
 	budgetJSON, _ := json.Marshal(budget)
-	run := AgentRun{ID: uuid.NewString(), TenantID: ac.TenantID, UserID: ac.UserID, ConversationID: conversation.ID, ConversationRevision: conversation.Revision, TriggerMessageID: trigger.ID, AgentVersionID: conversation.AgentVersionID, SessionID: ac.SessionID, AuthVersion: ac.AuthVersion, Status: string(aiagentruntime.RunQueued), BudgetJSON: budgetJSON, IdempotencyKey: key, Revision: 1}
+	traceID := strings.TrimSpace(ac.TraceID)
+	if traceID == "" {
+		traceID = ac.RequestID
+	}
+	run := AgentRun{ID: uuid.NewString(), TenantID: ac.TenantID, UserID: ac.UserID, ConversationID: conversation.ID, ConversationRevision: conversation.Revision, TriggerMessageID: trigger.ID, AgentVersionID: conversation.AgentVersionID, SessionID: ac.SessionID, AuthVersion: ac.AuthVersion, OriginRequestID: ac.RequestID, TraceID: traceID, Status: string(aiagentruntime.RunQueued), BudgetJSON: budgetJSON, IdempotencyKey: key, Revision: 1}
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if e := tx.Where("user_id=? AND idempotency_key=?", ac.UserID, key).First(&run).Error; e == nil {
 			return nil
@@ -512,7 +516,7 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 	if authErr != nil || snapshot.AuthVersion != run.AuthVersion {
 		return s.fail(ctx, run, "authorization_changed")
 	}
-	ctx = auth.WithContext(ctx, &auth.Context{TenantID: snapshot.TenantID, UserID: snapshot.UserID, SessionID: snapshot.SessionID, OrgID: snapshot.OrgID, DeptID: snapshot.DeptID, Roles: snapshot.Roles, Permissions: snapshot.Permissions, AuthVersion: snapshot.AuthVersion, Realm: auth.RealmTenant, Authenticated: true})
+	ctx = auth.WithContext(ctx, &auth.Context{RequestID: run.OriginRequestID, TraceID: run.TraceID, TenantID: snapshot.TenantID, UserID: snapshot.UserID, SessionID: snapshot.SessionID, OrgID: snapshot.OrgID, DeptID: snapshot.DeptID, Roles: snapshot.Roles, Permissions: snapshot.Permissions, AuthVersion: snapshot.AuthVersion, Realm: auth.RealmTenant, Client: "agent", AgentRunID: run.ID, Authenticated: true})
 	var budget aiagentruntime.Budget
 	if json.Unmarshal(run.BudgetJSON, &budget) != nil {
 		return s.fail(ctx, run, "invalid_budget")

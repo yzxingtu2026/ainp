@@ -15,6 +15,8 @@ type AgentRun struct {
 	AgentVersionID       string          `gorm:"size:64;not null" json:"agent_version_id"`
 	SessionID            string          `gorm:"size:64" json:"session_id"`
 	AuthVersion          uint64          `gorm:"not null" json:"auth_version"`
+	OriginRequestID      string          `gorm:"size:64;not null;default:'';index" json:"request_id,omitempty"`
+	TraceID              string          `gorm:"size:64;not null;default:'';index" json:"trace_id,omitempty"`
 	ContextSnapshotID    *string         `gorm:"size:64" json:"context_snapshot_id,omitempty"`
 	EvaluatedAtUTC       *time.Time      `json:"evaluated_at_utc,omitempty"`
 	Timezone             string          `gorm:"size:64;not null;default:''" json:"timezone,omitempty"`

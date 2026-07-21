@@ -39,8 +39,10 @@ const query = reactive({
   request_id: '',
   client: ''
 });
-const actor = (row: Api.Operations.AuditLog) =>
-  row.actor_name ? `${row.actor_name} (${row.user_id || row.actor_type})` : row.user_id || row.actor_type || '-';
+const actor = (row: Api.Operations.AuditLog) => {
+  const identity = [row.actor_type, row.user_id].filter(Boolean).join(': ');
+  return row.actor_name ? `${row.actor_name} (${identity})` : identity || '-';
+};
 const columns = computed<DataTableColumns<Api.Operations.AuditLog>>(() => [
   { title: $t('auditLog.occurredAt'), key: 'occurred_at', width: 180, render: r => formatDateTime(r.occurred_at) },
   { title: $t('auditLog.actor'), key: 'user_id', width: 180, ellipsis: { tooltip: true }, render: actor },
@@ -175,6 +177,9 @@ onMounted(load);
             {{ [detail.resource_type, detail.resource_id].filter(Boolean).join('/') || '-' }}
           </NDescriptionsItem>
           <NDescriptionsItem :label="$t('auditLog.requestId')">{{ detail.request_id || '-' }}</NDescriptionsItem>
+          <NDescriptionsItem label="Trace ID">{{ detail.trace_id || '-' }}</NDescriptionsItem>
+          <NDescriptionsItem label="Agent Run ID">{{ detail.agent_run_id || '-' }}</NDescriptionsItem>
+          <NDescriptionsItem label="Tool Invocation ID">{{ detail.tool_invocation_id || '-' }}</NDescriptionsItem>
           <NDescriptionsItem :label="$t('auditLog.client')">{{ detail.client || '-' }}</NDescriptionsItem>
           <NDescriptionsItem :label="$t('auditLog.summary')">{{ detail.summary || '-' }}</NDescriptionsItem>
         </NDescriptions>

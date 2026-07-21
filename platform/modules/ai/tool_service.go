@@ -432,7 +432,13 @@ func (s *ToolService) execute(ctx context.Context, ac *auth.Context, scope *Tool
 		return nil, s.finishInvocation(ctx, &inv, nil, "failed", "execution_failed", fmt.Errorf("tool executor unavailable"))
 	}
 	loaded.Handle = ""
-	result, execErr := executor.Execute(aitool.WithScopeID(ctx, scope.ID), loaded, args)
+	executionCtx := ctx
+	if current, ok := auth.FromContext(ctx); ok && current != nil {
+		invocationContext := *current
+		invocationContext.ToolInvocationID = inv.ID
+		executionCtx = auth.WithContext(ctx, &invocationContext)
+	}
+	result, execErr := executor.Execute(aitool.WithScopeID(executionCtx, scope.ID), loaded, args)
 	if execErr != nil {
 		_ = s.finishInvocation(ctx, &inv, nil, "failed", "execution_failed", execErr)
 		return nil, execErr

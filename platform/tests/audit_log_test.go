@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/yzxingtu2026/ainp/platform/framework/action"
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
 	"github.com/yzxingtu2026/ainp/platform/framework/audit"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
@@ -15,6 +16,40 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/modules/operations"
 	"github.com/yzxingtu2026/ainp/platform/modules/system/model"
 )
+
+func TestAgentActionAuditPreservesUserAndCorrelation(t *testing.T) {
+	db := openOutboxTestDB(t)
+	if err := db.AutoMigrate(&audit.Record{}); err != nil {
+		t.Fatal(err)
+	}
+	application := app.New(&config.Config{}, db, audit.NewGormRecorder(db), nil)
+	auditOn := true
+	if err := application.Actions.Register(action.Action{
+		ID:      "demo.agent_read",
+		Meta:    action.Metadata{Capability: "demo", Access: action.AccessAuthenticated, Audit: &auditOn},
+		Handler: func(context.Context, json.RawMessage) (any, error) { return map[string]any{"ok": true}, nil },
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ctx := auth.WithContext(context.Background(), &auth.Context{
+		Authenticated: true, TenantID: "t1", Realm: auth.RealmTenant, UserID: "u1",
+		RequestID: "req-origin", TraceID: "trace-origin", Client: "agent",
+		AgentRunID: "run-1", ToolInvocationID: "inv-1",
+	})
+	if _, err := application.Actions.Invoke(ctx, "demo.agent_read", json.RawMessage(`{}`)); err != nil {
+		t.Fatal(err)
+	}
+	var row audit.Record
+	if err := db.Where("action_id = ?", "demo.agent_read").First(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	if row.UserID != "u1" || row.ActorType != "agent" || row.Client != "agent" {
+		t.Fatalf("unexpected agent actor facts: %#v", row)
+	}
+	if row.RequestID != "req-origin" || row.TraceID == nil || *row.TraceID != "trace-origin" || row.AgentRunID == nil || *row.AgentRunID != "run-1" || row.ToolInvocationID == nil || *row.ToolInvocationID != "inv-1" {
+		t.Fatalf("unexpected agent correlation facts: %#v", row)
+	}
+}
 
 func TestAuditLogActionsFilterAndEnforceTenantScope(t *testing.T) {
 	db := openOutboxTestDB(t)

@@ -38,6 +38,8 @@ Agent 只读要点：`.agent/rules/audit.md`。本文档定义审计与运行日
 | `result` | string | `success` / `failure` |
 | `request_id` | string | 与 API 信封、运行日志关联 |
 
+Agent 代表用户执行 Action 时，`user_id` 保留责任与授权归属用户，`actor_type=agent`、`client=agent`。审计同时保存服务端生成的 `trace_id`、`agent_run_id` 与 `tool_invocation_id`，用于从审计详情定位 Run、工具调用和运行日志；这些关联字段不得来自模型参数或 Tool Arguments。
+
 ## 强烈建议（Phase 1 建议具备）
 
 | 字段 | 说明 |
@@ -48,11 +50,15 @@ Agent 只读要点：`.agent/rules/audit.md`。本文档定义审计与运行日
 | `resource_id` | 业务主键 |
 | `client` | `web` / `mcp` / `agent` / `job` |
 | `summary` | 短句摘要，无密钥与大段敏感正文 |
+| `trace_id` | 跨请求、Run、ToolInvocation 与日志的稳定追踪 ID |
+| `agent_run_id` | 发起本次 Action 的 Agent Run；非 Agent 调用为空 |
+| `tool_invocation_id` | 发起本次 Action 的 ToolInvocation；非工具调用为空 |
 
 ## 禁止写入审计的内容
 
 - 密码、Token、Authorization 全量
 - 完整 Request/Response Body、Prompt/Tool 全文
+- 完整 Tool Arguments、模型响应与工具结果
 - Stack trace、SQL 原文
 
 上述走运行日志并按 `logging.md` 脱敏/截断。

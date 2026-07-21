@@ -33,6 +33,8 @@ type Context struct {
 	SessionID         string
 	AuthVersion       uint64
 	Client            string
+	AgentRunID        string // 可信 Agent Runtime 注入；用于审计关联，不参与授权。
+	ToolInvocationID  string // 可信 Tool Runtime 注入；用于审计关联，不参与授权。
 	Language          string // 由 Accept-Language 中间件协商；空表示未设置
 	IsSystemOperator  bool
 	Authenticated     bool

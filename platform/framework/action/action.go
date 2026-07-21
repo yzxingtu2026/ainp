@@ -329,19 +329,22 @@ func (r *Registry) writeAuditWithReplay(ctx context.Context, a Action, perm, res
 	}
 	ac := auth.MustFromContext(ctx)
 	rec := audit.Record{
-		OccurredAt:   time.Now().UTC(),
-		TenantID:     ac.TenantID,
-		Realm:        string(auth.NormalizeRealm(ac.Realm)),
-		UserID:       ac.UserID,
-		ActorType:    actorType(ac),
-		ActionID:     a.ID,
-		Result:       result,
-		RequestID:    ac.RequestID,
-		Permission:   perm,
-		Client:       ac.Client,
-		ResourceType: ac.AuditResourceType,
-		ResourceID:   ac.AuditResourceID,
-		Replay:       replay,
+		OccurredAt:       time.Now().UTC(),
+		TenantID:         ac.TenantID,
+		Realm:            string(auth.NormalizeRealm(ac.Realm)),
+		UserID:           ac.UserID,
+		ActorType:        actorType(ac),
+		ActionID:         a.ID,
+		Result:           result,
+		RequestID:        ac.RequestID,
+		TraceID:          optionalAuditValue(ac.TraceID),
+		AgentRunID:       optionalAuditValue(ac.AgentRunID),
+		ToolInvocationID: optionalAuditValue(ac.ToolInvocationID),
+		Permission:       perm,
+		Client:           ac.Client,
+		ResourceType:     ac.AuditResourceType,
+		ResourceID:       ac.AuditResourceID,
+		Replay:           replay,
 	}
 	if replay && err == nil {
 		rec.Summary = "replay"
@@ -362,6 +365,14 @@ func (r *Registry) writeAuditWithReplay(ctx context.Context, a Action, perm, res
 	if werr := r.auditor.Write(ctx, rec); werr != nil {
 		logging.Error(ctx, "audit write failed", werr, "action_id", a.ID)
 	}
+}
+
+func optionalAuditValue(value string) *string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	return &value
 }
 
 func actorType(ac *auth.Context) string {
