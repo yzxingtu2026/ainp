@@ -131,7 +131,7 @@ func TestSystemOperationsContractUsesProgressiveActionScope(t *testing.T) {
 	if !ok {
 		t.Fatal("system.operations contract is not registered")
 	}
-	if !slices.Equal(contract.AllowedToolSources, []string{"action"}) || !slices.Equal(contract.AllowedToolCapabilities, []string{"system", "operations"}) {
+	if !slices.Equal(contract.AllowedToolSources, []string{"action"}) || !slices.Equal(contract.AllowedToolCapabilities, []string{"system", "operations", "ai"}) {
 		t.Fatalf("unexpected progressive tool scope: %#v", contract)
 	}
 	if !slices.Contains(contract.RequiredToolSelectors, "builtin:navigation.search") {
