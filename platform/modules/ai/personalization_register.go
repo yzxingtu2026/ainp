@@ -70,7 +70,7 @@ func RegisterPersonalization(a *app.App, service *PersonalizationService) error 
 		id, path, name string
 		handler        action.Handler
 	}{{ActionPersonalizationGet, "/api/v1/ai/assistant-personalization/get", "读取助手个性化快照", action.JSON(func(ctx context.Context, in struct{}) (any, error) { return service.Read(ctx, in) })}, {ActionPersonalizationRebuild, "/api/v1/ai/assistant-personalization/rebuild", "重建助手个性化快照", action.JSON(func(ctx context.Context, in struct{}) (any, error) { return service.Rebuild(ctx, in) })}} {
-		if err := a.RegisterAction(action.Action{ID: x.id, Handler: x.handler, Meta: action.Metadata{Capability: "ai", Access: action.AccessAuthenticated, Name: x.name, Description: x.name, Audit: &auditOff, HTTP: &action.HTTPMeta{Method: "POST", Path: x.path}}}); err != nil {
+		if err := a.RegisterAction(action.Action{ID: x.id, Handler: x.handler, Meta: action.Metadata{Capability: "ai", Access: action.AccessAuthenticated, Name: x.name, Description: x.name, Audit: &auditOff, AI: action.ExcludeFromAI(action.AIExcludeInternalRuntime), HTTP: &action.HTTPMeta{Method: "POST", Path: x.path}}}); err != nil {
 			return err
 		}
 	}

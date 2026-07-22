@@ -40,6 +40,7 @@ func RegisterSetupActions(a *app.App, svc *SetupService) error {
 			Description:    "返回当前安装状态",
 			DescriptionKey: "action.setup.status.description",
 			Audit:          &auditOff,
+			AI:             action.ExcludeFromAI(action.AIExcludeSetupOperation),
 			HTTP: &action.HTTPMeta{
 				Method: "GET",
 				Path:   "/api/v1/setup/status",
@@ -63,6 +64,7 @@ func RegisterSetupActions(a *app.App, svc *SetupService) error {
 			Description:    "检查运行环境是否就绪",
 			DescriptionKey: "action.setup.check_env.description",
 			Audit:          &auditOff,
+			AI:             action.ExcludeFromAI(action.AIExcludeSetupOperation),
 			HTTP: &action.HTTPMeta{
 				Method: "GET",
 				Path:   "/api/v1/setup/check-env",
@@ -86,6 +88,7 @@ func RegisterSetupActions(a *app.App, svc *SetupService) error {
 			Description:    "测试数据库连通性",
 			DescriptionKey: "action.setup.test_db.description",
 			Audit:          &auditOff,
+			AI:             action.ExcludeFromAI(action.AIExcludeSetupOperation),
 			HTTP: &action.HTTPMeta{
 				Method: "POST",
 				Path:   "/api/v1/setup/test-db",
@@ -109,6 +112,7 @@ func RegisterSetupActions(a *app.App, svc *SetupService) error {
 			Description:    "创建初始租户与管理员账号",
 			DescriptionKey: "action.setup.initialize.description",
 			Audit:          &auditOn,
+			AI:             action.ExcludeFromAI(action.AIExcludeSetupOperation),
 			HTTP: &action.HTTPMeta{
 				Method: "POST",
 				Path:   "/api/v1/setup/initialize",

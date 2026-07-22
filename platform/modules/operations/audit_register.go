@@ -197,7 +197,7 @@ func registerAuditLogActions(a *app.App) error {
 		{ActionAuditLogList, "/api/v1/operations/audit-logs/list", "审计列表", "action.system.audit_log_list.name", "查询当前租户操作审计", "action.system.audit_log_list.description", action.JSON(svc.list)},
 		{ActionAuditLogGet, "/api/v1/operations/audit-logs/get", "审计详情", "action.system.audit_log_get.name", "查询当前租户操作审计详情", "action.system.audit_log_get.description", action.JSON(svc.get)},
 	} {
-		if err := a.RegisterAction(action.Action{ID: spec.id, Handler: spec.handler, Meta: action.Metadata{Capability: "operations", Name: spec.name, NameKey: spec.nameKey, Description: spec.desc, DescriptionKey: spec.descKey, PermissionGroup: "system.operations.audit", PermissionGroupName: "操作审计", PermissionGroupNameKey: "permission_group.system.operations.audit", Audit: &auditOn, HTTP: &action.HTTPMeta{Method: "POST", Path: spec.path}}}); err != nil {
+		if err := a.RegisterAction(action.Action{ID: spec.id, Handler: spec.handler, Meta: action.Metadata{Capability: "operations", Name: spec.name, NameKey: spec.nameKey, Description: spec.desc, DescriptionKey: spec.descKey, PermissionGroup: "system.operations.audit", PermissionGroupName: "操作审计", PermissionGroupNameKey: "permission_group.system.operations.audit", Audit: &auditOn, AI: action.ExcludeFromAI(action.AIExcludePendingSafetyReview), HTTP: &action.HTTPMeta{Method: "POST", Path: spec.path}}}); err != nil {
 			return err
 		}
 	}

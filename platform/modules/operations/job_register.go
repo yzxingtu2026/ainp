@@ -178,6 +178,7 @@ func registerJobActions(a *app.App) error {
 				PermissionGroupName:    "任务运维",
 				PermissionGroupNameKey: "permission_group.operations.jobs",
 				Audit:                  spec.audit,
+				AI:                     action.ExcludeFromAI(action.AIExcludePendingSafetyReview),
 				HTTP:                   &action.HTTPMeta{Method: "POST", Path: spec.path},
 			},
 		}); err != nil {

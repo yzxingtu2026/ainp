@@ -101,3 +101,31 @@ func TestRegistryRejectsInvalidSurface(t *testing.T) {
 		t.Fatal("expected invalid surface registration error")
 	}
 }
+
+func TestAIClassificationIsMutuallyExclusiveAndFailClosed(t *testing.T) {
+	exposed := &action.AIMeta{ExposeTool: true, ExclusionReason: action.AIExcludePendingSafetyReview}
+	if err := action.ValidateAIClassification("demo.exposed", exposed); err == nil {
+		t.Fatal("exposed action must not also declare an exclusion reason")
+	}
+	if err := action.ValidateAIClassification("demo.excluded", &action.AIMeta{}); err == nil {
+		t.Fatal("excluded action without a reason must fail")
+	}
+	if err := action.ValidateAIClassification("demo.excluded", action.ExcludeFromAI(action.AIExcludePendingSafetyReview)); err != nil {
+		t.Fatalf("valid exclusion rejected: %v", err)
+	}
+}
+
+func TestSideEffectingAIActionRequiresConfirmation(t *testing.T) {
+	meta := &action.AIMeta{
+		ExposeTool: true, Risk: "medium", SideEffect: "write",
+		Summary: "更新资源", HumanDescription: "更新资源", ResultSummary: "资源已更新",
+		InputSchema: action.InputSchemaFor[struct{}](),
+	}
+	if err := action.ValidateAIClassification("demo.update", meta); err == nil {
+		t.Fatal("side-effecting AI action without confirmation must fail")
+	}
+	meta.RequiresConfirmation = true
+	if err := action.ValidateAIClassification("demo.update", meta); err != nil {
+		t.Fatalf("confirmed side-effecting AI action rejected: %v", err)
+	}
+}

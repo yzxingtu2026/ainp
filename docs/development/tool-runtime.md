@@ -6,13 +6,15 @@
 
 `ToolRegistry` 是完整工具定义的服务端事实源，不等于模型 Prompt。模型只获得 Agent 的 Contract 必选项与用户可选绑定；没有有效绑定的翻译、摘要等 Agent 不注入任何工具。绑定 `tool.search`、`tool.load` 后才启用渐进发现；`tool.search` 返回最多 10 个不含完整 Schema 的安全候选，`tool.load` 受单次数量、Scope 总量和 32 KiB Schema 预算限制。`knowledge.search` / `memory.search` 等条件工具只有已绑定且实时资源条件满足时才投影。
 
+同一 Agent Run 的 `loaded_tools` 是单调递增集合，每轮模型调用都投影 `allowed_tools + loaded_tools`；不同 Run 不继承 Scope。Progressive 工具未进入当前投影时不得通过普通执行路径隐式 load，必须先调用 `tool.load`。重复 load 已在 Scope 内的工具只返回紧凑 `already_loaded_tool_ids`，不得再次把完整 Definition 写入模型消息；首次 load 才返回完整 Schema。Search/Load 使用稳定 Registry ID（如 `action:system.user_update`），执行必须使用投影后的模型工具名（如 `action__system_user_update`）；模型混用两者时返回可恢复错误并允许同批后续 Search/Load 继续，禁止直接终止 Run。
+
 调用方使用 `enable_tools=true` 创建新 Scope，后续携带返回的 `tool_scope_id`。禁止直接提交 `tools` 绕过 Registry。结构化输出的 response-only function 是 Model Adapter 私有输出约束，不进入 Registry、Scope、Handle、Confirmation、Step 或执行事实，也不得由业务调用方通过 `Tools/ToolChoice` 构造。`tool.execute` 是服务端内部协议，不是常驻模型工具。
 
 ## Registry 与 Provider
 
 工具 ID 必须为 `{source}:{namespaced-id}`。Definition 必须分别声明稳定 `Name` / `DescriptionForLLM` 与插件自带的 `TitleForHuman` / `DescriptionForHuman`；框架不要求插件预注册平台 i18n key，管理界面只展示 Human 契约，Human 文案不参与 Schema Hash、Handle 或 Embedding 文档。Definition 还必须显式声明 `binding_mode=forbidden|optional` 与 `loading_mode=direct|conditional|progressive`；需要原子绑定的工具用稳定 `binding_group` 聚合。首期实现 `meta` 与 `action`，`builtin/plugin/http/mcp` 只能通过同一 Provider/Executor 接口扩展。未知来源、重复 Provider、非法 Schema、缺少 Human/风险/绑定/加载元数据均在注册或刷新时 fail-closed。
 
-Action 是否暴露以注册处的 `Metadata.AI` 为唯一事实源：仅 `AIMeta.ExposeTool=true` 自动投影为 Action Tool，`AI=nil` 默认不暴露。暴露项使用 `action.SchemaFor[Request/Response]()` 从强类型 DTO 生成输入/输出 Schema，并声明 tags、风险、副作用、确认策略与安全结果摘要。禁止维护 `action_ai_inventory.go` 等平行暴露清单；Action Executor 只能调用 `ActionRegistry.Invoke`。
+Action 是否暴露以注册处的 `Metadata.AI` 为唯一事实源：仅 `AIMeta.ExposeTool=true` 自动投影为 Action Tool，`AI=nil` 默认不暴露。暴露项使用 `action.InputSchemaFor[Request]()` 生成显式输入契约，响应使用 `action.SchemaFor[Response]()`；HTTP 与 Tool 必须复用同一强类型 DTO 和 Handler。字段 required 只由显式验证元数据决定，局部更新的缺失字段不得被解码零值覆盖；Tool Runtime 禁止补字段、隐式强转或维护 Agent 专用 DTO。暴露项还必须声明 tags、风险、副作用、确认策略与安全结果摘要。禁止维护 `action_ai_inventory.go` 等平行暴露清单；Action Executor 只能调用 `ActionRegistry.Invoke`。
 
 框架核心工具通过 `RuntimeSlot` 注册。Slot 同时声明稳定 Definition、`direct/progressive` 发现模式、动态投影、Executor、Step/Invocation 分类、预算类别与安全观测字段。`platform/modules/ai/tools/register.go` 是唯一显式聚合入口；每个核心工具位于独立子目录，例如 `tools/knowledge/slot.go`。生产启动不扫描源码、不使用 Go Plugin，也不依赖隐藏 `init()`。
 
@@ -43,6 +45,8 @@ Handle 使用服务端签名并绑定 tenant、user、realm、session/auth versi
 ## 确认与事实记录
 
 写入、外部、付费、破坏性、高风险工具默认单次确认，critical 默认禁止。确认绑定不可变 arguments hash，仅展示递归脱敏摘要；批准后重新校验全部安全条件并单次消费，不提供“始终允许”。
+
+同一模型响应含多个 Tool Call 时按顺序执行。任一调用进入确认后必须立即停止执行同批后续调用，并为每个未执行调用追加配对的 `deferred_for_confirmation` Tool Result；模型在确认恢复后按需重新发起。批准、拒绝、过期及其他确认终态都必须为原 Tool Call 产生配对结果，禁止留下永久等待卡片。
 
 工具调用事实与 `ai.tool_invocation.finished.v1` 同事务完成；目录变化写 `ai.tool_catalog.changed.v1`。Outbox、审计摘要和普通日志不得包含完整参数、结果、Secret、Credential 或第三方原始响应。
 

@@ -45,18 +45,18 @@ func (s *SettingService) notifyChange(ctx context.Context, change setting.Change
 }
 
 type settingKeyRequest struct {
-	Key string `json:"key"`
+	Key string `json:"key" validate:"required"`
 }
 
 type settingUpdateRequest struct {
-	Key      string         `json:"key"`
-	Revision int64          `json:"revision"`
-	Values   map[string]any `json:"values"`
+	Key      string         `json:"key" validate:"required"`
+	Revision *int64         `json:"revision" validate:"required"`
+	Values   map[string]any `json:"values" validate:"required"`
 }
 
 type settingResetRequest struct {
-	Key      string `json:"key"`
-	Revision int64  `json:"revision"`
+	Key      string `json:"key" validate:"required"`
+	Revision *int64 `json:"revision" validate:"required"`
 }
 
 type SettingFieldView struct {
@@ -184,7 +184,7 @@ func (s *SettingService) Update(ctx context.Context, input json.RawMessage) (any
 		return nil, err
 	}
 	var req settingUpdateRequest
-	if err := json.Unmarshal(input, &req); err != nil || req.Key == "" {
+	if err := json.Unmarshal(input, &req); err != nil || req.Key == "" || req.Revision == nil {
 		return nil, errs.ValidationKey("common.validation_failed", "invalid setting update request")
 	}
 	def, ok := s.registry.GetDefinition(req.Key)
@@ -205,7 +205,7 @@ func (s *SettingService) Update(ctx context.Context, input json.RawMessage) (any
 		return nil, errs.ValidationKey("setting.validation_failed", err.Error())
 	}
 	setSettingAudit(ctx, req.Key, "setting updated")
-	stored, err := s.store.Put(ctx, tenantID, req.Key, req.Revision, def.SchemaVersion, req.Values, userID)
+	stored, err := s.store.Put(ctx, tenantID, req.Key, *req.Revision, def.SchemaVersion, req.Values, userID)
 	if err != nil {
 		return nil, mapSettingError(err)
 	}
@@ -224,7 +224,7 @@ func (s *SettingService) Reset(ctx context.Context, input json.RawMessage) (any,
 		return nil, err
 	}
 	var req settingResetRequest
-	if err := json.Unmarshal(input, &req); err != nil || req.Key == "" {
+	if err := json.Unmarshal(input, &req); err != nil || req.Key == "" || req.Revision == nil {
 		return nil, errs.ValidationKey("common.validation_failed", "invalid setting reset request")
 	}
 	def, ok := s.registry.GetDefinition(req.Key)
@@ -239,7 +239,7 @@ func (s *SettingService) Reset(ctx context.Context, input json.RawMessage) (any,
 		return nil, errs.NewKey(errs.CodeForbidden, "common.forbidden", "forbidden")
 	}
 	setSettingAudit(ctx, req.Key, "setting reset")
-	if err := s.store.Delete(ctx, tenantID, req.Key, req.Revision); err != nil {
+	if err := s.store.Delete(ctx, tenantID, req.Key, *req.Revision); err != nil {
 		return nil, mapSettingError(err)
 	}
 	s.provider.Invalidate(tenantID, req.Key)

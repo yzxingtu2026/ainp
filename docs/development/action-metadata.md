@@ -8,6 +8,29 @@ Agent 只读要点：`.agent/rules/action-metadata.md`。本文档为 Phase 1 �
 - HTTP / 工作流 / Agent / MCP 共用同一 Action 入口。
 - 与图标（Iconify）、API 信封、运行日志 / 审计规范对齐。
 
+## AI 暴露分类
+
+所有非 `demo` 的生产 Action 在注册处必须完成且只能完成一种 AI 分类：
+
+- `exposed`：`Metadata.AI.ExposeTool=true`，并完整声明风险、side effect、输入 Schema、用户说明和结果摘要；可稳定建模时补充输出 Schema。
+- `excluded`：`Metadata.AI.ExposeTool=false`，并通过 `ExclusionReason` 声明非空、稳定的原因代码。统一使用 `action.ExcludeFromAI(...)` 和框架原因常量。
+
+两种状态互斥。暴露项同时填写排除原因、排除项缺少原因、或生产 Action 完全缺少 `AI` 元数据，注册与架构测试都会 fail closed。Action Registry 是唯一事实源，禁止另建 Action ID switch 或平行 AI 暴露清单。
+
+`risk=high|critical`，或 `side_effect=write|external|paid|destructive` 的暴露 Action 必须显式设置 `RequiresConfirmation=true`，否则注册失败。即使运行时会根据风险和副作用兜底触发确认，注册元数据仍必须完整表达安全契约。
+
+包含密码、Token 或 Provider 密钥的现有请求 DTO 不能直接用作 Tool 输入 Schema。必须先设计不让敏感值进入模型上下文、确认参数和调用日志的安全 DTO；完成前使用 `sensitive-credential-boundary` 排除。例如当前用户创建和密码重置 Action 均包含明文密码，因此不参与第二批投影。
+
+当前稳定排除原因包括：
+
+- `pending-safety-review`：等待对应批次完成强类型 DTO、风险和确认评审；
+- `public-authentication-entry`：登录、挑战、刷新等公共认证入口；
+- `installation-operation`：安装状态、环境检查、数据库测试和初始化；
+- `internal-runtime-operation`：Tool / Agent / 索引 / 恢复等内部运行时能力；
+- `sensitive-credential-boundary`：会接收或处理密码、Token、Provider 密钥等敏感凭证。
+
+新增原因必须表达稳定的架构边界，不能使用临时 Issue 编号或个人备注。`platform/tests/action_ai_architecture_test.go` 扫描生产模块的元数据声明，并按模块汇总漏分类位置；`demo` 与测试夹具按明确规则不进入生产清单。
+
 ## 分层关系
 
 ```text
@@ -130,7 +153,7 @@ purchase_order_create    # 禁止缺少 capability 点分前缀（除非 capabil
 | `human_description` | string | 面向用户的工具说明 |
 | `tags` | []string | 用于检索的稳定业务词 |
 | `result_summary` | string | 不含参数与正文的安全结果摘要 |
-| `input_schema` | JSON Schema | 由 `action.SchemaFor[Request]()` 生成 |
+| `input_schema` | JSON Schema | 由 `action.InputSchemaFor[Request]()` 生成；字段 required/optional 必须显式声明 |
 | `output_schema` | JSON Schema | 由 `action.SchemaFor[Response]()` 生成 |
 
 ### 预留（Phase 1 不强制）
@@ -210,7 +233,7 @@ RegisterAction(Action{
       RequiresConfirmation: true,
       Summary: "创建采购订单", HumanDescription: "创建一张新的采购订单",
       ResultSummary: "采购订单已创建",
-      InputSchema: action.SchemaFor[OrderCreateRequest](),
+      InputSchema: action.InputSchemaFor[OrderCreateRequest](),
       OutputSchema: action.SchemaFor[OrderView](),
     },
   },

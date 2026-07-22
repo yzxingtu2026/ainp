@@ -36,8 +36,8 @@ func NewRoleService(db *gorm.DB, authService *AuthService, actions *action.Regis
 
 type roleListRequest struct {
 	pagination.Request
-	Keyword string                  `json:"keyword"`
-	Status  status.ActivationStatus `json:"status" validate:"omitempty,oneof=enabled disabled"`
+	Keyword string                  `json:"keyword,omitempty" validate:"omitempty"`
+	Status  status.ActivationStatus `json:"status,omitempty" validate:"omitempty,oneof=enabled disabled"`
 }
 
 type roleIDRequest struct {
@@ -47,21 +47,21 @@ type roleIDRequest struct {
 type roleCreateRequest struct {
 	Code        string                  `json:"code" validate:"required,min=2,max=64"`
 	Name        string                  `json:"name" validate:"required,max=128"`
-	Description string                  `json:"description"`
+	Description string                  `json:"description,omitempty" validate:"omitempty"`
 	Status      status.ActivationStatus `json:"status" validate:"omitempty,oneof=enabled disabled"`
-	Permissions []string                `json:"permissions" validate:"max=200,dive,required"`
+	Permissions []string                `json:"permissions" validate:"required,max=200,dive,required"`
 }
 
 type roleUpdateRequest struct {
 	ID          string                  `json:"id" validate:"required"`
 	Name        string                  `json:"name" validate:"required,max=128"`
-	Description string                  `json:"description"`
+	Description string                  `json:"description,omitempty" validate:"omitempty"`
 	Status      status.ActivationStatus `json:"status" validate:"required,oneof=enabled disabled"`
 }
 
 type rolePermissionsRequest struct {
 	ID          string   `json:"id" validate:"required"`
-	Permissions []string `json:"permissions" validate:"max=200,dive,required"`
+	Permissions []string `json:"permissions" validate:"required,max=200,dive,required"`
 }
 
 type RoleView struct {

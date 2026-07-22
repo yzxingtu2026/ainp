@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/config"
 	"github.com/yzxingtu2026/ainp/platform/framework/database"
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
+	"github.com/yzxingtu2026/ainp/platform/framework/pagination"
 	"github.com/yzxingtu2026/ainp/platform/framework/permission"
 	"github.com/yzxingtu2026/ainp/platform/framework/setting"
 	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
@@ -26,6 +28,13 @@ import (
 type fakeToolProvider struct {
 	source aitool.Source
 	tools  []aitool.Definition
+}
+
+type embeddedListRequest struct {
+	pagination.Request
+	Keyword string `json:"keyword,omitempty"`
+	Status  string `json:"status,omitempty" validate:"omitempty,oneof=enabled disabled"`
+	RoleID  string `json:"role_id,omitempty"`
 }
 
 func (p *fakeToolProvider) Source() aitool.Source                             { return p.source }
@@ -201,8 +210,8 @@ func TestToolHandleIsActorScopeAndSchemaBound(t *testing.T) {
 }
 
 type exposedRequest struct {
-	ResourceID string `json:"resource_id"`
-	Count      int    `json:"count,omitempty"`
+	ResourceID string `json:"resource_id" validate:"required"`
+	Count      int    `json:"count,omitempty" validate:"omitempty"`
 }
 
 func TestActionToolProviderUsesTypedSchemaAndRegistryInvoke(t *testing.T) {
@@ -210,7 +219,7 @@ func TestActionToolProviderUsesTypedSchemaAndRegistryInvoke(t *testing.T) {
 	handler := action.JSON(func(_ context.Context, r exposedRequest) (any, error) {
 		return map[string]any{"resource_id": r.ResourceID}, nil
 	})
-	err := actions.Register(action.Action{ID: "demo.read", Handler: handler, Meta: action.Metadata{Capability: "demo", Access: action.AccessAuthenticated, Name: "读取资源", AI: &action.AIMeta{ExposeTool: true, Risk: "low", SideEffect: "read", Summary: "读取指定资源", HumanDescription: "读取资源", ResultSummary: "已读取资源", InputSchema: action.SchemaFor[exposedRequest]()}}})
+	err := actions.Register(action.Action{ID: "demo.read", Handler: handler, Meta: action.Metadata{Capability: "demo", Access: action.AccessAuthenticated, Name: "读取资源", AI: &action.AIMeta{ExposeTool: true, Risk: "low", SideEffect: "read", Summary: "读取指定资源", HumanDescription: "读取资源", ResultSummary: "已读取资源", InputSchema: action.InputSchemaFor[exposedRequest]()}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -241,6 +250,24 @@ func TestSchemaForRejectsAdditionalProperties(t *testing.T) {
 	schema := action.SchemaFor[exposedRequest]()
 	if !strings.Contains(string(schema), `"additionalProperties":false`) {
 		t.Fatalf("schema must reject unknown fields: %s", schema)
+	}
+}
+
+func TestSchemaForFlattensEmbeddedOptionalListFields(t *testing.T) {
+	var schema struct {
+		Properties map[string]any `json:"properties"`
+		Required   []string       `json:"required"`
+	}
+	if err := json.Unmarshal(action.SchemaFor[embeddedListRequest](), &schema); err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"page", "page_size", "keyword", "status", "role_id"} {
+		if _, ok := schema.Properties[field]; !ok {
+			t.Fatalf("embedded list schema missing %q: %#v", field, schema.Properties)
+		}
+	}
+	if len(schema.Required) != 0 {
+		t.Fatalf("optional list fields must not be required: %#v", schema.Required)
 	}
 }
 
@@ -507,11 +534,38 @@ VALUES (?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, 0, ?)`, restri
 	if err != nil || len(projected) != 2 || projected[0].Name != "meta__tool_search" || projected[1].Name != "meta__tool_load" {
 		t.Fatalf("initial projection must contain only search/load: %#v %v", projected, err)
 	}
+	if isLoaded, loadErr := service.IsLoaded(ctx, scopeID, "action:purchase.order_read"); loadErr != nil || isLoaded {
+		t.Fatalf("progressive tool must start unloaded: loaded=%v err=%v", isLoaded, loadErr)
+	}
+	if projectedNow, projectionErr := service.IsProjected(ctx, scopeID, "meta:tool.load"); projectionErr != nil || !projectedNow {
+		t.Fatalf("direct allowed tool must be executable without progressive load: projected=%v err=%v", projectedNow, projectionErr)
+	}
+	if projectedNow, projectionErr := service.IsProjected(ctx, scopeID, "action:purchase.order_read"); projectionErr != nil || projectedNow {
+		t.Fatalf("progressive tool must not be executable before load: projected=%v err=%v", projectedNow, projectionErr)
+	}
 	loaded, err := service.Load(ctx, ai.ToolLoadRequest{ScopeID: scopeID, ToolIDs: []string{"action:purchase.order_read"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	handle := loaded.(ai.ToolLoadResponse).Tools[0].Handle
+	loadedResponse := loaded.(ai.ToolLoadResponse)
+	if !slices.Equal(loadedResponse.NewlyLoadedToolIDs, []string{"action:purchase.order_read"}) || len(loadedResponse.AlreadyLoadedToolIDs) != 0 {
+		t.Fatalf("unexpected first load classification: %#v", loadedResponse)
+	}
+	handle := loadedResponse.Tools[0].Handle
+	if isLoaded, loadErr := service.IsLoaded(ctx, scopeID, "action:purchase.order_read"); loadErr != nil || !isLoaded {
+		t.Fatalf("loaded tool missing from scope: loaded=%v err=%v", isLoaded, loadErr)
+	}
+	if projectedNow, projectionErr := service.IsProjected(ctx, scopeID, "action:purchase.order_read"); projectionErr != nil || !projectedNow {
+		t.Fatalf("loaded progressive tool must remain projected: projected=%v err=%v", projectedNow, projectionErr)
+	}
+	repeated, err := service.Load(ctx, ai.ToolLoadRequest{ScopeID: scopeID, ToolIDs: []string{"action:purchase.order_read"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	repeatedResponse := repeated.(ai.ToolLoadResponse)
+	if len(repeatedResponse.NewlyLoadedToolIDs) != 0 || !slices.Equal(repeatedResponse.AlreadyLoadedToolIDs, []string{"action:purchase.order_read"}) {
+		t.Fatalf("repeat load must preserve cumulative scope without reclassification: %#v", repeatedResponse)
+	}
 	_, projected, err = service.ProjectModelTools(ctx, scopeID)
 	if err != nil || len(projected) != 3 {
 		t.Fatalf("loaded tool was not projected: %#v %v", projected, err)
@@ -541,6 +595,53 @@ VALUES (?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, 0, ?)`, restri
 	}
 	if strings.Contains(string(events[0].PayloadJSON), "supplier_id") || strings.Contains(string(events[0].PayloadJSON), "s1") {
 		t.Fatalf("arguments leaked to outbox: %s", events[0].PayloadJSON)
+	}
+	provider.tools[0].RequiresConfirmation = true
+	provider.tools[0].Risk = aitool.RiskHigh
+	provider.tools[0].SideEffect = aitool.SideEffectWrite
+	if err = registry.Refresh(ctx); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err = service.Load(ctx, ai.ToolLoadRequest{ScopeID: scopeID, ToolIDs: []string{actionTool.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	confirmationHandle := loaded.(ai.ToolLoadResponse).Tools[0].Handle
+	pendingValue, err := service.Execute(ctx, ai.ToolExecuteRequest{Handle: confirmationHandle, ToolCallID: "call-confirm", Arguments: json.RawMessage(`{"supplier_id":"s1"}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pendingResult := pendingValue.(*aitool.Result)
+	confirmation, ok := pendingResult.Data.(ai.ToolConfirmation)
+	if !ok || pendingResult.Status != "confirmation_required" {
+		t.Fatalf("unexpected confirmation result: %#v", pendingResult)
+	}
+	approvedValue, err := service.Approve(ctx, ai.ToolConfirmationRequest{ID: confirmation.ID})
+	if err != nil {
+		t.Fatalf("approve confirmation failed: %v", err)
+	}
+	if approvedValue.(*aitool.Result).Status != "completed" {
+		t.Fatalf("unexpected approved result: %#v", approvedValue)
+	}
+	var consumed ai.ToolConfirmation
+	if err = guarded.WithContext(ctx).Where("id=?", confirmation.ID).First(&consumed).Error; err != nil || consumed.Status != "consumed" {
+		t.Fatalf("confirmation was not consumed: %#v %v", consumed, err)
+	}
+	var confirmedInvocation ai.ToolInvocation
+	if err = guarded.WithContext(ctx).Where("id=?", confirmation.InvocationID).First(&confirmedInvocation).Error; err != nil || confirmedInvocation.Status != "completed" {
+		t.Fatalf("confirmed invocation was not completed: %#v %v", confirmedInvocation, err)
+	}
+	recoveryValue, err := service.Execute(ctx, ai.ToolExecuteRequest{Handle: confirmationHandle, ToolCallID: "call-confirm-recovery", Arguments: json.RawMessage(`{"supplier_id":"s1"}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	recoveryConfirmation := recoveryValue.(*aitool.Result).Data.(ai.ToolConfirmation)
+	decidedAt := time.Now().UTC()
+	if err = guarded.WithContext(ctx).Model(&ai.ToolConfirmation{}).Where("id=? AND status='pending'", recoveryConfirmation.ID).Updates(map[string]any{"status": "approved", "decided_at": decidedAt}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err = service.Approve(ctx, ai.ToolConfirmationRequest{ID: recoveryConfirmation.ID}); err != nil {
+		t.Fatalf("stale approved confirmation did not recover: %v", err)
 	}
 	revoked := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t1", UserID: "u1", SessionID: "s1", AuthVersion: 1, Realm: auth.RealmTenant})
 	if _, err = service.Execute(revoked, ai.ToolExecuteRequest{Handle: handle, ToolCallID: "call-revoked", Arguments: json.RawMessage(`{"supplier_id":"s1"}`)}); err == nil {

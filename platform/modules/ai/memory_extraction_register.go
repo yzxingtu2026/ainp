@@ -108,7 +108,7 @@ func RegisterMemoryExtraction(a *app.App, service *MemoryExtractionService, gove
 			}
 			logging.Info(ctx, "memory evaluation recovery requested", "selected_count", len(evaluations), "requested_count", requested, "category_counts", categories)
 			return map[string]any{"selected_count": len(evaluations), "requested_count": requested, "category_counts": categories}, nil
-		}), Meta: action.Metadata{Capability: "ai", Name: "恢复失败的记忆评估", Description: "受控重新入队失败的记忆评估", PermissionGroup: "ai.memory_management", PermissionGroupName: "记忆管理", Audit: &auditOn, HTTP: &action.HTTPMeta{Method: "POST", Path: "/api/v1/ai/memory-evaluations/recover"}}})
+		}), Meta: action.Metadata{Capability: "ai", Name: "恢复失败的记忆评估", Description: "受控重新入队失败的记忆评估", PermissionGroup: "ai.memory_management", PermissionGroupName: "记忆管理", Audit: &auditOn, AI: action.ExcludeFromAI(action.AIExcludeInternalRuntime), HTTP: &action.HTTPMeta{Method: "POST", Path: "/api/v1/ai/memory-evaluations/recover"}}})
 	}
 	return nil
 }
