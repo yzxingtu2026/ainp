@@ -30,8 +30,38 @@ type outboxEventIDRequest struct {
 
 type outboxListRequest struct {
 	pagination.Request
-	EventType string `json:"event_type"`
+	EventType string `json:"event_type" validate:"omitempty"`
 	Status    string `json:"status" validate:"omitempty,oneof=pending processing published failed dead"`
+}
+
+type outboxSummaryResponse struct {
+	Counts          map[string]int64 `json:"counts"`
+	OldestPendingAt *time.Time       `json:"oldest_pending_at"`
+}
+
+type outboxEventDetail struct {
+	ID            string              `json:"id"`
+	EventType     string              `json:"event_type"`
+	Status        status.OutboxStatus `json:"status"`
+	Attempts      int                 `json:"attempts"`
+	LastError     string              `json:"last_error"`
+	OccurredAt    time.Time           `json:"occurred_at"`
+	AggregateType string              `json:"aggregate_type"`
+	AggregateID   string              `json:"aggregate_id"`
+	Payload       json.RawMessage     `json:"payload"`
+	Metadata      json.RawMessage     `json:"metadata"`
+	AvailableAt   time.Time           `json:"available_at"`
+	PublishedAt   *time.Time          `json:"published_at"`
+}
+
+type outboxDeliveriesResponse struct {
+	Event      outboxEventDetail `json:"event"`
+	Deliveries []outbox.Delivery `json:"deliveries"`
+}
+
+type outboxRetryResponse struct {
+	ID     string              `json:"id"`
+	Status status.OutboxStatus `json:"status"`
 }
 
 func (s *OutboxService) List(ctx context.Context, input json.RawMessage) (any, error) {
@@ -204,11 +234,12 @@ func registerOutboxActions(a *app.App) error {
 		id, path, name, nameKey, desc, descKey string
 		audit                                  *bool
 		handler                                func(context.Context, json.RawMessage) (any, error)
+		ai                                     *action.AIMeta
 	}{
-		{ActionOutboxList, "/api/v1/operations/outbox/list", "Outbox 事件列表", "action.operations.outbox_list.name", "分页查询租户 Outbox 事件", "action.operations.outbox_list.description", &auditOff, action.JSON(svc.list)},
-		{ActionOutboxSummary, "/api/v1/operations/outbox/summary", "Outbox 摘要", "action.operations.outbox_summary.name", "查询租户 Outbox 状态计数", "action.operations.outbox_summary.description", &auditOff, svc.Summary},
-		{ActionOutboxListDeliveries, "/api/v1/operations/outbox/deliveries", "Outbox 投递记录", "action.operations.outbox_list_deliveries.name", "查看事件 Handler 投递状态", "action.operations.outbox_list_deliveries.description", &auditOff, action.JSON(svc.listDeliveries)},
-		{ActionOutboxRetry, "/api/v1/operations/outbox/retry", "重试 Outbox 事件", "action.operations.outbox_retry.name", "将 failed/dead 事件重置为 pending（不可改 payload）", "action.operations.outbox_retry.description", &auditOn, action.JSON(svc.retry)},
+		{ActionOutboxList, "/api/v1/operations/outbox/list", "Outbox 事件列表", "action.operations.outbox_list.name", "分页查询租户 Outbox 事件", "action.operations.outbox_list.description", &auditOff, action.JSON(svc.list), readAIMeta("查询当前租户 Outbox 事件，可按事件类型和状态筛选", "查询 Outbox 事件列表", "已返回当前租户可见的 Outbox 事件", action.InputSchemaFor[outboxListRequest](), action.SchemaFor[pagination.Result[outbox.Event]](), "运维", "Outbox", "事件")},
+		{ActionOutboxSummary, "/api/v1/operations/outbox/summary", "Outbox 摘要", "action.operations.outbox_summary.name", "查询租户 Outbox 状态计数", "action.operations.outbox_summary.description", &auditOff, svc.Summary, readAIMeta("查询当前租户 Outbox 各状态数量和最早待处理时间", "查询 Outbox 运行摘要", "已返回当前租户 Outbox 运行摘要", action.InputSchemaFor[struct{}](), action.SchemaFor[outboxSummaryResponse](), "运维", "Outbox", "摘要")},
+		{ActionOutboxListDeliveries, "/api/v1/operations/outbox/deliveries", "Outbox 投递记录", "action.operations.outbox_list_deliveries.name", "查看事件 Handler 投递状态", "action.operations.outbox_list_deliveries.description", &auditOff, action.JSON(svc.listDeliveries), readAIMeta("按事件 ID 查询当前租户 Outbox Handler 投递状态", "查询 Outbox 事件投递详情", "已返回指定 Outbox 事件及其 Handler 投递状态", action.InputSchemaFor[outboxEventIDRequest](), action.SchemaFor[outboxDeliveriesResponse](), "运维", "Outbox", "投递")},
+		{ActionOutboxRetry, "/api/v1/operations/outbox/retry", "重试 Outbox 事件", "action.operations.outbox_retry.name", "将 failed/dead 事件重置为 pending（不可改 payload）", "action.operations.outbox_retry.description", &auditOn, action.JSON(svc.retry), mutationAIMeta("将失败或终止的 Outbox 事件重置为待处理，仅接受事件 ID 且不可修改原始载荷", "重试 Outbox 事件", "已将指定 Outbox 事件重置为待处理", "high", "write", action.InputSchemaFor[outboxEventIDRequest](), action.SchemaFor[outboxRetryResponse](), "运维", "Outbox", "重试")},
 	}
 	for _, spec := range specs {
 		if err := a.RegisterAction(action.Action{
@@ -224,7 +255,7 @@ func registerOutboxActions(a *app.App) error {
 				PermissionGroupName:    "Outbox 运维",
 				PermissionGroupNameKey: "permission_group.operations.outbox",
 				Audit:                  spec.audit,
-				AI:                     action.ExcludeFromAI(action.AIExcludePendingSafetyReview),
+				AI:                     spec.ai,
 				HTTP: &action.HTTPMeta{
 					Method: "POST",
 					Path:   spec.path,

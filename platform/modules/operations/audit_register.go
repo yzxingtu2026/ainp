@@ -26,16 +26,16 @@ const (
 
 type auditLogListRequest struct {
 	pagination.Request
-	StartAt      string `json:"start_at"`
-	EndAt        string `json:"end_at"`
-	UserKeyword  string `json:"user_keyword"`
-	ActorType    string `json:"actor_type"`
-	ActionID     string `json:"action_id"`
+	StartAt      string `json:"start_at" validate:"omitempty"`
+	EndAt        string `json:"end_at" validate:"omitempty"`
+	UserKeyword  string `json:"user_keyword" validate:"omitempty"`
+	ActorType    string `json:"actor_type" validate:"omitempty"`
+	ActionID     string `json:"action_id" validate:"omitempty"`
 	Result       string `json:"result" validate:"omitempty,oneof=success failure"`
-	ResourceType string `json:"resource_type"`
-	ResourceID   string `json:"resource_id"`
-	RequestID    string `json:"request_id"`
-	Client       string `json:"client"`
+	ResourceType string `json:"resource_type" validate:"omitempty"`
+	ResourceID   string `json:"resource_id" validate:"omitempty"`
+	RequestID    string `json:"request_id" validate:"omitempty"`
+	Client       string `json:"client" validate:"omitempty"`
 	Sort         string `json:"sort" validate:"omitempty,oneof=asc desc"`
 }
 
@@ -193,11 +193,14 @@ func registerAuditLogActions(a *app.App) error {
 	for _, spec := range []struct {
 		id, path, name, nameKey, desc, descKey string
 		handler                                action.Handler
+		ai                                     *action.AIMeta
 	}{
-		{ActionAuditLogList, "/api/v1/operations/audit-logs/list", "审计列表", "action.system.audit_log_list.name", "查询当前租户操作审计", "action.system.audit_log_list.description", action.JSON(svc.list)},
-		{ActionAuditLogGet, "/api/v1/operations/audit-logs/get", "审计详情", "action.system.audit_log_get.name", "查询当前租户操作审计详情", "action.system.audit_log_get.description", action.JSON(svc.get)},
+		{ActionAuditLogList, "/api/v1/operations/audit-logs/list", "审计列表", "action.system.audit_log_list.name", "查询当前租户操作审计", "action.system.audit_log_list.description", action.JSON(svc.list), readAIMeta("查询当前租户操作审计，可按时间、用户、操作、结果和资源筛选", "查询操作审计列表", "已返回当前租户可见的操作审计记录", action.InputSchemaFor[auditLogListRequest](), action.SchemaFor[pagination.Result[AuditLogItem]](), "运维", "审计", "操作记录")},
+		{ActionAuditLogGet, "/api/v1/operations/audit-logs/get", "审计详情", "action.system.audit_log_get.name", "查询当前租户操作审计详情", "action.system.audit_log_get.description", action.JSON(svc.get), readAIMeta("按审计记录 ID 查询当前租户操作审计详情", "查询操作审计详情", "已返回指定操作审计详情", action.InputSchemaFor[auditLogGetRequest](), action.SchemaFor[struct {
+			AuditLog AuditLogItem `json:"audit_log"`
+		}](), "运维", "审计", "详情")},
 	} {
-		if err := a.RegisterAction(action.Action{ID: spec.id, Handler: spec.handler, Meta: action.Metadata{Capability: "operations", Name: spec.name, NameKey: spec.nameKey, Description: spec.desc, DescriptionKey: spec.descKey, PermissionGroup: "system.operations.audit", PermissionGroupName: "操作审计", PermissionGroupNameKey: "permission_group.system.operations.audit", Audit: &auditOn, AI: action.ExcludeFromAI(action.AIExcludePendingSafetyReview), HTTP: &action.HTTPMeta{Method: "POST", Path: spec.path}}}); err != nil {
+		if err := a.RegisterAction(action.Action{ID: spec.id, Handler: spec.handler, Meta: action.Metadata{Capability: "operations", Name: spec.name, NameKey: spec.nameKey, Description: spec.desc, DescriptionKey: spec.descKey, PermissionGroup: "system.operations.audit", PermissionGroupName: "操作审计", PermissionGroupNameKey: "permission_group.system.operations.audit", Audit: &auditOn, AI: spec.ai, HTTP: &action.HTTPMeta{Method: "POST", Path: spec.path}}}); err != nil {
 			return err
 		}
 	}

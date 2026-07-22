@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/yzxingtu2026/ainp/platform/framework/aitool"
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/config"
@@ -86,6 +87,67 @@ func TestOperationsMetadataKeepsPermissionsAndSplitsGroups(t *testing.T) {
 	}
 	if _, ok := menus["operations.logs"]; ok {
 		t.Fatal("log center menu must not be registered")
+	}
+
+	readActions := []string{
+		operations.ActionJobList, operations.ActionJobGet,
+		operations.ActionOutboxList, operations.ActionOutboxSummary, operations.ActionOutboxListDeliveries,
+		operations.ActionNotificationDeliveryList, operations.ActionNotificationDeliveryGet,
+		operations.ActionAuditLogList, operations.ActionAuditLogGet,
+	}
+	mutationActions := []string{
+		operations.ActionJobCancel, operations.ActionJobRetry,
+		operations.ActionOutboxRetry, operations.ActionNotificationDeliveryRetry,
+	}
+	for _, actionID := range readActions {
+		assertOperationsAIContract(t, application, actionID, false)
+	}
+	for _, actionID := range mutationActions {
+		assertOperationsAIContract(t, application, actionID, true)
+	}
+	for _, actionID := range mutationActions {
+		registered, _ := application.Actions.Get(actionID)
+		var schema struct {
+			Properties map[string]json.RawMessage `json:"properties"`
+		}
+		if err := json.Unmarshal(registered.Meta.AI.InputSchema, &schema); err != nil {
+			t.Fatal(err)
+		}
+		if _, leaked := schema.Properties["payload"]; leaked {
+			t.Fatalf("operations mutation %s must not accept payload", actionID)
+		}
+	}
+	projected, err := (&aitool.ActionProvider{Actions: application.Actions}).List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	projectedActions := make(map[string]bool, len(projected))
+	for _, definition := range projected {
+		projectedActions[definition.RuntimeRef] = true
+	}
+	for _, actionID := range append(readActions, mutationActions...) {
+		if !projectedActions[actionID] {
+			t.Fatalf("operations Action was not projected from Action Registry: %s", actionID)
+		}
+	}
+}
+
+func assertOperationsAIContract(t *testing.T, application *app.App, actionID string, mutation bool) {
+	t.Helper()
+	registered, ok := application.Actions.Get(actionID)
+	if !ok || registered.Meta.AI == nil || !registered.Meta.AI.ExposeTool {
+		t.Fatalf("operations Action %s must expose an AI contract: registered=%t meta=%#v", actionID, ok, registered.Meta.AI)
+	}
+	meta := registered.Meta.AI
+	if !json.Valid(meta.InputSchema) || !json.Valid(meta.OutputSchema) || meta.Summary == "" || meta.HumanDescription == "" || meta.ResultSummary == "" {
+		t.Fatalf("operations Action %s has an incomplete AI contract: %#v", actionID, meta)
+	}
+	if mutation {
+		if !meta.RequiresConfirmation || (meta.SideEffect != "write" && meta.SideEffect != "external") || (meta.Risk != "medium" && meta.Risk != "high") {
+			t.Fatalf("operations mutation %s has unsafe AI metadata: %#v", actionID, meta)
+		}
+	} else if meta.RequiresConfirmation || meta.SideEffect != "read" || meta.Risk != "low" {
+		t.Fatalf("operations read Action %s has unexpected AI metadata: %#v", actionID, meta)
 	}
 }
 

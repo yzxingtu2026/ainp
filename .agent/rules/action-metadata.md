@@ -14,5 +14,7 @@
 - 非 `demo` 生产 Action 注册时必须在 `Metadata.AI` 明确二选一：完整 `ExposeTool=true`，或 `ExcludeFromAI(稳定原因代码)`；两者互斥，禁止空原因和平行 AI 暴露清单。
 - 暴露 Action 必须完整声明风险、side effect、输入 Schema、用户说明和结果摘要；写入、外部、付费、破坏性或高风险操作必须进入确认机制。
 - 暴露 Action 输入统一使用 `action.InputSchemaFor[Request]()` 并通过显式字段存在语义门禁；普通 `SchemaFor` 仅用于响应等非输入 Schema。
+- Job、Outbox、通知投递等运维 mutation Tool 只接受稳定资源 ID，禁止接受或修改原始 payload、metadata、任务类型和通知正文；重试由领域服务复用持久化事实，并按 `write/external` 强制单次确认。
+- 暴露 Action 的业务模块必须先于 AI Tool Registry Refresh 注册；生产启动保持显式 `system → operations → ai` 聚合，禁止请求路径临时 Refresh 补注册。
 
 详规：`docs/development/action-metadata.md`

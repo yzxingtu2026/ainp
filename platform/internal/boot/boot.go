@@ -168,13 +168,13 @@ func OpenInstalled(ctx context.Context, cfg *config.Config) (*Platform, error) {
 	if err := system.Register(application); err != nil {
 		return nil, fmt.Errorf("register system: %w", err)
 	}
+	if err := operations.Register(application, system.NewOperationsNotificationDeliveryService(application)); err != nil {
+		return nil, fmt.Errorf("register operations: %w", err)
+	}
 	if err := ai.Register(application); err != nil {
 		return nil, fmt.Errorf("register ai: %w", err)
 	}
 	setupSvc.SetInitialDataHook(application.AgentTenantInitializer)
-	if err := operations.Register(application, system.NewOperationsNotificationDeliveryService(application)); err != nil {
-		return nil, fmt.Errorf("register operations: %w", err)
-	}
 	if err := demo.Register(application); err != nil {
 		return nil, fmt.Errorf("register demo: %w", err)
 	}

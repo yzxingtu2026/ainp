@@ -21,6 +21,10 @@ Agent 只读要点：`.agent/rules/action-metadata.md`。本文档为 Phase 1 �
 
 包含密码、Token 或 Provider 密钥的现有请求 DTO 不能直接用作 Tool 输入 Schema。必须先设计不让敏感值进入模型上下文、确认参数和调用日志的安全 DTO；完成前使用 `sensitive-credential-boundary` 排除。例如当前用户创建和密码重置 Action 均包含明文密码，因此不参与第二批投影。
 
+运维状态变更 Action 必须使用最小引用输入：Job 取消/重试只接受 `id`，Outbox 重试只接受 `event_id`，通知投递重试只接受 `id`。禁止把原始 Job/Event payload、metadata、任务类型或通知正文放入 mutation 输入 Schema；重试必须由领域服务读取并复用已持久化事实。Job 状态变更至少为 `medium/write`，可能重新发布事件或触达外部渠道的重试使用 `high/write|external`，全部强制单次确认。运维只读 Action 仍需保持租户隔离，不能因 Tool 投影扩大日志、事件、投递或审计记录的可见范围。
+
+所有暴露 Action 的业务模块必须在 AI 模块刷新 Tool Registry 之前完成注册。生产启动顺序保持 `system → operations → ai`；请求路径不得通过再次 Refresh 临时补注册，新增后置业务模块时必须先调整显式启动聚合顺序。
+
 当前稳定排除原因包括：
 
 - `pending-safety-review`：等待对应批次完成强类型 DTO、风险和确认评审；
