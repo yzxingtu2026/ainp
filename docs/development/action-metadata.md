@@ -23,6 +23,10 @@ Agent 只读要点：`.agent/rules/action-metadata.md`。本文档为 Phase 1 �
 
 运维状态变更 Action 必须使用最小引用输入：Job 取消/重试只接受 `id`，Outbox 重试只接受 `event_id`，通知投递重试只接受 `id`。禁止把原始 Job/Event payload、metadata、任务类型或通知正文放入 mutation 输入 Schema；重试必须由领域服务读取并复用已持久化事实。Job 状态变更至少为 `medium/write`，可能重新发布事件或触达外部渠道的重试使用 `high/write|external`，全部强制单次确认。运维只读 Action 仍需保持租户隔离，不能因 Tool 投影扩大日志、事件、投递或审计记录的可见范围。
 
+AI 管理后台必须明确区分管理面与运行面。Agent、版本、业务 Slot、工具绑定、知识库、知识文档、Agent 知识绑定、会话治理及用户记忆治理可使用原生产 Action 投影；所有 mutation 均按风险确认。Tool Runtime、Agent Runtime、目录/导航索引维护、诊断恢复、内置资源 Reconcile 和预览物化属于内部运行面，不得递归暴露为 Action Tool。
+
+Provider 列表和详情只有在响应经过统一脱敏后才可暴露。接收明文 `credential` 的创建、更新 Action 必须使用 `sensitive-credential-boundary` 排除，不能把原 DTO 投影给模型。远端模型发现只允许传递 `provider_id` 等非敏感引用，由领域服务读取已加密凭证，并声明 `high/external` 和一次性确认。Deployment 与 Alias 不接收凭证时可按普通 AI 管理 mutation 暴露，但不得扩展 DTO 以携带 Provider 密钥。
+
 所有暴露 Action 的业务模块必须在 AI 模块刷新 Tool Registry 之前完成注册。生产启动顺序保持 `system → operations → ai`；请求路径不得通过再次 Refresh 临时补注册，新增后置业务模块时必须先调整显式启动聚合顺序。
 
 当前稳定排除原因包括：

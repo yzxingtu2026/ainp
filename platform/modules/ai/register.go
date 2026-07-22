@@ -290,26 +290,27 @@ func Register(a *app.App) error {
 	type def struct {
 		id, path, name, group, groupName string
 		handler                          action.Handler
+		ai                               *action.AIMeta
 	}
 	defs := []def{
-		{ActionProviderTypes, "/api/v1/ai/provider-types/list", "供应商协议列表", "ai.provider_management", "模型供应商", action.JSON(svc.ProviderTypes)},
-		{ActionProviderList, "/api/v1/ai/providers/list", "供应商列表", "ai.provider_management", "模型供应商", action.JSON(svc.ListProviders)}, {ActionProviderGet, "/api/v1/ai/providers/get", "供应商详情", "ai.provider_management", "模型供应商", action.JSON(svc.GetProvider)}, {ActionProviderCreate, "/api/v1/ai/providers/create", "创建供应商", "ai.provider_management", "模型供应商", action.JSON(svc.CreateProvider)}, {ActionProviderUpdate, "/api/v1/ai/providers/update", "更新供应商", "ai.provider_management", "模型供应商", action.JSON(svc.UpdateProvider)}, {ActionProviderStatus, "/api/v1/ai/providers/status/update", "更新供应商状态", "ai.provider_management", "模型供应商", action.JSON(svc.UpdateProviderStatus)}, {ActionProviderDiscover, "/api/v1/ai/providers/discover-models", "发现远端模型", "ai.provider_management", "模型供应商", action.JSON(svc.Discover)},
-		{ActionDeploymentList, "/api/v1/ai/deployments/list", "模型目录", "ai.model_catalog", "模型目录", action.JSON(svc.ListDeployments)}, {ActionDeploymentGet, "/api/v1/ai/deployments/get", "模型详情", "ai.model_catalog", "模型目录", action.JSON(svc.GetDeployment)}, {ActionDeploymentCreate, "/api/v1/ai/deployments/create", "创建模型", "ai.model_catalog", "模型目录", action.JSON(svc.CreateDeployment)}, {ActionDeploymentImport, "/api/v1/ai/deployments/import", "导入模型", "ai.model_catalog", "模型目录", action.JSON(svc.ImportDeployments)}, {ActionDeploymentUpdate, "/api/v1/ai/deployments/update", "更新模型", "ai.model_catalog", "模型目录", action.JSON(svc.UpdateDeployment)}, {ActionDeploymentStatus, "/api/v1/ai/deployments/status/update", "更新模型状态", "ai.model_catalog", "模型目录", action.JSON(svc.UpdateDeploymentStatus)}, {ActionDeploymentDelete, "/api/v1/ai/deployments/delete", "删除模型", "ai.model_catalog", "模型目录", action.JSON(svc.DeleteDeployment)},
-		{ActionAliasList, "/api/v1/ai/aliases/list", "Alias 列表", "ai.model_catalog", "模型目录", action.JSON(svc.ListAliases)}, {ActionAliasUpsert, "/api/v1/ai/aliases/upsert", "绑定 Alias", "ai.model_catalog", "模型目录", action.JSON(svc.UpsertAlias)}, {ActionAliasDelete, "/api/v1/ai/aliases/delete", "删除 Alias", "ai.model_catalog", "模型目录", action.JSON(svc.DeleteAlias)},
-		{ActionToolSearch, "/api/v1/ai/tools/search", "搜索工具", "ai.tool_runtime", "工具运行时", action.JSON(tools.Search)},
-		{ActionToolLoad, "/api/v1/ai/tools/load", "加载工具", "ai.tool_runtime", "工具运行时", action.JSON(tools.Load)},
-		{ActionToolExecute, "/api/v1/ai/tools/execute", "执行已加载工具", "ai.tool_runtime", "工具运行时", action.JSON(tools.Execute)},
-		{ActionToolConfirmationList, "/api/v1/ai/tool-confirmations/list", "待确认工具列表", "ai.tool_runtime", "工具运行时", action.JSON(tools.ListConfirmations)},
-		{ActionToolConfirmationApprove, "/api/v1/ai/tool-confirmations/approve", "批准本次工具执行", "ai.tool_runtime", "工具运行时", action.JSON(tools.Approve)},
-		{ActionToolConfirmationReject, "/api/v1/ai/tool-confirmations/reject", "拒绝本次工具执行", "ai.tool_runtime", "工具运行时", action.JSON(tools.Reject)},
-		{ActionToolCatalogRebuild, "/api/v1/ai/tools/catalog/rebuild", "重建工具目录", "ai.tool_runtime", "工具运行时", action.JSON(func(ctx context.Context, _ struct{}) (any, error) { return tools.ReconcileCatalog(ctx, true) })},
+		{ActionProviderTypes, "/api/v1/ai/provider-types/list", "供应商协议列表", "ai.provider_management", "模型供应商", action.JSON(svc.ProviderTypes), readAIMeta("查询系统支持的模型供应商协议类型", "查询供应商协议类型", "已返回供应商协议类型", action.InputSchemaFor[struct{}](), nil, "AI", "模型供应商", "协议")},
+		{ActionProviderList, "/api/v1/ai/providers/list", "供应商列表", "ai.provider_management", "模型供应商", action.JSON(svc.ListProviders), readAIMeta("查询已脱敏的模型供应商列表", "查询模型供应商", "已返回模型供应商", action.InputSchemaFor[ListRequest](), nil, "AI", "模型供应商", "列表")}, {ActionProviderGet, "/api/v1/ai/providers/get", "供应商详情", "ai.provider_management", "模型供应商", action.JSON(svc.GetProvider), readAIMeta("查询已脱敏的模型供应商详情", "查询模型供应商详情", "已返回模型供应商详情", action.InputSchemaFor[IDRequest](), nil, "AI", "模型供应商", "详情")}, {ActionProviderCreate, "/api/v1/ai/providers/create", "创建供应商", "ai.provider_management", "模型供应商", action.JSON(svc.CreateProvider), action.ExcludeFromAI(action.AIExcludeSensitiveCredential)}, {ActionProviderUpdate, "/api/v1/ai/providers/update", "更新供应商", "ai.provider_management", "模型供应商", action.JSON(svc.UpdateProvider), action.ExcludeFromAI(action.AIExcludeSensitiveCredential)}, {ActionProviderStatus, "/api/v1/ai/providers/status/update", "更新供应商状态", "ai.provider_management", "模型供应商", action.JSON(svc.UpdateProviderStatus), mutationAIMeta("启用或停用已配置的模型供应商，不接触凭证", "更新模型供应商状态", "模型供应商状态已更新", "high", "write", action.InputSchemaFor[StatusRequest](), nil, "AI", "模型供应商", "状态")}, {ActionProviderDiscover, "/api/v1/ai/providers/discover-models", "发现远端模型", "ai.provider_management", "模型供应商", action.JSON(svc.Discover), mutationAIMeta("使用已保存凭证向供应商发现远端模型，不接收或回显凭证", "发现供应商远端模型", "已返回远端模型发现结果", "high", "external", action.InputSchemaFor[DiscoverRequest](), nil, "AI", "模型供应商", "模型发现")},
+		{ActionDeploymentList, "/api/v1/ai/deployments/list", "模型目录", "ai.model_catalog", "模型目录", action.JSON(svc.ListDeployments), readAIMeta("查询模型部署目录", "查询模型目录", "已返回模型目录", action.InputSchemaFor[ListRequest](), nil, "AI", "模型", "目录")}, {ActionDeploymentGet, "/api/v1/ai/deployments/get", "模型详情", "ai.model_catalog", "模型目录", action.JSON(svc.GetDeployment), readAIMeta("按 ID 查询模型部署详情", "查询模型详情", "已返回模型详情", action.InputSchemaFor[IDRequest](), nil, "AI", "模型", "详情")}, {ActionDeploymentCreate, "/api/v1/ai/deployments/create", "创建模型", "ai.model_catalog", "模型目录", action.JSON(svc.CreateDeployment), mutationAIMeta("在已配置供应商下创建模型部署", "创建模型部署", "模型部署已创建", "high", "write", action.InputSchemaFor[DeploymentCreateRequest](), nil, "AI", "模型", "创建")}, {ActionDeploymentImport, "/api/v1/ai/deployments/import", "导入模型", "ai.model_catalog", "模型目录", action.JSON(svc.ImportDeployments), mutationAIMeta("批量导入已发现的模型部署", "导入模型部署", "模型部署已导入", "high", "write", action.InputSchemaFor[ImportRequest](), nil, "AI", "模型", "导入")}, {ActionDeploymentUpdate, "/api/v1/ai/deployments/update", "更新模型", "ai.model_catalog", "模型目录", action.JSON(svc.UpdateDeployment), mutationAIMeta("更新模型部署的能力与限制配置", "更新模型部署", "模型部署已更新", "high", "write", action.InputSchemaFor[DeploymentUpdateRequest](), nil, "AI", "模型", "更新")}, {ActionDeploymentStatus, "/api/v1/ai/deployments/status/update", "更新模型状态", "ai.model_catalog", "模型目录", action.JSON(svc.UpdateDeploymentStatus), mutationAIMeta("启用或停用模型部署", "更新模型状态", "模型状态已更新", "high", "write", action.InputSchemaFor[StatusRequest](), nil, "AI", "模型", "状态")}, {ActionDeploymentDelete, "/api/v1/ai/deployments/delete", "删除模型", "ai.model_catalog", "模型目录", action.JSON(svc.DeleteDeployment), mutationAIMeta("删除未被 Alias 引用的模型部署", "删除模型部署", "模型部署已删除", "high", "destructive", action.InputSchemaFor[IDRequest](), nil, "AI", "模型", "删除")},
+		{ActionAliasList, "/api/v1/ai/aliases/list", "Alias 列表", "ai.model_catalog", "模型目录", action.JSON(svc.ListAliases), readAIMeta("查询模型 Alias 绑定", "查询模型 Alias", "已返回模型 Alias", action.InputSchemaFor[struct{}](), nil, "AI", "模型", "Alias")}, {ActionAliasUpsert, "/api/v1/ai/aliases/upsert", "绑定 Alias", "ai.model_catalog", "模型目录", action.JSON(svc.UpsertAlias), mutationAIMeta("创建或更新模型 Alias 绑定", "绑定模型 Alias", "模型 Alias 已绑定", "high", "write", action.InputSchemaFor[AliasUpsertRequest](), nil, "AI", "模型", "Alias", "绑定")}, {ActionAliasDelete, "/api/v1/ai/aliases/delete", "删除 Alias", "ai.model_catalog", "模型目录", action.JSON(svc.DeleteAlias), mutationAIMeta("删除模型 Alias 绑定", "删除模型 Alias", "模型 Alias 已删除", "high", "destructive", action.InputSchemaFor[AliasDeleteRequest](), nil, "AI", "模型", "Alias", "删除")},
+		{ActionToolSearch, "/api/v1/ai/tools/search", "搜索工具", "ai.tool_runtime", "工具运行时", action.JSON(tools.Search), nil},
+		{ActionToolLoad, "/api/v1/ai/tools/load", "加载工具", "ai.tool_runtime", "工具运行时", action.JSON(tools.Load), nil},
+		{ActionToolExecute, "/api/v1/ai/tools/execute", "执行已加载工具", "ai.tool_runtime", "工具运行时", action.JSON(tools.Execute), nil},
+		{ActionToolConfirmationList, "/api/v1/ai/tool-confirmations/list", "待确认工具列表", "ai.tool_runtime", "工具运行时", action.JSON(tools.ListConfirmations), nil},
+		{ActionToolConfirmationApprove, "/api/v1/ai/tool-confirmations/approve", "批准本次工具执行", "ai.tool_runtime", "工具运行时", action.JSON(tools.Approve), nil},
+		{ActionToolConfirmationReject, "/api/v1/ai/tool-confirmations/reject", "拒绝本次工具执行", "ai.tool_runtime", "工具运行时", action.JSON(tools.Reject), nil},
+		{ActionToolCatalogRebuild, "/api/v1/ai/tools/catalog/rebuild", "重建工具目录", "ai.tool_runtime", "工具运行时", action.JSON(func(ctx context.Context, _ struct{}) (any, error) { return tools.ReconcileCatalog(ctx, true) }), nil},
 		{ActionToolIndexStatus, "/api/v1/ai/tools/index/status", "工具索引状态", "ai.tool_runtime", "工具运行时", action.JSON(func(ctx context.Context, _ struct{}) (any, error) {
 			ac := auth.MustFromContext(ctx)
 			if !ac.HasPermission(system.ActionSettingList) {
 				return nil, errs.NewKey(errs.CodeForbidden, "common.forbidden", "forbidden")
 			}
 			return tools.IndexStatus(ctx)
-		})},
+		}), nil},
 		{ActionToolIndexRebuild, "/api/v1/ai/tools/index/rebuild", "重建工具索引", "ai.tool_runtime", "工具运行时", action.JSON(func(ctx context.Context, _ struct{}) (any, error) {
 			ac := auth.MustFromContext(ctx)
 			if !ac.HasPermission(system.ActionSettingUpdate) {
@@ -319,14 +320,14 @@ func Register(a *app.App) error {
 				return nil, err
 			}
 			return tools.IndexStatus(ctx)
-		})},
+		}), nil},
 		{ActionNavigationIndexStatus, "/api/v1/ai/navigation/index/status", "导航索引状态", "ai.navigation", "功能导航", action.JSON(func(ctx context.Context, _ struct{}) (any, error) {
 			ac := auth.MustFromContext(ctx)
 			if !ac.HasPermission(system.ActionSettingList) {
 				return nil, errs.NewKey(errs.CodeForbidden, "common.forbidden", "forbidden")
 			}
 			return navigationSearch.IndexStatus(ctx, ac.TenantID)
-		})},
+		}), nil},
 		{ActionNavigationIndexRebuild, "/api/v1/ai/navigation/index/rebuild", "重建导航索引", "ai.navigation", "功能导航", action.JSON(func(ctx context.Context, _ struct{}) (any, error) {
 			ac := auth.MustFromContext(ctx)
 			if !ac.HasPermission(system.ActionSettingUpdate) {
@@ -341,42 +342,42 @@ func Register(a *app.App) error {
 				}
 			}
 			return navigationSearch.IndexStatus(ctx, ac.TenantID)
-		})},
-		{ActionAgentList, "/api/v1/ai/agents/list", "智能体列表", "ai.agent_management", "智能体", action.JSON(agents.List)},
-		{ActionAgentGet, "/api/v1/ai/agents/get", "智能体详情", "ai.agent_management", "智能体", action.JSON(agents.Get)},
-		{ActionAgentCreate, "/api/v1/ai/agents/create", "创建智能体", "ai.agent_management", "智能体", action.JSON(agents.Create)},
-		{ActionAgentUpdate, "/api/v1/ai/agents/update", "更新智能体", "ai.agent_management", "智能体", action.JSON(agents.Update)},
-		{ActionAgentDuplicate, "/api/v1/ai/agents/duplicate", "复制智能体", "ai.agent_management", "智能体", action.JSON(agents.Duplicate)},
-		{ActionAgentStatus, "/api/v1/ai/agents/status/update", "更新智能体状态", "ai.agent_management", "智能体", action.JSON(agents.Status)},
-		{ActionAgentVersionList, "/api/v1/ai/agent-versions/list", "智能体版本列表", "ai.agent_management", "智能体", action.JSON(agents.ListVersions)},
-		{ActionAgentVersionGet, "/api/v1/ai/agent-versions/get", "智能体版本详情", "ai.agent_management", "智能体", action.JSON(agents.GetVersion)},
-		{ActionAgentVersionCreate, "/api/v1/ai/agent-versions/create", "创建智能体版本", "ai.agent_management", "智能体", action.JSON(agents.CreateVersion)},
-		{ActionAgentVersionPublish, "/api/v1/ai/agent-versions/publish", "发布智能体版本", "ai.agent_management", "智能体", action.JSON(agents.PublishVersion)},
-		{ActionAgentPreviewMaterialize, "/api/v1/ai/agents/preview/materialize", "物化智能体预览版本", "ai.agent_management", "智能体", action.JSON(agents.MaterializePreview)},
-		{ActionAgentToolSearch, "/api/v1/ai/agent-tools/search", "搜索可绑定工具", "ai.agent_management", "智能体", action.JSON(agents.SearchTools)},
-		{ActionAgentToolList, "/api/v1/ai/agent-tools/list", "智能体工具列表", "ai.agent_management", "智能体", action.JSON(agents.ListTools)},
-		{ActionAgentToolBind, "/api/v1/ai/agent-tools/bind", "绑定智能体工具", "ai.agent_management", "智能体", action.JSON(agents.BindTool)},
-		{ActionAgentToolUnbind, "/api/v1/ai/agent-tools/unbind", "解绑智能体工具", "ai.agent_management", "智能体", action.JSON(agents.UnbindTool)},
-		{ActionAgentDiagnostics, "/api/v1/ai/agents/diagnostics", "智能体诊断", "ai.agent_management", "智能体", action.JSON(agents.Diagnostics)},
-		{ActionAgentBuiltinReconcile, "/api/v1/ai/agents/builtin/reconcile", "同步内置智能体", "ai.agent_management", "智能体", action.JSON(agents.ReconcileBuiltin)},
-		{ActionAgentSlotList, "/api/v1/ai/agent-slots/list", "AI 功能配置列表", "ai.agent_slot_management", "AI 功能配置", action.JSON(slots.List)},
-		{ActionAgentSlotGet, "/api/v1/ai/agent-slots/get", "AI 功能配置详情", "ai.agent_slot_management", "AI 功能配置", action.JSON(slots.Get)},
-		{ActionAgentSlotUpdate, "/api/v1/ai/agent-slots/update", "配置业务功能智能体", "ai.agent_slot_management", "AI 功能配置", action.JSON(slots.Update)},
-		{ActionAgentSlotReset, "/api/v1/ai/agent-slots/reset", "恢复业务功能系统默认", "ai.agent_slot_management", "AI 功能配置", action.JSON(slots.Reset)},
-		{ActionAgentSlotReconcile, "/api/v1/ai/agent-slots/reconcile", "同步内置 AI 功能", "ai.agent_slot_management", "AI 功能配置", action.JSON(slots.Reconcile)},
-		{ActionAgentSlotPreferenceGet, "/api/v1/ai/agent-slot-preferences/get", "读取个人默认智能体", "ai.agent_slot_preferences", "AI 功能偏好", action.JSON(slots.Get)},
-		{ActionAgentSlotPreferenceUpdate, "/api/v1/ai/agent-slot-preferences/update", "设置个人默认智能体", "ai.agent_slot_preferences", "AI 功能偏好", action.JSON(slots.UpdatePreference)},
-		{ActionAgentSlotPreferenceReset, "/api/v1/ai/agent-slot-preferences/reset", "恢复个人默认智能体", "ai.agent_slot_preferences", "AI 功能偏好", action.JSON(slots.ResetPreference)},
-		{ActionConversationList, "/api/v1/ai/conversations/list", "会话列表", "ai.conversation", "AI 会话", action.JSON(conversations.List)},
-		{ActionConversationGet, "/api/v1/ai/conversations/get", "会话详情", "ai.conversation", "AI 会话", action.JSON(conversations.Get)},
-		{ActionConversationCreate, "/api/v1/ai/conversations/create", "创建会话", "ai.conversation", "AI 会话", action.JSON(conversations.Create)},
-		{ActionConversationCreateForSlot, "/api/v1/ai/conversations/create-for-slot", "按业务功能创建会话", "ai.conversation", "AI 会话", action.JSON(conversations.CreateForSlot(slots))},
-		{ActionConversationUpdate, "/api/v1/ai/conversations/update", "更新会话", "ai.conversation", "AI 会话", action.JSON(conversations.Update)},
-		{ActionConversationArchive, "/api/v1/ai/conversations/archive", "归档会话", "ai.conversation", "AI 会话", action.JSON(conversations.Archive)},
-		{ActionConversationRestore, "/api/v1/ai/conversations/restore", "恢复会话", "ai.conversation", "AI 会话", action.JSON(conversations.Restore)},
-		{ActionMessageList, "/api/v1/ai/messages/list", "消息列表", "ai.conversation", "AI 会话", action.JSON(conversations.ListMessages)},
-		{ActionMessageGet, "/api/v1/ai/messages/get", "消息详情", "ai.conversation", "AI 会话", action.JSON(conversations.GetMessage)},
-		{ActionContextCompactionDiagnostics, "/api/v1/ai/context-compaction/diagnostics", "上下文压缩诊断", "ai.conversation", "AI 会话", action.JSON(compactions.Diagnostics)},
+		}), nil},
+		{ActionAgentList, "/api/v1/ai/agents/list", "智能体列表", "ai.agent_management", "智能体", action.JSON(agents.List), readAIMeta("查询当前租户可见的智能体", "查询智能体列表", "已返回可见智能体", action.InputSchemaFor[AgentListRequest](), nil, "AI", "智能体", "列表")},
+		{ActionAgentGet, "/api/v1/ai/agents/get", "智能体详情", "ai.agent_management", "智能体", action.JSON(agents.Get), readAIMeta("按 ID 查询智能体详情", "查询智能体详情", "已返回智能体详情", action.InputSchemaFor[IDRequest](), nil, "AI", "智能体", "详情")},
+		{ActionAgentCreate, "/api/v1/ai/agents/create", "创建智能体", "ai.agent_management", "智能体", action.JSON(agents.Create), mutationAIMeta("创建租户智能体草稿", "创建智能体", "智能体已创建", "high", "write", action.InputSchemaFor[AgentCreateRequest](), nil, "AI", "智能体", "创建")},
+		{ActionAgentUpdate, "/api/v1/ai/agents/update", "更新智能体", "ai.agent_management", "智能体", action.JSON(agents.Update), mutationAIMeta("更新智能体资料和草稿配置", "更新智能体", "智能体已更新", "high", "write", action.InputSchemaFor[AgentUpdateRequest](), nil, "AI", "智能体", "更新")},
+		{ActionAgentDuplicate, "/api/v1/ai/agents/duplicate", "复制智能体", "ai.agent_management", "智能体", action.JSON(agents.Duplicate), mutationAIMeta("复制可见智能体为新草稿", "复制智能体", "智能体副本已创建", "high", "write", action.InputSchemaFor[AgentDuplicateRequest](), nil, "AI", "智能体", "复制")},
+		{ActionAgentStatus, "/api/v1/ai/agents/status/update", "更新智能体状态", "ai.agent_management", "智能体", action.JSON(agents.Status), mutationAIMeta("更新智能体启用状态", "更新智能体状态", "智能体状态已更新", "high", "write", action.InputSchemaFor[AgentStatusRequest](), nil, "AI", "智能体", "状态")},
+		{ActionAgentVersionList, "/api/v1/ai/agent-versions/list", "智能体版本列表", "ai.agent_management", "智能体", action.JSON(agents.ListVersions), readAIMeta("查询指定智能体的发布版本", "查询智能体版本", "已返回智能体版本", action.InputSchemaFor[IDRequest](), nil, "AI", "智能体", "版本")},
+		{ActionAgentVersionGet, "/api/v1/ai/agent-versions/get", "智能体版本详情", "ai.agent_management", "智能体", action.JSON(agents.GetVersion), readAIMeta("按版本 ID 查询智能体版本详情", "查询智能体版本详情", "已返回智能体版本详情", action.InputSchemaFor[IDRequest](), nil, "AI", "智能体", "版本详情")},
+		{ActionAgentVersionCreate, "/api/v1/ai/agent-versions/create", "创建智能体版本", "ai.agent_management", "智能体", action.JSON(agents.CreateVersion), mutationAIMeta("从智能体配置创建不可变版本", "创建智能体版本", "智能体版本已创建", "high", "write", action.InputSchemaFor[AgentVersionCreateRequest](), nil, "AI", "智能体", "版本创建")},
+		{ActionAgentVersionPublish, "/api/v1/ai/agent-versions/publish", "发布智能体版本", "ai.agent_management", "智能体", action.JSON(agents.PublishVersion), mutationAIMeta("创建并发布新的智能体版本", "发布智能体版本", "智能体版本已发布", "high", "write", action.InputSchemaFor[AgentVersionCreateRequest](), nil, "AI", "智能体", "发布")},
+		{ActionAgentPreviewMaterialize, "/api/v1/ai/agents/preview/materialize", "物化智能体预览版本", "ai.agent_management", "智能体", action.JSON(agents.MaterializePreview), nil},
+		{ActionAgentToolSearch, "/api/v1/ai/agent-tools/search", "搜索可绑定工具", "ai.agent_management", "智能体", action.JSON(agents.SearchTools), readAIMeta("搜索当前租户可绑定到智能体的工具", "搜索智能体可用工具", "已返回可绑定工具", action.InputSchemaFor[AgentToolSearchRequest](), nil, "AI", "智能体", "工具搜索")},
+		{ActionAgentToolList, "/api/v1/ai/agent-tools/list", "智能体工具列表", "ai.agent_management", "智能体", action.JSON(agents.ListTools), readAIMeta("查询指定智能体已绑定的工具", "查询智能体工具", "已返回智能体工具绑定", action.InputSchemaFor[IDRequest](), nil, "AI", "智能体", "工具")},
+		{ActionAgentToolBind, "/api/v1/ai/agent-tools/bind", "绑定智能体工具", "ai.agent_management", "智能体", action.JSON(agents.BindTool), mutationAIMeta("将可见工具绑定到智能体", "绑定智能体工具", "工具已绑定到智能体", "high", "write", action.InputSchemaFor[AgentBindRequest](), nil, "AI", "智能体", "工具绑定")},
+		{ActionAgentToolUnbind, "/api/v1/ai/agent-tools/unbind", "解绑智能体工具", "ai.agent_management", "智能体", action.JSON(agents.UnbindTool), mutationAIMeta("移除智能体的工具绑定", "解绑智能体工具", "智能体工具已解绑", "high", "write", action.InputSchemaFor[AgentUnbindRequest](), nil, "AI", "智能体", "工具解绑")},
+		{ActionAgentDiagnostics, "/api/v1/ai/agents/diagnostics", "智能体诊断", "ai.agent_management", "智能体", action.JSON(agents.Diagnostics), nil},
+		{ActionAgentBuiltinReconcile, "/api/v1/ai/agents/builtin/reconcile", "同步内置智能体", "ai.agent_management", "智能体", action.JSON(agents.ReconcileBuiltin), nil},
+		{ActionAgentSlotList, "/api/v1/ai/agent-slots/list", "AI 功能配置列表", "ai.agent_slot_management", "AI 功能配置", action.JSON(slots.List), readAIMeta("查询业务功能与智能体配置", "查询 AI 功能配置", "已返回 AI 功能配置", action.InputSchemaFor[AgentSlotListRequest](), nil, "AI", "功能配置", "列表")},
+		{ActionAgentSlotGet, "/api/v1/ai/agent-slots/get", "AI 功能配置详情", "ai.agent_slot_management", "AI 功能配置", action.JSON(slots.Get), readAIMeta("查询指定业务 Slot 的智能体配置", "查询 AI 功能配置详情", "已返回 AI 功能配置详情", action.InputSchemaFor[AgentSlotGetRequest](), nil, "AI", "功能配置", "详情")},
+		{ActionAgentSlotUpdate, "/api/v1/ai/agent-slots/update", "配置业务功能智能体", "ai.agent_slot_management", "AI 功能配置", action.JSON(slots.Update), mutationAIMeta("为业务功能配置智能体", "配置业务功能智能体", "业务功能智能体已配置", "high", "write", action.InputSchemaFor[AgentSlotMutationRequest](), nil, "AI", "功能配置", "更新")},
+		{ActionAgentSlotReset, "/api/v1/ai/agent-slots/reset", "恢复业务功能系统默认", "ai.agent_slot_management", "AI 功能配置", action.JSON(slots.Reset), mutationAIMeta("恢复业务功能的系统默认智能体", "恢复 AI 功能默认配置", "AI 功能已恢复默认配置", "high", "write", action.InputSchemaFor[AgentSlotResetRequest](), nil, "AI", "功能配置", "重置")},
+		{ActionAgentSlotReconcile, "/api/v1/ai/agent-slots/reconcile", "同步内置 AI 功能", "ai.agent_slot_management", "AI 功能配置", action.JSON(slots.Reconcile), nil},
+		{ActionAgentSlotPreferenceGet, "/api/v1/ai/agent-slot-preferences/get", "读取个人默认智能体", "ai.agent_slot_preferences", "AI 功能偏好", action.JSON(slots.Get), readAIMeta("查询当前用户指定业务功能的默认智能体", "查询个人默认智能体", "已返回个人默认智能体", action.InputSchemaFor[AgentSlotGetRequest](), nil, "AI", "个人偏好", "智能体")},
+		{ActionAgentSlotPreferenceUpdate, "/api/v1/ai/agent-slot-preferences/update", "设置个人默认智能体", "ai.agent_slot_preferences", "AI 功能偏好", action.JSON(slots.UpdatePreference), mutationAIMeta("设置当前用户指定业务功能的默认智能体", "设置个人默认智能体", "个人默认智能体已更新", "medium", "write", action.InputSchemaFor[AgentSlotMutationRequest](), nil, "AI", "个人偏好", "智能体")},
+		{ActionAgentSlotPreferenceReset, "/api/v1/ai/agent-slot-preferences/reset", "恢复个人默认智能体", "ai.agent_slot_preferences", "AI 功能偏好", action.JSON(slots.ResetPreference), mutationAIMeta("恢复当前用户指定业务功能的默认智能体", "恢复个人默认智能体", "个人默认智能体已恢复", "medium", "write", action.InputSchemaFor[AgentSlotResetRequest](), nil, "AI", "个人偏好", "重置")},
+		{ActionConversationList, "/api/v1/ai/conversations/list", "会话列表", "ai.conversation", "AI 会话", action.JSON(conversations.List), readAIMeta("查询当前用户可见的 AI 会话", "查询 AI 会话列表", "已返回可见 AI 会话", action.InputSchemaFor[ConversationListRequest](), nil, "AI", "会话", "列表")},
+		{ActionConversationGet, "/api/v1/ai/conversations/get", "会话详情", "ai.conversation", "AI 会话", action.JSON(conversations.Get), readAIMeta("按 ID 查询可见 AI 会话详情", "查询 AI 会话详情", "已返回 AI 会话详情", action.InputSchemaFor[ConversationGetRequest](), nil, "AI", "会话", "详情")},
+		{ActionConversationCreate, "/api/v1/ai/conversations/create", "创建会话", "ai.conversation", "AI 会话", action.JSON(conversations.Create), nil},
+		{ActionConversationCreateForSlot, "/api/v1/ai/conversations/create-for-slot", "按业务功能创建会话", "ai.conversation", "AI 会话", action.JSON(conversations.CreateForSlot(slots)), nil},
+		{ActionConversationUpdate, "/api/v1/ai/conversations/update", "更新会话", "ai.conversation", "AI 会话", action.JSON(conversations.Update), mutationAIMeta("更新当前用户可见会话的标题", "更新 AI 会话", "AI 会话已更新", "medium", "write", action.InputSchemaFor[ConversationUpdateRequest](), nil, "AI", "会话", "更新")},
+		{ActionConversationArchive, "/api/v1/ai/conversations/archive", "归档会话", "ai.conversation", "AI 会话", action.JSON(conversations.Archive), mutationAIMeta("归档当前用户可见的 AI 会话", "归档 AI 会话", "AI 会话已归档", "medium", "write", action.InputSchemaFor[ConversationStateRequest](), nil, "AI", "会话", "归档")},
+		{ActionConversationRestore, "/api/v1/ai/conversations/restore", "恢复会话", "ai.conversation", "AI 会话", action.JSON(conversations.Restore), mutationAIMeta("恢复当前用户已归档的 AI 会话", "恢复 AI 会话", "AI 会话已恢复", "medium", "write", action.InputSchemaFor[ConversationStateRequest](), nil, "AI", "会话", "恢复")},
+		{ActionMessageList, "/api/v1/ai/messages/list", "消息列表", "ai.conversation", "AI 会话", action.JSON(conversations.ListMessages), readAIMeta("查询指定会话的消息列表", "查询 AI 会话消息", "已返回 AI 会话消息", action.InputSchemaFor[MessageListRequest](), nil, "AI", "会话", "消息")},
+		{ActionMessageGet, "/api/v1/ai/messages/get", "消息详情", "ai.conversation", "AI 会话", action.JSON(conversations.GetMessage), readAIMeta("按 ID 查询可见会话消息详情", "查询 AI 消息详情", "已返回 AI 消息详情", action.InputSchemaFor[MessageGetRequest](), nil, "AI", "会话", "消息详情")},
+		{ActionContextCompactionDiagnostics, "/api/v1/ai/context-compaction/diagnostics", "上下文压缩诊断", "ai.conversation", "AI 会话", action.JSON(compactions.Diagnostics), nil},
 	}
 	if err := a.RegisterAction(action.Action{ID: ActionMessageCreate, Handler: action.JSON(conversations.CreateMessage), Meta: action.Metadata{Capability: "ai", Name: "提交用户消息", NameKey: "action." + ActionMessageCreate + ".name", Description: "向会话幂等追加用户消息", DescriptionKey: "action." + ActionMessageCreate + ".description", PermissionGroup: "ai.conversation", PermissionGroupName: "AI 会话", PermissionGroupNameKey: "permission_group.ai.conversation", Audit: &auditOn, AI: action.ExcludeFromAI(action.AIExcludeInternalRuntime), Idempotency: &action.IdempotencyMeta{Mode: "required"}, HTTP: &action.HTTPMeta{Method: "POST", Path: "/api/v1/ai/messages/create"}}}); err != nil {
 		return err
@@ -389,7 +390,11 @@ func Register(a *app.App) error {
 		if strings.HasPrefix(d.id, "ai.agent_slot_preference_") || d.id == ActionConversationCreateForSlot {
 			access = action.AccessAuthenticated
 		}
-		if err := a.RegisterAction(action.Action{ID: d.id, Handler: d.handler, Meta: action.Metadata{Capability: "ai", Access: access, Name: d.name, NameKey: "action." + d.id + ".name", Description: d.name, DescriptionKey: "action." + d.id + ".description", PermissionGroup: d.group, PermissionGroupName: d.groupName, PermissionGroupNameKey: "permission_group." + d.group, Audit: &auditOn, AI: action.ExcludeFromAI(action.AIExcludePendingSafetyReview), HTTP: &action.HTTPMeta{Method: "POST", Path: d.path}}}); err != nil {
+		aiMeta := d.ai
+		if aiMeta == nil {
+			aiMeta = action.ExcludeFromAI(action.AIExcludeInternalRuntime)
+		}
+		if err := a.RegisterAction(action.Action{ID: d.id, Handler: d.handler, Meta: action.Metadata{Capability: "ai", Access: access, Name: d.name, NameKey: "action." + d.id + ".name", Description: d.name, DescriptionKey: "action." + d.id + ".description", PermissionGroup: d.group, PermissionGroupName: d.groupName, PermissionGroupNameKey: "permission_group." + d.group, Audit: &auditOn, AI: aiMeta, HTTP: &action.HTTPMeta{Method: "POST", Path: d.path}}}); err != nil {
 			return err
 		}
 	}

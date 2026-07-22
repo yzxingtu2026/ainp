@@ -60,7 +60,10 @@ func (s *AgentSlotService) notifyChanged(ctx context.Context, slotKey string) er
 
 type AgentSlotListRequest struct {
 	pagination.Request
-	Keyword, Module, Status, Source string
+	Keyword string `json:"keyword" validate:"omitempty"`
+	Module  string `json:"module" validate:"omitempty"`
+	Status  string `json:"status" validate:"omitempty"`
+	Source  string `json:"source" validate:"omitempty"`
 }
 type AgentSlotGetRequest struct {
 	SlotKey string `json:"slot_key" validate:"required"`
@@ -68,7 +71,7 @@ type AgentSlotGetRequest struct {
 type AgentSlotMutationRequest struct {
 	SlotKey  string `json:"slot_key" validate:"required"`
 	AgentID  string `json:"agent_id" validate:"required"`
-	Revision uint64 `json:"revision"`
+	Revision uint64 `json:"revision" validate:"omitempty"`
 }
 type AgentSlotResetRequest struct {
 	SlotKey  string `json:"slot_key" validate:"required"`

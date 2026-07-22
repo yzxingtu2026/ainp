@@ -151,3 +151,24 @@ func TestStepLimitReservesConfirmationContinuationOnlyWhenNeeded(t *testing.T) {
 		})
 	}
 }
+
+func TestReactTurnModeAllowsOneCompletionTurnForPendingToolResults(t *testing.T) {
+	for _, tt := range []struct {
+		name                        string
+		current, limit              int
+		toolResultsPending          bool
+		wantAllowed, wantCompletion bool
+	}{
+		{name: "within budget", current: 10, limit: 12, wantAllowed: true},
+		{name: "exhausted without result", current: 12, limit: 12},
+		{name: "tool result at boundary", current: 12, limit: 12, toolResultsPending: true, wantAllowed: true, wantCompletion: true},
+		{name: "tool result beyond boundary", current: 13, limit: 12, toolResultsPending: true, wantAllowed: true, wantCompletion: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			allowed, completion := reactTurnMode(tt.current, tt.limit, tt.toolResultsPending)
+			if allowed != tt.wantAllowed || completion != tt.wantCompletion {
+				t.Fatalf("got (%t, %t), want (%t, %t)", allowed, completion, tt.wantAllowed, tt.wantCompletion)
+			}
+		})
+	}
+}

@@ -64,7 +64,7 @@ func NewKnowledgeService(db *gorm.DB, models aimodel.Resolver, agents *AgentServ
 
 type KnowledgeBaseListRequest struct {
 	pagination.Request
-	Keyword    string `json:"keyword" validate:"max=128"`
+	Keyword    string `json:"keyword" validate:"omitempty,max=128"`
 	Visibility string `json:"visibility" validate:"omitempty,oneof=private tenant"`
 	Status     string `json:"status" validate:"omitempty,oneof=draft enabled disabled"`
 }
@@ -75,11 +75,11 @@ type KnowledgeBaseIDRequest struct {
 
 type KnowledgeBaseCreateRequest struct {
 	Name            string                      `json:"name" validate:"required,max=128"`
-	Description     string                      `json:"description" validate:"max=1024"`
+	Description     string                      `json:"description" validate:"omitempty,max=1024"`
 	Visibility      string                      `json:"visibility" validate:"required,oneof=private tenant"`
-	EmbeddingAlias  string                      `json:"embedding_alias" validate:"max=64"`
-	ChunkingConfig  aiknowledge.ChunkingConfig  `json:"chunking_config"`
-	RetrievalConfig aiknowledge.RetrievalConfig `json:"retrieval_config"`
+	EmbeddingAlias  string                      `json:"embedding_alias" validate:"omitempty,max=64"`
+	ChunkingConfig  aiknowledge.ChunkingConfig  `json:"chunking_config" validate:"omitempty"`
+	RetrievalConfig aiknowledge.RetrievalConfig `json:"retrieval_config" validate:"omitempty"`
 }
 
 func (r *KnowledgeBaseCreateRequest) Normalize() {
@@ -104,11 +104,11 @@ func (r KnowledgeBaseCreateRequest) Validate(context.Context) error {
 type KnowledgeBaseUpdateRequest struct {
 	ID              string                      `json:"id" validate:"required"`
 	Name            string                      `json:"name" validate:"required,max=128"`
-	Description     string                      `json:"description" validate:"max=1024"`
+	Description     string                      `json:"description" validate:"omitempty,max=1024"`
 	Visibility      string                      `json:"visibility" validate:"required,oneof=private tenant"`
-	EmbeddingAlias  string                      `json:"embedding_alias" validate:"max=64"`
-	ChunkingConfig  aiknowledge.ChunkingConfig  `json:"chunking_config"`
-	RetrievalConfig aiknowledge.RetrievalConfig `json:"retrieval_config"`
+	EmbeddingAlias  string                      `json:"embedding_alias" validate:"omitempty,max=64"`
+	ChunkingConfig  aiknowledge.ChunkingConfig  `json:"chunking_config" validate:"omitempty"`
+	RetrievalConfig aiknowledge.RetrievalConfig `json:"retrieval_config" validate:"omitempty"`
 	Revision        uint64                      `json:"revision" validate:"required"`
 }
 
@@ -171,7 +171,7 @@ type KnowledgeDocumentDeleteRequest struct {
 
 type KnowledgeRetrievalTestRequest struct {
 	KnowledgeBaseID string   `json:"knowledge_base_id" validate:"required"`
-	DocumentIDs     []string `json:"document_ids" validate:"max=100,dive,required"`
+	DocumentIDs     []string `json:"document_ids" validate:"omitempty,max=100,dive,required"`
 	Query           string   `json:"query" validate:"required,max=4096"`
 }
 

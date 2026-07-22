@@ -15,6 +15,8 @@
 - 暴露 Action 必须完整声明风险、side effect、输入 Schema、用户说明和结果摘要；写入、外部、付费、破坏性或高风险操作必须进入确认机制。
 - 暴露 Action 输入统一使用 `action.InputSchemaFor[Request]()` 并通过显式字段存在语义门禁；普通 `SchemaFor` 仅用于响应等非输入 Schema。
 - Job、Outbox、通知投递等运维 mutation Tool 只接受稳定资源 ID，禁止接受或修改原始 payload、metadata、任务类型和通知正文；重试由领域服务复用持久化事实，并按 `write/external` 强制单次确认。
+- AI 管理 Action 必须区分管理面与运行面：Agent、版本、Slot、知识、会话治理和用户记忆治理可按风险暴露；Tool/Agent Runtime、索引维护、诊断恢复及预览物化保持 `internal-runtime-operation` 排除。
+- Provider 只读 Action 仅可投影已脱敏视图；任何接收明文 credential 的 Action 必须保持 `sensitive-credential-boundary`，远端发现只能引用已持久化 Provider ID 并按 `high/external` 确认。
 - 暴露 Action 的业务模块必须先于 AI Tool Registry Refresh 注册；生产启动保持显式 `system → operations → ai` 聚合，禁止请求路径临时 Refresh 补注册。
 
 详规：`docs/development/action-metadata.md`

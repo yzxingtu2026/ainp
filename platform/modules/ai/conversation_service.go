@@ -33,21 +33,21 @@ func NewConversationService(db *gorm.DB, assets aimodelruntime.AssetResolver) *C
 
 type ConversationListRequest struct {
 	pagination.Request
-	Status     string `json:"status"`
-	Visibility string `json:"visibility"`
-	Purpose    string `json:"purpose"`
+	Status     string `json:"status" validate:"omitempty"`
+	Visibility string `json:"visibility" validate:"omitempty"`
+	Purpose    string `json:"purpose" validate:"omitempty"`
 }
 type ConversationCreateRequest struct {
 	AgentID        string `json:"agent_id" validate:"required"`
 	AgentVersionID string `json:"agent_version_id" validate:"required"`
-	Title          string `json:"title"`
-	Visibility     string `json:"visibility"`
-	Purpose        string `json:"purpose"`
+	Title          string `json:"title" validate:"omitempty"`
+	Visibility     string `json:"visibility" validate:"omitempty"`
+	Purpose        string `json:"purpose" validate:"omitempty"`
 }
 type ConversationCreateForSlotRequest struct {
 	SlotKey    string `json:"slot_key" validate:"required"`
-	Title      string `json:"title"`
-	Visibility string `json:"visibility"`
+	Title      string `json:"title" validate:"omitempty"`
+	Visibility string `json:"visibility" validate:"omitempty"`
 }
 type ConversationGetRequest struct {
 	ID string `json:"id" validate:"required"`
@@ -63,7 +63,7 @@ type ConversationStateRequest struct {
 }
 type MessageListRequest struct {
 	ConversationID string `json:"conversation_id" validate:"required"`
-	AfterSequence  uint64 `json:"after_sequence"`
+	AfterSequence  uint64 `json:"after_sequence" validate:"omitempty"`
 	Limit          int    `json:"limit" validate:"omitempty,min=1,max=100"`
 }
 type MessageGetRequest struct {
