@@ -40,7 +40,7 @@ func actionDefinition(a action.Action) Definition {
 	if a.Meta.AccessMode() == action.AccessPermission {
 		permission = []string{a.Meta.PermissionCode(a.ID)}
 	}
-	return Definition{ID: "action:" + a.ID, Source: SourceAction, Name: a.Meta.Name, TitleForHuman: a.Meta.Name, DescriptionForLLM: m.Summary, DescriptionForHuman: m.HumanDescription, ResultSummary: m.ResultSummary, Capability: a.Meta.Capability, Tags: append([]string(nil), m.Tags...), InputSchema: m.InputSchema, OutputSchema: m.OutputSchema, Risk: Risk(m.Risk), SideEffect: SideEffect(m.SideEffect), RequiresConfirmation: m.RequiresConfirmation, BindingMode: BindingForbidden, LoadingMode: LoadingProgressive, PermissionRefs: permission, RuntimeRef: a.ID, SchemaVersion: 1, Status: "enabled"}
+	return Definition{ID: "action:" + a.ID, Source: SourceAction, Name: a.Meta.Name, TitleForHuman: a.Meta.Name, DescriptionForLLM: m.Summary, DescriptionForHuman: m.HumanDescription, ResultSummary: m.ResultSummary, Capability: a.Meta.Capability, Tags: append([]string(nil), m.Tags...), InputSchema: action.ToolInputSchema(m.InputSchema), OutputSchema: m.OutputSchema, Risk: Risk(m.Risk), SideEffect: SideEffect(m.SideEffect), RequiresConfirmation: m.RequiresConfirmation, BindingMode: BindingForbidden, LoadingMode: LoadingProgressive, PermissionRefs: permission, RuntimeRef: a.ID, SchemaVersion: 1, Status: "enabled"}
 }
 
 type ActionExecutor struct{ Actions *action.Registry }

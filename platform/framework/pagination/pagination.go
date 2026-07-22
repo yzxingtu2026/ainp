@@ -8,8 +8,8 @@ const (
 )
 
 type Request struct {
-	Page     int `json:"page,omitempty" validate:"min=1"`
-	PageSize int `json:"page_size,omitempty" validate:"min=1,max=100"`
+	Page     int `json:"page,omitempty" validate:"omitempty,min=1"`
+	PageSize int `json:"page_size,omitempty" validate:"omitempty,min=1,max=100"`
 }
 
 func (r *Request) Normalize() {

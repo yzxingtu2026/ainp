@@ -153,7 +153,7 @@ purchase_order_create    # 禁止缺少 capability 点分前缀（除非 capabil
 | `human_description` | string | 面向用户的工具说明 |
 | `tags` | []string | 用于检索的稳定业务词 |
 | `result_summary` | string | 不含参数与正文的安全结果摘要 |
-| `input_schema` | JSON Schema | 由 `action.SchemaFor[Request]()` 生成 |
+| `input_schema` | JSON Schema | 由 `action.InputSchemaFor[Request]()` 生成；字段 required/optional 必须显式声明 |
 | `output_schema` | JSON Schema | 由 `action.SchemaFor[Response]()` 生成 |
 
 ### 预留（Phase 1 不强制）
@@ -233,7 +233,7 @@ RegisterAction(Action{
       RequiresConfirmation: true,
       Summary: "创建采购订单", HumanDescription: "创建一张新的采购订单",
       ResultSummary: "采购订单已创建",
-      InputSchema: action.SchemaFor[OrderCreateRequest](),
+      InputSchema: action.InputSchemaFor[OrderCreateRequest](),
       OutputSchema: action.SchemaFor[OrderView](),
     },
   },

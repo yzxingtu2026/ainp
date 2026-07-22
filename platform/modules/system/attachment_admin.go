@@ -16,10 +16,10 @@ import (
 
 type attachmentAdminListRequest struct {
 	pagination.Request
-	Keyword  string `json:"keyword,omitempty"`
+	Keyword  string `json:"keyword,omitempty" validate:"omitempty"`
 	Status   string `json:"status,omitempty" validate:"omitempty,oneof=pending ready deleting deleted failed"`
 	Scope    string `json:"scope,omitempty" validate:"omitempty,oneof=all mine"` // all | mine
-	Uploader string `json:"uploader_id,omitempty"`
+	Uploader string `json:"uploader_id,omitempty" validate:"omitempty"`
 }
 
 type AttachmentLinkView struct {

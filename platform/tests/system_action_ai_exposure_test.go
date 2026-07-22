@@ -62,6 +62,9 @@ func TestSystemManagementAndPersonalActionsExposeSafeAIContracts(t *testing.T) {
 	projectedIDs := make(map[string]bool, len(projected))
 	for _, definition := range projected {
 		projectedIDs[definition.RuntimeRef] = true
+		if action.HasExplicitInputContract(definition.InputSchema) {
+			t.Fatalf("Action contract marker leaked into projected Tool schema: %s", definition.RuntimeRef)
+		}
 	}
 	for _, actionID := range append(readActions, writeActions...) {
 		if !projectedIDs[actionID] {
@@ -71,6 +74,8 @@ func TestSystemManagementAndPersonalActionsExposeSafeAIContracts(t *testing.T) {
 	if projectedIDs[system.ActionUserCreate] || projectedIDs[system.ActionUserPasswordReset] {
 		t.Fatal("credential-bearing user Actions must not be projected as Action Tools")
 	}
+	userUpdate, _ := application.Actions.Get(system.ActionUserUpdate)
+	assertSchemaRequired(t, userUpdate.Meta.AI.InputSchema, "id", "display_name")
 }
 
 func assertSystemAIContract(t *testing.T, application *app.App, actionID string, mutation bool) {
@@ -83,6 +88,9 @@ func assertSystemAIContract(t *testing.T, application *app.App, actionID string,
 	if !json.Valid(meta.InputSchema) || meta.Summary == "" || meta.HumanDescription == "" || meta.ResultSummary == "" {
 		t.Fatalf("Action %s has an incomplete AI contract: %#v", actionID, meta)
 	}
+	if !action.HasExplicitInputContract(meta.InputSchema) {
+		t.Fatalf("Action %s does not use the explicit input contract", actionID)
+	}
 	if mutation {
 		if !meta.RequiresConfirmation || (meta.SideEffect != "write" && meta.SideEffect != "destructive") {
 			t.Fatalf("mutation Action %s must use a confirmed side effect: %#v", actionID, meta)
@@ -91,5 +99,23 @@ func assertSystemAIContract(t *testing.T, application *app.App, actionID string,
 	}
 	if meta.RequiresConfirmation || meta.SideEffect != "read" || meta.Risk != "low" {
 		t.Fatalf("read Action %s must remain low-risk without confirmation: %#v", actionID, meta)
+	}
+}
+
+func assertSchemaRequired(t *testing.T, schema json.RawMessage, expected ...string) {
+	t.Helper()
+	var decoded struct {
+		Required []string `json:"required"`
+	}
+	if err := json.Unmarshal(schema, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if len(decoded.Required) != len(expected) {
+		t.Fatalf("required = %#v, want %#v", decoded.Required, expected)
+	}
+	for i := range expected {
+		if decoded.Required[i] != expected[i] {
+			t.Fatalf("required = %#v, want %#v", decoded.Required, expected)
+		}
 	}
 }

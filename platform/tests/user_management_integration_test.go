@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/yzxingtu2026/ainp/platform/framework/aitool"
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/config"
@@ -152,11 +153,64 @@ func TestUserManagementTenantIsolationAndProtection(t *testing.T) {
 	ctxA := auth.WithContext(context.Background(), &auth.Context{TenantID: "tenant-a", UserID: "user-a", Realm: auth.RealmTenant, Authenticated: true})
 	ctxB := auth.WithContext(context.Background(), &auth.Context{TenantID: "tenant-b", UserID: "user-b", Realm: auth.RealmTenant, Authenticated: true})
 
-	createdA, err := service.Create(ctxA, json.RawMessage(`{"username":"alice","display_name":"Alice","password":"Alice@123","status":"enabled","role_ids":["operator-a"]}`))
+	createdA, err := service.Create(ctxA, json.RawMessage(`{"username":"alice","display_name":"Alice","password":"Alice@123","status":"enabled","role_ids":["operator-a"],"org_id":"org-a","dept_id":"dept-a"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	userA := createdA.(system.UserView)
+	updatedA, err := service.Update(ctxA, json.RawMessage(`{"id":"`+userA.ID+`","display_name":"Alice Updated"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view := updatedA.(system.UserView); view.DisplayName != "Alice Updated" || view.OrgID != "org-a" || view.DeptID != "dept-a" {
+		t.Fatalf("partial user update overwrote omitted fields: %#v", view)
+	}
+	clearedA, err := service.Update(ctxA, json.RawMessage(`{"id":"`+userA.ID+`","display_name":"Alice Updated","org_id":"","dept_id":""}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view := clearedA.(system.UserView); view.OrgID != "" || view.DeptID != "" {
+		t.Fatalf("explicit user field clear was ignored: %#v", view)
+	}
+	if err := testDB.Model(&model.User{}).Where("tenant_id=? AND id=?", "tenant-a", userA.ID).Updates(map[string]any{"org_id": "org-a", "dept_id": "dept-a"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	application := app.New(&config.Config{}, testDB, nil, nil)
+	attachStorage(t, application)
+	if err := system.Register(application); err != nil {
+		t.Fatal(err)
+	}
+	actionCtx := auth.WithContext(context.Background(), &auth.Context{TenantID: "tenant-a", UserID: "user-a", SessionID: "session-a", Realm: auth.RealmTenant, Authenticated: true, Permissions: []string{system.ActionUserUpdate}})
+	minimalHTTPPayload := json.RawMessage(`{"id":"` + userA.ID + `","display_name":"HTTP Updated"}`)
+	if _, err := application.Actions.Invoke(actionCtx, system.ActionUserUpdate, minimalHTTPPayload); err != nil {
+		t.Fatalf("minimal HTTP Action payload failed: %v", err)
+	}
+	provider := &aitool.ActionProvider{Actions: application.Actions}
+	definitions, err := provider.List(actionCtx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var userUpdateTool aitool.Definition
+	for _, definition := range definitions {
+		if definition.RuntimeRef == system.ActionUserUpdate {
+			userUpdateTool = definition
+			break
+		}
+	}
+	if userUpdateTool.ID == "" {
+		t.Fatal("system.user_update Action Tool was not projected")
+	}
+	minimalToolPayload := json.RawMessage(`{"id":"` + userA.ID + `","display_name":"Tool Updated"}`)
+	if _, err := (&aitool.ActionExecutor{Actions: application.Actions}).Execute(actionCtx, aitool.LoadedTool{Definition: userUpdateTool}, minimalToolPayload); err != nil {
+		t.Fatalf("minimal Tool payload failed: %v", err)
+	}
+	var persisted model.User
+	if err := testDB.Where("tenant_id=? AND id=?", "tenant-a", userA.ID).First(&persisted).Error; err != nil {
+		t.Fatal(err)
+	}
+	if persisted.DisplayName != "Tool Updated" || persisted.OrgID != "org-a" || persisted.DeptID != "dept-a" {
+		t.Fatalf("HTTP/Tool update semantics diverged: %#v", persisted)
+	}
 	createdB, err := service.Create(ctxB, json.RawMessage(`{"username":"alice","display_name":"Alice B","password":"Alice@123","status":"enabled","role_ids":["admin-b"]}`))
 	if err != nil {
 		t.Fatal(err)

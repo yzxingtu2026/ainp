@@ -249,6 +249,9 @@ func validateAIMeta(actionID string, meta *AIMeta) error {
 	if len(meta.InputSchema) == 0 || !json.Valid(meta.InputSchema) {
 		return fmt.Errorf("action %s: valid AI input schema is required", actionID)
 	}
+	if !HasExplicitInputContract(meta.InputSchema) {
+		return fmt.Errorf("action %s: AI input schema requires an explicit input contract", actionID)
+	}
 	if len(meta.OutputSchema) > 0 && !json.Valid(meta.OutputSchema) {
 		return fmt.Errorf("action %s: AI output schema is invalid", actionID)
 	}

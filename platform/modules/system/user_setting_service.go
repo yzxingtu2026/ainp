@@ -110,8 +110,8 @@ type UserSettingService struct {
 }
 
 type userSettingUpdateRequest struct {
-	Revision int64          `json:"revision"`
-	Values   map[string]any `json:"values"`
+	Revision *int64         `json:"revision" validate:"required"`
+	Values   map[string]any `json:"values" validate:"required"`
 }
 
 func NewUserSettingService(db *gorm.DB, registry *setting.Registry) *UserSettingService {
@@ -158,7 +158,7 @@ func (s *UserSettingService) Update(ctx context.Context, input json.RawMessage) 
 		return nil, err
 	}
 	var req userSettingUpdateRequest
-	if json.Unmarshal(input, &req) != nil || req.Values == nil {
+	if json.Unmarshal(input, &req) != nil || req.Revision == nil || req.Values == nil {
 		return nil, errs.ValidationKey("common.validation_failed", "invalid user setting update request")
 	}
 	def, ok := s.registry.GetDefinition(RuntimePreferencesKey)
@@ -173,8 +173,8 @@ func (s *UserSettingService) Update(ctx context.Context, input json.RawMessage) 
 	if err := setting.ValidateValues(def, req.Values); err != nil {
 		return nil, errs.ValidationKey("setting.validation_failed", err.Error())
 	}
-	setSettingAudit(ctx, RuntimePreferencesKey, fmt.Sprintf("user setting revision %d requested", req.Revision))
-	row, err := s.store.put(ctx, userID, def.Key, req.Revision, def.SchemaVersion, req.Values)
+	setSettingAudit(ctx, RuntimePreferencesKey, fmt.Sprintf("user setting revision %d requested", *req.Revision))
+	row, err := s.store.put(ctx, userID, def.Key, *req.Revision, def.SchemaVersion, req.Values)
 	if err != nil {
 		return nil, mapSettingError(err)
 	}

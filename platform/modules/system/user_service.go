@@ -43,9 +43,9 @@ func (s *UserService) SetOutboxWriter(w outbox.Writer) {
 
 type userListRequest struct {
 	pagination.Request
-	Keyword string                  `json:"keyword,omitempty"`
+	Keyword string                  `json:"keyword,omitempty" validate:"omitempty"`
 	Status  status.ActivationStatus `json:"status,omitempty" validate:"omitempty,oneof=enabled disabled"`
-	RoleID  string                  `json:"role_id,omitempty"`
+	RoleID  string                  `json:"role_id,omitempty" validate:"omitempty"`
 }
 
 type userIDRequest struct {
@@ -57,16 +57,16 @@ type userCreateRequest struct {
 	DisplayName string                  `json:"display_name" validate:"required,max=128"`
 	Password    string                  `json:"password" validate:"required"`
 	Status      status.ActivationStatus `json:"status" validate:"omitempty,oneof=enabled disabled"`
-	RoleIDs     []string                `json:"role_ids" validate:"max=20,dive,required"`
-	OrgID       string                  `json:"org_id"`
-	DeptID      string                  `json:"dept_id"`
+	RoleIDs     []string                `json:"role_ids,omitempty" validate:"omitempty,max=20,dive,required"`
+	OrgID       string                  `json:"org_id,omitempty" validate:"omitempty"`
+	DeptID      string                  `json:"dept_id,omitempty" validate:"omitempty"`
 }
 
 type userUpdateRequest struct {
-	ID          string `json:"id" validate:"required"`
-	DisplayName string `json:"display_name" validate:"required,max=128"`
-	OrgID       string `json:"org_id"`
-	DeptID      string `json:"dept_id"`
+	ID          string  `json:"id" validate:"required"`
+	DisplayName string  `json:"display_name" validate:"required,max=128"`
+	OrgID       *string `json:"org_id,omitempty" validate:"omitempty"`
+	DeptID      *string `json:"dept_id,omitempty" validate:"omitempty"`
 }
 
 type selfProfileUpdateRequest struct {
@@ -149,7 +149,7 @@ type userStatusRequest struct {
 
 type userRolesRequest struct {
 	ID      string   `json:"id" validate:"required"`
-	RoleIDs []string `json:"role_ids" validate:"max=20,dive,required"`
+	RoleIDs []string `json:"role_ids" validate:"required,max=20,dive,required"`
 }
 
 type userPasswordRequest struct {
@@ -335,8 +335,14 @@ func (s *UserService) Update(ctx context.Context, input json.RawMessage) (any, e
 		return nil, err
 	}
 	req.DisplayName = strings.TrimSpace(req.DisplayName)
-	req.OrgID = strings.TrimSpace(req.OrgID)
-	req.DeptID = strings.TrimSpace(req.DeptID)
+	if req.OrgID != nil {
+		value := strings.TrimSpace(*req.OrgID)
+		req.OrgID = &value
+	}
+	if req.DeptID != nil {
+		value := strings.TrimSpace(*req.DeptID)
+		req.DeptID = &value
+	}
 	if req.DisplayName == "" {
 		return nil, errs.ValidationKey("common.validation_failed", "display_name is required")
 	}
@@ -351,14 +357,32 @@ func (s *UserService) Update(ctx context.Context, input json.RawMessage) (any, e
 		if err != nil {
 			return err
 		}
+		assignments := []string{"display_name = ?"}
+		arguments := []any{current.ID, req.DisplayName}
+		if req.OrgID != nil {
+			assignments = append(assignments, "org_id = ?")
+			arguments = append(arguments, *req.OrgID)
+		}
+		if req.DeptID != nil {
+			assignments = append(assignments, "dept_id = ?")
+			arguments = append(arguments, *req.DeptID)
+		}
+		assignments = append(assignments, "updated_at = ?")
+		arguments = append(arguments, time.Now().UTC())
 		if err := tenant.TenantExec(tdb, `WITH scoped_user AS (
   SELECT id FROM users WHERE tenant_id = ? AND id = ?
 )
-UPDATE users SET display_name = ?, org_id = ?, dept_id = ?, updated_at = ?
-WHERE id IN (SELECT id FROM scoped_user)`, current.ID, req.DisplayName, req.OrgID, req.DeptID, time.Now().UTC()); err != nil {
+UPDATE users SET `+strings.Join(assignments, ", ")+`
+WHERE id IN (SELECT id FROM scoped_user)`, arguments...); err != nil {
 			return err
 		}
-		current.DisplayName, current.OrgID, current.DeptID = req.DisplayName, req.OrgID, req.DeptID
+		current.DisplayName = req.DisplayName
+		if req.OrgID != nil {
+			current.OrgID = *req.OrgID
+		}
+		if req.DeptID != nil {
+			current.DeptID = *req.DeptID
+		}
 		current.UpdatedAt = time.Now().UTC()
 		user = current
 		return nil

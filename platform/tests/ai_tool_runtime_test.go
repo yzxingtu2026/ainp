@@ -210,8 +210,8 @@ func TestToolHandleIsActorScopeAndSchemaBound(t *testing.T) {
 }
 
 type exposedRequest struct {
-	ResourceID string `json:"resource_id"`
-	Count      int    `json:"count,omitempty"`
+	ResourceID string `json:"resource_id" validate:"required"`
+	Count      int    `json:"count,omitempty" validate:"omitempty"`
 }
 
 func TestActionToolProviderUsesTypedSchemaAndRegistryInvoke(t *testing.T) {
@@ -219,7 +219,7 @@ func TestActionToolProviderUsesTypedSchemaAndRegistryInvoke(t *testing.T) {
 	handler := action.JSON(func(_ context.Context, r exposedRequest) (any, error) {
 		return map[string]any{"resource_id": r.ResourceID}, nil
 	})
-	err := actions.Register(action.Action{ID: "demo.read", Handler: handler, Meta: action.Metadata{Capability: "demo", Access: action.AccessAuthenticated, Name: "读取资源", AI: &action.AIMeta{ExposeTool: true, Risk: "low", SideEffect: "read", Summary: "读取指定资源", HumanDescription: "读取资源", ResultSummary: "已读取资源", InputSchema: action.SchemaFor[exposedRequest]()}}})
+	err := actions.Register(action.Action{ID: "demo.read", Handler: handler, Meta: action.Metadata{Capability: "demo", Access: action.AccessAuthenticated, Name: "读取资源", AI: &action.AIMeta{ExposeTool: true, Risk: "low", SideEffect: "read", Summary: "读取指定资源", HumanDescription: "读取资源", ResultSummary: "已读取资源", InputSchema: action.InputSchemaFor[exposedRequest]()}}})
 	if err != nil {
 		t.Fatal(err)
 	}

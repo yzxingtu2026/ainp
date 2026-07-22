@@ -63,7 +63,7 @@ func (s *AttachmentService) Policies() *attachment.PolicyRegistry { return s.pol
 
 type attachmentPrepareRequest struct {
 	OriginalName string `json:"original_name" validate:"required,max=255"`
-	ContentType  string `json:"content_type"`
+	ContentType  string `json:"content_type,omitempty" validate:"omitempty"`
 	Size         int64  `json:"size" validate:"required,min=1"`
 }
 
@@ -72,21 +72,21 @@ type attachmentIDRequest struct {
 }
 
 type attachmentDownloadPrepareRequest struct {
-	ID      string `json:"id"`
-	Variant string `json:"variant"` // original | thumb | preview；空 = original
+	ID      string `json:"id" validate:"required"`
+	Variant string `json:"variant,omitempty" validate:"omitempty,oneof=original thumb preview"` // 空 = original
 }
 
 type attachmentBindRequest struct {
 	AttachmentID string `json:"attachment_id" validate:"required"`
 	ResourceType string `json:"resource_type" validate:"required"`
 	ResourceID   string `json:"resource_id" validate:"required"`
-	Field        string `json:"field"`
+	Field        string `json:"field,omitempty" validate:"omitempty"`
 }
 
 type attachmentListRequest struct {
-	ResourceType string `json:"resource_type"`
-	ResourceID   string `json:"resource_id"`
-	Field        string `json:"field"`
+	ResourceType string `json:"resource_type" validate:"required"`
+	ResourceID   string `json:"resource_id" validate:"required"`
+	Field        string `json:"field,omitempty" validate:"omitempty"`
 }
 
 type AttachmentView struct {

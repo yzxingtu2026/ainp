@@ -119,7 +119,7 @@ func TestSideEffectingAIActionRequiresConfirmation(t *testing.T) {
 	meta := &action.AIMeta{
 		ExposeTool: true, Risk: "medium", SideEffect: "write",
 		Summary: "更新资源", HumanDescription: "更新资源", ResultSummary: "资源已更新",
-		InputSchema: action.SchemaFor[struct{}](),
+		InputSchema: action.InputSchemaFor[struct{}](),
 	}
 	if err := action.ValidateAIClassification("demo.update", meta); err == nil {
 		t.Fatal("side-effecting AI action without confirmation must fail")

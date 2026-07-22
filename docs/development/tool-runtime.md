@@ -14,7 +14,7 @@
 
 工具 ID 必须为 `{source}:{namespaced-id}`。Definition 必须分别声明稳定 `Name` / `DescriptionForLLM` 与插件自带的 `TitleForHuman` / `DescriptionForHuman`；框架不要求插件预注册平台 i18n key，管理界面只展示 Human 契约，Human 文案不参与 Schema Hash、Handle 或 Embedding 文档。Definition 还必须显式声明 `binding_mode=forbidden|optional` 与 `loading_mode=direct|conditional|progressive`；需要原子绑定的工具用稳定 `binding_group` 聚合。首期实现 `meta` 与 `action`，`builtin/plugin/http/mcp` 只能通过同一 Provider/Executor 接口扩展。未知来源、重复 Provider、非法 Schema、缺少 Human/风险/绑定/加载元数据均在注册或刷新时 fail-closed。
 
-Action 是否暴露以注册处的 `Metadata.AI` 为唯一事实源：仅 `AIMeta.ExposeTool=true` 自动投影为 Action Tool，`AI=nil` 默认不暴露。暴露项使用 `action.SchemaFor[Request/Response]()` 从强类型 DTO 生成输入/输出 Schema，并声明 tags、风险、副作用、确认策略与安全结果摘要。禁止维护 `action_ai_inventory.go` 等平行暴露清单；Action Executor 只能调用 `ActionRegistry.Invoke`。
+Action 是否暴露以注册处的 `Metadata.AI` 为唯一事实源：仅 `AIMeta.ExposeTool=true` 自动投影为 Action Tool，`AI=nil` 默认不暴露。暴露项使用 `action.InputSchemaFor[Request]()` 生成显式输入契约，响应使用 `action.SchemaFor[Response]()`；HTTP 与 Tool 必须复用同一强类型 DTO 和 Handler。字段 required 只由显式验证元数据决定，局部更新的缺失字段不得被解码零值覆盖；Tool Runtime 禁止补字段、隐式强转或维护 Agent 专用 DTO。暴露项还必须声明 tags、风险、副作用、确认策略与安全结果摘要。禁止维护 `action_ai_inventory.go` 等平行暴露清单；Action Executor 只能调用 `ActionRegistry.Invoke`。
 
 框架核心工具通过 `RuntimeSlot` 注册。Slot 同时声明稳定 Definition、`direct/progressive` 发现模式、动态投影、Executor、Step/Invocation 分类、预算类别与安全观测字段。`platform/modules/ai/tools/register.go` 是唯一显式聚合入口；每个核心工具位于独立子目录，例如 `tools/knowledge/slot.go`。生产启动不扫描源码、不使用 Go Plugin，也不依赖隐藏 `init()`。
 
