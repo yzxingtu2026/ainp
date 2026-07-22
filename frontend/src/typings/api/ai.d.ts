@@ -134,7 +134,7 @@ declare namespace Api.AI {
   interface PersonalizationSuggestion {
     title: string;
     prompt: string;
-    source_type: 'general' | 'recent_work' | 'memory_profile';
+    source_type: 'general' | 'recent_work' | 'recent_conversation' | 'memory_profile';
     target_ref?: string | null;
   }
   interface AssistantPersonalization {

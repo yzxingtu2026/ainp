@@ -1,6 +1,7 @@
 package ai
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -16,6 +17,24 @@ func TestPersonalizationAcceptsInvocationRuntimeValueResponse(t *testing.T) {
 	}
 	if got.ID != want.ID {
 		t.Fatalf("unexpected response id: %q", got.ID)
+	}
+}
+
+func TestProjectConversationEndingKeepsBoundedTextInSequenceOrder(t *testing.T) {
+	content := func(parts ...aimodelruntime.ContentPart) []byte { value, _ := json.Marshal(parts); return value }
+	records := []ConversationMessage{
+		{Role: "assistant", Sequence: 4, Content: content(aimodelruntime.ContentPart{Type: aimodelruntime.PartOutputText, Text: "最后回复"}, aimodelruntime.ContentPart{Type: aimodelruntime.PartToolCall, ToolName: "secret.tool"})},
+		{Role: "user", Sequence: 3, Content: content(aimodelruntime.ContentPart{Type: aimodelruntime.PartInputText, Text: strings.Repeat("待继续", 200)})},
+	}
+	projected := projectConversationEnding(records, 450)
+	if len(projected) != 2 || projected[0].Role != "user" || projected[1].Role != "assistant" {
+		t.Fatalf("unexpected projection order: %#v", projected)
+	}
+	if len([]rune(projected[0].Text)) != 400 {
+		t.Fatalf("message limit not applied: %d", len([]rune(projected[0].Text)))
+	}
+	if strings.Contains(projected[1].Text, "secret.tool") {
+		t.Fatal("tool metadata leaked into conversation projection")
 	}
 }
 

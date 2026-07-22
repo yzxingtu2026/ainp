@@ -53,6 +53,18 @@ func RegisterPersonalization(a *app.App, service *PersonalizationService) error 
 	}}); err != nil {
 		return err
 	}
+	if err := a.Outbox.RegisterHandler(outbox.HandlerFunc{HandlerName: "ai.invalidate_assistant_personalization_after_run", Types: []string{agentRunTerminalEvent}, Fn: func(ctx context.Context, env outbox.Envelope) error {
+		var payload struct {
+			Status string `json:"status"`
+		}
+		if json.Unmarshal(env.Payload, &payload) != nil || payload.Status != "completed" || env.ActorID == "" {
+			return nil
+		}
+		ctx = auth.WithContext(ctx, &auth.Context{Authenticated: true, TenantID: env.TenantID, UserID: env.ActorID, Realm: auth.RealmTenant, RequestID: env.CorrelationID, Client: "outbox"})
+		return service.InvalidateAndRequest(ctx, env.ActorID, uint64(env.AggregateVersion))
+	}}); err != nil {
+		return err
+	}
 	auditOff := false
 	for _, x := range []struct {
 		id, path, name string

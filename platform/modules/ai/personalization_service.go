@@ -23,7 +23,7 @@ import (
 const AssistantPersonalizationSettingKey = "ai.assistant_personalization"
 const AssistantPersonalizationEvent = "ai.assistant_personalization.refresh_requested.v1"
 const AssistantPersonalizationJobType = "ai.assistant_personalization.generate"
-const assistantPersonalizationPromptVersion = "1.1.0"
+const assistantPersonalizationPromptVersion = "1.2.0"
 
 type PersonalizationSuggestion struct {
 	Title      string  `json:"title"`
@@ -163,7 +163,7 @@ func (s *PersonalizationService) InvalidateAndRequest(ctx context.Context, userI
 	if err != nil {
 		return err
 	}
-	if current, found, lookupErr := optionalPersonalizationSnapshot(repo, userID, WorkspaceDefaultSlot); lookupErr == nil && found && revision <= current.GenerationRevision {
+	if current, found, lookupErr := optionalPersonalizationSnapshot(repo, userID, WorkspaceDefaultSlot); lookupErr == nil && found {
 		revision = current.GenerationRevision + 1
 	}
 	if result := repo.Where("user_id=? AND slot_key=?", userID, WorkspaceDefaultSlot).Updates(map[string]any{"status": "stale"}); result.Error != nil {
@@ -182,19 +182,30 @@ func (s *PersonalizationService) InvalidateAndRequest(ctx context.Context, userI
 }
 
 type personalizationContext struct {
-	Locale               string           `json:"locale"`
-	Timezone             string           `json:"timezone"`
-	CurrentLocalDateTime string           `json:"current_local_datetime"`
-	PreferredAddress     string           `json:"preferred_address,omitempty"`
-	AgentVersionID       string           `json:"agent_version_id,omitempty"`
-	MemoryProfile        map[string]any   `json:"memory_profile,omitempty"`
-	RecentWork           []map[string]any `json:"recent_work,omitempty"`
-	AllowedSourceTypes   []string         `json:"allowed_source_types"`
+	Locale               string                     `json:"locale"`
+	Timezone             string                     `json:"timezone"`
+	CurrentLocalDateTime string                     `json:"current_local_datetime"`
+	PreferredAddress     string                     `json:"preferred_address,omitempty"`
+	AgentVersionID       string                     `json:"agent_version_id,omitempty"`
+	MemoryProfile        map[string]any             `json:"memory_profile,omitempty"`
+	RecentWork           []map[string]any           `json:"recent_work,omitempty"`
+	RecentConversation   *recentConversationContext `json:"recent_conversation,omitempty"`
+	AllowedSourceTypes   []string                   `json:"allowed_source_types"`
+}
+
+type recentConversationContext struct {
+	Title     string                      `json:"title"`
+	Messages  []recentConversationMessage `json:"messages"`
+	Untrusted bool                        `json:"untrusted"`
+}
+type recentConversationMessage struct {
+	Role string `json:"role"`
+	Text string `json:"text"`
 }
 
 func (s *PersonalizationService) buildContext(ctx context.Context, user, slot string) (personalizationContext, map[string]any, error) {
 	ac := auth.MustFromContext(ctx)
-	input := personalizationContext{Locale: "zh-CN", Timezone: "UTC", AllowedSourceTypes: []string{"general", "recent_work", "memory_profile"}}
+	input := personalizationContext{Locale: "zh-CN", Timezone: "UTC", AllowedSourceTypes: []string{"general", "recent_work", "recent_conversation", "memory_profile"}}
 	versions := map[string]any{"prompt": assistantPersonalizationPromptVersion}
 	var agentID string
 	if s.slots != nil {
@@ -242,7 +253,66 @@ func (s *PersonalizationService) buildContext(ctx context.Context, user, slot st
 			versions["recent_run_revision"] = rows[0].Revision
 		}
 	}
+	if rows, e := conversations.Where("owner_user_id=? AND purpose=? AND last_message_at IS NOT NULL", user, ConversationPurposeWorkspace).Order("last_message_at DESC").List(0, 1); e == nil && len(rows) == 1 {
+		messages, _ := tenantdata.NewTenantRepository[ConversationMessage](tdb)
+		if records, messageErr := messages.Where("conversation_id=? AND status=? AND role IN ?", rows[0].ID, "committed", []string{"user", "assistant"}).Order("sequence DESC").List(0, 4); messageErr == nil {
+			projected := projectConversationEnding(records, 1200)
+			if len(projected) > 0 {
+				input.RecentConversation = &recentConversationContext{Title: truncateRunes(strings.TrimSpace(rows[0].Title), 120), Messages: projected, Untrusted: true}
+				versions["recent_conversation_revision"] = rows[0].Revision
+			}
+		}
+	}
 	return input, versions, nil
+}
+
+func projectConversationEnding(records []ConversationMessage, budget int) []recentConversationMessage {
+	if budget <= 0 {
+		return nil
+	}
+	result := make([]recentConversationMessage, 0, len(records))
+	used := 0
+	for index := len(records) - 1; index >= 0; index-- {
+		var parts []aimodelruntime.ContentPart
+		if json.Unmarshal(records[index].Content, &parts) != nil {
+			continue
+		}
+		var text strings.Builder
+		for _, part := range parts {
+			if part.Type == aimodelruntime.PartInputText || part.Type == aimodelruntime.PartOutputText {
+				if text.Len() > 0 {
+					text.WriteString("\n")
+				}
+				text.WriteString(part.Text)
+			}
+		}
+		value := strings.TrimSpace(text.String())
+		if value == "" {
+			continue
+		}
+		remaining := budget - used
+		if remaining <= 0 {
+			break
+		}
+		value = truncateRunes(value, minInt(400, remaining))
+		used += len([]rune(value))
+		result = append(result, recentConversationMessage{Role: records[index].Role, Text: value})
+	}
+	return result
+}
+
+func truncateRunes(value string, limit int) string {
+	runes := []rune(value)
+	if limit >= 0 && len(runes) > limit {
+		return string(runes[:limit])
+	}
+	return value
+}
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func safeProfile(raw []byte) map[string]any {
@@ -421,5 +491,5 @@ func validPersonalization(g string, ss []PersonalizationSuggestion) bool {
 	return true
 }
 func personalizationSchema() json.RawMessage {
-	return json.RawMessage(`{"type":"object","additionalProperties":false,"required":["greeting","suggestions"],"properties":{"greeting":{"type":"string","maxLength":120},"suggestions":{"type":"array","minItems":1,"maxItems":4,"items":{"type":"object","additionalProperties":false,"required":["title","prompt","source_type","target_ref"],"properties":{"title":{"type":"string","maxLength":40},"prompt":{"type":"string","maxLength":160},"source_type":{"type":"string","enum":["general","recent_work","memory_profile"]},"target_ref":{"type":["string","null"]}}}}}}`)
+	return json.RawMessage(`{"type":"object","additionalProperties":false,"required":["greeting","suggestions"],"properties":{"greeting":{"type":"string","maxLength":120},"suggestions":{"type":"array","minItems":1,"maxItems":4,"items":{"type":"object","additionalProperties":false,"required":["title","prompt","source_type","target_ref"],"properties":{"title":{"type":"string","maxLength":40},"prompt":{"type":"string","maxLength":160},"source_type":{"type":"string","enum":["general","recent_work","recent_conversation","memory_profile"]},"target_ref":{"type":["string","null"]}}}}}}`)
 }
