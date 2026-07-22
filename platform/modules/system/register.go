@@ -75,6 +75,12 @@ func Register(a *app.App) error {
 	if err := registerUserActions(a, userSvc); err != nil {
 		return err
 	}
+	if a.ToolRegistry == nil {
+		return fmt.Errorf("tool registry is required")
+	}
+	if err := a.ToolRegistry.RegisterConfirmationPresenter("action:"+ActionUserRolesUpdate, userRolesConfirmationPresenter{db: a.DB}); err != nil {
+		return err
+	}
 	if a.PageContexts == nil {
 		return fmt.Errorf("page context registry is required")
 	}

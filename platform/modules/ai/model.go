@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/yzxingtu2026/ainp/platform/framework/aitool"
 	"gorm.io/gorm"
 )
 
@@ -188,28 +189,43 @@ type ToolScope struct {
 func (ToolScope) TableName() string { return "ai_tool_scopes" }
 
 type ToolConfirmation struct {
-	ID                   string          `gorm:"primaryKey;size:64" json:"id"`
-	TenantID             string          `gorm:"size:64;not null;index" json:"-"`
-	UserID               string          `gorm:"size:64;not null;index" json:"-"`
-	ScopeID              string          `gorm:"size:64;not null;index" json:"scope_id"`
-	InvocationID         string          `gorm:"size:64;not null;index" json:"invocation_id"`
-	ToolCallID           string          `gorm:"size:128;not null" json:"tool_call_id"`
-	ToolID               string          `gorm:"size:255;not null" json:"tool_id"`
-	SchemaHash           string          `gorm:"size:64;not null" json:"schema_hash"`
-	ArgumentsHash        string          `gorm:"size:64;not null" json:"arguments_hash"`
-	ArgumentsJSON        json.RawMessage `gorm:"type:jsonb;not null" json:"-"`
-	ArgumentsSummaryJSON json.RawMessage `gorm:"type:jsonb;not null" json:"arguments_summary"`
-	Risk                 string          `gorm:"size:16;not null" json:"risk"`
-	SideEffect           string          `gorm:"size:16;not null" json:"side_effect"`
-	Status               string          `gorm:"size:16;not null;index" json:"status"`
-	ExpiresAt            time.Time       `gorm:"not null" json:"expires_at"`
-	DecidedAt            *time.Time      `json:"decided_at,omitempty"`
-	ConsumedAt           *time.Time      `json:"consumed_at,omitempty"`
-	CreatedAt            time.Time       `json:"created_at"`
-	UpdatedAt            time.Time       `json:"updated_at"`
+	ID                   string                           `gorm:"primaryKey;size:64" json:"id"`
+	TenantID             string                           `gorm:"size:64;not null;index" json:"-"`
+	UserID               string                           `gorm:"size:64;not null;index" json:"-"`
+	ScopeID              string                           `gorm:"size:64;not null;index" json:"scope_id"`
+	InvocationID         string                           `gorm:"size:64;not null;index" json:"invocation_id"`
+	ToolCallID           string                           `gorm:"size:128;not null" json:"tool_call_id"`
+	ToolID               string                           `gorm:"size:255;not null" json:"tool_id"`
+	SchemaHash           string                           `gorm:"size:64;not null" json:"schema_hash"`
+	ArgumentsHash        string                           `gorm:"size:64;not null" json:"arguments_hash"`
+	ArgumentsJSON        json.RawMessage                  `gorm:"type:jsonb;not null" json:"-"`
+	ArgumentsSummaryJSON json.RawMessage                  `gorm:"type:jsonb;not null" json:"arguments_summary"`
+	PresentationJSON     json.RawMessage                  `gorm:"type:jsonb" json:"-"`
+	PresentationVersion  int                              `gorm:"not null;default:0" json:"presentation_version"`
+	Presentation         *aitool.ConfirmationPresentation `gorm:"-" json:"presentation,omitempty"`
+	Risk                 string                           `gorm:"size:16;not null" json:"risk"`
+	SideEffect           string                           `gorm:"size:16;not null" json:"side_effect"`
+	Status               string                           `gorm:"size:16;not null;index" json:"status"`
+	ExpiresAt            time.Time                        `gorm:"not null" json:"expires_at"`
+	DecidedAt            *time.Time                       `json:"decided_at,omitempty"`
+	ConsumedAt           *time.Time                       `json:"consumed_at,omitempty"`
+	CreatedAt            time.Time                        `json:"created_at"`
+	UpdatedAt            time.Time                        `json:"updated_at"`
 }
 
 func (ToolConfirmation) TableName() string { return "ai_tool_confirmations" }
+
+func (c *ToolConfirmation) AfterFind(*gorm.DB) error {
+	if len(c.PresentationJSON) == 0 || string(c.PresentationJSON) == "null" {
+		return nil
+	}
+	var presentation aitool.ConfirmationPresentation
+	if err := json.Unmarshal(c.PresentationJSON, &presentation); err != nil {
+		return nil
+	}
+	c.Presentation = &presentation
+	return nil
+}
 
 type ToolInvocation struct {
 	ID             string          `gorm:"primaryKey;size:64" json:"id"`

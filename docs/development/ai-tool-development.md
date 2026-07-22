@@ -16,6 +16,8 @@
 
 禁止业务模块自行把完整工具 Schema 放入模型请求，禁止 Executor 绕过 Tool Runtime 直接向模型暴露或执行。
 
+需要把资源 ID、变更集合等复杂参数解释为普通用户可读授权信息时，在 Tool 所属模块通过 `ToolRegistry.RegisterConfirmationPresenter` 注册领域 Presenter。Presenter 必须使用当前请求上下文下的 TenantDB/Guarded Repository 做只读解析，返回 `ConfirmationPresentation`，并允许任何查询失败由 Runtime 安全降级。禁止在 AI Runtime、SSE Handler 或前端按 Tool ID 编写展示特例；简单工具直接使用 Definition Human 文案和默认生成器。
+
 ## 将 Action 暴露为工具
 
 请求 DTO 是 Action 验证和 AI Tool Schema 的唯一事实源：

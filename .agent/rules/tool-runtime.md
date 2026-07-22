@@ -19,6 +19,8 @@
 - 写/外部/付费/破坏性/high 必须单次确认，critical 默认禁止；批准后重新鉴权，不支持始终允许。
 - 同批 Tool Call 遇确认后停止执行剩余调用并逐个追加 deferred Tool Result；批准、拒绝、过期等确认终态必须保证所有 Tool Call/Result 配对，禁止永久等待。
 - Invocation 终态与 Outbox 同事务，日志/Outbox/审计禁止完整参数、结果、Secret 和原始第三方响应。
+- Tool Call 创建时必须固化 Definition 的 `ToolPresentation`；确认创建事务必须固化版本化 `ConfirmationPresentation`。展示快照只用于解释，禁止作为执行输入；前端禁止解析模型工具名或按 Tool ID 维护业务名称映射。
+- 确认文案只能由 Tool Runtime 默认生成器或已注册的可信 Presenter 生成；领域 Presenter 必须租户隔离、权限受控、只读且失败安全降级，Runtime/SSE 禁止按具体 Tool ID 写业务分支或临时查询拼文案。
 - `knowledge.search` 必须经 Registry/Scope/Executor，且仅在存在当前可读、enabled、ready 的 Agent 绑定库时投影；知识正文不得进入 Invocation/Step/事件事实摘要。
 - 测试统一放在 `platform/tests`。详见 `docs/development/tool-runtime.md`。
 - 新增 Action Tool 或 Provider/Executor 时同时遵循 `docs/development/ai-tool-development.md`。

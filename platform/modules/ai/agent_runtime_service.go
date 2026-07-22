@@ -1358,12 +1358,19 @@ func (s *AgentRuntimeService) appendAssistantToolCalls(ctx context.Context, run 
 		if len(args) == 0 || !json.Valid(args) {
 			args = json.RawMessage(`{}`)
 		}
-		parts = append(parts, aimodelruntime.ContentPart{
+		part := aimodelruntime.ContentPart{
 			Type:       aimodelruntime.PartToolCall,
 			ToolCallID: call.ToolCallID,
 			ToolName:   call.ToolName,
 			Arguments:  args,
-		})
+		}
+		if toolID := s.registryToolID(call.ToolName); toolID != "" {
+			if definition, ok := s.tools.registry.Get(toolID); ok {
+				presentation := aitool.PresentationFor(definition)
+				part.Presentation = &presentation
+			}
+		}
+		parts = append(parts, part)
 	}
 	if len(parts) == 0 {
 		return fmt.Errorf("empty assistant tool call message")

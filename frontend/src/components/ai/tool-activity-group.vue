@@ -117,6 +117,8 @@ watch(
           v-for="operation in regularOperations"
           :key="operation.toolCallId || operation.toolName"
           :tool-name="operation.toolName"
+          :presentation="operation.presentation"
+          :tool-call-id="operation.toolCallId"
           :request="operation.request"
           :result="operation.result"
           :has-result="operation.hasResult"

@@ -5,10 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	jsonschema "github.com/santhosh-tekuri/jsonschema/v5"
 	"github.com/yzxingtu2026/ainp/platform/framework/aimodel"
+	"github.com/yzxingtu2026/ainp/platform/framework/aitool"
 )
 
 type Role string
@@ -74,17 +76,18 @@ const (
 )
 
 type ContentPart struct {
-	Type               PartType           `json:"type"`
-	Text               string             `json:"text,omitempty"`
-	ImageAttachmentID  string             `json:"image_attachment_id,omitempty"`
-	AttachmentRevision string             `json:"attachment_revision,omitempty"`
-	ImageDetail        ImageDetail        `json:"detail,omitempty"`
-	ToolCallID         string             `json:"tool_call_id,omitempty"`
-	ToolName           string             `json:"tool_name,omitempty"`
-	Arguments          json.RawMessage    `json:"arguments,omitempty"`
-	Result             json.RawMessage    `json:"result,omitempty"`
-	DerivedSource      *DerivedTextSource `json:"derived_source,omitempty"`
-	ResolvedImage      *ResolvedImage     `json:"-"`
+	Type               PartType                 `json:"type"`
+	Text               string                   `json:"text,omitempty"`
+	ImageAttachmentID  string                   `json:"image_attachment_id,omitempty"`
+	AttachmentRevision string                   `json:"attachment_revision,omitempty"`
+	ImageDetail        ImageDetail              `json:"detail,omitempty"`
+	ToolCallID         string                   `json:"tool_call_id,omitempty"`
+	ToolName           string                   `json:"tool_name,omitempty"`
+	Presentation       *aitool.ToolPresentation `json:"presentation,omitempty"`
+	Arguments          json.RawMessage          `json:"arguments,omitempty"`
+	Result             json.RawMessage          `json:"result,omitempty"`
+	DerivedSource      *DerivedTextSource       `json:"derived_source,omitempty"`
+	ResolvedImage      *ResolvedImage           `json:"-"`
 }
 
 func (p *ContentPart) UnmarshalJSON(data []byte) error {
@@ -93,7 +96,7 @@ func (p *ContentPart) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &fields); err != nil {
 		return err
 	}
-	allowed := map[string]bool{"type": true, "text": true, "image_attachment_id": true, "attachment_revision": true, "detail": true, "tool_call_id": true, "tool_name": true, "arguments": true, "result": true, "derived_source": true}
+	allowed := map[string]bool{"type": true, "text": true, "image_attachment_id": true, "attachment_revision": true, "detail": true, "tool_call_id": true, "tool_name": true, "presentation": true, "arguments": true, "result": true, "derived_source": true}
 	for key := range fields {
 		if !allowed[key] {
 			return fmt.Errorf("unsupported content part field: %s", key)
@@ -329,6 +332,9 @@ func validatePart(role Role, p ContentPart) error {
 		if role != RoleAssistant || p.ToolCallID == "" || p.ToolName == "" || !json.Valid(p.Arguments) {
 			return fmt.Errorf("invalid tool_call")
 		}
+		if p.Presentation != nil && strings.TrimSpace(p.Presentation.Title) == "" {
+			return fmt.Errorf("tool_call presentation requires title")
+		}
 	case PartToolResult:
 		if role != RoleTool || p.ToolCallID == "" || !json.Valid(p.Result) {
 			return fmt.Errorf("invalid tool_result")
@@ -341,6 +347,9 @@ func validatePart(role Role, p ContentPart) error {
 		return fmt.Errorf("content part is not implemented: %s", p.Type)
 	default:
 		return fmt.Errorf("unsupported input part: %s", p.Type)
+	}
+	if p.Type != PartToolCall && p.Presentation != nil {
+		return fmt.Errorf("presentation is only allowed for tool_call")
 	}
 	return nil
 }

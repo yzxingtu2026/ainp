@@ -44,7 +44,15 @@ Handle 使用服务端签名并绑定 tenant、user、realm、session/auth versi
 
 ## 确认与事实记录
 
-写入、外部、付费、破坏性、高风险工具默认单次确认，critical 默认禁止。确认绑定不可变 arguments hash，仅展示递归脱敏摘要；批准后重新校验全部安全条件并单次消费，不提供“始终允许”。
+写入、外部、付费、破坏性、高风险工具默认单次确认，critical 默认禁止。确认绑定不可变 arguments hash；批准后重新校验全部安全条件并单次消费，不提供“始终允许”。
+
+Assistant Tool Call 创建时从当前投影 Definition 固化 `ToolPresentation{title,description}` 快照。模型协议仍保留 `tool_name` / `tool_call_id`，但前端主视图只消费展示快照；历史消息没有快照时才降级显示原始工具名。Definition 后续改名不得改变历史消息，前端禁止解析 `action__...`、`meta__...` 或维护具体 Tool ID 名称映射。
+
+确认创建时在同一事务边界固化版本化 `ConfirmationPresentation`，包含 Tool 标题/描述、操作摘要和结构化 Details。原始 `ArgumentsJSON`、`ArgumentsHash`、`SchemaHash` 始终是批准后执行事实，展示快照禁止反向作为执行输入。SSE 只通知 confirmation ID 和状态，不动态查询业务资源或拼接授权文案。
+
+没有领域 Presenter 时，默认生成器只读取 Definition Human 文案及 Input Schema 明确声明的人类标签，并只展示安全短标量；敏感字段、UUID/内部 ID、数组和嵌套对象不进入普通用户主视图。复杂 Tool 通过 `ToolRegistry.RegisterConfirmationPresenter` 在所属模块注册可信 Presenter。Presenter 可在当前 actor 权限和租户范围内只读解析资源名称，不得产生副作用；查询失败、目标删除或无权读取时 Runtime 自动使用安全默认展示。Tool Runtime 和 SSE 禁止按具体 Tool ID 增加业务分支。
+
+前端确认卡片默认显示标题、描述、摘要、结构化 Details、风险和副作用；原始 Tool ID、Tool Call ID 与脱敏参数摘要进入默认折叠的技术详情。`PresentationVersion=0` 或快照为空表示历史数据，必须兼容读取且不得阻断批准流程。
 
 同一模型响应含多个 Tool Call 时按顺序执行。任一调用进入确认后必须立即停止执行同批后续调用，并为每个未执行调用追加配对的 `deferred_for_confirmation` Tool Result；模型在确认恢复后按需重新发起。批准、拒绝、过期及其他确认终态都必须为原 Tool Call 产生配对结果，禁止留下永久等待卡片。
 

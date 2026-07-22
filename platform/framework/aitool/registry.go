@@ -13,16 +13,17 @@ import (
 )
 
 type Registry struct {
-	mu          sync.RWMutex
-	tools       map[string]Definition
-	providers   map[Source]Provider
-	executors   map[Source]Executor
-	slots       map[string]RuntimeSlot
-	runtimeRefs map[string]string
+	mu                     sync.RWMutex
+	tools                  map[string]Definition
+	providers              map[Source]Provider
+	executors              map[Source]Executor
+	slots                  map[string]RuntimeSlot
+	runtimeRefs            map[string]string
+	confirmationPresenters map[string]ConfirmationPresenter
 }
 
 func NewRegistry() *Registry {
-	return &Registry{tools: map[string]Definition{}, providers: map[Source]Provider{}, executors: map[Source]Executor{}, slots: map[string]RuntimeSlot{}, runtimeRefs: map[string]string{}}
+	return &Registry{tools: map[string]Definition{}, providers: map[Source]Provider{}, executors: map[Source]Executor{}, slots: map[string]RuntimeSlot{}, runtimeRefs: map[string]string{}, confirmationPresenters: map[string]ConfirmationPresenter{}}
 }
 func (r *Registry) RegisterSlot(slot RuntimeSlot) error {
 	if slot == nil {

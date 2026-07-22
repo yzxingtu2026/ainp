@@ -2,6 +2,7 @@
 export interface ToolOperation {
   toolCallId: string;
   toolName: string;
+  presentation?: Api.AI.ToolPresentation;
   /** tool_call 的调用参数 */
   request: unknown;
   /** 配对 tool_result 的结果载荷，结构异构（aitool.Result / search / load 响应等） */
