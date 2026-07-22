@@ -23,7 +23,7 @@ import (
 const AssistantPersonalizationSettingKey = "ai.assistant_personalization"
 const AssistantPersonalizationEvent = "ai.assistant_personalization.refresh_requested.v1"
 const AssistantPersonalizationJobType = "ai.assistant_personalization.generate"
-const assistantPersonalizationPromptVersion = "1.2.0"
+const assistantPersonalizationPromptVersion = "1.2.1"
 
 type PersonalizationSuggestion struct {
 	Title      string  `json:"title"`
@@ -391,8 +391,11 @@ func (s *PersonalizationService) Generate(ctx context.Context, user, slot string
 		Greeting    string                      `json:"greeting"`
 		Suggestions []PersonalizationSuggestion `json:"suggestions"`
 	}
-	if json.Unmarshal([]byte(text), &value) != nil || !validPersonalization(value.Greeting, value.Suggestions) {
-		return fmt.Errorf("personalization output invalid")
+	if json.Unmarshal([]byte(text), &value) != nil {
+		return fmt.Errorf("personalization output invalid: invalid_json")
+	}
+	if err := validatePersonalization(value.Greeting, value.Suggestions); err != nil {
+		return fmt.Errorf("personalization output invalid: %w", err)
 	}
 	suggestions, _ := json.Marshal(value.Suggestions)
 	versionsJSON, _ := json.Marshal(sourceVersions)
@@ -479,17 +482,24 @@ func renderTimeGreeting(body, locale, timezone string, now time.Time) string {
 	}
 	return period + "，" + body
 }
-func validPersonalization(g string, ss []PersonalizationSuggestion) bool {
+func validatePersonalization(g string, ss []PersonalizationSuggestion) error {
 	if len([]rune(g)) == 0 || len([]rune(g)) > 120 || len(ss) == 0 || len(ss) > 4 || strings.ContainsAny(g, "<>") {
-		return false
+		return fmt.Errorf("greeting_or_count")
 	}
 	for _, x := range ss {
-		if x.TargetRef != nil || len([]rune(x.Title)) > 40 || len([]rune(x.Prompt)) > 160 || strings.Contains(x.Prompt, "http") || strings.Contains(x.Prompt, "/") {
-			return false
+		if x.TargetRef != nil {
+			return fmt.Errorf("target_ref_not_allowed")
+		}
+		if len([]rune(x.Title)) > 40 || len([]rune(x.Prompt)) > 160 {
+			return fmt.Errorf("suggestion_length")
+		}
+		lower := strings.ToLower(x.Prompt)
+		if strings.ContainsAny(x.Prompt, "<>") || strings.Contains(lower, "http://") || strings.Contains(lower, "https://") || strings.Contains(lower, "/api/") || strings.Contains(lower, "/ai/") {
+			return fmt.Errorf("url_or_internal_path")
 		}
 	}
-	return true
+	return nil
 }
 func personalizationSchema() json.RawMessage {
-	return json.RawMessage(`{"type":"object","additionalProperties":false,"required":["greeting","suggestions"],"properties":{"greeting":{"type":"string","maxLength":120},"suggestions":{"type":"array","minItems":1,"maxItems":4,"items":{"type":"object","additionalProperties":false,"required":["title","prompt","source_type","target_ref"],"properties":{"title":{"type":"string","maxLength":40},"prompt":{"type":"string","maxLength":160},"source_type":{"type":"string","enum":["general","recent_work","recent_conversation","memory_profile"]},"target_ref":{"type":["string","null"]}}}}}}`)
+	return json.RawMessage(`{"type":"object","additionalProperties":false,"required":["greeting","suggestions"],"properties":{"greeting":{"type":"string","maxLength":120},"suggestions":{"type":"array","minItems":1,"maxItems":4,"items":{"type":"object","additionalProperties":false,"required":["title","prompt","source_type","target_ref"],"properties":{"title":{"type":"string","maxLength":40},"prompt":{"type":"string","maxLength":160},"source_type":{"type":"string","enum":["general","recent_work","recent_conversation","memory_profile"]},"target_ref":{"type":"null"}}}}}}`)
 }
