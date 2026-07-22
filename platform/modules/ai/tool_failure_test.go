@@ -75,3 +75,23 @@ func TestInvalidArgumentsIsTheOnlyRecoverableToolError(t *testing.T) {
 		}
 	}
 }
+
+func TestStepLimitReservesConfirmationContinuationOnlyWhenNeeded(t *testing.T) {
+	for _, tt := range []struct {
+		name                string
+		configured, current int
+		resumed             bool
+		want                int
+	}{
+		{name: "ordinary run", configured: 24, current: 24, resumed: false, want: 24},
+		{name: "confirmation has room", configured: 24, current: 10, resumed: true, want: 24},
+		{name: "confirmation needs room", configured: 24, current: 22, resumed: true, want: 26},
+		{name: "confirmation exhausted", configured: 24, current: 24, resumed: true, want: 28},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := stepLimitAfterConfirmation(tt.configured, tt.current, tt.resumed); got != tt.want {
+				t.Fatalf("got %d, want %d", got, tt.want)
+			}
+		})
+	}
+}

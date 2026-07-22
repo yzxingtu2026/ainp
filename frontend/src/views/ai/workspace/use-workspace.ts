@@ -53,10 +53,14 @@ function diagnosticMessage(issue: Api.AI.AgentDiagnosticIssue) {
 }
 
 function runFailureMessage(detail: Api.AI.AgentRunDetail) {
+  const category = detail.run.error_category || 'unknown';
+  if (category !== 'tool_failed') {
+    return $t('page.aiWorkspace.runFailureSimple', { category });
+  }
   const failedStep = [...detail.steps].reverse().find(step => step.status === 'failed');
   const reason = typeof failedStep?.output_summary?.reason === 'string' ? failedStep.output_summary.reason : '';
   return $t('page.aiWorkspace.runFailure', {
-    category: detail.run.error_category || 'unknown',
+    category,
     reason: reason || failedStep?.error_category || 'unknown'
   });
 }

@@ -29,6 +29,7 @@ Builder 预览约束：
 - Knowledge binding 只限定候选 Knowledge Base；每次模型调用前由统一 `KnowledgeRetriever` 使用 Run 当前 actor 重鉴权并执行预算受控检索。结果只能作为 `user` 级不可信参考消息注入，禁止写入 Contract、system/developer instructions、Snapshot 或事件摘要。
 - 记忆启用且用户允许自动记忆时，模型调用前由统一 Memory Retriever 执行受预算混合召回；无高质量结果不注入，结果只能进入 `UNTRUSTED USER MEMORY` user reference，Snapshot 只记录 provenance refs。
 - 敏感工具复用 ToolConfirmation。Run 保存 confirmation/invocation 引用并释放 lease；恢复前校验 actor、auth version、会话 revision、Agent/Tool/Schema 和已持久化调用结果。
+- 已确认工具成功恢复后必须至少保留 4 个收尾 Step；仅补足不足的 Step 额度，不重置或扩张 model/tool/compaction/Token/时长预算，普通执行与未成功确认不得获得该额度。
 - 模型返回 tool_call 后，必须先幂等追加 assistant（含 `tool_call`）消息，再追加 tool result；二者成对出现，禁止只落 tool_result。最终无工具回复经 finalize 提交；失败或取消不伪造 assistant 完成消息。
 
 ## 事件与敏感信息

@@ -489,7 +489,8 @@ const local: App.I18n.Schema = {
       reconnectFallback: 'Connection interrupted, recovering',
       diagnosticContextWindow:
         'The current model has no context window configured. Enter the provider value in AI Center > Model Catalog.',
-      runFailure: 'Run failed: {category} ({reason})'
+      runFailure: 'Run failed: {category} ({reason})',
+      runFailureSimple: 'Run failed: {category}'
     },
     agentBuilder: {
       back: 'Back to list',

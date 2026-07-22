@@ -639,6 +639,7 @@ declare namespace App {
           reconnectFallback: string;
           diagnosticContextWindow: string;
           runFailure: string;
+          runFailureSimple: string;
         };
         agentBuilder: {
           back: string;

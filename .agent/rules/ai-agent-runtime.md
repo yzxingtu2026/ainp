@@ -9,6 +9,7 @@
 - `purpose=builder_preview` 才允许 draft agent 执行；workspace 禁止 preview Version；非 builder 路径不得放宽 enabled。
 - 模型只经统一 Model Runtime，Agent 输出必须消费真实 Stream delta，禁止完整 Generate 后切片伪流式；工具只经 Tool Runtime，压缩只经 ContextCompactor。
 - ToolConfirmation 暂停时释放 lease；恢复必须校验 auth、permission、Agent/Tool/Schema、参数 hash、会话 revision 与 Snapshot。
+- 已确认工具成功恢复时仅可补足最多 4 个收尾 Step；不得重置或扩张 model/tool/compaction/Token/时长预算，普通执行不得获得额外 Step。
 - assistant/tool 消息只经 ConversationService 追加；模型 tool_call 必须先落 assistant 再落 tool_result，二者成对；失败/取消禁止伪造完成消息。
 - 事件 cursor 单调且 tenant/run 隔离；日志、Outbox、Step/Event 禁止 Secret、Handle、完整敏感参数、压缩摘要与供应商原始响应。
 - Agent Run 使用知识时只能把 Agent binding 当候选范围，并通过统一 `KnowledgeRetriever` 按当前 actor 重鉴权；结果必须以 user 级不可信参考注入，禁止进入 system/developer instructions。

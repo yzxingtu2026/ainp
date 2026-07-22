@@ -34,6 +34,7 @@ const (
 	agentRunResumeEvent              = "ai.agent_run.resume_requested.v1"
 	agentRunTerminalEvent            = "ai.agent_run.terminal.v1"
 	agentRunConfirmationTimeoutEvent = "ai.agent_run.confirmation_timeout.v1"
+	confirmationResumeStepAllowance  = 4
 )
 
 type AgentRuntimeService struct {
@@ -617,10 +618,12 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 	if err != nil {
 		return s.fail(ctx, run, "tool_scope_failed")
 	}
-	if err = s.resumeConfirmation(ctx, run); err != nil {
+	resumedConfirmation, err := s.resumeConfirmation(ctx, run)
+	if err != nil {
 		return err
 	}
-	for run.CurrentStep < budget.MaxSteps && s.now().Before(deadline) {
+	stepLimit := stepLimitAfterConfirmation(budget.MaxSteps, run.CurrentStep, resumedConfirmation)
+	for run.CurrentStep < stepLimit && s.now().Before(deadline) {
 		if run.ModelCalls >= budget.MaxModelCalls {
 			return s.fail(ctx, run, "model_budget_exhausted")
 		}
@@ -1417,33 +1420,33 @@ func toolExecutionErrorCategory(err error) string {
 	}
 }
 
-func (s *AgentRuntimeService) resumeConfirmation(ctx context.Context, run *AgentRun) error {
+func (s *AgentRuntimeService) resumeConfirmation(ctx context.Context, run *AgentRun) (bool, error) {
 	var step AgentStep
 	if err := s.db.WithContext(ctx).Where("run_id=? AND status=? AND confirmation_id IS NOT NULL", run.ID, "waiting").Order("step_index DESC").First(&step).Error; errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil
+		return false, nil
 	} else if err != nil {
-		return err
+		return false, err
 	}
 	var c ToolConfirmation
 	if err := s.db.WithContext(ctx).Where("user_id=? AND id=?", run.UserID, *step.ConfirmationID).First(&c).Error; err != nil {
-		return s.fail(ctx, run, "confirmation_missing")
+		return false, s.fail(ctx, run, "confirmation_missing")
 	}
 	if c.Status == "pending" && c.ExpiresAt.After(s.now()) {
-		return s.waitForConfirmation(ctx, run, c.ID)
+		return false, s.waitForConfirmation(ctx, run, c.ID)
 	}
 	if c.Status == "rejected" || c.ExpiresAt.Before(s.now()) {
-		return s.fail(ctx, run, "confirmation_rejected")
+		return false, s.fail(ctx, run, "confirmation_rejected")
 	}
 	if s.currentConversationRevision(ctx, run) != run.ConversationRevision {
-		return s.fail(ctx, run, "conversation_revision_changed")
+		return false, s.fail(ctx, run, "conversation_revision_changed")
 	}
 	var inv ToolInvocation
 	if err := s.db.WithContext(ctx).Where("id=? AND status=?", c.InvocationID, "completed").First(&inv).Error; err != nil {
-		return s.fail(ctx, run, "confirmation_execution_unavailable")
+		return false, s.fail(ctx, run, "confirmation_execution_unavailable")
 	}
 	var result aitool.Result
 	if json.Unmarshal(inv.ResultJSON, &result) != nil {
-		return s.fail(ctx, run, "confirmation_result_unavailable")
+		return false, s.fail(ctx, run, "confirmation_result_unavailable")
 	}
 	call := aimodelruntime.OutputItem{ToolCallID: c.ToolCallID, ToolName: modelToolName(c.ToolID)}
 	_, err := s.appendToolResult(ctx, run, &step, call, &result, nil)
@@ -1453,7 +1456,14 @@ func (s *AgentRuntimeService) resumeConfirmation(ctx context.Context, run *Agent
 			_ = s.finishStep(ctx, run, &parent, "completed", map[string]any{"confirmation_id": c.ID, "executed": true}, "")
 		}
 	}
-	return err
+	return err == nil, err
+}
+
+func stepLimitAfterConfirmation(configured, current int, resumed bool) int {
+	if resumed && current+confirmationResumeStepAllowance > configured {
+		return current + confirmationResumeStepAllowance
+	}
+	return configured
 }
 func (s *AgentRuntimeService) currentConversationRevision(ctx context.Context, run *AgentRun) uint64 {
 	tdb, err := s.db.Tenant(ctx)
