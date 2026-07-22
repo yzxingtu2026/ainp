@@ -255,6 +255,7 @@ type memorySourceRef struct {
 type MemoryProjectionService struct {
 	db         tenantdata.GuardedDatabase
 	embeddings aimodelruntime.EmbeddingRuntime
+	completed  func(context.Context, string, uint64) error
 }
 
 func NewMemoryProjectionService(db *gorm.DB, embeddings ...aimodelruntime.EmbeddingRuntime) *MemoryProjectionService {
@@ -263,6 +264,9 @@ func NewMemoryProjectionService(db *gorm.DB, embeddings ...aimodelruntime.Embedd
 		runtime = embeddings[0]
 	}
 	return &MemoryProjectionService{db: tenantdata.GuardedDB(db), embeddings: runtime}
+}
+func (s *MemoryProjectionService) SetCompletedHook(hook func(context.Context, string, uint64) error) {
+	s.completed = hook
 }
 func (s *MemoryProjectionService) Rebuild(ctx context.Context, userID string) error {
 	now := time.Now().UTC()
@@ -284,7 +288,8 @@ func (s *MemoryProjectionService) Rebuild(ctx context.Context, userID string) er
 			}
 		}
 	}
-	return db.Transaction(func(tx *gorm.DB) error {
+	var profileRevision uint64
+	err := db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("user_id=? AND kind IN ?", userID, []aimemory.ProjectionKind{aimemory.ProjectionExact, aimemory.ProjectionFTS, aimemory.ProjectionVector}).Delete(&MemoryProjection{}).Error; err != nil {
 			return err
 		}
@@ -348,10 +353,18 @@ func (s *MemoryProjectionService) Rebuild(ctx context.Context, userID string) er
 		}
 		payload, _ := json.Marshal(profile)
 		refs, revision, policy := sourceRefs(items)
+		profileRevision = revision
 		encoded, _ := json.Marshal(refs)
 		row := MemoryCurrentProfile{ID: uuid.NewString(), UserID: userID, SourceRevision: revision, Status: aimemory.ProjectionReady, ProfileJSON: payload, ContentHash: sha256Hex(payload), PolicyVersion: policy, SourceItemsJSON: encoded, CreatedAt: now, UpdatedAt: now}
 		return tx.Create(&row).Error
 	})
+	if err != nil {
+		return err
+	}
+	if s.completed != nil {
+		return s.completed(ctx, userID, profileRevision)
+	}
+	return nil
 }
 func dayGroupKey(item MemoryItem) string {
 	date, group := projectionDate(item)

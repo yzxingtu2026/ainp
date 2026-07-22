@@ -35,6 +35,10 @@ Header launcher 在所有 layout mode 中显示，但仍以动态路由中 `shel
 
 生成只使用统一 Model Runtime 的非流式严格结构化输出，不创建 Conversation、Message、Agent Run 或 Tool Invocation。用户输入、点击推荐或绑定 Conversation 后，本次 Surface 冻结欢迎区；身份变化必须清除前端共享快照。
 
+全局快照输入只使用预算化可信投影：Runtime Context 提供称呼、locale、时区和当前本地时间；Agent Slot Resolver 提供当前发布版本；Memory Current Profile 只保留受限字符串字段；近期工作最多读取 5 个已完成 Run 对应的会话标题、页面类型和完成时间。禁止发送完整对话、原始记忆、Page Context 正文或内部资源标识。
+
+Memory Current Profile 重建完成以及 `workspace.default` Slot 绑定/个人偏好变化后，将当前用户快照标记为 stale 并通过 Outbox 合并刷新。Run 结束本身不立即生成，避免在记忆提取和画像重建之前产生重复、过早的快照。
+
 ## 二级视图
 
 History 复用 `ConversationPanel`，支持新建、选择、重命名、归档与恢复。Run 详情在面板内部展示安全状态和 Step 时间线，不嵌套 Drawer。展开 Workspace 复用当前 controller，保留 Conversation、草稿和可恢复 Run。

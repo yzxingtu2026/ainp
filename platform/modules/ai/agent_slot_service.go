@@ -9,6 +9,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/agentslot"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
+	"github.com/yzxingtu2026/ainp/platform/framework/logging"
 	"github.com/yzxingtu2026/ainp/platform/framework/pagination"
 	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"gorm.io/gorm"
@@ -34,9 +35,10 @@ func registerAgentSlotModels() error {
 }
 
 type AgentSlotService struct {
-	db     *gorm.DB
-	slots  *agentslot.Registry
-	agents *AgentService
+	db      *gorm.DB
+	slots   *agentslot.Registry
+	agents  *AgentService
+	changed func(context.Context, string) error
 }
 
 func NewAgentSlotService(db *gorm.DB, slots *agentslot.Registry, agents *AgentService) *AgentSlotService {
@@ -44,6 +46,16 @@ func NewAgentSlotService(db *gorm.DB, slots *agentslot.Registry, agents *AgentSe
 		panic(err)
 	}
 	return &AgentSlotService{db: db, slots: slots, agents: agents}
+}
+func (s *AgentSlotService) SetChangedHook(hook func(context.Context, string) error) { s.changed = hook }
+func (s *AgentSlotService) notifyChanged(ctx context.Context, slotKey string) error {
+	if s.changed == nil {
+		return nil
+	}
+	if err := s.changed(ctx, slotKey); err != nil {
+		logging.Warn(ctx, "agent slot derived refresh failed", "slot_key", slotKey, "error", err)
+	}
+	return nil
 }
 
 type AgentSlotListRequest struct {
@@ -258,6 +270,9 @@ func (s *AgentSlotService) Update(ctx context.Context, r AgentSlotMutationReques
 		if err = repo.Create(&row); err != nil {
 			return nil, err
 		}
+		if err = s.notifyChanged(ctx, slot.Key); err != nil {
+			return nil, err
+		}
 		return s.Resolve(ctx, AgentSlotGetRequest{SlotKey: slot.Key})
 	}
 	if row.Revision != r.Revision {
@@ -269,6 +284,9 @@ func (s *AgentSlotService) Update(ctx context.Context, r AgentSlotMutationReques
 	}
 	if res.RowsAffected != 1 {
 		return nil, errs.New(errs.CodeConflict, "agent slot binding revision conflict")
+	}
+	if err = s.notifyChanged(ctx, slot.Key); err != nil {
+		return nil, err
 	}
 	return s.Resolve(ctx, AgentSlotGetRequest{SlotKey: slot.Key})
 }
@@ -287,6 +305,9 @@ func (s *AgentSlotService) Reset(ctx context.Context, r AgentSlotResetRequest) (
 	}
 	if res.RowsAffected != 1 {
 		return nil, errs.New(errs.CodeConflict, "agent slot binding revision conflict")
+	}
+	if err = s.notifyChanged(ctx, r.SlotKey); err != nil {
+		return nil, err
 	}
 	return s.Resolve(ctx, AgentSlotGetRequest{SlotKey: r.SlotKey})
 }
@@ -310,6 +331,9 @@ func (s *AgentSlotService) ResetPreference(ctx context.Context, r AgentSlotReset
 	}
 	if res.RowsAffected != 1 {
 		return nil, errs.New(errs.CodeConflict, "agent slot preference revision conflict")
+	}
+	if err = s.notifyChanged(ctx, r.SlotKey); err != nil {
+		return nil, err
 	}
 	return s.Resolve(ctx, AgentSlotGetRequest{SlotKey: r.SlotKey})
 }
@@ -345,6 +369,9 @@ func (s *AgentSlotService) mutatePreference(ctx context.Context, r AgentSlotMuta
 		if err = repo.Create(&row); err != nil {
 			return nil, err
 		}
+		if err = s.notifyChanged(ctx, slot.Key); err != nil {
+			return nil, err
+		}
 		return s.Resolve(ctx, AgentSlotGetRequest{SlotKey: slot.Key})
 	}
 	if row.Revision != r.Revision {
@@ -356,6 +383,9 @@ func (s *AgentSlotService) mutatePreference(ctx context.Context, r AgentSlotMuta
 	}
 	if res.RowsAffected != 1 {
 		return nil, errs.New(errs.CodeConflict, "agent slot preference revision conflict")
+	}
+	if err = s.notifyChanged(ctx, slot.Key); err != nil {
+		return nil, err
 	}
 	return s.Resolve(ctx, AgentSlotGetRequest{SlotKey: slot.Key})
 }

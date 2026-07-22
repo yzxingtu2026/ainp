@@ -2,8 +2,10 @@ package ai
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -12,6 +14,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
 	"github.com/yzxingtu2026/ainp/platform/framework/prompt"
+	"github.com/yzxingtu2026/ainp/platform/framework/runtimecontext"
 	"github.com/yzxingtu2026/ainp/platform/framework/setting"
 	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"gorm.io/gorm"
@@ -38,11 +41,17 @@ type personalizationGenerator interface {
 	Generate(context.Context, aimodelruntime.GenerateRequest) (any, error)
 }
 type PersonalizationService struct {
-	db        *gorm.DB
-	settings  *setting.Provider
-	writer    outbox.Writer
-	generator personalizationGenerator
-	now       func() time.Time
+	db             *gorm.DB
+	settings       *setting.Provider
+	writer         outbox.Writer
+	generator      personalizationGenerator
+	slots          *AgentSlotService
+	runtimeContext runtimecontext.Provider
+	now            func() time.Time
+}
+
+func (s *PersonalizationService) SetContextSources(slots *AgentSlotService, provider runtimecontext.Provider) {
+	s.slots, s.runtimeContext = slots, provider
 }
 
 func NewPersonalizationService(db *gorm.DB, settings *setting.Provider, writer outbox.Writer, generator personalizationGenerator) *PersonalizationService {
@@ -79,8 +88,8 @@ func (s *PersonalizationService) Read(ctx context.Context, _ struct{}) (Personal
 	if e != nil {
 		return result, e
 	}
-	row, e := repo.First("user_id=? AND slot_key=?", ac.UserID, WorkspaceDefaultSlot)
-	if tenantdata.IsNotFound(e) {
+	row, found, e := optionalPersonalizationSnapshot(repo, ac.UserID, WorkspaceDefaultSlot)
+	if !found && e == nil {
 		result.Freshness = "missing"
 		_ = s.request(ctx, uint64(rev))
 		return result, nil
@@ -129,15 +138,157 @@ func (s *PersonalizationService) Rebuild(ctx context.Context, _ struct{}) (map[s
 	return map[string]any{"requested": e == nil}, e
 }
 
+func (s *PersonalizationService) InvalidateAndRequest(ctx context.Context, userID string, revision uint64) error {
+	ac := auth.MustFromContext(ctx)
+	enabled, _, settingRevision, err := s.config(ctx, ac.TenantID)
+	if err != nil || !enabled {
+		return err
+	}
+	repo, err := personalizationRepository(ctx, s.db)
+	if err != nil {
+		return err
+	}
+	if current, found, lookupErr := optionalPersonalizationSnapshot(repo, userID, WorkspaceDefaultSlot); lookupErr == nil && found && revision <= current.GenerationRevision {
+		revision = current.GenerationRevision + 1
+	}
+	if result := repo.Where("user_id=? AND slot_key=?", userID, WorkspaceDefaultSlot).Updates(map[string]any{"status": "stale"}); result.Error != nil {
+		return result.Error
+	}
+	requestContext := ctx
+	if userID != ac.UserID {
+		copied := *ac
+		copied.UserID = userID
+		requestContext = auth.WithContext(ctx, &copied)
+	}
+	if revision < uint64(settingRevision+1) {
+		revision = uint64(settingRevision + 1)
+	}
+	return s.request(requestContext, revision)
+}
+
+type personalizationContext struct {
+	Locale               string           `json:"locale"`
+	Timezone             string           `json:"timezone"`
+	CurrentLocalDateTime string           `json:"current_local_datetime"`
+	PreferredAddress     string           `json:"preferred_address,omitempty"`
+	AgentVersionID       string           `json:"agent_version_id,omitempty"`
+	MemoryProfile        map[string]any   `json:"memory_profile,omitempty"`
+	RecentWork           []map[string]any `json:"recent_work,omitempty"`
+	AllowedSourceTypes   []string         `json:"allowed_source_types"`
+}
+
+func (s *PersonalizationService) buildContext(ctx context.Context, user, slot string) (personalizationContext, map[string]any, error) {
+	ac := auth.MustFromContext(ctx)
+	input := personalizationContext{Locale: "zh-CN", Timezone: "UTC", AllowedSourceTypes: []string{"general", "recent_work", "memory_profile"}}
+	versions := map[string]any{"prompt": "1.0.0"}
+	var agentID string
+	if s.slots != nil {
+		resolved, err := s.slots.Resolve(ctx, AgentSlotGetRequest{SlotKey: slot})
+		if err == nil && resolved.AgentVersion != nil {
+			input.AgentVersionID = resolved.AgentVersion.ID
+			agentID = resolved.Agent.ID
+			versions["agent_version_id"] = resolved.AgentVersion.ID
+		}
+	}
+	if s.runtimeContext != nil {
+		trusted, err := s.runtimeContext.Build(ctx, runtimecontext.BuildRequest{TenantID: ac.TenantID, UserID: user, AgentID: agentID, AgentVersionID: input.AgentVersionID})
+		if err != nil {
+			return input, nil, err
+		}
+		input.Locale = trusted.Locale
+		input.Timezone = trusted.Time.Timezone
+		input.CurrentLocalDateTime = trusted.Time.CurrentLocalDateTime
+		input.PreferredAddress = trusted.PreferredAddress
+	}
+	tdb, err := tenantdata.TenantDB(ctx, s.db)
+	if err != nil {
+		return input, nil, err
+	}
+	profiles, _ := tenantdata.NewTenantRepository[MemoryCurrentProfile](tdb)
+	if rows, e := profiles.Where("user_id=? AND status=?", user, "ready").Order("source_revision DESC").List(0, 1); e == nil && len(rows) == 1 {
+		input.MemoryProfile = safeProfile(rows[0].ProfileJSON)
+		versions["memory_profile_revision"] = rows[0].SourceRevision
+	}
+	runs, _ := tenantdata.NewTenantRepository[AgentRun](tdb)
+	conversations, _ := tenantdata.NewTenantRepository[Conversation](tdb)
+	if rows, e := runs.Where("user_id=? AND status=?", user, "completed").Order("finished_at DESC").List(0, 5); e == nil {
+		for _, run := range rows {
+			item := map[string]any{"page_context_type": run.PageContextType, "finished_at": run.FinishedAt}
+			if conversation, lookupErr := conversations.GetByID(run.ConversationID); lookupErr == nil {
+				title := strings.TrimSpace(conversation.Title)
+				if len([]rune(title)) > 120 {
+					title = string([]rune(title)[:120])
+				}
+				item["title"] = title
+			}
+			input.RecentWork = append(input.RecentWork, item)
+		}
+		if len(rows) > 0 {
+			versions["recent_run_revision"] = rows[0].Revision
+		}
+	}
+	return input, versions, nil
+}
+
+func safeProfile(raw []byte) map[string]any {
+	var source map[string]any
+	if json.Unmarshal(raw, &source) != nil {
+		return nil
+	}
+	out := map[string]any{}
+	keys := make([]string, 0, len(source))
+	for key := range source {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		if len(out) >= 12 {
+			break
+		}
+		switch value := source[key].(type) {
+		case string:
+			if len([]rune(value)) > 200 {
+				value = string([]rune(value)[:200])
+			}
+			out[key] = value
+		case map[string]any:
+			nested := map[string]any{}
+			nestedKeys := make([]string, 0, len(value))
+			for k := range value {
+				nestedKeys = append(nestedKeys, k)
+			}
+			sort.Strings(nestedKeys)
+			for _, k := range nestedKeys {
+				if len(nested) >= 8 {
+					break
+				}
+				if text, ok := value[k].(string); ok {
+					if len([]rune(text)) > 160 {
+						text = string([]rune(text)[:160])
+					}
+					nested[k] = text
+				}
+			}
+			out[key] = nested
+		}
+	}
+	return out
+}
+
 func (s *PersonalizationService) Generate(ctx context.Context, user, slot string, revision uint64) error {
 	ac := auth.MustFromContext(ctx)
 	enabled, alias, _, e := s.config(ctx, ac.TenantID)
 	if e != nil || !enabled || alias == "" {
 		return e
 	}
+	contextInput, sourceVersions, e := s.buildContext(ctx, user, slot)
+	if e != nil {
+		return e
+	}
+	body, _ := json.Marshal(contextInput)
 	max := int64(700)
 	temp := 0.3
-	raw, e := s.generator.Generate(ctx, aimodelruntime.GenerateRequest{ModelAlias: alias, Instructions: prompt.MustGet("ai/assistant-personalization"), Messages: []aimodelruntime.Message{{Role: aimodelruntime.RoleUser, Content: []aimodelruntime.ContentPart{{Type: aimodelruntime.PartInputText, Text: `{"locale":"zh-CN","allowed_source_types":["general","recent_work","memory_profile"]}`}}}}, StructuredOutput: &aimodelruntime.StructuredOutput{Name: "assistant_personalization", Strict: true, Schema: personalizationSchema()}, MaxOutputTokens: &max, Temperature: &temp, TimeoutMS: 60000, Metadata: map[string]string{"purpose": "assistant_personalization", "prompt_version": "1.0.0"}})
+	raw, e := s.generator.Generate(ctx, aimodelruntime.GenerateRequest{ModelAlias: alias, Instructions: prompt.MustGet("ai/assistant-personalization"), Messages: []aimodelruntime.Message{{Role: aimodelruntime.RoleUser, Content: []aimodelruntime.ContentPart{{Type: aimodelruntime.PartInputText, Text: string(body)}}}}, StructuredOutput: &aimodelruntime.StructuredOutput{Name: "assistant_personalization", Strict: true, Schema: personalizationSchema()}, MaxOutputTokens: &max, Temperature: &temp, TimeoutMS: 60000, Metadata: map[string]string{"purpose": "assistant_personalization", "prompt_version": "1.0.0"}})
 	if e != nil {
 		return e
 	}
@@ -159,24 +310,34 @@ func (s *PersonalizationService) Generate(ctx context.Context, user, slot string
 		return fmt.Errorf("personalization output invalid")
 	}
 	suggestions, _ := json.Marshal(value.Suggestions)
+	versionsJSON, _ := json.Marshal(sourceVersions)
+	contextDigest := sha256.Sum256(body)
 	now := s.now()
-	row := AssistantPersonalizationSnapshot{ID: uuid.NewString(), TenantID: ac.TenantID, UserID: user, SlotKey: slot, Locale: "zh-CN", Timezone: "Asia/Shanghai", ContextScope: "global", Greeting: value.Greeting, SuggestionsJSON: suggestions, SourceVersionsJSON: []byte("{}"), ModelAlias: alias, PromptVersion: "1.0.0", Status: "ready", GenerationRevision: revision, GeneratedAt: now, ExpiresAt: now.Add(24 * time.Hour)}
+	row := AssistantPersonalizationSnapshot{ID: uuid.NewString(), TenantID: ac.TenantID, UserID: user, SlotKey: slot, AgentVersionID: contextInput.AgentVersionID, Locale: contextInput.Locale, Timezone: contextInput.Timezone, ContextScope: "global", ContextHash: fmt.Sprintf("%x", contextDigest), Greeting: value.Greeting, SuggestionsJSON: suggestions, SourceVersionsJSON: versionsJSON, ModelAlias: alias, PromptVersion: "1.0.0", Status: "ready", GenerationRevision: revision, GeneratedAt: now, ExpiresAt: now.Add(24 * time.Hour)}
 	repo, e := personalizationRepository(ctx, s.db)
 	if e != nil {
 		return e
 	}
-	old, e := repo.First("user_id=? AND slot_key=?", user, slot)
-	if e == nil && old.GenerationRevision > revision {
+	old, found, e := optionalPersonalizationSnapshot(repo, user, slot)
+	if e == nil && found && old.GenerationRevision > revision {
 		return nil
 	}
-	if e == nil {
+	if e == nil && found {
 		values := map[string]any{"agent_version_id": row.AgentVersionID, "locale": row.Locale, "timezone": row.Timezone, "context_scope": row.ContextScope, "context_hash": row.ContextHash, "greeting": row.Greeting, "suggestions_json": row.SuggestionsJSON, "source_versions_json": row.SourceVersionsJSON, "model_alias": row.ModelAlias, "prompt_version": row.PromptVersion, "status": row.Status, "generation_revision": row.GenerationRevision, "generated_at": row.GeneratedAt, "expires_at": row.ExpiresAt, "last_error_category": ""}
 		return repo.Where("id=? AND generation_revision<=?", old.ID, revision).Updates(values).Error
 	}
-	if !tenantdata.IsNotFound(e) {
+	if e != nil {
 		return e
 	}
 	return repo.Create(&row)
+}
+
+func optionalPersonalizationSnapshot(repo *tenantdata.Repository[AssistantPersonalizationSnapshot], userID, slotKey string) (AssistantPersonalizationSnapshot, bool, error) {
+	rows, err := repo.Find("user_id=? AND slot_key=?", userID, slotKey)
+	if err != nil || len(rows) == 0 {
+		return AssistantPersonalizationSnapshot{}, false, err
+	}
+	return rows[0], true, nil
 }
 func validPersonalization(g string, ss []PersonalizationSuggestion) bool {
 	if len([]rune(g)) == 0 || len([]rune(g)) > 120 || len(ss) == 0 || len(ss) > 4 || strings.ContainsAny(g, "<>") {
