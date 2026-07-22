@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, toRef } from 'vue';
+import { toRef } from 'vue';
+import defaultAgentAvatar from '@/assets/imgs/ai-workspace/mascot-blink.png';
 import { useAgentAvatar } from '@/hooks/business/agent-avatar';
 
 defineOptions({ name: 'AgentAvatar' });
@@ -15,7 +16,6 @@ const props = withDefaults(
 
 const attachmentId = toRef(props, 'attachmentId');
 const { url, status } = useAgentAvatar(attachmentId);
-const initial = computed(() => Array.from(props.name.trim())[0]?.toUpperCase() || 'A');
 </script>
 
 <template>
@@ -27,7 +27,7 @@ const initial = computed(() => Array.from(props.name.trim())[0]?.toUpperCase() |
   >
     <img v-if="url" :src="url" :alt="name" />
     <NSpin v-else-if="status === 'loading'" :size="20" />
-    <span v-else class="agent-avatar__initial">{{ initial }}</span>
+    <img v-else :src="defaultAgentAvatar" alt="" class="agent-avatar__default" />
   </div>
 </template>
 
@@ -49,8 +49,8 @@ const initial = computed(() => Array.from(props.name.trim())[0]?.toUpperCase() |
   object-fit: cover;
 }
 
-.agent-avatar__initial {
-  font-size: 24px;
-  font-weight: 700;
+.agent-avatar__default {
+  padding: 5px;
+  object-fit: contain !important;
 }
 </style>

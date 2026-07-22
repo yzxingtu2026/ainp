@@ -13,6 +13,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/aimemory"
 	"github.com/yzxingtu2026/ainp/platform/framework/aimodel"
 	"github.com/yzxingtu2026/ainp/platform/framework/aitool"
+	"github.com/yzxingtu2026/ainp/platform/framework/attachment"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 	"github.com/yzxingtu2026/ainp/platform/framework/pagination"
@@ -20,6 +21,11 @@ import (
 	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	systemmodel "github.com/yzxingtu2026/ainp/platform/modules/system/model"
 	"gorm.io/gorm"
+)
+
+const (
+	AgentAvatarResourceType = "ai.agent"
+	AgentAvatarField        = "avatar"
 )
 
 type AgentService struct {
@@ -189,6 +195,22 @@ func (s *AgentService) validateAvatar(ctx context.Context, ac *auth.Context, id 
 		return errs.New(errs.CodeValidation, "avatar attachment must be an image")
 	}
 	return nil
+}
+
+type agentAvatarAttachmentPolicy struct {
+	service *AgentService
+}
+
+func (p agentAvatarAttachmentPolicy) ResourceType() string { return AgentAvatarResourceType }
+
+func (p agentAvatarAttachmentPolicy) CanAccess(ctx context.Context, tenantID, userID, resourceID, field string) error {
+	ac, err := agentActor(ctx)
+	if err != nil || ac.TenantID != tenantID || ac.UserID != userID || field != AgentAvatarField {
+		return errs.New(errs.CodeNotFound, "agent avatar not found")
+	}
+	edit := attachment.ResourceLinkOperationFromContext(ctx) != ""
+	_, _, err = p.service.get(ctx, resourceID, edit)
+	return err
 }
 
 func (s *AgentService) visibleQuery(ctx context.Context) (*tenantdata.Repository[Agent], *auth.Context, error) {

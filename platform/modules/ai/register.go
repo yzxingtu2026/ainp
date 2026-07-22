@@ -194,6 +194,12 @@ func Register(a *app.App) error {
 	}
 	a.AgentContracts = contracts
 	agents := NewAgentService(a.DB, contracts, svc, toolRegistry)
+	if a.AttachmentPolicies == nil {
+		return fmt.Errorf("attachment policy registry is required")
+	}
+	if err := a.AttachmentPolicies.Register(agentAvatarAttachmentPolicy{service: agents}); err != nil {
+		return err
+	}
 	slotRegistry := agentslot.NewRegistry(contracts)
 	if err := slotRegistry.Register(agentslot.Slot{Key: WorkspaceDefaultSlot, Version: "1.0.0", Module: "workspace", Title: "默认 AI 工作台", Description: "AI 工作台新会话使用的默认智能体", DefaultContractKey: "system.operations", DefaultContractVersion: "1.0.0", RequiredCapabilities: []string{"chat", "tools"}, TenantOverride: true, UserOverride: true, FallbackPolicy: agentslot.FallbackFailClosed, UpgradePolicy: agentslot.UpgradeCompatible}); err != nil {
 		return err

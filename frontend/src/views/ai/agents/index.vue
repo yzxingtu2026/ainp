@@ -295,7 +295,7 @@ onMounted(load);
             </div>
             <code :title="agent.code">{{ agent.code }}</code>
           </div>
-          <AgentAvatar :attachment-id="agent.avatar_attachment_id" :name="agent.name" :size="72" />
+          <AgentAvatar :attachment-id="agent.avatar_attachment_id" :name="agent.name" :size="60" />
         </div>
 
         <p class="agent-card__description" :title="agent.description || $t('page.aiAgents.noDescription')">
@@ -447,31 +447,64 @@ onMounted(load);
   gap: 16px;
 }
 
-.agent-card { min-height: 310px; }
+.agent-card {
+  height: 258px;
+}
+
+.agent-card :deep(.n-card__content) {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  padding: 16px;
+}
+
 .agent-card--clickable { cursor: pointer; }
 .agent-card--clickable:focus-visible { outline: 2px solid rgb(var(--primary-color)); outline-offset: 2px; }
-.agent-card--skeleton { min-height: 310px; }
+.agent-card--skeleton { height: 258px; }
 
 .agent-card__top { align-items: flex-start; justify-content: space-between; gap: 16px; }
 .agent-card__identity { min-width: 0; }
 .agent-card__title-row { align-items: flex-start; gap: 8px; }
 .agent-card h3 { overflow: hidden; margin: 0; font-size: 16px; text-overflow: ellipsis; white-space: nowrap; }
-.agent-card code { display: block; overflow: hidden; margin-top: 8px; color: var(--n-text-color-3); text-overflow: ellipsis; white-space: nowrap; }
+.agent-card code { display: block; overflow: hidden; margin-top: 5px; color: var(--n-text-color-3); text-overflow: ellipsis; white-space: nowrap; }
 
 .agent-card__description {
   display: -webkit-box;
-  min-height: 44px;
+  min-height: 40px;
   overflow: hidden;
-  margin: 18px 0 14px;
+  margin: 12px 0 10px;
   color: var(--n-text-color-2);
-  line-height: 22px;
+  line-height: 20px;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }
 
-.agent-card__tags { display: flex; min-height: 52px; flex-wrap: wrap; align-content: flex-start; gap: 6px; }
-.agent-card__meta { display: grid; gap: 6px; margin-top: 14px; color: var(--n-text-color-3); font-size: 12px; }
-.agent-card__actions { justify-content: space-between; margin-top: 18px; }
+.agent-card__tags {
+  display: flex;
+  height: 46px;
+  overflow: hidden;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 5px;
+}
+
+.agent-card__meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 9px;
+  overflow: hidden;
+  color: var(--n-text-color-3);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.agent-card__meta span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.agent-card__actions { justify-content: space-between; margin-top: auto; padding-top: 10px; }
 .agent-page__empty { padding: 80px 0; }
 .agent-page__pagination { justify-content: flex-end; margin-top: 20px; }
 
@@ -483,6 +516,6 @@ onMounted(load);
   .agent-page__header { align-items: flex-start; flex-direction: column; }
   .agent-filters__keyword, .agent-filters__select { width: 100%; }
   .agent-grid { grid-template-columns: minmax(0, 1fr); }
-  .agent-card { min-height: 300px; }
+  .agent-card, .agent-card--skeleton { height: 270px; }
 }
 </style>

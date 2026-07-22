@@ -677,6 +677,10 @@ declare namespace App {
           paneConfig: string;
           panePreview: string;
           groupBasic: string;
+          editAvatar: string;
+          avatarUpdated: string;
+          avatarImageOnly: string;
+          avatarUpdateFailed: string;
           tenantPlaceholder: string;
           instructionTooLong: string;
           name: string;
