@@ -31,31 +31,31 @@ func NewMemoryManagementService(db *gorm.DB, g *MemoryGovernanceService, w outbo
 
 type MemoryListRequest struct {
 	pagination.Request
-	Keyword     string               `json:"keyword"`
-	Status      aimemory.ItemStatus  `json:"status"`
-	Type        aimemory.ItemType    `json:"type"`
-	Sensitivity aimemory.Sensitivity `json:"sensitivity"`
-	AgentID     string               `json:"agent_id"`
-	DateFrom    string               `json:"date_from"`
-	DateTo      string               `json:"date_to"`
+	Keyword     string               `json:"keyword" validate:"omitempty"`
+	Status      aimemory.ItemStatus  `json:"status" validate:"omitempty"`
+	Type        aimemory.ItemType    `json:"type" validate:"omitempty"`
+	Sensitivity aimemory.Sensitivity `json:"sensitivity" validate:"omitempty"`
+	AgentID     string               `json:"agent_id" validate:"omitempty"`
+	DateFrom    string               `json:"date_from" validate:"omitempty"`
+	DateTo      string               `json:"date_to" validate:"omitempty"`
 }
 type MemoryIDRequest struct {
-	ID       string `json:"id"`
-	Revision uint64 `json:"revision"`
+	ID       string `json:"id" validate:"required"`
+	Revision uint64 `json:"revision" validate:"required"`
 }
 type MemoryCorrectRequest struct {
-	ID            string                 `json:"id"`
-	Revision      uint64                 `json:"revision"`
-	Summary       string                 `json:"summary"`
-	Content       string                 `json:"content"`
-	LocalDate     string                 `json:"local_date"`
-	DatePrecision aimemory.DatePrecision `json:"date_precision"`
+	ID            string                 `json:"id" validate:"required"`
+	Revision      uint64                 `json:"revision" validate:"required"`
+	Summary       string                 `json:"summary" validate:"required"`
+	Content       string                 `json:"content" validate:"required"`
+	LocalDate     string                 `json:"local_date" validate:"omitempty"`
+	DatePrecision aimemory.DatePrecision `json:"date_precision" validate:"omitempty"`
 }
 type MemoryClearRequest struct {
-	RevisionToken string `json:"revision_token"`
-	Scope         string `json:"scope"`
-	AgentID       string `json:"agent_id"`
-	BeforeDate    string `json:"before_date"`
+	RevisionToken string `json:"revision_token" validate:"required"`
+	Scope         string `json:"scope" validate:"required"`
+	AgentID       string `json:"agent_id" validate:"omitempty"`
+	BeforeDate    string `json:"before_date" validate:"omitempty"`
 }
 type MemoryItemView struct {
 	MemoryItem

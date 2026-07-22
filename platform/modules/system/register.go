@@ -335,8 +335,11 @@ func Register(a *app.App) error {
 	if err := registerNotificationActions(a); err != nil {
 		return err
 	}
-	if err := systemhelp.Register(a.PageHelp); err != nil {
+	if err := systemhelp.Register(a.PageHelp, a.Menus); err != nil {
 		return fmt.Errorf("register page help: %w", err)
 	}
-	return a.PageHelp.ValidateMenus(a.Menus)
+	if err := a.PageHelp.ValidateMenus(a.Menus); err != nil {
+		return err
+	}
+	return a.PageHelp.ValidateModuleCoverage(a.Menus, "system", "zh-CN")
 }

@@ -63,8 +63,8 @@ func dbError(err error, what string) error {
 
 type ListRequest struct {
 	pagination.Request
-	Keyword string `json:"keyword"`
-	Status  string `json:"status"`
+	Keyword string `json:"keyword" validate:"omitempty"`
+	Status  string `json:"status" validate:"omitempty"`
 }
 type IDRequest struct {
 	ID string `json:"id" validate:"required"`
@@ -91,8 +91,8 @@ type StatusRequest struct {
 }
 type DiscoverRequest struct {
 	ProviderID string `json:"provider_id" validate:"required"`
-	Cursor     string `json:"cursor"`
-	Limit      int    `json:"limit"`
+	Cursor     string `json:"cursor" validate:"omitempty"`
+	Limit      int    `json:"limit" validate:"omitempty"`
 }
 type DeploymentCreateRequest struct {
 	ProviderID    string               `json:"provider_id" validate:"required"`
@@ -100,18 +100,18 @@ type DeploymentCreateRequest struct {
 	RemoteModelID string               `json:"remote_model_id" validate:"required"`
 	DisplayName   string               `json:"display_name" validate:"required"`
 	ModelType     aimodel.ModelType    `json:"model_type" validate:"required"`
-	Capabilities  aimodel.Capabilities `json:"capabilities"`
-	Limits        aimodel.Limits       `json:"limits"`
-	Status        string               `json:"status"`
-	Config        map[string]any       `json:"config"`
+	Capabilities  aimodel.Capabilities `json:"capabilities" validate:"omitempty"`
+	Limits        aimodel.Limits       `json:"limits" validate:"omitempty"`
+	Status        string               `json:"status" validate:"omitempty"`
+	Config        map[string]any       `json:"config" validate:"omitempty"`
 }
 type DeploymentUpdateRequest struct {
 	ID           string               `json:"id" validate:"required"`
 	DisplayName  string               `json:"display_name" validate:"required"`
 	ModelType    aimodel.ModelType    `json:"model_type" validate:"required"`
-	Capabilities aimodel.Capabilities `json:"capabilities"`
-	Limits       aimodel.Limits       `json:"limits"`
-	Config       map[string]any       `json:"config"`
+	Capabilities aimodel.Capabilities `json:"capabilities" validate:"omitempty"`
+	Limits       aimodel.Limits       `json:"limits" validate:"omitempty"`
+	Config       map[string]any       `json:"config" validate:"omitempty"`
 }
 type ImportRequest struct {
 	Items []DeploymentCreateRequest `json:"items" validate:"required,min=1,max=100,dive"`

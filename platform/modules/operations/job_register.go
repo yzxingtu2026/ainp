@@ -20,8 +20,17 @@ type jobIDRequest struct {
 
 type jobListRequest struct {
 	pagination.Request
-	JobType string `json:"job_type"`
+	JobType string `json:"job_type" validate:"omitempty"`
 	Status  string `json:"status" validate:"omitempty,oneof=pending_enqueue queued running retrying succeeded failed dead cancelled"`
+}
+
+type jobGetResponse struct {
+	Job job.Run `json:"job"`
+}
+
+type jobCancelResponse struct {
+	ID              string `json:"id"`
+	CancelRequested bool   `json:"cancel_requested"`
 }
 
 const (
@@ -158,11 +167,12 @@ func registerJobActions(a *app.App) error {
 		id, path, name, nameKey, desc, descKey string
 		audit                                  *bool
 		handler                                func(context.Context, json.RawMessage) (any, error)
+		ai                                     *action.AIMeta
 	}{
-		{ActionJobList, "/api/v1/operations/jobs/list", "任务列表", "action.operations.job_list.name", "分页查询当前租户 Job", "action.operations.job_list.description", &auditOff, action.JSON(svc.list)},
-		{ActionJobGet, "/api/v1/operations/jobs/get", "任务详情", "action.operations.job_get.name", "查询 JobRun 详情", "action.operations.job_get.description", &auditOff, action.JSON(svc.get)},
-		{ActionJobCancel, "/api/v1/operations/jobs/cancel", "取消任务", "action.operations.job_cancel.name", "协作式请求取消", "action.operations.job_cancel.description", &auditOn, action.JSON(svc.cancel)},
-		{ActionJobRetry, "/api/v1/operations/jobs/retry", "重试任务", "action.operations.job_retry.name", "对 failed/dead 新建重试 JobRun", "action.operations.job_retry.description", &auditOn, action.JSON(svc.retry)},
+		{ActionJobList, "/api/v1/operations/jobs/list", "任务列表", "action.operations.job_list.name", "分页查询当前租户 Job", "action.operations.job_list.description", &auditOff, action.JSON(svc.list), readAIMeta("查询当前租户后台任务，可按任务类型和状态筛选", "查询后台任务列表", "已返回当前租户可见的后台任务", action.InputSchemaFor[jobListRequest](), action.SchemaFor[pagination.Result[job.Run]](), "运维", "任务", "列表")},
+		{ActionJobGet, "/api/v1/operations/jobs/get", "任务详情", "action.operations.job_get.name", "查询 JobRun 详情", "action.operations.job_get.description", &auditOff, action.JSON(svc.get), readAIMeta("按任务 ID 查询当前租户后台任务详情", "查询后台任务详情", "已返回指定后台任务详情", action.InputSchemaFor[jobIDRequest](), action.SchemaFor[jobGetResponse](), "运维", "任务", "详情")},
+		{ActionJobCancel, "/api/v1/operations/jobs/cancel", "取消任务", "action.operations.job_cancel.name", "协作式请求取消", "action.operations.job_cancel.description", &auditOn, action.JSON(svc.cancel), mutationAIMeta("请求取消当前租户中仍可取消的后台任务，不修改任务载荷", "取消后台任务", "已提交后台任务取消请求", "medium", "write", action.InputSchemaFor[jobIDRequest](), action.SchemaFor[jobCancelResponse](), "运维", "任务", "取消")},
+		{ActionJobRetry, "/api/v1/operations/jobs/retry", "重试任务", "action.operations.job_retry.name", "对 failed/dead 新建重试 JobRun", "action.operations.job_retry.description", &auditOn, action.JSON(svc.retry), mutationAIMeta("基于失败或终止任务的原始载荷创建重试任务，不接受载荷修改", "重试后台任务", "已基于原任务创建新的重试任务", "medium", "write", action.InputSchemaFor[jobIDRequest](), action.SchemaFor[jobGetResponse](), "运维", "任务", "重试")},
 	}
 	for _, spec := range specs {
 		if err := a.RegisterAction(action.Action{
@@ -178,7 +188,7 @@ func registerJobActions(a *app.App) error {
 				PermissionGroupName:    "任务运维",
 				PermissionGroupNameKey: "permission_group.operations.jobs",
 				Audit:                  spec.audit,
-				AI:                     action.ExcludeFromAI(action.AIExcludePendingSafetyReview),
+				AI:                     spec.ai,
 				HTTP:                   &action.HTTPMeta{Method: "POST", Path: spec.path},
 			},
 		}); err != nil {

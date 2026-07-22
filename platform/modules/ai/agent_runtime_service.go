@@ -623,7 +623,13 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 		return err
 	}
 	stepLimit := stepLimitAfterConfirmation(budget.MaxSteps, run.CurrentStep, resumedConfirmation)
-	for run.CurrentStep < stepLimit && s.now().Before(deadline) {
+	toolResultsPending := false
+	for {
+		allowed, completionOnly := reactTurnMode(run.CurrentStep, stepLimit, toolResultsPending)
+		if !allowed || !s.now().Before(deadline) {
+			break
+		}
+		toolResultsPending = false
 		if run.ModelCalls >= budget.MaxModelCalls {
 			return s.fail(ctx, run, "model_budget_exhausted")
 		}
@@ -707,6 +713,9 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 			_ = s.finishStep(ctx, run, finalStep, "completed", map[string]any{"message_committed": true}, "")
 			return s.complete(ctx, run)
 		}
+		if completionOnly {
+			return s.fail(ctx, run, "step_budget_exhausted")
+		}
 		// Provider 要求 tool_result 前必须有配对的 assistant tool_call；先落库再执行工具。
 		if e := s.appendAssistantToolCalls(ctx, run, step, text, toolCalls); e != nil {
 			return s.fail(ctx, run, "assistant_tool_call_persist_failed")
@@ -732,11 +741,19 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 				return nil
 			}
 		}
+		toolResultsPending = true
 	}
 	if !s.now().Before(deadline) {
 		return s.fail(ctx, run, "timeout")
 	}
 	return s.fail(ctx, run, "step_budget_exhausted")
+}
+
+func reactTurnMode(currentStep, stepLimit int, toolResultsPending bool) (allowed, completionOnly bool) {
+	if currentStep < stepLimit {
+		return true, false
+	}
+	return toolResultsPending, toolResultsPending
 }
 
 func (s *AgentRuntimeService) persistCounters(ctx context.Context, run *AgentRun) error {

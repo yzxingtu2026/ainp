@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/yzxingtu2026/ainp/platform/framework/action"
 	"github.com/yzxingtu2026/ainp/platform/framework/aiagent"
 	"github.com/yzxingtu2026/ainp/platform/framework/aiknowledge"
 	"github.com/yzxingtu2026/ainp/platform/framework/aimodel"
@@ -148,6 +149,9 @@ func TestKnowledgeMigrationModelsActionsAndI18n(t *testing.T) {
 			id != ai.ActionKnowledgeRetrievalTest && id != ai.ActionKnowledgeCitationResolve
 		if registered.Meta.Audit == nil || *registered.Meta.Audit != wantAudit {
 			t.Fatalf("unexpected audit metadata for %s", id)
+		}
+		if registered.Meta.AI == nil || !registered.Meta.AI.ExposeTool || !action.HasExplicitInputContract(registered.Meta.AI.InputSchema) {
+			t.Fatalf("knowledge action lacks explicit AI contract: %s %#v", id, registered.Meta.AI)
 		}
 	}
 	if _, ok := application.CodeSets.Get(ai.CodeSetKnowledgeBaseStatus); !ok {

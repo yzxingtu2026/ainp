@@ -62,47 +62,47 @@ func (s *AgentService) ReconcileBuiltinForTenant(ctx context.Context, db *gorm.D
 
 type AgentListRequest struct {
 	pagination.Request
-	Keyword     string `json:"keyword"`
-	Source      string `json:"source"`
-	Visibility  string `json:"visibility"`
-	Status      string `json:"status"`
-	ContractKey string `json:"contract_key"`
-	OwnerUserID string `json:"owner_user_id"`
+	Keyword     string `json:"keyword" validate:"omitempty"`
+	Source      string `json:"source" validate:"omitempty"`
+	Visibility  string `json:"visibility" validate:"omitempty"`
+	Status      string `json:"status" validate:"omitempty"`
+	ContractKey string `json:"contract_key" validate:"omitempty"`
+	OwnerUserID string `json:"owner_user_id" validate:"omitempty"`
 }
 type AgentCreateRequest struct {
 	Code               string           `json:"code" validate:"required"`
 	Name               string           `json:"name" validate:"required"`
-	Description        string           `json:"description"`
-	Source             string           `json:"source"`
-	Visibility         string           `json:"visibility"`
+	Description        string           `json:"description" validate:"omitempty"`
+	Source             string           `json:"source" validate:"omitempty"`
+	Visibility         string           `json:"visibility" validate:"omitempty"`
 	ModelAlias         string           `json:"model_alias" validate:"required"`
-	TenantInstructions string           `json:"tenant_instructions"`
-	AvatarAttachmentID *string          `json:"avatar_attachment_id"`
-	GenerationConfig   map[string]any   `json:"generation_config"`
-	ToolPolicy         map[string]any   `json:"tool_policy"`
-	MemoryPolicy       *aimemory.Policy `json:"memory_policy,omitempty"`
+	TenantInstructions string           `json:"tenant_instructions" validate:"omitempty"`
+	AvatarAttachmentID *string          `json:"avatar_attachment_id" validate:"omitempty"`
+	GenerationConfig   map[string]any   `json:"generation_config" validate:"omitempty"`
+	ToolPolicy         map[string]any   `json:"tool_policy" validate:"omitempty"`
+	MemoryPolicy       *aimemory.Policy `json:"memory_policy,omitempty" validate:"omitempty"`
 }
 type AgentUpdateRequest struct {
 	ID                 string  `json:"id" validate:"required"`
 	Name               string  `json:"name" validate:"required"`
-	Description        string  `json:"description"`
-	AvatarAttachmentID *string `json:"avatar_attachment_id"`
+	Description        string  `json:"description" validate:"omitempty"`
+	AvatarAttachmentID *string `json:"avatar_attachment_id" validate:"omitempty"`
 	// 以下为 Builder 草稿运行配置；写入 Agent 草稿列，不创建 Version、不晋升 current。
-	ModelAlias         string           `json:"model_alias"`
-	TenantInstructions string           `json:"tenant_instructions"`
-	GenerationConfig   map[string]any   `json:"generation_config"`
-	ToolPolicy         map[string]any   `json:"tool_policy"`
-	MemoryPolicy       *aimemory.Policy `json:"memory_policy,omitempty"`
-	SaveDraftConfig    bool             `json:"save_draft_config"`
+	ModelAlias         string           `json:"model_alias" validate:"omitempty"`
+	TenantInstructions string           `json:"tenant_instructions" validate:"omitempty"`
+	GenerationConfig   map[string]any   `json:"generation_config" validate:"omitempty"`
+	ToolPolicy         map[string]any   `json:"tool_policy" validate:"omitempty"`
+	MemoryPolicy       *aimemory.Policy `json:"memory_policy,omitempty" validate:"omitempty"`
+	SaveDraftConfig    bool             `json:"save_draft_config" validate:"omitempty"`
 	Revision           uint64           `json:"revision" validate:"required"`
 }
 type AgentVersionCreateRequest struct {
 	AgentID            string           `json:"agent_id" validate:"required"`
 	ModelAlias         string           `json:"model_alias" validate:"required"`
-	TenantInstructions string           `json:"tenant_instructions"`
-	GenerationConfig   map[string]any   `json:"generation_config"`
-	ToolPolicy         map[string]any   `json:"tool_policy"`
-	MemoryPolicy       *aimemory.Policy `json:"memory_policy,omitempty"`
+	TenantInstructions string           `json:"tenant_instructions" validate:"omitempty"`
+	GenerationConfig   map[string]any   `json:"generation_config" validate:"omitempty"`
+	ToolPolicy         map[string]any   `json:"tool_policy" validate:"omitempty"`
+	MemoryPolicy       *aimemory.Policy `json:"memory_policy,omitempty" validate:"omitempty"`
 	Revision           uint64           `json:"revision" validate:"required"`
 }
 
@@ -110,10 +110,10 @@ type AgentVersionCreateRequest struct {
 type AgentPreviewMaterializeRequest struct {
 	AgentID            string           `json:"agent_id" validate:"required"`
 	ModelAlias         string           `json:"model_alias" validate:"required"`
-	TenantInstructions string           `json:"tenant_instructions"`
-	GenerationConfig   map[string]any   `json:"generation_config"`
-	ToolPolicy         map[string]any   `json:"tool_policy"`
-	MemoryPolicy       *aimemory.Policy `json:"memory_policy,omitempty"`
+	TenantInstructions string           `json:"tenant_instructions" validate:"omitempty"`
+	GenerationConfig   map[string]any   `json:"generation_config" validate:"omitempty"`
+	ToolPolicy         map[string]any   `json:"tool_policy" validate:"omitempty"`
+	MemoryPolicy       *aimemory.Policy `json:"memory_policy,omitempty" validate:"omitempty"`
 	Revision           uint64           `json:"revision" validate:"required"`
 }
 type AgentBindRequest struct {
@@ -139,9 +139,9 @@ type AgentDiagnostics struct {
 	Issues  []AgentDiagnosticIssue `json:"issues"`
 }
 type AgentToolSearchRequest struct {
-	Query      string        `json:"query" validate:"max=512"`
-	Capability string        `json:"capability"`
-	Source     aitool.Source `json:"source"`
+	Query      string        `json:"query" validate:"omitempty,max=512"`
+	Capability string        `json:"capability" validate:"omitempty"`
+	Source     aitool.Source `json:"source" validate:"omitempty"`
 	Limit      int           `json:"limit" validate:"omitempty,min=1,max=100"`
 }
 type AgentEmptyRequest struct{}
