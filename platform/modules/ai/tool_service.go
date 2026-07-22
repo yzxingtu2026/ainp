@@ -349,7 +349,7 @@ func (s *ToolService) Approve(ctx context.Context, r ToolConfirmationRequest) (a
 	if err = s.db.WithContext(ctx).Where("id=? AND user_id=?", r.ID, ac.UserID).First(&c).Error; err != nil {
 		return nil, err
 	}
-	if c.Status != "pending" || time.Now().UTC().After(c.ExpiresAt) {
+	if (c.Status != "pending" && c.Status != "approved") || time.Now().UTC().After(c.ExpiresAt) {
 		return nil, errs.New(errs.CodeConflict, "confirmation is not pending")
 	}
 	scope, err := s.scope(ctx, ac, c.ScopeID)
@@ -364,13 +364,17 @@ func (s *ToolService) Approve(ctx context.Context, r ToolConfirmationRequest) (a
 	if err != nil || !ok {
 		return nil, errs.New(errs.CodeConflict, "tool authorization changed")
 	}
-	now := time.Now().UTC()
-	claim := s.db.WithContext(ctx).Model(&ToolConfirmation{}).Where("id=? AND user_id=? AND status='pending'", c.ID, ac.UserID).Updates(map[string]any{"status": "approved", "decided_at": now})
-	if claim.Error != nil {
-		return nil, claim.Error
-	}
-	if claim.RowsAffected == 0 {
-		return nil, errs.New(errs.CodeConflict, "confirmation is not pending")
+	if c.Status == "pending" {
+		now := time.Now().UTC()
+		claim := s.db.WithContext(ctx).Model(&ToolConfirmation{}).Where("id=? AND user_id=? AND status='pending'", c.ID, ac.UserID).Updates(map[string]any{"status": "approved", "decided_at": now})
+		if claim.Error != nil {
+			return nil, claim.Error
+		}
+		if claim.RowsAffected == 0 {
+			return nil, errs.New(errs.CodeConflict, "confirmation is not pending")
+		}
+		c.Status = "approved"
+		c.DecidedAt = &now
 	}
 	loaded := aitool.LoadedTool{Definition: d}
 	result, err := s.execute(ctx, ac, scope, loaded, c.ToolCallID, c.ArgumentsJSON, &c)
@@ -440,7 +444,10 @@ func (s *ToolService) execute(ctx context.Context, ac *auth.Context, scope *Tool
 		return nil, errs.New(errs.CodeForbidden, "critical tool execution is disabled")
 	}
 	now := time.Now().UTC()
-	inv := ToolInvocation{ID: uuid.NewString(), TenantID: ac.TenantID, UserID: ac.UserID, ScopeID: scope.ID, AgentRunID: scope.AgentRunID, ToolCallID: callID, ToolID: d.ID, Source: string(d.Source), TargetAction: d.RuntimeRef, Risk: string(d.Risk), SideEffect: string(d.SideEffect), Status: "running", StartedAt: now, RequestID: ac.RequestID, TraceID: ac.TraceID}
+	var inv ToolInvocation
+	if approved == nil {
+		inv = ToolInvocation{ID: uuid.NewString(), TenantID: ac.TenantID, UserID: ac.UserID, ScopeID: scope.ID, AgentRunID: scope.AgentRunID, ToolCallID: callID, ToolID: d.ID, Source: string(d.Source), TargetAction: d.RuntimeRef, Risk: string(d.Risk), SideEffect: string(d.SideEffect), Status: "running", StartedAt: now, RequestID: ac.RequestID, TraceID: ac.TraceID}
+	}
 	if approved == nil && needs {
 		hash := hashJSON(args)
 		summary := redactArguments(args)
@@ -464,10 +471,14 @@ func (s *ToolService) execute(ctx context.Context, ac *auth.Context, scope *Tool
 		return &aitool.Result{CallID: callID, Status: "confirmation_required", Summary: "user confirmation is required", Data: c}, nil
 	}
 	if approved != nil {
-		if err := s.db.WithContext(ctx).Where("id=? AND user_id=? AND status='waiting_confirmation'", approved.InvocationID, ac.UserID).First(&inv).Error; err != nil {
-			return nil, err
+		claim := s.db.WithContext(ctx).Model(&ToolInvocation{}).Where("id=? AND user_id=? AND status='waiting_confirmation'", approved.InvocationID, ac.UserID).Update("status", "running")
+		if claim.Error != nil {
+			return nil, claim.Error
 		}
-		if err := s.db.WithContext(ctx).Model(&ToolInvocation{}).Where("id=? AND status='waiting_confirmation'", inv.ID).Update("status", "running").Error; err != nil {
+		if claim.RowsAffected != 1 {
+			return nil, errs.New(errs.CodeConflict, "confirmation invocation is not waiting")
+		}
+		if err := s.db.WithContext(ctx).Where("id=? AND user_id=? AND status='running'", approved.InvocationID, ac.UserID).First(&inv).Error; err != nil {
 			return nil, err
 		}
 	} else if err := s.db.WithContext(ctx).Create(&inv).Error; err != nil {

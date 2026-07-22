@@ -568,6 +568,53 @@ VALUES (?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, 0, ?)`, restri
 	if strings.Contains(string(events[0].PayloadJSON), "supplier_id") || strings.Contains(string(events[0].PayloadJSON), "s1") {
 		t.Fatalf("arguments leaked to outbox: %s", events[0].PayloadJSON)
 	}
+	provider.tools[0].RequiresConfirmation = true
+	provider.tools[0].Risk = aitool.RiskHigh
+	provider.tools[0].SideEffect = aitool.SideEffectWrite
+	if err = registry.Refresh(ctx); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err = service.Load(ctx, ai.ToolLoadRequest{ScopeID: scopeID, ToolIDs: []string{actionTool.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	confirmationHandle := loaded.(ai.ToolLoadResponse).Tools[0].Handle
+	pendingValue, err := service.Execute(ctx, ai.ToolExecuteRequest{Handle: confirmationHandle, ToolCallID: "call-confirm", Arguments: json.RawMessage(`{"supplier_id":"s1"}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pendingResult := pendingValue.(*aitool.Result)
+	confirmation, ok := pendingResult.Data.(ai.ToolConfirmation)
+	if !ok || pendingResult.Status != "confirmation_required" {
+		t.Fatalf("unexpected confirmation result: %#v", pendingResult)
+	}
+	approvedValue, err := service.Approve(ctx, ai.ToolConfirmationRequest{ID: confirmation.ID})
+	if err != nil {
+		t.Fatalf("approve confirmation failed: %v", err)
+	}
+	if approvedValue.(*aitool.Result).Status != "completed" {
+		t.Fatalf("unexpected approved result: %#v", approvedValue)
+	}
+	var consumed ai.ToolConfirmation
+	if err = guarded.WithContext(ctx).Where("id=?", confirmation.ID).First(&consumed).Error; err != nil || consumed.Status != "consumed" {
+		t.Fatalf("confirmation was not consumed: %#v %v", consumed, err)
+	}
+	var confirmedInvocation ai.ToolInvocation
+	if err = guarded.WithContext(ctx).Where("id=?", confirmation.InvocationID).First(&confirmedInvocation).Error; err != nil || confirmedInvocation.Status != "completed" {
+		t.Fatalf("confirmed invocation was not completed: %#v %v", confirmedInvocation, err)
+	}
+	recoveryValue, err := service.Execute(ctx, ai.ToolExecuteRequest{Handle: confirmationHandle, ToolCallID: "call-confirm-recovery", Arguments: json.RawMessage(`{"supplier_id":"s1"}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	recoveryConfirmation := recoveryValue.(*aitool.Result).Data.(ai.ToolConfirmation)
+	decidedAt := time.Now().UTC()
+	if err = guarded.WithContext(ctx).Model(&ai.ToolConfirmation{}).Where("id=? AND status='pending'", recoveryConfirmation.ID).Updates(map[string]any{"status": "approved", "decided_at": decidedAt}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err = service.Approve(ctx, ai.ToolConfirmationRequest{ID: recoveryConfirmation.ID}); err != nil {
+		t.Fatalf("stale approved confirmation did not recover: %v", err)
+	}
 	revoked := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t1", UserID: "u1", SessionID: "s1", AuthVersion: 1, Realm: auth.RealmTenant})
 	if _, err = service.Execute(revoked, ai.ToolExecuteRequest{Handle: handle, ToolCallID: "call-revoked", Arguments: json.RawMessage(`{"supplier_id":"s1"}`)}); err == nil {
 		t.Fatal("permission revocation must invalidate an existing handle")
