@@ -243,6 +243,9 @@ func validateAIMeta(actionID string, meta *AIMeta) error {
 	default:
 		return fmt.Errorf("action %s: invalid AI side effect", actionID)
 	}
+	if (meta.Risk == "high" || meta.Risk == "critical" || meta.SideEffect == "write" || meta.SideEffect == "external" || meta.SideEffect == "paid" || meta.SideEffect == "destructive") && !meta.RequiresConfirmation {
+		return fmt.Errorf("action %s: high-risk and side-effecting AI actions must require confirmation", actionID)
+	}
 	if len(meta.InputSchema) == 0 || !json.Valid(meta.InputSchema) {
 		return fmt.Errorf("action %s: valid AI input schema is required", actionID)
 	}

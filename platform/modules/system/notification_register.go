@@ -45,6 +45,32 @@ type inAppNotificationListRequest struct {
 	ExcludeArchived bool `json:"exclude_archived"`
 }
 
+type inAppNotificationIDRequest struct {
+	ID string `json:"id" validate:"required"`
+}
+
+type notificationTemplateUpdateRequest struct {
+	DefinitionKey string `json:"definition_key" validate:"required"`
+	Channel       string `json:"channel" validate:"required"`
+	Locale        string `json:"locale" validate:"required"`
+	Subject       string `json:"subject"`
+	Body          string `json:"body"`
+	Enabled       *bool  `json:"enabled"`
+}
+
+type notificationTemplateKeyRequest struct {
+	DefinitionKey string `json:"definition_key" validate:"required"`
+	Channel       string `json:"channel" validate:"required"`
+	Locale        string `json:"locale" validate:"required"`
+}
+
+type notificationTemplatePreviewRequest struct {
+	DefinitionKey string         `json:"definition_key" validate:"required"`
+	Channel       string         `json:"channel" validate:"required"`
+	Locale        string         `json:"locale" validate:"required"`
+	Variables     map[string]any `json:"variables"`
+}
+
 func NewInAppNotificationService(repo *NotificationRepository) *InAppNotificationService {
 	return &InAppNotificationService{repo: repo}
 }
@@ -107,9 +133,7 @@ func (s *InAppNotificationService) MarkRead(ctx context.Context, input json.RawM
 	if err != nil {
 		return nil, err
 	}
-	var req struct {
-		ID string `json:"id"`
-	}
+	var req inAppNotificationIDRequest
 	if err := json.Unmarshal(input, &req); err != nil || strings.TrimSpace(req.ID) == "" {
 		return nil, errs.ValidationKey("common.validation_failed", "id required")
 	}
@@ -136,9 +160,7 @@ func (s *InAppNotificationService) Archive(ctx context.Context, input json.RawMe
 	if err != nil {
 		return nil, err
 	}
-	var req struct {
-		ID string `json:"id"`
-	}
+	var req inAppNotificationIDRequest
 	if err := json.Unmarshal(input, &req); err != nil || strings.TrimSpace(req.ID) == "" {
 		return nil, errs.ValidationKey("common.validation_failed", "id required")
 	}
@@ -153,9 +175,7 @@ func (s *InAppNotificationService) Unarchive(ctx context.Context, input json.Raw
 	if err != nil {
 		return nil, err
 	}
-	var req struct {
-		ID string `json:"id"`
-	}
+	var req inAppNotificationIDRequest
 	if err := json.Unmarshal(input, &req); err != nil || strings.TrimSpace(req.ID) == "" {
 		return nil, errs.ValidationKey("common.validation_failed", "id required")
 	}
@@ -292,14 +312,7 @@ func (s *NotificationTemplateService) Update(ctx context.Context, input json.Raw
 	if err != nil {
 		return nil, err
 	}
-	var req struct {
-		DefinitionKey string `json:"definition_key"`
-		Channel       string `json:"channel"`
-		Locale        string `json:"locale"`
-		Subject       string `json:"subject"`
-		Body          string `json:"body"`
-		Enabled       *bool  `json:"enabled"`
-	}
+	var req notificationTemplateUpdateRequest
 	if err := json.Unmarshal(input, &req); err != nil {
 		return nil, errs.ValidationKey("common.validation_failed", "invalid input")
 	}
@@ -338,11 +351,7 @@ func (s *NotificationTemplateService) Reset(ctx context.Context, input json.RawM
 	if err != nil {
 		return nil, err
 	}
-	var req struct {
-		DefinitionKey string `json:"definition_key"`
-		Channel       string `json:"channel"`
-		Locale        string `json:"locale"`
-	}
+	var req notificationTemplateKeyRequest
 	if err := json.Unmarshal(input, &req); err != nil {
 		return nil, errs.ValidationKey("common.validation_failed", "invalid input")
 	}
@@ -364,12 +373,7 @@ func (s *NotificationTemplateService) Preview(ctx context.Context, input json.Ra
 	if err != nil {
 		return nil, err
 	}
-	var req struct {
-		DefinitionKey string         `json:"definition_key"`
-		Channel       string         `json:"channel"`
-		Locale        string         `json:"locale"`
-		Variables     map[string]any `json:"variables"`
-	}
+	var req notificationTemplatePreviewRequest
 	if err := json.Unmarshal(input, &req); err != nil {
 		return nil, errs.ValidationKey("common.validation_failed", "invalid input")
 	}
@@ -693,13 +697,14 @@ func registerNotificationActions(a *app.App) error {
 		id, path, name, nameKey, desc, descKey string
 		audit                                  *bool
 		handler                                func(context.Context, json.RawMessage) (any, error)
+		ai                                     *action.AIMeta
 	}{
-		{ActionNotificationList, "/api/v1/notifications/list", "通知列表", "action.system.notification_list.name", "分页查询当前用户站内通知", "action.system.notification_list.description", &auditOff, inAppSvc.List},
-		{ActionNotificationUnreadCount, "/api/v1/notifications/unread-count", "未读数量", "action.system.notification_unread_count.name", "查询当前用户未读通知数", "action.system.notification_unread_count.description", &auditOff, inAppSvc.UnreadCount},
-		{ActionNotificationMarkRead, "/api/v1/notifications/mark-read", "标记已读", "action.system.notification_mark_read.name", "标记单条通知为已读", "action.system.notification_mark_read.description", &auditOff, inAppSvc.MarkRead},
-		{ActionNotificationMarkAllRead, "/api/v1/notifications/mark-all-read", "全部已读", "action.system.notification_mark_all_read.name", "标记所有通知为已读", "action.system.notification_mark_all_read.description", &auditOff, inAppSvc.MarkAllRead},
-		{ActionNotificationArchive, "/api/v1/notifications/archive", "归档通知", "action.system.notification_archive.name", "归档单条通知", "action.system.notification_archive.description", &auditOff, inAppSvc.Archive},
-		{ActionNotificationUnarchive, "/api/v1/notifications/unarchive", "取消归档", "action.system.notification_unarchive.name", "取消归档单条通知", "action.system.notification_unarchive.description", &auditOff, inAppSvc.Unarchive},
+		{ActionNotificationList, "/api/v1/notifications/list", "通知列表", "action.system.notification_list.name", "分页查询当前用户站内通知", "action.system.notification_list.description", &auditOff, inAppSvc.List, readAIMeta("分页查询当前登录用户的站内通知，可筛选未读和归档状态", "查询我的通知", "已返回当前用户通知列表", action.SchemaFor[inAppNotificationListRequest](), nil, "通知", "站内通知", "列表")},
+		{ActionNotificationUnreadCount, "/api/v1/notifications/unread-count", "未读数量", "action.system.notification_unread_count.name", "查询当前用户未读通知数", "action.system.notification_unread_count.description", &auditOff, inAppSvc.UnreadCount, readAIMeta("查询当前登录用户的未读站内通知数量", "查询通知未读数量", "已返回未读通知数量", action.SchemaFor[struct{}](), nil, "通知", "未读", "数量")},
+		{ActionNotificationMarkRead, "/api/v1/notifications/mark-read", "标记已读", "action.system.notification_mark_read.name", "标记单条通知为已读", "action.system.notification_mark_read.description", &auditOff, inAppSvc.MarkRead, writeAIMeta("将当前用户的一条站内通知标记为已读", "标记通知已读", "通知已标记为已读", "medium", action.SchemaFor[inAppNotificationIDRequest](), nil, "通知", "已读")},
+		{ActionNotificationMarkAllRead, "/api/v1/notifications/mark-all-read", "全部已读", "action.system.notification_mark_all_read.name", "标记所有通知为已读", "action.system.notification_mark_all_read.description", &auditOff, inAppSvc.MarkAllRead, writeAIMeta("将当前用户的全部未读站内通知标记为已读", "全部通知标记已读", "全部通知已标记为已读", "medium", action.SchemaFor[struct{}](), nil, "通知", "全部已读")},
+		{ActionNotificationArchive, "/api/v1/notifications/archive", "归档通知", "action.system.notification_archive.name", "归档单条通知", "action.system.notification_archive.description", &auditOff, inAppSvc.Archive, writeAIMeta("归档当前用户的一条站内通知", "归档通知", "通知已归档", "medium", action.SchemaFor[inAppNotificationIDRequest](), nil, "通知", "归档")},
+		{ActionNotificationUnarchive, "/api/v1/notifications/unarchive", "取消归档", "action.system.notification_unarchive.name", "取消归档单条通知", "action.system.notification_unarchive.description", &auditOff, inAppSvc.Unarchive, writeAIMeta("取消归档当前用户的一条站内通知", "取消归档通知", "通知已取消归档", "medium", action.SchemaFor[inAppNotificationIDRequest](), nil, "通知", "取消归档")},
 	}
 	for _, spec := range userSpecs {
 		if err := a.RegisterAction(action.Action{
@@ -716,7 +721,7 @@ func registerNotificationActions(a *app.App) error {
 				PermissionGroupName:    "通知操作",
 				PermissionGroupNameKey: "permission_group.system.notification_user",
 				Audit:                  spec.audit,
-				AI:                     action.ExcludeFromAI(action.AIExcludePendingSafetyReview),
+				AI:                     spec.ai,
 				HTTP:                   &action.HTTPMeta{Method: "POST", Path: spec.path},
 			},
 		}); err != nil {
@@ -729,11 +734,12 @@ func registerNotificationActions(a *app.App) error {
 		id, path, name, nameKey, desc, descKey string
 		audit                                  *bool
 		handler                                func(context.Context, json.RawMessage) (any, error)
+		ai                                     *action.AIMeta
 	}{
-		{ActionNotificationTemplateList, "/api/v1/system/notification/templates", "模板覆盖列表", "action.system.notification_template_list.name", "列出租户模板覆盖", "action.system.notification_template_list.description", &auditOff, tplSvc.List},
-		{ActionNotificationTemplateUpdate, "/api/v1/system/notification/templates/update", "更新模板覆盖", "action.system.notification_template_update.name", "更新模板覆盖内容", "action.system.notification_template_update.description", &auditOn, tplSvc.Update},
-		{ActionNotificationTemplateReset, "/api/v1/system/notification/templates/reset", "重置模板覆盖", "action.system.notification_template_reset.name", "重置为代码默认模板", "action.system.notification_template_reset.description", &auditOn, tplSvc.Reset},
-		{ActionNotificationTemplatePreview, "/api/v1/system/notification/templates/preview", "模板预览", "action.system.notification_template_preview.name", "预览模板渲染结果（不触发投递）", "action.system.notification_template_preview.description", &auditOff, tplSvc.Preview},
+		{ActionNotificationTemplateList, "/api/v1/system/notification/templates", "模板覆盖列表", "action.system.notification_template_list.name", "列出租户模板覆盖", "action.system.notification_template_list.description", &auditOff, tplSvc.List, readAIMeta("查询当前租户可配置的通知模板、变量和覆盖状态", "查询通知模板", "已返回通知模板列表", action.SchemaFor[struct{}](), nil, "通知", "模板", "配置")},
+		{ActionNotificationTemplateUpdate, "/api/v1/system/notification/templates/update", "更新模板覆盖", "action.system.notification_template_update.name", "更新模板覆盖内容", "action.system.notification_template_update.description", &auditOn, tplSvc.Update, writeAIMeta("更新当前租户指定渠道和语言的通知模板覆盖", "更新通知模板", "通知模板覆盖已更新", "high", action.SchemaFor[notificationTemplateUpdateRequest](), nil, "通知", "模板", "更新")},
+		{ActionNotificationTemplateReset, "/api/v1/system/notification/templates/reset", "重置模板覆盖", "action.system.notification_template_reset.name", "重置为代码默认模板", "action.system.notification_template_reset.description", &auditOn, tplSvc.Reset, writeAIMeta("删除当前租户指定通知模板覆盖并恢复代码默认模板", "重置通知模板", "通知模板已恢复默认值", "high", action.SchemaFor[notificationTemplateKeyRequest](), nil, "通知", "模板", "重置")},
+		{ActionNotificationTemplatePreview, "/api/v1/system/notification/templates/preview", "模板预览", "action.system.notification_template_preview.name", "预览模板渲染结果（不触发投递）", "action.system.notification_template_preview.description", &auditOff, tplSvc.Preview, readAIMeta("使用给定变量预览通知模板渲染结果，不触发实际投递", "预览通知模板", "已返回通知模板预览", action.SchemaFor[notificationTemplatePreviewRequest](), nil, "通知", "模板", "预览")},
 	}
 	for _, spec := range adminSpecs {
 		if err := a.RegisterAction(action.Action{
@@ -749,7 +755,7 @@ func registerNotificationActions(a *app.App) error {
 				PermissionGroupName:    "通知配置",
 				PermissionGroupNameKey: "permission_group.system.notification_configuration",
 				Audit:                  spec.audit,
-				AI:                     action.ExcludeFromAI(action.AIExcludePendingSafetyReview),
+				AI:                     spec.ai,
 				HTTP:                   &action.HTTPMeta{Method: "POST", Path: spec.path},
 			},
 		}); err != nil {

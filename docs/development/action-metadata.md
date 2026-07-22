@@ -17,6 +17,10 @@ Agent 只读要点：`.agent/rules/action-metadata.md`。本文档为 Phase 1 �
 
 两种状态互斥。暴露项同时填写排除原因、排除项缺少原因、或生产 Action 完全缺少 `AI` 元数据，注册与架构测试都会 fail closed。Action Registry 是唯一事实源，禁止另建 Action ID switch 或平行 AI 暴露清单。
 
+`risk=high|critical`，或 `side_effect=write|external|paid|destructive` 的暴露 Action 必须显式设置 `RequiresConfirmation=true`，否则注册失败。即使运行时会根据风险和副作用兜底触发确认，注册元数据仍必须完整表达安全契约。
+
+包含密码、Token 或 Provider 密钥的现有请求 DTO 不能直接用作 Tool 输入 Schema。必须先设计不让敏感值进入模型上下文、确认参数和调用日志的安全 DTO；完成前使用 `sensitive-credential-boundary` 排除。例如当前用户创建和密码重置 Action 均包含明文密码，因此不参与第二批投影。
+
 当前稳定排除原因包括：
 
 - `pending-safety-review`：等待对应批次完成强类型 DTO、风险和确认评审；

@@ -109,6 +109,11 @@ type UserSettingService struct {
 	store    *userSettingStore
 }
 
+type userSettingUpdateRequest struct {
+	Revision int64          `json:"revision"`
+	Values   map[string]any `json:"values"`
+}
+
 func NewUserSettingService(db *gorm.DB, registry *setting.Registry) *UserSettingService {
 	return &UserSettingService{registry: registry, store: newUserSettingStore(db)}
 }
@@ -152,10 +157,7 @@ func (s *UserSettingService) Update(ctx context.Context, input json.RawMessage) 
 	if err != nil {
 		return nil, err
 	}
-	var req struct {
-		Revision int64          `json:"revision"`
-		Values   map[string]any `json:"values"`
-	}
+	var req userSettingUpdateRequest
 	if json.Unmarshal(input, &req) != nil || req.Values == nil {
 		return nil, errs.ValidationKey("common.validation_failed", "invalid user setting update request")
 	}
