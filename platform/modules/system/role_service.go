@@ -36,8 +36,8 @@ func NewRoleService(db *gorm.DB, authService *AuthService, actions *action.Regis
 
 type roleListRequest struct {
 	pagination.Request
-	Keyword string                  `json:"keyword"`
-	Status  status.ActivationStatus `json:"status" validate:"omitempty,oneof=enabled disabled"`
+	Keyword string                  `json:"keyword,omitempty"`
+	Status  status.ActivationStatus `json:"status,omitempty" validate:"omitempty,oneof=enabled disabled"`
 }
 
 type roleIDRequest struct {

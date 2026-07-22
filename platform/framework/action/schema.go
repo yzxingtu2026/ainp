@@ -32,6 +32,15 @@ func schemaForType(t reflect.Type) map[string]any {
 				continue
 			}
 			if f.Anonymous && name == "" {
+				embedded := schemaForType(f.Type)
+				if embeddedProperties, ok := embedded["properties"].(map[string]any); ok {
+					for embeddedName, embeddedSchema := range embeddedProperties {
+						properties[embeddedName] = embeddedSchema
+					}
+				}
+				if embeddedRequired, ok := embedded["required"].([]string); ok {
+					required = append(required, embeddedRequired...)
+				}
 				continue
 			}
 			if name == "" {

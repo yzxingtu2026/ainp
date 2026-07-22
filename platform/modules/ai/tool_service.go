@@ -708,28 +708,28 @@ func validateToolArguments(schema, arguments json.RawMessage) error {
 		Additional bool `json:"additionalProperties"`
 	}
 	if json.Unmarshal(schema, &spec) != nil {
-		return fmt.Errorf("invalid tool schema")
+		return errs.Validation("invalid tool schema")
 	}
 	var values map[string]any
 	if json.Unmarshal(arguments, &values) != nil {
-		return fmt.Errorf("arguments must be object")
+		return errs.Validation("arguments must be object")
 	}
 	for _, key := range spec.Required {
 		if _, ok := values[key]; !ok {
-			return fmt.Errorf("required argument missing")
+			return errs.Validation("required argument missing")
 		}
 	}
 	for key, value := range values {
 		field, ok := spec.Properties[key]
 		if !ok && !spec.Additional {
-			return fmt.Errorf("unknown argument")
+			return errs.Validation("unknown argument")
 		}
 		if !ok {
 			continue
 		}
 		valid := field.Type == "" || (field.Type == "string" && isString(value)) || (field.Type == "number" && isNumber(value)) || (field.Type == "integer" && isInteger(value)) || (field.Type == "boolean" && isBool(value)) || (field.Type == "object" && isObject(value)) || (field.Type == "array" && isArray(value))
 		if !valid {
-			return fmt.Errorf("argument type mismatch")
+			return errs.Validation("argument type mismatch")
 		}
 	}
 	return nil

@@ -1240,7 +1240,7 @@ func (s *AgentRuntimeService) executeToolCall(ctx context.Context, run *AgentRun
 	if call.ToolName == modelToolName("meta:tool.search") {
 		var input aitool.MetaSearchInput
 		if json.Unmarshal(call.Arguments, &input) != nil {
-			return false, fmt.Errorf("invalid search")
+			return s.appendToolResult(ctx, run, step, call, nil, errs.Validation("invalid tool arguments"))
 		}
 		value, err := s.tools.Search(ctx, ToolSearchRequest{ScopeID: scopeID, Query: input.Query, Capability: input.Capability, Source: input.Source, Limit: input.Limit})
 		return s.appendToolResult(ctx, run, step, call, value, err)
@@ -1248,7 +1248,7 @@ func (s *AgentRuntimeService) executeToolCall(ctx context.Context, run *AgentRun
 	if call.ToolName == modelToolName("meta:tool.load") {
 		var input aitool.MetaLoadInput
 		if json.Unmarshal(call.Arguments, &input) != nil {
-			return false, fmt.Errorf("invalid load")
+			return s.appendToolResult(ctx, run, step, call, nil, errs.Validation("invalid tool arguments"))
 		}
 		value, err := s.tools.Load(ctx, ToolLoadRequest{ScopeID: scopeID, ToolIDs: input.ToolIDs})
 		if err != nil {
@@ -1262,16 +1262,16 @@ func (s *AgentRuntimeService) executeToolCall(ctx context.Context, run *AgentRun
 		return s.appendToolResult(ctx, run, step, call, map[string]any{"scope_id": loaded.ScopeID, "tools": definitions}, nil)
 	}
 	if toolID == "" {
-		return false, fmt.Errorf("unknown model tool")
+		return s.appendToolResult(ctx, run, step, call, nil, errs.New(errs.CodeNotFound, "tool unavailable"))
 	}
 	loadedValue, err := s.tools.Load(ctx, ToolLoadRequest{ScopeID: scopeID, ToolIDs: []string{toolID}})
 	if err != nil {
-		return false, err
+		return s.appendToolResult(ctx, run, step, call, nil, err)
 	}
 	loaded := loadedValue.(ToolLoadResponse).Tools[0]
 	value, err := s.tools.Execute(ctx, ToolExecuteRequest{Handle: loaded.Handle, ToolCallID: call.ToolCallID, Arguments: call.Arguments, IdempotencyKey: fmt.Sprintf("run:%s:tool:%s", run.ID, call.ToolCallID)})
 	if err != nil {
-		return false, err
+		return s.appendToolResult(ctx, run, step, call, nil, err)
 	}
 	result := value.(*aitool.Result)
 	if result.Status == "confirmation_required" {
@@ -1334,8 +1334,12 @@ func (s *AgentRuntimeService) appendAssistantToolCalls(ctx context.Context, run 
 
 func (s *AgentRuntimeService) appendToolResult(ctx context.Context, run *AgentRun, step *AgentStep, call aimodelruntime.OutputItem, value any, err error) (bool, error) {
 	if err != nil {
-		_ = s.finishStep(ctx, run, step, "failed", map[string]any{}, "tool_failed")
-		return false, err
+		category := toolExecutionErrorCategory(err)
+		failedResult := &aitool.Result{CallID: call.ToolCallID, Status: "failed", Summary: "tool execution failed", ErrorCategory: category}
+		encoded, _ := json.Marshal(failedResult)
+		_, messageErr := s.conversations.AppendRuntimeMessage(ctx, run.ConversationID, run.ID, "tool", fmt.Sprintf("run:%s:tool-result:%s", run.ID, call.ToolCallID), []aimodelruntime.ContentPart{{Type: aimodelruntime.PartToolResult, ToolCallID: call.ToolCallID, Result: encoded}})
+		stepErr := s.finishStep(ctx, run, step, "failed", map[string]any{"tool_call_id": call.ToolCallID, "reason": category}, category)
+		return false, errors.Join(err, messageErr, stepErr)
 	}
 	encoded, _ := json.Marshal(value)
 	var invocation ToolInvocation
@@ -1379,6 +1383,25 @@ func (s *AgentRuntimeService) appendToolResult(ctx context.Context, run *AgentRu
 		_ = s.finishStep(ctx, run, step, "completed", summary, category)
 	}
 	return false, err
+}
+
+func toolExecutionErrorCategory(err error) string {
+	var appErr *errs.AppError
+	if !errors.As(err, &appErr) {
+		return "execution_failed"
+	}
+	switch appErr.Code {
+	case errs.CodeValidation:
+		return "invalid_arguments"
+	case errs.CodeUnauthorized, errs.CodeForbidden:
+		return "authorization_failed"
+	case errs.CodeConflict, errs.CodeRevisionConflict:
+		return "authorization_changed"
+	case errs.CodeNotFound, errs.CodeActionNotFound:
+		return "tool_unavailable"
+	default:
+		return "execution_failed"
+	}
 }
 
 func (s *AgentRuntimeService) resumeConfirmation(ctx context.Context, run *AgentRun) error {

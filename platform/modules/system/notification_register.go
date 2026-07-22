@@ -41,8 +41,8 @@ type InAppNotificationService struct {
 
 type inAppNotificationListRequest struct {
 	pagination.Request
-	UnreadOnly      bool `json:"unread_only"`
-	ExcludeArchived bool `json:"exclude_archived"`
+	UnreadOnly      bool `json:"unread_only,omitempty"`
+	ExcludeArchived bool `json:"exclude_archived,omitempty"`
 }
 
 type inAppNotificationIDRequest struct {

@@ -17,6 +17,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/config"
 	"github.com/yzxingtu2026/ainp/platform/framework/database"
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
+	"github.com/yzxingtu2026/ainp/platform/framework/pagination"
 	"github.com/yzxingtu2026/ainp/platform/framework/permission"
 	"github.com/yzxingtu2026/ainp/platform/framework/setting"
 	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
@@ -26,6 +27,13 @@ import (
 type fakeToolProvider struct {
 	source aitool.Source
 	tools  []aitool.Definition
+}
+
+type embeddedListRequest struct {
+	pagination.Request
+	Keyword string `json:"keyword,omitempty"`
+	Status  string `json:"status,omitempty" validate:"omitempty,oneof=enabled disabled"`
+	RoleID  string `json:"role_id,omitempty"`
 }
 
 func (p *fakeToolProvider) Source() aitool.Source                             { return p.source }
@@ -241,6 +249,24 @@ func TestSchemaForRejectsAdditionalProperties(t *testing.T) {
 	schema := action.SchemaFor[exposedRequest]()
 	if !strings.Contains(string(schema), `"additionalProperties":false`) {
 		t.Fatalf("schema must reject unknown fields: %s", schema)
+	}
+}
+
+func TestSchemaForFlattensEmbeddedOptionalListFields(t *testing.T) {
+	var schema struct {
+		Properties map[string]any `json:"properties"`
+		Required   []string       `json:"required"`
+	}
+	if err := json.Unmarshal(action.SchemaFor[embeddedListRequest](), &schema); err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"page", "page_size", "keyword", "status", "role_id"} {
+		if _, ok := schema.Properties[field]; !ok {
+			t.Fatalf("embedded list schema missing %q: %#v", field, schema.Properties)
+		}
+	}
+	if len(schema.Required) != 0 {
+		t.Fatalf("optional list fields must not be required: %#v", schema.Required)
 	}
 }
 

@@ -43,9 +43,9 @@ func (s *UserService) SetOutboxWriter(w outbox.Writer) {
 
 type userListRequest struct {
 	pagination.Request
-	Keyword string                  `json:"keyword"`
-	Status  status.ActivationStatus `json:"status" validate:"omitempty,oneof=enabled disabled"`
-	RoleID  string                  `json:"role_id"`
+	Keyword string                  `json:"keyword,omitempty"`
+	Status  status.ActivationStatus `json:"status,omitempty" validate:"omitempty,oneof=enabled disabled"`
+	RoleID  string                  `json:"role_id,omitempty"`
 }
 
 type userIDRequest struct {
