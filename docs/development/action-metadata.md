@@ -29,6 +29,8 @@ Provider 列表和详情只有在响应经过统一脱敏后才可暴露。接�
 
 所有暴露 Action 的业务模块必须在 AI 模块刷新 Tool Registry 之前完成注册。生产启动顺序保持 `system → operations → ai`；请求路径不得通过再次 Refresh 临时补注册，新增后置业务模块时必须先调整显式启动聚合顺序。
 
+`ExposeTool=true` 只完成“Action 可以被投影为 Tool”这一层，不代表具体 Agent 可以发现它。新增模块或新的 Action Capability 时，必须明确哪些 Agent Contract 可以使用，并同步检查 `AllowedToolSources` 与 `AllowedToolCapabilities`。交付测试必须从目标 Contract 创建的 ToolScope 发起搜索，验证 Action 能通过 Scope 且仍受当前用户 permission 过滤；仅断言 `ActionProvider.List()` 包含该 Action 不算完成接入。
+
 当前稳定排除原因包括：
 
 - `pending-safety-review`：等待对应批次完成强类型 DTO、风险和确认评审；

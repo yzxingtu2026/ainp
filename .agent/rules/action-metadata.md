@@ -18,5 +18,6 @@
 - AI 管理 Action 必须区分管理面与运行面：Agent、版本、Slot、知识、会话治理和用户记忆治理可按风险暴露；Tool/Agent Runtime、索引维护、诊断恢复及预览物化保持 `internal-runtime-operation` 排除。
 - Provider 只读 Action 仅可投影已脱敏视图；任何接收明文 credential 的 Action 必须保持 `sensitive-credential-boundary`，远端发现只能引用已持久化 Provider ID 并按 `high/external` 确认。
 - 暴露 Action 的业务模块必须先于 AI Tool Registry Refresh 注册；生产启动保持显式 `system → operations → ai` 聚合，禁止请求路径临时 Refresh 补注册。
+- `ExposeTool=true` 只表示可投影，不表示任意 Agent 可发现；新增模块或 Capability 暴露 Action 时必须明确目标 Agent Contract，同步其 `AllowedToolSources` / `AllowedToolCapabilities`，并验证 Action Registry → Tool Registry → ToolScope → permission 的端到端搜索可达性。禁止只测 `ActionProvider.List()` 后宣称已接入智能体。
 
 详规：`docs/development/action-metadata.md`
