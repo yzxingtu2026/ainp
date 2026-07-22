@@ -353,6 +353,8 @@ declare namespace Api.AI {
   interface ToolLoadResponse {
     scope_id: string;
     tools: LoadedTool[];
+    newly_loaded_tool_ids: string[];
+    already_loaded_tool_ids: string[];
   }
   interface ToolResult {
     call_id: string;

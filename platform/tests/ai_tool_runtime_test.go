@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -533,11 +534,38 @@ VALUES (?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, 0, ?)`, restri
 	if err != nil || len(projected) != 2 || projected[0].Name != "meta__tool_search" || projected[1].Name != "meta__tool_load" {
 		t.Fatalf("initial projection must contain only search/load: %#v %v", projected, err)
 	}
+	if isLoaded, loadErr := service.IsLoaded(ctx, scopeID, "action:purchase.order_read"); loadErr != nil || isLoaded {
+		t.Fatalf("progressive tool must start unloaded: loaded=%v err=%v", isLoaded, loadErr)
+	}
+	if projectedNow, projectionErr := service.IsProjected(ctx, scopeID, "meta:tool.load"); projectionErr != nil || !projectedNow {
+		t.Fatalf("direct allowed tool must be executable without progressive load: projected=%v err=%v", projectedNow, projectionErr)
+	}
+	if projectedNow, projectionErr := service.IsProjected(ctx, scopeID, "action:purchase.order_read"); projectionErr != nil || projectedNow {
+		t.Fatalf("progressive tool must not be executable before load: projected=%v err=%v", projectedNow, projectionErr)
+	}
 	loaded, err := service.Load(ctx, ai.ToolLoadRequest{ScopeID: scopeID, ToolIDs: []string{"action:purchase.order_read"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	handle := loaded.(ai.ToolLoadResponse).Tools[0].Handle
+	loadedResponse := loaded.(ai.ToolLoadResponse)
+	if !slices.Equal(loadedResponse.NewlyLoadedToolIDs, []string{"action:purchase.order_read"}) || len(loadedResponse.AlreadyLoadedToolIDs) != 0 {
+		t.Fatalf("unexpected first load classification: %#v", loadedResponse)
+	}
+	handle := loadedResponse.Tools[0].Handle
+	if isLoaded, loadErr := service.IsLoaded(ctx, scopeID, "action:purchase.order_read"); loadErr != nil || !isLoaded {
+		t.Fatalf("loaded tool missing from scope: loaded=%v err=%v", isLoaded, loadErr)
+	}
+	if projectedNow, projectionErr := service.IsProjected(ctx, scopeID, "action:purchase.order_read"); projectionErr != nil || !projectedNow {
+		t.Fatalf("loaded progressive tool must remain projected: projected=%v err=%v", projectedNow, projectionErr)
+	}
+	repeated, err := service.Load(ctx, ai.ToolLoadRequest{ScopeID: scopeID, ToolIDs: []string{"action:purchase.order_read"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	repeatedResponse := repeated.(ai.ToolLoadResponse)
+	if len(repeatedResponse.NewlyLoadedToolIDs) != 0 || !slices.Equal(repeatedResponse.AlreadyLoadedToolIDs, []string{"action:purchase.order_read"}) {
+		t.Fatalf("repeat load must preserve cumulative scope without reclassification: %#v", repeatedResponse)
+	}
 	_, projected, err = service.ProjectModelTools(ctx, scopeID)
 	if err != nil || len(projected) != 3 {
 		t.Fatalf("loaded tool was not projected: %#v %v", projected, err)

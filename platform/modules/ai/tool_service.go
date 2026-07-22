@@ -112,8 +112,10 @@ type ToolLoadRequest struct {
 	ToolIDs []string `json:"tool_ids" validate:"required,min=1,max=3"`
 }
 type ToolLoadResponse struct {
-	ScopeID string              `json:"scope_id"`
-	Tools   []aitool.LoadedTool `json:"tools"`
+	ScopeID              string              `json:"scope_id"`
+	Tools                []aitool.LoadedTool `json:"tools"`
+	NewlyLoadedToolIDs   []string            `json:"newly_loaded_tool_ids"`
+	AlreadyLoadedToolIDs []string            `json:"already_loaded_tool_ids"`
 }
 type ToolExecuteRequest struct {
 	Handle         string          `json:"handle" validate:"required"`
@@ -270,6 +272,8 @@ func (s *ToolService) Load(ctx context.Context, r ToolLoadRequest) (any, error) 
 	}
 	now := time.Now().UTC()
 	out := []aitool.LoadedTool{}
+	newlyLoaded := []string{}
+	alreadyLoaded := []string{}
 	bytes := scope.SchemaBytes
 	for _, id := range r.ToolIDs {
 		d, ok := s.registry.Get(id)
@@ -293,6 +297,9 @@ func (s *ToolService) Load(ctx context.Context, r ToolLoadRequest) (any, error) 
 			}
 			loaded = append(loaded, id)
 			set[id] = true
+			newlyLoaded = append(newlyLoaded, id)
+		} else {
+			alreadyLoaded = append(alreadyLoaded, id)
 		}
 		exp := now.Add(toolHandleTTL)
 		if exp.After(scope.ExpiresAt) {
@@ -307,7 +314,31 @@ func (s *ToolService) Load(ctx context.Context, r ToolLoadRequest) (any, error) 
 	if err = s.db.WithContext(ctx).Model(&ToolScope{}).Where("id=? AND user_id=?", scope.ID, ac.UserID).Updates(map[string]any{"loaded_tools_json": jsonBytes(loaded), "schema_bytes": bytes}).Error; err != nil {
 		return nil, err
 	}
-	return ToolLoadResponse{ScopeID: scope.ID, Tools: out}, nil
+	return ToolLoadResponse{ScopeID: scope.ID, Tools: out, NewlyLoadedToolIDs: newlyLoaded, AlreadyLoadedToolIDs: alreadyLoaded}, nil
+}
+
+func (s *ToolService) IsLoaded(ctx context.Context, scopeID, toolID string) (bool, error) {
+	ac, err := toolActor(ctx)
+	if err != nil {
+		return false, err
+	}
+	scope, err := s.scope(ctx, ac, scopeID)
+	if err != nil {
+		return false, err
+	}
+	return contains(decodeStrings(scope.LoadedToolsJSON), toolID), nil
+}
+
+func (s *ToolService) IsProjected(ctx context.Context, scopeID, toolID string) (bool, error) {
+	ac, err := toolActor(ctx)
+	if err != nil {
+		return false, err
+	}
+	scope, err := s.scope(ctx, ac, scopeID)
+	if err != nil {
+		return false, err
+	}
+	return contains(decodeStrings(scope.AllowedToolsJSON), toolID) || contains(decodeStrings(scope.LoadedToolsJSON), toolID), nil
 }
 
 func (s *ToolService) Execute(ctx context.Context, r ToolExecuteRequest) (any, error) {

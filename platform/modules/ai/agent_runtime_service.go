@@ -711,7 +711,7 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 		if e := s.appendAssistantToolCalls(ctx, run, step, text, toolCalls); e != nil {
 			return s.fail(ctx, run, "assistant_tool_call_persist_failed")
 		}
-		for _, call := range toolCalls {
+		for callIndex, call := range toolCalls {
 			if run.ToolCalls >= budget.MaxToolCalls {
 				return s.fail(ctx, run, "tool_budget_exhausted")
 			}
@@ -724,6 +724,11 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 				return err
 			}
 			if waiting {
+				for _, deferredCall := range toolCalls[callIndex+1:] {
+					if err := s.appendSyntheticToolFailure(ctx, run, deferredCall, "deferred_for_confirmation", "tool call was not executed because another call requires confirmation; retry after confirmation if still needed"); err != nil {
+						return s.fail(ctx, run, "tool_result_persist_failed")
+					}
+				}
 				return nil
 			}
 		}
@@ -1220,18 +1225,12 @@ func (s *AgentRuntimeService) ensureToolScope(ctx context.Context, run *AgentRun
 
 func (s *AgentRuntimeService) executeToolCall(ctx context.Context, run *AgentRun, scopeID string, call aimodelruntime.OutputItem) (bool, error) {
 	stepType := aiagentruntime.StepToolExecute
-	if call.ToolName == modelToolName("meta:tool.search") {
+	toolID := s.registryToolID(call.ToolName)
+	if toolID == "meta:tool.search" {
 		stepType = aiagentruntime.StepToolSearch
 	}
-	if call.ToolName == modelToolName("meta:tool.load") {
+	if toolID == "meta:tool.load" {
 		stepType = aiagentruntime.StepToolLoad
-	}
-	toolID := ""
-	for _, d := range s.tools.registry.List() {
-		if modelToolName(d.ID) == call.ToolName {
-			toolID = d.ID
-			break
-		}
 	}
 	if metadata, ok := s.tools.registry.SlotMetadata(toolID); ok {
 		stepType = aiagentruntime.StepType(metadata.StepType)
@@ -1240,7 +1239,10 @@ func (s *AgentRuntimeService) executeToolCall(ctx context.Context, run *AgentRun
 	if stepErr != nil {
 		return false, stepErr
 	}
-	if call.ToolName == modelToolName("meta:tool.search") {
+	if toolID != "" && call.ToolName == toolID {
+		return s.appendToolResult(ctx, run, step, call, nil, &toolRuntimeError{category: "tool_name_invalid", summary: fmt.Sprintf("tool name uses a registry ID; load it first and call the projected model tool name %s", modelToolName(toolID)), recoverable: true})
+	}
+	if toolID == "meta:tool.search" {
 		var input aitool.MetaSearchInput
 		if json.Unmarshal(call.Arguments, &input) != nil {
 			return s.appendToolResult(ctx, run, step, call, nil, errs.Validation("invalid tool arguments"))
@@ -1248,7 +1250,7 @@ func (s *AgentRuntimeService) executeToolCall(ctx context.Context, run *AgentRun
 		value, err := s.tools.Search(ctx, ToolSearchRequest{ScopeID: scopeID, Query: input.Query, Capability: input.Capability, Source: input.Source, Limit: input.Limit})
 		return s.appendToolResult(ctx, run, step, call, value, err)
 	}
-	if call.ToolName == modelToolName("meta:tool.load") {
+	if toolID == "meta:tool.load" {
 		var input aitool.MetaLoadInput
 		if json.Unmarshal(call.Arguments, &input) != nil {
 			return s.appendToolResult(ctx, run, step, call, nil, errs.Validation("invalid tool arguments"))
@@ -1258,14 +1260,17 @@ func (s *AgentRuntimeService) executeToolCall(ctx context.Context, run *AgentRun
 			return s.appendToolResult(ctx, run, step, call, nil, err)
 		}
 		loaded := value.(ToolLoadResponse)
-		definitions := make([]aitool.Definition, 0, len(loaded.Tools))
-		for _, tool := range loaded.Tools {
-			definitions = append(definitions, tool.Definition)
-		}
-		return s.appendToolResult(ctx, run, step, call, map[string]any{"scope_id": loaded.ScopeID, "tools": definitions}, nil)
+		return s.appendToolResult(ctx, run, step, call, agentToolLoadResult(loaded), nil)
 	}
 	if toolID == "" {
-		return s.appendToolResult(ctx, run, step, call, nil, errs.New(errs.CodeNotFound, "tool unavailable"))
+		return s.appendToolResult(ctx, run, step, call, nil, &toolRuntimeError{category: "tool_unavailable", summary: "tool is unavailable; call meta__tool_search and meta__tool_load before retrying", recoverable: true})
+	}
+	projectedInScope, err := s.tools.IsProjected(ctx, scopeID, toolID)
+	if err != nil {
+		return s.appendToolResult(ctx, run, step, call, nil, err)
+	}
+	if !projectedInScope {
+		return s.appendToolResult(ctx, run, step, call, nil, &toolRuntimeError{category: "tool_not_loaded", summary: "tool is not loaded; call meta__tool_load first", recoverable: true})
 	}
 	loadedValue, err := s.tools.Load(ctx, ToolLoadRequest{ScopeID: scopeID, ToolIDs: []string{toolID}})
 	if err != nil {
@@ -1302,6 +1307,45 @@ func (s *AgentRuntimeService) executeToolCall(ctx context.Context, run *AgentRun
 		return true, nil
 	}
 	return s.appendToolResult(ctx, run, step, call, result, nil)
+}
+
+func (s *AgentRuntimeService) registryToolID(name string) string {
+	return resolveRegistryToolID(s.tools.registry.List(), name)
+}
+
+func resolveRegistryToolID(definitions []aitool.Definition, name string) string {
+	for _, definition := range definitions {
+		if definition.ID == name || modelToolName(definition.ID) == name {
+			return definition.ID
+		}
+	}
+	return ""
+}
+
+type modelToolLoadResult struct {
+	ScopeID              string              `json:"scope_id"`
+	Tools                []aitool.Definition `json:"tools"`
+	NewlyLoadedToolIDs   []string            `json:"newly_loaded_tool_ids"`
+	AlreadyLoadedToolIDs []string            `json:"already_loaded_tool_ids"`
+}
+
+func agentToolLoadResult(loaded ToolLoadResponse) modelToolLoadResult {
+	newlyLoaded := make(map[string]bool, len(loaded.NewlyLoadedToolIDs))
+	for _, id := range loaded.NewlyLoadedToolIDs {
+		newlyLoaded[id] = true
+	}
+	definitions := make([]aitool.Definition, 0, len(loaded.NewlyLoadedToolIDs))
+	for _, tool := range loaded.Tools {
+		if newlyLoaded[tool.Definition.ID] {
+			definitions = append(definitions, tool.Definition)
+		}
+	}
+	return modelToolLoadResult{
+		ScopeID:              loaded.ScopeID,
+		Tools:                definitions,
+		NewlyLoadedToolIDs:   loaded.NewlyLoadedToolIDs,
+		AlreadyLoadedToolIDs: loaded.AlreadyLoadedToolIDs,
+	}
 }
 
 func (s *AgentRuntimeService) appendAssistantToolCalls(ctx context.Context, run *AgentRun, step *AgentStep, text string, toolCalls []aimodelruntime.OutputItem) error {
@@ -1391,7 +1435,30 @@ func (s *AgentRuntimeService) appendToolResult(ctx context.Context, run *AgentRu
 	return false, err
 }
 
+func (s *AgentRuntimeService) appendSyntheticToolFailure(ctx context.Context, run *AgentRun, call aimodelruntime.OutputItem, category, summary string) error {
+	result := syntheticToolFailure(call.ToolCallID, category, summary)
+	encoded, _ := json.Marshal(result)
+	_, err := s.conversations.AppendRuntimeMessage(ctx, run.ConversationID, run.ID, "tool", fmt.Sprintf("run:%s:tool-result:%s", run.ID, call.ToolCallID), []aimodelruntime.ContentPart{{Type: aimodelruntime.PartToolResult, ToolCallID: call.ToolCallID, Result: encoded}})
+	return err
+}
+
+func syntheticToolFailure(callID, category, summary string) *aitool.Result {
+	return &aitool.Result{CallID: callID, Status: "failed", Summary: summary, ErrorCategory: category}
+}
+
+type toolRuntimeError struct {
+	category    string
+	summary     string
+	recoverable bool
+}
+
+func (e *toolRuntimeError) Error() string { return e.summary }
+
 func toolExecutionFailure(callID string, err error) (*aitool.Result, bool) {
+	var runtimeErr *toolRuntimeError
+	if errors.As(err, &runtimeErr) {
+		return &aitool.Result{CallID: callID, Status: "failed", Summary: runtimeErr.summary, ErrorCategory: runtimeErr.category}, runtimeErr.recoverable
+	}
 	category := toolExecutionErrorCategory(err)
 	summary := "tool execution failed"
 	recoverable := category == "invalid_arguments"
@@ -1431,11 +1498,15 @@ func (s *AgentRuntimeService) resumeConfirmation(ctx context.Context, run *Agent
 	if err := s.db.WithContext(ctx).Where("user_id=? AND id=?", run.UserID, *step.ConfirmationID).First(&c).Error; err != nil {
 		return false, s.fail(ctx, run, "confirmation_missing")
 	}
+	call := aimodelruntime.OutputItem{ToolCallID: c.ToolCallID, ToolName: modelToolName(c.ToolID)}
 	if c.Status == "pending" && c.ExpiresAt.After(s.now()) {
 		return false, s.waitForConfirmation(ctx, run, c.ID)
 	}
-	if c.Status == "rejected" || c.ExpiresAt.Before(s.now()) {
-		return false, s.fail(ctx, run, "confirmation_rejected")
+	if c.Status == "rejected" {
+		return false, s.finishRejectedConfirmation(ctx, run, &step, call, "confirmation_rejected", "tool call was not executed because confirmation was rejected")
+	}
+	if c.ExpiresAt.Before(s.now()) {
+		return false, s.finishRejectedConfirmation(ctx, run, &step, call, "confirmation_expired", "tool call was not executed because confirmation expired")
 	}
 	if s.currentConversationRevision(ctx, run) != run.ConversationRevision {
 		return false, s.fail(ctx, run, "conversation_revision_changed")
@@ -1448,7 +1519,6 @@ func (s *AgentRuntimeService) resumeConfirmation(ctx context.Context, run *Agent
 	if json.Unmarshal(inv.ResultJSON, &result) != nil {
 		return false, s.fail(ctx, run, "confirmation_result_unavailable")
 	}
-	call := aimodelruntime.OutputItem{ToolCallID: c.ToolCallID, ToolName: modelToolName(c.ToolID)}
 	_, err := s.appendToolResult(ctx, run, &step, call, &result, nil)
 	if err == nil && step.ParentStepID != nil {
 		var parent AgentStep
@@ -1457,6 +1527,21 @@ func (s *AgentRuntimeService) resumeConfirmation(ctx context.Context, run *Agent
 		}
 	}
 	return err == nil, err
+}
+
+func (s *AgentRuntimeService) finishRejectedConfirmation(ctx context.Context, run *AgentRun, step *AgentStep, call aimodelruntime.OutputItem, category, summary string) error {
+	messageErr := s.appendSyntheticToolFailure(ctx, run, call, category, summary)
+	stepErr := s.finishStep(ctx, run, step, "failed", map[string]any{"tool_call_id": call.ToolCallID, "reason": category}, category)
+	if step.ParentStepID != nil {
+		var parent AgentStep
+		if s.db.WithContext(ctx).Where("id=?", *step.ParentStepID).First(&parent).Error == nil {
+			stepErr = errors.Join(stepErr, s.finishStep(ctx, run, &parent, "failed", map[string]any{"confirmation_id": step.ConfirmationID, "reason": category}, category))
+		}
+	}
+	if err := errors.Join(messageErr, stepErr); err != nil {
+		return err
+	}
+	return s.fail(ctx, run, category)
 }
 
 func stepLimitAfterConfirmation(configured, current int, resumed bool) int {

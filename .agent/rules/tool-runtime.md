@@ -10,12 +10,14 @@
 - 核心工具必须实现独立 `RuntimeSlot` 并经 `platform/modules/ai/tools/register.go` 显式聚合；禁止扫描源码、Go Plugin、隐藏 `init()`，禁止在 ToolService/Agent Runtime 增加业务 Tool ID 分支。
 - Action 是否暴露以注册处的 `Metadata.AI` 为唯一事实源；仅 `AIMeta.ExposeTool=true` 自动投影，`AI=nil` 默认不暴露。输入/输出 Schema 必须由同一强类型 DTO 生成，Action Tool 只经 `ActionRegistry.Invoke`，禁止维护平行暴露清单。
 - Scope 精确 Tool 与来源/能力白名单按“精确命中或来源+能力命中”授权，但 Action 禁止通过精确 Binding 授权，只能命中 Contract 来源+能力；来源/能力只开放渐进 search/load，禁止未 load Schema 进入模型初始投影。
+- 同一 Run 的 loaded tools 只能递增；Progressive 工具未投影时必须先显式 load，普通执行禁止隐式扩容。重复 load 只返回紧凑状态，不重复写完整 Schema；不同 Run 不继承 Scope。Registry ID 只用于 search/load，执行只接受投影模型名；名称混用必须可恢复且不得阻断同批后续发现调用。
 - Catalog 在模块注册完成、新租户初始化或显式 rebuild 时幂等投影；请求路径禁止写 Catalog。变更以单调 revision 同事务写 Outbox，移除/停用立即 stale，重复/乱序事件不得覆盖当前 Search Document。
 - 语义索引只经统一 Embedding Runtime（`purpose=tool_index`）和 Outbox→Job 写 pgvector；Alias、deployment、dimensions、preprocessing、schema/revision 必须匹配。失败自动降级 exact + 中文词法/FTS，混合排序不得先于权限和 Scope 过滤。
 - search/load/execute 每次重新应用 tenant、realm、permission、Scope 与启用状态；Embedding/索引绝不是权限事实源。
 - project/search/load/execute 共用 Slot 动态可用性协议且只能收紧权限；Step/Invocation 分类、专用预算和事实摘要由 Slot 元数据生成，观测只持久化白名单字段。
 - Handle 绑定 actor/session/auth version/scope/tool/runtime/schema hash/TTL；任何变化立即失效。
 - 写/外部/付费/破坏性/high 必须单次确认，critical 默认禁止；批准后重新鉴权，不支持始终允许。
+- 同批 Tool Call 遇确认后停止执行剩余调用并逐个追加 deferred Tool Result；批准、拒绝、过期等确认终态必须保证所有 Tool Call/Result 配对，禁止永久等待。
 - Invocation 终态与 Outbox 同事务，日志/Outbox/审计禁止完整参数、结果、Secret 和原始第三方响应。
 - `knowledge.search` 必须经 Registry/Scope/Executor，且仅在存在当前可读、enabled、ready 的 Agent 绑定库时投影；知识正文不得进入 Invocation/Step/事件事实摘要。
 - 测试统一放在 `platform/tests`。详见 `docs/development/tool-runtime.md`。

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/yzxingtu2026/ainp/platform/framework/action"
+	"github.com/yzxingtu2026/ainp/platform/framework/aitool"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 	"github.com/yzxingtu2026/ainp/platform/framework/pagination"
 )
@@ -73,6 +74,61 @@ func TestInvalidArgumentsIsTheOnlyRecoverableToolError(t *testing.T) {
 		if got && result.Summary != "tool arguments are invalid; correct them to match the input schema and retry" {
 			t.Fatalf("recoverable failure must guide model retry: %#v", result)
 		}
+	}
+}
+
+func TestToolNotLoadedFailureGuidesProgressiveLoad(t *testing.T) {
+	result, recoverable := toolExecutionFailure("call-load", &toolRuntimeError{category: "tool_not_loaded", summary: "tool is not loaded; call meta__tool_load first", recoverable: true})
+	if !recoverable || result.Status != "failed" || result.ErrorCategory != "tool_not_loaded" {
+		t.Fatalf("unexpected progressive load failure: %#v recoverable=%v", result, recoverable)
+	}
+	if result.Summary != "tool is not loaded; call meta__tool_load first" {
+		t.Fatalf("missing load guidance: %#v", result)
+	}
+}
+
+func TestUnknownToolFailureLetsLaterDiscoveryCallsRun(t *testing.T) {
+	result, recoverable := toolExecutionFailure("call-unknown", &toolRuntimeError{category: "tool_unavailable", summary: "search and load before retrying", recoverable: true})
+	if !recoverable || result.ErrorCategory != "tool_unavailable" || result.Summary != "search and load before retrying" {
+		t.Fatalf("unexpected unavailable tool result: %#v recoverable=%v", result, recoverable)
+	}
+}
+
+func TestResolveRegistryToolIDAcceptsModelNameAndStableID(t *testing.T) {
+	definitions := []aitool.Definition{{ID: "action:system.user_update"}}
+	for _, name := range []string{"action__system_user_update", "action:system.user_update"} {
+		if got := resolveRegistryToolID(definitions, name); got != definitions[0].ID {
+			t.Fatalf("resolve %q got %q", name, got)
+		}
+	}
+	if got := resolveRegistryToolID(definitions, "action__missing"); got != "" {
+		t.Fatalf("unknown tool resolved as %q", got)
+	}
+}
+
+func TestRegistryIDToolNameIsRecoverableButNotExecutableAlias(t *testing.T) {
+	result, recoverable := toolExecutionFailure("call-id", &toolRuntimeError{category: "tool_name_invalid", summary: "call the projected model tool name", recoverable: true})
+	if !recoverable || result.ErrorCategory != "tool_name_invalid" {
+		t.Fatalf("unexpected registry ID failure: %#v recoverable=%v", result, recoverable)
+	}
+}
+
+func TestSyntheticDeferredToolFailurePairsPendingCall(t *testing.T) {
+	result := syntheticToolFailure("call-deferred", "deferred_for_confirmation", "retry after confirmation")
+	if result.CallID != "call-deferred" || result.Status != "failed" || result.ErrorCategory != "deferred_for_confirmation" || result.Summary != "retry after confirmation" {
+		t.Fatalf("unexpected deferred result: %#v", result)
+	}
+}
+
+func TestAgentToolLoadResultOmitsDefinitionsForRepeatedLoads(t *testing.T) {
+	definition := aitool.Definition{ID: "action:system.user_list"}
+	first := agentToolLoadResult(ToolLoadResponse{ScopeID: "scope-1", Tools: []aitool.LoadedTool{{Definition: definition}}, NewlyLoadedToolIDs: []string{definition.ID}, AlreadyLoadedToolIDs: []string{}})
+	if len(first.Tools) != 1 || first.Tools[0].ID != definition.ID {
+		t.Fatalf("first load must return the new definition: %#v", first)
+	}
+	repeated := agentToolLoadResult(ToolLoadResponse{ScopeID: "scope-1", Tools: []aitool.LoadedTool{{Definition: definition}}, NewlyLoadedToolIDs: []string{}, AlreadyLoadedToolIDs: []string{definition.ID}})
+	if len(repeated.Tools) != 0 || len(repeated.AlreadyLoadedToolIDs) != 1 || repeated.AlreadyLoadedToolIDs[0] != definition.ID {
+		t.Fatalf("repeated load must return compact state: %#v", repeated)
 	}
 }
 
