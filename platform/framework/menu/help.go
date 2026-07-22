@@ -154,6 +154,18 @@ func (r *HelpRegistry) ValidateMenus(registry *Registry) error {
 	return nil
 }
 
+func (r *HelpRegistry) ValidateModuleCoverage(registry *Registry, module, locale string) error {
+	for _, item := range registry.List() {
+		if item.Module != module || !isSearchableMenu(item) {
+			continue
+		}
+		if _, ok := r.Get(item.ID, locale); !ok {
+			return fmt.Errorf("searchable menu requires reviewed page help for %s: %s", locale, item.ID)
+		}
+	}
+	return nil
+}
+
 func (r *HelpRegistry) Get(menuID, locale string) (HelpDocument, bool) {
 	document, ok := r.documents[helpKey(menuID, locale)]
 	if !ok && locale != "zh-CN" {

@@ -22,6 +22,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
 	"github.com/yzxingtu2026/ainp/platform/framework/prompt"
 	"github.com/yzxingtu2026/ainp/platform/framework/setting"
+	aihelp "github.com/yzxingtu2026/ainp/platform/modules/ai/help"
 	aitools "github.com/yzxingtu2026/ainp/platform/modules/ai/tools"
 	knowledgetool "github.com/yzxingtu2026/ainp/platform/modules/ai/tools/knowledge"
 	memorytool "github.com/yzxingtu2026/ainp/platform/modules/ai/tools/memory"
@@ -460,7 +461,13 @@ func Register(a *app.App) error {
 			return err
 		}
 	}
-	return nil
+	if err := aihelp.Register(a.PageHelp); err != nil {
+		return fmt.Errorf("register AI page help: %w", err)
+	}
+	if err := a.PageHelp.ValidateMenus(a.Menus); err != nil {
+		return err
+	}
+	return a.PageHelp.ValidateModuleCoverage(a.Menus, "ai", "zh-CN")
 }
 
 func NewBuiltinAgentContractRegistry() (*aiagent.Registry, error) {

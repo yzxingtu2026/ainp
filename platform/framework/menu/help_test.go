@@ -82,3 +82,30 @@ func TestHelpRegistryRejectsInvalidAssets(t *testing.T) {
 		t.Fatal("expected unknown menu error")
 	}
 }
+
+func TestHelpRegistryRequiresDefaultLocaleForSearchableModuleMenus(t *testing.T) {
+	registry := NewRegistry()
+	for _, item := range []Menu{
+		{ID: "system.users", Type: TypeMenu, Path: "/system/users", Module: "system", Surface: auth.RealmTenant},
+		{ID: "system.hidden", Type: TypeMenu, Path: "/system/hidden", Module: "system", HideInMenu: true, Surface: auth.RealmTenant},
+		{ID: "operations.jobs", Type: TypeMenu, Path: "/operations/jobs", Module: "operations", Surface: auth.RealmTenant},
+	} {
+		if err := registry.Register(item); err != nil {
+			t.Fatal(err)
+		}
+	}
+	help := NewHelpRegistry()
+	if err := help.ValidateModuleCoverage(registry, "system", "zh-CN"); err == nil {
+		t.Fatal("expected missing searchable system menu help")
+	}
+	document, err := ParseHelpDocument("system.users.zh-CN.md", []byte("---\nmenu_id: system.users\nversion: 1.0.0\nlocale: zh-CN\nuse_cases: [查询用户]\n---\n# 用户管理"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := help.Register(document); err != nil {
+		t.Fatal(err)
+	}
+	if err := help.ValidateModuleCoverage(registry, "system", "zh-CN"); err != nil {
+		t.Fatal(err)
+	}
+}

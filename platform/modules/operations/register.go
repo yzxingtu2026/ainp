@@ -11,6 +11,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/capability"
 	"github.com/yzxingtu2026/ainp/platform/framework/menu"
 	"github.com/yzxingtu2026/ainp/platform/framework/pagination"
+	operationshelp "github.com/yzxingtu2026/ainp/platform/modules/operations/help"
 )
 
 const (
@@ -159,5 +160,11 @@ func registerMenus(a *app.App, includeDeliveries bool) error {
 			return err
 		}
 	}
-	return nil
+	if err := operationshelp.Register(a.PageHelp, includeDeliveries); err != nil {
+		return fmt.Errorf("register operations page help: %w", err)
+	}
+	if err := a.PageHelp.ValidateMenus(a.Menus); err != nil {
+		return err
+	}
+	return a.PageHelp.ValidateModuleCoverage(a.Menus, "operations", "zh-CN")
 }
