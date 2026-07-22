@@ -235,6 +235,7 @@ func Register(a *app.App) error {
 	compactions.SetMemoryFlushHook(memoryExtraction)
 	a.ContextCompactor = compactions
 	agentRuntime := NewAgentRuntimeService(a.DB, conversations, invocations, tools, compactions, writer, a.Authorization, a.PageContexts, a.RuntimeContextProvider)
+	agentRuntime.SetBudgetProvider(NewRuntimeBudgetProvider(a.SettingValues))
 	agentRuntime.SetAgentContracts(contracts)
 	agentRuntime.SetMemoryRetriever(memoryRetriever)
 	tools.SetConfirmationHooks(agentRuntime.OnConfirmationPending, agentRuntime.OnConfirmationDecided)

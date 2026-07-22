@@ -8,6 +8,25 @@ Run 固定 tenant、actor、session/auth version、origin request ID、trace ID�
 
 Run 状态为 queued/running/waiting_confirmation/paused/completed/failed/cancelled；Step 为 pending/running/waiting/completed/failed/skipped/cancelled。非法迁移 fail-closed，completed/cancelled 不可恢复；failed 只能显式 retry。
 
+## 运行预算
+
+租户管理员只通过“系统设置 → AI → Agent 运行预算”维护 `ai.agent_runtime_budget`。解析顺序固定为：平台硬上限 → 租户设置默认/覆盖 → Run 创建时固化。客户端 Start 请求不接受预算字段，不能放大服务端限制；Agent Version 级覆盖属于未来能力，首期不实现。
+
+Run 固化的版本化预算使用 `schema_version=1` 与 snake_case 字段：`max_steps`、`max_model_calls`、`max_tool_calls`、`max_compactions`、`max_duration_seconds`、`run_token_budget`。历史 PascalCase `BudgetJSON`（含 `MaxTokens`）仅做兼容读取，新 Run 禁止继续写旧格式。设置读取或类型转换失败必须 fail-closed；已经创建的 Run 始终读取自身快照，不受后续设置修改影响。
+
+`run_token_budget` 是整个 Run 的累计 input + output Token 上限，不是单次模型上下文容量。单次上下文容量统一按目标 Deployment 的 `context_window - reserved_output_tokens - safety_margin_tokens` 计算，默认输出预留为 Deployment `max_output_tokens`（缺失时 2048），安全余量为上下文窗口的 10%；ContextAssembler 与 ContextCompactor 必须复用同一算法，后者再扣除 instructions、工具 Schema 和附件预算。
+
+平台默认值与硬范围：
+
+| 字段 | 默认值 | 范围 |
+| --- | ---: | ---: |
+| `max_steps` | 24 | 1–100 |
+| `max_model_calls` | 8 | 1–32 |
+| `max_tool_calls` | 12 | 0–64 |
+| `max_compactions` | 2 | 0–3 |
+| `max_duration_seconds` | 300 | 10–1800 |
+| `run_token_budget` | 100000 | 1–10000000 |
+
 Builder 预览约束：
 
 - Conversation `purpose=builder_preview` 时允许 agent 为 `draft` 或 `enabled` 执行；`disabled` 仍 fail-closed。

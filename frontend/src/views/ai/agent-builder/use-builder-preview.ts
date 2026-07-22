@@ -371,7 +371,7 @@ export function useBuilderPreview(options: {
       images.value = [];
       await refreshMessages();
       const { data: started, error: runError } = await startAIAgentRun(
-        { conversation_id: conv.id, trigger_message_id: userMsg.id, budget: {} },
+		{ conversation_id: conv.id, trigger_message_id: userMsg.id },
         newIdempotencyKey('builder-run')
       );
       if (runError || !started) throw runError || new Error($t('page.agentBuilder.previewRunFailed'));

@@ -73,6 +73,8 @@ VisibleWhen: &setting.VisibleWhen{Field: "mode", In: []any{"a", "b"}}
 
 长期记忆租户默认值注册为 `ai.memory_policy`。Agent 模块只能通过注入的 `setting.Provider` 读取并类型化解析；管理员修改默认值不会改写已经发布的 Agent Version。
 
+Agent Runtime 预算注册为 `ai.agent_runtime_budget`。Agent 模块通过类型化 `RuntimeBudgetProvider` 读取，严格校验整数与平台范围并在 Run 创建时固化；业务禁止散落解析设置值，客户端不得提交预算，后续修改仅影响新 Run。累计 `run_token_budget` 与 Deployment 决定的单次上下文容量是两个独立概念。
+
 Tool Runtime 语义检索 Alias 注册为 `ai.tool_search.embedding_model_alias`。空值明确表示词法降级；修改 Alias 后调用 `ai.tool_catalog_rebuild` 生成新 revision 并重建向量，禁止直接修改 Search Document provenance。
 
 Navigation 语义检索 Alias 注册为 `ai.navigation_search.embedding_model_alias`。保存或重置后由 Change Hook 立即 reconcile，并经 Outbox → Job 异步更新；设置页面展示 disabled/not_indexed/pending/ready/failed/degraded，允许具有 `system.setting_update` 权限的用户立即重建。

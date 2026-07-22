@@ -349,7 +349,6 @@ function createAiConversationController() {
         {
           conversation_id: current.id,
           trigger_message_id: userMessage.id,
-          budget: {},
           page_context: capturePageContext()
         },
         idempotencyKey('workspace-run')
