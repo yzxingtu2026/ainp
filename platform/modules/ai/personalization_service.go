@@ -23,6 +23,7 @@ import (
 const AssistantPersonalizationSettingKey = "ai.assistant_personalization"
 const AssistantPersonalizationEvent = "ai.assistant_personalization.refresh_requested.v1"
 const AssistantPersonalizationJobType = "ai.assistant_personalization.generate"
+const assistantPersonalizationPromptVersion = "1.1.0"
 
 type PersonalizationSuggestion struct {
 	Title      string  `json:"title"`
@@ -66,16 +67,30 @@ func (s *PersonalizationService) config(ctx context.Context, tenant string) (boo
 	alias, _ := v.Values["model_alias"].(string)
 	return enabled, strings.TrimSpace(alias), v.Revision, nil
 }
-func fallback(ac *auth.Context) PersonalizationResponse {
-	if strings.HasPrefix(strings.ToLower(ac.Language), "en") {
-		return PersonalizationResponse{Greeting: "What would you like to work on today?", Suggestions: []PersonalizationSuggestion{{Title: "Continue recent work", Prompt: "Help me continue my unfinished recent work", SourceType: "general"}, {Title: "Review priorities", Prompt: "Help me identify today's highest priority work", SourceType: "general"}}, ContextScope: "global"}
+func (s *PersonalizationService) fallback(ctx context.Context, ac *auth.Context) PersonalizationResponse {
+	locale, timezone, address := ac.Language, "UTC", ""
+	if s.runtimeContext != nil {
+		if trusted, err := s.runtimeContext.Build(ctx, runtimecontext.BuildRequest{TenantID: ac.TenantID, UserID: ac.UserID}); err == nil {
+			locale, timezone, address = trusted.Locale, trusted.Time.Timezone, trusted.PreferredAddress
+		}
 	}
-	return PersonalizationResponse{Greeting: "你好，今天想先处理什么？", Suggestions: []PersonalizationSuggestion{{Title: "继续最近的工作", Prompt: "帮我继续整理最近未完成的工作", SourceType: "general"}, {Title: "查看当前重点", Prompt: "帮我梳理今天最值得优先处理的事项", SourceType: "general"}}, ContextScope: "global"}
+	if strings.HasPrefix(strings.ToLower(locale), "en") {
+		body := "What would you like to work on today?"
+		if address != "" {
+			body = address + ", " + body
+		}
+		return PersonalizationResponse{Greeting: renderTimeGreeting(body, locale, timezone, s.now()), Suggestions: []PersonalizationSuggestion{{Title: "Continue recent work", Prompt: "Help me continue my unfinished recent work", SourceType: "general"}, {Title: "Review priorities", Prompt: "Help me identify today's highest priority work", SourceType: "general"}}, ContextScope: "global"}
+	}
+	body := "今天想先处理什么？"
+	if address != "" {
+		body = address + "。" + body
+	}
+	return PersonalizationResponse{Greeting: renderTimeGreeting(body, locale, timezone, s.now()), Suggestions: []PersonalizationSuggestion{{Title: "继续最近的工作", Prompt: "帮我继续整理最近未完成的工作", SourceType: "general"}, {Title: "查看当前重点", Prompt: "帮我梳理今天最值得优先处理的事项", SourceType: "general"}}, ContextScope: "global"}
 }
 
 func (s *PersonalizationService) Read(ctx context.Context, _ struct{}) (PersonalizationResponse, error) {
 	ac := auth.MustFromContext(ctx)
-	result := fallback(ac)
+	result := s.fallback(ctx, ac)
 	enabled, _, rev, e := s.config(ctx, ac.TenantID)
 	if e != nil {
 		return result, e
@@ -98,11 +113,11 @@ func (s *PersonalizationService) Read(ctx context.Context, _ struct{}) (Personal
 		return result, e
 	}
 	_ = json.Unmarshal(row.SuggestionsJSON, &result.Suggestions)
-	result.Greeting = row.Greeting
+	result.Greeting = renderTimeGreeting(row.Greeting, row.Locale, row.Timezone, s.now())
 	result.GeneratedAt = &row.GeneratedAt
 	result.ContextScope = row.ContextScope
 	result.Freshness = "fresh"
-	if row.Status != "ready" || !row.ExpiresAt.After(s.now()) {
+	if row.Status != "ready" || row.PromptVersion != assistantPersonalizationPromptVersion || !row.ExpiresAt.After(s.now()) {
 		result.Freshness = "stale"
 		_ = s.request(ctx, row.GenerationRevision+1)
 	}
@@ -180,7 +195,7 @@ type personalizationContext struct {
 func (s *PersonalizationService) buildContext(ctx context.Context, user, slot string) (personalizationContext, map[string]any, error) {
 	ac := auth.MustFromContext(ctx)
 	input := personalizationContext{Locale: "zh-CN", Timezone: "UTC", AllowedSourceTypes: []string{"general", "recent_work", "memory_profile"}}
-	versions := map[string]any{"prompt": "1.0.0"}
+	versions := map[string]any{"prompt": assistantPersonalizationPromptVersion}
 	var agentID string
 	if s.slots != nil {
 		resolved, err := s.slots.Resolve(ctx, AgentSlotGetRequest{SlotKey: slot})
@@ -288,7 +303,7 @@ func (s *PersonalizationService) Generate(ctx context.Context, user, slot string
 	body, _ := json.Marshal(contextInput)
 	max := int64(700)
 	temp := 0.3
-	raw, e := s.generator.Generate(ctx, aimodelruntime.GenerateRequest{ModelAlias: alias, Instructions: prompt.MustGet("ai/assistant-personalization"), Messages: []aimodelruntime.Message{{Role: aimodelruntime.RoleUser, Content: []aimodelruntime.ContentPart{{Type: aimodelruntime.PartInputText, Text: string(body)}}}}, StructuredOutput: &aimodelruntime.StructuredOutput{Name: "assistant_personalization", Strict: true, Schema: personalizationSchema()}, MaxOutputTokens: &max, Temperature: &temp, TimeoutMS: 60000, Metadata: map[string]string{"purpose": "assistant_personalization", "prompt_version": "1.0.0"}})
+	raw, e := s.generator.Generate(ctx, aimodelruntime.GenerateRequest{ModelAlias: alias, Instructions: prompt.MustGet("ai/assistant-personalization"), Messages: []aimodelruntime.Message{{Role: aimodelruntime.RoleUser, Content: []aimodelruntime.ContentPart{{Type: aimodelruntime.PartInputText, Text: string(body)}}}}, StructuredOutput: &aimodelruntime.StructuredOutput{Name: "assistant_personalization", Strict: true, Schema: personalizationSchema()}, MaxOutputTokens: &max, Temperature: &temp, TimeoutMS: 60000, Metadata: map[string]string{"purpose": "assistant_personalization", "prompt_version": assistantPersonalizationPromptVersion}})
 	if e != nil {
 		return e
 	}
@@ -313,7 +328,7 @@ func (s *PersonalizationService) Generate(ctx context.Context, user, slot string
 	versionsJSON, _ := json.Marshal(sourceVersions)
 	contextDigest := sha256.Sum256(body)
 	now := s.now()
-	row := AssistantPersonalizationSnapshot{ID: uuid.NewString(), TenantID: ac.TenantID, UserID: user, SlotKey: slot, AgentVersionID: contextInput.AgentVersionID, Locale: contextInput.Locale, Timezone: contextInput.Timezone, ContextScope: "global", ContextHash: fmt.Sprintf("%x", contextDigest), Greeting: value.Greeting, SuggestionsJSON: suggestions, SourceVersionsJSON: versionsJSON, ModelAlias: alias, PromptVersion: "1.0.0", Status: "ready", GenerationRevision: revision, GeneratedAt: now, ExpiresAt: now.Add(24 * time.Hour)}
+	row := AssistantPersonalizationSnapshot{ID: uuid.NewString(), TenantID: ac.TenantID, UserID: user, SlotKey: slot, AgentVersionID: contextInput.AgentVersionID, Locale: contextInput.Locale, Timezone: contextInput.Timezone, ContextScope: "global", ContextHash: fmt.Sprintf("%x", contextDigest), Greeting: canonicalGreeting(value.Greeting), SuggestionsJSON: suggestions, SourceVersionsJSON: versionsJSON, ModelAlias: alias, PromptVersion: assistantPersonalizationPromptVersion, Status: "ready", GenerationRevision: revision, GeneratedAt: now, ExpiresAt: now.Add(24 * time.Hour)}
 	repo, e := personalizationRepository(ctx, s.db)
 	if e != nil {
 		return e
@@ -338,6 +353,61 @@ func optionalPersonalizationSnapshot(repo *tenantdata.Repository[AssistantPerson
 		return AssistantPersonalizationSnapshot{}, false, err
 	}
 	return rows[0], true, nil
+}
+
+func canonicalGreeting(value string) string {
+	value = strings.TrimSpace(value)
+	prefixes := []string{"早上好", "上午好", "中午好", "下午好", "晚上好", "夜深了", "good morning", "good afternoon", "good evening"}
+	lower := strings.ToLower(value)
+	for _, prefix := range prefixes {
+		if strings.HasPrefix(lower, prefix) {
+			value = strings.TrimSpace(value[len(prefix):])
+			value = strings.TrimLeft(value, "，,：:！!。. ")
+			break
+		}
+	}
+	return value
+}
+
+func renderTimeGreeting(body, locale, timezone string, now time.Time) string {
+	location, err := time.LoadLocation(timezone)
+	if err != nil {
+		location = time.UTC
+	}
+	hour := now.In(location).Hour()
+	english := strings.HasPrefix(strings.ToLower(locale), "en")
+	period := "晚上好"
+	if english {
+		period = "Good evening"
+	}
+	switch {
+	case hour >= 5 && hour < 12:
+		if english {
+			period = "Good morning"
+		} else {
+			period = "早上好"
+		}
+	case hour >= 12 && hour < 14:
+		if english {
+			period = "Good afternoon"
+		} else {
+			period = "中午好"
+		}
+	case hour >= 14 && hour < 18:
+		if english {
+			period = "Good afternoon"
+		} else {
+			period = "下午好"
+		}
+	}
+	body = canonicalGreeting(body)
+	if body == "" {
+		return period
+	}
+	if english {
+		return period + ", " + body
+	}
+	return period + "，" + body
 }
 func validPersonalization(g string, ss []PersonalizationSuggestion) bool {
 	if len([]rune(g)) == 0 || len([]rune(g)) > 120 || len(ss) == 0 || len(ss) > 4 || strings.ContainsAny(g, "<>") {

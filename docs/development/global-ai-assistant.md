@@ -39,6 +39,8 @@ Header launcher 在所有 layout mode 中显示，但仍以动态路由中 `shel
 
 Memory Current Profile 重建完成以及 `workspace.default` Slot 绑定/个人偏好变化后，将当前用户快照标记为 stale 并通过 Outbox 合并刷新。Run 结束本身不立即生成，避免在记忆提取和画像重建之前产生重复、过早的快照。
 
+时间段问候属于读取时确定性派生值，不属于模型快照。模型只保存稳定 greeting body；读取接口按快照 locale、用户时区和当前服务器 UTC 时间动态组合早上/中午/下午/晚上问候，并兼容清理旧快照中的时段前缀。禁止依赖快照生成时间判断当前时段。
+
 ## 二级视图
 
 History 复用 `ConversationPanel`，支持新建、选择、重命名、归档与恢复。Run 详情在面板内部展示安全状态和 Step 时间线，不嵌套 Drawer。展开 Workspace 复用当前 controller，保留 Conversation、草稿和可恢复 Run。

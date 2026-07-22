@@ -11,6 +11,7 @@
 - 三个入口统一读取可重建 personalization snapshot；读取不得同步等待模型，disabled/missing 立即 fallback，输入、推荐点击或绑定 Conversation 后冻结本次欢迎区。
 - 快照不得写入 Conversation/Memory；生成仅走 Model Runtime，不得创建 Agent Run、调用工具或回退未配置模型。
 - 个性化输入只允许预算化 Runtime Context、Agent Slot Version、Memory Current Profile 和近期 Run 摘要；禁止完整对话、原始记忆与页面正文。画像重建完成或 Workspace Slot 变化后再失效刷新。
+- 时段问候必须由服务端在每次读取时按用户时区动态计算；模型快照只保存稳定 greeting body，禁止固化“早上好/下午好/晚上好”。
 - 桌面宽度、移动全屏、长内容 overflow、焦点返回、Escape、ARIA、Tooltip 与 reduced-motion 必须验证。
 
 详规：`docs/development/global-ai-assistant.md`
