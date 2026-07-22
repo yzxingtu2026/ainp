@@ -13,6 +13,7 @@
 - 字段关联显隐只用声明式 `visible_when`（同组兄弟字段 + `eq`/`in`）；禁止表达式/脚本；隐藏字段跳过必填校验且保留值。
 - 启动配置（DSN/JWT/端口）不得纳入设置系统；Setting 不承载状态/业务字典。
 - `ai.memory_policy` 只由 Settings Action 管理；Agent 模块经类型化 Provider 读取并在发布时冻结，禁止直接读写设置表或散落 JSON。
+- `ai.agent_runtime_budget` 只由 Settings Action 管理；Agent 模块经类型化 Provider 读取并在 Run 创建时冻结，读取/类型/范围异常 fail-closed，客户端不得覆盖。
 - 设置提交后的模块派生刷新必须订阅 `setting.ChangeRegistry`；Hook 只接收 tenant/user/key/operation，失败不得伪装设置已回滚，模块需提供状态与恢复入口。
 - 变更同步 `docs/development/settings-system.md` 并 `agent-rules sync`。
 

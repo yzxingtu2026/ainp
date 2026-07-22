@@ -49,8 +49,12 @@ type AgentRuntimeService struct {
 	pageContexts    *pagecontext.Registry
 	memoryRetriever *MemoryRetrievalService
 	contracts       *aiagent.Registry
-	leaseDuration   time.Duration
-	now             func() time.Time
+	budgetProvider  *RuntimeBudgetProvider
+	contextBudget   interface {
+		ContextTokenLimit(context.Context, string) (int, error)
+	}
+	leaseDuration time.Duration
+	now           func() time.Time
 }
 
 func (s *AgentRuntimeService) SetMemoryRetriever(retriever *MemoryRetrievalService) {
@@ -69,13 +73,20 @@ func NewAgentRuntimeService(db *gorm.DB, c *ConversationService, i *InvocationSe
 	if len(runtimeContext) > 0 {
 		provider = runtimeContext[0]
 	}
-	return &AgentRuntimeService{db: tenantdata.GuardedDB(db), conversations: c, invocations: i, tools: t, compactor: compactor, writer: w, authorization: authorization, runtimeContext: provider, pageContexts: pageContexts, leaseDuration: 30 * time.Second, now: func() time.Time { return time.Now().UTC() }}
+	service := &AgentRuntimeService{db: tenantdata.GuardedDB(db), conversations: c, invocations: i, tools: t, compactor: compactor, writer: w, authorization: authorization, runtimeContext: provider, pageContexts: pageContexts, leaseDuration: 30 * time.Second, now: func() time.Time { return time.Now().UTC() }}
+	service.contextBudget, _ = compactor.(interface {
+		ContextTokenLimit(context.Context, string) (int, error)
+	})
+	return service
+}
+
+func (s *AgentRuntimeService) SetBudgetProvider(provider *RuntimeBudgetProvider) {
+	s.budgetProvider = provider
 }
 
 type AgentRunStartRequest struct {
 	ConversationID   string                `json:"conversation_id" validate:"required"`
 	TriggerMessageID string                `json:"trigger_message_id" validate:"required"`
-	Budget           aiagentruntime.Budget `json:"budget"`
 	PageContext      *pagecontext.Envelope `json:"page_context,omitempty"`
 }
 
@@ -152,11 +163,12 @@ WHERE tenant_id=? AND conversation_id=? AND id=? AND role=? AND status=? LIMIT 1
 		return nil, errs.New(errs.CodeNotFound, "trigger message not found")
 	}
 	trigger := triggers[0]
-	budget := r.Budget.Normalize()
-	if err = budget.Validate(); err != nil {
-		return nil, errs.New(errs.CodeValidation, err.Error())
+	budget, budgetSource, err := s.budgetProvider.Resolve(ctx, ac.TenantID)
+	if err != nil {
+		return nil, errs.New(errs.CodeInternal, "agent runtime budget unavailable")
 	}
 	budgetJSON, _ := json.Marshal(budget)
+	logging.Info(ctx, "agent runtime budget resolved", "source", budgetSource, "max_steps", budget.MaxSteps, "max_model_calls", budget.MaxModelCalls, "max_tool_calls", budget.MaxToolCalls, "max_compactions", budget.MaxCompactions, "max_duration_seconds", budget.MaxDurationSeconds, "run_token_budget", budget.RunTokenBudget)
 	pageContextJSON := json.RawMessage(`{}`)
 	pageContextType, pageContextStatus, pageContextBytes := "", "none", 0
 	if r.PageContext != nil {
@@ -478,6 +490,10 @@ func (s *AgentRuntimeService) claim(ctx context.Context, runID, worker string) (
 		run.Status = "running"
 		run.LeaseOwner = worker
 		run.LeaseExpiresAt = &expires
+		if run.StartedAt == nil {
+			startedAt := now
+			run.StartedAt = &startedAt
+		}
 		run.Revision++
 		return s.appendEvent(ctx, tx, &run, "run.started", nil, map[string]any{"worker": worker})
 	})
@@ -566,11 +582,14 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 		ctx = pagecontext.WithSnapshot(ctx, pageSnapshot)
 	}
 	var budget aiagentruntime.Budget
-	if json.Unmarshal(run.BudgetJSON, &budget) != nil {
+	if json.Unmarshal(run.BudgetJSON, &budget) != nil || budget.Validate() != nil {
 		return s.fail(ctx, run, "invalid_budget")
 	}
-	budget = budget.Normalize()
-	deadline := s.now().Add(time.Duration(budget.MaxDurationSeconds) * time.Second)
+	startedAt := s.now()
+	if run.StartedAt != nil {
+		startedAt = *run.StartedAt
+	}
+	deadline := startedAt.Add(time.Duration(budget.MaxDurationSeconds) * time.Second)
 	repos, repoErr := newAgentRepositories(ctx, s.db.WithContext(ctx))
 	if repoErr != nil {
 		return s.fail(ctx, run, "tenant_repository_unavailable")
@@ -633,7 +652,10 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 		if run.ModelCalls >= budget.MaxModelCalls {
 			return s.fail(ctx, run, "model_budget_exhausted")
 		}
-		messages, snapshotID, err := s.runtimeMessages(ctx, run, version.ModelAlias, budget, trustedContext)
+		if run.InputTokens+run.OutputTokens >= budget.RunTokenBudget {
+			return s.fail(ctx, run, "token_budget_exhausted")
+		}
+		messages, snapshotID, err := s.runtimeMessages(ctx, run, version.ModelAlias, budget.MaxCompactions, trustedContext)
 		if err != nil {
 			return s.fail(ctx, run, "context_failed")
 		}
@@ -679,7 +701,7 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 		if e := s.persistCounters(ctx, run); e != nil {
 			return e
 		}
-		if run.InputTokens+run.OutputTokens > budget.MaxTokens {
+		if run.InputTokens+run.OutputTokens > budget.RunTokenBudget {
 			_ = s.finishStep(ctx, run, step, "failed", map[string]any{}, "token_budget_exhausted")
 			return s.fail(ctx, run, "token_budget_exhausted")
 		}
@@ -791,7 +813,7 @@ func (s *AgentRuntimeService) heartbeatLease(ctx context.Context, cancel context
 	}
 }
 
-func (s *AgentRuntimeService) runtimeMessages(ctx context.Context, run *AgentRun, modelAlias string, budget aiagentruntime.Budget, trusted *runtimecontext.TrustedRuntimeContext) ([]aimodelruntime.Message, *string, error) {
+func (s *AgentRuntimeService) runtimeMessages(ctx context.Context, run *AgentRun, modelAlias string, maxCompactions int, trusted *runtimecontext.TrustedRuntimeContext) ([]aimodelruntime.Message, *string, error) {
 	pageSnapshot, err := pageContextSnapshot(run.PageContextJSON)
 	if err != nil {
 		return nil, nil, err
@@ -800,7 +822,16 @@ func (s *AgentRuntimeService) runtimeMessages(ctx context.Context, run *AgentRun
 	if stepErr != nil {
 		return nil, nil, stepErr
 	}
-	assembly, err := s.conversations.Assemble(ctx, aiconversation.AssemblyRequest{ConversationID: run.ConversationID, MaxTokens: int(budget.MaxTokens), MaxBytes: int(budget.MaxTokens) * 8})
+	if s.contextBudget == nil {
+		_ = s.finishStep(ctx, run, assembleStep, "failed", map[string]any{}, "model_context_budget_unavailable")
+		return nil, nil, fmt.Errorf("model context budget unavailable")
+	}
+	contextTokenLimit, err := s.contextBudget.ContextTokenLimit(ctx, modelAlias)
+	if err != nil {
+		_ = s.finishStep(ctx, run, assembleStep, "failed", map[string]any{}, "model_context_budget_unavailable")
+		return nil, nil, err
+	}
+	assembly, err := s.conversations.Assemble(ctx, aiconversation.AssemblyRequest{ConversationID: run.ConversationID, MaxTokens: contextTokenLimit, MaxBytes: contextTokenLimit * 8})
 	if err != nil {
 		_ = s.finishStep(ctx, run, assembleStep, "failed", map[string]any{}, "context_assemble_failed")
 		return nil, nil, err
@@ -825,7 +856,7 @@ func (s *AgentRuntimeService) runtimeMessages(ctx context.Context, run *AgentRun
 		}
 		_ = s.finishStep(ctx, run, compactStep, "completed", map[string]any{"status": result.Status, "snapshot_id": result.SnapshotID, "input_tokens": result.InputTokens, "output_tokens": result.OutputTokens}, "")
 		if result.Status == "compacted" {
-			if run.Compactions >= budget.MaxCompactions {
+			if run.Compactions >= maxCompactions {
 				return nil, nil, fmt.Errorf("compaction budget exhausted")
 			}
 			run.Compactions++

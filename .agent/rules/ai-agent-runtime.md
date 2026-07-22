@@ -1,6 +1,8 @@
 # AI Agent Runtime 硬约束
 
 - Run 必须固定 actor/session/auth version、Conversation/trigger Message、不可变 Agent Version、预算与 ContextSnapshot。
+- Run 预算只由类型化租户设置 Provider 解析并在创建时固化；客户端不得提交或放大预算。新快照使用版本化 snake_case，历史 PascalCase 仅兼容读取。
+- `run_token_budget` 只限制 Run 累计 input + output Token；单次上下文容量必须按 Deployment context window、输出预留和安全余量统一计算，禁止混用两种 Token 语义。
 - HTTP 只写 Run/控制事实；执行必须经版本化 Outbox → Job，禁止请求内无界循环。
 - Run/Step 状态迁移 fail-closed；重复 Job/事件/Step/工具副作用/最终消息必须幂等。
 - Worker 必须使用行锁 + lease；有效 lease 和终态重复投递 no-op，只有过期 lease 可接管。

@@ -176,12 +176,13 @@ declare namespace Api.AI {
   }
   type AgentRunStatus = 'queued' | 'running' | 'waiting_confirmation' | 'paused' | 'completed' | 'failed' | 'cancelled';
   interface AgentRunBudget {
+		schema_version: number;
     max_steps: number;
     max_model_calls: number;
     max_tool_calls: number;
     max_compactions: number;
     max_duration_seconds: number;
-    max_tokens: number;
+		run_token_budget: number;
   }
   interface PageContextResourceRef {
     resource_type: string;

@@ -1,6 +1,7 @@
 package system
 
 import (
+	"github.com/yzxingtu2026/ainp/platform/framework/aiagentruntime"
 	"github.com/yzxingtu2026/ainp/platform/framework/aimemory"
 	"github.com/yzxingtu2026/ainp/platform/framework/aitool"
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
@@ -30,6 +31,9 @@ func registerExampleSettings(a *app.App) error {
 	if err := registerMemoryPolicySetting(a); err != nil {
 		return err
 	}
+	if err := registerAgentRuntimeBudgetSetting(a); err != nil {
+		return err
+	}
 	if err := registerToolSearchSetting(a); err != nil {
 		return err
 	}
@@ -37,6 +41,30 @@ func registerExampleSettings(a *app.App) error {
 		return err
 	}
 	return registerAssistantPersonalizationSetting(a)
+}
+
+func registerAgentRuntimeBudgetSetting(a *app.App) error {
+	d := aiagentruntime.SystemDefaultBudget()
+	minSteps, maxSteps := 1.0, 100.0
+	minModelCalls, maxModelCalls := 1.0, 32.0
+	minToolCalls, maxToolCalls := 0.0, 64.0
+	minCompactions, maxCompactions := 0.0, 3.0
+	minDuration, maxDuration := 10.0, 1800.0
+	minTokens, maxTokens := 1.0, 10000000.0
+	step := 1.0
+	return a.RegisterSettingDefinition(setting.Definition{
+		Key: "ai.agent_runtime_budget", CategoryKey: "ai",
+		Title: "Agent 运行预算", Description: "控制单次 Agent Run 的步骤、调用、时长与累计 Token 硬上限",
+		Scope: setting.ScopeTenant, Surface: auth.RealmTenant, Permission: ActionSettingList, Order: 50, SchemaVersion: 1,
+		Fields: []setting.Field{
+			{Key: "max_steps", Type: setting.FieldNumber, Label: "最大步骤数", Required: true, Default: float64(d.MaxSteps), Min: &minSteps, Max: &maxSteps, Step: &step},
+			{Key: "max_model_calls", Type: setting.FieldNumber, Label: "最大模型调用次数", Required: true, Default: float64(d.MaxModelCalls), Min: &minModelCalls, Max: &maxModelCalls, Step: &step},
+			{Key: "max_tool_calls", Type: setting.FieldNumber, Label: "最大工具调用次数", Required: true, Default: float64(d.MaxToolCalls), Min: &minToolCalls, Max: &maxToolCalls, Step: &step},
+			{Key: "max_compactions", Type: setting.FieldNumber, Label: "最大上下文压缩次数", Required: true, Default: float64(d.MaxCompactions), Min: &minCompactions, Max: &maxCompactions, Step: &step},
+			{Key: "max_duration_seconds", Type: setting.FieldNumber, Label: "最长运行时间（秒）", Required: true, Default: float64(d.MaxDurationSeconds), Min: &minDuration, Max: &maxDuration, Step: &step},
+			{Key: "run_token_budget", Type: setting.FieldNumber, Label: "累计 Token 预算", Required: true, Default: float64(d.RunTokenBudget), Min: &minTokens, Max: &maxTokens, Step: &step},
+		},
+	})
 }
 
 func registerToolSearchSetting(a *app.App) error {

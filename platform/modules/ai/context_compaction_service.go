@@ -35,6 +35,50 @@ func (s *ContextCompactionService) SetMemoryFlushHook(h aiconversation.DurableMe
 	}
 }
 
+type ModelContextBudget struct {
+	ContextWindow        int
+	ReservedOutputTokens int
+	SafetyMarginTokens   int
+	AvailableTokens      int
+}
+
+func ResolveModelContextBudget(limits aimodel.Limits) (ModelContextBudget, error) {
+	if limits.ContextWindow <= 0 {
+		return ModelContextBudget{}, fmt.Errorf("model context window unavailable")
+	}
+	reserved := int(limits.MaxOutputTokens)
+	if reserved <= 0 {
+		reserved = 2048
+	}
+	margin := int(limits.ContextWindow / 10)
+	budget := ModelContextBudget{
+		ContextWindow:        int(limits.ContextWindow),
+		ReservedOutputTokens: reserved,
+		SafetyMarginTokens:   margin,
+		AvailableTokens:      int(limits.ContextWindow) - reserved - margin,
+	}
+	if budget.AvailableTokens <= 0 {
+		return ModelContextBudget{}, fmt.Errorf("fixed context exceeds model window")
+	}
+	return budget, nil
+}
+
+func (s *ContextCompactionService) ContextTokenLimit(ctx context.Context, modelAlias string) (int, error) {
+	resolved, err := s.models.Resolve(ctx, modelAlias, aimodel.CapabilityRequirements{
+		ModelType:        aimodel.ModelTypeChat,
+		InputModalities:  []aimodel.Modality{aimodel.ModalityText},
+		OutputModalities: []aimodel.Modality{aimodel.ModalityText},
+	})
+	if err != nil {
+		return 0, err
+	}
+	budget, err := ResolveModelContextBudget(resolved.Limits)
+	if err != nil {
+		return 0, err
+	}
+	return budget.AvailableTokens, nil
+}
+
 type runtimeCompactionProvider struct {
 	invocations *InvocationService
 	modelAlias  string
@@ -93,7 +137,8 @@ func (s *ContextCompactionService) Compact(ctx context.Context, r aiconversation
 	if err != nil {
 		return nil, err
 	}
-	if resolved.Limits.ContextWindow <= 0 {
+	contextBudget, budgetErr := ResolveModelContextBudget(resolved.Limits)
+	if budgetErr != nil {
 		return &aiconversation.CompactionResult{Status: "failed", Reason: "model_context_window_unavailable"}, nil
 	}
 	repos, repoErr := newAgentRepositories(ctx, s.db)
@@ -120,14 +165,11 @@ func (s *ContextCompactionService) Compact(ctx context.Context, r aiconversation
 	}
 	reserved := r.ReservedOutputTokens
 	if reserved <= 0 {
-		reserved = int(resolved.Limits.MaxOutputTokens)
-		if reserved <= 0 {
-			reserved = 2048
-		}
+		reserved = contextBudget.ReservedOutputTokens
 	}
 	margin := r.SafetyMarginTokens
 	if margin <= 0 {
-		margin = int(resolved.Limits.ContextWindow / 10)
+		margin = contextBudget.SafetyMarginTokens
 	}
 	available := int(resolved.Limits.ContextWindow) - reserved - margin - fixedTokens - (toolSchemaBytes+3)/4 - r.AttachmentTokens
 	if available <= 0 {
@@ -230,22 +272,15 @@ FROM ai_context_snapshots WHERE tenant_id=? AND conversation_id=? AND kind=? ORD
 		if err != nil {
 			return nil, err
 		}
-		if resolved.Limits.ContextWindow <= 0 {
+		contextBudget, budgetErr := ResolveModelContextBudget(resolved.Limits)
+		if budgetErr != nil {
 			result["status"] = "failed"
 			result["reason"] = "model_context_window_unavailable"
 			return result, nil
 		}
-		reserved := int(resolved.Limits.MaxOutputTokens)
-		if reserved <= 0 {
-			reserved = 2048
-		}
-		margin := int(resolved.Limits.ContextWindow / 10)
-		available := int(resolved.Limits.ContextWindow) - reserved - margin
-		if available <= 0 {
-			result["status"] = "cannot_fit"
-			result["reason"] = "fixed_context_exceeds_model_window"
-			return result, nil
-		}
+		reserved := contextBudget.ReservedOutputTokens
+		margin := contextBudget.SafetyMarginTokens
+		available := contextBudget.AvailableTokens
 		assembly, err := s.conversations.Assemble(ctx, aiconversation.AssemblyRequest{ConversationID: r.ConversationID, MaxTokens: available, MaxBytes: available * 8})
 		if err != nil {
 			return nil, err
