@@ -12,6 +12,7 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    AgentAvatar: typeof import('./../components/ai/agent-avatar.vue')['default']
     AgentRunStatus: typeof import('./../components/ai/agent-run-status.vue')['default']
     AiConversationSurface: typeof import('./../components/ai/ai-conversation-surface.vue')['default']
     AiMascot: typeof import('./../components/ai/ai-mascot.vue')['default']
@@ -90,6 +91,7 @@ declare module 'vue' {
     NResult: typeof import('naive-ui')['NResult']
     NScrollbar: typeof import('naive-ui')['NScrollbar']
     NSelect: typeof import('naive-ui')['NSelect']
+    NSkeleton: typeof import('naive-ui')['NSkeleton']
     NSpace: typeof import('naive-ui')['NSpace']
     NSpin: typeof import('naive-ui')['NSpin']
     NStep: typeof import('naive-ui')['NStep']
@@ -126,6 +128,7 @@ declare module 'vue' {
 
 // For TSX support
 declare global {
+  const AgentAvatar: typeof import('./../components/ai/agent-avatar.vue')['default']
   const AgentRunStatus: typeof import('./../components/ai/agent-run-status.vue')['default']
   const AiConversationSurface: typeof import('./../components/ai/ai-conversation-surface.vue')['default']
   const AiMascot: typeof import('./../components/ai/ai-mascot.vue')['default']
@@ -204,6 +207,7 @@ declare global {
   const NResult: typeof import('naive-ui')['NResult']
   const NScrollbar: typeof import('naive-ui')['NScrollbar']
   const NSelect: typeof import('naive-ui')['NSelect']
+  const NSkeleton: typeof import('naive-ui')['NSkeleton']
   const NSpace: typeof import('naive-ui')['NSpace']
   const NSpin: typeof import('naive-ui')['NSpin']
   const NStep: typeof import('naive-ui')['NStep']
