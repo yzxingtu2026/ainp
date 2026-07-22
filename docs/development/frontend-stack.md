@@ -39,6 +39,8 @@ Soybean Admin（壳）
 
 业务页面通过 `src/composables/page-context.ts` 的 `usePageContextProvider()` 注册当前页面的受限语义；全局 AI 发送时只调用 `capturePageContext()` 获取一次快照。禁止全局组件读取 DOM/组件实例或按路由字符串维护业务分支，禁止 Provider 上传未提交表单、密码、Token 或隐藏状态。Provider 必须正确处理 mounted/activated/deactivated/unmount 生命周期。完整协议见 `page-context.md`。
 
+智能体形象统一使用 `AgentAvatar`：只传 `avatar_attachment_id`、名称与稳定尺寸。组件经附件 download prepare/transfer 加载，按 attachment ID 去重并限制并发，在最后一个消费者卸载时回收 Object URL；业务页面禁止直接拼图片地址。
+
 全局 AI 侧边栏与 Workspace 必须复用应用级 `useAiConversationController()` 和 `AiConversationSurface`；应用壳 Store 只管理面板与二级视图，不持有第二套 Conversation/Run/SSE 状态。完整边界见 `global-ai-assistant.md`。
 
 开始前端任务前确认：

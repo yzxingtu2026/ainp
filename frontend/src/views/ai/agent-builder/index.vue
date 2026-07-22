@@ -27,11 +27,13 @@ import {
   useMessage
 } from 'naive-ui';
 import { AI_ACTIONS } from '@/constants/ai';
+import { ATTACHMENT_RESOURCE_TYPES } from '@/constants/attachment';
 import { useRouterPush } from '@/hooks/common/router';
 import { $t } from '@/locales';
 import {
   bindAIAgentKnowledge,
   bindAIAgentTool,
+  bindAttachment,
   createAIAgent,
   fetchAIAgent,
   fetchAIAgentDiagnostics,
@@ -44,6 +46,7 @@ import {
   publishAIAgentVersion,
   unbindAIAgentKnowledge,
   unbindAIAgentTool,
+  unbindAttachment,
   updateAIAgent
 } from '@/service/api';
 import { useAuthStore } from '@/store/modules/auth';
@@ -56,6 +59,8 @@ import PreviewMessageImages from './modules/preview-message-images.vue';
 import PreviewToolCallCard from './modules/preview-tool-call-card.vue';
 import { useBuilderPreview } from './use-builder-preview';
 import AgentRunStatus from '@/components/ai/agent-run-status.vue';
+import AgentAvatar from '@/components/ai/agent-avatar.vue';
+import AttachmentPicker from '@/components/common/attachment-picker.vue';
 import ToolConfirmationCard from '@/components/ai/tool-confirmation-card.vue';
 
 defineOptions({ name: 'AIAgentBuilder' });
@@ -77,6 +82,9 @@ const mobileTab = ref<'prompt' | 'config' | 'preview'>('prompt');
 const versionsVisible = ref(false);
 const toolPickerVisible = ref(false);
 const knowledgePickerVisible = ref(false);
+const avatarPickerVisible = ref(false);
+const avatarUpdating = ref(false);
+const avatarAttachmentId = ref<string | null>(null);
 /** 中间栏折叠分组：默认只展开基本信息 */
 const configExpandedNames = ref<Array<string | number>>(['basic']);
 const collapsed = reactive({ left: false, right: false });
@@ -297,6 +305,7 @@ async function loadAgent(id: string) {
       return;
     }
     agent.value = agentResult.data;
+    avatarAttachmentId.value = agentResult.data.avatar_attachment_id || null;
     versions.value = versionResult.data || [];
     boundTools.value = toolResult.data || [];
     await loadAgentKnowledge(id);
@@ -413,7 +422,73 @@ function memoryPolicy(): Api.AI.MemoryPolicy | undefined {
 
 function isMetaDirty() {
   if (!agent.value) return false;
-  return draft.name !== agent.value.name || draft.description !== (agent.value.description || '');
+  return (
+    draft.name !== agent.value.name ||
+    draft.description !== (agent.value.description || '') ||
+    avatarAttachmentId.value !== (agent.value.avatar_attachment_id || null)
+  );
+}
+
+async function pickAvatar(items: Api.Attachment.Item[]) {
+  const selected = items[0];
+  if (!selected) return;
+  if (!selected.content_type.toLowerCase().startsWith('image/')) {
+    message.warning($t('page.agentBuilder.avatarImageOnly'));
+    return;
+  }
+  if (selected.id === avatarAttachmentId.value) return;
+  if (!agent.value) {
+    avatarAttachmentId.value = selected.id;
+    markDirty();
+    return;
+  }
+
+  const current = agent.value;
+  const previousId = current.avatar_attachment_id || null;
+  avatarUpdating.value = true;
+  try {
+    const link = await bindAttachment({
+      attachment_id: selected.id,
+      resource_type: ATTACHMENT_RESOURCE_TYPES.agentAvatar,
+      resource_id: current.id,
+      field: 'avatar'
+    });
+    if (link.error) {
+      message.error(link.error.message || $t('page.agentBuilder.avatarUpdateFailed'));
+      return;
+    }
+    const { data, error } = await updateAIAgent({
+      id: current.id,
+      name: current.name,
+      description: current.description,
+      avatar_attachment_id: selected.id,
+      revision: draft.revision
+    });
+    if (error || !data) {
+      await unbindAttachment({
+        attachment_id: selected.id,
+        resource_type: ATTACHMENT_RESOURCE_TYPES.agentAvatar,
+        resource_id: current.id,
+        field: 'avatar'
+      });
+      message.error($t('page.agentBuilder.avatarUpdateFailed'));
+      return;
+    }
+    if (previousId) {
+      await unbindAttachment({
+        attachment_id: previousId,
+        resource_type: ATTACHMENT_RESOURCE_TYPES.agentAvatar,
+        resource_id: current.id,
+        field: 'avatar'
+      });
+    }
+    agent.value = { ...current, ...data };
+    avatarAttachmentId.value = selected.id;
+    draft.revision = data.revision;
+    message.success($t('page.agentBuilder.avatarUpdated'));
+  } finally {
+    avatarUpdating.value = false;
+  }
 }
 
 /** 仅更新名称/描述/头像，不写草稿、不发布版本 */
@@ -423,7 +498,7 @@ async function persistAgentMeta(): Promise<boolean> {
     id: agent.value.id,
     name: draft.name,
     description: draft.description,
-    avatar_attachment_id: agent.value.avatar_attachment_id ?? null,
+    avatar_attachment_id: avatarAttachmentId.value,
     revision: draft.revision
   });
   if (error || !data) {
@@ -451,7 +526,7 @@ async function saveMetadata() {
       id: agent.value.id,
       name: draft.name,
       description: draft.description,
-      avatar_attachment_id: agent.value.avatar_attachment_id ?? null,
+      avatar_attachment_id: avatarAttachmentId.value,
       save_draft_config: true,
       model_alias: draft.model_alias,
       tenant_instructions: draft.tenant_instructions,
@@ -490,11 +565,21 @@ async function publishVersion() {
         visibility: draft.visibility,
         model_alias: draft.model_alias,
         tenant_instructions: draft.tenant_instructions,
+        avatar_attachment_id: avatarAttachmentId.value,
         generation_config: generationConfig(),
         tool_policy: {},
         memory_policy: memoryPolicy()
       });
       if (error || !data) return;
+      if (avatarAttachmentId.value) {
+        const link = await bindAttachment({
+          attachment_id: avatarAttachmentId.value,
+          resource_type: ATTACHMENT_RESOURCE_TYPES.agentAvatar,
+          resource_id: data.id,
+          field: 'avatar'
+        });
+        if (link.error) message.error(link.error.message || $t('page.agentBuilder.avatarUpdateFailed'));
+      }
       dirty.value = false;
       message.success($t('page.agentBuilder.createSuccess'));
       await routerPushByKey('ai_agent-builder', { query: { agentId: data.id } });
@@ -589,6 +674,7 @@ watch(
       await loadAgent(id);
     } else {
       agent.value = null;
+      avatarAttachmentId.value = null;
       versions.value = [];
       boundTools.value = [];
       boundKnowledge.value = [];
@@ -657,6 +743,24 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
             <span v-if="agent">· v{{ agent.current_version }} · rev {{ draft.revision }}</span>
           </div>
         </div>
+        <NTooltip>
+          <template #trigger>
+            <button
+              class="agent-builder-avatar"
+              type="button"
+              :disabled="!canEditMeta || avatarUpdating"
+              :aria-label="$t('page.agentBuilder.editAvatar')"
+              @click="avatarPickerVisible = true"
+            >
+              <AgentAvatar :attachment-id="avatarAttachmentId" :name="draft.name || 'AINP'" :size="52" />
+              <span v-if="canEditMeta" class="agent-builder-avatar__edit">
+                <NSpin v-if="avatarUpdating" :size="16" />
+                <SvgIcon v-else icon="mdi:pencil" />
+              </span>
+            </button>
+          </template>
+          {{ $t('page.agentBuilder.editAvatar') }}
+        </NTooltip>
       </NSpace>
       <NSpace>
         <NButton class="lt-md:hidden" @click="collapsed.left = !collapsed.left">
@@ -679,6 +783,15 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
         </NButton>
       </NSpace>
     </header>
+
+    <AttachmentPicker
+      v-model:show="avatarPickerVisible"
+      :multiple="false"
+      :max-count="1"
+      mode="replace"
+      :selected-ids="avatarAttachmentId ? [avatarAttachmentId] : []"
+      @confirm="pickAvatar"
+    />
 
     <NSpin
       :show="loading"
@@ -1160,6 +1273,38 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
 </template>
 
 <style scoped>
+.agent-builder-avatar {
+  position: relative;
+  display: block;
+  flex: none;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.agent-builder-avatar:disabled {
+  cursor: default;
+}
+
+.agent-builder-avatar__edit {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  color: white;
+  background: rgb(15 23 42 / 62%);
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+
+.agent-builder-avatar:hover .agent-builder-avatar__edit,
+.agent-builder-avatar:focus-visible .agent-builder-avatar__edit {
+  opacity: 1;
+}
+
 .preview-caret {
   display: inline-block;
   margin-left: 1px;
