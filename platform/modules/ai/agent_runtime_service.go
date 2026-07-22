@@ -1334,11 +1334,14 @@ func (s *AgentRuntimeService) appendAssistantToolCalls(ctx context.Context, run 
 
 func (s *AgentRuntimeService) appendToolResult(ctx context.Context, run *AgentRun, step *AgentStep, call aimodelruntime.OutputItem, value any, err error) (bool, error) {
 	if err != nil {
-		category := toolExecutionErrorCategory(err)
-		failedResult := &aitool.Result{CallID: call.ToolCallID, Status: "failed", Summary: "tool execution failed", ErrorCategory: category}
+		failedResult, recoverable := toolExecutionFailure(call.ToolCallID, err)
+		category := failedResult.ErrorCategory
 		encoded, _ := json.Marshal(failedResult)
 		_, messageErr := s.conversations.AppendRuntimeMessage(ctx, run.ConversationID, run.ID, "tool", fmt.Sprintf("run:%s:tool-result:%s", run.ID, call.ToolCallID), []aimodelruntime.ContentPart{{Type: aimodelruntime.PartToolResult, ToolCallID: call.ToolCallID, Result: encoded}})
 		stepErr := s.finishStep(ctx, run, step, "failed", map[string]any{"tool_call_id": call.ToolCallID, "reason": category}, category)
+		if recoverable && messageErr == nil && stepErr == nil {
+			return false, nil
+		}
 		return false, errors.Join(err, messageErr, stepErr)
 	}
 	encoded, _ := json.Marshal(value)
@@ -1383,6 +1386,16 @@ func (s *AgentRuntimeService) appendToolResult(ctx context.Context, run *AgentRu
 		_ = s.finishStep(ctx, run, step, "completed", summary, category)
 	}
 	return false, err
+}
+
+func toolExecutionFailure(callID string, err error) (*aitool.Result, bool) {
+	category := toolExecutionErrorCategory(err)
+	summary := "tool execution failed"
+	recoverable := category == "invalid_arguments"
+	if recoverable {
+		summary = "tool arguments are invalid; correct them to match the input schema and retry"
+	}
+	return &aitool.Result{CallID: callID, Status: "failed", Summary: summary, ErrorCategory: category}, recoverable
 }
 
 func toolExecutionErrorCategory(err error) string {

@@ -52,3 +52,26 @@ func TestToolExecutionErrorCategory(t *testing.T) {
 		})
 	}
 }
+
+func TestInvalidArgumentsIsTheOnlyRecoverableToolError(t *testing.T) {
+	for _, tt := range []struct {
+		err         error
+		recoverable bool
+	}{
+		{err: errs.Validation("invalid"), recoverable: true},
+		{err: errs.New(errs.CodeForbidden, "forbidden"), recoverable: false},
+		{err: errs.New(errs.CodeConflict, "changed"), recoverable: false},
+		{err: fmt.Errorf("failed"), recoverable: false},
+	} {
+		result, got := toolExecutionFailure("call-1", tt.err)
+		if got != tt.recoverable {
+			t.Fatalf("error %v recoverable=%v, want %v", tt.err, got, tt.recoverable)
+		}
+		if result.CallID != "call-1" || result.Status != "failed" || result.ErrorCategory == "" {
+			t.Fatalf("invalid failed result: %#v", result)
+		}
+		if got && result.Summary != "tool arguments are invalid; correct them to match the input schema and retry" {
+			t.Fatalf("recoverable failure must guide model retry: %#v", result)
+		}
+	}
+}
