@@ -53,6 +53,7 @@ func Register(a *app.App) error {
 			Name:       "Ping",
 			NameKey:    "action.system.ping.name",
 			Audit:      &auditOff,
+			AI:         action.ExcludeFromAI(action.AIExcludePublicAuthentication),
 			HTTP: &action.HTTPMeta{
 				Method: "GET",
 				Path:   "/api/v1/system/ping",
@@ -143,6 +144,7 @@ func Register(a *app.App) error {
 			Description:    "通过统一认证与会话链路完成密码登录",
 			DescriptionKey: "action.system.auth_login.description",
 			Audit:          &auditOn,
+			AI:             action.ExcludeFromAI(action.AIExcludePublicAuthentication),
 			HTTP: &action.HTTPMeta{
 				Method: "POST",
 				Path:   "/api/v1/system/auth/login",
@@ -169,6 +171,7 @@ func Register(a *app.App) error {
 			Description:    "返回当前登录用户摘要与权限",
 			DescriptionKey: "action.system.auth_me.description",
 			Audit:          &auditOff,
+			AI:             action.ExcludeFromAI(action.AIExcludePendingSafetyReview),
 			HTTP: &action.HTTPMeta{
 				Method: "GET",
 				Path:   "/api/v1/system/auth/me",
@@ -191,6 +194,7 @@ func Register(a *app.App) error {
 			Description:    "返回当前用户角色与 permission 列表",
 			DescriptionKey: "action.system.auth_permissions.description",
 			Audit:          &auditOff,
+			AI:             action.ExcludeFromAI(action.AIExcludePendingSafetyReview),
 			HTTP: &action.HTTPMeta{
 				Method: "GET",
 				Path:   "/api/v1/system/auth/permissions",
@@ -219,6 +223,7 @@ func Register(a *app.App) error {
 			Description:    "重新加载 i18n 翻译文件",
 			DescriptionKey: "action.system.i18n_reload.description",
 			Audit:          &auditOn,
+			AI:             action.ExcludeFromAI(action.AIExcludeInternalRuntime),
 			HTTP: &action.HTTPMeta{
 				Method: "POST",
 				Path:   "/api/v1/system/i18n/reload",

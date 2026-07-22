@@ -8,6 +8,25 @@ Agent 只读要点：`.agent/rules/action-metadata.md`。本文档为 Phase 1 �
 - HTTP / 工作流 / Agent / MCP 共用同一 Action 入口。
 - 与图标（Iconify）、API 信封、运行日志 / 审计规范对齐。
 
+## AI 暴露分类
+
+所有非 `demo` 的生产 Action 在注册处必须完成且只能完成一种 AI 分类：
+
+- `exposed`：`Metadata.AI.ExposeTool=true`，并完整声明风险、side effect、输入 Schema、用户说明和结果摘要；可稳定建模时补充输出 Schema。
+- `excluded`：`Metadata.AI.ExposeTool=false`，并通过 `ExclusionReason` 声明非空、稳定的原因代码。统一使用 `action.ExcludeFromAI(...)` 和框架原因常量。
+
+两种状态互斥。暴露项同时填写排除原因、排除项缺少原因、或生产 Action 完全缺少 `AI` 元数据，注册与架构测试都会 fail closed。Action Registry 是唯一事实源，禁止另建 Action ID switch 或平行 AI 暴露清单。
+
+当前稳定排除原因包括：
+
+- `pending-safety-review`：等待对应批次完成强类型 DTO、风险和确认评审；
+- `public-authentication-entry`：登录、挑战、刷新等公共认证入口；
+- `installation-operation`：安装状态、环境检查、数据库测试和初始化；
+- `internal-runtime-operation`：Tool / Agent / 索引 / 恢复等内部运行时能力；
+- `sensitive-credential-boundary`：会接收或处理密码、Token、Provider 密钥等敏感凭证。
+
+新增原因必须表达稳定的架构边界，不能使用临时 Issue 编号或个人备注。`platform/tests/action_ai_architecture_test.go` 扫描生产模块的元数据声明，并按模块汇总漏分类位置；`demo` 与测试夹具按明确规则不进入生产清单。
+
 ## 分层关系
 
 ```text

@@ -85,7 +85,7 @@ func registerNotificationDeliveryActions(a *app.App, svc NotificationDeliverySer
 			Description: spec.desc, DescriptionKey: spec.descKey,
 			PermissionGroup: "operations.notification_delivery", PermissionGroupName: "通知投递运维",
 			PermissionGroupNameKey: "permission_group.operations.notification_delivery",
-			Audit:                  spec.audit, HTTP: &action.HTTPMeta{Method: "POST", Path: spec.path},
+			Audit:                  spec.audit, AI: action.ExcludeFromAI(action.AIExcludePendingSafetyReview), HTTP: &action.HTTPMeta{Method: "POST", Path: spec.path},
 		}}); err != nil {
 			return err
 		}

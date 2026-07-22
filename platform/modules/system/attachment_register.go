@@ -39,6 +39,7 @@ func registerAttachmentActions(a *app.App, svc *AttachmentService) error {
 				PermissionGroup: "system.attachment_management", PermissionGroupName: "附件管理",
 				PermissionGroupNameKey: "permission_group.system.attachment_management",
 				Permission:             item.Permission,
+				AI:                     action.ExcludeFromAI(action.AIExcludePendingSafetyReview),
 				Audit:                  item.Audit,
 				HTTP:                   &action.HTTPMeta{Method: "POST", Path: item.Path},
 			},

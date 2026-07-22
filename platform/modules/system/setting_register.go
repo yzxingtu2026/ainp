@@ -30,7 +30,8 @@ func registerSettingActions(a *app.App, svc *SettingService) error {
 				Capability: "system", Name: definition.name, NameKey: "action." + definition.id + ".name",
 				PermissionGroup: "system.setting_management", PermissionGroupName: "设置管理",
 				PermissionGroupNameKey: "permission_group.system.setting_management",
-				Description: definition.description, DescriptionKey: "action." + definition.id + ".description",
+				Description:            definition.description, DescriptionKey: "action." + definition.id + ".description",
+				AI:    action.ExcludeFromAI(action.AIExcludePendingSafetyReview),
 				Audit: &auditOn, HTTP: &action.HTTPMeta{Method: "POST", Path: definition.path},
 			},
 		}); err != nil {

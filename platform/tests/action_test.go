@@ -101,3 +101,16 @@ func TestRegistryRejectsInvalidSurface(t *testing.T) {
 		t.Fatal("expected invalid surface registration error")
 	}
 }
+
+func TestAIClassificationIsMutuallyExclusiveAndFailClosed(t *testing.T) {
+	exposed := &action.AIMeta{ExposeTool: true, ExclusionReason: action.AIExcludePendingSafetyReview}
+	if err := action.ValidateAIClassification("demo.exposed", exposed); err == nil {
+		t.Fatal("exposed action must not also declare an exclusion reason")
+	}
+	if err := action.ValidateAIClassification("demo.excluded", &action.AIMeta{}); err == nil {
+		t.Fatal("excluded action without a reason must fail")
+	}
+	if err := action.ValidateAIClassification("demo.excluded", action.ExcludeFromAI(action.AIExcludePendingSafetyReview)); err != nil {
+		t.Fatalf("valid exclusion rejected: %v", err)
+	}
+}

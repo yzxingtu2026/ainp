@@ -42,7 +42,7 @@ func TestUserManagementActionsAndMenuAreRegistered(t *testing.T) {
 		if shouldExpose && (registered.Meta.AI == nil || !registered.Meta.AI.ExposeTool) {
 			t.Fatalf("user action %s must expose a complete AI contract", actionID)
 		}
-		if !shouldExpose && registered.Meta.AI != nil {
+		if !shouldExpose && registered.Meta.AI != nil && registered.Meta.AI.ExposeTool {
 			t.Fatalf("user action %s must remain unavailable to AI", actionID)
 		}
 	}

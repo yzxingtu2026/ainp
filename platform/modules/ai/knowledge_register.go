@@ -92,6 +92,7 @@ func RegisterKnowledge(a *app.App, service *KnowledgeService) error {
 				PermissionGroupName:    "Knowledge management",
 				PermissionGroupNameKey: "permission_group.ai.knowledge_management",
 				Audit:                  definition.audit,
+				AI:                     action.ExcludeFromAI(action.AIExcludePendingSafetyReview),
 				HTTP: &action.HTTPMeta{
 					Method: "POST",
 					Path:   definition.path,

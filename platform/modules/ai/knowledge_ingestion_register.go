@@ -94,5 +94,5 @@ func RegisterKnowledgeIngestion(a *app.App, knowledge *KnowledgeService, ingesti
 			return nil, err
 		}
 		return map[string]any{"requested": true, "document_id": document.ID, "revision": document.Revision}, nil
-	}), Meta: action.Metadata{Capability: "ai", Name: "Retry knowledge ingestion", NameKey: "action." + ActionKnowledgeDocumentRetry + ".name", Description: "Request a new reliable ingestion attempt", DescriptionKey: "action." + ActionKnowledgeDocumentRetry + ".description", PermissionGroup: "ai.knowledge_management", PermissionGroupName: "Knowledge management", PermissionGroupNameKey: "permission_group.ai.knowledge_management", Audit: &auditOn, HTTP: &action.HTTPMeta{Method: "POST", Path: "/api/v1/ai/knowledge-documents/ingestion/retry"}}})
+	}), Meta: action.Metadata{Capability: "ai", Name: "Retry knowledge ingestion", NameKey: "action." + ActionKnowledgeDocumentRetry + ".name", Description: "Request a new reliable ingestion attempt", DescriptionKey: "action." + ActionKnowledgeDocumentRetry + ".description", PermissionGroup: "ai.knowledge_management", PermissionGroupName: "Knowledge management", PermissionGroupNameKey: "permission_group.ai.knowledge_management", Audit: &auditOn, AI: action.ExcludeFromAI(action.AIExcludeInternalRuntime), HTTP: &action.HTTPMeta{Method: "POST", Path: "/api/v1/ai/knowledge-documents/ingestion/retry"}}})
 }

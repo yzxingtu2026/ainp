@@ -716,6 +716,7 @@ func registerNotificationActions(a *app.App) error {
 				PermissionGroupName:    "通知操作",
 				PermissionGroupNameKey: "permission_group.system.notification_user",
 				Audit:                  spec.audit,
+				AI:                     action.ExcludeFromAI(action.AIExcludePendingSafetyReview),
 				HTTP:                   &action.HTTPMeta{Method: "POST", Path: spec.path},
 			},
 		}); err != nil {
@@ -748,6 +749,7 @@ func registerNotificationActions(a *app.App) error {
 				PermissionGroupName:    "通知配置",
 				PermissionGroupNameKey: "permission_group.system.notification_configuration",
 				Audit:                  spec.audit,
+				AI:                     action.ExcludeFromAI(action.AIExcludePendingSafetyReview),
 				HTTP:                   &action.HTTPMeta{Method: "POST", Path: spec.path},
 			},
 		}); err != nil {

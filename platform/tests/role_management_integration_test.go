@@ -44,7 +44,7 @@ func TestRoleManagementActionsAndMenuAreRegistered(t *testing.T) {
 		if shouldExpose && (registered.Meta.AI == nil || !registered.Meta.AI.ExposeTool) {
 			t.Fatalf("role action %s must expose a complete AI contract", actionID)
 		}
-		if !shouldExpose && registered.Meta.AI != nil {
+		if !shouldExpose && registered.Meta.AI != nil && registered.Meta.AI.ExposeTool {
 			t.Fatalf("role action %s must remain unavailable to AI", actionID)
 		}
 	}

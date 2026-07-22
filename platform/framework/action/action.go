@@ -42,6 +42,7 @@ func (h *HTTPMeta) IsEnabled() bool {
 
 type AIMeta struct {
 	ExposeTool           bool
+	ExclusionReason      string
 	Risk                 string
 	SideEffect           string
 	RequiresConfirmation bool
@@ -51,6 +52,18 @@ type AIMeta struct {
 	ResultSummary        string
 	InputSchema          json.RawMessage
 	OutputSchema         json.RawMessage
+}
+
+const (
+	AIExcludePendingSafetyReview  = "pending-safety-review"
+	AIExcludePublicAuthentication = "public-authentication-entry"
+	AIExcludeSetupOperation       = "installation-operation"
+	AIExcludeInternalRuntime      = "internal-runtime-operation"
+	AIExcludeSensitiveCredential  = "sensitive-credential-boundary"
+)
+
+func ExcludeFromAI(reason string) *AIMeta {
+	return &AIMeta{ExclusionReason: reason}
 }
 
 // IdempotencyMeta 控制 Action 的幂等策略。
@@ -184,8 +197,8 @@ func (r *Registry) Register(a Action) error {
 	if err := validateIdempotency(a.Meta.Idempotency); err != nil {
 		return fmt.Errorf("action %s: %w", a.ID, err)
 	}
-	if a.Meta.AI != nil && a.Meta.AI.ExposeTool {
-		if err := validateAIMeta(a.ID, a.Meta.AI); err != nil {
+	if a.Meta.AI != nil {
+		if err := ValidateAIClassification(a.ID, a.Meta.AI); err != nil {
 			return err
 		}
 	}
@@ -193,6 +206,23 @@ func (r *Registry) Register(a Action) error {
 		return fmt.Errorf("action already registered: %s", a.ID)
 	}
 	r.items[a.ID] = a
+	return nil
+}
+
+func ValidateAIClassification(actionID string, meta *AIMeta) error {
+	if meta == nil {
+		return fmt.Errorf("action %s: AI classification is required", actionID)
+	}
+	reason := strings.TrimSpace(meta.ExclusionReason)
+	if meta.ExposeTool {
+		if reason != "" {
+			return fmt.Errorf("action %s: exposed AI action must not declare an exclusion reason", actionID)
+		}
+		return validateAIMeta(actionID, meta)
+	}
+	if reason == "" {
+		return fmt.Errorf("action %s: excluded AI action requires an exclusion reason", actionID)
+	}
 	return nil
 }
 

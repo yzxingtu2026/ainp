@@ -34,5 +34,9 @@ func registerAuthenticationActions(a *app.App, service *UnifiedAuthService, audi
 }
 
 func authMeta(access action.AccessMode, name, key string, audit *bool, method, path string) action.Metadata {
-	return action.Metadata{Capability: "system", Access: access, Name: name, NameKey: key + ".name", Description: name, DescriptionKey: key + ".description", Audit: audit, HTTP: &action.HTTPMeta{Method: method, Path: path}}
+	reason := action.AIExcludePendingSafetyReview
+	if access == action.AccessPublic {
+		reason = action.AIExcludePublicAuthentication
+	}
+	return action.Metadata{Capability: "system", Access: access, Name: name, NameKey: key + ".name", Description: name, DescriptionKey: key + ".description", Audit: audit, AI: action.ExcludeFromAI(reason), HTTP: &action.HTTPMeta{Method: method, Path: path}}
 }

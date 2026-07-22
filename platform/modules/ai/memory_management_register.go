@@ -40,5 +40,5 @@ func RegisterMemoryManagement(a *app.App, s *MemoryManagementService) error {
 	return nil
 }
 func memoryMeta(name, path string, audit *bool, idem *action.IdempotencyMeta) action.Metadata {
-	return action.Metadata{Capability: "ai", Access: action.AccessAuthenticated, Name: name, Description: name, Audit: audit, Idempotency: idem, HTTP: &action.HTTPMeta{Method: "POST", Path: path}}
+	return action.Metadata{Capability: "ai", Access: action.AccessAuthenticated, Name: name, Description: name, Audit: audit, AI: action.ExcludeFromAI(action.AIExcludePendingSafetyReview), Idempotency: idem, HTTP: &action.HTTPMeta{Method: "POST", Path: path}}
 }

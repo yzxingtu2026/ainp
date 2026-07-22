@@ -224,6 +224,7 @@ func registerOutboxActions(a *app.App) error {
 				PermissionGroupName:    "Outbox 运维",
 				PermissionGroupNameKey: "permission_group.operations.outbox",
 				Audit:                  spec.audit,
+				AI:                     action.ExcludeFromAI(action.AIExcludePendingSafetyReview),
 				HTTP: &action.HTTPMeta{
 					Method: "POST",
 					Path:   spec.path,
