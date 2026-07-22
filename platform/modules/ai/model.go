@@ -239,6 +239,9 @@ type ToolInvocation struct {
 func (ToolInvocation) TableName() string { return "ai_tool_invocations" }
 
 func AutoMigrate(db *gorm.DB) error {
+	if err := registerPersonalizationTenantModel(); err != nil {
+		return err
+	}
 	if err := db.Exec("CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public").Error; err != nil {
 		return err
 	}
@@ -262,7 +265,7 @@ func AutoMigrate(db *gorm.DB) error {
 			return err
 		}
 	}
-	if err := db.AutoMigrate(&Provider{}, &Deployment{}, &Alias{}, &ModelInvocation{}, &ToolCatalog{}, &ToolSearchDocument{}, &NavigationSearchDocument{}, &ToolScope{}, &ToolConfirmation{}, &ToolInvocation{}, &Agent{}, &AgentVersion{}, &AgentToolBinding{}, &AgentSlotBinding{}, &AgentSlotPreference{}, &Conversation{}, &ConversationMessage{}, &AssistantStream{}, &AssistantStreamDelta{}, &ContextSnapshot{}, &AgentRun{}, &AgentStep{}, &AgentRunEvent{}, &MemoryItem{}, &MemoryItemVersion{}, &MemoryEvidence{}, &MemoryProjection{}, &MemoryDaySummary{}, &MemoryCurrentProfile{}, &MemoryEvaluation{}, &MemoryGovernanceDecision{}, &MemoryRelation{}, &MemoryConsolidationBatch{}); err != nil {
+	if err := db.AutoMigrate(&Provider{}, &Deployment{}, &Alias{}, &ModelInvocation{}, &ToolCatalog{}, &ToolSearchDocument{}, &NavigationSearchDocument{}, &ToolScope{}, &ToolConfirmation{}, &ToolInvocation{}, &Agent{}, &AgentVersion{}, &AgentToolBinding{}, &AgentSlotBinding{}, &AgentSlotPreference{}, &Conversation{}, &ConversationMessage{}, &AssistantStream{}, &AssistantStreamDelta{}, &ContextSnapshot{}, &AgentRun{}, &AgentStep{}, &AgentRunEvent{}, &MemoryItem{}, &MemoryItemVersion{}, &MemoryEvidence{}, &MemoryProjection{}, &MemoryDaySummary{}, &MemoryCurrentProfile{}, &MemoryEvaluation{}, &MemoryGovernanceDecision{}, &MemoryRelation{}, &MemoryConsolidationBatch{}, &AssistantPersonalizationSnapshot{}); err != nil {
 		return err
 	}
 	return AutoMigrateKnowledge(db)

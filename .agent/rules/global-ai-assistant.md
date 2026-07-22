@@ -8,6 +8,10 @@
 - 首页只提供欢迎、开始工作、继续工作与授权功能模块，不放置 Prompt 输入框或第二套会话 controller；开始工作统一进入 Workspace。
 - 首页“继续工作”只能投影真实的待确认 AI 工具调用与当前仍有权限的已打开页面；框架期无通用待办模型时必须展示空状态，禁止伪造待办或项目数据。
 - 首页机器人动作必须表达明确交互状态（欢迎、静坐、思考、冥想、跳动），保持固定画布避免漂移，并为 `prefers-reduced-motion` 提供静态图。
+- 三个入口统一读取可重建 personalization snapshot；读取不得同步等待模型，disabled/missing 立即 fallback，输入、推荐点击或绑定 Conversation 后冻结本次欢迎区。
+- 快照不得写入 Conversation/Memory；生成仅走 Model Runtime，不得创建 Agent Run、调用工具或回退未配置模型。
+- 个性化输入只允许预算化 Runtime Context、Agent Slot Version、Memory Current Profile、近期 Run 摘要及最近 Workspace 会话结尾最多 4 条纯文本；会话片段必须标记 untrusted，禁止完整历史、工具参数、原始记忆与页面正文。
+- 时段问候必须由服务端在每次读取时按用户时区动态计算；模型快照只保存稳定 greeting body，禁止固化“早上好/下午好/晚上好”。
 - 桌面宽度、移动全屏、长内容 overflow、焦点返回、Escape、ARIA、Tooltip 与 reduced-motion 必须验证。
 
 详规：`docs/development/global-ai-assistant.md`

@@ -152,6 +152,16 @@ func Register(a *app.App) error {
 	invocations := NewInvocationService(a.DB, svc, adapters, writer)
 	invocations.SetEmbeddingAdapters(embeddingAdapters)
 	invocations.SetAssetResolver(a.AIAssetResolver)
+	personalization := NewPersonalizationService(a.DB, a.SettingValues, writer, invocations)
+	if err := RegisterPersonalization(a, personalization); err != nil {
+		return err
+	}
+	if err := a.SettingChanges.Register(AssistantPersonalizationSettingKey, func(ctx context.Context, _ setting.Change) error {
+		_, err := personalization.Rebuild(ctx, struct{}{})
+		return err
+	}); err != nil {
+		return err
+	}
 	a.EmbeddingRuntime = invocations
 	if err := invocations.RecoverStale(context.Background(), 10*time.Minute); err != nil {
 		return err
@@ -186,6 +196,13 @@ func Register(a *app.App) error {
 		return err
 	}
 	slots := NewAgentSlotService(a.DB, slotRegistry, agents)
+	personalization.SetContextSources(slots, a.RuntimeContextProvider)
+	slots.SetChangedHook(func(ctx context.Context, slotKey string) error {
+		if slotKey != WorkspaceDefaultSlot {
+			return nil
+		}
+		return personalization.InvalidateAndRequest(ctx, auth.MustFromContext(ctx).UserID, uint64(time.Now().UTC().Unix()))
+	})
 	agents.SetMemoryPolicyProvider(a.SettingValues)
 	knowledge := NewKnowledgeService(a.DB, svc, agents, a.AttachmentResourceLinker)
 	parserRegistry, err := aiknowledge.NewDefaultParserRegistry(aiknowledge.DefaultParseLimits())
@@ -206,6 +223,9 @@ func Register(a *app.App) error {
 	memoryGovernance := NewMemoryGovernanceService(a.DB, writer)
 	memoryManagement := NewMemoryManagementService(a.DB, memoryGovernance, writer)
 	memoryProjection := NewMemoryProjectionService(a.DB, a.EmbeddingRuntime)
+	memoryProjection.SetCompletedHook(func(ctx context.Context, userID string, revision uint64) error {
+		return personalization.InvalidateAndRequest(ctx, userID, revision)
+	})
 	memoryRetriever := NewMemoryRetrievalService(a.DB, a.EmbeddingRuntime)
 	memoryRuntimeTool := NewMemoryTool(memoryRetriever)
 	memoryConsolidation := NewMemoryConsolidationService(a.DB, invocations)

@@ -131,6 +131,19 @@ declare namespace Api.AI {
     created_at: string;
     updated_at: string;
   }
+  interface PersonalizationSuggestion {
+    title: string;
+    prompt: string;
+    source_type: 'general' | 'recent_work' | 'recent_conversation' | 'memory_profile';
+    target_ref?: string | null;
+  }
+  interface AssistantPersonalization {
+    greeting: string;
+    suggestions: PersonalizationSuggestion[];
+    freshness: 'fresh' | 'stale' | 'missing' | 'disabled';
+    generated_at?: string | null;
+    context_scope: 'global' | 'page';
+  }
   interface ConversationContentPart {
     type: string;
     text?: string;

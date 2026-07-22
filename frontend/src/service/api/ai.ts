@@ -77,6 +77,10 @@ export const createAIConversationForSlot = (slotKey: string, data: Record<string
 export const fetchAIConversations = (params: Record<string, unknown> = {}) =>
   post<Api.AI.Page<Api.AI.Conversation>>('conversations/list', params);
 export const fetchAIConversation = (id: string) => post<Api.AI.Conversation>('conversations/get', { id });
+export const fetchAssistantPersonalization = () =>
+  post<Api.AI.AssistantPersonalization>('assistant-personalization/get');
+export const rebuildAssistantPersonalization = () =>
+  post<{ requested: boolean; freshness?: string }>('assistant-personalization/rebuild');
 export const createAIConversation = (data: Record<string, unknown>) =>
   post<Api.AI.Conversation>('conversations/create', data);
 export const updateAIConversation = (id: string, title: string, revision: number) =>

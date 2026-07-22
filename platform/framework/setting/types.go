@@ -272,10 +272,16 @@ func validateField(defKey string, field *Field) error {
 		}
 	}
 	if field.Default != nil {
-		if err := validateFieldValue(defKey, *field, field.Default, true); err != nil {
+		defaultField := *field
+		// Conditional required fields may have an empty default while their
+		// controlling field keeps them hidden. Submitted visible values remain required.
+		if field.VisibleWhen != nil {
+			defaultField.Required = false
+		}
+		if err := validateFieldValue(defKey, defaultField, field.Default, true); err != nil {
 			return fmt.Errorf("invalid default for %s.%s: %w", defKey, field.Key, err)
 		}
-	} else if field.Required {
+	} else if field.Required && field.VisibleWhen == nil {
 		return fmt.Errorf("required field must declare default: %s.%s", defKey, field.Key)
 	}
 	return nil
