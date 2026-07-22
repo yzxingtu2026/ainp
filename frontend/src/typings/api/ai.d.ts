@@ -152,6 +152,7 @@ declare namespace Api.AI {
     detail?: string;
     tool_call_id?: string;
     tool_name?: string;
+    presentation?: ToolPresentation;
     arguments?: unknown;
     result?: unknown;
   }
@@ -365,6 +366,20 @@ declare namespace Api.AI {
     truncated: boolean;
     error_category?: string;
   }
+  interface ToolPresentation {
+    title: string;
+    description?: string;
+  }
+  interface ConfirmationPresentationDetail {
+    label: string;
+    value: string;
+    sensitive?: boolean;
+  }
+  interface ConfirmationPresentation {
+    tool: ToolPresentation;
+    summary: string;
+    details?: ConfirmationPresentationDetail[];
+  }
   interface ToolConfirmation {
     id: string;
     scope_id: string;
@@ -372,6 +387,8 @@ declare namespace Api.AI {
     tool_call_id: string;
     tool_id: string;
     arguments_summary: Record<string, unknown>;
+    presentation_version: number;
+    presentation?: ConfirmationPresentation;
     risk: string;
     side_effect: string;
     status: string;

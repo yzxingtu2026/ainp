@@ -486,6 +486,10 @@ func (s *ToolService) execute(ctx context.Context, ac *auth.Context, scope *Tool
 		inv.Status = "waiting_confirmation"
 		inv.ConfirmationID = &c.ID
 		if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			presentation := s.registry.PresentConfirmation(ctx, d, args)
+			c.PresentationJSON = jsonBytes(presentation)
+			c.PresentationVersion = aitool.ConfirmationPresentationVersion
+			c.Presentation = &presentation
 			if err := tx.Create(&inv).Error; err != nil {
 				return err
 			}

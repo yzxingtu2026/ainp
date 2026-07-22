@@ -616,6 +616,13 @@ VALUES (?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, 0, ?)`, restri
 	if !ok || pendingResult.Status != "confirmation_required" {
 		t.Fatalf("unexpected confirmation result: %#v", pendingResult)
 	}
+	if confirmation.PresentationVersion != aitool.ConfirmationPresentationVersion || confirmation.Presentation == nil || confirmation.Presentation.Tool.Title != actionTool.TitleForHuman || confirmation.Presentation.Summary == "" {
+		t.Fatalf("confirmation presentation snapshot missing: %#v", confirmation)
+	}
+	var storedConfirmation ai.ToolConfirmation
+	if err = guarded.WithContext(ctx).Where("id=?", confirmation.ID).First(&storedConfirmation).Error; err != nil || storedConfirmation.Presentation == nil || storedConfirmation.Presentation.Tool.Title != actionTool.TitleForHuman {
+		t.Fatalf("confirmation presentation was not persisted: %#v %v", storedConfirmation, err)
+	}
 	approvedValue, err := service.Approve(ctx, ai.ToolConfirmationRequest{ID: confirmation.ID})
 	if err != nil {
 		t.Fatalf("approve confirmation failed: %v", err)

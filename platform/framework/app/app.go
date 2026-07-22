@@ -129,6 +129,7 @@ func New(cfg *config.Config, db *gorm.DB, auditor audit.Recorder, tokens *auth.T
 		Notifications:        notification.NewDefinitionRegistry(),
 		LogProviders:         logcenter.NewRegistry(),
 		PageContexts:         pagecontext.NewRegistry(),
+		ToolRegistry:         aitool.NewRegistry(),
 		NotificationRenderer: notification.NewRenderer(),
 		Auditor:              auditor,
 		Installed:            true,

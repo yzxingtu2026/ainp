@@ -166,7 +166,10 @@ func Register(a *app.App) error {
 	if err := invocations.RecoverStale(context.Background(), 10*time.Minute); err != nil {
 		return err
 	}
-	toolRegistry := aitool.NewRegistry()
+	toolRegistry := a.ToolRegistry
+	if toolRegistry == nil {
+		return fmt.Errorf("tool registry is required")
+	}
 	handleSigner, err := aitool.NewHandleSigner(a.Config.Auth.JWT.Secret)
 	if err != nil {
 		return err
@@ -184,7 +187,6 @@ func Register(a *app.App) error {
 		return err
 	}
 	invocations.SetToolProjector(tools)
-	a.ToolRegistry = toolRegistry
 	contracts, err := NewBuiltinAgentContractRegistry()
 	if err != nil {
 		return err

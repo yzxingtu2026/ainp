@@ -139,6 +139,7 @@ const renderedItems = computed<RenderedItem[]>(() => {
       operations.push({
         toolCallId: callId,
         toolName: part.tool_name || '',
+        presentation: part.presentation,
         request: part.arguments,
         result: callId ? resultIndex.get(callId) : undefined,
         hasResult: Boolean(callId && resultIndex.has(callId))
@@ -169,10 +170,8 @@ const renderedItems = computed<RenderedItem[]>(() => {
       else operations.push(...segment.operations);
     }
     const merged: RunSegment[] = [];
-    if (texts.length > 0)
-      merged.push({ kind: 'text', key: `${group.runId}-text`, text: texts.join('\n\n') });
-    if (operations.length > 0)
-      merged.push({ kind: 'operations', key: `${group.runId}-ops`, operations });
+    if (texts.length > 0) merged.push({ kind: 'text', key: `${group.runId}-text`, text: texts.join('\n\n') });
+    if (operations.length > 0) merged.push({ kind: 'operations', key: `${group.runId}-ops`, operations });
     group.segments = merged;
   }
 
@@ -182,9 +181,7 @@ const renderedItems = computed<RenderedItem[]>(() => {
       kind: 'run',
       key: props.activeRunId,
       runId: props.activeRunId,
-      segments: props.streamingText
-        ? [{ kind: 'text', key: 'streaming', text: props.streamingText }]
-        : [],
+      segments: props.streamingText ? [{ kind: 'text', key: 'streaming', text: props.streamingText }] : [],
       live: true
     };
     runGroups.set(props.activeRunId, activeGroup);
@@ -252,11 +249,7 @@ function onConfirmationResolved(status: 'approved' | 'rejected', result?: Api.AI
         <div class="message__content">
           <template v-for="segment in item.segments" :key="segment.key">
             <MarkdownRenderer v-if="segment.kind === 'text'" :content="segment.text" />
-            <ToolActivityGroup
-              v-else
-              :operations="segment.operations"
-              :active="item.live"
-            />
+            <ToolActivityGroup v-else :operations="segment.operations" :active="item.live" />
           </template>
         </div>
       </article>
@@ -381,12 +374,7 @@ function onConfirmationResolved(status: 'approved' | 'rejected', result?: Api.AI
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(
-    100deg,
-    transparent 25%,
-    rgba(var(--primary-color), 0.09) 50%,
-    transparent 75%
-  );
+  background: linear-gradient(100deg, transparent 25%, rgba(var(--primary-color), 0.09) 50%, transparent 75%);
   background-size: 220% 100%;
   animation: thinking-shimmer 2.4s linear infinite;
   pointer-events: none;

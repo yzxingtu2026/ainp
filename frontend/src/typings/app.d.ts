@@ -1163,6 +1163,9 @@ declare namespace App {
         toolWaiting: string;
         toolArguments: string;
         toolResult: string;
+        toolTechnicalDetails: string;
+        toolIdentifier: string;
+        toolCallIdentifier: string;
         navigationSearching: string;
         navigationProcessed: string;
         navigationEmpty: string;
@@ -1176,6 +1179,9 @@ declare namespace App {
         title: string;
         tool: string;
         arguments: string;
+        callId: string;
+        technicalDetails: string;
+        fallbackSummary: string;
         reject: string;
         approveOnce: string;
         risk: Record<'low' | 'medium' | 'high' | 'critical', string>;

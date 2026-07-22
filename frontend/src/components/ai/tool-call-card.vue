@@ -7,6 +7,8 @@ defineOptions({ name: 'ToolCallCard' });
 
 const props = defineProps<{
   toolName: string;
+  presentation?: Api.AI.ToolPresentation;
+  toolCallId: string;
   /** tool_call 调用参数 */
   request: unknown;
   /** 配对 tool_result 结果，未返回时为空 */
@@ -42,13 +44,14 @@ const statusText = computed(() => {
 const summary = computed(() => toolResultSummary(props.result));
 const requestCode = computed(() => formatToolPayload(props.request));
 const resultCode = computed(() => formatToolPayload(props.result));
+const displayName = computed(() => props.presentation?.title || props.toolName || $t('page.agentBuilder.unknownTool'));
 </script>
 
 <template>
   <div class="tool-call" :class="`tool-call--${status}`">
     <button type="button" class="tool-call__row" @click="expanded = !expanded">
       <SvgIcon icon="mdi:api" class="tool-call__icon" />
-      <span class="tool-call__name">{{ toolName || $t('page.agentBuilder.unknownTool') }}</span>
+      <span class="tool-call__name">{{ displayName }}</span>
       <span class="tool-call__status">
         <NSpin v-if="status === 'running'" :size="14" />
         <SvgIcon v-else :icon="statusIcon" />
@@ -58,21 +61,30 @@ const resultCode = computed(() => formatToolPayload(props.result));
     </button>
 
     <div v-if="expanded" class="tool-call__detail">
+      <p v-if="presentation?.description" class="tool-call__description">{{ presentation.description }}</p>
       <p v-if="summary" class="tool-call__summary">{{ summary }}</p>
-      <div class="tool-call__section">
-        <div class="tool-call__label">{{ $t('chat.toolArguments') }}</div>
-        <div v-if="requestCode" class="tool-call__payload">
-          <NCode :code="requestCode" language="json" word-wrap />
-        </div>
-        <span v-else class="tool-call__empty">-</span>
-      </div>
-      <div class="tool-call__section">
-        <div class="tool-call__label">{{ $t('chat.toolResult') }}</div>
-        <div v-if="hasResult && resultCode" class="tool-call__payload">
-          <NCode :code="resultCode" language="json" word-wrap />
-        </div>
-        <span v-else class="tool-call__empty">{{ $t('chat.toolWaiting') }}</span>
-      </div>
+      <NCollapse>
+        <NCollapseItem :title="$t('chat.toolTechnicalDetails')" name="technical">
+          <NDescriptions :column="1" label-placement="left" size="small">
+            <NDescriptionsItem :label="$t('chat.toolIdentifier')">{{ toolName || '-' }}</NDescriptionsItem>
+            <NDescriptionsItem :label="$t('chat.toolCallIdentifier')">{{ toolCallId || '-' }}</NDescriptionsItem>
+          </NDescriptions>
+          <div class="tool-call__section">
+            <div class="tool-call__label">{{ $t('chat.toolArguments') }}</div>
+            <div v-if="requestCode" class="tool-call__payload">
+              <NCode :code="requestCode" language="json" word-wrap />
+            </div>
+            <span v-else class="tool-call__empty">-</span>
+          </div>
+          <div class="tool-call__section">
+            <div class="tool-call__label">{{ $t('chat.toolResult') }}</div>
+            <div v-if="hasResult && resultCode" class="tool-call__payload">
+              <NCode :code="resultCode" language="json" word-wrap />
+            </div>
+            <span v-else class="tool-call__empty">{{ $t('chat.toolWaiting') }}</span>
+          </div>
+        </NCollapseItem>
+      </NCollapse>
     </div>
   </div>
 </template>
@@ -83,7 +95,9 @@ const resultCode = computed(() => formatToolPayload(props.result));
   border-radius: 8px;
   background: rgba(127, 127, 127, 0.05);
   overflow: hidden;
-  transition: border-color 0.2s ease, background 0.2s ease;
+  transition:
+    border-color 0.2s ease,
+    background 0.2s ease;
 }
 
 .tool-call--running {
@@ -124,8 +138,13 @@ const resultCode = computed(() => formatToolPayload(props.result));
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: var(--font-mono, ui-monospace, monospace);
   font-weight: 600;
+}
+
+.tool-call__description {
+  margin: 0 0 8px;
+  color: rgba(127, 127, 127, 0.9);
+  font-size: 12px;
 }
 
 .tool-call__status {
