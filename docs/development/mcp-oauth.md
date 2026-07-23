@@ -2,7 +2,7 @@
 
 AINP 的远程 MCP 入口使用官方 Go MCP SDK 提供 Streamable HTTP。业务不得手写 JSON-RPC、SSE 或 session 状态机。
 
-## 第一期边界
+## OAuth 与传输边界
 
 - MCP endpoint 固定为 `/mcp`，OAuth metadata 位于标准 `/.well-known/` 路径。
 - authorization endpoint `/oauth/authorize` 是前端浏览器页面；它使用网页登录态访问 `/api/v1/mcp/oauth/authorize` 查询并确认授权，避免页面路由与协议 API 冲突。
@@ -13,7 +13,17 @@ AINP 的远程 MCP 入口使用官方 Go MCP SDK 提供 Streamable HTTP。业务
 - MCP Access Token audience 固定为 `ainp:mcp`，与网页 `ainp:tenant-console` 双向隔离。
 - Refresh Token 使用 opaque token，数据库只存 SHA-256；每次刷新轮换，旧 token 重放会撤销整个 Grant。
 - Grant 固定 tenant、user、client、scope 和 `auth_version`。每次 MCP 请求重新加载 Grant，并通过 `AuthorizationProvider` 实时校验用户、租户和授权版本。
-- 第一期只建立 transport 与授权边界，不投影 Action Tool；`tools/list` / `tools/call` 属于第二期。
+
+## Action 自动投影与执行
+
+- Action Registry 是唯一工具事实源。MCP 只投影 `source=action`、tenant realm、`AIMeta.ExposeTool=true` 且 enabled 的 Action；禁止 MCP 专用业务清单、DTO 或 Action ID switch。
+- 每个新 MCP session 从已完成注册的 Action Registry 构建协议目录；`tools/list` 每次请求再按 Action 状态、tenant realm、实时 permission、OAuth scope 的顺序求交集。不可见项不返回，目录单页最多 100 项。
+- MCP tool name 由原 Action ID 的可读归一化片段和 SHA-256 稳定摘要组成。原 Action ID 只保留在服务端 `RuntimeRef`，名称冲突启动时 fail-closed。
+- 输入 Schema、LLM/Human 描述和只读/破坏性/开放世界/幂等提示来自 Action Tool Definition。MCP 要求输出 Schema 顶层为 object；非 object 的 Action 输出 Schema 不声明为 MCP `outputSchema`，结果仍安全返回。
+- `none/read` 需要 `actions:read`；普通 `write` 需要 `actions:write`。`external/paid/destructive/critical` 在第三期逐次确认链完成前全部从目录过滤且不可执行，即使 Grant 已含 `actions:sensitive` 也不能绕过。
+- `tools/call` 根据稳定名称定位原 Action，重新检查 Grant、scope、realm、permission、暴露状态和 Schema，并且只调用 `ActionRegistry.Invoke`。`_meta.idempotencyKey`（兼容 `idempotency_key`）写入可信 `AuthContext.IdempotencyKey`，复用 Action 的幂等策略。
+- Action/校验错误映射为安全 MCP Tool error。鉴权与资源存在性统一返回 `tool is unavailable`；未知错误不返回堆栈、SQL、内部路径或 cause。
+- Action 审计记录 `actor_type/client=mcp`、`mcp_client_id`、`mcp_grant_id`、Action、permission、结果和 replay。适配器预检拒绝也写入同一 Action 审计协议；参数和原始结果不进入审计摘要。
 
 ## Scope
 

@@ -69,6 +69,7 @@ System
 硬规则：
 
 - MCP AuthContext 只能由服务端校验 `ainp:mcp` Token、Grant 与 AuthorizationProvider 后构造，`client=mcp`；请求不得上传 tenant/user/realm。
+- MCP OAuth 适配器把服务端校验后的 client/grant 标识写入 `MCPClientID/MCPGrantID`，仅用于授权关联与审计；Tool Arguments 和 `_meta` 不得覆盖。MCP 幂等键只允许写入 `IdempotencyKey`，不能携带身份事实。
 
 - 不存在「请求里带 tenant_id 就切换租户」。
 - 因一用户一租户，**Phase 1 不做租户切换 API**。

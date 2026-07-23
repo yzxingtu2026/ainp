@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/yzxingtu2026/ainp/platform/framework/action"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/authentication"
 )
@@ -20,9 +21,8 @@ type HTTPServer struct {
 	limiter    authentication.RateLimiter
 }
 
-func NewHTTPServer(service *Service, baseURL, webBaseURL string) *HTTPServer {
-	server := mcp.NewServer(&mcp.Implementation{Name: "AINP", Version: "1.0.0"}, nil)
-	return &HTTPServer{service: service, baseURL: strings.TrimRight(baseURL, "/"), webBaseURL: strings.TrimRight(webBaseURL, "/"), limiter: authentication.NewMemoryRateLimiter(30, time.Minute), handler: mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{})}
+func NewHTTPServer(service *Service, actions *action.Registry, baseURL, webBaseURL string) *HTTPServer {
+	return &HTTPServer{service: service, baseURL: strings.TrimRight(baseURL, "/"), webBaseURL: strings.TrimRight(webBaseURL, "/"), limiter: authentication.NewMemoryRateLimiter(30, time.Minute), handler: mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return NewActionServer(actions) }, &mcp.StreamableHTTPOptions{})}
 }
 
 func (h *HTTPServer) Register(r *gin.Engine) {
@@ -153,12 +153,13 @@ func (h *HTTPServer) mcp(c *gin.Context) {
 	}
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 1<<20)
 	raw := strings.TrimSpace(strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer "))
-	ac, err := h.service.Authenticate(c.Request.Context(), raw)
+	principal, err := h.service.Authenticate(c.Request.Context(), raw)
 	if err != nil {
 		c.Header("WWW-Authenticate", `Bearer resource_metadata="`+h.baseURL+`/.well-known/oauth-protected-resource"`)
 		c.Status(401)
 		return
 	}
-	ctx := auth.WithContext(c.Request.Context(), ac)
+	ctx := auth.WithContext(c.Request.Context(), principal.Auth)
+	ctx = withPrincipal(ctx, principal)
 	h.handler.ServeHTTP(c.Writer, c.Request.WithContext(ctx))
 }

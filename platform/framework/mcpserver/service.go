@@ -346,7 +346,13 @@ func (s *Service) parseAccess(raw string) (*accessClaims, error) {
 	return claims, nil
 }
 
-func (s *Service) Authenticate(ctx context.Context, raw string) (*auth.Context, error) {
+type Principal struct {
+	Auth   *auth.Context
+	Scopes map[string]bool
+}
+
+func (s *Service) Authenticate(ctx context.Context, raw string) (*Principal, error) {
+	requestContext := auth.MustFromContext(ctx)
 	claims, err := s.parseAccess(raw)
 	if err != nil {
 		return nil, err
@@ -365,5 +371,12 @@ func (s *Service) Authenticate(ctx context.Context, raw string) (*auth.Context, 
 	}
 	now := time.Now().UTC()
 	_ = db.Model(&Grant{}).Where("id = ?", grant.ID).Update("last_used_at", now).Error
-	return &auth.Context{TenantID: snapshot.TenantID, UserID: snapshot.UserID, Realm: auth.RealmTenant, AuthVersion: snapshot.AuthVersion, Roles: snapshot.Roles, Permissions: snapshot.Permissions, OrgID: snapshot.OrgID, DeptID: snapshot.DeptID, SessionID: grant.ID, Client: "mcp", Authenticated: true}, nil
+	scopes := make(map[string]bool)
+	for _, scope := range strings.Fields(grant.Scopes) {
+		scopes[scope] = true
+	}
+	return &Principal{
+		Auth:   &auth.Context{RequestID: requestContext.RequestID, TraceID: requestContext.TraceID, Language: requestContext.Language, TenantID: snapshot.TenantID, UserID: snapshot.UserID, Realm: auth.RealmTenant, AuthVersion: snapshot.AuthVersion, Roles: snapshot.Roles, Permissions: snapshot.Permissions, OrgID: snapshot.OrgID, DeptID: snapshot.DeptID, SessionID: grant.ID, Client: "mcp", MCPClientID: grant.ClientID, MCPGrantID: grant.ID, Authenticated: true},
+		Scopes: scopes,
+	}, nil
 }

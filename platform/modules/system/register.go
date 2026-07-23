@@ -135,7 +135,7 @@ func Register(a *app.App) error {
 		return err
 	}
 	mcpService := mcpserver.NewService(a.DB, svc, a.Config.Auth.JWT.Secret, a.Config.Auth.JWT.Issuer, a.Config.MCP.BaseURL)
-	mcpHTTP := mcpserver.NewHTTPServer(mcpService, a.Config.MCP.BaseURL, a.Config.MCP.WebBaseURL)
+	mcpHTTP := mcpserver.NewHTTPServer(mcpService, a.Actions, a.Config.MCP.BaseURL, a.Config.MCP.WebBaseURL)
 	a.OnHTTP = func(engine *gin.Engine) {
 		RegisterAttachmentTransferRoutes(engine, attachSvc)
 		mcpHTTP.Register(engine)

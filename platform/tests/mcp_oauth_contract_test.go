@@ -17,7 +17,7 @@ func TestMCPOAuthMetadataAndProtectedTransport(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	service := mcpserver.NewService(nil, nil, "test-secret", "ainp-test", "https://api.ainp.example")
-	mcpserver.NewHTTPServer(service, "https://api.ainp.example", "https://ainp.example").Register(router)
+	mcpserver.NewHTTPServer(service, nil, "https://api.ainp.example", "https://ainp.example").Register(router)
 
 	for _, path := range []string{"/.well-known/oauth-protected-resource", "/.well-known/oauth-authorization-server"} {
 		request := httptest.NewRequest(http.MethodGet, path, nil)

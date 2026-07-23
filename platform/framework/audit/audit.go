@@ -26,6 +26,8 @@ type Record struct {
 	ResourceType     string    `gorm:"size:64" json:"resource_type"`
 	ResourceID       string    `gorm:"size:64" json:"resource_id"`
 	Client           string    `gorm:"size:32" json:"client"`
+	MCPClientID      string    `gorm:"size:64" json:"mcp_client_id,omitempty"`
+	MCPGrantID       string    `gorm:"size:64" json:"mcp_grant_id,omitempty"`
 	Summary          string    `gorm:"size:512" json:"summary"`
 	Replay           bool      `gorm:"default:false" json:"replay"`
 }

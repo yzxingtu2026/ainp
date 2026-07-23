@@ -16,7 +16,7 @@
 
 Action 是否暴露以注册处的 `Metadata.AI` 为唯一事实源：仅 `AIMeta.ExposeTool=true` 自动投影为 Action Tool，`AI=nil` 默认不暴露。暴露项使用 `action.InputSchemaFor[Request]()` 生成显式输入契约，响应使用 `action.SchemaFor[Response]()`；HTTP 与 Tool 必须复用同一强类型 DTO 和 Handler。字段 required 只由显式验证元数据决定，局部更新的缺失字段不得被解码零值覆盖；Tool Runtime 禁止补字段、隐式强转或维护 Agent 专用 DTO。暴露项还必须声明 tags、风险、副作用、确认策略与安全结果摘要。禁止维护 `action_ai_inventory.go` 等平行暴露清单；Action Executor 只能调用 `ActionRegistry.Invoke`。
 
-远程 MCP 的 OAuth/transport 不属于 Tool Provider。第二期 MCP Action Adapter 只能复用现有 ActionProvider 投影；外部 `source=mcp` Provider 仍是独立后续能力，禁止借本功能接入 Agent Runtime。
+远程 MCP 的 OAuth/transport 不属于 Tool Provider。MCP Action Adapter 只复用现有 ActionProvider 投影，并在 list/call 时求 Action 状态、tenant realm、实时 permission 与 OAuth scope 的交集；执行只进入 `ActionRegistry.Invoke`。普通写由 `actions:write` 持续授权，敏感 Action 在逐次确认链完成前禁止投影。外部 `source=mcp` Provider 仍是独立后续能力，禁止借本功能接入 Agent Runtime。
 
 框架核心工具通过 `RuntimeSlot` 注册。Slot 同时声明稳定 Definition、`direct/progressive` 发现模式、动态投影、Executor、Step/Invocation 分类、预算类别与安全观测字段。`platform/modules/ai/tools/register.go` 是唯一显式聚合入口；每个核心工具位于独立子目录，例如 `tools/knowledge/slot.go`。生产启动不扫描源码、不使用 Go Plugin，也不依赖隐藏 `init()`。
 
