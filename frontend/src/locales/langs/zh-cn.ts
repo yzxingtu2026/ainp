@@ -849,7 +849,6 @@ const local: App.I18n.Schema = {
       startWork: '开始工作',
       continueTitle: '继续工作',
       continueSubtitle: '当前打开的页面与需要确认的 AI 操作',
-      continueEmpty: '当前没有需要继续处理的工作',
       confirmationTitle: 'AI 操作待确认',
       openPage: '已打开页面',
       opened: '已打开',

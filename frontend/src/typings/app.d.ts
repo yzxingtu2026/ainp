@@ -981,7 +981,6 @@ declare namespace App {
           startWork: string;
           continueTitle: string;
           continueSubtitle: string;
-          continueEmpty: string;
           confirmationTitle: string;
           openPage: string;
           opened: string;

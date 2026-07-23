@@ -856,7 +856,6 @@ const local: App.I18n.Schema = {
       startWork: 'Start working',
       continueTitle: 'Continue working',
       continueSubtitle: 'Open pages and AI actions awaiting confirmation',
-      continueEmpty: 'There is no work waiting to be continued',
       confirmationTitle: 'AI action needs confirmation',
       openPage: 'Open page',
       opened: 'Open',
