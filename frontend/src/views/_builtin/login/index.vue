@@ -39,8 +39,17 @@ const activeModule = computed(() => moduleMap[props.module || 'pwd-login']);
 
 <template>
   <div class="login-page" :class="{ 'is-dark': themeStore.darkMode }">
-    <aside class="login-visual" aria-hidden="true">
+    <aside class="login-visual" aria-labelledby="login-visual-title">
       <img class="visual-image" src="/brand/ainp-login-visual.png" alt="" />
+      <div class="visual-copy">
+        <h2 id="login-visual-title">AINP</h2>
+        <p>{{ $t('page.login.visual.tagline') }}</p>
+        <ul class="visual-features">
+          <li>{{ $t('page.login.visual.intelligentCollaboration') }}</li>
+          <li>{{ $t('page.login.visual.trustedExecution') }}</li>
+          <li>{{ $t('page.login.visual.flexibleExtension') }}</li>
+        </ul>
+      </div>
     </aside>
 
     <section class="login-panel">
@@ -92,6 +101,9 @@ const activeModule = computed(() => moduleMap[props.module || 'pwd-login']);
   --login-border: rgba(15, 23, 42, 0.12);
   --login-text: #111827;
   --login-muted: #64748b;
+  --visual-text: #12203f;
+  --visual-muted: #51617f;
+  --visual-divider: rgba(64, 82, 126, 0.28);
   min-height: 100%;
   display: grid;
   grid-template-columns: minmax(0, 1.18fr) minmax(480px, 0.82fr);
@@ -106,6 +118,9 @@ const activeModule = computed(() => moduleMap[props.module || 'pwd-login']);
   --login-border: rgba(148, 163, 184, 0.18);
   --login-text: #f8fafc;
   --login-muted: #8b98ab;
+  --visual-text: #f8faff;
+  --visual-muted: #bdc8dc;
+  --visual-divider: rgba(214, 223, 244, 0.32);
 }
 
 .login-visual {
@@ -128,6 +143,52 @@ const activeModule = computed(() => moduleMap[props.module || 'pwd-login']);
 
 .is-dark .visual-image {
   filter: brightness(0.38) saturate(1.08) contrast(1.06);
+}
+
+.visual-copy {
+  position: absolute;
+  z-index: 1;
+  right: clamp(36px, 5vw, 76px);
+  bottom: clamp(34px, 5.5vh, 68px);
+  left: clamp(36px, 5vw, 76px);
+  color: var(--visual-text);
+}
+
+.visual-copy h2 {
+  margin: 0;
+  font-size: 25px;
+  line-height: 1.2;
+  font-weight: 700;
+}
+
+.visual-copy p {
+  margin: 8px 0 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--visual-muted);
+}
+
+.visual-features {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  max-width: 520px;
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--visual-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.visual-features li {
+  display: flex;
+  align-items: center;
+}
+
+.visual-features li + li {
+  margin-left: 14px;
+  padding-left: 14px;
+  border-left: 1px solid var(--visual-divider);
 }
 
 .login-panel {

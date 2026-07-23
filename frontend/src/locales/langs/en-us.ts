@@ -799,6 +799,12 @@ const local: App.I18n.Schema = {
       reloginNow: 'Sign in again'
     },
     login: {
+      visual: {
+        tagline: 'AI-native application platform for industry software',
+        intelligentCollaboration: 'Intelligent collaboration',
+        trustedExecution: 'Trusted execution',
+        flexibleExtension: 'Flexible extension'
+      },
       common: {
         loginOrRegister: 'Login / Register',
         subtitle: 'Enter your AI-native workspace',

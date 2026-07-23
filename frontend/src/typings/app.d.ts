@@ -924,6 +924,12 @@ declare namespace App {
           reloginNow: string;
         };
         login: {
+          visual: {
+            tagline: string;
+            intelligentCollaboration: string;
+            trustedExecution: string;
+            flexibleExtension: string;
+          };
           common: {
             loginOrRegister: string;
             subtitle: string;

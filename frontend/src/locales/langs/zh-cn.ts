@@ -792,6 +792,12 @@ const local: App.I18n.Schema = {
       reloginNow: '重新登录'
     },
     login: {
+      visual: {
+        tagline: '面向行业软件的 AI 原生应用平台',
+        intelligentCollaboration: '智能协作',
+        trustedExecution: '可信执行',
+        flexibleExtension: '灵活扩展'
+      },
       common: {
         loginOrRegister: '登录 / 注册',
         subtitle: '进入你的 AI 原生工作空间',
