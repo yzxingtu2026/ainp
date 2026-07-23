@@ -20,7 +20,9 @@ const darkMenu = computed(
     !themeStore.darkMode && !isTopHybridSidebarFirst.value && !isTopHybridHeaderFirst.value && themeStore.sider.inverted
 );
 const showLogo = computed(() => themeStore.layout.mode === 'vertical');
-const menuWrapperClass = computed(() => (showLogo.value ? 'flex-1-hidden' : 'flex-1-hidden'));
+const menuWrapperClass = computed(() =>
+  showLogo.value ? 'flex-1-hidden' : 'min-h-0 flex-1 overflow-visible'
+);
 </script>
 
 <template>
