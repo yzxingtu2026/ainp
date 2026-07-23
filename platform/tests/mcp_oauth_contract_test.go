@@ -16,8 +16,8 @@ import (
 func TestMCPOAuthMetadataAndProtectedTransport(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	service := mcpserver.NewService(nil, nil, "test-secret", "ainp-test", "https://ainp.example")
-	mcpserver.NewHTTPServer(service, "https://ainp.example").Register(router)
+	service := mcpserver.NewService(nil, nil, "test-secret", "ainp-test", "https://api.ainp.example")
+	mcpserver.NewHTTPServer(service, "https://api.ainp.example", "https://ainp.example").Register(router)
 
 	for _, path := range []string{"/.well-known/oauth-protected-resource", "/.well-known/oauth-authorization-server"} {
 		request := httptest.NewRequest(http.MethodGet, path, nil)
@@ -27,8 +27,14 @@ func TestMCPOAuthMetadataAndProtectedTransport(t *testing.T) {
 			t.Fatalf("metadata %s: status=%d body=%s", path, response.Code, response.Body.String())
 		}
 	}
-	request := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`))
+	request := httptest.NewRequest(http.MethodGet, "/.well-known/oauth-authorization-server", nil)
 	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if !strings.Contains(response.Body.String(), `"authorization_endpoint":"https://ainp.example/oauth/authorize"`) {
+		t.Fatalf("authorization endpoint must use web base URL: %s", response.Body.String())
+	}
+	request = httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`))
+	response = httptest.NewRecorder()
 	router.ServeHTTP(response, request)
 	if response.Code != http.StatusUnauthorized || !strings.Contains(response.Header().Get("WWW-Authenticate"), "oauth-protected-resource") {
 		t.Fatalf("unprotected MCP request status=%d challenge=%q", response.Code, response.Header().Get("WWW-Authenticate"))

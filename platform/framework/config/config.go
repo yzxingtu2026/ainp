@@ -24,7 +24,8 @@ type Config struct {
 }
 
 type MCPConfig struct {
-	BaseURL string `yaml:"base_url"`
+	BaseURL    string `yaml:"base_url"`
+	WebBaseURL string `yaml:"web_base_url"`
 }
 
 type AIConfig struct {
@@ -230,6 +231,9 @@ func (c *Config) applyDefaults() {
 	if c.MCP.BaseURL == "" {
 		c.MCP.BaseURL = "http://127.0.0.1" + c.Server.Addr
 	}
+	if c.MCP.WebBaseURL == "" {
+		c.MCP.WebBaseURL = c.MCP.BaseURL
+	}
 	if c.StateFile == "" {
 		c.StateFile = "configs/state.yaml"
 	}
@@ -313,6 +317,12 @@ func (c *Config) applyEnvOverrides() {
 	}
 	if baseURL := os.Getenv("MCP_BASE_URL"); baseURL != "" {
 		c.MCP.BaseURL = baseURL
+		if os.Getenv("MCP_WEB_BASE_URL") == "" {
+			c.MCP.WebBaseURL = baseURL
+		}
+	}
+	if webBaseURL := os.Getenv("MCP_WEB_BASE_URL"); webBaseURL != "" {
+		c.MCP.WebBaseURL = webBaseURL
 	}
 	if provider := os.Getenv("STORAGE_PROVIDER"); provider != "" {
 		c.Storage.Provider = provider

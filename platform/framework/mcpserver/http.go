@@ -13,15 +13,16 @@ import (
 )
 
 type HTTPServer struct {
-	service *Service
-	handler http.Handler
-	baseURL string
-	limiter authentication.RateLimiter
+	service    *Service
+	handler    http.Handler
+	baseURL    string
+	webBaseURL string
+	limiter    authentication.RateLimiter
 }
 
-func NewHTTPServer(service *Service, baseURL string) *HTTPServer {
+func NewHTTPServer(service *Service, baseURL, webBaseURL string) *HTTPServer {
 	server := mcp.NewServer(&mcp.Implementation{Name: "AINP", Version: "1.0.0"}, nil)
-	return &HTTPServer{service: service, baseURL: strings.TrimRight(baseURL, "/"), limiter: authentication.NewMemoryRateLimiter(30, time.Minute), handler: mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{})}
+	return &HTTPServer{service: service, baseURL: strings.TrimRight(baseURL, "/"), webBaseURL: strings.TrimRight(webBaseURL, "/"), limiter: authentication.NewMemoryRateLimiter(30, time.Minute), handler: mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{})}
 }
 
 func (h *HTTPServer) Register(r *gin.Engine) {
@@ -48,7 +49,7 @@ func (h *HTTPServer) resourceMetadata(c *gin.Context) {
 	c.JSON(200, gin.H{"resource": h.baseURL + "/mcp", "authorization_servers": []string{h.baseURL}, "scopes_supported": []string{ScopeRead, ScopeWrite, ScopeSensitive}, "bearer_methods_supported": []string{"header"}})
 }
 func (h *HTTPServer) serverMetadata(c *gin.Context) {
-	c.JSON(200, gin.H{"issuer": h.baseURL, "authorization_endpoint": h.baseURL + "/oauth/authorize", "token_endpoint": h.baseURL + "/oauth/token", "registration_endpoint": h.baseURL + "/oauth/register", "revocation_endpoint": h.baseURL + "/oauth/revoke", "response_types_supported": []string{"code"}, "grant_types_supported": []string{"authorization_code", "refresh_token"}, "code_challenge_methods_supported": []string{"S256"}, "token_endpoint_auth_methods_supported": []string{"none"}, "scopes_supported": []string{ScopeRead, ScopeWrite, ScopeSensitive}})
+	c.JSON(200, gin.H{"issuer": h.baseURL, "authorization_endpoint": h.webBaseURL + "/oauth/authorize", "token_endpoint": h.baseURL + "/oauth/token", "registration_endpoint": h.baseURL + "/oauth/register", "revocation_endpoint": h.baseURL + "/oauth/revoke", "response_types_supported": []string{"code"}, "grant_types_supported": []string{"authorization_code", "refresh_token"}, "code_challenge_methods_supported": []string{"S256"}, "token_endpoint_auth_methods_supported": []string{"none"}, "scopes_supported": []string{ScopeRead, ScopeWrite, ScopeSensitive}})
 }
 func (h *HTTPServer) registerClient(c *gin.Context) {
 	if !h.allow(c, "register") {

@@ -25,7 +25,7 @@ Scope 只缩小能力。任何阶段都不得绕过 realm、tenant、实时 perm
 
 ## 部署
 
-- `mcp.base_url` / `MCP_BASE_URL` 必须是客户端可访问的规范公网地址；生产必须为 HTTPS。
+- `mcp.base_url` / `MCP_BASE_URL` 是 OAuth/MCP 后端规范公网地址；`mcp.web_base_url` / `MCP_WEB_BASE_URL` 是浏览器授权页地址。生产同域部署时两者可相同，本地前后端分端口时必须分别配置。
 - `/mcp` 拒绝未知 Origin，并限制请求体为 1 MiB。反向代理必须覆盖 Host、Origin、连接和读取超时门禁。
 - Code、Access/Refresh Token、PKCE verifier、Cookie 和完整授权 Body 禁止进入日志、审计或错误响应。
 
