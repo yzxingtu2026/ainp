@@ -32,6 +32,8 @@ Scope 只缩小能力。任何阶段都不得绕过 realm、tenant、实时 perm
 
 个人中心的“MCP 连接”页签通过 authenticated API 读取规范 MCP URL，并提供桌面 Agent 配置指南。指南只展示名称、`streamable_http` 类型和 URL；OAuth 客户端的 Bearer 环境变量及自定义 Header 必须留空，禁止引导用户复制 Token。
 
+对于支持 `mcpServers` JSON 的客户端，页面生成 `type=streamable-http`、稳定 server key 与 URL 的最小配置并一键复制。不得把 `/mcp` 伪装成 `type=sse`；客户端若使用 `http` 等私有枚举，应提示用户只调整 type。客户端专用命令、Token、Header 或环境变量不得伪装成通用配置。
+
 ## 数据
 
 `mcp_oauth_clients` 是协议级全局 Client；Grant 是 tenant-owned 用户委托；授权码和 Token family 只能通过受控 SystemDB 协议仓储访问。Grant 撤销独立于网页 Session，网页 Token 和 MCP Token 不得跨入口使用。

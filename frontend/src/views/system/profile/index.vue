@@ -26,6 +26,15 @@ const address = computed(() => {
     : { value: profile.value?.effective_address || '-', source: profile.value?.address_source === 'memory_profile' ? '记忆画像' : '基本资料' };
 });
 
+const mcpJSONConfig = computed(() => JSON.stringify({
+  mcpServers: {
+    ainp: {
+      type: 'streamable-http',
+      url: mcpConnection.value?.url || ''
+    }
+  }
+}, null, 2));
+
 watch(tab, value => router.replace({ query: { ...route.query, tab: value } }));
 
 async function load() {
@@ -73,6 +82,12 @@ async function copyMCPURL() {
   if (!mcpConnection.value?.url) return;
   await navigator.clipboard.writeText(mcpConnection.value.url);
   window.$message?.success('MCP 地址已复制');
+}
+
+async function copyMCPJSON() {
+  if (!mcpConnection.value?.url) return;
+  await navigator.clipboard.writeText(mcpJSONConfig.value);
+  window.$message?.success('MCP JSON 配置已复制');
 }
 
 const optionMap: Record<string, Array<{ label: string; value: string }>> = {
@@ -154,6 +169,18 @@ onMounted(load);
               <li>粘贴上方 URL，其余认证字段保持为空，然后保存。</li>
               <li>在浏览器授权页确认账号、租户和所需权限范围。</li>
             </ol>
+
+            <NDivider title-placement="left">JSON 配置</NDivider>
+            <NAlert type="default" class="mb-12px">
+              AINP 使用 Streamable HTTP，不是旧版 SSE。适用于识别 <NCode code="type: streamable-http" language="text" /> 的客户端；若客户端使用 <NCode code="type: http" language="text" /> 等私有枚举，请按其文档调整 type，URL 始终使用上方的 /mcp 地址。
+            </NAlert>
+            <div class="border border-#e5e7eb bg-#f8fafc p-16px">
+              <div class="mb-12px flex items-center justify-between gap-12px">
+                <NText strong>mcp.json</NText>
+                <NButton type="primary" secondary :disabled="!mcpConnection?.url" @click="copyMCPJSON">复制 JSON</NButton>
+              </div>
+              <NCode :code="mcpJSONConfig" language="json" word-wrap />
+            </div>
 
             <NDivider title-placement="left">授权范围</NDivider>
             <NSpace vertical :size="10">
