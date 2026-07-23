@@ -40,7 +40,11 @@ const activeModule = computed(() => moduleMap[props.module || 'pwd-login']);
 <template>
   <div class="login-page" :class="{ 'is-dark': themeStore.darkMode }">
     <aside class="login-visual" aria-labelledby="login-visual-title">
-      <img class="visual-image" src="/brand/ainp-login-visual.png" alt="" />
+      <img
+        class="visual-image"
+        :src="themeStore.darkMode ? '/brand/ainp-login-visual-dark.png' : '/brand/ainp-login-visual.png'"
+        alt=""
+      />
       <div class="visual-copy">
         <h2 id="login-visual-title">AINP</h2>
         <p>{{ $t('page.login.visual.tagline') }}</p>
@@ -131,6 +135,10 @@ const activeModule = computed(() => moduleMap[props.module || 'pwd-login']);
   background: #e9edf5;
 }
 
+.is-dark .login-visual {
+  background: #111a29;
+}
+
 .visual-image {
   position: absolute;
   inset: 0;
@@ -138,11 +146,6 @@ const activeModule = computed(() => moduleMap[props.module || 'pwd-login']);
   height: 100%;
   object-fit: cover;
   object-position: 50% 48%;
-  transition: filter 200ms ease;
-}
-
-.is-dark .visual-image {
-  filter: brightness(0.38) saturate(1.08) contrast(1.06);
 }
 
 .visual-copy {
