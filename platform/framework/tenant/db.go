@@ -95,6 +95,18 @@ func SystemDB(ctx context.Context, db *gorm.DB) (SystemDatabase, error) {
 	return SystemDatabase{db: accessDB(db, ctx, modeSystem)}, nil
 }
 
+// WithContext exposes GORM only after a platform/system-operator context has
+// established the system access boundary. Protocol repositories use this for
+// atomic credential flows that cannot be expressed as isolated raw statements.
+func (d SystemDatabase) WithContext(ctx context.Context) *gorm.DB {
+	if d.db == nil {
+		db := &gorm.DB{}
+		_ = db.AddError(ErrSystemDBRequired)
+		return db
+	}
+	return accessDB(d.db, ctx, modeSystem)
+}
+
 func accessDB(db *gorm.DB, ctx context.Context, mode accessMode) *gorm.DB {
 	scoped := db.Session(&gorm.Session{NewDB: true}).WithContext(ctx).Set(accessModeKey, mode)
 	return scoped.Session(&gorm.Session{})

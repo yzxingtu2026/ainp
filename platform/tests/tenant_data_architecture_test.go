@@ -27,6 +27,8 @@ var tenantModelClassifications = map[string]tenantModelClassification{
 	"framework/audit/audit.go:Record":                                      {Reason: "mixed tenant/platform realm append-only audit fact"},
 	"framework/idempotency/model.go:Record":                                {Registered: true},
 	"framework/job/model.go:Run":                                           {Reason: "trusted worker must load the PostgreSQL fact before restoring AuthContext"},
+	"framework/mcpserver/model.go:Grant":                                   {Registered: true},
+	"framework/mcpserver/model.go:Confirmation":                            {Registered: true},
 	"framework/outbox/model.go:Event":                                      {Reason: "trusted dispatcher claims tenant and platform events before request AuthContext exists"},
 	"modules/ai/agent_model.go:Agent":                                      {Registered: true},
 	"modules/ai/agent_model.go:AgentToolBinding":                           {Registered: true},
@@ -94,6 +96,9 @@ var tenantArchitectureExceptions = map[string]tenantArchitectureException{
 	"framework/job/runstore.go:ListPendingEnqueue:Find":                 {Reason: "trusted enqueuer recovers pending runs across tenants", Risk: "private worker capability; tenant APIs use TenantRaw"},
 	"framework/job/runstore.go:UpdateFields:Updates":                    {Reason: "trusted worker updates a previously loaded JobRun by immutable id", Risk: "must only follow GetTrusted or claimed run state"},
 	"framework/job/migrate.go:ensureConstraints:Exec":                   {Reason: "schema migration maintains database constraints", Risk: "startup migration only"},
+	"framework/mcpserver/service.go:AutoMigrate:Exec":                   {Reason: "schema migration backfills encrypted MCP confirmation arguments before adding the not-null constraint", Risk: "startup migration only; fixed table and column"},
+	"framework/mcpserver/governance.go:ListGrants:Table":                {Reason: "private OAuth governance projection joins tenant Grant to global Client display metadata", Risk: "must retain explicit current tenant and user ownership predicates"},
+	"framework/mcpserver/governance.go:ListGrants:Joins":                {Reason: "private OAuth governance projection joins tenant Grant to global Client display metadata", Risk: "join is fixed and must not influence authorization"},
 	"framework/outbox/delivery.go:ListByEvent:Find":                     {Reason: "dispatcher loads handler delivery facts for one trusted event", Risk: "private dispatcher capability"},
 	"framework/outbox/delivery.go:RunHandler:Create":                    {Reason: "dispatcher creates an idempotent delivery fact", Risk: "private dispatcher capability"},
 	"framework/outbox/delivery.go:RunHandler:Save":                      {Reason: "dispatcher advances a claimed delivery state", Risk: "private dispatcher capability"},
@@ -130,11 +135,16 @@ var tenantArchitectureExceptions = map[string]tenantArchitectureException{
 }
 
 var manualTenantPredicateExceptions = map[string]tenantArchitectureException{
-	"framework/job/runstore.go:CreateIdempotent:Where":         {Reason: "trusted enqueue path verifies tenant from AuthContext before persisting JobRun", Risk: "must remain private to the Job runtime"},
-	"modules/system/preauth_store.go:findIdentity:Where":       {Reason: "identity lookup occurs before authenticated user context exists", Risk: "private pre-auth store only"},
-	"modules/system/preauth_store.go:findUserByID:Where":       {Reason: "session bootstrap validates the user before full AuthContext exists", Risk: "private pre-auth store only"},
-	"modules/system/preauth_store.go:findUserByUsername:Where": {Reason: "password authentication starts before full AuthContext exists", Risk: "private pre-auth store only"},
-	"modules/system/preauth_store.go:loadAuthorization:Where":  {Reason: "authorization bootstrap validates the session before request AuthContext is established", Risk: "private pre-auth store only"},
+	"framework/mcpserver/governance.go:DecideConfirmation:Where":    {Reason: "MCP confirmation decision uses SystemDB only after recovery token and current web identity resolve ownership", Risk: "must bind tenant, user, pending status, and opaque recovery hash"},
+	"framework/mcpserver/governance.go:ConfirmationForResume:Where": {Reason: "MCP confirmation resume resolves a tenant-owned confirmation through OAuth protocol tables", Risk: "must bind confirmation ID to current tenant, user, grant, client, and sensitive scope"},
+	"framework/mcpserver/governance.go:ownedConfirmation:Where":     {Reason: "MCP confirmation lookup crosses OAuth protocol tables after authenticated web login", Risk: "must bind opaque recovery hash to current tenant and user"},
+	"framework/mcpserver/governance.go:ListGrants:Where":            {Reason: "MCP Grant management projects global Client metadata for the current owner", Risk: "must bind current tenant and user and cap results"},
+	"framework/mcpserver/governance.go:RevokeOwnedGrants:Where":     {Reason: "MCP Grant revocation atomically revokes tenant Grant, global token family, and confirmations", Risk: "must resolve IDs from current tenant and user before cross-table updates"},
+	"framework/job/runstore.go:CreateIdempotent:Where":              {Reason: "trusted enqueue path verifies tenant from AuthContext before persisting JobRun", Risk: "must remain private to the Job runtime"},
+	"modules/system/preauth_store.go:findIdentity:Where":            {Reason: "identity lookup occurs before authenticated user context exists", Risk: "private pre-auth store only"},
+	"modules/system/preauth_store.go:findUserByID:Where":            {Reason: "session bootstrap validates the user before full AuthContext exists", Risk: "private pre-auth store only"},
+	"modules/system/preauth_store.go:findUserByUsername:Where":      {Reason: "password authentication starts before full AuthContext exists", Risk: "private pre-auth store only"},
+	"modules/system/preauth_store.go:loadAuthorization:Where":       {Reason: "authorization bootstrap validates the session before request AuthContext is established", Risk: "private pre-auth store only"},
 }
 
 func TestTenantDataAccessArchitecture(t *testing.T) {

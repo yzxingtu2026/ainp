@@ -22,6 +22,15 @@ auth:
     issuer: ainp
     ttl: 15m
 
+mcp:
+  # MCP/OAuth 后端对外公开的规范地址，用于 issuer、metadata、token 和 resource URL。
+  # 生产必须配置为反向代理后的 HTTPS 公网地址，且不要带尾部斜杠。
+  # 可通过环境变量 MCP_BASE_URL 覆盖。
+  base_url: "http://127.0.0.1:8080"
+  # Web 授权页地址；本地前后端分端口时指向前端，生产同域部署可与 base_url 相同。
+  # 可通过环境变量 MCP_WEB_BASE_URL 覆盖。
+  web_base_url: "http://127.0.0.1:9527"
+
 i18n:
   # 未传 Accept-Language 时的默认语言；支持 zh-CN、en
   default_language: zh-CN

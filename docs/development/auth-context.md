@@ -68,6 +68,10 @@ System
 
 硬规则：
 
+- MCP AuthContext 只能由服务端校验 `ainp:mcp` Token、Grant 与 AuthorizationProvider 后构造，`client=mcp`；请求不得上传 tenant/user/realm。
+- MCP OAuth 适配器把服务端校验后的 client/grant 标识写入 `MCPClientID/MCPGrantID`，仅用于授权关联与审计；Tool Arguments 和 `_meta` 不得覆盖。MCP 幂等键只允许写入 `IdempotencyKey`，不能携带身份事实。
+- MCP 敏感操作确认必须绑定当前 AuthContext 的 tenant/user/client/grant 和实时授权版本；恢复凭证只能恢复同 Action、同 Schema、同参数的一次调用，不能携带或覆盖身份事实。Grant 撤销后 Access Token、Refresh family 和未消费确认全部立即失效。
+
 - 不存在「请求里带 tenant_id 就切换租户」。
 - 因一用户一租户，**Phase 1 不做租户切换 API**。
 - 仓储/GORM：tenant-owned Model 强制经 TenantDB/GuardedDatabase 与 Callback；缺失租户上下文直接报错，不得退化为无条件查询。

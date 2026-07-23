@@ -24,6 +24,26 @@ export function fetchUserPreferences() {
   return request<Api.Setting.Definition>({ url: '/api/v1/system/profile/preferences' });
 }
 
+export function fetchMCPConnectionInfo() {
+  return request<Api.User.MCPConnectionInfo>({ url: '/api/v1/system/profile/mcp-connection' });
+}
+
+export function fetchMCPGrants() {
+  return request<Api.User.MCPGrant[]>({ url: '/api/v1/mcp/grants' });
+}
+
+export function revokeMCPGrants(data: { grant_id?: string; client_id?: string; all?: boolean }) {
+  return request<{ status: string }>({ url: '/api/v1/mcp/grants/revoke', method: 'post', data });
+}
+
+export function fetchMCPConfirmation(token: string) {
+  return request<Api.User.MCPConfirmation>({ url: '/api/v1/mcp/confirmations/info', params: { token } });
+}
+
+export function decideMCPConfirmation(token: string, decision: 'approve' | 'reject') {
+  return request<Api.User.MCPConfirmation>({ url: '/api/v1/mcp/confirmations/decision', method: 'post', data: { token, decision } });
+}
+
 export function updateUserPreferences(revision: number, values: Record<string, unknown>) {
   return request<Api.Setting.Definition>({
     url: '/api/v1/system/profile/preferences/update', method: 'post', data: { revision, values }

@@ -8,6 +8,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/idempotency"
 	"github.com/yzxingtu2026/ainp/platform/framework/job"
 	"github.com/yzxingtu2026/ainp/platform/framework/logging"
+	"github.com/yzxingtu2026/ainp/platform/framework/mcpserver"
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
 	"github.com/yzxingtu2026/ainp/platform/framework/status"
 	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
@@ -59,6 +60,9 @@ func AutoMigrate(db *gorm.DB) error {
 		return err
 	}
 	if err := idempotency.AutoMigrate(db); err != nil {
+		return err
+	}
+	if err := mcpserver.AutoMigrate(db); err != nil {
 		return err
 	}
 	if err := ensureActivationStatusConstraints(db); err != nil {

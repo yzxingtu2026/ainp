@@ -13,6 +13,7 @@ type Config struct {
 	Database  DatabaseConfig `yaml:"database"`
 	Logging   LoggingConfig  `yaml:"logging"`
 	Auth      AuthConfig     `yaml:"auth"`
+	MCP       MCPConfig      `yaml:"mcp"`
 	I18n      I18nConfig     `yaml:"i18n"`
 	Storage   StorageConfig  `yaml:"storage"`
 	Outbox    OutboxConfig   `yaml:"outbox"`
@@ -20,6 +21,11 @@ type Config struct {
 	Jobs      JobsConfig     `yaml:"jobs"`
 	AI        AIConfig       `yaml:"ai"`
 	StateFile string         `yaml:"state_file"` // 安装状态文件路径，默认 configs/state.yaml
+}
+
+type MCPConfig struct {
+	BaseURL    string `yaml:"base_url"`
+	WebBaseURL string `yaml:"web_base_url"`
 }
 
 type AIConfig struct {
@@ -222,6 +228,12 @@ func (c *Config) applyDefaults() {
 	if c.Auth.RefreshTTL == "" {
 		c.Auth.RefreshTTL = "720h"
 	}
+	if c.MCP.BaseURL == "" {
+		c.MCP.BaseURL = "http://127.0.0.1" + c.Server.Addr
+	}
+	if c.MCP.WebBaseURL == "" {
+		c.MCP.WebBaseURL = c.MCP.BaseURL
+	}
 	if c.StateFile == "" {
 		c.StateFile = "configs/state.yaml"
 	}
@@ -302,6 +314,15 @@ func (c *Config) applyEnvOverrides() {
 	}
 	if root := os.Getenv("STORAGE_LOCAL_ROOT"); root != "" {
 		c.Storage.Local.RootDir = root
+	}
+	if baseURL := os.Getenv("MCP_BASE_URL"); baseURL != "" {
+		c.MCP.BaseURL = baseURL
+		if os.Getenv("MCP_WEB_BASE_URL") == "" {
+			c.MCP.WebBaseURL = baseURL
+		}
+	}
+	if webBaseURL := os.Getenv("MCP_WEB_BASE_URL"); webBaseURL != "" {
+		c.MCP.WebBaseURL = webBaseURL
 	}
 	if provider := os.Getenv("STORAGE_PROVIDER"); provider != "" {
 		c.Storage.Provider = provider

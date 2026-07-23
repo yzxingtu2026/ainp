@@ -34,8 +34,12 @@ declare module "@elegant-router/types" {
     "home": "/home";
     "iframe-page": "/iframe-page/:url";
     "login": "/login/:module(pwd-login|code-login|register|reset-pwd|bind-wechat)?";
+    "mcp": "/mcp";
+    "mcp_confirm": "/mcp/confirm";
     "notification": "/notification";
     "notification_list": "/notification/list";
+    "oauth": "/oauth";
+    "oauth_authorize": "/oauth/authorize";
     "operations": "/operations";
     "operations_audit-logs": "/operations/audit-logs";
     "operations_jobs": "/operations/jobs";
@@ -91,7 +95,9 @@ declare module "@elegant-router/types" {
     | "home"
     | "iframe-page"
     | "login"
+    | "mcp"
     | "notification"
+    | "oauth"
     | "operations"
     | "profile"
     | "setup"
@@ -128,7 +134,9 @@ declare module "@elegant-router/types" {
     | "demo_attachments"
     | "demo_hello"
     | "home"
+    | "mcp_confirm"
     | "notification_list"
+    | "oauth_authorize"
     | "operations_audit-logs"
     | "operations_jobs"
     | "operations_logs"

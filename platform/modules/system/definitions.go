@@ -26,6 +26,7 @@ const (
 	ActionProfileUpdate         = "system.profile_update"
 	ActionUserPreferencesGet    = "system.user_preferences_get"
 	ActionUserPreferencesUpdate = "system.user_preferences_update"
+	ActionMCPConnectionInfo     = "system.mcp_connection_info"
 
 	ActionAttachmentUploadPrepare   = "system.attachment_upload_prepare"
 	ActionAttachmentDownloadPrepare = "system.attachment_download_prepare"
