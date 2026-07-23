@@ -1,9 +1,10 @@
-package ai
+package tests
 
 import (
 	"slices"
 	"testing"
 
+	. "github.com/yzxingtu2026/ainp/platform/modules/ai"
 	navigationtool "github.com/yzxingtu2026/ainp/platform/modules/ai/tools/navigation"
 )
 

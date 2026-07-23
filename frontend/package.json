@@ -1,7 +1,7 @@
 {
   "name": "ainp-frontend",
   "version": "0.1.0",
-  "description": "AINP Admin — Soybean Admin + Naive UI shell for AINP platform",
+  "description": "AINP - AI Native Enterprise SaaS Platform",
   "keywords": [
     "AINP",
     "TypeScript",
@@ -102,5 +102,5 @@
     "node": ">=20.19.0",
     "pnpm": ">=10.5.0"
   },
-  "website": "https://admin.soybeanjs.cn"
+  "website": "https://github.com/yzxingtu2026/ainp"
 }

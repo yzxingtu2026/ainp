@@ -14,7 +14,7 @@ export const themeSettings: App.Theme.ThemeSetting = {
   },
   isInfoFollowPrimary: true,
   layout: {
-    mode: 'vertical',
+    mode: 'vertical-mix',
     scrollMode: 'content'
   },
   page: {
@@ -22,7 +22,7 @@ export const themeSettings: App.Theme.ThemeSetting = {
     animateMode: 'fade-slide'
   },
   header: {
-    height: 56,
+    height: 40,
     breadcrumb: {
       visible: true,
       showIcon: true
@@ -37,7 +37,7 @@ export const themeSettings: App.Theme.ThemeSetting = {
   tab: {
     visible: true,
     cache: true,
-    height: 44,
+    height: 35,
     mode: 'chrome',
     closeTabByMiddleClick: false
   },
@@ -54,12 +54,12 @@ export const themeSettings: App.Theme.ThemeSetting = {
   footer: {
     visible: true,
     fixed: false,
-    height: 48,
+    height: 32,
     right: true
   },
   watermark: {
     visible: false,
-    text: 'SoybeanAdmin',
+    text: 'AINP',
     enableUserName: false,
     enableTime: false,
     timeFormat: 'YYYY-MM-DD HH:mm'

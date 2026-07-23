@@ -11,7 +11,7 @@ export function toViewKey(component?: string, id?: string): string {
 }
 
 /**
- * Soybean 约定：一级路由 name 不能含 `_`，否则 children 会被拆成顶层路由。
+ * Elegant Router 约定：一级路由 name 不能含 `_`，否则 children 会被拆成顶层路由。
  * directory 用能力域/路径首段，如 demo.root → demo，/system/profile → system
  */
 export function toFirstLevelName(id: string, path?: string): string {
@@ -36,7 +36,7 @@ function menuTitleMeta(item: Api.Route.AinPMenu): { title: string; i18nKey: stri
 }
 
 /**
- * 将 AINP 扁平菜单（directory/menu）转为 Soybean ElegantConstRoute 树。
+ * 将 AINP 扁平菜单（directory/menu）转为 ElegantConstRoute 树。
  * button 不进路由，仅用于权限码。
  * 默认不设置 i18nKey，侧栏直接使用后端已本地化 title；仅当 title 回退为 title_key 时启用前端键。
  */

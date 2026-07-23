@@ -55,12 +55,14 @@
 - AI 长期记忆见 `ai-memory-runtime`（追加式时态事实、来源证据、投影与当前召回边界）。
 - 模型提示词管理见 `prompt-management`（Markdown 外置、启动校验、模板安全与原子热重载）。
 - 前端栈、图标协议见关联规则。
+- 前端产品品牌与 Logo 单一源资产见 `frontend-branding`。
 - Copilot PR 语义审查见 `copilot-code-review`；它只负责中文语义反馈，不替代合并门禁与人工审批。
 
 ## 关联规则
 
 - `github-issues-workflow` / `branching-strategy` / `project-context-and-docs`
 - `frontend-stack` → `docs/development/frontend-stack.md`
+- `frontend-branding` → `docs/development/frontend-branding.md`
 - `datetime-display` → `docs/development/datetime-display.md`
 - `settings-system` → `docs/development/settings-system.md`
 - `object-storage` → `docs/development/object-storage.md`

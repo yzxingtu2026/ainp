@@ -32,7 +32,7 @@ const model: FormModel = reactive({
 });
 
 const rules = computed<Record<keyof FormModel, App.Global.FormRule[]>>(() => {
-  // AINP 密码可含特殊字符；登录页仅校验必填，不套 Soybean 默认 REG_PWD
+  // AINP 密码可含特殊字符；登录页仅校验必填，不套模板默认 REG_PWD
   const { formRules, createRequiredRule } = useFormRules();
 
   return {

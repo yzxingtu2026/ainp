@@ -1,9 +1,11 @@
-package action
+package tests
 
 import (
 	"encoding/json"
 	"reflect"
 	"testing"
+
+	. "github.com/yzxingtu2026/ainp/platform/framework/action"
 )
 
 func TestSchemaForRequiresOnlyExplicitRequiredValidation(t *testing.T) {
