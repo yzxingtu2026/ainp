@@ -1,10 +1,12 @@
-package prompt
+package tests
 
 import (
 	"os"
 	"path/filepath"
 	"sync"
 	"testing"
+
+	. "github.com/yzxingtu2026/ainp/platform/framework/prompt"
 )
 
 func TestLoadGetRenderAndReload(t *testing.T) {

@@ -22,6 +22,7 @@ const props = defineProps<Props>();
 
 interface Emits {
   (e: 'select', menuKey: RouteKey): boolean;
+  (e: 'hover', menuKey: RouteKey): void;
   (e: 'toggleSiderCollapse'): void;
 }
 
@@ -50,6 +51,10 @@ const selectedBgColor = computed(() => {
 
 function handleClickMixMenu(menuKey: RouteKey) {
   emit('select', menuKey);
+}
+
+function handleHoverMixMenu(menuKey: RouteKey) {
+  emit('hover', menuKey);
 }
 
 function toggleSiderCollapse() {
@@ -89,6 +94,7 @@ function toggleSiderCollapse() {
         :icon="menu.icon"
         :active="menu.key === activeMenuKey"
         :is-mini="siderCollapse"
+        @mouseenter="handleHoverMixMenu(menu.routeKey)"
         @click="handleClickMixMenu(menu.routeKey)"
       />
     </SimpleScrollbar>

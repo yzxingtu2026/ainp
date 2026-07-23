@@ -1,4 +1,4 @@
-package menu
+package tests
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"testing/fstest"
 
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
+	. "github.com/yzxingtu2026/ainp/platform/framework/menu"
 )
 
 type semanticRecorder struct{ request SemanticSearchRequest }

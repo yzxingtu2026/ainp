@@ -1,6 +1,6 @@
 const local: App.I18n.Schema = {
   system: {
-    title: 'Soybean 管理系统',
+    title: 'AINP',
     updateTitle: '系统版本更新通知',
     updateContent: '检测到系统有新版本发布，是否立即刷新页面？',
     updateConfirm: '立即刷新',
@@ -105,7 +105,7 @@ const local: App.I18n.Schema = {
         applySuccess: '预设应用成功',
         default: {
           name: '默认预设',
-          desc: 'Soybean 默认主题预设'
+          desc: 'AINP 默认主题预设'
         },
         dark: {
           name: '暗色预设',
@@ -792,8 +792,15 @@ const local: App.I18n.Schema = {
       reloginNow: '重新登录'
     },
     login: {
+      visual: {
+        tagline: '面向行业软件的 AI 原生应用平台',
+        intelligentCollaboration: '智能协作',
+        trustedExecution: '可信执行',
+        flexibleExtension: '灵活扩展'
+      },
       common: {
         loginOrRegister: '登录 / 注册',
+        subtitle: '进入你的 AI 原生工作空间',
         userNamePlaceholder: '请输入用户名',
         phonePlaceholder: '请输入手机号',
         codePlaceholder: '请输入验证码',
@@ -849,7 +856,6 @@ const local: App.I18n.Schema = {
       startWork: '开始工作',
       continueTitle: '继续工作',
       continueSubtitle: '当前打开的页面与需要确认的 AI 操作',
-      continueEmpty: '当前没有需要继续处理的工作',
       confirmationTitle: 'AI 操作待确认',
       openPage: '已打开页面',
       opened: '已打开',

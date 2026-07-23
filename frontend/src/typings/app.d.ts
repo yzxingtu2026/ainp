@@ -924,8 +924,15 @@ declare namespace App {
           reloginNow: string;
         };
         login: {
+          visual: {
+            tagline: string;
+            intelligentCollaboration: string;
+            trustedExecution: string;
+            flexibleExtension: string;
+          };
           common: {
             loginOrRegister: string;
+            subtitle: string;
             userNamePlaceholder: string;
             phonePlaceholder: string;
             codePlaceholder: string;
@@ -981,7 +988,6 @@ declare namespace App {
           startWork: string;
           continueTitle: string;
           continueSubtitle: string;
-          continueEmpty: string;
           confirmationTitle: string;
           openPage: string;
           opened: string;

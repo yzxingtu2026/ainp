@@ -9,7 +9,7 @@ Agent 只读要点：`.agent/rules/backend-layout.md`。本文档为已拍板的
 3. **Phase 1 modules**：`system`（配置与身份）、`operations`（运行态运维）+ `demo`；采购等业务域稍后。
 4. **骨架第一步即接 GORM + PostgreSQL**。
 5. **配置格式**：YAML（提供 `configs/config.example.yaml`）。
-6. **后端测试统一归档**：所有 `_test.go` 放入 `platform/tests/`，使用外部测试包通过公开 API 验证行为。
+6. **后端测试统一归档**：所有 `_test.go` 放入 `platform/tests/`，使用外部测试包通过公开 API 验证行为；迁移时合并重复覆盖并记录替代位置，禁止仅为测试导出生产私有实现。
 
 ## 仓库顶层
 
@@ -113,7 +113,9 @@ Action/Handler → Service → Tenant Repository / Domain Query → GORM
 - `framework/pagination` 只定义传输无关的分页请求和结果；领域筛选 DTO 留在 `modules/*`，不得建立万能查询 DSL。
 - 禁止 module 内手写响应 JSON；走 `response` + `errs`。
 - 禁止业务 `print`；走 `logging`。
-- `_test.go` 不放在 `framework/*` 或 `modules/*`；统一放入 `platform/tests/`。
+- `_test.go` 不放在 `framework/*` 或 `modules/*`；统一放入 `platform/tests/`，由架构测试扫描防回流。
+- 迁移白盒测试时改写为注册表、Service、Action、状态转换或稳定输出等公开行为；不得增加 test-only 导出函数、测试桥接文件或绕过边界的链接技巧。
+- 与集中测试重复的断言应合并，并在迁移记录或 PR 中注明替代覆盖位置，不得静默删除有效覆盖。
 
 ## 启动与执行链
 

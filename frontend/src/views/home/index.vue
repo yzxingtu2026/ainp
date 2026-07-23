@@ -32,7 +32,6 @@ const routeStore = useRouteStore();
 const tabStore = useTabStore();
 const personalization = useAssistantPersonalization();
 const confirmations = ref<Api.AI.ToolConfirmation[]>([]);
-const continueLoading = ref(true);
 const robotMode = ref<RobotMode>(null);
 const navigating = ref(false);
 let navigationTimer: number | null = null;
@@ -178,13 +177,8 @@ function openSuggestion(prompt: string) {
 }
 
 async function loadContinueWork() {
-  continueLoading.value = true;
-  try {
-    const { data } = await fetchAIToolConfirmations();
-    confirmations.value = data || [];
-  } finally {
-    continueLoading.value = false;
-  }
+  const { data } = await fetchAIToolConfirmations();
+  confirmations.value = data || [];
 }
 
 onMounted(() => {
@@ -233,18 +227,17 @@ onBeforeUnmount(() => {
       <HomeRobot :mode="robotMode" />
     </section>
 
-    <section class="home-section" aria-labelledby="continue-work-title">
+    <section v-if="continueItems.length" class="home-section" aria-labelledby="continue-work-title">
       <div class="home-section__heading">
         <div>
           <h2 id="continue-work-title">{{ $t('page.home.continueTitle') }}</h2>
           <p>{{ $t('page.home.continueSubtitle') }}</p>
         </div>
-        <span v-if="continueItems.length">{{ continueItems.length }}</span>
+        <span>{{ continueItems.length }}</span>
       </div>
 
       <div class="continue-panel">
-        <div v-if="continueLoading" class="continue-panel__loading"><NSpin size="small" /></div>
-        <div v-else-if="continueItems.length" class="continue-list">
+        <div class="continue-list">
           <button
             v-for="item in continueItems"
             :key="item.key"
@@ -269,7 +262,6 @@ onBeforeUnmount(() => {
             <SvgIcon icon="mdi:arrow-right" class="continue-item__arrow" />
           </button>
         </div>
-        <NEmpty v-else size="small" :description="$t('page.home.continueEmpty')" />
       </div>
     </section>
 
@@ -421,12 +413,6 @@ onBeforeUnmount(() => {
   border: 1px solid rgb(var(--base-text-color) / 10%);
   border-radius: 8px;
   background: rgb(var(--container-bg-color));
-}
-
-.continue-panel__loading {
-  min-height: 136px;
-  display: grid;
-  place-items: center;
 }
 
 .continue-list {

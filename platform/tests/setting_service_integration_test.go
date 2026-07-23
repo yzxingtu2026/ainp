@@ -13,6 +13,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/config"
 	"github.com/yzxingtu2026/ainp/platform/framework/database"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
+	"github.com/yzxingtu2026/ainp/platform/framework/setting"
 	"github.com/yzxingtu2026/ainp/platform/framework/status"
 	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"github.com/yzxingtu2026/ainp/platform/modules/system"
@@ -63,6 +64,15 @@ func TestSettingServiceTenantIsolationAndRevision(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc := system.NewSettingService(testDB, application.Settings)
+	changes := setting.NewChangeRegistry()
+	var received setting.Change
+	if err := changes.Register("general.preferences", func(_ context.Context, change setting.Change) error {
+		received = change
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	svc.SetChangeRegistry(changes)
 	ctxA := auth.WithContext(context.Background(), &auth.Context{
 		TenantID: "tenant-a", UserID: "user-a", Realm: auth.RealmTenant, Authenticated: true,
 		Permissions: []string{system.ActionSettingList, system.ActionSettingUpdate, system.ActionSettingReset, system.ActionSettingGet},
@@ -111,6 +121,9 @@ func TestSettingServiceTenantIsolationAndRevision(t *testing.T) {
 	viewA := updated.(system.SettingDefinitionView)
 	if viewA.Revision != 1 || viewA.Source != "tenant" || viewA.Values["display_name"] != "Tenant A" {
 		t.Fatalf("updated view = %#v", viewA)
+	}
+	if received.TenantID != "tenant-a" || received.UserID != "user-a" || received.Key != "general.preferences" || received.Operation != setting.ChangeUpdated {
+		t.Fatalf("unexpected post-commit setting change: %#v", received)
 	}
 	if _, err := svc.Update(ctxA, json.RawMessage(`{"key":"general.preferences","revision":0,"values":{"display_name":"stale","page_size":30,"dark_mode":true,"language":"en-US","tags":["biz"],"brand_color":"#112233","notes":""}}`)); appErrorCode(err) != errs.CodeConflict {
 		t.Fatalf("stale revision error = %v", err)

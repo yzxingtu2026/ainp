@@ -1,6 +1,6 @@
 const local: App.I18n.Schema = {
   system: {
-    title: 'SoybeanAdmin',
+    title: 'AINP',
     updateTitle: 'System Version Update Notification',
     updateContent: 'A new version of the system has been detected. Do you want to refresh the page immediately?',
     updateConfirm: 'Refresh immediately',
@@ -799,8 +799,15 @@ const local: App.I18n.Schema = {
       reloginNow: 'Sign in again'
     },
     login: {
+      visual: {
+        tagline: 'AI-native application platform for industry software',
+        intelligentCollaboration: 'Intelligent collaboration',
+        trustedExecution: 'Trusted execution',
+        flexibleExtension: 'Flexible extension'
+      },
       common: {
         loginOrRegister: 'Login / Register',
+        subtitle: 'Enter your AI-native workspace',
         userNamePlaceholder: 'Please enter user name',
         phonePlaceholder: 'Please enter phone number',
         codePlaceholder: 'Please enter verification code',
@@ -856,7 +863,6 @@ const local: App.I18n.Schema = {
       startWork: 'Start working',
       continueTitle: 'Continue working',
       continueSubtitle: 'Open pages and AI actions awaiting confirmation',
-      continueEmpty: 'There is no work waiting to be continued',
       confirmationTitle: 'AI action needs confirmation',
       openPage: 'Open page',
       opened: 'Open',

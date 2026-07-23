@@ -1,9 +1,11 @@
-package runtimecontext
+package tests
 
 import (
 	"context"
 	"testing"
 	"time"
+
+	. "github.com/yzxingtu2026/ainp/platform/framework/runtimecontext"
 )
 
 func TestTimeSnapshotAndRelativeDateAreDeterministicAcrossDST(t *testing.T) {

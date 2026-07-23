@@ -12,6 +12,7 @@
 - 通用请求结构校验在 `framework/validation`；领域、数据库、权限与租户规则保留在 `modules/*` Service。
 - 通用分页 Request/Result 在 `framework/pagination`；领域筛选 DTO 留在 `modules/*`，禁止万能查询 DSL。
 - Job / Outbox / 通知投递管理 Action、API、菜单统一归 `modules/operations` 与 `operations.*` 语义；领域服务通过接口注入，`operations` 禁止反向依赖 `system`。
-- 后端 `_test.go` 统一放在 `platform/tests/`，使用外部测试包通过公开 API 测试；禁止散落到 `framework/*`、`modules/*`。
+- 后端 `_test.go` 统一放在 `platform/tests/`，使用外部测试包通过公开 API 测试；禁止散落到 `framework/*`、`modules/*`，由架构门禁扫描防回流。
+- 迁移测试要合并重复覆盖并记录替代位置；禁止为测试新增生产导出 API、测试桥接或其他边界绕过。
 
 详规：`docs/development/backend-layout.md`

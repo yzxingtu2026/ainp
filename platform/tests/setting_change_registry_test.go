@@ -1,9 +1,11 @@
-package setting
+package tests
 
 import (
 	"context"
 	"errors"
 	"testing"
+
+	. "github.com/yzxingtu2026/ainp/platform/framework/setting"
 )
 
 func TestChangeRegistryRoutesBySettingKey(t *testing.T) {

@@ -29,6 +29,7 @@ const {
   secondLevelMenus,
   activeFirstLevelMenuKey,
   isActiveFirstLevelMenuHasChildren,
+  setActiveFirstLevelMenuKey,
   getActiveFirstLevelMenuKey,
   handleSelectFirstLevelMenu
 } = useMixMenuContext('VerticalMixMenu');
@@ -46,6 +47,11 @@ function handleSelectMenu(key: RouteKey) {
   if (isActiveFirstLevelMenuHasChildren.value) {
     setDrawerVisible(true);
   }
+}
+
+function handleHoverMenu(key: RouteKey) {
+  setActiveFirstLevelMenuKey(key);
+  setDrawerVisible(isActiveFirstLevelMenuHasChildren.value);
 }
 
 function handleResetActiveMenu() {
@@ -85,6 +91,7 @@ watch(
         :sider-collapse="appStore.siderCollapse"
         :dark-mode="themeStore.darkMode"
         :theme-color="themeStore.themeColor"
+        @hover="handleHoverMenu"
         @select="handleSelectMenu"
         @toggle-sider-collapse="appStore.toggleSiderCollapse"
       >
