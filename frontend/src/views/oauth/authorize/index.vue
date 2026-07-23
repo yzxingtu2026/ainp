@@ -11,6 +11,8 @@ const route = useRoute();
 const router = useRouter();
 const loading = ref(true);
 const submitting = ref(false);
+const authorizationComplete = ref(false);
+const callbackURL = ref('');
 const info = ref<AuthorizationInfo | null>(null);
 const write = ref(false);
 const sensitive = ref(false);
@@ -36,6 +38,18 @@ function callback(error?: string, code?: string) {
   window.location.assign(target.toString());
 }
 
+function buildCallbackURL(code: string) {
+  if (!info.value) return '';
+  const target = new URL(info.value.redirect_uri);
+  target.searchParams.set('code', code);
+  if (typeof route.query.state === 'string') target.searchParams.set('state', route.query.state);
+  return target.toString();
+}
+
+function returnToClient() {
+  if (callbackURL.value) window.location.assign(callbackURL.value);
+}
+
 async function approve() {
   if (!info.value) return;
   submitting.value = true;
@@ -45,7 +59,9 @@ async function approve() {
   const response = await fetch(`${baseURL}/api/v1/mcp/oauth/authorize`, { method: 'POST', headers: { Authorization: `Bearer ${localStg.get('token')}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ client_id: info.value.client_id, redirect_uri: info.value.redirect_uri, scope: scopes.join(' '), code_challenge: route.query.code_challenge, code_challenge_method: route.query.code_challenge_method }) });
   const body = await response.json();
   if (!response.ok || !body.code) { submitting.value = false; window.$message?.error('授权失败，请重新发起连接'); return; }
-  callback(undefined, body.code);
+  callbackURL.value = buildCallbackURL(body.code);
+  authorizationComplete.value = true;
+  window.setTimeout(returnToClient, 1200);
 }
 
 onMounted(() => void loadAuthorization().catch(error => { loading.value = false; window.$message?.error(error instanceof Error ? error.message : '无法读取授权请求'); }));
@@ -55,7 +71,15 @@ onMounted(() => void loadAuthorization().catch(error => { loading.value = false;
   <div class="min-h-screen bg-#f4f6f8 px-16px py-40px text-#202124">
     <main class="mx-auto max-w-620px bg-white p-32px shadow-sm ring-1 ring-#dfe3e8 sm:p-40px">
       <NSpin :show="loading">
-        <template v-if="info">
+        <NResult
+          v-if="authorizationComplete"
+          status="success"
+          title="授权成功"
+          description="正在安全返回 MCP 客户端，你随后可以关闭此浏览器窗口。"
+        >
+          <template #footer><NButton type="primary" @click="returnToClient">立即返回客户端</NButton></template>
+        </NResult>
+        <template v-else-if="info">
           <div class="mb-28px flex items-center gap-14px">
             <div class="h-44px w-44px flex-center bg-#111827 text-20px text-white">AI</div>
             <div><h1 class="m-0 text-22px font-600">授权 {{ info.client_name }} 连接 AINP</h1><p class="mb-0 mt-4px text-13px text-#667085">{{ info.user_id }} · {{ info.tenant_id }}</p></div>
