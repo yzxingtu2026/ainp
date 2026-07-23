@@ -270,6 +270,8 @@ const local: App.I18n.Schema = {
     'system_notification-templates': '通知模板',
     notification: '通知',
     notification_list: '通知列表',
+    oauth: '安全授权',
+    oauth_authorize: 'MCP 授权',
     operations: '运维',
     operations_jobs: '任务运行',
     operations_outbox: 'Outbox 事件',

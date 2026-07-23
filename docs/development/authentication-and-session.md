@@ -45,6 +45,8 @@ Provider secret 使用启动安全配置或 Secret 管理，不进入普通租�
 
 新增 `sid` 后旧 JWT 不兼容，升级需要重新登录。迁移见 `platform/migrations/0012_authentication_sessions.sql`。
 
+MCP 使用独立的 OAuth Grant、Token family 和 `ainp:mcp` audience，不复用网页 Session Token。其 Refresh 重放检测沿用本节原则，但撤销 MCP Grant 不影响网页会话，详见 `mcp-oauth.md`。
+
 ## API
 
 | API | Access | 说明 |

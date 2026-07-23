@@ -595,6 +595,12 @@
       "source": ".agent/rules/navigation-search.md",
       "qoder": {"path": ".qoder/rules/navigation-search.md", "frontmatter": {"trigger": "always_on"}},
       "cursor": {"path": ".cursor/rules/navigation-search.mdc", "frontmatter": {"description": "Menu Registry 派生导航目录、实时授权词法检索与可信路径", "alwaysApply": true}}
+    },
+    {
+      "id": "mcp-oauth",
+      "source": ".agent/rules/mcp-oauth.md",
+      "qoder": {"path": ".qoder/rules/mcp-oauth.md", "frontmatter": {"trigger": "always_on"}},
+      "cursor": {"path": ".cursor/rules/mcp-oauth.mdc", "frontmatter": {"description": "MCP Streamable HTTP、独立 OAuth audience、PKCE、Grant 与实时授权边界", "alwaysApply": true}}
     }
   ]
 }

@@ -211,6 +211,29 @@ export const generatedRoutes: GeneratedRoute[] = [
     ]
   },
   {
+    name: 'oauth',
+    path: '/oauth',
+    component: 'layout.blank',
+    meta: {
+      title: 'oauth',
+      i18nKey: 'route.oauth',
+      constant: true,
+      hideInMenu: true
+    },
+    children: [
+      {
+        name: 'oauth_authorize',
+        path: '/oauth/authorize',
+        component: 'view.oauth_authorize',
+        meta: {
+          title: 'oauth_authorize',
+          i18nKey: 'route.oauth_authorize',
+          hideInMenu: true
+        }
+      }
+    ]
+  },
+  {
     name: 'operations',
     path: '/operations',
     component: 'layout.base',

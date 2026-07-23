@@ -68,6 +68,8 @@ System
 
 硬规则：
 
+- MCP AuthContext 只能由服务端校验 `ainp:mcp` Token、Grant 与 AuthorizationProvider 后构造，`client=mcp`；请求不得上传 tenant/user/realm。
+
 - 不存在「请求里带 tenant_id 就切换租户」。
 - 因一用户一租户，**Phase 1 不做租户切换 API**。
 - 仓储/GORM：tenant-owned Model 强制经 TenantDB/GuardedDatabase 与 Callback；缺失租户上下文直接报错，不得退化为无条件查询。

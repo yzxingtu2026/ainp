@@ -18,6 +18,8 @@ Agent 只读要点：`.agent/rules/audit.md`。本文档定义审计与运行日
 
 禁止用 `Info` 日志冒充审计。
 
+MCP OAuth 注册、授权、换 Token、Refresh、撤销和后续 Action 调用必须写安全事件/审计事实；只记录 client/grant、tenant/user、request/trace 和结果。Code、Token、PKCE verifier、Cookie 及完整参数不得进入日志或审计摘要。
+
 ## 何时写入
 
 - Action 的 `meta.audit == true` 时，在 **Action 执行链统一写入**（成功与失败都写）。

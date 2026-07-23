@@ -24,6 +24,10 @@ export function fetchUserPreferences() {
   return request<Api.Setting.Definition>({ url: '/api/v1/system/profile/preferences' });
 }
 
+export function fetchMCPConnectionInfo() {
+  return request<Api.User.MCPConnectionInfo>({ url: '/api/v1/system/profile/mcp-connection' });
+}
+
 export function updateUserPreferences(revision: number, values: Record<string, unknown>) {
   return request<Api.Setting.Definition>({
     url: '/api/v1/system/profile/preferences/update', method: 'post', data: { revision, values }

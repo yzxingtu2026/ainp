@@ -6,6 +6,14 @@ declare namespace Api {
       effective_address: string;
       address_source: 'memory_profile' | 'display_name' | 'username';
     }
+
+    interface MCPConnectionInfo {
+      name: string;
+      transport: 'streamable_http';
+      url: string;
+      oauth_enabled: boolean;
+      scopes: Array<'actions:read' | 'actions:write' | 'actions:sensitive'>;
+    }
     type ActivationStatus = 'enabled' | 'disabled';
 
     interface RoleBrief {

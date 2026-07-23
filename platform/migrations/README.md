@@ -17,6 +17,7 @@
 - `0043_page_context.sql` 为 Agent Run 增加不可变 Page Context 安全快照，并为 ContextSnapshot 增加最小引用投影。
 - `0044_navigation_search.sql` 创建独立 Navigation Search Document 与 pgvector provenance 索引；不复用 Tool Catalog 表，也不保存菜单 path 或权限事实。
 - `0045_assistant_personalization.sql` 创建租户、用户和 Agent Slot 隔离的可丢弃欢迎语物化快照；内容不进入 Conversation 或长期记忆事实层。
+- `0046_mcp_oauth.sql` 创建 MCP Public Client、用户 Grant、单次授权码与轮换 Refresh Token family；所有凭证仅保存 SHA-256 摘要。
 - `0005_attachments.sql` 创建 `attachments` / `attachment_links` 与状态 CHECK；附件策略与 AccessPolicy 由代码注册。
 - `0011_audit_log_indexes.sql` 为租户审计时间线、Action 与资源筛选增加复合索引。
 - `0012_authentication_sessions.sql` 创建统一认证身份、challenge 与轮换会话表；旧 JWT 缺少 `sid`，升级后需重新登录。

@@ -11,6 +11,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/attachment"
 	"github.com/yzxingtu2026/ainp/platform/framework/capability"
 	"github.com/yzxingtu2026/ainp/platform/framework/i18n"
+	"github.com/yzxingtu2026/ainp/platform/framework/mcpserver"
 	"github.com/yzxingtu2026/ainp/platform/framework/menu"
 	systemhelp "github.com/yzxingtu2026/ainp/platform/modules/system/help"
 	"github.com/yzxingtu2026/ainp/platform/modules/system/jobs"
@@ -133,8 +134,11 @@ func Register(a *app.App) error {
 	if err := jobs.Register(a); err != nil {
 		return err
 	}
+	mcpService := mcpserver.NewService(a.DB, svc, a.Config.Auth.JWT.Secret, a.Config.Auth.JWT.Issuer, a.Config.MCP.BaseURL)
+	mcpHTTP := mcpserver.NewHTTPServer(mcpService, a.Config.MCP.BaseURL)
 	a.OnHTTP = func(engine *gin.Engine) {
 		RegisterAttachmentTransferRoutes(engine, attachSvc)
+		mcpHTTP.Register(engine)
 	}
 
 	if err := a.RegisterAction(action.Action{

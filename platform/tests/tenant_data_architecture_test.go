@@ -27,6 +27,7 @@ var tenantModelClassifications = map[string]tenantModelClassification{
 	"framework/audit/audit.go:Record":                                      {Reason: "mixed tenant/platform realm append-only audit fact"},
 	"framework/idempotency/model.go:Record":                                {Registered: true},
 	"framework/job/model.go:Run":                                           {Reason: "trusted worker must load the PostgreSQL fact before restoring AuthContext"},
+	"framework/mcpserver/model.go:Grant":                                   {Registered: true},
 	"framework/outbox/model.go:Event":                                      {Reason: "trusted dispatcher claims tenant and platform events before request AuthContext exists"},
 	"modules/ai/agent_model.go:Agent":                                      {Registered: true},
 	"modules/ai/agent_model.go:AgentToolBinding":                           {Registered: true},

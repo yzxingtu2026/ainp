@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { fetchAuthSessions, fetchSelfProfile, fetchUserPreferences, revokeAuthSession, updateSelfProfile, updateUserPreferences } from '@/service/api';
+import { fetchAuthSessions, fetchMCPConnectionInfo, fetchSelfProfile, fetchUserPreferences, revokeAuthSession, updateSelfProfile, updateUserPreferences } from '@/service/api';
 import { formatDateTime } from '@/utils/datetime';
 
 defineOptions({ name: 'SystemProfile' });
 
-type Tab = 'basic' | 'preferences' | 'memory' | 'security';
+type Tab = 'basic' | 'preferences' | 'memory' | 'mcp' | 'security';
 const route = useRoute();
 const router = useRouter();
 const tab = ref<Tab>((route.query.tab as Tab) || 'basic');
@@ -15,6 +15,7 @@ const saving = ref(false);
 const profile = ref<Api.User.SelfProfile | null>(null);
 const definition = ref<Api.Setting.Definition | null>(null);
 const sessions = ref<Api.Auth.Session[]>([]);
+const mcpConnection = ref<Api.User.MCPConnectionInfo | null>(null);
 const displayName = ref('');
 const values = reactive<Record<string, any>>({});
 
@@ -30,7 +31,7 @@ watch(tab, value => router.replace({ query: { ...route.query, tab: value } }));
 async function load() {
   loading.value = true;
   try {
-    const [profileResult, preferenceResult, sessionResult] = await Promise.all([fetchSelfProfile(), fetchUserPreferences(), fetchAuthSessions()]);
+    const [profileResult, preferenceResult, sessionResult, mcpResult] = await Promise.all([fetchSelfProfile(), fetchUserPreferences(), fetchAuthSessions(), fetchMCPConnectionInfo()]);
     if (!profileResult.error && profileResult.data) {
       profile.value = profileResult.data;
       displayName.value = profileResult.data.display_name;
@@ -40,6 +41,7 @@ async function load() {
       Object.assign(values, preferenceResult.data.values);
     }
     if (!sessionResult.error && sessionResult.data) sessions.value = sessionResult.data.sessions || [];
+    if (!mcpResult.error && mcpResult.data) mcpConnection.value = mcpResult.data;
   } finally { loading.value = false; }
 }
 
@@ -65,6 +67,12 @@ async function savePreferences() {
     const { data, error } = await updateUserPreferences(definition.value.revision, { ...values });
     if (!error && data) { definition.value = data; Object.assign(values, data.values); window.$message?.success('对话偏好已保存'); }
   } finally { saving.value = false; }
+}
+
+async function copyMCPURL() {
+  if (!mcpConnection.value?.url) return;
+  await navigator.clipboard.writeText(mcpConnection.value.url);
+  window.$message?.success('MCP 地址已复制');
 }
 
 const optionMap: Record<string, Array<{ label: string; value: string }>> = {
@@ -118,6 +126,42 @@ onMounted(load);
             </div>
             <NSpace><NButton type="primary" :loading="saving" @click="savePreferences">保存隐私设置</NButton><NButton @click="router.push({ path: '/profile/memory', query: { from: 'profile' } })">管理记忆</NButton></NSpace>
           </NSpace>
+        </NTabPane>
+
+        <NTabPane name="mcp" tab="MCP 连接">
+          <div class="max-w-760px">
+            <NAlert type="info" title="连接桌面 Agent" class="mb-20px">
+              AINP 使用远程 Streamable HTTP 与浏览器 OAuth 授权。客户端保存连接后会打开 AINP 授权页，无需手动填写 Token 或请求头。
+            </NAlert>
+
+            <NDescriptions label-placement="left" :column="1" bordered>
+              <NDescriptionsItem label="名称">{{ mcpConnection?.name || 'AINP' }}</NDescriptionsItem>
+              <NDescriptionsItem label="类型">流式 HTTP</NDescriptionsItem>
+              <NDescriptionsItem label="URL">
+                <div class="flex items-center gap-10px">
+                  <NInput :value="mcpConnection?.url || ''" readonly />
+                  <NButton type="primary" secondary :disabled="!mcpConnection?.url" @click="copyMCPURL">复制地址</NButton>
+                </div>
+              </NDescriptionsItem>
+              <NDescriptionsItem label="Bearer 令牌环境变量">留空</NDescriptionsItem>
+              <NDescriptionsItem label="标头 / 环境变量标头">留空</NDescriptionsItem>
+            </NDescriptions>
+
+            <NDivider title-placement="left">在 Codex 中连接</NDivider>
+            <ol class="m-0 pl-22px leading-30px">
+              <li>打开“插件”，切换到“MCP”，选择“连接至自定义 MCP”。</li>
+              <li>名称填写 AINP，类型选择“流式 HTTP”。</li>
+              <li>粘贴上方 URL，其余认证字段保持为空，然后保存。</li>
+              <li>在浏览器授权页确认账号、租户和所需权限范围。</li>
+            </ol>
+
+            <NDivider title-placement="left">授权范围</NDivider>
+            <NSpace vertical :size="10">
+              <div><NTag type="success" class="mr-10px">读取</NTag>查看当前账号有权访问的数据，默认启用。</div>
+              <div><NTag type="warning" class="mr-10px">写入</NTag>创建或编辑有权管理的数据，需要主动勾选。</div>
+              <div><NTag type="error" class="mr-10px">敏感</NTag>允许发起外部调用、费用或删除操作，执行时仍需逐次确认。</div>
+            </NSpace>
+          </div>
         </NTabPane>
 
         <NTabPane name="security" tab="账号安全">

@@ -182,6 +182,8 @@ const routeMap: RouteMap = {
   "login": "/login/:module(pwd-login|code-login|register|reset-pwd|bind-wechat)?",
   "notification": "/notification",
   "notification_list": "/notification/list",
+  "oauth": "/oauth",
+  "oauth_authorize": "/oauth/authorize",
   "operations": "/operations",
   "operations_audit-logs": "/operations/audit-logs",
   "operations_jobs": "/operations/jobs",

@@ -274,6 +274,8 @@ const local: App.I18n.Schema = {
     'system_notification-templates': 'Notification Templates',
     notification: 'Notifications',
     notification_list: 'Notification List',
+    oauth: 'Secure Authorization',
+    oauth_authorize: 'MCP Authorization',
     operations: 'Operations',
     operations_jobs: 'Job Runs',
     operations_outbox: 'Outbox Events',

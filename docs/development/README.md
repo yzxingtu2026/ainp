@@ -6,6 +6,7 @@
 - [AI 上下文压缩](./ai-context-compaction.md)：模型感知预算、确定性缩减、结构化摘要、质量校验与版本化 Snapshot。
 - [AI Agent Runtime](./ai-agent-runtime.md)：Run/Step 状态机、lease、Outbox→Job、工具确认暂停与可靠恢复。
 - [统一 Tool Runtime](./tool-runtime.md)：渐进式工具发现、Scope、Handle、确认与执行安全边界。
+- [MCP OAuth 与远程传输](./mcp-oauth.md)：Streamable HTTP、PKCE、独立 audience、Grant 与实时授权边界。
 - [AI 工具开发指南](./ai-tool-development.md)：新增 Action Tool、Builtin/Plugin/MCP/HTTP Provider 与 Executor 的操作手册。
 
 本目录用于沉淀面向开发者的公共规范详规。`.agent/rules/` 仅保留 Agent 硬约束要点并引用本文档，避免双份堆砌。

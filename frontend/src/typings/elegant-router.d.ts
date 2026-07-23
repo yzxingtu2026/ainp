@@ -36,6 +36,8 @@ declare module "@elegant-router/types" {
     "login": "/login/:module(pwd-login|code-login|register|reset-pwd|bind-wechat)?";
     "notification": "/notification";
     "notification_list": "/notification/list";
+    "oauth": "/oauth";
+    "oauth_authorize": "/oauth/authorize";
     "operations": "/operations";
     "operations_audit-logs": "/operations/audit-logs";
     "operations_jobs": "/operations/jobs";
@@ -92,6 +94,7 @@ declare module "@elegant-router/types" {
     | "iframe-page"
     | "login"
     | "notification"
+    | "oauth"
     | "operations"
     | "profile"
     | "setup"
@@ -129,6 +132,7 @@ declare module "@elegant-router/types" {
     | "demo_hello"
     | "home"
     | "notification_list"
+    | "oauth_authorize"
     | "operations_audit-logs"
     | "operations_jobs"
     | "operations_logs"
