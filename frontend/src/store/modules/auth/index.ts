@@ -121,8 +121,12 @@ export const useAuthStore = defineStore(SetupStoreId.Auth, () => {
         // Check if the tab needs to be cleared
         const isClear = checkTabClear();
         let needRedirect = redirect;
+        const redirectTarget = route.query.redirect;
+        const hasSafeInternalRedirect = typeof redirectTarget === 'string'
+          && redirectTarget.startsWith('/')
+          && !redirectTarget.startsWith('//');
 
-        if (isClear) {
+        if (isClear && !hasSafeInternalRedirect) {
           // If the tab needs to be cleared,it means we don't need to redirect.
           needRedirect = false;
         }

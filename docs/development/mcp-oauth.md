@@ -6,6 +6,7 @@ AINP 的远程 MCP 入口使用官方 Go MCP SDK 提供 Streamable HTTP。业务
 
 - MCP endpoint 固定为 `/mcp`，OAuth metadata 位于标准 `/.well-known/` 路径。
 - authorization endpoint `/oauth/authorize` 是前端浏览器页面；它使用网页登录态访问 `/api/v1/mcp/oauth/authorize` 查询并确认授权，避免页面路由与协议 API 冲突。
+- 未登录时进入统一登录页并把完整授权 URL 作为站内 redirect；登录后的账号切换清理不得覆盖该 redirect，且只接受以单 `/` 开头的站内目标。
 - 授权成功后页面短暂展示成功状态并自动返回 Client callback；最终 callback 页面由 MCP 客户端控制，AINP 不得替换或延迟 Token 交换。
 - Public Client 通过动态注册获得 `client_id`，不依赖 client secret；redirect URI 必须精确匹配，非回环地址必须使用 HTTPS。
 - 授权只支持 Authorization Code + PKCE S256。授权码 5 分钟内单次消费，并绑定 Client、redirect URI、Grant 和 challenge。
