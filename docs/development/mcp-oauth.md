@@ -38,8 +38,9 @@ Scope 只缩小能力。任何阶段都不得绕过 realm、tenant、实时 perm
 ## 写操作确认与授权治理
 
 - 普通写操作依赖 `actions:write` 持续授权和 Action 自身幂等策略；敏感操作不直接执行。客户端声明 URL elicitation 能力时由 MCP 协议发起浏览器确认；不支持时返回结构化 `confirmation_required`、浏览器确认 URL、恢复凭证和 10 分钟有效期。
-- 确认绑定 tenant、user、Grant、Client、Action、Tool name、Schema hash 与规范化 arguments hash。Web 批准后，客户端只可使用相同参数和 `_meta.confirmationToken`（兼容 `confirmation_token`）重试一次；参数、Schema、Grant、Client、用户变化，过期、拒绝、撤销或重复消费均 fail-closed。
-- 数据库只保存恢复凭证 SHA-256，确认页只展示服务端固化的 Human 描述、风险和副作用，不返回原始参数或恢复凭证。确认链接未登录时复用统一登录 redirect，登录后必须返回原确认页。
+- 确认绑定 tenant、user、Grant、Client、Action、Tool name、Schema hash 与规范化 arguments hash。首次响应同时返回 opaque `confirmation_id`、`resume_tool=ainp_confirmation_execute` 和固定恢复参数；Web 批准后，客户端调用该治理工具恢复一次原 Action。旧客户端仍可通过 `_meta.confirmationToken`（兼容 `confirmation_token`）执行同参数重试。
+- `ainp_confirmation_execute` 只接受 confirmation ID，不接受 Action ID 或业务参数；执行前重新检查 Grant、scope、realm、实时 permission、Action 状态、Tool name、Schema 与参数 hash，并以 confirmation ID 派生幂等键，只经 `ActionRegistry.Invoke` 执行。参数、Schema、Grant、Client、用户变化，过期、拒绝、撤销或重复消费均 fail-closed。
+- 数据库只保存恢复凭证 SHA-256；规范化 Action 参数使用服务端密钥派生的 AEAD 短期密文并绑定确认 ownership，消费、拒绝、过期或授权撤销时立即清空。确认页只展示服务端固化的 Human 描述、风险和副作用，不返回原始参数、密文或恢复凭证。确认链接未登录时复用统一登录 redirect，登录后必须返回原确认页。
 - 个人中心列出当前用户的 MCP Grant，可撤销单次授权、某客户端全部授权或全部授权。撤销在同一事务把 Grant 标记为 revoked，并撤销关联 Refresh Token family 与 pending/approved confirmation；后续 Access Token 请求也因 Grant 实时校验立即失败。
 - 待确认调用按 Action 审计协议记录 `result=failure` 和安全摘要；批准、拒绝及授权撤销另写治理审计。审计、日志和错误不得保存原始参数、恢复凭证、Code 或 Token。
 

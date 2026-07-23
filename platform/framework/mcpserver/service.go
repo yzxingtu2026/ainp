@@ -61,6 +61,11 @@ func (s *Service) systemDB(ctx context.Context) (*gorm.DB, error) {
 }
 
 func AutoMigrate(db *gorm.DB) error {
+	if db.Migrator().HasTable(&Confirmation{}) && !db.Migrator().HasColumn(&Confirmation{}, "arguments_ciphertext") {
+		if err := db.Exec(`ALTER TABLE mcp_action_confirmations ADD COLUMN arguments_ciphertext text NOT NULL DEFAULT ''`).Error; err != nil {
+			return err
+		}
+	}
 	return db.AutoMigrate(&Client{}, &Grant{}, &AuthorizationCode{}, &TokenFamily{}, &Confirmation{})
 }
 

@@ -17,7 +17,10 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 )
 
-const maxProjectedTools = 100
+const (
+	maxProjectedTools      = 100
+	confirmationResumeTool = "ainp_confirmation_execute"
+)
 
 type principalContextKey struct{}
 
@@ -52,12 +55,18 @@ func NewActionServer(actions *action.Registry, confirmations *Service) *mcp.Serv
 	if err != nil {
 		panic(err)
 	}
+	byActionID := make(map[string]projectedAction, len(projected))
 	for _, item := range projected {
 		item := item
+		byActionID[item.definition.RuntimeRef] = item
 		server.AddTool(item.tool, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			return callProjectedAction(ctx, actions, confirmations, item, req)
 		})
 	}
+	resumeTool := confirmationExecutionTool()
+	server.AddTool(resumeTool, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return executeConfirmedAction(ctx, actions, confirmations, byActionID, req)
+	})
 	server.AddReceivingMiddleware(func(next mcp.MethodHandler) mcp.MethodHandler {
 		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
 			if method != "tools/list" {
@@ -67,7 +76,10 @@ func NewActionServer(actions *action.Registry, confirmations *Service) *mcp.Serv
 			if !ok {
 				return &mcp.ListToolsResult{Tools: []*mcp.Tool{}}, nil
 			}
-			tools := make([]*mcp.Tool, 0, len(projected))
+			tools := make([]*mcp.Tool, 0, len(projected)+1)
+			if confirmations != nil && principal.Scopes[ScopeSensitive] {
+				tools = append(tools, resumeTool)
+			}
 			for _, item := range projected {
 				if visibleToPrincipal(principal, item.definition) {
 					tools = append(tools, item.tool)
@@ -82,6 +94,52 @@ func NewActionServer(actions *action.Registry, confirmations *Service) *mcp.Serv
 		}
 	})
 	return server
+}
+
+func confirmationExecutionTool() *mcp.Tool {
+	readOnly, destructive, openWorld, idempotent := false, true, false, true
+	return &mcp.Tool{
+		Name: confirmationResumeTool, Title: "执行已批准的 AINP 操作",
+		Description: "执行用户已在 AINP 网页批准的单次敏感操作。只接受确认 ID，不接受 Action ID 或业务参数。",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"confirmation_id":{"type":"string","description":"敏感操作首次调用返回的确认 ID"}},"required":["confirmation_id"],"additionalProperties":false}`),
+		Annotations: &mcp.ToolAnnotations{Title: "执行已批准的 AINP 操作", ReadOnlyHint: readOnly, DestructiveHint: &destructive, OpenWorldHint: &openWorld, IdempotentHint: idempotent},
+	}
+}
+
+func executeConfirmedAction(ctx context.Context, actions *action.Registry, confirmations *Service, projected map[string]projectedAction, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	principal, ok := principalFromContext(ctx)
+	if !ok || confirmations == nil || !principal.Scopes[ScopeSensitive] {
+		return toolError("confirmation is unavailable"), nil
+	}
+	var input struct {
+		ConfirmationID string `json:"confirmation_id"`
+	}
+	if err := json.Unmarshal(req.Params.Arguments, &input); err != nil || strings.TrimSpace(input.ConfirmationID) == "" {
+		return toolError("confirmation_id is required"), nil
+	}
+	row, err := confirmations.ConfirmationForResume(ctx, principal, strings.TrimSpace(input.ConfirmationID))
+	if err != nil {
+		return toolError("confirmation is unavailable"), nil
+	}
+	item, exists := projected[row.ActionID]
+	if !exists || item.tool.Name != row.ToolName || !visibleToPrincipal(principal, item.definition) {
+		return toolError("confirmation is unavailable"), nil
+	}
+	current, exists := actions.Get(item.definition.RuntimeRef)
+	if !exists || current.Meta.AI == nil || !current.Meta.AI.ExposeTool || auth.NormalizeRealm(current.Meta.Surface) != auth.RealmTenant {
+		return toolError("confirmation is unavailable"), nil
+	}
+	arguments, err := confirmations.ConsumeStoredConfirmation(ctx, principal, row.ID, item.definition, item.tool.Name)
+	if err != nil {
+		return toolError("confirmation is unavailable"), nil
+	}
+	authCopy := *principal.Auth
+	authCopy.IdempotencyKey = "mcp-confirmation:" + row.ID
+	data, err := actions.Invoke(auth.WithContext(ctx, &authCopy), item.definition.RuntimeRef, arguments)
+	if err != nil {
+		return toolError(safeActionError(err)), nil
+	}
+	return successfulToolResult(data)
 }
 
 func projectActions(actions *action.Registry) ([]projectedAction, error) {
@@ -229,6 +287,10 @@ func callProjectedAction(ctx context.Context, actions *action.Registry, confirma
 	if err != nil {
 		return toolError(safeActionError(err)), nil
 	}
+	return successfulToolResult(data)
+}
+
+func successfulToolResult(data any) (*mcp.CallToolResult, error) {
 	encoded, err := json.Marshal(data)
 	if err != nil {
 		return toolError("tool execution failed"), nil
@@ -243,7 +305,7 @@ func callProjectedAction(ctx context.Context, actions *action.Registry, confirma
 func confirmationRequired(pending *ConfirmationRequest) *mcp.CallToolResult {
 	return &mcp.CallToolResult{
 		Content:           []mcp.Content{&mcp.TextContent{Text: "confirmation_required: open " + pending.ConfirmationURL}},
-		StructuredContent: map[string]any{"status": "confirmation_required", "confirmation_url": pending.ConfirmationURL, "confirmation_token": pending.RecoveryToken, "expires_at": pending.ExpiresAt},
+		StructuredContent: map[string]any{"status": "confirmation_required", "confirmation_id": pending.ID, "confirmation_url": pending.ConfirmationURL, "confirmation_token": pending.RecoveryToken, "expires_at": pending.ExpiresAt, "resume_tool": confirmationResumeTool, "resume_arguments": map[string]any{"confirmation_id": pending.ID}},
 		IsError:           true,
 	}
 }

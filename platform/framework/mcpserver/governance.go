@@ -2,9 +2,15 @@ package mcpserver
 
 import (
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/url"
 	"strings"
 	"time"
@@ -19,7 +25,7 @@ import (
 )
 
 type ConfirmationRequest struct {
-	ID              string    `json:"-"`
+	ID              string    `json:"confirmation_id"`
 	ConfirmationURL string    `json:"confirmation_url"`
 	RecoveryToken   string    `json:"confirmation_token"`
 	ExpiresAt       time.Time `json:"expires_at"`
@@ -54,17 +60,22 @@ type GrantRevokeRequest struct {
 	All      bool   `json:"all"`
 }
 
-func canonicalHash(raw json.RawMessage) (string, error) {
+func canonicalArguments(raw json.RawMessage) (json.RawMessage, string, error) {
 	var value any
 	if err := json.Unmarshal(raw, &value); err != nil {
-		return "", err
+		return nil, "", err
 	}
 	canonical, err := json.Marshal(value)
 	if err != nil {
-		return "", err
+		return nil, "", err
 	}
 	sum := sha256.Sum256(canonical)
-	return hex.EncodeToString(sum[:]), nil
+	return canonical, hex.EncodeToString(sum[:]), nil
+}
+
+func canonicalHash(raw json.RawMessage) (string, error) {
+	_, digest, err := canonicalArguments(raw)
+	return digest, err
 }
 
 func definitionHash(definition aitool.Definition) string {
@@ -72,11 +83,56 @@ func definitionHash(definition aitool.Definition) string {
 	return hex.EncodeToString(sum[:])
 }
 
+func confirmationAAD(row *Confirmation) []byte {
+	return []byte(strings.Join([]string{"mcp-confirmation-v1", row.ID, row.TenantID, row.UserID, row.GrantID, row.ClientID, row.ActionID}, "\x00"))
+}
+
+func (s *Service) confirmationAEAD() (cipher.AEAD, error) {
+	key := sha256.Sum256(append([]byte("ainp:mcp:confirmation:"), s.secret...))
+	block, err := aes.NewCipher(key[:])
+	if err != nil {
+		return nil, err
+	}
+	return cipher.NewGCM(block)
+}
+
+func (s *Service) encryptConfirmationArguments(row *Confirmation, plaintext json.RawMessage) (string, error) {
+	aead, err := s.confirmationAEAD()
+	if err != nil {
+		return "", err
+	}
+	nonce := make([]byte, aead.NonceSize())
+	if _, err = io.ReadFull(rand.Reader, nonce); err != nil {
+		return "", err
+	}
+	sealed := aead.Seal(nil, nonce, plaintext, confirmationAAD(row))
+	return "v1:" + base64.RawURLEncoding.EncodeToString(append(nonce, sealed...)), nil
+}
+
+func (s *Service) decryptConfirmationArguments(row *Confirmation) (json.RawMessage, error) {
+	if !strings.HasPrefix(row.ArgumentsCiphertext, "v1:") {
+		return nil, fmt.Errorf("unsupported confirmation ciphertext")
+	}
+	aead, err := s.confirmationAEAD()
+	if err != nil {
+		return nil, err
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(row.ArgumentsCiphertext, "v1:"))
+	if err != nil || len(raw) < aead.NonceSize() {
+		return nil, fmt.Errorf("invalid confirmation ciphertext")
+	}
+	plaintext, err := aead.Open(nil, raw[:aead.NonceSize()], raw[aead.NonceSize():], confirmationAAD(row))
+	if err != nil {
+		return nil, fmt.Errorf("invalid confirmation ciphertext")
+	}
+	return json.RawMessage(plaintext), nil
+}
+
 func (s *Service) CreateConfirmation(ctx context.Context, principal *Principal, definition aitool.Definition, toolName string, arguments json.RawMessage) (*ConfirmationRequest, error) {
 	if principal == nil || principal.Auth == nil || !principal.Scopes[ScopeSensitive] || principal.Auth.MCPGrantID == "" || principal.Auth.MCPClientID == "" {
 		return nil, errs.New(errs.CodeForbidden, "tool is unavailable")
 	}
-	argumentsHash, err := canonicalHash(arguments)
+	canonical, argumentsHash, err := canonicalArguments(arguments)
 	if err != nil {
 		return nil, errs.New(errs.CodeValidation, "invalid tool arguments")
 	}
@@ -92,6 +148,10 @@ func (s *Service) CreateConfirmation(ctx context.Context, principal *Principal, 
 		RecoveryHash: hash(recovery), Title: definition.TitleForHuman, Description: definition.DescriptionForHuman,
 		Risk: string(definition.Risk), SideEffect: string(definition.SideEffect), Status: "pending", ExpiresAt: now.Add(10 * time.Minute),
 	}
+	row.ArgumentsCiphertext, err = s.encryptConfirmationArguments(&row, canonical)
+	if err != nil {
+		return nil, err
+	}
 	db, err := s.systemDB(ctx)
 	if err != nil {
 		return nil, err
@@ -104,6 +164,59 @@ func (s *Service) CreateConfirmation(ctx context.Context, principal *Principal, 
 		base = s.baseURL
 	}
 	return &ConfirmationRequest{ID: row.ID, ConfirmationURL: base + "/mcp/confirm?token=" + url.QueryEscape(recovery), RecoveryToken: recovery, ExpiresAt: row.ExpiresAt}, nil
+}
+
+func (s *Service) ConfirmationForResume(ctx context.Context, principal *Principal, confirmationID string) (*Confirmation, error) {
+	if principal == nil || principal.Auth == nil || !principal.Scopes[ScopeSensitive] || strings.TrimSpace(confirmationID) == "" {
+		return nil, errs.New(errs.CodeForbidden, "confirmation is unavailable")
+	}
+	db, err := s.systemDB(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var row Confirmation
+	if err := db.Where("id = ? AND tenant_id = ? AND user_id = ? AND grant_id = ? AND client_id = ?", confirmationID, principal.Auth.TenantID, principal.Auth.UserID, principal.Auth.MCPGrantID, principal.Auth.MCPClientID).First(&row).Error; err != nil {
+		return nil, errs.New(errs.CodeForbidden, "confirmation is unavailable")
+	}
+	if row.Status != "approved" || time.Now().UTC().After(row.ExpiresAt) {
+		return nil, errs.New(errs.CodeForbidden, "confirmation is unavailable")
+	}
+	return &row, nil
+}
+
+func (s *Service) ConsumeStoredConfirmation(ctx context.Context, principal *Principal, confirmationID string, definition aitool.Definition, toolName string) (json.RawMessage, error) {
+	if principal == nil || principal.Auth == nil || !principal.Scopes[ScopeSensitive] {
+		return nil, errs.New(errs.CodeForbidden, "confirmation is unavailable")
+	}
+	db, err := s.systemDB(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var arguments json.RawMessage
+	err = db.Transaction(func(tx *gorm.DB) error {
+		var row Confirmation
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", confirmationID).First(&row).Error; err != nil {
+			return errs.New(errs.CodeForbidden, "confirmation is unavailable")
+		}
+		if row.Status != "approved" || time.Now().UTC().After(row.ExpiresAt) || row.TenantID != principal.Auth.TenantID || row.UserID != principal.Auth.UserID || row.GrantID != principal.Auth.MCPGrantID || row.ClientID != principal.Auth.MCPClientID || row.ActionID != definition.RuntimeRef || row.ToolName != toolName || row.SchemaHash != definitionHash(definition) {
+			return errs.New(errs.CodeForbidden, "confirmation is unavailable")
+		}
+		decoded, err := s.decryptConfirmationArguments(&row)
+		if err != nil {
+			return errs.New(errs.CodeForbidden, "confirmation is unavailable")
+		}
+		argumentsHash, err := canonicalHash(decoded)
+		if err != nil || argumentsHash != row.ArgumentsHash {
+			return errs.New(errs.CodeForbidden, "confirmation is unavailable")
+		}
+		now := time.Now().UTC()
+		if err = tx.Model(&row).Updates(map[string]any{"status": "consumed", "consumed_at": now, "arguments_ciphertext": ""}).Error; err != nil {
+			return err
+		}
+		arguments = decoded
+		return nil
+	})
+	return arguments, err
 }
 
 func (s *Service) ConsumeConfirmation(ctx context.Context, principal *Principal, recovery string, definition aitool.Definition, toolName string, arguments json.RawMessage) error {
@@ -127,7 +240,7 @@ func (s *Service) ConsumeConfirmation(ctx context.Context, principal *Principal,
 			return errs.New(errs.CodeForbidden, "confirmation is unavailable")
 		}
 		now := time.Now().UTC()
-		return tx.Model(&row).Updates(map[string]any{"status": "consumed", "consumed_at": now}).Error
+		return tx.Model(&row).Updates(map[string]any{"status": "consumed", "consumed_at": now, "arguments_ciphertext": ""}).Error
 	})
 	return err
 }
@@ -160,7 +273,11 @@ func (s *Service) DecideConfirmation(ctx context.Context, ac *auth.Context, reco
 	if err != nil {
 		return nil, err
 	}
-	result := db.Model(&Confirmation{}).Where("id = ? AND tenant_id = ? AND user_id = ? AND status = 'pending'", row.ID, ac.TenantID, ac.UserID).Updates(map[string]any{"status": status, "decided_at": now})
+	updates := map[string]any{"status": status, "decided_at": now}
+	if status == "rejected" {
+		updates["arguments_ciphertext"] = ""
+	}
+	result := db.Model(&Confirmation{}).Where("id = ? AND tenant_id = ? AND user_id = ? AND status = 'pending'", row.ID, ac.TenantID, ac.UserID).Updates(updates)
 	if result.Error != nil {
 		return nil, result.Error
 	}
@@ -186,7 +303,7 @@ func (s *Service) ownedConfirmation(ctx context.Context, ac *auth.Context, recov
 	}
 	if row.Status == "pending" && time.Now().UTC().After(row.ExpiresAt) {
 		row.Status = "expired"
-		_ = db.Model(&row).Update("status", "expired").Error
+		_ = db.Model(&row).Updates(map[string]any{"status": "expired", "arguments_ciphertext": ""}).Error
 	}
 	var client Client
 	_ = db.Where("id = ?", row.ClientID).First(&client).Error
@@ -261,7 +378,7 @@ func (s *Service) RevokeOwnedGrants(ctx context.Context, ac *auth.Context, reque
 		if err := tx.Model(&TokenFamily{}).Where("grant_id IN ? AND revoked_at IS NULL", ids).Update("revoked_at", now).Error; err != nil {
 			return err
 		}
-		return tx.Model(&Confirmation{}).Where("grant_id IN ? AND status IN ?", ids, []string{"pending", "approved"}).Update("status", "revoked").Error
+		return tx.Model(&Confirmation{}).Where("grant_id IN ? AND status IN ?", ids, []string{"pending", "approved"}).Updates(map[string]any{"status": "revoked", "arguments_ciphertext": ""}).Error
 	})
 	if err == nil && changed {
 		s.writeGovernanceAudit(ctx, ac, nil, "mcp.grant_revoke", "success", false)

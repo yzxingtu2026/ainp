@@ -80,26 +80,27 @@ type TokenFamily struct {
 func (TokenFamily) TableName() string { return "mcp_oauth_token_families" }
 
 type Confirmation struct {
-	ID            string    `gorm:"primaryKey;size:64"`
-	TenantID      string    `gorm:"size:64;not null;index"`
-	UserID        string    `gorm:"size:64;not null;index"`
-	GrantID       string    `gorm:"size:64;not null;index"`
-	ClientID      string    `gorm:"size:64;not null;index"`
-	ActionID      string    `gorm:"size:128;not null"`
-	ToolName      string    `gorm:"size:128;not null"`
-	SchemaHash    string    `gorm:"size:64;not null"`
-	ArgumentsHash string    `gorm:"size:64;not null"`
-	RecoveryHash  string    `gorm:"size:64;not null;uniqueIndex"`
-	Title         string    `gorm:"size:160;not null"`
-	Description   string    `gorm:"size:512;not null"`
-	Risk          string    `gorm:"size:16;not null"`
-	SideEffect    string    `gorm:"size:16;not null"`
-	Status        string    `gorm:"size:16;not null;index"`
-	ExpiresAt     time.Time `gorm:"not null;index"`
-	DecidedAt     *time.Time
-	ConsumedAt    *time.Time
-	CreatedAt     time.Time `gorm:"autoCreateTime"`
-	UpdatedAt     time.Time `gorm:"autoUpdateTime"`
+	ID                  string    `gorm:"primaryKey;size:64"`
+	TenantID            string    `gorm:"size:64;not null;index"`
+	UserID              string    `gorm:"size:64;not null;index"`
+	GrantID             string    `gorm:"size:64;not null;index"`
+	ClientID            string    `gorm:"size:64;not null;index"`
+	ActionID            string    `gorm:"size:128;not null"`
+	ToolName            string    `gorm:"size:128;not null"`
+	SchemaHash          string    `gorm:"size:64;not null"`
+	ArgumentsHash       string    `gorm:"size:64;not null"`
+	ArgumentsCiphertext string    `gorm:"type:text;not null"`
+	RecoveryHash        string    `gorm:"size:64;not null;uniqueIndex"`
+	Title               string    `gorm:"size:160;not null"`
+	Description         string    `gorm:"size:512;not null"`
+	Risk                string    `gorm:"size:16;not null"`
+	SideEffect          string    `gorm:"size:16;not null"`
+	Status              string    `gorm:"size:16;not null;index"`
+	ExpiresAt           time.Time `gorm:"not null;index"`
+	DecidedAt           *time.Time
+	ConsumedAt          *time.Time
+	CreatedAt           time.Time `gorm:"autoCreateTime"`
+	UpdatedAt           time.Time `gorm:"autoUpdateTime"`
 }
 
 func (Confirmation) TableName() string { return "mcp_action_confirmations" }

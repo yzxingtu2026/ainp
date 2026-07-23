@@ -9,7 +9,7 @@
 - OAuth 只允许 Authorization Code + PKCE S256；redirect URI 精确匹配，授权码单次短 TTL。
 - Grant 固定 tenant/user/client/scope/auth_version；每次请求通过 AuthorizationProvider 实时校验。
 - `actions:read` 默认选中；write/sensitive 默认关闭；sensitive scope 永不替代逐次确认。
-- 敏感确认优先使用客户端声明的标准 URL elicitation，不支持时返回结构化 URL/恢复凭证；确认必须绑定 tenant/user/client/grant、Action/Tool、Schema hash 与规范化参数 hash，短 TTL 且单次消费，参数或授权变化、过期、拒绝、撤销和重放全部 fail-closed。
+- 敏感确认优先使用客户端声明的标准 URL elicitation，不支持时返回结构化 URL；响应必须提供 opaque confirmation ID 和固定恢复工具。恢复工具只接受 confirmation ID，禁止接收 Action ID/业务参数，并在实时重鉴权后只经 `ActionRegistry.Invoke` 单次执行。确认绑定 tenant/user/client/grant、Action/Tool、Schema hash 与规范化参数 hash，参数只以 ownership-bound AEAD 短期密文保存并在消费、拒绝、过期或授权撤销时清空；参数或授权变化、过期、拒绝、撤销和重放全部 fail-closed。
 - 用户可撤销单 Grant、某 Client 全部 Grant 或全部 Grant；撤销必须原子失效 Refresh family 与 pending/approved confirmation，且请求路径继续实时校验 Grant。
 - OAuth Code、Token、PKCE verifier、Cookie 和敏感参数不得进入日志或审计摘要。
 - 详规见 `docs/development/mcp-oauth.md`。

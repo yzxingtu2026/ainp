@@ -11,9 +11,12 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/yzxingtu2026/ainp/platform/framework/action"
 	"github.com/yzxingtu2026/ainp/platform/framework/aitool"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/mcpserver"
+	"github.com/yzxingtu2026/ainp/platform/framework/permission"
 	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
 )
 
@@ -87,7 +90,69 @@ func TestMCPSensitiveConfirmationIsBoundAndSingleUse(t *testing.T) {
 		t.Fatal("confirmation replay was accepted")
 	}
 
-	pending, err = service.CreateConfirmation(context.Background(), principal, definition, "ainp_demo_destroy", json.RawMessage(`{"id":"two"}`))
+	pending, err = service.CreateConfirmation(context.Background(), principal, definition, "ainp_demo_destroy", json.RawMessage(`{"id":"two","nested":{"enabled":true}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = service.DecideConfirmation(context.Background(), web, pending.RecoveryToken, "approve"); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := service.ConsumeStoredConfirmation(context.Background(), principal, pending.ID, definition, "ainp_demo_destroy")
+	if err != nil || string(stored) != `{"id":"two","nested":{"enabled":true}}` {
+		t.Fatalf("stored confirmation arguments were not recovered: %s %v", stored, err)
+	}
+	var consumed mcpserver.Confirmation
+	if err = sdb.WithContext(platformCtx).First(&consumed, "id = ?", pending.ID).Error; err != nil || consumed.ArgumentsCiphertext != "" {
+		t.Fatalf("consumed confirmation retained encrypted arguments: %#v %v", consumed, err)
+	}
+	if _, err = service.ConsumeStoredConfirmation(context.Background(), principal, pending.ID, definition, "ainp_demo_destroy"); err == nil {
+		t.Fatal("stored confirmation replay was accepted")
+	}
+
+	registry := action.NewRegistry(permission.NewChecker(), nil)
+	var calls int
+	registerMCPTestAction(t, registry, "demo.resume", action.AccessPermission, "demo.resume", "destructive", "high", func(ctx context.Context, _ json.RawMessage) (any, error) {
+		calls++
+		if auth.MustFromContext(ctx).IdempotencyKey == "" {
+			t.Fatal("confirmation execution did not set an idempotency key")
+		}
+		return map[string]any{"deleted": true}, nil
+	})
+	definitions, err := (&aitool.ActionProvider{Actions: registry}).List(context.Background())
+	if err != nil || len(definitions) != 1 {
+		t.Fatalf("project resume action: %#v %v", definitions, err)
+	}
+	principal.Auth.Permissions = []string{"demo.resume"}
+	resumePending, err := service.CreateConfirmation(context.Background(), principal, definitions[0], mcpserver.MCPToolName("demo.resume"), json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = service.DecideConfirmation(context.Background(), web, resumePending.RecoveryToken, "approve"); err != nil {
+		t.Fatal(err)
+	}
+	ctx := auth.WithContext(context.Background(), principal.Auth)
+	ctx = mcpserver.ContextWithPrincipalForTest(ctx, principal.Scopes)
+	serverTransport, clientTransport := mcp.NewInMemoryTransports()
+	serverSession, err := mcpserver.NewActionServer(registry, service).Connect(ctx, serverTransport, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer serverSession.Close()
+	clientSession, err := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "1"}, nil).Connect(ctx, clientTransport, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer clientSession.Close()
+	result, err := clientSession.CallTool(ctx, &mcp.CallToolParams{Name: "ainp_confirmation_execute", Arguments: map[string]any{"confirmation_id": resumePending.ID}})
+	if err != nil || result.IsError || calls != 1 {
+		t.Fatalf("confirmed action was not executed: result=%#v err=%v calls=%d", result, err, calls)
+	}
+	result, err = clientSession.CallTool(ctx, &mcp.CallToolParams{Name: "ainp_confirmation_execute", Arguments: map[string]any{"confirmation_id": resumePending.ID}})
+	if err != nil || !result.IsError || calls != 1 {
+		t.Fatalf("confirmed action replay was accepted: result=%#v err=%v calls=%d", result, err, calls)
+	}
+
+	pending, err = service.CreateConfirmation(context.Background(), principal, definition, "ainp_demo_destroy", json.RawMessage(`{"id":"three"}`))
 	if err != nil {
 		t.Fatal(err)
 	}

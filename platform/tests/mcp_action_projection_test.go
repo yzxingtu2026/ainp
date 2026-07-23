@@ -52,13 +52,23 @@ func TestMCPConfirmationMigrationDeclaresOneTimeGovernance(t *testing.T) {
 	}
 }
 
+func TestMCPConfirmationResumeMigrationStoresEncryptedArguments(t *testing.T) {
+	body, err := os.ReadFile("../migrations/0049_mcp_confirmation_resume.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), "arguments_ciphertext") {
+		t.Fatal("MCP confirmation resume migration must persist encrypted arguments")
+	}
+}
+
 func TestMCPActionProjectionUsesRegistryMetadata(t *testing.T) {
 	registry := action.NewRegistry(permission.NewChecker(), nil)
 	registerMCPTestAction(t, registry, "demo.read", action.AccessPermission, "demo.read", "read", "low", nil)
 	registerMCPTestAction(t, registry, "demo.write", action.AccessPermission, "demo.write", "write", "medium", nil)
 	registerMCPTestAction(t, registry, "demo.sensitive", action.AccessPermission, "demo.sensitive", "destructive", "high", nil)
 
-	server := mcpserver.NewActionServer(registry, nil)
+	server := mcpserver.NewActionServer(registry, mcpserver.NewService(nil, nil, "test-secret", "ainp-test", "https://api.ainp.example"))
 	client := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "1"}, nil)
 	ctx := auth.WithContext(context.Background(), &auth.Context{TenantID: "tenant-a", UserID: "user-a", Realm: auth.RealmTenant, Authenticated: true, Permissions: []string{"demo.read", "demo.write", "demo.sensitive"}, Client: "mcp"})
 	scopes := map[string]bool{mcpserver.ScopeRead: true, mcpserver.ScopeWrite: true, mcpserver.ScopeSensitive: true}
@@ -78,8 +88,8 @@ func TestMCPActionProjectionUsesRegistryMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Tools) != 3 {
-		t.Fatalf("expected read, write and authorized sensitive tools, got %d", len(result.Tools))
+	if len(result.Tools) != 4 || result.Tools[0].Name != "ainp_confirmation_execute" {
+		t.Fatalf("expected confirmation executor plus read, write and sensitive tools, got %#v", result.Tools)
 	}
 	for _, tool := range result.Tools {
 		if tool.InputSchema == nil || tool.Description == "" || tool.Annotations == nil {
@@ -88,7 +98,7 @@ func TestMCPActionProjectionUsesRegistryMetadata(t *testing.T) {
 	}
 	delete(scopes, mcpserver.ScopeWrite)
 	result, err = session.ListTools(ctx, nil)
-	if err != nil || len(result.Tools) != 2 || result.Tools[0].Name != mcpserver.MCPToolName("demo.read") || result.Tools[1].Name != mcpserver.MCPToolName("demo.sensitive") {
+	if err != nil || len(result.Tools) != 3 || result.Tools[0].Name != "ainp_confirmation_execute" || result.Tools[1].Name != mcpserver.MCPToolName("demo.read") || result.Tools[2].Name != mcpserver.MCPToolName("demo.sensitive") {
 		t.Fatalf("scope removal must hide write tools: result=%#v err=%v", result, err)
 	}
 }
