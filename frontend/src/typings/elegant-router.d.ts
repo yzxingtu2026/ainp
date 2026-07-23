@@ -34,6 +34,8 @@ declare module "@elegant-router/types" {
     "home": "/home";
     "iframe-page": "/iframe-page/:url";
     "login": "/login/:module(pwd-login|code-login|register|reset-pwd|bind-wechat)?";
+    "mcp": "/mcp";
+    "mcp_confirm": "/mcp/confirm";
     "notification": "/notification";
     "notification_list": "/notification/list";
     "oauth": "/oauth";
@@ -93,6 +95,7 @@ declare module "@elegant-router/types" {
     | "home"
     | "iframe-page"
     | "login"
+    | "mcp"
     | "notification"
     | "oauth"
     | "operations"
@@ -131,6 +134,7 @@ declare module "@elegant-router/types" {
     | "demo_attachments"
     | "demo_hello"
     | "home"
+    | "mcp_confirm"
     | "notification_list"
     | "oauth_authorize"
     | "operations_audit-logs"

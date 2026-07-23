@@ -356,6 +356,17 @@ func (r *Registry) AuditRejected(ctx context.Context, actionID string, err error
 	r.writeAudit(ctx, a, a.Meta.PermissionCode(a.ID), "failure", err)
 }
 
+func (r *Registry) AuditDeferred(ctx context.Context, actionID, summary string) {
+	a, ok := r.items[actionID]
+	if !ok {
+		return
+	}
+	ac := auth.MustFromContext(ctx)
+	copyContext := *ac
+	copyContext.AuditSummary = summary
+	r.writeAudit(auth.WithContext(ctx, &copyContext), a, a.Meta.PermissionCode(a.ID), "failure", nil)
+}
+
 // RequireAuthenticated is the shared access policy for authenticated-only endpoints.
 func RequireAuthenticated(ctx context.Context) error {
 	ac, ok := auth.FromContext(ctx)

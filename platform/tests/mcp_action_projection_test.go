@@ -39,13 +39,26 @@ func TestMCPActionAuditMigrationDeclaresTrustedGrantColumns(t *testing.T) {
 	}
 }
 
+func TestMCPConfirmationMigrationDeclaresOneTimeGovernance(t *testing.T) {
+	body, err := os.ReadFile("../migrations/0048_mcp_confirmation_governance.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := string(body)
+	for _, required := range []string{"mcp_action_confirmations", "recovery_hash", "arguments_hash", "consumed_at", "ck_mcp_confirmation_status", "idx_mcp_confirmation_owner", "idx_mcp_confirmation_grant"} {
+		if !strings.Contains(sql, required) {
+			t.Fatalf("MCP confirmation migration missing %s", required)
+		}
+	}
+}
+
 func TestMCPActionProjectionUsesRegistryMetadata(t *testing.T) {
 	registry := action.NewRegistry(permission.NewChecker(), nil)
 	registerMCPTestAction(t, registry, "demo.read", action.AccessPermission, "demo.read", "read", "low", nil)
 	registerMCPTestAction(t, registry, "demo.write", action.AccessPermission, "demo.write", "write", "medium", nil)
 	registerMCPTestAction(t, registry, "demo.sensitive", action.AccessPermission, "demo.sensitive", "destructive", "high", nil)
 
-	server := mcpserver.NewActionServer(registry)
+	server := mcpserver.NewActionServer(registry, nil)
 	client := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "1"}, nil)
 	ctx := auth.WithContext(context.Background(), &auth.Context{TenantID: "tenant-a", UserID: "user-a", Realm: auth.RealmTenant, Authenticated: true, Permissions: []string{"demo.read", "demo.write", "demo.sensitive"}, Client: "mcp"})
 	scopes := map[string]bool{mcpserver.ScopeRead: true, mcpserver.ScopeWrite: true, mcpserver.ScopeSensitive: true}
@@ -65,20 +78,17 @@ func TestMCPActionProjectionUsesRegistryMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Tools) != 2 {
-		t.Fatalf("expected read and normal write only, got %d", len(result.Tools))
+	if len(result.Tools) != 3 {
+		t.Fatalf("expected read, write and authorized sensitive tools, got %d", len(result.Tools))
 	}
 	for _, tool := range result.Tools {
-		if tool.Name == mcpserver.MCPToolName("demo.sensitive") {
-			t.Fatal("sensitive Action must remain filtered before phase 3")
-		}
 		if tool.InputSchema == nil || tool.Description == "" || tool.Annotations == nil {
 			t.Fatalf("incomplete projected metadata: %#v", tool)
 		}
 	}
 	delete(scopes, mcpserver.ScopeWrite)
 	result, err = session.ListTools(ctx, nil)
-	if err != nil || len(result.Tools) != 1 || result.Tools[0].Name != mcpserver.MCPToolName("demo.read") {
+	if err != nil || len(result.Tools) != 2 || result.Tools[0].Name != mcpserver.MCPToolName("demo.read") || result.Tools[1].Name != mcpserver.MCPToolName("demo.sensitive") {
 		t.Fatalf("scope removal must hide write tools: result=%#v err=%v", result, err)
 	}
 }
@@ -94,7 +104,7 @@ func TestMCPActionCallRechecksPermissionAndPropagatesIdempotency(t *testing.T) {
 		}
 		return map[string]any{"ok": true}, nil
 	})
-	server := mcpserver.NewActionServer(registry)
+	server := mcpserver.NewActionServer(registry, nil)
 	client := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "1"}, nil)
 	authContext := &auth.Context{TenantID: "tenant-a", UserID: "user-a", Realm: auth.RealmTenant, Authenticated: true, Permissions: []string{"demo.write"}, Client: "mcp", MCPClientID: "client-a", MCPGrantID: "grant-a"}
 	ctx := auth.WithContext(context.Background(), authContext)

@@ -43,7 +43,7 @@ type projectedAction struct {
 
 // NewActionServer projects the Action Registry into MCP without introducing a
 // second business registration source.
-func NewActionServer(actions *action.Registry) *mcp.Server {
+func NewActionServer(actions *action.Registry, confirmations *Service) *mcp.Server {
 	server := mcp.NewServer(&mcp.Implementation{Name: "AINP", Version: "1.0.0"}, &mcp.ServerOptions{PageSize: maxProjectedTools})
 	if actions == nil {
 		return server
@@ -55,7 +55,7 @@ func NewActionServer(actions *action.Registry) *mcp.Server {
 	for _, item := range projected {
 		item := item
 		server.AddTool(item.tool, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			return callProjectedAction(ctx, actions, item, req)
+			return callProjectedAction(ctx, actions, confirmations, item, req)
 		})
 	}
 	server.AddReceivingMiddleware(func(next mcp.MethodHandler) mcp.MethodHandler {
@@ -163,8 +163,7 @@ func visibleToPrincipal(principal *Principal, definition aitool.Definition) bool
 	if principal == nil || principal.Auth == nil || !principal.Auth.Authenticated || auth.NormalizeRealm(principal.Auth.Realm) != auth.RealmTenant || definition.Status != "enabled" {
 		return false
 	}
-	// Sensitive Actions remain unavailable until phase 3 adds per-call confirmation.
-	if requiredScope(definition) == ScopeSensitive || !principal.Scopes[requiredScope(definition)] {
+	if !principal.Scopes[requiredScope(definition)] {
 		return false
 	}
 	for _, permission := range definition.PermissionRefs {
@@ -175,7 +174,7 @@ func visibleToPrincipal(principal *Principal, definition aitool.Definition) bool
 	return true
 }
 
-func callProjectedAction(ctx context.Context, actions *action.Registry, projected projectedAction, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func callProjectedAction(ctx context.Context, actions *action.Registry, confirmations *Service, projected projectedAction, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	principal, ok := principalFromContext(ctx)
 	if !ok || !visibleToPrincipal(principal, projected.definition) {
 		if ok {
@@ -190,6 +189,35 @@ func callProjectedAction(ctx context.Context, actions *action.Registry, projecte
 	input := req.Params.Arguments
 	if len(input) == 0 {
 		input = json.RawMessage("{}")
+	}
+	if requiredScope(projected.definition) == ScopeSensitive {
+		if confirmations == nil {
+			return toolError("tool is unavailable"), nil
+		}
+		recovery, _ := req.Params.Meta["confirmationToken"].(string)
+		if recovery == "" {
+			recovery, _ = req.Params.Meta["confirmation_token"].(string)
+		}
+		if strings.TrimSpace(recovery) == "" {
+			pending, err := confirmations.CreateConfirmation(ctx, principal, projected.definition, projected.tool.Name, input)
+			if err != nil {
+				return toolError(safeActionError(err)), nil
+			}
+			actions.AuditDeferred(auth.WithContext(ctx, principal.Auth), projected.definition.RuntimeRef, "sensitive MCP action requires per-call confirmation")
+			if req.Session != nil {
+				elicited, elicitErr := req.Session.Elicit(ctx, &mcp.ElicitParams{
+					Mode: "url", Message: "请在 AINP 中确认本次敏感操作", URL: pending.ConfirmationURL, ElicitationID: pending.ID,
+				})
+				if elicitErr == nil && elicited != nil && elicited.Action != "accept" {
+					_, _ = confirmations.DecideConfirmation(ctx, principal.Auth, pending.RecoveryToken, "reject")
+					return toolError("confirmation was declined"), nil
+				}
+			}
+			return confirmationRequired(pending), nil
+		}
+		if err := confirmations.ConsumeConfirmation(ctx, principal, strings.TrimSpace(recovery), projected.definition, projected.tool.Name, input); err != nil {
+			return toolError("confirmation is unavailable"), nil
+		}
 	}
 	authCopy := *principal.Auth
 	if key, _ := req.Params.Meta["idempotencyKey"].(string); strings.TrimSpace(key) != "" {
@@ -210,6 +238,14 @@ func callProjectedAction(ctx context.Context, actions *action.Registry, projecte
 		structured = map[string]any{"result": data}
 	}
 	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(encoded)}}, StructuredContent: structured}, nil
+}
+
+func confirmationRequired(pending *ConfirmationRequest) *mcp.CallToolResult {
+	return &mcp.CallToolResult{
+		Content:           []mcp.Content{&mcp.TextContent{Text: "confirmation_required: open " + pending.ConfirmationURL}},
+		StructuredContent: map[string]any{"status": "confirmation_required", "confirmation_url": pending.ConfirmationURL, "confirmation_token": pending.RecoveryToken, "expires_at": pending.ExpiresAt},
+		IsError:           true,
+	}
 }
 
 func toolError(message string) *mcp.CallToolResult {

@@ -180,6 +180,8 @@ const routeMap: RouteMap = {
   "home": "/home",
   "iframe-page": "/iframe-page/:url",
   "login": "/login/:module(pwd-login|code-login|register|reset-pwd|bind-wechat)?",
+  "mcp": "/mcp",
+  "mcp_confirm": "/mcp/confirm",
   "notification": "/notification",
   "notification_list": "/notification/list",
   "oauth": "/oauth",

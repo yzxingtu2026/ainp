@@ -15,6 +15,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"github.com/yzxingtu2026/ainp/platform/framework/audit"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"gorm.io/gorm"
@@ -38,12 +39,17 @@ type Service struct {
 	baseURL       string
 	accessTTL     time.Duration
 	refreshTTL    time.Duration
+	webBaseURL    string
+	auditor       audit.Recorder
 }
 
 func NewService(db *gorm.DB, authorization auth.AuthorizationProvider, secret, issuer, baseURL string) *Service {
 	registerModels()
 	return &Service{db: db, authorization: authorization, secret: []byte(secret), issuer: issuer, baseURL: strings.TrimRight(baseURL, "/"), accessTTL: 15 * time.Minute, refreshTTL: 30 * 24 * time.Hour}
 }
+
+func (s *Service) SetWebBaseURL(value string)      { s.webBaseURL = strings.TrimRight(value, "/") }
+func (s *Service) SetAuditor(value audit.Recorder) { s.auditor = value }
 
 func (s *Service) systemDB(ctx context.Context) (*gorm.DB, error) {
 	systemCtx := auth.WithContext(ctx, &auth.Context{Authenticated: true, Realm: auth.RealmPlatform, IsSystemOperator: true, UserID: "system:mcp-oauth", Client: "mcp-oauth"})
@@ -55,7 +61,7 @@ func (s *Service) systemDB(ctx context.Context) (*gorm.DB, error) {
 }
 
 func AutoMigrate(db *gorm.DB) error {
-	return db.AutoMigrate(&Client{}, &Grant{}, &AuthorizationCode{}, &TokenFamily{})
+	return db.AutoMigrate(&Client{}, &Grant{}, &AuthorizationCode{}, &TokenFamily{}, &Confirmation{})
 }
 
 func randomToken() (string, error) {

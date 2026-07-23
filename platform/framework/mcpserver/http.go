@@ -11,6 +11,8 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/action"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/authentication"
+	"github.com/yzxingtu2026/ainp/platform/framework/errs"
+	"github.com/yzxingtu2026/ainp/platform/framework/response"
 )
 
 type HTTPServer struct {
@@ -22,7 +24,8 @@ type HTTPServer struct {
 }
 
 func NewHTTPServer(service *Service, actions *action.Registry, baseURL, webBaseURL string) *HTTPServer {
-	return &HTTPServer{service: service, baseURL: strings.TrimRight(baseURL, "/"), webBaseURL: strings.TrimRight(webBaseURL, "/"), limiter: authentication.NewMemoryRateLimiter(30, time.Minute), handler: mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return NewActionServer(actions) }, &mcp.StreamableHTTPOptions{})}
+	service.SetWebBaseURL(webBaseURL)
+	return &HTTPServer{service: service, baseURL: strings.TrimRight(baseURL, "/"), webBaseURL: strings.TrimRight(webBaseURL, "/"), limiter: authentication.NewMemoryRateLimiter(30, time.Minute), handler: mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return NewActionServer(actions, service) }, &mcp.StreamableHTTPOptions{})}
 }
 
 func (h *HTTPServer) Register(r *gin.Engine) {
@@ -33,7 +36,59 @@ func (h *HTTPServer) Register(r *gin.Engine) {
 	r.POST("/api/v1/mcp/oauth/authorize", h.authorize)
 	r.POST("/oauth/token", h.token)
 	r.POST("/oauth/revoke", h.revoke)
+	r.GET("/api/v1/mcp/confirmations/info", h.confirmationInfo)
+	r.POST("/api/v1/mcp/confirmations/decision", h.confirmationDecision)
+	r.GET("/api/v1/mcp/grants", h.grants)
+	r.POST("/api/v1/mcp/grants/revoke", h.revokeGrant)
 	r.Any("/mcp", h.mcp)
+}
+
+func (h *HTTPServer) confirmationInfo(c *gin.Context) {
+	view, err := h.service.ConfirmationInfo(c.Request.Context(), auth.MustFromContext(c.Request.Context()), c.Query("token"))
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, view)
+}
+
+func (h *HTTPServer) confirmationDecision(c *gin.Context) {
+	var req struct {
+		Token    string `json:"token"`
+		Decision string `json:"decision"`
+	}
+	if c.ShouldBindJSON(&req) != nil {
+		response.Fail(c, errs.New(errs.CodeValidation, "invalid confirmation request"))
+		return
+	}
+	view, err := h.service.DecideConfirmation(c.Request.Context(), auth.MustFromContext(c.Request.Context()), req.Token, req.Decision)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, view)
+}
+
+func (h *HTTPServer) grants(c *gin.Context) {
+	items, err := h.service.ListGrants(c.Request.Context(), auth.MustFromContext(c.Request.Context()))
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, items)
+}
+
+func (h *HTTPServer) revokeGrant(c *gin.Context) {
+	var req GrantRevokeRequest
+	if c.ShouldBindJSON(&req) != nil {
+		response.Fail(c, errs.New(errs.CodeValidation, "invalid grant revoke request"))
+		return
+	}
+	if err := h.service.RevokeOwnedGrants(c.Request.Context(), auth.MustFromContext(c.Request.Context()), req); err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, gin.H{"status": "revoked"})
 }
 
 func (h *HTTPServer) allow(c *gin.Context, operation string) bool {

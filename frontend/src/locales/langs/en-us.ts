@@ -276,6 +276,8 @@ const local: App.I18n.Schema = {
     notification_list: 'Notification List',
     oauth: 'Secure Authorization',
     oauth_authorize: 'MCP Authorization',
+    mcp: 'MCP Security Confirmation',
+    mcp_confirm: 'MCP Action Confirmation',
     operations: 'Operations',
     operations_jobs: 'Job Runs',
     operations_outbox: 'Outbox Events',

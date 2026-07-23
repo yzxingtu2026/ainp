@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { fetchAuthSessions, fetchMCPConnectionInfo, fetchSelfProfile, fetchUserPreferences, revokeAuthSession, updateSelfProfile, updateUserPreferences } from '@/service/api';
+import { fetchAuthSessions, fetchMCPConnectionInfo, fetchMCPGrants, fetchSelfProfile, fetchUserPreferences, revokeAuthSession, revokeMCPGrants, updateSelfProfile, updateUserPreferences } from '@/service/api';
 import { formatDateTime } from '@/utils/datetime';
 
 defineOptions({ name: 'SystemProfile' });
@@ -16,6 +16,7 @@ const profile = ref<Api.User.SelfProfile | null>(null);
 const definition = ref<Api.Setting.Definition | null>(null);
 const sessions = ref<Api.Auth.Session[]>([]);
 const mcpConnection = ref<Api.User.MCPConnectionInfo | null>(null);
+const mcpGrants = ref<Api.User.MCPGrant[]>([]);
 const displayName = ref('');
 const values = reactive<Record<string, any>>({});
 
@@ -40,7 +41,7 @@ watch(tab, value => router.replace({ query: { ...route.query, tab: value } }));
 async function load() {
   loading.value = true;
   try {
-    const [profileResult, preferenceResult, sessionResult, mcpResult] = await Promise.all([fetchSelfProfile(), fetchUserPreferences(), fetchAuthSessions(), fetchMCPConnectionInfo()]);
+    const [profileResult, preferenceResult, sessionResult, mcpResult, grantResult] = await Promise.all([fetchSelfProfile(), fetchUserPreferences(), fetchAuthSessions(), fetchMCPConnectionInfo(), fetchMCPGrants()]);
     if (!profileResult.error && profileResult.data) {
       profile.value = profileResult.data;
       displayName.value = profileResult.data.display_name;
@@ -51,6 +52,7 @@ async function load() {
     }
     if (!sessionResult.error && sessionResult.data) sessions.value = sessionResult.data.sessions || [];
     if (!mcpResult.error && mcpResult.data) mcpConnection.value = mcpResult.data;
+    if (!grantResult.error && grantResult.data) mcpGrants.value = grantResult.data;
   } finally { loading.value = false; }
 }
 
@@ -88,6 +90,34 @@ async function copyMCPJSON() {
   if (!mcpConnection.value?.url) return;
   await navigator.clipboard.writeText(mcpJSONConfig.value);
   window.$message?.success('MCP JSON 配置已复制');
+}
+
+async function revokeMCPGrant(grant: Api.User.MCPGrant) {
+  const { error } = await revokeMCPGrants({ grant_id: grant.id });
+  if (!error) {
+    grant.status = 'revoked';
+    window.$message?.success('MCP 授权已撤销');
+  }
+}
+
+async function revokeMCPClient(grant: Api.User.MCPGrant) {
+  const { error } = await revokeMCPGrants({ client_id: grant.client_id });
+  if (!error) {
+    mcpGrants.value.forEach(item => { if (item.client_id === grant.client_id && item.status === 'active') item.status = 'revoked'; });
+    window.$message?.success('该客户端的 MCP 授权已全部撤销');
+  }
+}
+
+async function revokeAllMCPGrants() {
+  const { error } = await revokeMCPGrants({ all: true });
+  if (!error) {
+    mcpGrants.value.forEach(item => { if (item.status === 'active') item.status = 'revoked'; });
+    window.$message?.success('全部 MCP 授权已撤销');
+  }
+}
+
+function scopeLabel(scope: string) {
+  return ({ 'actions:read': '读取', 'actions:write': '写入', 'actions:sensitive': '敏感' } as Record<string, string>)[scope] || scope;
 }
 
 const optionMap: Record<string, Array<{ label: string; value: string }>> = {
@@ -188,6 +218,30 @@ onMounted(load);
               <div><NTag type="warning" class="mr-10px">写入</NTag>创建或编辑有权管理的数据，需要主动勾选。</div>
               <div><NTag type="error" class="mr-10px">敏感</NTag>允许发起外部调用、费用或删除操作，执行时仍需逐次确认。</div>
             </NSpace>
+
+            <NDivider title-placement="left">已授权客户端</NDivider>
+            <div class="mb-12px flex justify-end">
+              <NButton size="small" type="error" ghost :disabled="!mcpGrants.some(item => item.status === 'active')" @click="revokeAllMCPGrants">撤销全部</NButton>
+            </div>
+            <NList bordered>
+              <NListItem v-for="grant in mcpGrants" :key="grant.id">
+                <NThing :title="grant.client_name || grant.client_id" :description="`最近使用：${grant.last_used_at ? formatDateTime(grant.last_used_at) : '尚未使用'} · 到期：${formatDateTime(grant.expires_at)}`">
+                  <template #footer>
+                    <NSpace size="small">
+                      <NTag v-for="scope in grant.scopes" :key="scope" size="small" :type="scope === 'actions:sensitive' ? 'error' : scope === 'actions:write' ? 'warning' : 'success'">{{ scopeLabel(scope) }}</NTag>
+                      <NTag size="small" :type="grant.status === 'active' ? 'success' : 'default'">{{ grant.status === 'active' ? '有效' : grant.status === 'revoked' ? '已撤销' : '已过期' }}</NTag>
+                    </NSpace>
+                  </template>
+                </NThing>
+                <template #suffix>
+                  <NSpace v-if="grant.status === 'active'" size="small">
+                    <NButton size="small" type="error" ghost @click="revokeMCPGrant(grant)">撤销本次</NButton>
+                    <NButton size="small" type="error" ghost @click="revokeMCPClient(grant)">撤销该客户端全部</NButton>
+                  </NSpace>
+                </template>
+              </NListItem>
+              <NEmpty v-if="mcpGrants.length === 0" description="暂无 MCP 授权" class="py-24px" />
+            </NList>
           </div>
         </NTabPane>
 

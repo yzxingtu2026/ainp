@@ -31,6 +31,7 @@ export const views: Record<LastLevelRouteKey, RouteComponent | (() => Promise<Ro
   demo_attachments: () => import("@/views/demo/attachments/index.vue"),
   demo_hello: () => import("@/views/demo/hello/index.vue"),
   home: () => import("@/views/home/index.vue"),
+  mcp_confirm: () => import("@/views/mcp/confirm/index.vue"),
   notification_list: () => import("@/views/notification/list/index.vue"),
   oauth_authorize: () => import("@/views/oauth/authorize/index.vue"),
   "operations_audit-logs": () => import("@/views/operations/audit-logs/index.vue"),

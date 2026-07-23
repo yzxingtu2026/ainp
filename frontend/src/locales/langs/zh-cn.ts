@@ -272,6 +272,8 @@ const local: App.I18n.Schema = {
     notification_list: '通知列表',
     oauth: '安全授权',
     oauth_authorize: 'MCP 授权',
+    mcp: 'MCP 安全确认',
+    mcp_confirm: 'MCP 操作确认',
     operations: '运维',
     operations_jobs: '任务运行',
     operations_outbox: 'Outbox 事件',

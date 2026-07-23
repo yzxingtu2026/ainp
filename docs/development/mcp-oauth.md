@@ -20,7 +20,7 @@ AINP 的远程 MCP 入口使用官方 Go MCP SDK 提供 Streamable HTTP。业务
 - 每个新 MCP session 从已完成注册的 Action Registry 构建协议目录；`tools/list` 每次请求再按 Action 状态、tenant realm、实时 permission、OAuth scope 的顺序求交集。不可见项不返回，目录单页最多 100 项。
 - MCP tool name 由原 Action ID 的可读归一化片段和 SHA-256 稳定摘要组成。原 Action ID 只保留在服务端 `RuntimeRef`，名称冲突启动时 fail-closed。
 - 输入 Schema、LLM/Human 描述和只读/破坏性/开放世界/幂等提示来自 Action Tool Definition。MCP 要求输出 Schema 顶层为 object；非 object 的 Action 输出 Schema 不声明为 MCP `outputSchema`，结果仍安全返回。
-- `none/read` 需要 `actions:read`；普通 `write` 需要 `actions:write`。`external/paid/destructive/critical` 在第三期逐次确认链完成前全部从目录过滤且不可执行，即使 Grant 已含 `actions:sensitive` 也不能绕过。
+- `none/read` 需要 `actions:read`；普通 `write` 需要 `actions:write`。`external/paid/destructive/critical` 需要 `actions:sensitive` 才进入目录，并在每次执行前进入逐次确认链；scope 只允许发起确认，不能替代批准。
 - `tools/call` 根据稳定名称定位原 Action，重新检查 Grant、scope、realm、permission、暴露状态和 Schema，并且只调用 `ActionRegistry.Invoke`。`_meta.idempotencyKey`（兼容 `idempotency_key`）写入可信 `AuthContext.IdempotencyKey`，复用 Action 的幂等策略。
 - Action/校验错误映射为安全 MCP Tool error。鉴权与资源存在性统一返回 `tool is unavailable`；未知错误不返回堆栈、SQL、内部路径或 cause。
 - Action 审计记录 `actor_type/client=mcp`、`mcp_client_id`、`mcp_grant_id`、Action、permission、结果和 replay。适配器预检拒绝也写入同一 Action 审计协议；参数和原始结果不进入审计摘要。
@@ -35,6 +35,14 @@ AINP 的远程 MCP 入口使用官方 Go MCP SDK 提供 Streamable HTTP。业务
 
 Scope 只缩小能力。任何阶段都不得绕过 realm、tenant、实时 permission、Action 状态或敏感操作确认。
 
+## 写操作确认与授权治理
+
+- 普通写操作依赖 `actions:write` 持续授权和 Action 自身幂等策略；敏感操作不直接执行。客户端声明 URL elicitation 能力时由 MCP 协议发起浏览器确认；不支持时返回结构化 `confirmation_required`、浏览器确认 URL、恢复凭证和 10 分钟有效期。
+- 确认绑定 tenant、user、Grant、Client、Action、Tool name、Schema hash 与规范化 arguments hash。Web 批准后，客户端只可使用相同参数和 `_meta.confirmationToken`（兼容 `confirmation_token`）重试一次；参数、Schema、Grant、Client、用户变化，过期、拒绝、撤销或重复消费均 fail-closed。
+- 数据库只保存恢复凭证 SHA-256，确认页只展示服务端固化的 Human 描述、风险和副作用，不返回原始参数或恢复凭证。确认链接未登录时复用统一登录 redirect，登录后必须返回原确认页。
+- 个人中心列出当前用户的 MCP Grant，可撤销单次授权、某客户端全部授权或全部授权。撤销在同一事务把 Grant 标记为 revoked，并撤销关联 Refresh Token family 与 pending/approved confirmation；后续 Access Token 请求也因 Grant 实时校验立即失败。
+- 待确认调用按 Action 审计协议记录 `result=failure` 和安全摘要；批准、拒绝及授权撤销另写治理审计。审计、日志和错误不得保存原始参数、恢复凭证、Code 或 Token。
+
 ## 部署
 
 - `mcp.base_url` / `MCP_BASE_URL` 是 OAuth/MCP 后端规范公网地址；`mcp.web_base_url` / `MCP_WEB_BASE_URL` 是浏览器授权页地址。生产同域部署时两者可相同，本地前后端分端口时必须分别配置。
@@ -47,4 +55,4 @@ Scope 只缩小能力。任何阶段都不得绕过 realm、tenant、实时 perm
 
 ## 数据
 
-`mcp_oauth_clients` 是协议级全局 Client；Grant 是 tenant-owned 用户委托；授权码和 Token family 只能通过受控 SystemDB 协议仓储访问。Grant 撤销独立于网页 Session，网页 Token 和 MCP Token 不得跨入口使用。
+`mcp_oauth_clients` 是协议级全局 Client；Grant 与 confirmation 是 tenant-owned 用户委托事实；授权码和 Token family 只能通过受控 SystemDB 协议仓储访问。Grant 撤销独立于网页 Session，网页 Token 和 MCP Token 不得跨入口使用。

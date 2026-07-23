@@ -189,6 +189,29 @@ export const generatedRoutes: GeneratedRoute[] = [
     }
   },
   {
+    name: 'mcp',
+    path: '/mcp',
+    component: 'layout.blank',
+    meta: {
+      title: 'mcp',
+      i18nKey: 'route.mcp',
+      constant: true,
+      hideInMenu: true
+    },
+    children: [
+      {
+        name: 'mcp_confirm',
+        path: '/mcp/confirm',
+        component: 'view.mcp_confirm',
+        meta: {
+          title: 'mcp_confirm',
+          i18nKey: 'route.mcp_confirm',
+          hideInMenu: true
+        }
+      }
+    ]
+  },
+  {
     name: 'notification',
     path: '/notification',
     component: 'layout.base',
