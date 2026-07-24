@@ -27,7 +27,7 @@ jobs:
           npx -y @yz-xingtu/agent-rules@latest sync --target=qoder,cursor
           npx -y @yz-xingtu/agent-rules@latest doctor
       - name: Test release entrypoint
-        run: python3 -m unittest scripts/test_release.py
+        run: python3 -m unittest scripts/test_release.py scripts/test_generate_release_notes.py
 
   backend:
     runs-on: ubuntu-latest

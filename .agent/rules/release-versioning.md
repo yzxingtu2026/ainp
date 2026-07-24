@@ -8,6 +8,7 @@
 - 正式环境关闭启动时 AutoMigrate，只允许统一 runner 按编号和校验和 forward-only 执行；新安装自动 baseline，旧环境 baseline 必须显式确认。
 - 演示部署必须 flock 串行、迁移前备份、记录目标 digest，并以 healthz 状态和目标 Tag 双重校验；失败只回滚应用镜像，不自动 down migration。
 - 本地 release.py 必须在干净同步 main 上验证 CI 后只推 annotated Tag；Release 必须 Draft→演示部署与版本校验→Published，已发布 Tag rerun 禁止重建或覆盖产物。
+- AI Release Notes 只读受限 commit/PR 事实并返回受 Schema 约束的分类摘要；Tag、镜像、digest、Compare 与发布状态由模板固定，未知引用/非法输出/模型失败必须降级且不阻塞发布。
 - 后端统一读取 `framework/buildinfo`，前端统一读取 `src/utils/build-info.ts`，页面不得硬编码正式版本。
 - 部署健康校验必须同时验证 `status=ok` 与目标版本；正式部署禁止依赖 `latest`。
 - PR/main CI 是测试事实源；发布工作流复用其门禁，不复制另一套测试协议。

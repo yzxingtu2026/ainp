@@ -106,14 +106,14 @@ jobs:
           path: release-digests/${{ matrix.image }}.digest
           if-no-files-found: error
 
-  draft-release:
+  release-notes:
     needs: [validate, build]
     if: needs.validate.outputs.already_published != 'true'
     runs-on: ubuntu-latest
+    environment: release
     permissions:
-      contents: write
-    outputs:
-      already_published: ${{ steps.release.outputs.already_published }}
+      contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -123,6 +123,48 @@ jobs:
           pattern: digest-*
           path: release-digests
           merge-multiple: true
+      - name: Generate controlled release notes
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RELEASE_NOTES_API_KEY: ${{ secrets.RELEASE_NOTES_API_KEY }}
+          RELEASE_NOTES_BASE_URL: ${{ vars.RELEASE_NOTES_BASE_URL }}
+          RELEASE_NOTES_MODEL: ${{ vars.RELEASE_NOTES_MODEL }}
+        run: |
+          python3 scripts/generate_release_notes.py \
+            --repository "$GITHUB_REPOSITORY" \
+            --tag "$GITHUB_REF_NAME" \
+            --commit "$GITHUB_SHA" \
+            --build-time "${{ needs.validate.outputs.build_time }}" \
+            --digests-dir release-digests \
+            --output release-notes.md \
+            --summary-output release-notes-summary.txt
+          cat release-notes-summary.txt >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-notes
+          path: |
+            release-notes.md
+            release-notes-summary.txt
+          if-no-files-found: error
+
+  draft-release:
+    needs: [validate, build, release-notes]
+    if: needs.validate.outputs.already_published != 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      already_published: ${{ steps.release.outputs.already_published }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: digest-*
+          path: release-digests
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-notes
       - id: release
         name: Create or update Draft Release
         env:
@@ -134,33 +176,8 @@ jobs:
             exit 0
           fi
           echo "already_published=false" >> "$GITHUB_OUTPUT"
-          previous="$(git tag --sort=-v:refname | grep -E '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' | grep -Fxv "${GITHUB_REF_NAME}" | head -1 || true)"
-          if [ -n "$previous" ]; then
-            changes="$(git log --first-parent --pretty='- %s (%h)' "${previous}..HEAD")"
-            compare="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/${previous}...${GITHUB_REF_NAME}"
-          else
-            changes="$(git log --first-parent --max-count=100 --pretty='- %s (%h)' HEAD)"
-            compare="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}"
-          fi
           mkdir -p release-assets
           cp deploy/demo/compose.yaml deploy/demo/config.yaml deploy/demo/deploy-demo.sh deploy/demo/.env.example release-assets/
-          cat > release-notes.md <<EOF
-          # ${GITHUB_REF_NAME}
-
-          ## 变更
-
-          ${changes}
-
-          ## 镜像
-
-          $(cat release-digests/*.digest)
-
-          Commit: ${GITHUB_SHA}<br>
-          Build time: ${{ needs.validate.outputs.build_time }}<br>
-          Compare: ${compare}
-
-          > 当前为确定性发布说明；AI 增强失败或未配置时发布流程继续使用本内容。
-          EOF
           cp release-digests/*.digest release-assets/
           (cd release-assets && sha256sum .env.example backend.digest compose.yaml config.yaml deploy-demo.sh web.digest > SHA256SUMS)
           if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then

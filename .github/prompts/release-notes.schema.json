@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["summary", "features", "improvements", "fixes", "breaking_changes", "upgrade_notes"],
+  "properties": {
+    "summary": { "type": "string", "maxLength": 1000 },
+    "features": { "$ref": "#/$defs/items" },
+    "improvements": { "$ref": "#/$defs/items" },
+    "fixes": { "$ref": "#/$defs/items" },
+    "breaking_changes": { "$ref": "#/$defs/items" },
+    "upgrade_notes": { "$ref": "#/$defs/items" }
+  },
+  "$defs": {
+    "items": {
+      "type": "array",
+      "maxItems": 20,
+      "items": { "type": "string", "maxLength": 300 }
+    }
+  }
+}

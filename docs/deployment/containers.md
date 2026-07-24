@@ -49,6 +49,10 @@ Tag workflow 在镜像与 digest 完成后创建 Draft Release，再通过 `demo
 
 GitHub `demo` Environment 需要配置 Secret `DEMO_SSH_PRIVATE_KEY`，以及 Variables `DEMO_HOST`、`DEMO_PORT`、`DEMO_USER`、`DEMO_PATH`、`DEMO_URL`、`DEMO_SSH_HOST_KEY`。建议 Environment 启用人工审批；部署用户不得拥有交互式 root 权限。
 
+GitHub `release` Environment 可配置 Secret `RELEASE_NOTES_API_KEY`，以及 Variables `RELEASE_NOTES_BASE_URL`、`RELEASE_NOTES_MODEL`。Base URL 应指向 OpenAI-compatible API 根路径（例如以 `/v1` 结尾），workflow 调用其 `/chat/completions`。未配置、超时、重试后失败、Schema 非法或包含未知引用时，自动使用确定性提交列表，发布继续。
+
+模型只接收最多 100 条 first-parent commit 及由这些合并提交识别出的受控 PR 字段，输入总量有硬上限。Prompt 与 Schema 位于 `.github/prompts/`；模型 Job 只有 `contents: read`、`pull-requests: read`，不能创建 Tag、镜像或 Release。最终 Markdown 模板固定写入 Tag、Commit、构建时间、Compare URL 和两个 digest，模型输出禁止提供这些字段。
+
 ## GHCR 发布
 
 推送格式为 `vMAJOR.MINOR.PATCH` 的 Tag 后，`release-images.yml` 先确认该提交的 `backend`、`frontend`、`repository-gates`、`containers` 四项 CI 成功，再构建镜像。每个镜像发布 `<tag>` 和 `sha-<short-sha>` 两个标签，Actions Summary 记录不可变 digest。
