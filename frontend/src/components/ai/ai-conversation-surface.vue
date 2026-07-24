@@ -112,6 +112,7 @@ onBeforeUnmount(() => {
         :disabled="!controller.slot.value?.healthy || !online"
         :can-send="controller.canSend.value"
         :active="runActive"
+        :draft-key="controller.conversation.value?.id || 'new'"
         @send="controller.send"
         @stop="controller.stop"
       />

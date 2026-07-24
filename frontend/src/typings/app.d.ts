@@ -642,6 +642,10 @@ declare namespace App {
           save: string;
           addImage: string;
           removeImage: string;
+          imageUploading: string;
+          retryImageUpload: string;
+          imageLimit: string;
+          clipboardImageUnsupported: string;
           placeholder: string;
           stop: string;
           send: string;

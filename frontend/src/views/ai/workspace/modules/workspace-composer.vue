@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { isImageContentType, useAttachmentGridThumbs } from '@/hooks/business/attachment';
+import { useAttachmentUploadQueue } from '@/hooks/business/attachment-upload-queue';
 import AttachmentPicker from '@/components/common/attachment-picker.vue';
 import { $t } from '@/locales';
+import { clipboardImageExts, clipboardImageMimes, normalizeClipboardImage } from './clipboard-image';
 
 defineOptions({ name: 'WorkspaceComposer' });
 
@@ -10,6 +12,7 @@ const props = defineProps<{
   disabled?: boolean;
   canSend?: boolean;
   active?: boolean;
+  draftKey?: string;
 }>();
 const text = defineModel<string>({ default: '' });
 const images = defineModel<Api.Attachment.Item[]>('images', { default: () => [] });
@@ -17,11 +20,55 @@ const emit = defineEmits<{ send: []; stop: [] }>();
 
 const pickerVisible = ref(false);
 const thumbs = useAttachmentGridThumbs(images, { enabled: computed(() => images.value.length > 0) });
+const uploadQueue = useAttachmentUploadQueue({
+  maxCount: () => Math.max(0, 4 - images.value.length),
+  allowedExt: clipboardImageExts,
+  allowedMime: clipboardImageMimes,
+  onSuccess(item) {
+    if (item.attachment && images.value.length < 4) images.value = [...images.value, item.attachment];
+    uploadQueue.remove(item.localId);
+  }
+});
+
+watch(
+  () => props.draftKey,
+  () => uploadQueue.reset()
+);
 
 function onKeydown(event: KeyboardEvent) {
   if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return;
   event.preventDefault();
-  if (!props.active && props.canSend && !props.disabled) emit('send');
+  if (!props.active && props.canSend && !props.disabled && !uploadQueue.busy.value) emit('send');
+}
+
+function onPaste(event: ClipboardEvent) {
+  if (props.disabled || props.active) return;
+  const imageFiles = Array.from(event.clipboardData?.items || [])
+    .filter(item => item.kind === 'file' && item.type.startsWith('image/'))
+    .map(item => item.getAsFile())
+    .filter((file): file is File => Boolean(file));
+  if (imageFiles.length === 0) return;
+
+  event.preventDefault();
+  const remaining = Math.max(0, 4 - images.value.length - uploadQueue.items.value.length);
+  if (remaining === 0) {
+    window.$message?.warning($t('page.aiWorkspace.imageLimit'));
+    return;
+  }
+  const timestamp = Date.now();
+  const normalized = imageFiles
+    .slice(0, remaining)
+    .map((file, index) => normalizeClipboardImage(file, index, timestamp))
+    .filter((file): file is File => Boolean(file));
+  if (normalized.length === 0) {
+    window.$message?.warning($t('page.aiWorkspace.clipboardImageUnsupported'));
+    return;
+  }
+  if (normalized.length < Math.min(imageFiles.length, remaining)) {
+    window.$message?.warning($t('page.aiWorkspace.clipboardImageUnsupported'));
+  }
+  if (imageFiles.length > remaining) window.$message?.warning($t('page.aiWorkspace.imageLimit'));
+  uploadQueue.enqueue(normalized);
 }
 
 function selectImages(items: Api.Attachment.Item[]) {
@@ -33,7 +80,7 @@ function selectImages(items: Api.Attachment.Item[]) {
 
 <template>
   <div class="workspace-composer">
-    <div v-if="images.length" class="workspace-composer__attachments">
+    <div v-if="images.length || uploadQueue.items.value.length" class="workspace-composer__attachments">
       <div v-for="item in images" :key="item.id" class="workspace-composer__attachment">
         <img v-if="thumbs.urls[item.id]" :src="thumbs.urls[item.id]" :alt="item.original_name" />
         <span v-else>{{ item.original_name }}</span>
@@ -45,13 +92,40 @@ function selectImages(items: Api.Attachment.Item[]) {
           <SvgIcon icon="mdi:close" />
         </button>
       </div>
+      <div
+        v-for="item in uploadQueue.items.value"
+        :key="item.localId"
+        class="workspace-composer__attachment workspace-composer__attachment--upload"
+        :title="item.error || $t('page.aiWorkspace.imageUploading')"
+      >
+        <NSpin v-if="item.status !== 'failed'" :size="18" />
+        <SvgIcon v-else icon="mdi:image-remove-outline" class="text-20px text-error" />
+        <span>{{ item.status === 'uploading' ? `${item.progress}%` : item.file.name }}</span>
+        <span class="workspace-composer__upload-actions">
+          <button
+            v-if="item.status === 'failed'"
+            type="button"
+            :title="$t('page.aiWorkspace.retryImageUpload')"
+            @click="uploadQueue.retry(item.localId)"
+          >
+            <SvgIcon icon="mdi:refresh" />
+          </button>
+          <button
+            type="button"
+            :title="$t('page.aiWorkspace.removeImage')"
+            @click="uploadQueue.remove(item.localId)"
+          >
+            <SvgIcon icon="mdi:close" />
+          </button>
+        </span>
+      </div>
     </div>
     <div class="workspace-composer__capsule">
       <button
         type="button"
         class="workspace-composer__icon"
         :title="$t('page.aiWorkspace.addImage')"
-        :disabled="disabled || active || images.length >= 4"
+        :disabled="disabled || active || uploadQueue.busy.value || images.length >= 4"
         @click="pickerVisible = true"
       >
         <SvgIcon icon="mdi:plus" class="text-22px" />
@@ -62,13 +136,14 @@ function selectImages(items: Api.Attachment.Item[]) {
         :placeholder="$t('page.aiWorkspace.placeholder')"
         :disabled="disabled || active"
         @keydown="onKeydown"
+        @paste="onPaste"
       />
       <button
         type="button"
         class="workspace-composer__primary"
         :class="{ 'workspace-composer__primary--stop': active }"
         :title="active ? $t('page.aiWorkspace.stop') : $t('page.aiWorkspace.send')"
-        :disabled="active ? false : !canSend || disabled"
+        :disabled="active ? false : !canSend || disabled || uploadQueue.busy.value"
         @click="active ? emit('stop') : emit('send')"
       >
         <SvgIcon :icon="active ? 'mdi:stop' : 'mdi:arrow-up'" class="text-20px" />
@@ -107,6 +182,34 @@ function selectImages(items: Api.Attachment.Item[]) {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.workspace-composer__attachment--upload {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 4px;
+  color: rgba(127, 127, 127, 0.95);
+}
+
+.workspace-composer__attachment--upload span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-composer__attachment--upload .workspace-composer__upload-actions {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  display: flex;
+  overflow: visible;
+}
+
+.workspace-composer__attachment--upload .workspace-composer__upload-actions button {
+  position: static;
 }
 
 .workspace-composer__attachment button {
