@@ -20,4 +20,4 @@ Go 构建通过 `-ldflags -X` 注入 `framework/buildinfo` 的私有变量；`ai
 
 后续阶段的容器镜像必须写入对应 OCI `version`、`revision`、`created`、`source` labels，并只允许不可变 SemVer Tag 或 digest 进入正式 Compose。禁止以 `latest` 作为部署版本。
 
-Phase 2 已提供 backend/web 两个多阶段镜像、同源 Web 代理、GHCR Tag 构建和演示 Compose 基线，具体使用方式见 [容器部署基线](../deployment/containers.md)。migration runner、服务器备份/部署/回滚和 Draft Release 状态机仍属于后续阶段，当前 Compose 不应被描述为自动升级方案。
+Phase 2 已提供 backend/web 两个多阶段镜像、同源 Web 代理、GHCR Tag 构建和演示 Compose 基线。Phase 3 已提供版本化 migration runner 及服务器备份、串行部署、健康校验和应用镜像回滚。具体使用方式见 [容器部署基线](../deployment/containers.md)；SSH 编排与 Draft Release 状态机仍属于后续阶段。

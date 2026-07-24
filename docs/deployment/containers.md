@@ -28,6 +28,19 @@ docker compose --env-file deploy/demo/.env -f deploy/demo/compose.yaml up -d
 
 部署后的基础校验必须读取 `PUBLIC_BASE_URL/healthz`，同时确认 `data.status == "ok"` 且 `data.version == AINP_IMAGE_TAG`。仅 HTTP 200 不代表版本部署成功。
 
+## 数据库迁移与自动更新
+
+正式 Compose 已关闭启动时 GORM AutoMigrate。backend 镜像内置 `ainp-migrate status|up|baseline`，迁移状态保存在 `schema_migrations`，每个 SQL 文件通过编号、名称和 SHA-256 校验和锁定。新安装由安装向导在完整建表后自动 baseline；从旧版升级且尚无迁移账本时，维护者必须先核对 Schema，再执行一次：
+
+```bash
+docker compose --env-file deploy/demo/.env -f deploy/demo/compose.yaml run --rm --no-deps \
+  --entrypoint /usr/local/bin/ainp-migrate api -config /app/config/config.yaml baseline
+```
+
+服务器将 `deploy/demo` 固定到低权限 deploy 用户目录，填写 `.env` 后执行 `./deploy-demo.sh <tag>`。脚本使用 `flock` 串行部署，拉取指定 Tag、记录镜像 digest、在迁移前创建 `pg_dump`、执行 forward-only migration、原子更新 Tag，并同时校验 `/healthz` 的状态和版本。启动或健康校验失败时恢复旧应用镜像；数据库不执行 down migration，依赖升级前备份和向后兼容 Schema。
+
+部署日志与备份位于 `runtime/logs`、`runtime/backups`。备份按 `BACKUP_RETENTION_DAYS` 清理；失败日志和当次备份不会因为应用回滚而丢失。SSH、固定 host key 与 GitHub Environment 编排属于下一发布阶段。
+
 ## GHCR 发布
 
 推送格式为 `vMAJOR.MINOR.PATCH` 的 Tag 后，`release-images.yml` 先确认该提交的 `backend`、`frontend`、`repository-gates`、`containers` 四项 CI 成功，再构建镜像。每个镜像发布 `<tag>` 和 `sha-<short-sha>` 两个标签，Actions Summary 记录不可变 digest。

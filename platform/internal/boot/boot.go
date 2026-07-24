@@ -87,14 +87,16 @@ func OpenInstalled(ctx context.Context, cfg *config.Config) (*Platform, error) {
 	}
 
 	auditor := audit.NewGormRecorder(db)
-	if err := auditor.AutoMigrate(); err != nil {
-		return nil, fmt.Errorf("audit migrate: %w", err)
-	}
-	if err := system.AutoMigrate(db); err != nil {
-		return nil, fmt.Errorf("system migrate: %w", err)
-	}
-	if err := ai.AutoMigrate(db); err != nil {
-		return nil, fmt.Errorf("ai migrate: %w", err)
+	if cfg.Database.IsAutoMigrateEnabled() {
+		if err := auditor.AutoMigrate(); err != nil {
+			return nil, fmt.Errorf("audit migrate: %w", err)
+		}
+		if err := system.AutoMigrate(db); err != nil {
+			return nil, fmt.Errorf("system migrate: %w", err)
+		}
+		if err := ai.AutoMigrate(db); err != nil {
+			return nil, fmt.Errorf("ai migrate: %w", err)
+		}
 	}
 	if err := system.SeedDemo(ctx, db); err != nil {
 		return nil, fmt.Errorf("system seed: %w", err)

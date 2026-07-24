@@ -7,12 +7,14 @@ import (
 	"os"
 
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
+	"github.com/yzxingtu2026/ainp/platform/framework/audit"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/buildinfo"
 	"github.com/yzxingtu2026/ainp/platform/framework/config"
 	"github.com/yzxingtu2026/ainp/platform/framework/logging"
 	"github.com/yzxingtu2026/ainp/platform/framework/state"
 	"github.com/yzxingtu2026/ainp/platform/internal/boot"
+	"github.com/yzxingtu2026/ainp/platform/migrations"
 	"github.com/yzxingtu2026/ainp/platform/modules/ai"
 	"github.com/yzxingtu2026/ainp/platform/modules/system"
 	"gorm.io/gorm"
@@ -92,10 +94,17 @@ func runSetupMode(ctx context.Context, cfg *config.Config, st *state.State) {
 	}
 	agents := ai.NewAgentService(nil, contracts, nil, nil)
 	setupSvc.SetInitialDataHook(func(ctx context.Context, db *gorm.DB, tenantID, userID string) error {
-		if err := ai.AutoMigrateAgents(db); err != nil {
+		if err := audit.NewGormRecorder(db).AutoMigrate(); err != nil {
 			return err
 		}
-		return agents.ReconcileBuiltinForTenant(ctx, db, tenantID, userID)
+		if err := ai.AutoMigrate(db); err != nil {
+			return err
+		}
+		if err := agents.ReconcileBuiltinForTenant(ctx, db, tenantID, userID); err != nil {
+			return err
+		}
+		_, err := migrations.Baseline(db)
+		return err
 	})
 	if err := system.RegisterSetupActions(application, setupSvc); err != nil {
 		logging.Error(ctx, "register setup failed", err)

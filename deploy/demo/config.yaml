@@ -3,6 +3,7 @@ server:
   mode: release
 database:
   dsn: "overridden-by-DATABASE_DSN"
+  auto_migrate: false
 logging:
   level: info
   format: json
