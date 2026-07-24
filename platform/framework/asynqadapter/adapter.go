@@ -48,7 +48,7 @@ func (o RedisOpt) asynqRedis() asynq.RedisClientOpt {
 
 // ClientTransport implements job.Transport via Asynq.
 type ClientTransport struct {
-	client *asynq.Client
+	client    *asynq.Client
 	inspector *asynq.Inspector
 }
 
@@ -110,8 +110,8 @@ func (t *ClientTransport) Close() error {
 
 // WorkerConfig configures the Asynq server.
 type WorkerConfig struct {
-	Concurrency int
-	Queues      map[string]int
+	Concurrency    int
+	Queues         map[string]int
 	StrictPriority bool
 }
 
@@ -157,8 +157,8 @@ func process(ctx context.Context, db *gorm.DB, registry *job.Registry, store job
 	handler, ok := registry.Handler(run.JobType)
 	if !ok {
 		_ = store.UpdateFields(ctx, run.ID, map[string]any{
-			"status":     status.JobDead,
-			"last_error": "handler not registered",
+			"status":      status.JobDead,
+			"last_error":  "handler not registered",
 			"finished_at": time.Now().UTC(),
 		})
 		return fmt.Errorf("handler missing for %s", run.JobType)

@@ -21,8 +21,8 @@ type HandlerFunc struct {
 	Fn          func(ctx context.Context, env Envelope) error
 }
 
-func (h HandlerFunc) Name() string              { return h.HandlerName }
-func (h HandlerFunc) EventTypes() []string      { return h.Types }
+func (h HandlerFunc) Name() string         { return h.HandlerName }
+func (h HandlerFunc) EventTypes() []string { return h.Types }
 func (h HandlerFunc) Handle(ctx context.Context, env Envelope) error {
 	if h.Fn == nil {
 		return fmt.Errorf("outbox: handler %q has nil Fn", h.HandlerName)
@@ -32,9 +32,9 @@ func (h HandlerFunc) Handle(ctx context.Context, env Envelope) error {
 
 // HandlerRegistry indexes handlers by name and event type.
 type HandlerRegistry struct {
-	mu       sync.RWMutex
-	byName   map[string]Handler
-	byType   map[string][]Handler
+	mu     sync.RWMutex
+	byName map[string]Handler
+	byType map[string][]Handler
 }
 
 func NewHandlerRegistry() *HandlerRegistry {

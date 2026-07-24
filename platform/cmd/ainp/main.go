@@ -8,6 +8,7 @@ import (
 
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
+	"github.com/yzxingtu2026/ainp/platform/framework/buildinfo"
 	"github.com/yzxingtu2026/ainp/platform/framework/config"
 	"github.com/yzxingtu2026/ainp/platform/framework/logging"
 	"github.com/yzxingtu2026/ainp/platform/framework/state"
@@ -40,7 +41,9 @@ func main() {
 	}
 	st.ApplyConfig(cfg)
 
-	logging.Info(ctx, "starting ainp", "addr", cfg.Server.Addr)
+	info := buildinfo.Current()
+	logging.Info(ctx, "starting ainp", "addr", cfg.Server.Addr,
+		"version", info.Version, "commit", info.Commit, "build_time", info.BuildTime)
 	p, err := boot.OpenInstalled(ctx, cfg)
 	if err != nil {
 		logging.Error(ctx, "bootstrap failed", err)

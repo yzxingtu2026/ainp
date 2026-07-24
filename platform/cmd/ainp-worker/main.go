@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	"github.com/yzxingtu2026/ainp/platform/framework/asynqadapter"
+	"github.com/yzxingtu2026/ainp/platform/framework/buildinfo"
 	"github.com/yzxingtu2026/ainp/platform/framework/config"
 	"github.com/yzxingtu2026/ainp/platform/framework/logging"
 	"github.com/yzxingtu2026/ainp/platform/framework/state"
@@ -74,9 +75,13 @@ func main() {
 		p.App.Jobs.Store,
 	)
 
+	info := buildinfo.Current()
 	logging.Info(runCtx, "ainp-worker starting",
 		"jobs", len(p.App.Jobs.Registry.List()),
 		"concurrency", cfg.Jobs.Concurrency,
+		"version", info.Version,
+		"commit", info.Commit,
+		"build_time", info.BuildTime,
 	)
 	runner.Start(runCtx)
 

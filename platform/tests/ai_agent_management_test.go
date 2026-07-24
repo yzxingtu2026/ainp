@@ -220,13 +220,17 @@ func openAgentManagementTestDB(t *testing.T) *gorm.DB {
 
 func TestAgentEnableRequiresFirstPublishedVersion(t *testing.T) {
 	db := openAgentManagementTestDB(t)
+	fixtureDB, err := tenantdata.MigrationDB(db)
+	if err != nil {
+		t.Fatal(err)
+	}
 	owner := "user-a"
 	row := ai.Agent{
 		ID: "agent-without-release", TenantID: "tenant-a", OwnerUserID: &owner,
 		Code: "draft-agent", Name: "Draft Agent", Source: "personal", Visibility: "private",
 		Status: "draft", CurrentVersion: 0, Revision: 1,
 	}
-	if err := db.Create(&row).Error; err != nil {
+	if err := fixtureDB.Create(&row).Error; err != nil {
 		t.Fatal(err)
 	}
 	service := ai.NewAgentService(db, aiagent.NewRegistry(), nil, aitool.NewRegistry())
@@ -234,7 +238,7 @@ func TestAgentEnableRequiresFirstPublishedVersion(t *testing.T) {
 		Authenticated: true, TenantID: "tenant-a", UserID: "user-a", Realm: auth.RealmTenant,
 	})
 
-	_, err := service.Status(ctx, ai.AgentStatusRequest{ID: row.ID, Status: "enabled", Revision: row.Revision})
+	_, err = service.Status(ctx, ai.AgentStatusRequest{ID: row.ID, Status: "enabled", Revision: row.Revision})
 	var appErr *errs.AppError
 	if !errors.As(err, &appErr) || appErr.Code != errs.CodeConflict || appErr.Key() != "ai.agent.publish_required" {
 		t.Fatalf("expected publish-required conflict, got %#v", err)

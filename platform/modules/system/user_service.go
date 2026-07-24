@@ -640,6 +640,22 @@ func (s *UserService) findUser(db tenant.TenantDatabase, userID string, lock boo
 	return &rows[0], nil
 }
 
+func (s *UserService) resolveAssignableUserRoles(ctx context.Context, userID string, roleIDs []string) (*model.User, []model.Role, error) {
+	tdb, err := tenant.TenantDB(ctx, s.db)
+	if err != nil {
+		return nil, nil, err
+	}
+	user, err := s.findUser(tdb, userID, false)
+	if err != nil {
+		return nil, nil, err
+	}
+	roles, err := s.validateAssignableRoles(tdb, roleIDs)
+	if err != nil {
+		return nil, nil, fmt.Errorf("resolve roles: %w", err)
+	}
+	return user, roles, nil
+}
+
 func (s *UserService) validateAssignableRoles(db tenant.TenantDatabase, values []string) ([]model.Role, error) {
 	seen := make(map[string]struct{})
 	ids := make([]string, 0, len(values))

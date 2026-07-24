@@ -1,4 +1,4 @@
-import axios, { type AxiosProgressEvent } from 'axios';
+import { create, type AxiosProgressEvent } from 'axios';
 import { getServiceBaseURL } from '@/utils/service';
 import { localStg } from '@/utils/storage';
 
@@ -34,7 +34,7 @@ export async function putAttachmentTransfer(options: {
   signal?: AbortSignal;
   onProgress?: (loaded: number, total: number) => void;
 }): Promise<Api.Attachment.Item> {
-  const client = axios.create({ baseURL: transferBaseURL() });
+  const client = create({ baseURL: transferBaseURL() });
   const response = await client.put<TransferEnvelope<{ attachment: Api.Attachment.Item }>>(
     options.uploadUrl,
     options.file,
@@ -63,7 +63,7 @@ export async function getAttachmentTransferBlob(options: {
   transferToken: string;
   signal?: AbortSignal;
 }): Promise<Blob> {
-  const client = axios.create({ baseURL: transferBaseURL() });
+  const client = create({ baseURL: transferBaseURL() });
   const response = await client.get(options.downloadUrl, {
     headers: transferHeaders(options.transferToken),
     responseType: 'blob',

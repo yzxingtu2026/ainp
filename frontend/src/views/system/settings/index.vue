@@ -190,7 +190,7 @@ function snapshotValues(definition: Api.Setting.Definition) {
 
 function applyDefinition(definition: Api.Setting.Definition | null) {
   current.value = definition;
-  Object.keys(formModel).forEach(key => delete formModel[key]);
+  Object.keys(formModel).forEach(key => Reflect.deleteProperty(formModel, key));
   if (!definition) {
     baseline.value = {};
     return;

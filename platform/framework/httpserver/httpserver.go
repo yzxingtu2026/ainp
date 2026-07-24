@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/yzxingtu2026/ainp/platform/framework/action"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
+	"github.com/yzxingtu2026/ainp/platform/framework/buildinfo"
 	"github.com/yzxingtu2026/ainp/platform/framework/codeset"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 	"github.com/yzxingtu2026/ainp/platform/framework/i18n"
@@ -61,7 +62,13 @@ func New(opts Options) *gin.Engine {
 				status = "degraded"
 			}
 		}
-		response.OK(c, gin.H{"status": status})
+		info := buildinfo.Current()
+		response.OK(c, gin.H{
+			"status":     status,
+			"version":    info.Version,
+			"commit":     info.Commit,
+			"build_time": info.BuildTime,
+		})
 	})
 
 	r.GET("/api/v1/menus", func(c *gin.Context) {
@@ -114,7 +121,7 @@ func New(opts Options) *gin.Engine {
 		ac := auth.MustFromContext(c.Request.Context())
 		results, semantic, err := menu.NewSearchService(opts.Menus).SearchContext(c.Request.Context(), menu.SearchOptions{
 			TenantID: ac.TenantID,
-			Realm: ac.Realm, Language: ac.Language, HasPermission: ac.HasPermission,
+			Realm:    ac.Realm, Language: ac.Language, HasPermission: ac.HasPermission,
 			Query: query, Limit: limit,
 		})
 		if err != nil {

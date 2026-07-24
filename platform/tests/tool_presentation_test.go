@@ -134,7 +134,7 @@ func TestSystemUserRolesConfirmationPresenterResolvesTenantNames(t *testing.T) {
 	}
 	crossTenant := application.ToolRegistry.PresentConfirmation(ctx, definition, json.RawMessage(`{"id":"user-t2","role_ids":["role-admin"]}`))
 	encoded, _ := json.Marshal(crossTenant)
-	if crossTenant.Summary != "请求执行「更新用户角色」" || strings.Contains(string(encoded), "其他租户用户") {
+	if crossTenant.Summary != "请求执行「更新系统用户角色」" || strings.Contains(string(encoded), "其他租户用户") {
 		t.Fatalf("cross-tenant lookup did not fail safely: %s", encoded)
 	}
 }

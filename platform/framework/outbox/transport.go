@@ -16,7 +16,7 @@ type Transport interface {
 
 // InProcessTransport dispatches to HandlerRegistry with DeliveryStore idempotency.
 type InProcessTransport struct {
-	Handlers  *HandlerRegistry
+	Handlers   *HandlerRegistry
 	Deliveries DeliveryStore
 }
 

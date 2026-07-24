@@ -18,6 +18,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/modules/system"
 	"github.com/yzxingtu2026/ainp/platform/modules/system/model"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 func TestUserSettingsAreSelfOnlyAndRevisioned(t *testing.T) {
@@ -38,18 +39,21 @@ func TestUserSettingsAreSelfOnlyAndRevisioned(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	setupDB, err := tenant.MigrationDB(testDB)
-	if err != nil {
-		t.Fatal(err)
+	fixtureDB := func() *gorm.DB {
+		db, migrationErr := tenant.MigrationDB(testDB)
+		if migrationErr != nil {
+			t.Fatal(migrationErr)
+		}
+		return db
 	}
 	if err := system.AutoMigrate(testDB); err != nil {
 		t.Fatal(err)
 	}
-	if err := testDB.Create(&tenant.Tenant{ID: "tenant-a", Name: "A", Status: status.ActivationEnabled}).Error; err != nil {
+	if err := fixtureDB().Create(&tenant.Tenant{ID: "tenant-a", Name: "A", Status: status.ActivationEnabled}).Error; err != nil {
 		t.Fatal(err)
 	}
 	for _, u := range []model.User{{ID: "user-a", TenantID: "tenant-a", Username: "alice", PasswordHash: "x", DisplayName: "Alice", Status: status.ActivationEnabled}, {ID: "user-b", TenantID: "tenant-a", Username: "bob", PasswordHash: "x", DisplayName: "Bob", Status: status.ActivationEnabled}} {
-		if err := testDB.Create(&u).Error; err != nil {
+		if err := fixtureDB().Create(&u).Error; err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -57,11 +61,11 @@ func TestUserSettingsAreSelfOnlyAndRevisioned(t *testing.T) {
 		{ID: "avatar-a", TenantID: "tenant-a", Provider: "local", ObjectKey: "tenant-a/avatar-a", OriginalName: "avatar.png", ContentType: "image/png", Size: 10, Status: status.AttachmentReady, UploaderID: "user-a"},
 		{ID: "avatar-b", TenantID: "tenant-a", Provider: "local", ObjectKey: "tenant-a/avatar-b", OriginalName: "other.png", ContentType: "image/png", Size: 10, Status: status.AttachmentReady, UploaderID: "user-b"},
 	} {
-		if err := testDB.Create(&item).Error; err != nil {
+		if err := fixtureDB().Create(&item).Error; err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := testDB.Create(&model.AttachmentLink{ID: "avatar-link-a", TenantID: "tenant-a", AttachmentID: "avatar-a", ResourceType: system.UserProfileAttachmentResourceType, ResourceID: "user-a", Field: system.UserProfileAvatarField}).Error; err != nil {
+	if err := fixtureDB().Create(&model.AttachmentLink{ID: "avatar-link-a", TenantID: "tenant-a", AttachmentID: "avatar-a", ResourceType: system.UserProfileAttachmentResourceType, ResourceID: "user-a", Field: system.UserProfileAvatarField}).Error; err != nil {
 		t.Fatal(err)
 	}
 	application := app.New(&config.Config{}, testDB, nil, nil)
@@ -140,10 +144,10 @@ func TestUserSettingsAreSelfOnlyAndRevisioned(t *testing.T) {
 		t.Fatal("self avatar policy allowed another user's resource")
 	}
 	var alice, bob model.User
-	if err := setupDB.Raw("SELECT * FROM users WHERE tenant_id = ? AND id = ?", "tenant-a", "user-a").Scan(&alice).Error; err != nil {
+	if err := fixtureDB().Raw("SELECT * FROM users WHERE tenant_id = ? AND id = ?", "tenant-a", "user-a").Scan(&alice).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := setupDB.Raw("SELECT * FROM users WHERE tenant_id = ? AND id = ?", "tenant-a", "user-b").Scan(&bob).Error; err != nil {
+	if err := fixtureDB().Raw("SELECT * FROM users WHERE tenant_id = ? AND id = ?", "tenant-a", "user-b").Scan(&bob).Error; err != nil {
 		t.Fatal(err)
 	}
 	if alice.DisplayName != "Alice Updated" || bob.DisplayName != "Bob" {
@@ -153,7 +157,7 @@ func TestUserSettingsAreSelfOnlyAndRevisioned(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := setupDB.Exec("UPDATE users SET password_hash = ? WHERE tenant_id = ? AND id = ?", string(currentHash), "tenant-a", "user-a").Error; err != nil {
+	if err := fixtureDB().Exec("UPDATE users SET password_hash = ? WHERE tenant_id = ? AND id = ?", string(currentHash), "tenant-a", "user-a").Error; err != nil {
 		t.Fatal(err)
 	}
 	if _, err := userService.UpdateSelfPassword(ctx("user-a"), json.RawMessage(`{"current_password":"wrong","new_password":"Next@1234"}`)); appErrorCode(err) != errs.CodeInvalidCredentials {
@@ -169,7 +173,7 @@ func TestUserSettingsAreSelfOnlyAndRevisioned(t *testing.T) {
 	if result.(map[string]any)["reauthentication_required"] != true {
 		t.Fatalf("password update result=%#v", result)
 	}
-	if err := setupDB.Raw("SELECT * FROM users WHERE tenant_id = ? AND id = ?", "tenant-a", "user-a").Scan(&alice).Error; err != nil {
+	if err := fixtureDB().Raw("SELECT * FROM users WHERE tenant_id = ? AND id = ?", "tenant-a", "user-a").Scan(&alice).Error; err != nil {
 		t.Fatal(err)
 	}
 	if bcrypt.CompareHashAndPassword([]byte(alice.PasswordHash), []byte("Next@1234")) != nil {

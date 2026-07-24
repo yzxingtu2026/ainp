@@ -1,0 +1,104 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  repository-gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check patch whitespace
+        run: git diff --check
+      - name: Check Agent rules
+        run: |
+          cp .agent/templates/AGENTS.md.tpl AGENTS.md
+          npx -y @yz-xingtu/agent-rules@latest sync --target=qoder,cursor
+          npx -y @yz-xingtu/agent-rules@latest doctor
+
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: ainp
+          POSTGRES_PASSWORD: ainp
+          POSTGRES_DB: ainp_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ainp -d ainp_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    defaults:
+      run:
+        working-directory: platform
+    env:
+      AINP_TEST_DATABASE_DSN: host=127.0.0.1 user=ainp password=ainp dbname=ainp_test port=5432 sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: platform/go.mod
+          cache-dependency-path: platform/go.sum
+      - name: Configure integration database
+        working-directory: ${{ github.workspace }}
+        run: |
+          docker exec "${{ job.services.postgres.id }}" psql -U ainp -d ainp_test -c "ALTER SYSTEM SET max_connections = 500"
+          docker restart "${{ job.services.postgres.id }}"
+          until docker exec "${{ job.services.postgres.id }}" pg_isready -U ainp -d ainp_test; do sleep 1; done
+      - name: Check formatting
+        run: test -z "$(gofmt -l .)"
+      - name: Vet
+        run: go vet ./...
+      - name: Test
+        run: go test ./...
+      - name: Verify release linker flags
+        run: |
+          flags="-X github.com/yzxingtu2026/ainp/platform/framework/buildinfo.version=v0.0.0-ci -X github.com/yzxingtu2026/ainp/platform/framework/buildinfo.commit=${GITHUB_SHA} -X github.com/yzxingtu2026/ainp/platform/framework/buildinfo.buildTime=1970-01-01T00:00:00Z"
+          go build -ldflags "$flags" ./cmd/ainp
+          go build -ldflags "$flags" ./cmd/ainp-worker
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.5.0
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.19.0
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Unit tests
+        run: pnpm test:attachment-picker && pnpm test:composer && pnpm test:menu
+      - name: Lint
+        run: pnpm exec oxlint . && pnpm exec eslint .
+      - name: Production build
+        env:
+          VITE_BUILD_VERSION: v0.0.0-ci
+          VITE_BUILD_COMMIT: ${{ github.sha }}
+          VITE_BUILD_TIME: "1970-01-01T00:00:00Z"
+        run: pnpm build

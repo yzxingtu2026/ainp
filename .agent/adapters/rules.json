@@ -601,6 +601,12 @@
       "source": ".agent/rules/mcp-oauth.md",
       "qoder": {"path": ".qoder/rules/mcp-oauth.md", "frontmatter": {"trigger": "always_on"}},
       "cursor": {"path": ".cursor/rules/mcp-oauth.mdc", "frontmatter": {"description": "MCP Streamable HTTP、独立 OAuth audience、PKCE、Grant 与实时授权边界", "alwaysApply": true}}
+    },
+    {
+      "id": "release-versioning",
+      "source": ".agent/rules/release-versioning.md",
+      "qoder": {"path": ".qoder/rules/release-versioning.md", "frontmatter": {"trigger": "always_on"}},
+      "cursor": {"path": ".cursor/rules/release-versioning.mdc", "frontmatter": {"description": "Git Tag 唯一版本源、统一 BuildInfo、CI 与部署版本校验", "alwaysApply": true}}
     }
   ]
 }

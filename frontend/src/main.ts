@@ -6,8 +6,10 @@ import { setupStore } from './store';
 import { setupRouter } from './router';
 import { getLocale, setupI18n } from './locales';
 import App from './App.vue';
+import { logBuildInfo } from './utils/build-info';
 
 async function setupApp() {
+  logBuildInfo();
   setupLoading();
 
   setupNProgress();
