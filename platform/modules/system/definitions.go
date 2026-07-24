@@ -66,8 +66,6 @@ var adminMinimumPermissions = []string{
 	ActionSettingGet,
 	ActionSettingUpdate,
 	ActionSettingReset,
-	ActionAttachmentUploadPrepare,
-	ActionAttachmentDownloadPrepare,
 	ActionAttachmentBind,
 	ActionAttachmentUnbind,
 	ActionAttachmentListByResource,
@@ -76,7 +74,7 @@ var adminMinimumPermissions = []string{
 	ActionAttachmentGet,
 }
 
-// AdminMinimumPermissions 返回内置管理员必须保留的最小权限副本（测试与文档对齐用）。
+// AdminMinimumPermissions returns the management permission baseline used by architecture contracts.
 func AdminMinimumPermissions() []string {
 	return append([]string(nil), adminMinimumPermissions...)
 }

@@ -5,6 +5,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/yzxingtu2026/ainp/platform/framework/action"
 	"github.com/yzxingtu2026/ainp/platform/framework/status"
 	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"github.com/yzxingtu2026/ainp/platform/modules/system/model"
@@ -14,9 +15,18 @@ import (
 
 // preAuthStore is the narrow data capability used before an AuthContext exists.
 // It deliberately exposes fixed authentication lookups instead of a general DB.
-type preAuthStore struct{ db *gorm.DB }
+type preAuthStore struct {
+	db      *gorm.DB
+	actions *action.Registry
+}
 
-func newPreAuthStore(db *gorm.DB) *preAuthStore { return &preAuthStore{db: db} }
+func newPreAuthStore(db *gorm.DB, registries ...*action.Registry) *preAuthStore {
+	var actions *action.Registry
+	if len(registries) > 0 {
+		actions = registries[0]
+	}
+	return &preAuthStore{db: db, actions: actions}
+}
 
 func (s *preAuthStore) findDefaultTenant(ctx context.Context) (*tenant.Tenant, error) {
 	var row tenant.Tenant
@@ -90,8 +100,9 @@ func (s *preAuthStore) loadAuthorization(ctx context.Context, tenantID, userID, 
 	var rows []struct {
 		Role       string `gorm:"column:role_code"`
 		Permission string `gorm:"column:permission"`
+		Builtin    bool   `gorm:"column:is_builtin"`
 	}
-	err = s.db.WithContext(ctx).Raw(`SELECT r.code AS role_code, rp.permission
+	err = s.db.WithContext(ctx).Raw(`SELECT r.code AS role_code, r.is_builtin, rp.permission
 FROM user_roles ur JOIN roles r ON r.tenant_id = ur.tenant_id AND r.id = ur.role_id
 LEFT JOIN role_permissions rp ON rp.role_id = r.id
 WHERE ur.tenant_id = ? AND ur.user_id = ? AND r.status = ?
@@ -100,10 +111,17 @@ ORDER BY r.code, rp.permission`, tenantID, userID, status.ActivationEnabled).Sca
 		return nil, nil, nil, err
 	}
 	roleSet, permissionSet := map[string]struct{}{}, map[string]struct{}{}
+	builtinAdmin := false
 	for _, row := range rows {
 		roleSet[row.Role] = struct{}{}
+		builtinAdmin = builtinAdmin || (row.Builtin && row.Role == BuiltinAdminCode)
 		if row.Permission != "" {
 			permissionSet[row.Permission] = struct{}{}
+		}
+	}
+	if builtinAdmin {
+		for _, permission := range AssignablePermissions(s.actions) {
+			permissionSet[permission] = struct{}{}
 		}
 	}
 	roles, permissions := make([]string, 0, len(roleSet)), make([]string, 0, len(permissionSet))

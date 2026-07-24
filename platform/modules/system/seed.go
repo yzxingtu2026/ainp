@@ -201,25 +201,6 @@ func SeedDemo(ctx context.Context, db *gorm.DB) error {
 			return err
 		}
 
-		perms := append([]string{
-			"demo.complete",
-			"demo.hello",
-			"demo.echo",
-			"demo.doc_list",
-			"demo.doc_get",
-			"demo.doc_create",
-			"demo.doc_update",
-		}, adminMinimumPermissions...)
-		for _, p := range perms {
-			if err := tx.Create(&model.RolePermission{
-				ID:         uuid.NewString(),
-				RoleID:     SeedRoleID,
-				Permission: p,
-			}).Error; err != nil {
-				return err
-			}
-		}
-
 		logging.Info(ctx, "system seed created",
 			"tenant_id", SeedTenantID,
 			"username", SeedUsername,

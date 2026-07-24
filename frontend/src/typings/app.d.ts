@@ -912,6 +912,9 @@ declare namespace App {
           permissionTitle: string;
           permissionSearch: string;
           selectedCount: string;
+          superAdmin: string;
+          superAdminDescription: string;
+          allPermissions: string;
           code: string;
           name: string;
           description: string;

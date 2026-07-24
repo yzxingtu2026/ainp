@@ -184,6 +184,9 @@ func (s *RoleService) Get(ctx context.Context, input json.RawMessage) (any, erro
 	if err != nil {
 		return nil, err
 	}
+	if role.IsBuiltin && role.Code == BuiltinAdminCode {
+		permissions = AssignablePermissions(s.actions)
+	}
 	counts, err := tenant.TenantRaw[struct{ Count int64 }](tdb,
 		`SELECT COUNT(*) AS count FROM user_roles WHERE tenant_id = ? AND role_id = ?`, role.ID)
 	if err != nil {
@@ -364,8 +367,8 @@ func (s *RoleService) UpdatePermissions(ctx context.Context, input json.RawMessa
 		if err != nil {
 			return err
 		}
-		if role.IsBuiltin && !containsAll(permissions, adminMinimumPermissions) {
-			return errs.NewKey(errs.CodeConflict, "role.admin_permissions_required", "admin role must retain management permissions")
+		if role.IsBuiltin && role.Code == BuiltinAdminCode {
+			return errs.NewKey(errs.CodeConflict, "role.builtin_permissions_readonly", "built-in admin permissions are managed by the system")
 		}
 		if err := replaceRolePermissions(tx, role.ID, permissions); err != nil {
 			return err
@@ -432,10 +435,8 @@ func (s *RoleService) PermissionCatalog(ctx context.Context, _ json.RawMessage) 
 
 func (s *RoleService) assignablePermissions() map[string]struct{} {
 	allowed := make(map[string]struct{})
-	for _, registered := range s.actions.List() {
-		if auth.NormalizeRealm(registered.Meta.Surface) == auth.RealmTenant && registered.Meta.AccessMode() == action.AccessPermission {
-			allowed[registered.Meta.PermissionCode(registered.ID)] = struct{}{}
-		}
+	for _, permission := range AssignablePermissions(s.actions) {
+		allowed[permission] = struct{}{}
 	}
 	return allowed
 }
@@ -512,19 +513,6 @@ SELECT ?, id, ? FROM scoped_role`, roleID, uuid.NewString(), permission); err !=
 		}
 	}
 	return nil
-}
-
-func containsAll(values, required []string) bool {
-	set := make(map[string]struct{}, len(values))
-	for _, value := range values {
-		set[value] = struct{}{}
-	}
-	for _, value := range required {
-		if _, ok := set[value]; !ok {
-			return false
-		}
-	}
-	return true
 }
 
 func normalizeRoleError(err error, fallback string) error {
