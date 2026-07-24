@@ -17,6 +17,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"github.com/yzxingtu2026/ainp/platform/modules/system"
 	"github.com/yzxingtu2026/ainp/platform/modules/system/model"
+	"golang.org/x/crypto/bcrypt"
 )
 
 func TestUserSettingsAreSelfOnlyAndRevisioned(t *testing.T) {
@@ -37,6 +38,10 @@ func TestUserSettingsAreSelfOnlyAndRevisioned(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	setupDB, err := tenant.MigrationDB(testDB)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := system.AutoMigrate(testDB); err != nil {
 		t.Fatal(err)
 	}
@@ -47,6 +52,17 @@ func TestUserSettingsAreSelfOnlyAndRevisioned(t *testing.T) {
 		if err := testDB.Create(&u).Error; err != nil {
 			t.Fatal(err)
 		}
+	}
+	for _, item := range []model.Attachment{
+		{ID: "avatar-a", TenantID: "tenant-a", Provider: "local", ObjectKey: "tenant-a/avatar-a", OriginalName: "avatar.png", ContentType: "image/png", Size: 10, Status: status.AttachmentReady, UploaderID: "user-a"},
+		{ID: "avatar-b", TenantID: "tenant-a", Provider: "local", ObjectKey: "tenant-a/avatar-b", OriginalName: "other.png", ContentType: "image/png", Size: 10, Status: status.AttachmentReady, UploaderID: "user-b"},
+	} {
+		if err := testDB.Create(&item).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := testDB.Create(&model.AttachmentLink{ID: "avatar-link-a", TenantID: "tenant-a", AttachmentID: "avatar-a", ResourceType: system.UserProfileAttachmentResourceType, ResourceID: "user-a", Field: system.UserProfileAvatarField}).Error; err != nil {
+		t.Fatal(err)
 	}
 	application := app.New(&config.Config{}, testDB, nil, nil)
 	attachStorage(t, application)
@@ -95,7 +111,7 @@ func TestUserSettingsAreSelfOnlyAndRevisioned(t *testing.T) {
 		t.Fatalf("typed prefs=%#v", prefs)
 	}
 
-	userService := system.NewUserService(testDB, nil)
+	userService := system.NewUserService(testDB, system.NewAuthService(testDB))
 	updatedProfile, err := userService.UpdateSelfProfile(ctx("user-a"), json.RawMessage(`{"display_name":"Alice Updated"}`))
 	if err != nil {
 		t.Fatal(err)
@@ -105,17 +121,6 @@ func TestUserSettingsAreSelfOnlyAndRevisioned(t *testing.T) {
 	}
 	if updatedProfile.(system.SelfProfileView).AvatarAttachmentID != nil {
 		t.Fatalf("legacy profile update unexpectedly changed avatar: %#v", updatedProfile)
-	}
-	for _, item := range []model.Attachment{
-		{ID: "avatar-a", TenantID: "tenant-a", Provider: "local", ObjectKey: "tenant-a/avatar-a", OriginalName: "avatar.png", ContentType: "image/png", Size: 10, Status: status.AttachmentReady, UploaderID: "user-a"},
-		{ID: "avatar-b", TenantID: "tenant-a", Provider: "local", ObjectKey: "tenant-a/avatar-b", OriginalName: "other.png", ContentType: "image/png", Size: 10, Status: status.AttachmentReady, UploaderID: "user-b"},
-	} {
-		if err := testDB.Create(&item).Error; err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := testDB.Create(&model.AttachmentLink{ID: "avatar-link-a", TenantID: "tenant-a", AttachmentID: "avatar-a", ResourceType: system.UserProfileAttachmentResourceType, ResourceID: "user-a", Field: system.UserProfileAvatarField}).Error; err != nil {
-		t.Fatal(err)
 	}
 	updatedProfile, err = userService.UpdateSelfProfile(ctx("user-a"), json.RawMessage(`{"display_name":"Alice Updated","avatar_attachment_id":"avatar-a"}`))
 	if err != nil {
@@ -135,13 +140,42 @@ func TestUserSettingsAreSelfOnlyAndRevisioned(t *testing.T) {
 		t.Fatal("self avatar policy allowed another user's resource")
 	}
 	var alice, bob model.User
-	if err := testDB.Where("tenant_id = ? AND id = ?", "tenant-a", "user-a").First(&alice).Error; err != nil {
+	if err := setupDB.Raw("SELECT * FROM users WHERE tenant_id = ? AND id = ?", "tenant-a", "user-a").Scan(&alice).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := testDB.Where("tenant_id = ? AND id = ?", "tenant-a", "user-b").First(&bob).Error; err != nil {
+	if err := setupDB.Raw("SELECT * FROM users WHERE tenant_id = ? AND id = ?", "tenant-a", "user-b").Scan(&bob).Error; err != nil {
 		t.Fatal(err)
 	}
 	if alice.DisplayName != "Alice Updated" || bob.DisplayName != "Bob" {
 		t.Fatalf("self update escaped owner boundary: alice=%q bob=%q", alice.DisplayName, bob.DisplayName)
+	}
+	currentHash, err := bcrypt.GenerateFromPassword([]byte("Current@123"), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := setupDB.Exec("UPDATE users SET password_hash = ? WHERE tenant_id = ? AND id = ?", string(currentHash), "tenant-a", "user-a").Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := userService.UpdateSelfPassword(ctx("user-a"), json.RawMessage(`{"current_password":"wrong","new_password":"Next@1234"}`)); appErrorCode(err) != errs.CodeInvalidCredentials {
+		t.Fatalf("wrong current password=%v", err)
+	}
+	if _, err := userService.UpdateSelfPassword(ctx("user-a"), json.RawMessage(`{"current_password":"Current@123","new_password":"weak"}`)); appErrorCode(err) != errs.CodeValidation {
+		t.Fatalf("weak new password=%v", err)
+	}
+	result, err := userService.UpdateSelfPassword(ctx("user-a"), json.RawMessage(`{"current_password":"Current@123","new_password":"Next@1234"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.(map[string]any)["reauthentication_required"] != true {
+		t.Fatalf("password update result=%#v", result)
+	}
+	if err := setupDB.Raw("SELECT * FROM users WHERE tenant_id = ? AND id = ?", "tenant-a", "user-a").Scan(&alice).Error; err != nil {
+		t.Fatal(err)
+	}
+	if bcrypt.CompareHashAndPassword([]byte(alice.PasswordHash), []byte("Next@1234")) != nil {
+		t.Fatal("new password was not persisted")
+	}
+	if alice.AuthVersion != 2 {
+		t.Fatalf("auth_version=%d want 2", alice.AuthVersion)
 	}
 }

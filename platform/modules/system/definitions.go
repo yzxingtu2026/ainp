@@ -24,6 +24,7 @@ const (
 
 	ActionProfileGet            = "system.profile_get"
 	ActionProfileUpdate         = "system.profile_update"
+	ActionProfilePasswordUpdate = "system.profile_password_update"
 	ActionUserPreferencesGet    = "system.user_preferences_get"
 	ActionUserPreferencesUpdate = "system.user_preferences_update"
 	ActionMCPConnectionInfo     = "system.mcp_connection_info"

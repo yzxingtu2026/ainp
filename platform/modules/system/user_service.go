@@ -74,6 +74,11 @@ type selfProfileUpdateRequest struct {
 	AvatarAttachmentID *string `json:"avatar_attachment_id,omitempty" validate:"omitempty"`
 }
 
+type selfPasswordUpdateRequest struct {
+	CurrentPassword string `json:"current_password" validate:"required"`
+	NewPassword     string `json:"new_password" validate:"required"`
+}
+
 type SelfProfileView struct {
 	UserView
 	AvatarAttachmentID     *string `json:"avatar_attachment_id,omitempty"`
@@ -168,6 +173,56 @@ WHERE id IN (SELECT id FROM scoped_user)`, userID, req.DisplayName, *req.AvatarA
 		return nil, normalizeUserError(updateErr, "update self profile failed")
 	}
 	return s.SelfProfile(ctx, nil)
+}
+
+func (s *UserService) UpdateSelfPassword(ctx context.Context, input json.RawMessage) (any, error) {
+	_, userID, err := tenantIdentity(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var req selfPasswordUpdateRequest
+	if err := decodeUserRequest(input, &req); err != nil {
+		return nil, err
+	}
+	if req.CurrentPassword == "" {
+		return nil, errs.ValidationKey("common.validation_failed", "current password is required")
+	}
+	if err := ValidatePassword(req.NewPassword); err != nil {
+		return nil, err
+	}
+	setUserAudit(ctx, userID, "self password updated")
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		tdb, scopeErr := tenant.TenantDB(ctx, tx)
+		if scopeErr != nil {
+			return scopeErr
+		}
+		user, findErr := s.findUser(tdb, userID, true)
+		if findErr != nil {
+			return findErr
+		}
+		if bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.CurrentPassword)) != nil {
+			return errs.NewKey(errs.CodeInvalidCredentials, "auth.current_password_invalid", "current password is invalid")
+		}
+		if bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.NewPassword)) == nil {
+			return errs.ValidationKey("user.password_unchanged", "new password must differ from current password")
+		}
+		hash, hashErr := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+		if hashErr != nil {
+			return errs.Wrap(errs.CodeInternal, "hash password failed", hashErr)
+		}
+		if execErr := tenant.TenantExec(tdb, `WITH scoped_user AS (
+  SELECT id FROM users WHERE tenant_id = ? AND id = ?
+)
+UPDATE users SET password_hash = ?, updated_at = ? WHERE id IN (SELECT id FROM scoped_user)`,
+			userID, string(hash), time.Now().UTC()); execErr != nil {
+			return execErr
+		}
+		return s.auth.BumpAuthVersionScoped(tdb, userID)
+	})
+	if err != nil {
+		return nil, normalizeUserError(err, "update self password failed")
+	}
+	return map[string]any{"reauthentication_required": true}, nil
 }
 
 type userStatusRequest struct {

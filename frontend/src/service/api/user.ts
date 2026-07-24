@@ -22,6 +22,14 @@ export function updateSelfProfile(payload: { display_name: string; avatar_attach
   });
 }
 
+export function updateSelfPassword(payload: { current_password: string; new_password: string }) {
+  return request<{ reauthentication_required: boolean }>({
+    url: '/api/v1/system/profile/password/update',
+    method: 'post',
+    data: payload
+  });
+}
+
 export function fetchUserPreferences() {
   return request<Api.Setting.Definition>({ url: '/api/v1/system/profile/preferences' });
 }

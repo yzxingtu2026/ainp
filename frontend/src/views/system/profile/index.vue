@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import type { FormInst } from 'naive-ui';
 import {
   bindAttachment,
   fetchAuthSessions,
@@ -12,11 +13,13 @@ import {
   revokeMCPGrants,
   unbindAttachment,
   updateSelfProfile,
+  updateSelfPassword,
   updateUserPreferences
 } from '@/service/api';
 import { useAuthStore } from '@/store/modules/auth';
 import { useAttachmentAvatar } from '@/hooks/business/agent-avatar';
 import { ATTACHMENT_RESOURCE_TYPES } from '@/constants/attachment';
+import { REG_PWD } from '@/constants/reg';
 import { formatDateTime } from '@/utils/datetime';
 
 defineOptions({ name: 'SystemProfile' });
@@ -28,12 +31,15 @@ const authStore = useAuthStore();
 const tab = ref<Tab>((route.query.tab as Tab) || 'basic');
 const loading = ref(false);
 const saving = ref(false);
+const passwordSaving = ref(false);
 const profile = ref<Api.User.SelfProfile | null>(null);
 const definition = ref<Api.Setting.Definition | null>(null);
 const sessions = ref<Api.Auth.Session[]>([]);
 const mcpConnection = ref<Api.User.MCPConnectionInfo | null>(null);
 const mcpGrants = ref<Api.User.MCPGrant[]>([]);
 const displayName = ref('');
+const passwordFormRef = ref<FormInst | null>(null);
+const passwordForm = reactive({ current_password: '', new_password: '', confirm_password: '' });
 const avatarAttachmentId = ref<string | null>(null);
 const avatarPickerVisible = ref(false);
 const { url: avatarUrl, status: avatarStatus } = useAttachmentAvatar(avatarAttachmentId);
@@ -162,6 +168,25 @@ function pickAvatar(items: Api.Attachment.Item[]) {
     return;
   }
   avatarAttachmentId.value = selected.id;
+}
+
+async function savePassword() {
+  await passwordFormRef.value?.validate();
+  passwordSaving.value = true;
+  try {
+    const { error } = await updateSelfPassword({
+      current_password: passwordForm.current_password,
+      new_password: passwordForm.new_password
+    });
+    if (error) return;
+    passwordForm.current_password = '';
+    passwordForm.new_password = '';
+    passwordForm.confirm_password = '';
+    window.$message?.success('密码已修改，请重新登录');
+    await authStore.resetStore();
+  } finally {
+    passwordSaving.value = false;
+  }
 }
 
 async function savePreferences() {
@@ -444,7 +469,57 @@ onMounted(load);
 
         <NTabPane name="security" tab="账号安全">
           <NSpace vertical size="large">
-            <NAlert type="info" title="账号安全">登录会话沿用统一认证能力；密码能力不在此页面复制实现。</NAlert>
+            <div class="max-w-560px">
+              <div class="mb-12px text-16px font-medium">修改密码</div>
+              <NAlert type="info" class="mb-16px">
+                修改成功后，当前账号的全部登录会话都会失效，需要使用新密码重新登录。
+              </NAlert>
+              <NForm ref="passwordFormRef" :model="passwordForm" label-placement="top">
+                <NFormItem
+                  label="当前密码"
+                  path="current_password"
+                  :rule="{ required: true, message: '请输入当前密码' }"
+                >
+                  <NInput
+                    v-model:value="passwordForm.current_password"
+                    type="password"
+                    show-password-on="click"
+                    autocomplete="current-password"
+                  />
+                </NFormItem>
+                <NFormItem
+                  label="新密码"
+                  path="new_password"
+                  :rule="{ required: true, pattern: REG_PWD, message: '密码需为 8–72 位，并同时包含字母和数字' }"
+                >
+                  <NInput
+                    v-model:value="passwordForm.new_password"
+                    type="password"
+                    show-password-on="click"
+                    autocomplete="new-password"
+                  />
+                </NFormItem>
+                <NFormItem
+                  label="确认新密码"
+                  path="confirm_password"
+                  :rule="{
+                    required: true,
+                    validator: (_rule, value: string) => value === passwordForm.new_password,
+                    message: '两次输入的新密码不一致'
+                  }"
+                >
+                  <NInput
+                    v-model:value="passwordForm.confirm_password"
+                    type="password"
+                    show-password-on="click"
+                    autocomplete="new-password"
+                    @keyup.enter="savePassword"
+                  />
+                </NFormItem>
+                <NButton type="primary" :loading="passwordSaving" @click="savePassword">修改密码</NButton>
+              </NForm>
+            </div>
+            <NDivider />
             <NList bordered>
               <template #header>登录会话</template>
               <NListItem v-for="session in sessions" :key="session.id">

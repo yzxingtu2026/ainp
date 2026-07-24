@@ -59,6 +59,7 @@ MCP 使用独立的 OAuth Grant、Token family 和 `ainp:mcp` audience，不复�
 | `GET /api/v1/system/auth/sessions` | authenticated | 当前用户有效会话 |
 | `POST /api/v1/system/auth/sessions/revoke` | authenticated | 撤销自己的指定会话 |
 | `POST /api/v1/system/auth/sessions/revoke-all` | authenticated | 撤销自己的全部会话 |
+| `POST /api/v1/system/profile/password/update` | authenticated | 校验当前密码后修改本人密码，并使全部旧会话失效 |
 
 ## Challenge、限流与审计
 
@@ -66,7 +67,7 @@ Challenge 只保存摘要，必须具备短 TTL、单次消费、失败次数上
 
 入口经 `authentication.RateLimiter` 统一限流；默认进程内实现提供单实例基线，多实例部署应替换为 Redis 等共享实现。限流键不得包含密码、验证码或 Token 原文。
 
-登录、challenge、refresh、退出和撤销使用统一 Action 审计。密码、验证码、Token、challenge secret 和完整认证 Body 禁止进入日志与审计。
+登录、challenge、refresh、退出、撤销和本人密码修改使用统一 Action 审计。本人修改密码必须校验当前密码、复用统一强度规则并递增 `auth_version`；密码、验证码、Token、challenge secret 和完整认证 Body 禁止进入日志与审计。
 
 ## Passkey 边界
 
