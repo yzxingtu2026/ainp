@@ -39,7 +39,15 @@ docker compose --env-file deploy/demo/.env -f deploy/demo/compose.yaml run --rm 
 
 服务器将 `deploy/demo` 固定到低权限 deploy 用户目录，填写 `.env` 后执行 `./deploy-demo.sh <tag>`。脚本使用 `flock` 串行部署，拉取指定 Tag、记录镜像 digest、在迁移前创建 `pg_dump`、执行 forward-only migration、原子更新 Tag，并同时校验 `/healthz` 的状态和版本。启动或健康校验失败时恢复旧应用镜像；数据库不执行 down migration，依赖升级前备份和向后兼容 Schema。
 
-部署日志与备份位于 `runtime/logs`、`runtime/backups`。备份按 `BACKUP_RETENTION_DAYS` 清理；失败日志和当次备份不会因为应用回滚而丢失。SSH、固定 host key 与 GitHub Environment 编排属于下一发布阶段。
+部署日志与备份位于 `runtime/logs`、`runtime/backups`。备份按 `BACKUP_RETENTION_DAYS` 清理；失败日志和当次备份不会因为应用回滚而丢失。
+
+## 维护者发布
+
+在干净且与 `origin/main` 完全一致的 `main` 根目录运行 `./scripts/release.py vMAJOR.MINOR.PATCH`。脚本会检查分支、工作区、remote、GitHub CLI 登录、重复 Tag 及该 Commit 的四项 CI，只创建 annotated Tag 并仅推送该 Tag。
+
+Tag workflow 在镜像与 digest 完成后创建 Draft Release，再通过 `demo` Environment 的固定 SSH host key 调用服务器 `deploy-demo.sh`。Actions 会再次从公网验证目标版本，成功后才把 Release 转为 Published。已发布 Tag 的 rerun 跳过全部镜像与发布写操作。
+
+GitHub `demo` Environment 需要配置 Secret `DEMO_SSH_PRIVATE_KEY`，以及 Variables `DEMO_HOST`、`DEMO_PORT`、`DEMO_USER`、`DEMO_PATH`、`DEMO_URL`、`DEMO_SSH_HOST_KEY`。建议 Environment 启用人工审批；部署用户不得拥有交互式 root 权限。
 
 ## GHCR 发布
 
