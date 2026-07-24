@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/yzxingtu2026/ainp/platform/framework/config"
 	"gopkg.in/yaml.v3"
 )
 
@@ -15,6 +16,34 @@ type State struct {
 	Installed   bool      `yaml:"installed"`
 	InstalledAt time.Time `yaml:"installed_at,omitempty"`
 	DSN         string    `yaml:"dsn,omitempty"` // 向导写入的实际 DSN（敏感，生产建议 env 注入）
+	Redis       Redis     `yaml:"redis,omitempty"`
+	Jobs        Jobs      `yaml:"jobs,omitempty"`
+}
+
+type Redis struct {
+	Addr string `yaml:"addr,omitempty"`
+	DB   int    `yaml:"db,omitempty"`
+}
+
+type Jobs struct {
+	Enabled        *bool `yaml:"enabled,omitempty"`
+	EmbeddedWorker bool  `yaml:"embedded_worker,omitempty"`
+}
+
+// ApplyConfig applies setup-owned runtime values after config and environment loading.
+// Secrets remain environment-owned and are never persisted in state.yaml.
+func (s *State) ApplyConfig(cfg *config.Config) {
+	if cfg.Database.DSN == "" && s.DSN != "" {
+		cfg.Database.DSN = s.DSN
+	}
+	if s.Redis.Addr != "" && os.Getenv("REDIS_ADDR") == "" {
+		cfg.Redis.Addr = s.Redis.Addr
+		cfg.Redis.DB = s.Redis.DB
+	}
+	if s.Jobs.Enabled != nil {
+		cfg.Jobs.Enabled = s.Jobs.Enabled
+		cfg.Jobs.EmbeddedWorker = s.Jobs.EmbeddedWorker
+	}
 }
 
 // DefaultPath 默认状态文件路径。

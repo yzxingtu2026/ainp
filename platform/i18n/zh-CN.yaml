@@ -343,12 +343,16 @@ action.setup.check_env.name: "环境检查"
 action.setup.check_env.description: "检查运行环境是否就绪"
 action.setup.test_db.name: "测试数据库"
 action.setup.test_db.description: "测试数据库连通性"
+action.setup.test_redis.name: "测试 Redis"
+action.setup.test_redis.description: "测试 Redis 连通性"
 action.setup.initialize.name: "初始化系统"
 action.setup.initialize.description: "创建初始租户与管理员账号"
 
 # ── 安装向导错误 ──
 setup.required: "系统未安装，请先完成安装向导"
 setup.already_installed: "系统已安装，无法重复初始化"
+setup.redis_addr_required: "请输入 Redis 地址"
+setup.redis_unreachable: "Redis 不可达，无法启用后台任务"
 
 # ── 演示域 Capability ──
 capability.demo.name: "演示"

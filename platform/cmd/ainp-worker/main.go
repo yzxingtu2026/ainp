@@ -36,9 +36,7 @@ func main() {
 		logging.Error(ctx, "worker requires installed platform", fmt.Errorf("not installed"))
 		os.Exit(1)
 	}
-	if cfg.Database.DSN == "" && st.DSN != "" {
-		cfg.Database.DSN = st.DSN
-	}
+	st.ApplyConfig(cfg)
 	if !cfg.Jobs.IsEnabled() {
 		logging.Error(ctx, "jobs disabled", fmt.Errorf("set jobs.enabled=true"))
 		os.Exit(1)

@@ -44,6 +44,17 @@ jobs:
 - `enabled=true` 且 Redis 不可用：Worker/组装失败（明确错误）
 - `embedded_worker=true`（仅开发/单机）：在 `cmd/ainp` 内嵌启动 Asynq Worker，关停时一并优雅退出；生产保持 `false` 并独立跑 `cmd/ainp-worker`
 
+## 首次安装
+
+安装向导的“后台任务”步骤可选择是否启用 Job：
+
+1. 保持关闭时无需 Redis，HTTP、登录等核心能力可正常使用；附件缩略图等异步能力暂不可用。
+2. 启用时填写 Redis `addr` / `db` 并先测试连接；初始化会再次执行 `PING`，不可达时 fail-closed，不会静默写入启用状态。
+3. Redis 密码不由浏览器提交，也不写入 `state.yaml`；使用 `REDIS_PASSWORD`（可选 `REDIS_USERNAME`）环境变量注入。
+4. 完成安装后重启 HTTP 服务加载新配置。生产环境另行启动 `ainp-worker`；开发/单机可在向导中选择 `embedded_worker`，由 HTTP 进程内嵌 Worker。
+
+向导生成的 DSN、Redis 地址/DB、Job 开关统一写入权限为 `0600` 的 `configs/state.yaml`，不回写只读的 `config.yaml`。启动时先加载主配置与环境变量，再合并安装状态；`DATABASE_DSN` / `REDIS_ADDR` / Redis 凭据等部署环境变量保持更高优先级，避免形成双份配置真相。
+
 ## 运维 Action
 
 `operations.job_list` / `job_get` / `job_cancel` / `job_retry`（取消与重试审计；不可改 Payload）。

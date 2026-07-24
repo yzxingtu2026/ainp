@@ -21,6 +21,15 @@ function goLogin() {
           <NAlert type="warning" :bordered="false" class="max-w-360px">
             {{ $t('page.setup.restartRequired') }}
           </NAlert>
+          <NAlert :type="result?.jobs_enabled ? 'info' : 'warning'" :bordered="false" class="max-w-420px text-left">
+            {{
+              result?.jobs_enabled
+                ? result.embedded_worker
+                  ? $t('page.setup.jobsEmbeddedHint')
+                  : $t('page.setup.jobsWorkerHint')
+                : $t('page.setup.jobsDisabledHint')
+            }}
+          </NAlert>
           <NButton type="primary" size="large" @click="goLogin">
             {{ $t('page.setup.goLogin') }}
           </NButton>

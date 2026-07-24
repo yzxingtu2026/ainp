@@ -23,6 +23,15 @@ export function fetchSetupTestDB(dsn?: string) {
   });
 }
 
+/** 测试 Redis 连通性 */
+export function fetchSetupTestRedis(addr: string, db: number) {
+  return request<Api.Setup.TestDBResult>({
+    url: '/api/v1/setup/test-redis',
+    method: 'post',
+    data: { addr, db }
+  });
+}
+
 /** 初始化系统 */
 export function fetchSetupInitialize(params: Api.Setup.InitParams) {
   return request<Api.Setup.InitResult>({

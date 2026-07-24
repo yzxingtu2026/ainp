@@ -6,6 +6,7 @@ import { useThemeStore } from '@/store/modules/theme';
 import { $t } from '@/locales';
 import EnvCheck from './modules/env-check.vue';
 import Database from './modules/database.vue';
+import RedisJobs from './modules/redis-jobs.vue';
 import Admin from './modules/admin.vue';
 import Complete from './modules/complete.vue';
 
@@ -17,6 +18,9 @@ const themeStore = useThemeStore();
 const currentStep = ref(0);
 const envData = ref<Api.Setup.CheckEnv | null>(null);
 const dbDSN = ref('');
+const redisOptions = ref<Api.Setup.RedisOptions>({
+  addr: '127.0.0.1:6379', db: 0, jobs_enabled: false, embedded_worker: false
+});
 const initResult = ref<Api.Setup.InitResult | null>(null);
 
 const bgThemeColor = computed(() =>
@@ -32,6 +36,7 @@ const bgColor = computed(() => {
 const steps = computed(() => [
   { title: $t('page.setup.stepEnv') },
   { title: $t('page.setup.stepDatabase') },
+  { title: $t('page.setup.stepRedisJobs') },
   { title: $t('page.setup.stepAdmin') },
   { title: $t('page.setup.stepComplete') }
 ]);
@@ -42,6 +47,10 @@ function onEnvChecked(data: Api.Setup.CheckEnv) {
 
 function onDSNReady(dsn: string) {
   dbDSN.value = dsn;
+}
+
+function onRedisReady(options: Api.Setup.RedisOptions) {
+  redisOptions.value = options;
 }
 
 function nextStep() {
@@ -82,16 +91,23 @@ function onInitialized(result: Api.Setup.InitResult) {
         @next="nextStep"
       />
       <Admin
-        v-if="currentStep === 2"
+        v-if="currentStep === 3"
         :dsn="dbDSN"
+        :redis-options="redisOptions"
         :bg-theme-color="bgThemeColor"
         @next="nextStep"
         @initialized="onInitialized"
       />
       <Complete
-        v-if="currentStep === 3"
+        v-if="currentStep === 4"
         :result="initResult"
         :bg-theme-color="bgThemeColor"
+      />
+      <RedisJobs
+        v-if="currentStep === 2"
+        :default-addr="envData?.redis_addr || '127.0.0.1:6379'"
+        @ready="onRedisReady"
+        @next="nextStep"
       />
     </div>
   </div>
