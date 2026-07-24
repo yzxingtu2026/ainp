@@ -1,6 +1,7 @@
 # AI 会话硬约束
 
 - Conversation 必须固定明确 `agent_version_id`；禁止运行时追随 Agent current version。
+- Conversation、Message、Agent Run 对所有 tenant 已登录用户开放，不要求角色额外分配 permission；仍必须强制 tenant/owner/visibility，且不得放宽业务工具权限。
 - Conversation 必须声明 `purpose`（`workspace` / `builder_preview`）；列表默认只返回 workspace，Workspace 禁止钉 `kind=preview` Version。
 - Message 是不可变追加事实；客户端只能创建 user 消息，system/tool/assistant 只能由受控服务端流程产生。
 - 会话、消息、Snapshot 必须从 AuthContext 强制 tenant/owner/visibility，跨租户和无权 private 资源 fail-closed。

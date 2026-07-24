@@ -169,6 +169,8 @@ action.system.attachment_list_by_resource.description: "List attachments bound t
 action.system.attachment_delete.name: "Delete attachment"
 action.system.attachment_delete.description: "Mark attachment deleted and clean the object"
 action.system.attachment_list.name: "Attachment list"
+action.system.attachment_mine_list.name: "My attachments"
+action.system.attachment_mine_list.description: "List attachments uploaded by the current user"
 action.system.attachment_list.description: "Paginate tenant attachments"
 action.system.attachment_get.name: "Attachment details"
 action.system.attachment_get.description: "Get attachment details and bindings"

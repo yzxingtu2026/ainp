@@ -106,6 +106,19 @@ const (
 	ActionAgentRunSubscribe            = "ai.agent_run_subscribe"
 )
 
+func isAuthenticatedAssistantAction(id string) bool {
+	switch id {
+	case ActionAgentSlotGet,
+		ActionAgentSlotPreferenceGet, ActionAgentSlotPreferenceUpdate, ActionAgentSlotPreferenceReset,
+		ActionConversationList, ActionConversationGet, ActionConversationCreate, ActionConversationCreateForSlot,
+		ActionConversationUpdate, ActionConversationArchive, ActionConversationRestore,
+		ActionMessageList, ActionMessageGet:
+		return true
+	default:
+		return false
+	}
+}
+
 func Register(a *app.App) error {
 	if err := a.RegisterCapability(capability.Capability{ID: "ai", Name: "AI 中心", NameKey: "capability.ai.name", Description: "模型资产与 AI 基础能力", DescriptionKey: "capability.ai.description", Module: "ai", Order: 20}); err != nil {
 		return err
@@ -387,7 +400,7 @@ func Register(a *app.App) error {
 		{ActionMessageGet, "/api/v1/ai/messages/get", "消息详情", "ai.conversation", "AI 会话", action.JSON(conversations.GetMessage), readAIMeta("按 ID 查询可见会话消息详情", "查询 AI 消息详情", "按 ID 查询可见会话消息详情", "已返回 AI 消息详情", action.InputSchemaFor[MessageGetRequest](), nil, "AI", "会话", "消息详情")},
 		{ActionContextCompactionDiagnostics, "/api/v1/ai/context-compaction/diagnostics", "上下文压缩诊断", "ai.conversation", "AI 会话", action.JSON(compactions.Diagnostics), nil},
 	}
-	if err := a.RegisterAction(action.Action{ID: ActionMessageCreate, Handler: action.JSON(conversations.CreateMessage), Meta: action.Metadata{Capability: "ai", Name: "提交用户消息", NameKey: "action." + ActionMessageCreate + ".name", Description: "向会话幂等追加用户消息", DescriptionKey: "action." + ActionMessageCreate + ".description", PermissionGroup: "ai.conversation", PermissionGroupName: "AI 会话", PermissionGroupNameKey: "permission_group.ai.conversation", Audit: &auditOn, AI: action.ExcludeFromAI(action.AIExcludeInternalRuntime), Idempotency: &action.IdempotencyMeta{Mode: "required"}, HTTP: &action.HTTPMeta{Method: "POST", Path: "/api/v1/ai/messages/create"}}}); err != nil {
+	if err := a.RegisterAction(action.Action{ID: ActionMessageCreate, Handler: action.JSON(conversations.CreateMessage), Meta: action.Metadata{Capability: "ai", Access: action.AccessAuthenticated, Name: "提交用户消息", NameKey: "action." + ActionMessageCreate + ".name", Description: "向会话幂等追加用户消息", DescriptionKey: "action." + ActionMessageCreate + ".description", PermissionGroup: "ai.conversation", PermissionGroupName: "AI 会话", PermissionGroupNameKey: "permission_group.ai.conversation", Audit: &auditOn, AI: action.ExcludeFromAI(action.AIExcludeInternalRuntime), Idempotency: &action.IdempotencyMeta{Mode: "required"}, HTTP: &action.HTTPMeta{Method: "POST", Path: "/api/v1/ai/messages/create"}}}); err != nil {
 		return err
 	}
 	for _, d := range defs {
@@ -395,7 +408,7 @@ func Register(a *app.App) error {
 		if strings.HasPrefix(d.id, "ai.tool_") || strings.HasPrefix(d.id, "ai.navigation_index_") {
 			access = action.AccessAuthenticated
 		}
-		if strings.HasPrefix(d.id, "ai.agent_slot_preference_") || d.id == ActionConversationCreateForSlot {
+		if isAuthenticatedAssistantAction(d.id) {
 			access = action.AccessAuthenticated
 		}
 		aiMeta := d.ai
@@ -460,7 +473,7 @@ func Register(a *app.App) error {
 		{ID: "ai.agents", ParentID: "ai.root", Title: "智能体", TitleKey: "menu.ai.agents.title", Icon: "mdi:robot-outline", Type: menu.TypeMenu, Path: "/ai/agents", Component: "ai/agents", Permission: ActionAgentList, BindAction: ActionAgentList, Module: "ai", Order: 4},
 		{ID: "ai.agent_slots", ParentID: "ai.root", Title: "AI 功能配置", TitleKey: "menu.ai.agent_slots.title", Icon: "mdi:tune-variant", Type: menu.TypeMenu, Path: "/ai/agent-slots", Component: "ai/agent-slots", Permission: ActionAgentSlotList, BindAction: ActionAgentSlotList, Module: "ai", Order: 5},
 		{ID: "ai.knowledge", ParentID: "ai.root", Title: "知识库", TitleKey: "menu.ai.knowledge.title", Icon: "mdi:bookshelf", Type: menu.TypeMenu, Path: "/ai/knowledge", Component: "ai/knowledge", Permission: ActionKnowledgeBaseList, BindAction: ActionKnowledgeBaseList, Module: "ai", Order: 6},
-		{ID: "ai.workspace", ParentID: "ai.root", Title: "AI 工作台", TitleKey: "menu.ai.workspace.title", Icon: "mdi:creation", Type: menu.TypeMenu, Path: "/ai/workspace", Component: "ai/workspace", Permission: ActionConversationList, BindAction: ActionConversationList, Module: "ai", Order: 99, HideInMenu: true, Placement: menu.PlacementGlobalAILauncher, Immersive: true},
+		{ID: "ai.workspace", ParentID: "ai.root", Title: "AI 工作台", TitleKey: "menu.ai.workspace.title", Icon: "mdi:creation", Type: menu.TypeMenu, Path: "/ai/workspace", Component: "ai/workspace", BindAction: ActionConversationList, Module: "ai", Order: 99, HideInMenu: true, Placement: menu.PlacementGlobalAILauncher, Immersive: true},
 		// HideInMenu：不进侧栏，但必须出现在 /menus 结果中，供动态路由注册 Agent Builder
 		{ID: "ai.agent_builder", ParentID: "ai.root", Title: "智能体编排工作台", TitleKey: "menu.ai.agent_builder.title", Icon: "mdi:application-edit-outline", Type: menu.TypeMenu, Path: "/ai/agent-builder", Component: "ai/agent-builder", Permission: ActionAgentList, BindAction: ActionAgentList, Module: "ai", Order: 6, HideInMenu: true},
 	} {

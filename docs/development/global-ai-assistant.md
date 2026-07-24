@@ -12,7 +12,9 @@
 
 ## 应用壳与入口
 
-Header launcher 在所有 layout mode 中显示，但仍以动态路由中 `shellPlacement=global_ai_launcher` 为权限事实；点击只开关面板，不修改当前业务路由。Sider launcher 始终跳转 Workspace。
+Header launcher 在所有 layout mode 中显示，并以动态路由中的 `shellPlacement=global_ai_launcher` 为入口事实；该路由与默认 Slot 解析、本人会话/消息/Run、工具运行时确认及“我的附件”对话上传链路均为 authenticated 自助能力，不要求角色额外分配 AI 权限。点击只开关面板，不修改当前业务路由。Sider launcher 始终跳转 Workspace。
+
+已登录可用只免除对话基础设施自身的角色 permission，不改变任何资源边界：会话、消息、Run、附件仍强制当前 tenant/user/owner；Agent 管理、Slot 管理、模型、知识库管理仍需角色权限；Agent 实际调用的业务 Action 必须在 Tool Search/Load/Execute 和执行前按当前用户实时权限过滤，禁止借 AI 助手越权。
 
 桌面面板宽度限制为 400px 至 `min(640px, 48vw)`，固定在应用壳右侧；窄屏为全屏分层页。面板没有 Page Context 区域，不展示 resource/capability/tag/Tool ID。Escape、关闭和展开后恢复触发入口焦点，reduced-motion 禁用转场。
 

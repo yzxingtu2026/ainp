@@ -12,11 +12,7 @@ const ATTACHMENT_API = {
   policy: '/api/v1/system/attachments/policy'
 } as const;
 
-export function prepareAttachmentUpload(payload: {
-  original_name: string;
-  content_type: string;
-  size: number;
-}) {
+export function prepareAttachmentUpload(payload: { original_name: string; content_type: string; size: number }) {
   return request<Api.Attachment.TransferPrepare>({
     url: ATTACHMENT_API.uploadPrepare,
     method: 'post',
@@ -71,11 +67,7 @@ export function unbindAttachment(payload: {
   });
 }
 
-export function listAttachmentsByResource(payload: {
-  resource_type: string;
-  resource_id: string;
-  field?: string;
-}) {
+export function listAttachmentsByResource(payload: { resource_type: string; resource_id: string; field?: string }) {
   return request<Api.Attachment.ListResult>({
     url: ATTACHMENT_API.listByResource,
     method: 'post',
@@ -98,6 +90,14 @@ export function deleteAttachment(id: string) {
 export function fetchAttachmentList(params: Api.Attachment.ListParams) {
   return request<Api.Attachment.PageResult>({
     url: ATTACHMENT_API.list,
+    method: 'post',
+    data: params
+  });
+}
+
+export function fetchMyAttachmentList(params: Omit<Api.Attachment.ListParams, 'scope' | 'uploader_id'>) {
+  return request<Api.Attachment.PageResult>({
+    url: '/api/v1/system/attachments/mine/list',
     method: 'post',
     data: params
   });

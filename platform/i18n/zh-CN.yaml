@@ -169,6 +169,8 @@ action.system.attachment_list_by_resource.description: "按业务资源列出已
 action.system.attachment_delete.name: "删除附件"
 action.system.attachment_delete.description: "标记删除并清理对象"
 action.system.attachment_list.name: "附件列表"
+action.system.attachment_mine_list.name: "我的附件列表"
+action.system.attachment_mine_list.description: "分页查询当前用户上传的附件"
 action.system.attachment_list.description: "分页查询租户附件"
 action.system.attachment_get.name: "附件详情"
 action.system.attachment_get.description: "查询附件详情与业务绑定"

@@ -1,6 +1,7 @@
 # 全局 AI 助手
 
-- Header 在所有 layout mode 提供受动态路由权限控制的侧边栏入口；Sider 入口只进入完整 Workspace，禁止混用行为。
+- Header 在所有 layout mode 提供 authenticated 全局 AI 入口；默认 Slot 解析、本人 Conversation/Message/Run、工具确认及对话所需“我的附件”链路不得要求额外角色权限。Sider 入口只进入完整 Workspace，禁止混用行为。
+- authenticated 只适用于对话基础设施；Agent/Slot/模型/知识库管理仍需角色权限，业务工具必须按当前用户实时 Action 权限过滤和执行，禁止借 AI 越权。
 - Conversation/Message/SSE/Run/确认/附件/幂等/Page Context 只由应用级单例 controller 管理；Workspace 与 Sidebar 必须复用同一 Conversation Surface，不得复制协议或合并逻辑。
 - 用户消息优先展示认证态当前用户头像 attachment ID，经统一附件下载协议加载；无头像或失败时降级账户图标，禁止保存对象 URL 或在容器层重复实现。
 - 面板挂载于应用壳，关闭/跨路由不清 controller；展开 Workspace 保留 Conversation、草稿和 Run。刷新只持久化 Conversation ID 并从服务端恢复事实。

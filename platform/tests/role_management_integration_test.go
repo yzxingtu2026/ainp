@@ -49,10 +49,18 @@ func TestRoleManagementActionsAndMenuAreRegistered(t *testing.T) {
 	}
 	for _, actionID := range []string{
 		"system.auth_me", "system.auth_permissions",
+		system.ActionAttachmentUploadPrepare, system.ActionAttachmentDownloadPrepare,
+		system.ActionAttachmentMineList, system.ActionAttachmentPolicyGet,
 	} {
 		registered, ok := application.Actions.Get(actionID)
 		if !ok || registered.Meta.AccessMode() != action.AccessAuthenticated {
 			t.Fatalf("basic action %s must be authenticated", actionID)
+		}
+	}
+	for _, actionID := range []string{system.ActionAttachmentBind, system.ActionAttachmentUnbind, system.ActionAttachmentListByResource} {
+		registered, ok := application.Actions.Get(actionID)
+		if !ok || registered.Meta.AccessMode() != action.AccessPermission {
+			t.Fatalf("attachment resource action %s must retain permission mode", actionID)
 		}
 	}
 	foundMenu := false

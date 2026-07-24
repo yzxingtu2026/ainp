@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
 import { Icon } from '@iconify/vue';
-import { fetchAttachmentList, fetchAttachmentPolicy } from '@/service/api';
+import { fetchAttachmentPolicy, fetchMyAttachmentList } from '@/service/api';
 import {
   attachmentTypeIcon,
   formatFileSize,
@@ -133,10 +133,9 @@ async function loadMine(options?: { reset?: boolean }) {
   const requestPage = reset ? 1 : page.value + 1;
 
   try {
-    const { data, error } = await fetchAttachmentList({
+    const { data, error } = await fetchMyAttachmentList({
       page: requestPage,
       page_size: PAGE_SIZE,
-      scope: 'mine',
       keyword: keyword.value.trim() || undefined,
       status: 'ready'
     });

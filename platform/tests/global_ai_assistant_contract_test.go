@@ -78,6 +78,43 @@ func TestGlobalAiAssistantRestoresOnlyCanonicalConversationReference(t *testing.
 	}
 }
 
+func TestGlobalAiAssistantRuntimeActionsAreAuthenticatedSelfService(t *testing.T) {
+	register, err := os.ReadFile("../modules/ai/register.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeRegister, err := os.ReadFile("../modules/ai/agent_runtime_register.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	registerSource := string(register)
+	runtimeSource := string(runtimeRegister)
+	for _, actionID := range []string{
+		"ActionAgentSlotGet",
+		"ActionConversationList", "ActionConversationGet", "ActionConversationCreate", "ActionConversationCreateForSlot",
+		"ActionConversationUpdate", "ActionConversationArchive", "ActionConversationRestore",
+		"ActionMessageList", "ActionMessageGet",
+	} {
+		if !strings.Contains(registerSource, actionID) {
+			t.Fatalf("authenticated assistant action set missing %s", actionID)
+		}
+	}
+	if !strings.Contains(registerSource, "Capability: \"ai\", Access: action.AccessAuthenticated, Name: \"提交用户消息\"") {
+		t.Fatal("message create must be authenticated self-service")
+	}
+	if strings.Contains(registerSource, `Component: "ai/workspace", Permission: ActionConversationList`) {
+		t.Fatal("global AI workspace route must not require a role permission")
+	}
+	for _, expected := range []string{
+		"ID: ActionAgentRunStart", "Access: action.AccessAuthenticated",
+		"func runActionMeta", "Capability: \"ai\", Access: action.AccessAuthenticated",
+	} {
+		if !strings.Contains(runtimeSource, expected) {
+			t.Fatalf("agent runtime self-service contract missing %q", expected)
+		}
+	}
+}
+
 func readFrontendContract(t *testing.T, path string) string {
 	t.Helper()
 	body, err := os.ReadFile("../../frontend/src/" + path)

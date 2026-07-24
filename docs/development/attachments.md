@@ -99,6 +99,7 @@ Local Provider 返回本服务流式 URL；未来 S3/OSS 可换预签名 URL，�
 | `system.attachment_bind` / `unbind` | 绑定/解绑 | true |
 | `system.attachment_list_by_resource` | 按资源列表 | true |
 | `system.attachment_list` | 分页列表（mine/all）；补充 `uploader_name`、`thumb_status` | false |
+| `system.attachment_mine_list` | authenticated 本人附件列表（Picker / 对话自助） | false |
 | `system.attachment_get` | 详情与 links；补充 `uploader_name`、`thumb_status` | false |
 | `system.attachment_policy_get` | 有效上传策略 | false |
 | `system.attachment_delete` | 删除（级联派生对象） | true |
@@ -109,6 +110,7 @@ Local Provider 返回本服务流式 URL；未来 S3/OSS 可换预签名 URL，�
 
 - [ ] 新业务注册 AccessPolicy，不硬编码「同租户即可」
 - [ ] 上传/下载走 prepare + transfer，不把字节塞进 JSON；宫格只用 `variant=thumb`
+- [ ] Picker / 对话只调用 `attachment_mine_list`；租户附件中心继续走权限型 `attachment_list`
 - [ ] 租户隔离与跨租户 ID 测试通过
 - [ ] token 过期/重放、未注册 resource_type、Range/HEAD、variant 未就绪覆盖
 - [ ] 变更同步本文档与 Agent 规则并 `agent-rules sync`

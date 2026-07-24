@@ -26,7 +26,7 @@ type agentRunJobPayload struct {
 func RegisterAgentRuntime(a *app.App, runtime *AgentRuntimeService) error {
 	auditOn := true
 	actions := []action.Action{
-		{ID: ActionAgentRunStart, Handler: action.JSON(runtime.Start), Meta: action.Metadata{Capability: "ai", Name: "启动 Agent Run", NameKey: "action." + ActionAgentRunStart + ".name", Description: "幂等创建并排队 Agent Run", DescriptionKey: "action." + ActionAgentRunStart + ".description", PermissionGroup: "ai.agent_runtime", PermissionGroupName: "Agent Runtime", PermissionGroupNameKey: "permission_group.ai.agent_runtime", Audit: &auditOn, AI: action.ExcludeFromAI(action.AIExcludeInternalRuntime), Idempotency: &action.IdempotencyMeta{Mode: "required"}, HTTP: &action.HTTPMeta{Method: "POST", Path: "/api/v1/ai/agent-runs/start"}}},
+		{ID: ActionAgentRunStart, Handler: action.JSON(runtime.Start), Meta: action.Metadata{Capability: "ai", Access: action.AccessAuthenticated, Name: "启动 Agent Run", NameKey: "action." + ActionAgentRunStart + ".name", Description: "幂等创建并排队 Agent Run", DescriptionKey: "action." + ActionAgentRunStart + ".description", PermissionGroup: "ai.agent_runtime", PermissionGroupName: "Agent Runtime", PermissionGroupNameKey: "permission_group.ai.agent_runtime", Audit: &auditOn, AI: action.ExcludeFromAI(action.AIExcludeInternalRuntime), Idempotency: &action.IdempotencyMeta{Mode: "required"}, HTTP: &action.HTTPMeta{Method: "POST", Path: "/api/v1/ai/agent-runs/start"}}},
 		{ID: ActionAgentRunGet, Handler: action.JSON(runtime.Get), Meta: runActionMeta(ActionAgentRunGet, "Agent Run 详情", "/api/v1/ai/agent-runs/get", &auditOn)},
 		{ID: ActionAgentRunList, Handler: action.JSON(runtime.List), Meta: runActionMeta(ActionAgentRunList, "Agent Run 列表", "/api/v1/ai/agent-runs/list", &auditOn)},
 		{ID: ActionAgentRunCancel, Handler: action.JSON(runtime.Cancel), Meta: runActionMeta(ActionAgentRunCancel, "取消 Agent Run", "/api/v1/ai/agent-runs/cancel", &auditOn)},
@@ -124,5 +124,5 @@ func RegisterAgentRuntime(a *app.App, runtime *AgentRuntimeService) error {
 }
 
 func runActionMeta(id, name, path string, audit *bool) action.Metadata {
-	return action.Metadata{Capability: "ai", Name: name, NameKey: "action." + id + ".name", Description: name, DescriptionKey: "action." + id + ".description", PermissionGroup: "ai.agent_runtime", PermissionGroupName: "Agent Runtime", PermissionGroupNameKey: "permission_group.ai.agent_runtime", Audit: audit, AI: action.ExcludeFromAI(action.AIExcludeInternalRuntime), HTTP: &action.HTTPMeta{Method: "POST", Path: path}}
+	return action.Metadata{Capability: "ai", Access: action.AccessAuthenticated, Name: name, NameKey: "action." + id + ".name", Description: name, DescriptionKey: "action." + id + ".description", PermissionGroup: "ai.agent_runtime", PermissionGroupName: "Agent Runtime", PermissionGroupNameKey: "permission_group.ai.agent_runtime", Audit: audit, AI: action.ExcludeFromAI(action.AIExcludeInternalRuntime), HTTP: &action.HTTPMeta{Method: "POST", Path: path}}
 }

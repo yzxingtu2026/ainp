@@ -36,6 +36,7 @@ const (
 	ActionAttachmentListByResource  = "system.attachment_list_by_resource"
 	ActionAttachmentDelete          = "system.attachment_delete"
 	ActionAttachmentList            = "system.attachment_list"
+	ActionAttachmentMineList        = "system.attachment_mine_list"
 	ActionAttachmentGet             = "system.attachment_get"
 	ActionAttachmentPolicyGet       = "system.attachment_policy_get"
 

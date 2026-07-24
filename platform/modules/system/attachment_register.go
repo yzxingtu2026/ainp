@@ -27,20 +27,32 @@ func registerAttachmentActions(a *app.App, svc *AttachmentService) error {
 		{ActionAttachmentListByResource, "/api/v1/system/attachments/list_by_resource", "按资源列附件", "action.system.attachment_list_by_resource.name", "按业务资源列出已绑定附件", "action.system.attachment_list_by_resource.description", "", &auditOn, svc.ListByResource, readAIMeta("列出当前用户有权访问的指定业务资源附件", "查询业务资源附件", "列出当前用户有权访问的指定业务资源附件", "已返回业务资源附件", action.InputSchemaFor[attachmentListRequest](), nil, "附件", "业务资源", "列表")},
 		{ActionAttachmentDelete, "/api/v1/system/attachments/delete", "删除附件", "action.system.attachment_delete.name", "标记删除并清理对象", "action.system.attachment_delete.description", "", &auditOn, svc.Delete, destructiveAIMeta("删除未绑定业务资源的附件并清理存储对象", "删除附件", "删除未绑定业务资源的附件并清理存储对象", "附件删除已受理", action.InputSchemaFor[attachmentIDRequest](), nil, "附件", "删除")},
 		{ActionAttachmentList, "/api/v1/system/attachments/list", "附件列表", "action.system.attachment_list.name", "分页查询租户附件（中心/我的）", "action.system.attachment_list.description", "", &auditOff, action.JSON(svc.list), readAIMeta("分页查询当前用户上传或有权管理的租户附件", "查询附件列表", "分页查询当前用户上传或有权管理的租户附件", "已返回附件列表", action.InputSchemaFor[attachmentAdminListRequest](), action.SchemaFor[pagination.Result[AttachmentView]](), "附件", "列表", "查询")},
+		{ActionAttachmentMineList, "/api/v1/system/attachments/mine/list", "我的附件列表", "action.system.attachment_mine_list.name", "分页查询当前用户上传的附件", "action.system.attachment_mine_list.description", "", &auditOff, action.JSON(func(ctx context.Context, req attachmentAdminListRequest) (any, error) {
+			req.Scope = "mine"
+			req.Uploader = ""
+			return svc.list(ctx, req)
+		}), action.ExcludeFromAI(action.AIExcludeInternalRuntime)},
 		{ActionAttachmentGet, "/api/v1/system/attachments/get", "附件详情", "action.system.attachment_get.name", "查询附件详情与业务绑定", "action.system.attachment_get.description", "", &auditOff, svc.Get, readAIMeta("查询指定附件详情及其业务资源绑定", "查询附件详情", "查询指定附件详情及其业务资源绑定", "已返回附件详情", action.InputSchemaFor[attachmentIDRequest](), action.SchemaFor[AttachmentDetailView](), "附件", "详情", "绑定")},
 		{ActionAttachmentPolicyGet, "/api/v1/system/attachments/policy", "附件上传策略", "action.system.attachment_policy_get.name", "返回当前租户有效上传策略", "action.system.attachment_policy_get.description", ActionAttachmentUploadPrepare, &auditOff, svc.PolicyGet, readAIMeta("查询当前租户生效的附件类型、大小和传输限制", "查询附件上传策略", "查询当前租户生效的附件类型、大小和传输限制", "已返回附件上传策略", action.InputSchemaFor[struct{}](), nil, "附件", "上传策略", "查询")},
 	}
 	for _, item := range actions {
 		item := item
+		access := action.AccessMode("")
+		permission := item.Permission
+		switch item.ID {
+		case ActionAttachmentUploadPrepare, ActionAttachmentDownloadPrepare, ActionAttachmentMineList, ActionAttachmentPolicyGet:
+			access = action.AccessAuthenticated
+			permission = ""
+		}
 		if err := a.RegisterAction(action.Action{
 			ID:      item.ID,
 			Handler: item.Fn,
 			Meta: action.Metadata{
-				Capability: "system", Name: item.Name, NameKey: item.NameKey,
+				Capability: "system", Access: access, Name: item.Name, NameKey: item.NameKey,
 				Description: item.Desc, DescriptionKey: item.DescKey,
 				PermissionGroup: "system.attachment_management", PermissionGroupName: "附件管理",
 				PermissionGroupNameKey: "permission_group.system.attachment_management",
-				Permission:             item.Permission,
+				Permission:             permission,
 				AI:                     item.AI,
 				Audit:                  item.Audit,
 				HTTP:                   &action.HTTPMeta{Method: "POST", Path: item.Path},

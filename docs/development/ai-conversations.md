@@ -10,6 +10,7 @@ Conversation 是租户内、供应商无关的会话事实边界。它固定一�
 
 ## 权限与可见性
 
+- Conversation、Message 与 Agent Run 是所有 tenant 已登录用户的自助能力，不要求额外角色 permission；管理 Agent、Slot、模型或知识库不属于本层。
 - `tenant_id`、owner 和当前 actor 只来自 `AuthContext`。
 - 默认 `private`，只有 owner 可见；`tenant` 会话可供同租户授权用户读取。
 - 跨租户、无权 private 会话、消息和 Snapshot 统一按不存在处理。
