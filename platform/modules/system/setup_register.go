@@ -100,6 +100,23 @@ func RegisterSetupActions(a *app.App, svc *SetupService) error {
 
 	// setup.initialize — 创建初始租户+管理员
 	if err := a.RegisterAction(action.Action{
+		ID: "setup.test_redis",
+		Handler: func(ctx context.Context, input json.RawMessage) (any, error) {
+			return svc.TestRedis(ctx, input)
+		},
+		Meta: action.Metadata{
+			Capability: "setup", Access: action.AccessPublic,
+			Name: "测试 Redis", NameKey: "action.setup.test_redis.name",
+			Description: "测试 Redis 连通性", DescriptionKey: "action.setup.test_redis.description",
+			Audit: &auditOff, AI: action.ExcludeFromAI(action.AIExcludeSetupOperation),
+			HTTP: &action.HTTPMeta{Method: "POST", Path: "/api/v1/setup/test-redis"},
+		},
+	}); err != nil {
+		return err
+	}
+
+	// setup.initialize — 创建初始租户+管理员
+	if err := a.RegisterAction(action.Action{
 		ID: "setup.initialize",
 		Handler: func(ctx context.Context, input json.RawMessage) (any, error) {
 			return svc.Initialize(ctx, input)

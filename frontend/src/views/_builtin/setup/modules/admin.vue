@@ -6,6 +6,7 @@ import { resetSetupCache } from '@/router/guard/route';
 
 interface Props {
   dsn: string;
+  redisOptions: Api.Setup.RedisOptions;
   bgThemeColor: string;
 }
 
@@ -42,7 +43,11 @@ async function handleSubmit() {
       dsn: props.dsn || undefined,
       tenant_name: form.value.tenantName,
       username: form.value.username,
-      password: form.value.password
+      password: form.value.password,
+      redis_addr: props.redisOptions.addr,
+      redis_db: props.redisOptions.db,
+      jobs_enabled: props.redisOptions.jobs_enabled,
+      embedded_worker: props.redisOptions.embedded_worker
     });
     if (res.error || !res.data) {
       error.value = res.error?.message || 'Initialization failed';

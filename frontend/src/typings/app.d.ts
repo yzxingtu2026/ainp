@@ -1006,6 +1006,7 @@ declare namespace App {
           title: string;
           stepEnv: string;
           stepDatabase: string;
+          stepRedisJobs: string;
           stepAdmin: string;
           stepComplete: string;
           goVersion: string;
@@ -1027,6 +1028,17 @@ declare namespace App {
           dbConnectFail: string;
           dbConnectOk: string;
           testConnection: string;
+          enableJobs: string;
+          redisAddr: string;
+          redisDb: string;
+          embeddedWorker: string;
+          redisPasswordEnv: string;
+          testRedis: string;
+          redisConnectOk: string;
+          redisConnectFail: string;
+          redisStatus: string;
+          redisReachable: string;
+          redisUnavailable: string;
           tenantName: string;
           tenantNamePlaceholder: string;
           adminUsername: string;
@@ -1041,6 +1053,9 @@ declare namespace App {
           completeTitle: string;
           completeDesc: string;
           restartRequired: string;
+          jobsWorkerHint: string;
+          jobsEmbeddedHint: string;
+          jobsDisabledHint: string;
           goLogin: string;
         };
       };

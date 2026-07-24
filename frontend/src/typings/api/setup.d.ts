@@ -16,6 +16,9 @@ declare namespace Api {
       dsn_present: boolean;
       i18n_langs: number;
       i18n_keys: number;
+      redis_addr: string;
+      redis_reachable: boolean;
+      redis_error?: string;
     }
 
     /** DB 测试结果 */
@@ -24,18 +27,31 @@ declare namespace Api {
       error?: string;
     }
 
+    interface RedisOptions {
+      addr: string;
+      db: number;
+      jobs_enabled: boolean;
+      embedded_worker: boolean;
+    }
+
     /** 初始化请求参数 */
     interface InitParams {
       dsn?: string;
       tenant_name: string;
       username: string;
       password: string;
+      redis_addr: string;
+      redis_db: number;
+      jobs_enabled: boolean;
+      embedded_worker: boolean;
     }
 
     /** 初始化结果 */
     interface InitResult {
       installed: boolean;
       installed_at: string;
+      jobs_enabled: boolean;
+      embedded_worker: boolean;
     }
   }
 }

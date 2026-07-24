@@ -343,12 +343,16 @@ action.setup.check_env.name: "Environment Check"
 action.setup.check_env.description: "Check if runtime environment is ready"
 action.setup.test_db.name: "Test Database"
 action.setup.test_db.description: "Test database connectivity"
+action.setup.test_redis.name: "Test Redis"
+action.setup.test_redis.description: "Test Redis connectivity"
 action.setup.initialize.name: "Initialize System"
 action.setup.initialize.description: "Create initial tenant and admin account"
 
 # ── Setup Errors ──
 setup.required: "system not installed, please complete setup wizard"
 setup.already_installed: "system already installed, cannot re-initialize"
+setup.redis_addr_required: "Redis address is required"
+setup.redis_unreachable: "Redis is unreachable; background jobs cannot be enabled"
 
 # ── Demo Capability ──
 capability.demo.name: "Demo"

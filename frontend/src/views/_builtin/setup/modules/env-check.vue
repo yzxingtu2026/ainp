@@ -60,6 +60,12 @@ onMounted(() => {
         </NDescriptionsItem>
         <NDescriptionsItem :label="$t('page.setup.i18nLangs')">{{ envData.i18n_langs }}</NDescriptionsItem>
         <NDescriptionsItem :label="$t('page.setup.i18nKeys')">{{ envData.i18n_keys }}</NDescriptionsItem>
+        <NDescriptionsItem :label="$t('page.setup.redisStatus')">
+          <NTag :type="envData.redis_reachable ? 'success' : 'warning'" size="small">
+            {{ envData.redis_reachable ? $t('page.setup.redisReachable') : $t('page.setup.redisUnavailable') }}
+          </NTag>
+          <span class="ml-8px text-12px text-gray">{{ envData.redis_addr }}</span>
+        </NDescriptionsItem>
       </NDescriptions>
     </NSpin>
 

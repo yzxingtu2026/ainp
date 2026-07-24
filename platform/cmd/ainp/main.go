@@ -38,9 +38,7 @@ func main() {
 		runSetupMode(ctx, cfg, st)
 		return
 	}
-	if cfg.Database.DSN == "" && st.DSN != "" {
-		cfg.Database.DSN = st.DSN
-	}
+	st.ApplyConfig(cfg)
 
 	logging.Info(ctx, "starting ainp", "addr", cfg.Server.Addr)
 	p, err := boot.OpenInstalled(ctx, cfg)
@@ -81,7 +79,7 @@ func runSetupMode(ctx context.Context, cfg *config.Config, st *state.State) {
 	}
 	application := app.New(cfg, nil, nil, tokens)
 	application.Installed = false
-	setupSvc := system.NewSetupService(cfg.Database.DSN, cfg.StateFile, st, func() {
+	setupSvc := system.NewSetupService(cfg, cfg.StateFile, st, func() {
 		application.Installed = true
 	})
 	contracts, err := ai.NewBuiltinAgentContractRegistry()

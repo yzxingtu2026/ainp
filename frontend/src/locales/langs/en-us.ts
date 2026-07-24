@@ -885,6 +885,7 @@ const local: App.I18n.Schema = {
       title: 'Setup Wizard',
       stepEnv: 'Environment Check',
       stepDatabase: 'Database Config',
+      stepRedisJobs: 'Background Jobs',
       stepAdmin: 'Admin Account',
       stepComplete: 'Complete',
       goVersion: 'Go Version',
@@ -906,6 +907,17 @@ const local: App.I18n.Schema = {
       dbConnectFail: 'Database connection failed',
       dbConnectOk: 'Database connection successful',
       testConnection: 'Test Connection',
+      enableJobs: 'Enable Background Jobs',
+      redisAddr: 'Redis Address',
+      redisDb: 'Redis DB',
+      embeddedWorker: 'Embedded Worker (Dev)',
+      redisPasswordEnv: 'Redis passwords are not saved by the wizard. Configure REDIS_PASSWORD in the environment.',
+      testRedis: 'Test Redis',
+      redisConnectOk: 'Redis connection successful',
+      redisConnectFail: 'Redis connection failed',
+      redisStatus: 'Redis Status',
+      redisReachable: 'Reachable',
+      redisUnavailable: 'Unavailable (continue with jobs disabled)',
       tenantName: 'Tenant Name',
       tenantNamePlaceholder: 'Please enter tenant name',
       adminUsername: 'Admin Username',
@@ -921,6 +933,12 @@ const local: App.I18n.Schema = {
       completeDesc: 'System has been successfully initialized. Please restart the backend server before logging in.',
       restartRequired:
         'The backend server needs to be restarted to load the new configuration. Please restart and then click the button below to proceed to login.',
+      jobsWorkerHint:
+        'Background jobs are enabled. Start a standalone ainp-worker in production; development may use jobs.embedded_worker=true.',
+      jobsEmbeddedHint:
+        'Background jobs are enabled with an embedded Worker after restart. This mode is only intended for development or single-node deployments.',
+      jobsDisabledHint:
+        'Background jobs are disabled. Async features such as attachment thumbnails are unavailable until jobs and a Worker are enabled.',
       goLogin: 'Go to Login'
     }
   },

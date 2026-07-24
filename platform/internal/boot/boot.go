@@ -161,7 +161,7 @@ func OpenInstalled(ctx context.Context, cfg *config.Config) (*Platform, error) {
 	if st == nil {
 		st = &state.State{Installed: true}
 	}
-	setupSvc := system.NewSetupService(cfg.Database.DSN, cfg.StateFile, st, nil)
+	setupSvc := system.NewSetupService(cfg, cfg.StateFile, st, nil)
 	if err := system.RegisterSetupActions(application, setupSvc); err != nil {
 		return nil, fmt.Errorf("register setup: %w", err)
 	}
