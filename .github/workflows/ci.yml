@@ -23,6 +23,7 @@ jobs:
         run: git diff --check
       - name: Check Agent rules
         run: |
+          cp .agent/templates/AGENTS.md.tpl AGENTS.md
           npx -y @yz-xingtu/agent-rules@latest sync --target=qoder,cursor
           npx -y @yz-xingtu/agent-rules@latest doctor
 
@@ -53,6 +54,12 @@ jobs:
         with:
           go-version-file: platform/go.mod
           cache-dependency-path: platform/go.sum
+      - name: Configure integration database
+        working-directory: ${{ github.workspace }}
+        run: |
+          docker exec "${{ job.services.postgres.id }}" psql -U ainp -d ainp_test -c "ALTER SYSTEM SET max_connections = 500"
+          docker restart "${{ job.services.postgres.id }}"
+          until docker exec "${{ job.services.postgres.id }}" pg_isready -U ainp -d ainp_test; do sleep 1; done
       - name: Check formatting
         run: test -z "$(gofmt -l .)"
       - name: Vet
