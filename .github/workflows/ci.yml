@@ -119,12 +119,19 @@ jobs:
           context: .
           file: docker/backend.Dockerfile
           push: false
+          load: true
+          tags: ainp-backend:ci
           build-args: |
             VERSION=v0.0.0-ci
             COMMIT=${{ github.sha }}
             BUILD_TIME=1970-01-01T00:00:00Z
           cache-from: type=gha,scope=backend
           cache-to: type=gha,mode=max,scope=backend
+      - name: Smoke test backend executables
+        run: |
+          docker run --rm ainp-backend:ci -h
+          docker run --rm --entrypoint /usr/local/bin/ainp-worker ainp-backend:ci -h
+          docker run --rm --entrypoint /usr/local/bin/ainp-migrate ainp-backend:ci -h
       - name: Build web image
         uses: docker/build-push-action@v6
         with:
