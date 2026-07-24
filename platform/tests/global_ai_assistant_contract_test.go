@@ -49,9 +49,9 @@ func TestGlobalAiAssistantShellLifecycleAndLaunchers(t *testing.T) {
 	if !strings.Contains(base, "<GlobalAiAssistant />") {
 		t.Fatal("global AI assistant must be mounted at the application shell")
 	}
-	for _, expected := range []string{`<Teleport to="body">`, "z-index: 10000", "isolation: isolate", "background: rgb(var(--container-bg-color))"} {
+	for _, expected := range []string{`<Teleport to="body">`, "z-index: 1100", "isolation: isolate", "background: rgb(var(--container-bg-color))"} {
 		if !strings.Contains(panel, expected) {
-			t.Fatalf("global AI assistant must stay above shell stacking contexts with an opaque surface: missing %q", expected)
+			t.Fatalf("global AI assistant must stay above shell content but below application overlays: missing %q", expected)
 		}
 	}
 	for _, expected := range []string{"controller.reset()", "returnFocus", "view.value = 'conversation'"} {

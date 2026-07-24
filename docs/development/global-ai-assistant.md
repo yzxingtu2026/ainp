@@ -19,6 +19,8 @@ Header launcher 在所有 layout mode 中显示，并以动态路由中的 `shel
 
 桌面面板宽度限制为 400px 至 `min(640px, 48vw)`，固定在应用壳右侧；窄屏为全屏分层页。面板没有 Page Context 区域，不展示 resource/capability/tag/Tool ID。Escape、关闭和展开后恢复触发入口焦点，reduced-motion 禁用转场。
 
+侧边栏必须高于应用壳普通内容，但低于 Naive UI 的 Modal、Drawer、Dialog 等统一浮层；从 Composer 打开的附件选择器及侧边栏内其他模态交互必须完整覆盖侧边栏和遮罩整个页面。禁止通过给单个业务弹窗持续叠加更高 z-index 修补层级。
+
 首页只提供进入 Workspace 的明确命令，不承载 Prompt 输入、Conversation 或待发送消息。点击“开始工作”只执行可信路由跳转；首页不得创建第二个 controller，不得通过 URL、Hash 或浏览器历史传递对话内容。
 
 首页模块宫格只投影 `routeStore.menus` 中具有可见子菜单的一级目录，目标取稳定顺序下首个授权叶子路由。标题、图标和路径均继承实时 Menu Registry 投影；权限、身份或菜单变化后不得使用平行缓存或硬编码模块列表。

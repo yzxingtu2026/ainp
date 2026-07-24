@@ -274,7 +274,7 @@ function expandWorkspace() {
 <style scoped>
 .global-ai-assistant {
   position: fixed;
-  z-index: 10000;
+  z-index: 1100;
   top: var(--ai-header-height, 56px);
   right: 0;
   bottom: 0;
