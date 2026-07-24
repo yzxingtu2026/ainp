@@ -3,7 +3,7 @@ import { useI18n } from 'vue-i18n';
 import CodeTag from '@/components/common/code-tag.vue';
 import { CODESET_KEYS } from '@/constants/codeset';
 
-const props = defineProps<{ run: Api.AI.AgentRun }>();
+defineProps<{ run: Api.AI.AgentRun }>();
 const emit = defineEmits<{ cancel: []; resume: []; retry: [] }>();
 const { t } = useI18n();
 </script>

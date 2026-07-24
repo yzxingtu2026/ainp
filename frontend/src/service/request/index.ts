@@ -47,7 +47,8 @@ export const request = createFlatRequest(
       Object.assign(config.headers, { Authorization, 'Accept-Language': getAcceptLanguage() });
 
       // Inject Idempotency-Key if set in config metadata
-      const idempotencyKey = (config as any)._idempotencyKey as string | undefined;
+      const requestConfig = config as typeof config & { idempotencyKey?: string };
+      const { idempotencyKey } = requestConfig;
       if (idempotencyKey) {
         Object.assign(config.headers, { 'Idempotency-Key': idempotencyKey });
       }
@@ -74,11 +75,12 @@ export const request = createFlatRequest(
 
       const expiredTokenCodes = import.meta.env.VITE_SERVICE_EXPIRED_TOKEN_CODES?.split(',').filter(Boolean) || [];
       if (expiredTokenCodes.includes(responseCode)) {
-        if ((response.config as any).__authRetried) return null;
+        const retryConfig = response.config as typeof response.config & { authRetried?: boolean };
+        if (retryConfig.authRetried) return null;
         const success = await handleExpiredRequest(request.state);
         if (success) {
           const Authorization = getAuthorization();
-          (response.config as any).__authRetried = true;
+          retryConfig.authRetried = true;
           Object.assign(response.config.headers, { Authorization, 'Accept-Language': getAcceptLanguage() });
           return instance.request(response.config) as Promise<AxiosResponse>;
         }

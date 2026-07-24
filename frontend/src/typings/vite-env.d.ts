@@ -16,6 +16,12 @@ declare namespace Env {
     readonly VITE_APP_TITLE: string;
     /** The description of the application */
     readonly VITE_APP_DESC: string;
+    /** immutable release tag injected by the trusted build */
+    readonly VITE_BUILD_VERSION?: string;
+    /** git commit injected by the trusted build */
+    readonly VITE_BUILD_COMMIT?: string;
+    /** UTC RFC3339 build time injected by the trusted build */
+    readonly VITE_BUILD_TIME?: string;
     /** The router history mode */
     readonly VITE_ROUTER_HISTORY_MODE?: RouterHistoryMode;
     /** The prefix of the iconify icon */

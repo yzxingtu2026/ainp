@@ -5,6 +5,7 @@ import { loginModuleRecord } from '@/constants/app';
 import { useAppStore } from '@/store/modules/app';
 import { useThemeStore } from '@/store/modules/theme';
 import { $t } from '@/locales';
+import { buildInfo } from '@/utils/build-info';
 import PwdLogin from './modules/pwd-login.vue';
 import CodeLogin from './modules/code-login.vue';
 import Register from './modules/register.vue';
@@ -92,7 +93,7 @@ const activeModule = computed(() => moduleMap[props.module || 'pwd-login']);
           </Transition>
         </main>
 
-        <footer class="login-footer">AINP</footer>
+        <footer class="login-footer">AINP · v{{ buildInfo.version.replace(/^v/, '') }}</footer>
       </div>
     </section>
   </div>

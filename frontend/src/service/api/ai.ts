@@ -101,14 +101,14 @@ export const createAIMessage = (data: Record<string, unknown>, idempotencyKey: s
     url: '/api/v1/ai/messages/create',
     method: 'post',
     data,
-    _idempotencyKey: idempotencyKey
+    idempotencyKey
   } as any);
 export const startAIAgentRun = (data: Record<string, unknown>, idempotencyKey: string) =>
   request<Api.AI.AgentRun>({
     url: '/api/v1/ai/agent-runs/start',
     method: 'post',
     data,
-    _idempotencyKey: idempotencyKey
+    idempotencyKey
   } as any);
 export const fetchAIAgentRun = (id: string) => post<Api.AI.AgentRunDetail>('agent-runs/get', { id });
 export const fetchAIAgentRuns = (params: Record<string, unknown> = {}) =>

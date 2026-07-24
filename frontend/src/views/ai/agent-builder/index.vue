@@ -129,6 +129,20 @@ const previewSupportsVision = computed(() =>
     selectedDeployment.value?.capabilities_json.features?.includes('vision')
   )
 );
+const modelOptions = computed(() => {
+  const enabled = new Map(deployments.value.filter(item => item.status === 'enabled').map(item => [item.id, item]));
+  return aliases.value.flatMap(alias => {
+    const deployment = enabled.get(alias.deployment_id);
+    if (!deployment || deployment.model_type !== 'chat') return [];
+    const caps = (deployment.capabilities_json?.features || []).slice(0, 3).join(', ');
+    return [
+      {
+        label: `${alias.code} · ${deployment.display_name}${caps ? ` (${caps})` : ''}`,
+        value: alias.code
+      }
+    ];
+  });
+});
 const memoryAliasOptions = computed(() => modelOptions.value.filter(option => {
   const alias = aliases.value.find(item => item.code === option.value);
   const deployment = deployments.value.find(item => item.id === alias?.deployment_id);
@@ -260,21 +274,6 @@ const instructionError = computed(() => {
     return $t('page.agentBuilder.instructionTooLong');
   }
   return '';
-});
-
-const modelOptions = computed(() => {
-  const enabled = new Map(deployments.value.filter(item => item.status === 'enabled').map(item => [item.id, item]));
-  return aliases.value.flatMap(alias => {
-    const deployment = enabled.get(alias.deployment_id);
-    if (!deployment || deployment.model_type !== 'chat') return [];
-    const caps = (deployment.capabilities_json?.features || []).slice(0, 3).join(', ');
-    return [
-      {
-        label: `${alias.code} · ${deployment.display_name}${caps ? ` (${caps})` : ''}`,
-        value: alias.code
-      }
-    ];
-  });
 });
 
 function markDirty() {

@@ -7,7 +7,7 @@ export const fetchMemory = (id: string) =>
 export const fetchMemoryProfile = () =>
   request<Api.Memory.Profile>({ url: `${base}/profile`, method: 'post', data: {} });
 const mutation = (url: string, data: Record<string, unknown>) =>
-  request({ url, method: 'post', data, _idempotencyKey: crypto.randomUUID() });
+  request({ url, method: 'post', data, idempotencyKey: crypto.randomUUID() });
 export const confirmMemory = (id: string, revision: number) => mutation(`${base}/confirm`, { id, revision });
 export const rejectMemory = (id: string, revision: number) => mutation(`${base}/reject`, { id, revision });
 export const deleteMemory = (id: string, revision: number) => mutation(`${base}/delete`, { id, revision });

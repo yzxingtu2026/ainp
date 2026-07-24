@@ -50,10 +50,8 @@ export function useIdempotentAction(actionId: string) {
       const result = await fn(key);
       resetKey();
       return result;
-    } catch (err) {
-      // Keep the key for potential retry on network errors
-      throw err;
     } finally {
+      // Failures intentionally retain the key for a network retry.
       isSubmitting.value = false;
     }
   }
