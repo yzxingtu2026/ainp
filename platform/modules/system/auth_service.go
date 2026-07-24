@@ -3,6 +3,7 @@ package system
 import (
 	"context"
 
+	"github.com/yzxingtu2026/ainp/platform/framework/action"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"github.com/yzxingtu2026/ainp/platform/modules/system/model"
@@ -14,8 +15,12 @@ type AuthService struct {
 	preAuth *preAuthStore
 }
 
-func NewAuthService(db *gorm.DB) *AuthService {
-	return &AuthService{db: db, preAuth: newPreAuthStore(db)}
+func NewAuthService(db *gorm.DB, registries ...*action.Registry) *AuthService {
+	var actions *action.Registry
+	if len(registries) > 0 {
+		actions = registries[0]
+	}
+	return &AuthService{db: db, preAuth: newPreAuthStore(db, actions)}
 }
 
 type UserProfile struct {

@@ -30,7 +30,7 @@ func Register(a *app.App) error {
 		return err
 	}
 
-	svc := NewAuthService(a.DB)
+	svc := NewAuthService(a.DB, a.Actions)
 	a.Authorization = svc
 	if a.Authenticators == nil {
 		return fmt.Errorf("authenticator registry is required")

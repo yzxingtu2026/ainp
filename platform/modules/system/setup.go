@@ -350,21 +350,6 @@ func (s *SetupService) createInitialData(ctx context.Context, db *gorm.DB, tenan
 			}
 		}
 
-		// 分配权限
-		perms := append([]string{
-			"demo.hello",
-			"demo.echo",
-		}, adminMinimumPermissions...)
-		for _, p := range perms {
-			if err := tx.Create(&model.RolePermission{
-				ID:         uuid.NewString(),
-				RoleID:     roleID,
-				Permission: p,
-			}).Error; err != nil {
-				return fmt.Errorf("create permission %s: %w", p, err)
-			}
-		}
-
 		logging.Info(ctx, "initial data created",
 			"tenant_id", tenantID,
 			"user_id", userID,

@@ -82,6 +82,15 @@ func TestRoleManagementActionsAndMenuAreRegistered(t *testing.T) {
 	if !foundHiddenProfile {
 		t.Fatal("profile route must remain registered but hidden from the sidebar")
 	}
+	assignable := make(map[string]struct{})
+	for _, permission := range system.AssignablePermissions(application.Actions) {
+		assignable[permission] = struct{}{}
+	}
+	for _, minimum := range system.AdminMinimumPermissions() {
+		if _, ok := assignable[minimum]; !ok {
+			t.Fatalf("admin minimum permission is not assignable: %s", minimum)
+		}
+	}
 }
 
 func TestRoleManagementTenantIsolationAndProtection(t *testing.T) {
@@ -153,7 +162,7 @@ func TestRoleManagementTenantIsolationAndProtection(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	authService := system.NewAuthService(testDB)
+	authService := system.NewAuthService(testDB, actions)
 	service := system.NewRoleService(testDB, authService, actions, capabilities)
 	ctxA := auth.WithContext(context.Background(), &auth.Context{TenantID: "tenant-a", UserID: "user-a", Realm: auth.RealmTenant, Authenticated: true})
 	ctxB := auth.WithContext(context.Background(), &auth.Context{TenantID: "tenant-b", UserID: "user-b", Realm: auth.RealmTenant, Authenticated: true})
@@ -214,6 +223,38 @@ func TestRoleManagementTenantIsolationAndProtection(t *testing.T) {
 	if _, err := service.Delete(ctxA, json.RawMessage(`{"id":"admin-a"}`)); appErrorCode(err) != errs.CodeConflict {
 		t.Fatalf("built-in role delete error = %v", err)
 	}
+	if _, err := service.UpdatePermissions(ctxA, json.RawMessage(`{"id":"admin-a","permissions":["system.role_list"]}`)); appErrorCode(err) != errs.CodeConflict {
+		t.Fatalf("built-in admin permissions must be read-only: %v", err)
+	}
+	if err := testDB.Create(&model.UserRole{ID: "ur-admin-a", TenantID: "tenant-a", UserID: "user-a", RoleID: admin.ID}).Error; err != nil {
+		t.Fatal(err)
+	}
+	_, adminPermissions, err := authService.LoadRolesAndPermissions(context.Background(), "user-a", "tenant-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !containsString(adminPermissions, "system.shared") || containsString(adminPermissions, "system.authenticated") {
+		t.Fatalf("built-in admin projection = %#v", adminPermissions)
+	}
+	if err := actions.Register(action.Action{ID: "system.new_permission", Handler: dummy, Meta: action.Metadata{
+		Capability: "system", Name: "New permission", HTTP: &action.HTTPMeta{Method: "POST", Path: "/system.new_permission"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	_, adminPermissions, err = authService.LoadRolesAndPermissions(context.Background(), "user-a", "tenant-a")
+	if err != nil || !containsString(adminPermissions, "system.new_permission") {
+		t.Fatalf("new permission was not projected dynamically: %#v, %v", adminPermissions, err)
+	}
+	if err := testDB.Model(&admin).Update("status", status.ActivationDisabled).Error; err != nil {
+		t.Fatal(err)
+	}
+	_, disabledPermissions, err := authService.LoadRolesAndPermissions(context.Background(), "user-a", "tenant-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if containsString(disabledPermissions, "system.new_permission") {
+		t.Fatalf("disabled built-in admin expanded permissions: %#v", disabledPermissions)
+	}
 
 	catalogAny, err := service.PermissionCatalog(ctxA, json.RawMessage(`{}`))
 	if err != nil {
@@ -237,6 +278,15 @@ func TestRoleManagementTenantIsolationAndProtection(t *testing.T) {
 			t.Fatalf("shared permission was not deduplicated: %#v", item)
 		}
 	}
+}
+
+func containsString(values []string, wanted string) bool {
+	for _, value := range values {
+		if value == wanted {
+			return true
+		}
+	}
+	return false
 }
 
 func appErrorCode(err error) int {

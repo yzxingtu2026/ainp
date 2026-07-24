@@ -36,6 +36,7 @@ const catalog = ref<Api.Role.PermissionGroup[]>([]);
 const selectedPermissions = ref<string[]>([]);
 const permissionKeyword = ref('');
 const expandedPermissionNodes = ref<Array<string | number>>([]);
+const isBuiltinAdmin = computed(() => editing.value?.is_builtin && editing.value.code === 'admin');
 
 usePageContextProvider(() => {
   const editorMode = editorVisible.value ? (editing.value ? 'edit' : 'create') : null;
@@ -217,6 +218,11 @@ async function openPermissions(role: Api.Role.Record) {
   editing.value = role;
   permissionsVisible.value = true;
   permissionKeyword.value = '';
+  if (role.is_builtin && role.code === 'admin') {
+    const roleResult = await fetchRole(role.id);
+    if (!roleResult.error && roleResult.data) selectedPermissions.value = roleResult.data.permissions || [];
+    return;
+  }
   const [roleResult, catalogResult] = await Promise.all([fetchRole(role.id), fetchPermissionCatalog()]);
   if (!roleResult.error && roleResult.data) selectedPermissions.value = roleResult.data.permissions || [];
   if (!catalogResult.error && catalogResult.data) {
@@ -303,23 +309,28 @@ onMounted(loadRoles);
       <template #footer><NSpace justify="end"><NButton @click="editorVisible = false">{{ $t('common.cancel') }}</NButton><NButton type="primary" :loading="saving" @click="saveRole">{{ $t('common.confirm') }}</NButton></NSpace></template>
     </NModal>
 
-    <NModal v-model:show="permissionsVisible" preset="card" class="w-760px max-w-95vw" :title="$t('page.role.permissionTitle', { name: editing?.name || '' })">
-      <NInput v-model:value="permissionKeyword" clearable class="mb-12px" :placeholder="$t('page.role.permissionSearch')" />
-      <NScrollbar class="max-h-55vh">
-        <NTree
-          block-line
-          checkable
-          cascade
-          check-strategy="child"
-          :data="permissionTreeData"
-          :checked-keys="selectedPermissions"
-          :expanded-keys="expandedPermissionNodes"
-          :render-label="renderPermissionLabel"
-          @update:checked-keys="updatePermissionSelection"
-          @update:expanded-keys="keys => expandedPermissionNodes = keys"
-        />
-      </NScrollbar>
-      <template #footer><NSpace justify="space-between"><span>{{ $t('page.role.selectedCount', { count: selectedPermissions.length }) }}</span><NSpace><NButton @click="permissionsVisible = false">{{ $t('common.cancel') }}</NButton><NButton type="primary" :loading="saving" @click="savePermissions">{{ $t('common.confirm') }}</NButton></NSpace></NSpace></template>
+    <NModal v-model:show="permissionsVisible" preset="card" class="w-760px max-w-95vw" :title="isBuiltinAdmin ? $t('page.role.superAdmin') : $t('page.role.permissionTitle', { name: editing?.name || '' })">
+      <NAlert v-if="isBuiltinAdmin" type="info" :title="$t('page.role.superAdmin')">
+        {{ $t('page.role.superAdminDescription') }}
+      </NAlert>
+      <template v-else>
+        <NInput v-model:value="permissionKeyword" clearable class="mb-12px" :placeholder="$t('page.role.permissionSearch')" />
+        <NScrollbar class="max-h-55vh">
+          <NTree
+            block-line
+            checkable
+            cascade
+            check-strategy="child"
+            :data="permissionTreeData"
+            :checked-keys="selectedPermissions"
+            :expanded-keys="expandedPermissionNodes"
+            :render-label="renderPermissionLabel"
+            @update:checked-keys="updatePermissionSelection"
+            @update:expanded-keys="keys => expandedPermissionNodes = keys"
+          />
+        </NScrollbar>
+      </template>
+      <template #footer><NSpace justify="space-between"><span>{{ isBuiltinAdmin ? $t('page.role.allPermissions') : $t('page.role.selectedCount', { count: selectedPermissions.length }) }}</span><NSpace><NButton @click="permissionsVisible = false">{{ isBuiltinAdmin ? $t('common.close') : $t('common.cancel') }}</NButton><NButton v-if="!isBuiltinAdmin" type="primary" :loading="saving" @click="savePermissions">{{ $t('common.confirm') }}</NButton></NSpace></NSpace></template>
     </NModal>
   </div>
 </template>
