@@ -345,6 +345,7 @@ function onConfirmationResolved(status: 'approved' | 'rejected', result?: Api.AI
   flex: none;
   display: grid;
   place-items: center;
+  overflow: hidden;
   border-radius: 50%;
   background: rgba(127, 127, 127, 0.16);
   color: rgba(127, 127, 127, 0.95);
