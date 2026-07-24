@@ -161,7 +161,7 @@ func registerMCPTestAction(t *testing.T, registry *action.Registry, id string, a
 	}
 	err := registry.Register(action.Action{ID: id, Handler: handler, Meta: action.Metadata{
 		Capability: "demo", Surface: auth.RealmTenant, Access: access, Permission: permissionCode, Name: id,
-		AI: &action.AIMeta{ExposeTool: true, Risk: risk, SideEffect: sideEffect, RequiresConfirmation: sideEffect != "read", Summary: "summary", HumanDescription: "description", ResultSummary: "done", InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false,"x-ainp-input-contract":"explicit-v1"}`), OutputSchema: json.RawMessage(`{"type":"object"}`)},
+		AI: &action.AIMeta{ExposeTool: true, ToolTitle: "执行测试动作", Risk: risk, SideEffect: sideEffect, RequiresConfirmation: sideEffect != "read", Summary: "summary", HumanDescription: "description", ResultSummary: "done", InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false,"x-ainp-input-contract":"explicit-v1"}`), OutputSchema: json.RawMessage(`{"type":"object"}`)},
 	}})
 	if err != nil {
 		t.Fatal(err)

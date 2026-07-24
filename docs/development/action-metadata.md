@@ -243,7 +243,8 @@ RegisterAction(Action{
     AI: &AIMeta{
       ExposeTool: true, Risk: "medium", SideEffect: "write",
       RequiresConfirmation: true,
-      Summary: "创建采购订单", HumanDescription: "创建一张新的采购订单",
+      ToolTitle: "创建采购订单",
+      Summary: "创建采购订单", HumanDescription: "在当前租户创建一张新的采购订单",
       ResultSummary: "采购订单已创建",
       InputSchema: action.InputSchemaFor[OrderCreateRequest](),
       OutputSchema: action.SchemaFor[OrderView](),
@@ -251,6 +252,8 @@ RegisterAction(Action{
   },
 })
 ```
+
+暴露为 Tool 的 Action 必须显式声明 `ToolTitle`，用于 Agent/MCP 工具过程中的 `Definition.TitleForHuman`。标题使用简短、准确的“动作 + 对象”语义；`Metadata.Name` 继续服务通用 Action 展示，`Summary` 与 `HumanDescription` 分别服务模型说明和用户补充说明。`SideEffect` 是治理分类，不能用来自动拼接查询、创建、更新、预览、归档等动作标题。
 
 ## 注册顺序建议
 

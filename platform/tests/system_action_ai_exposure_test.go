@@ -60,8 +60,10 @@ func TestSystemManagementAndPersonalActionsExposeSafeAIContracts(t *testing.T) {
 		t.Fatal(err)
 	}
 	projectedIDs := make(map[string]bool, len(projected))
+	projectedTitles := make(map[string]string, len(projected))
 	for _, definition := range projected {
 		projectedIDs[definition.RuntimeRef] = true
+		projectedTitles[definition.RuntimeRef] = definition.TitleForHuman
 		if action.HasExplicitInputContract(definition.InputSchema) {
 			t.Fatalf("Action contract marker leaked into projected Tool schema: %s", definition.RuntimeRef)
 		}
@@ -74,6 +76,16 @@ func TestSystemManagementAndPersonalActionsExposeSafeAIContracts(t *testing.T) {
 	if projectedIDs[system.ActionUserCreate] || projectedIDs[system.ActionUserPasswordReset] {
 		t.Fatal("credential-bearing user Actions must not be projected as Action Tools")
 	}
+	for actionID, want := range map[string]string{
+		system.ActionUserList:                    "查询系统用户列表",
+		system.ActionUserUpdate:                  "更新系统用户资料",
+		system.ActionAttachmentDownloadPrepare:   "准备下载附件",
+		system.ActionNotificationTemplatePreview: "预览通知模板",
+	} {
+		if got := projectedTitles[actionID]; got != want {
+			t.Fatalf("Action %s tool title = %q, want %q", actionID, got, want)
+		}
+	}
 	userUpdate, _ := application.Actions.Get(system.ActionUserUpdate)
 	assertSchemaRequired(t, userUpdate.Meta.AI.InputSchema, "id", "display_name")
 }
@@ -85,7 +97,7 @@ func assertSystemAIContract(t *testing.T, application *app.App, actionID string,
 		t.Fatalf("Action %s must expose an AI contract: registered=%t meta=%#v", actionID, ok, registered.Meta.AI)
 	}
 	meta := registered.Meta.AI
-	if !json.Valid(meta.InputSchema) || meta.Summary == "" || meta.HumanDescription == "" || meta.ResultSummary == "" {
+	if !json.Valid(meta.InputSchema) || meta.ToolTitle == "" || meta.Summary == "" || meta.HumanDescription == "" || meta.ResultSummary == "" {
 		t.Fatalf("Action %s has an incomplete AI contract: %#v", actionID, meta)
 	}
 	if !action.HasExplicitInputContract(meta.InputSchema) {

@@ -52,6 +52,8 @@ Handle 使用服务端签名并绑定 tenant、user、realm、session/auth versi
 
 Assistant Tool Call 创建时从当前投影 Definition 固化 `ToolPresentation{title,description}` 快照。模型协议仍保留 `tool_name` / `tool_call_id`，但前端主视图只消费展示快照；历史消息没有快照时才降级显示原始工具名。Definition 后续改名不得改变历史消息，前端禁止解析 `action__...`、`meta__...` 或维护具体 Tool ID 名称映射。
 
+Action Tool 的 `TitleForHuman` 必须来自注册处显式声明的 `AIMeta.ToolTitle`，并采用准确的“动作 + 对象”短语；`Metadata.Name` 不承担工具过程标题职责。`SideEffect` 只用于风险治理，不能据此推导“查询/更新/删除”等标题，因为 read/write 还包含搜索、预览、解析、创建、归档、重置、绑定等不同业务动作。缺少 `ToolTitle` 的 exposed Action 必须在注册校验阶段 fail-closed。
+
 确认创建时在同一事务边界固化版本化 `ConfirmationPresentation`，包含 Tool 标题/描述、操作摘要和结构化 Details。原始 `ArgumentsJSON`、`ArgumentsHash`、`SchemaHash` 始终是批准后执行事实，展示快照禁止反向作为执行输入。SSE 只通知 confirmation ID 和状态，不动态查询业务资源或拼接授权文案。
 
 没有领域 Presenter 时，默认生成器只读取 Definition Human 文案及 Input Schema 明确声明的人类标签，并只展示安全短标量；敏感字段、UUID/内部 ID、数组和嵌套对象不进入普通用户主视图。复杂 Tool 通过 `ToolRegistry.RegisterConfirmationPresenter` 在所属模块注册可信 Presenter。Presenter 可在当前 actor 权限和租户范围内只读解析资源名称，不得产生副作用；查询失败、目标删除或无权读取时 Runtime 自动使用安全默认展示。Tool Runtime 和 SSE 禁止按具体 Tool ID 增加业务分支。

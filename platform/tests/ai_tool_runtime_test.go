@@ -219,7 +219,7 @@ func TestActionToolProviderUsesTypedSchemaAndRegistryInvoke(t *testing.T) {
 	handler := action.JSON(func(_ context.Context, r exposedRequest) (any, error) {
 		return map[string]any{"resource_id": r.ResourceID}, nil
 	})
-	err := actions.Register(action.Action{ID: "demo.read", Handler: handler, Meta: action.Metadata{Capability: "demo", Access: action.AccessAuthenticated, Name: "读取资源", AI: &action.AIMeta{ExposeTool: true, Risk: "low", SideEffect: "read", Summary: "读取指定资源", HumanDescription: "读取资源", ResultSummary: "已读取资源", InputSchema: action.InputSchemaFor[exposedRequest]()}}})
+	err := actions.Register(action.Action{ID: "demo.read", Handler: handler, Meta: action.Metadata{Capability: "demo", Access: action.AccessAuthenticated, Name: "资源详情", AI: &action.AIMeta{ExposeTool: true, ToolTitle: " 读取资源 ", Risk: "low", SideEffect: "read", Summary: "读取指定资源", HumanDescription: "读取当前用户有权访问的资源", ResultSummary: "已读取资源", InputSchema: action.InputSchemaFor[exposedRequest]()}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,6 +230,9 @@ func TestActionToolProviderUsesTypedSchemaAndRegistryInvoke(t *testing.T) {
 	}
 	if !strings.Contains(string(items[0].InputSchema), `"resource_id"`) {
 		t.Fatalf("typed schema missing: %s", items[0].InputSchema)
+	}
+	if items[0].TitleForHuman != "读取资源" || items[0].Name != "资源详情" || items[0].DescriptionForHuman != "读取当前用户有权访问的资源" {
+		t.Fatalf("action presentation metadata projected incorrectly: %#v", items[0])
 	}
 	ctx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t1", UserID: "u1", SessionID: "s1", Realm: auth.RealmTenant})
 	result, err := (&aitool.ActionExecutor{Actions: actions}).Execute(ctx, aitool.LoadedTool{Definition: items[0]}, json.RawMessage(`{"resource_id":"r1"}`))
