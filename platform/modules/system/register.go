@@ -79,7 +79,7 @@ func Register(a *app.App) error {
 	if a.ToolRegistry == nil {
 		return fmt.Errorf("tool registry is required")
 	}
-	if err := a.ToolRegistry.RegisterConfirmationPresenter("action:"+ActionUserRolesUpdate, userRolesConfirmationPresenter{db: a.DB}); err != nil {
+	if err := a.ToolRegistry.RegisterConfirmationPresenter("action:"+ActionUserRolesUpdate, userRolesConfirmationPresenter{users: userSvc}); err != nil {
 		return err
 	}
 	if a.PageContexts == nil {
