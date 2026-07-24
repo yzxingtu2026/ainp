@@ -1,0 +1,88 @@
+name: ainp-demo
+
+x-backend: &backend
+  image: ghcr.io/yzxingtu2026/ainp-backend:${AINP_IMAGE_TAG:?set AINP_IMAGE_TAG to vMAJOR.MINOR.PATCH}
+  restart: unless-stopped
+  environment:
+    DATABASE_DSN: host=postgres user=${POSTGRES_USER:-ainp} password=${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD} dbname=${POSTGRES_DB:-ainp} port=5432 sslmode=disable TimeZone=UTC
+    REDIS_ADDR: redis:6379
+    STORAGE_PROVIDER: local
+    STORAGE_LOCAL_ROOT: /var/lib/ainp/objects
+    MCP_BASE_URL: ${PUBLIC_BASE_URL:?set PUBLIC_BASE_URL}
+    MCP_WEB_BASE_URL: ${PUBLIC_BASE_URL:?set PUBLIC_BASE_URL}
+    JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
+    AI_CREDENTIAL_ENCRYPTION_KEY: ${AI_CREDENTIAL_ENCRYPTION_KEY:?set AI_CREDENTIAL_ENCRYPTION_KEY}
+  volumes:
+    - ./config.yaml:/app/config/config.yaml:ro
+    - state:/var/lib/ainp/state
+    - objects:/var/lib/ainp/objects
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ainp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-ainp}
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ainp} -d ${POSTGRES_DB:-ainp}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7.4.2-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api:
+    <<: *backend
+    command: ["-config", "/app/config/config.yaml"]
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  worker:
+    <<: *backend
+    entrypoint: ["/usr/local/bin/ainp-worker"]
+    command: ["-config", "/app/config/config.yaml"]
+    depends_on:
+      api:
+        condition: service_healthy
+
+  web:
+    image: ghcr.io/yzxingtu2026/ainp-web:${AINP_IMAGE_TAG:?set AINP_IMAGE_TAG to vMAJOR.MINOR.PATCH}
+    restart: unless-stopped
+    ports:
+      - "${WEB_BIND_ADDR:-127.0.0.1}:${WEB_PORT:-8080}:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  postgres:
+  redis:
+  state:
+  objects:

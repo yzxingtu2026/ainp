@@ -1,0 +1,34 @@
+server:
+  addr: ":8080"
+  mode: release
+database:
+  dsn: "overridden-by-DATABASE_DSN"
+logging:
+  level: info
+  format: json
+auth:
+  refresh_ttl: 720h
+  dev_token_enabled: false
+  jwt:
+    secret: "overridden-by-JWT_SECRET"
+    issuer: ainp
+    ttl: 15m
+mcp:
+  base_url: "overridden-by-MCP_BASE_URL"
+  web_base_url: "overridden-by-MCP_WEB_BASE_URL"
+i18n:
+  default_language: zh-CN
+  dir: /app/i18n
+ai:
+  credential_encryption_key: "overridden-by-AI_CREDENTIAL_ENCRYPTION_KEY"
+storage:
+  provider: local
+  local:
+    root_dir: /var/lib/ainp/objects
+outbox:
+  enabled: true
+  transport: postgres
+jobs:
+  enabled: true
+  embedded_worker: false
+state_file: /var/lib/ainp/state/state.yaml

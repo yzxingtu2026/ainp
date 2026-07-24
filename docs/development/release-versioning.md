@@ -19,3 +19,5 @@ Go 构建通过 `-ldflags -X` 注入 `framework/buildinfo` 的私有变量；`ai
 `.github/workflows/ci.yml` 是 PR 和 `main` 的测试事实源。Tag 发布工作流应依赖相同门禁结果，不复制一套测试定义；发布、镜像和部署任务不得使用会取消运行中任务的 concurrency 配置。
 
 后续阶段的容器镜像必须写入对应 OCI `version`、`revision`、`created`、`source` labels，并只允许不可变 SemVer Tag 或 digest 进入正式 Compose。禁止以 `latest` 作为部署版本。
+
+Phase 2 已提供 backend/web 两个多阶段镜像、同源 Web 代理、GHCR Tag 构建和演示 Compose 基线，具体使用方式见 [容器部署基线](../deployment/containers.md)。migration runner、服务器备份/部署/回滚和 Draft Release 状态机仍属于后续阶段，当前 Compose 不应被描述为自动升级方案。
