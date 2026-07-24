@@ -70,14 +70,16 @@ type userUpdateRequest struct {
 }
 
 type selfProfileUpdateRequest struct {
-	DisplayName string `json:"display_name" validate:"required,max=128"`
+	DisplayName        string  `json:"display_name" validate:"required,max=128"`
+	AvatarAttachmentID *string `json:"avatar_attachment_id,omitempty" validate:"omitempty"`
 }
 
 type SelfProfileView struct {
 	UserView
-	MemoryPreferredAddress string `json:"memory_preferred_address"`
-	EffectiveAddress       string `json:"effective_address"`
-	AddressSource          string `json:"address_source"`
+	AvatarAttachmentID     *string `json:"avatar_attachment_id,omitempty"`
+	MemoryPreferredAddress string  `json:"memory_preferred_address"`
+	EffectiveAddress       string  `json:"effective_address"`
+	AddressSource          string  `json:"address_source"`
 }
 
 func (s *UserService) SelfProfile(ctx context.Context, _ json.RawMessage) (any, error) {
@@ -97,7 +99,7 @@ func (s *UserService) SelfProfile(ctx context.Context, _ json.RawMessage) (any, 
 	if err != nil {
 		return nil, err
 	}
-	view := SelfProfileView{UserView: userView(*user, roleMap[userID])}
+	view := SelfProfileView{UserView: userView(*user, roleMap[userID]), AvatarAttachmentID: user.AvatarAttachmentID}
 	rows, qerr := tenant.TenantRaw[struct{ PreferredAddress string }](tdb, `SELECT COALESCE(profile_json->>'preferred_address','') AS preferred_address
 FROM ai_memory_current_profiles WHERE tenant_id = ? AND user_id = ? AND agent_id IS NULL AND status = 'ready'
 ORDER BY source_revision DESC LIMIT 1`, userID)
@@ -124,6 +126,10 @@ func (s *UserService) UpdateSelfProfile(ctx context.Context, input json.RawMessa
 		return nil, err
 	}
 	req.DisplayName = strings.TrimSpace(req.DisplayName)
+	if req.AvatarAttachmentID != nil {
+		trimmed := strings.TrimSpace(*req.AvatarAttachmentID)
+		req.AvatarAttachmentID = &trimmed
+	}
 	if req.DisplayName == "" {
 		return nil, errs.ValidationKey("common.validation_failed", "display_name is required")
 	}
@@ -132,12 +138,34 @@ func (s *UserService) UpdateSelfProfile(ctx context.Context, input json.RawMessa
 	if err != nil {
 		return nil, err
 	}
-	if err := tenant.TenantExec(tdb, `WITH scoped_user AS (
+	if req.AvatarAttachmentID != nil && *req.AvatarAttachmentID != "" {
+		rows, queryErr := tenant.TenantRaw[struct{ ID string }](tdb, `SELECT a.id
+FROM attachments a
+JOIN attachment_links l ON l.tenant_id = a.tenant_id AND l.attachment_id = a.id
+WHERE a.tenant_id = ? AND a.id = ? AND a.uploader_id = ? AND a.status = 'ready'
+  AND a.content_type LIKE 'image/%'
+  AND l.resource_type = 'system.user_profile' AND l.resource_id = ? AND l.field = 'avatar'
+LIMIT 1`, *req.AvatarAttachmentID, userID, userID)
+		if queryErr != nil || len(rows) != 1 {
+			return nil, errs.ValidationKey("common.validation_failed", "avatar attachment must be a bound ready image uploaded by the current user")
+		}
+	}
+	var updateErr error
+	if req.AvatarAttachmentID == nil {
+		updateErr = tenant.TenantExec(tdb, `WITH scoped_user AS (
   SELECT id FROM users WHERE tenant_id = ? AND id = ?
 )
 UPDATE users SET display_name = ?, updated_at = ?
-WHERE id IN (SELECT id FROM scoped_user)`, userID, req.DisplayName, time.Now().UTC()); err != nil {
-		return nil, normalizeUserError(err, "update self profile failed")
+WHERE id IN (SELECT id FROM scoped_user)`, userID, req.DisplayName, time.Now().UTC())
+	} else {
+		updateErr = tenant.TenantExec(tdb, `WITH scoped_user AS (
+  SELECT id FROM users WHERE tenant_id = ? AND id = ?
+)
+UPDATE users SET display_name = ?, avatar_attachment_id = NULLIF(?, ''), updated_at = ?
+WHERE id IN (SELECT id FROM scoped_user)`, userID, req.DisplayName, *req.AvatarAttachmentID, time.Now().UTC())
+	}
+	if updateErr != nil {
+		return nil, normalizeUserError(updateErr, "update self profile failed")
 	}
 	return s.SelfProfile(ctx, nil)
 }

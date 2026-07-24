@@ -32,8 +32,8 @@ const suggestions = computed(() =>
     : fallbackSuggestions.value
   ).slice(0, props.density === 'sidebar' ? 3 : 4)
 );
-const welcomeGreeting = computed(() =>
-  personalization.greeting.value || $t('page.aiWorkspace.greeting', { name: greetingName.value })
+const welcomeGreeting = computed(
+  () => personalization.greeting.value || $t('page.aiWorkspace.greeting', { name: greetingName.value })
 );
 
 let surfaceElement: HTMLElement | null = null;
@@ -88,6 +88,8 @@ onBeforeUnmount(() => {
       <ChatMessageList
         v-else
         :messages="controller.messages.value"
+        :user-avatar-attachment-id="authStore.userInfo.avatarAttachmentId"
+        :user-name="authStore.userInfo.userName"
         :streaming-text="controller.displayStreamingText.value"
         :thinking="thinking"
         :thinking-hint="controller.thinkingHint.value"

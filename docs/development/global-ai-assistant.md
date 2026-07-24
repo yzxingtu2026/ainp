@@ -6,6 +6,7 @@
 
 - `useAiConversationController()` 是应用生命周期单例，唯一负责 Conversation、Message、SSE、Run cursor、轮询、确认、附件、幂等和 Page Context 发送时捕获。
 - `AiConversationSurface` 统一渲染消息、流式/thinking、工具活动/确认、错误、空状态和 Composer，只提供 workspace/sidebar 密度变体。
+- 用户消息头像优先使用认证态中的当前用户头像 attachment ID，并通过统一附件 prepare/download 协议加载；未设置、无权访问或加载失败时降级为账户图标。Workspace 与全局侧边栏必须共享这一渲染逻辑。
 - `ai-assistant` Pinia Store 只管理面板 visible 与 conversation/history/run 二级视图，不复制协议状态。
 - Workspace、全局侧边栏只负责布局。禁止在任一容器新增第二套 send/watch/reconnect/message merge。
 

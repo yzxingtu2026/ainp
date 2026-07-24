@@ -49,6 +49,7 @@ export function fetchGetUserInfo() {
       realm: profile.realm,
       userId: profile.userId || profile.id,
       userName: profile.userName || profile.display_name || profile.username,
+      avatarAttachmentId: profile.avatarAttachmentId || profile.avatar_attachment_id || null,
       roles: profile.roles || [],
       buttons: permissionButtons
     };
@@ -90,7 +91,9 @@ export function fetchAuthSessions() {
 
 export function revokeAuthSession(sessionId: string) {
   return request<{ revoked: boolean }>({
-    url: '/api/v1/system/auth/sessions/revoke', method: 'post', data: { session_id: sessionId }
+    url: '/api/v1/system/auth/sessions/revoke',
+    method: 'post',
+    data: { session_id: sessionId }
   });
 }
 

@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, toRef, watch } from 'vue';
 import { $t } from '@/locales';
+import { useAttachmentAvatar } from '@/hooks/business/agent-avatar';
 import type { ToolOperation } from './tool-activity';
 
 defineOptions({ name: 'ChatMessageList' });
@@ -24,6 +25,8 @@ const props = withDefaults(
     activeRunId?: string;
     confirmations?: Api.AI.ToolConfirmation[];
     error?: string;
+    userAvatarAttachmentId?: string | null;
+    userName?: string;
   }>(),
   {
     streamingText: '',
@@ -31,9 +34,14 @@ const props = withDefaults(
     thinkingHint: () => ({ icon: 'mdi:brain-outline', text: '' }),
     activeRunId: '',
     confirmations: () => [],
-    error: ''
+    error: '',
+    userAvatarAttachmentId: null,
+    userName: ''
   }
 );
+
+const userAvatarAttachmentId = toRef(props, 'userAvatarAttachmentId');
+const { url: userAvatarUrl } = useAttachmentAvatar(userAvatarAttachmentId);
 
 const emit = defineEmits<{
   confirmationResolved: [status: 'approved' | 'rejected', result?: Api.AI.ToolResult];
@@ -233,8 +241,9 @@ function onConfirmationResolved(status: 'approved' | 'rejected', result?: Api.AI
             {{ $t('chat.imageAttachment') }}
           </NTag>
         </div>
-        <span class="message__user-avatar" aria-hidden="true">
-          <SvgIcon icon="mdi:account" />
+        <span class="message__user-avatar" role="img" :aria-label="userName || '当前用户头像'">
+          <img v-if="userAvatarUrl" :src="userAvatarUrl" :alt="userName" />
+          <SvgIcon v-else icon="mdi:account" />
         </span>
       </article>
 
@@ -340,6 +349,12 @@ function onConfirmationResolved(status: 'approved' | 'rejected', result?: Api.AI
   background: rgba(127, 127, 127, 0.16);
   color: rgba(127, 127, 127, 0.95);
   font-size: 22px;
+}
+
+.message__user-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .thinking-mascot {

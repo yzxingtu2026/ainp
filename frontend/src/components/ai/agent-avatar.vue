@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { toRef } from 'vue';
 import defaultAgentAvatar from '@/assets/imgs/ai-workspace/mascot-blink.png';
-import { useAgentAvatar } from '@/hooks/business/agent-avatar';
+import { useAttachmentAvatar } from '@/hooks/business/agent-avatar';
 
 defineOptions({ name: 'AgentAvatar' });
 
@@ -15,7 +15,7 @@ const props = withDefaults(
 );
 
 const attachmentId = toRef(props, 'attachmentId');
-const { url, status } = useAgentAvatar(attachmentId);
+const { url, status } = useAttachmentAvatar(attachmentId);
 </script>
 
 <template>

@@ -103,6 +103,37 @@ func TestUserSettingsAreSelfOnlyAndRevisioned(t *testing.T) {
 	if updatedProfile.(system.SelfProfileView).DisplayName != "Alice Updated" {
 		t.Fatalf("updated self profile=%#v", updatedProfile)
 	}
+	if updatedProfile.(system.SelfProfileView).AvatarAttachmentID != nil {
+		t.Fatalf("legacy profile update unexpectedly changed avatar: %#v", updatedProfile)
+	}
+	for _, item := range []model.Attachment{
+		{ID: "avatar-a", TenantID: "tenant-a", Provider: "local", ObjectKey: "tenant-a/avatar-a", OriginalName: "avatar.png", ContentType: "image/png", Size: 10, Status: status.AttachmentReady, UploaderID: "user-a"},
+		{ID: "avatar-b", TenantID: "tenant-a", Provider: "local", ObjectKey: "tenant-a/avatar-b", OriginalName: "other.png", ContentType: "image/png", Size: 10, Status: status.AttachmentReady, UploaderID: "user-b"},
+	} {
+		if err := testDB.Create(&item).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := testDB.Create(&model.AttachmentLink{ID: "avatar-link-a", TenantID: "tenant-a", AttachmentID: "avatar-a", ResourceType: system.UserProfileAttachmentResourceType, ResourceID: "user-a", Field: system.UserProfileAvatarField}).Error; err != nil {
+		t.Fatal(err)
+	}
+	updatedProfile, err = userService.UpdateSelfProfile(ctx("user-a"), json.RawMessage(`{"display_name":"Alice Updated","avatar_attachment_id":"avatar-a"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	avatarID := updatedProfile.(system.SelfProfileView).AvatarAttachmentID
+	if avatarID == nil || *avatarID != "avatar-a" {
+		t.Fatalf("avatar was not saved: %#v", updatedProfile)
+	}
+	if _, err := userService.UpdateSelfProfile(ctx("user-a"), json.RawMessage(`{"display_name":"Alice Updated","avatar_attachment_id":"avatar-b"}`)); appErrorCode(err) != errs.CodeValidation {
+		t.Fatalf("other user's avatar must be rejected: %v", err)
+	}
+	if err := application.AttachmentPolicies.Allow(ctx("user-a"), system.UserProfileAttachmentResourceType, "tenant-a", "user-a", "user-a", system.UserProfileAvatarField); err != nil {
+		t.Fatalf("self avatar policy rejected owner: %v", err)
+	}
+	if err := application.AttachmentPolicies.Allow(ctx("user-a"), system.UserProfileAttachmentResourceType, "tenant-a", "user-a", "user-b", system.UserProfileAvatarField); err == nil {
+		t.Fatal("self avatar policy allowed another user's resource")
+	}
 	var alice, bob model.User
 	if err := testDB.Where("tenant_id = ? AND id = ?", "tenant-a", "user-a").First(&alice).Error; err != nil {
 		t.Fatal(err)

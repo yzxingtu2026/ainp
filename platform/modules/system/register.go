@@ -121,6 +121,9 @@ func Register(a *app.App) error {
 	if a.AttachmentPolicies == nil {
 		a.AttachmentPolicies = attachment.NewPolicyRegistry()
 	}
+	if err := a.AttachmentPolicies.Register(userProfileAttachmentPolicy{}); err != nil {
+		return err
+	}
 	policyProvider := NewSettingUploadPolicyProvider(settingSvc.Provider())
 	attachSvc := NewAttachmentService(a.DB, a.Storage, a.TransferTokens, a.AttachmentPolicies, policyProvider)
 	a.AIAssetResolver = attachSvc

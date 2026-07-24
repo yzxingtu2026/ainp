@@ -19,16 +19,17 @@ func NewAuthService(db *gorm.DB) *AuthService {
 }
 
 type UserProfile struct {
-	ID          string     `json:"id"`
-	Username    string     `json:"username"`
-	DisplayName string     `json:"display_name"`
-	TenantID    string     `json:"tenant_id"`
-	TenantName  string     `json:"tenant_name,omitempty"`
-	OrgID       string     `json:"org_id,omitempty"`
-	DeptID      string     `json:"dept_id,omitempty"`
-	Roles       []string   `json:"roles"`
-	Permissions []string   `json:"permissions"`
-	Realm       auth.Realm `json:"realm"`
+	ID                 string     `json:"id"`
+	Username           string     `json:"username"`
+	DisplayName        string     `json:"display_name"`
+	AvatarAttachmentID *string    `json:"avatar_attachment_id,omitempty"`
+	TenantID           string     `json:"tenant_id"`
+	TenantName         string     `json:"tenant_name,omitempty"`
+	OrgID              string     `json:"org_id,omitempty"`
+	DeptID             string     `json:"dept_id,omitempty"`
+	Roles              []string   `json:"roles"`
+	Permissions        []string   `json:"permissions"`
+	Realm              auth.Realm `json:"realm"`
 }
 
 func (s *AuthService) FindUserByUsername(ctx context.Context, tenantID, username string) (*model.User, error) {
@@ -96,15 +97,16 @@ func (s *AuthService) BuildProfile(ctx context.Context, u *model.User) (*UserPro
 		return nil, err
 	}
 	profile := &UserProfile{
-		ID:          u.ID,
-		Username:    u.Username,
-		DisplayName: u.DisplayName,
-		TenantID:    u.TenantID,
-		OrgID:       u.OrgID,
-		DeptID:      u.DeptID,
-		Roles:       snapshot.Roles,
-		Permissions: snapshot.Permissions,
-		Realm:       auth.RealmTenant,
+		ID:                 u.ID,
+		Username:           u.Username,
+		DisplayName:        u.DisplayName,
+		AvatarAttachmentID: u.AvatarAttachmentID,
+		TenantID:           u.TenantID,
+		OrgID:              u.OrgID,
+		DeptID:             u.DeptID,
+		Roles:              snapshot.Roles,
+		Permissions:        snapshot.Permissions,
+		Realm:              auth.RealmTenant,
 	}
 	if t, err := s.FindTenant(ctx, u.TenantID); err == nil && t != nil {
 		profile.TenantName = t.Name

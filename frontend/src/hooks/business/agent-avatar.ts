@@ -33,7 +33,7 @@ function pump() {
     active += 1;
     entry.status.value = 'loading';
     entry.abort = new AbortController();
-    downloadAttachmentById(id, { variant: 'preview', signal: entry.abort.signal })
+    downloadAttachmentById(id, { variant: 'original', signal: entry.abort.signal })
       .then(result => {
         if (!entries.has(id) || entry.abort?.signal.aborted) return;
         entry.url.value = URL.createObjectURL(result.blob);
@@ -62,8 +62,8 @@ function acquire(id: string) {
   return entry;
 }
 
-/** Shared Agent avatar loader: deduplicates IDs, limits concurrency and revokes URLs after the last consumer leaves. */
-export function useAgentAvatar(attachmentId: Ref<string | null | undefined>) {
+/** Shared attachment avatar loader: deduplicates IDs, limits concurrency and revokes URLs after the last consumer leaves. */
+export function useAttachmentAvatar(attachmentId: Ref<string | null | undefined>) {
   const url = ref<string | null>(null);
   const status = ref<AvatarStatus>('idle');
   let currentId = '';
@@ -100,3 +100,6 @@ export function useAgentAvatar(attachmentId: Ref<string | null | undefined>) {
   onBeforeUnmount(detach);
   return { url: readonly(url), status: readonly(status) };
 }
+
+/** @deprecated Use useAttachmentAvatar for both Agent and user avatars. */
+export const useAgentAvatar = useAttachmentAvatar;

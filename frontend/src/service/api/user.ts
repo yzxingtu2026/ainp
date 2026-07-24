@@ -14,9 +14,11 @@ export function fetchSelfProfile() {
   return request<Api.User.SelfProfile>({ url: '/api/v1/system/profile' });
 }
 
-export function updateSelfProfile(displayName: string) {
+export function updateSelfProfile(payload: { display_name: string; avatar_attachment_id: string }) {
   return request<Api.User.SelfProfile>({
-    url: '/api/v1/system/profile/update', method: 'post', data: { display_name: displayName }
+    url: '/api/v1/system/profile/update',
+    method: 'post',
+    data: payload
   });
 }
 
@@ -41,12 +43,18 @@ export function fetchMCPConfirmation(token: string) {
 }
 
 export function decideMCPConfirmation(token: string, decision: 'approve' | 'reject') {
-  return request<Api.User.MCPConfirmation>({ url: '/api/v1/mcp/confirmations/decision', method: 'post', data: { token, decision } });
+  return request<Api.User.MCPConfirmation>({
+    url: '/api/v1/mcp/confirmations/decision',
+    method: 'post',
+    data: { token, decision }
+  });
 }
 
 export function updateUserPreferences(revision: number, values: Record<string, unknown>) {
   return request<Api.Setting.Definition>({
-    url: '/api/v1/system/profile/preferences/update', method: 'post', data: { revision, values }
+    url: '/api/v1/system/profile/preferences/update',
+    method: 'post',
+    data: { revision, values }
   });
 }
 

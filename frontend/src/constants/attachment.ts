@@ -1,7 +1,8 @@
 /** 后端已注册的附件 resource_type；前端禁止自由拼接任意字符串。 */
 export const ATTACHMENT_RESOURCE_TYPES = {
   demoTask: 'demo.task',
-  agentAvatar: 'ai.agent'
+  agentAvatar: 'ai.agent',
+  userProfile: 'system.user_profile'
 } as const;
 
 export type RegisteredAttachmentResourceType =

@@ -27,6 +27,7 @@ export const useAuthStore = defineStore(SetupStoreId.Auth, () => {
     realm: 'tenant',
     userId: '',
     userName: '',
+    avatarAttachmentId: null,
     roles: [],
     buttons: []
   });
@@ -122,9 +123,8 @@ export const useAuthStore = defineStore(SetupStoreId.Auth, () => {
         const isClear = checkTabClear();
         let needRedirect = redirect;
         const redirectTarget = route.query.redirect;
-        const hasSafeInternalRedirect = typeof redirectTarget === 'string'
-          && redirectTarget.startsWith('/')
-          && !redirectTarget.startsWith('//');
+        const hasSafeInternalRedirect =
+          typeof redirectTarget === 'string' && redirectTarget.startsWith('/') && !redirectTarget.startsWith('//');
 
         if (isClear && !hasSafeInternalRedirect) {
           // If the tab needs to be cleared,it means we don't need to redirect.

@@ -1,7 +1,7 @@
 declare namespace Api {
   namespace User {
-
     interface SelfProfile extends Record {
+      avatar_attachment_id?: string | null;
       memory_preferred_address: string;
       effective_address: string;
       address_source: 'memory_profile' | 'display_name' | 'username';

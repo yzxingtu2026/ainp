@@ -9,6 +9,7 @@ declare namespace Api {
       realm: 'tenant' | 'platform';
       userId: string;
       userName: string;
+      avatarAttachmentId?: string | null;
       roles: string[];
       buttons: string[];
     }
@@ -44,6 +45,7 @@ declare namespace Api {
       id: string;
       username: string;
       display_name: string;
+      avatar_attachment_id?: string | null;
       tenant_id: string;
       tenant_name?: string;
       org_id?: string;

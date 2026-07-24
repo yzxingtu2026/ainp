@@ -8,17 +8,18 @@ import (
 
 // User 一用户一租户；OrgID/DeptID 仅预留。
 type User struct {
-	ID           string                  `gorm:"primaryKey;size:64"`
-	TenantID     string                  `gorm:"size:64;uniqueIndex:ux_users_tenant_username;not null"`
-	Username     string                  `gorm:"size:64;uniqueIndex:ux_users_tenant_username;not null"`
-	PasswordHash string                  `gorm:"size:255;not null"`
-	DisplayName  string                  `gorm:"size:128"`
-	Status       status.ActivationStatus `gorm:"size:32;not null;default:enabled"`
-	AuthVersion  uint64                  `gorm:"not null;default:1"`
-	OrgID        string                  `gorm:"size:64"`
-	DeptID       string                  `gorm:"size:64"`
-	CreatedAt    time.Time               `gorm:"autoCreateTime"`
-	UpdatedAt    time.Time               `gorm:"autoUpdateTime"`
+	ID                 string                  `gorm:"primaryKey;size:64"`
+	TenantID           string                  `gorm:"size:64;uniqueIndex:ux_users_tenant_username;not null"`
+	Username           string                  `gorm:"size:64;uniqueIndex:ux_users_tenant_username;not null"`
+	PasswordHash       string                  `gorm:"size:255;not null"`
+	DisplayName        string                  `gorm:"size:128"`
+	AvatarAttachmentID *string                 `gorm:"size:64"`
+	Status             status.ActivationStatus `gorm:"size:32;not null;default:enabled"`
+	AuthVersion        uint64                  `gorm:"not null;default:1"`
+	OrgID              string                  `gorm:"size:64"`
+	DeptID             string                  `gorm:"size:64"`
+	CreatedAt          time.Time               `gorm:"autoCreateTime"`
+	UpdatedAt          time.Time               `gorm:"autoUpdateTime"`
 }
 
 func (User) TableName() string { return "users" }
