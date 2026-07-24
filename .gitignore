@@ -37,3 +37,10 @@ platform/build-errors.log
 
 # local object store root (see storage.local.root_dir)
 platform/data/
+
+# demo deployment runtime logs, locks and database backups
+deploy/demo/runtime/
+
+# Python tooling cache
+__pycache__/
+*.pyc

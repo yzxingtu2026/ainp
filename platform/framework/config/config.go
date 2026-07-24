@@ -138,7 +138,12 @@ type ServerConfig struct {
 }
 
 type DatabaseConfig struct {
-	DSN string `yaml:"dsn"`
+	DSN         string `yaml:"dsn"`
+	AutoMigrate *bool  `yaml:"auto_migrate"`
+}
+
+func (c DatabaseConfig) IsAutoMigrateEnabled() bool {
+	return c.AutoMigrate == nil || *c.AutoMigrate
 }
 
 type LoggingConfig struct {

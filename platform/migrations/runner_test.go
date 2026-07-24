@@ -1,0 +1,40 @@
+package migrations
+
+import (
+	"strings"
+	"testing"
+	"testing/fstest"
+)
+
+func TestLoadFSMigrationsAreOrderedAndChecksummed(t *testing.T) {
+	items, err := loadFS(fstest.MapFS{
+		"0003_three.sql": {Data: []byte("SELECT 3;")},
+		"0002_two.sql":   {Data: []byte("SELECT 2;")},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 2 || items[0].Version != 2 || items[1].Version != 3 || len(items[0].Checksum) != 64 {
+		t.Fatalf("unexpected migrations: %#v", items)
+	}
+}
+
+func TestLoadFSMigrationsRejectsGap(t *testing.T) {
+	_, err := loadFS(fstest.MapFS{
+		"0002_two.sql":  {Data: []byte("SELECT 2;")},
+		"0004_four.sql": {Data: []byte("SELECT 4;")},
+	})
+	if err == nil || !strings.Contains(err.Error(), "sequence gap") {
+		t.Fatalf("expected sequence gap, got %v", err)
+	}
+}
+
+func TestValidateAppliedRejectsMutationAndOutOfOrder(t *testing.T) {
+	known := []Migration{{Version: 2, Name: "0002_two.sql", Checksum: "a"}, {Version: 3, Name: "0003_three.sql", Checksum: "b"}}
+	if err := validateApplied(known, []Applied{{Version: 2, Name: "0002_two.sql", Checksum: "changed"}}); err == nil || !strings.Contains(err.Error(), "checksum") {
+		t.Fatalf("expected checksum failure, got %v", err)
+	}
+	if err := validateApplied(known, []Applied{{Version: 3, Name: "0003_three.sql", Checksum: "b"}}); err == nil || !strings.Contains(err.Error(), "out of order") {
+		t.Fatalf("expected ordering failure, got %v", err)
+	}
+}

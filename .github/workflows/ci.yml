@@ -26,6 +26,8 @@ jobs:
           cp .agent/templates/AGENTS.md.tpl AGENTS.md
           npx -y @yz-xingtu/agent-rules@latest sync --target=qoder,cursor
           npx -y @yz-xingtu/agent-rules@latest doctor
+      - name: Test release entrypoint
+        run: python3 -m unittest scripts/test_release.py scripts/test_generate_release_notes.py
 
   backend:
     runs-on: ubuntu-latest
@@ -102,3 +104,36 @@ jobs:
           VITE_BUILD_COMMIT: ${{ github.sha }}
           VITE_BUILD_TIME: "1970-01-01T00:00:00Z"
         run: pnpm build
+
+  containers:
+    needs: [repository-gates, backend, frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Validate demo Compose
+        run: docker compose --env-file deploy/demo/.env.example -f deploy/demo/compose.yaml config --quiet
+      - name: Build backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/backend.Dockerfile
+          push: false
+          build-args: |
+            VERSION=v0.0.0-ci
+            COMMIT=${{ github.sha }}
+            BUILD_TIME=1970-01-01T00:00:00Z
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+      - name: Build web image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/web.Dockerfile
+          push: false
+          build-args: |
+            VERSION=v0.0.0-ci
+            COMMIT=${{ github.sha }}
+            BUILD_TIME=1970-01-01T00:00:00Z
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web

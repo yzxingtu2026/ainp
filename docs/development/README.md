@@ -40,5 +40,6 @@
 - [后台 Job](./background-jobs.md)
 - [Copilot PR 语义审查](./copilot-code-review.md)
 - [发布版本与构建身份](./release-versioning.md)
+- [容器部署基线](../deployment/containers.md)
 
 新增或调整公共能力时，请同步更新本目录或 `.agent/rules/`、`.agent/skills/`、`.agent/team/`，运行 `agent-rules sync`，并在 Issue/PR 中说明规范位置。
