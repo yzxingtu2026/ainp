@@ -53,7 +53,7 @@ AI Builder 的预览消息复用 `AttachmentPicker` 与上传队列，但不伪�
 
 有效上传策略：`POST .../attachments/policy`（设置覆盖 + 代码默认）。附件中心：`/system/attachments`（状态用 `CodeSelect` / `CodeTag` + CodeSet `system.attachment_status`；上传者展示 `uploader_name`）。
 
-选择器「我的上传」为**宫格预览** + **滚动加载更多**（首屏 24 条，触底追加，软顶 200；搜索重置第 1 页）。图/视在 `thumb_status=ready` 时经 `variant=thumb` 加载；`pending` 显示 Spin；否则类型图标。缩略图并发受限（默认 3）并在关闭时 `revokeObjectURL`。token 不进持久存储与日志。
+选择器「我的上传」为**宫格预览** + **滚动加载更多**（首屏 24 条，触底追加，软顶 200；搜索重置第 1 页）。图/视在 `thumb_status=ready` 时经 `variant=thumb` 加载；`pending` 显示 Spin，并仅在选择器可见、当前为“我的上传”且仍有 pending 图/视时每 2.5 秒静默批量刷新已加载范围；全部完成、切换 Tab、关闭或卸载后立即停止轮询。轮询只合并已加载附件的最新状态，不重置选择、滚动位置或列表。否则显示类型图标。缩略图并发受限（默认 3）并在关闭时 `revokeObjectURL`。token 不进持久存储与日志。
 
 Demo：`/demo/attachments`（选择器主路径）。
 
