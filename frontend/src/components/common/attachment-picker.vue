@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import { Icon } from '@iconify/vue';
 import { fetchAttachmentPolicy, fetchMyAttachmentList } from '@/service/api';
 import {
@@ -11,7 +11,7 @@ import {
 } from '@/hooks/business/attachment';
 import { DEFAULT_ATTACHMENT_UPLOAD_POLICY } from '@/constants/attachment';
 import { $t } from '@/locales';
-import { mergePendingThumbnailStatuses, pendingThumbnailIds } from './attachment-thumb-poll';
+import { useAttachmentThumbStatusPolling } from '@/hooks/business/attachment-thumb-poll';
 
 defineOptions({ name: 'AttachmentPicker' });
 
@@ -20,8 +20,6 @@ const PAGE_SIZE = 24;
 /** Picker 软顶：再多请去附件中心或加强搜索 */
 const MAX_LOADED = 200;
 const SCROLL_THRESHOLD_PX = 80;
-const THUMB_POLL_INTERVAL_MS = 2500;
-const THUMB_POLL_PAGE_SIZE = 100;
 
 const props = withDefaults(
   defineProps<{
@@ -71,60 +69,12 @@ const lockedIds = computed(() => (props.mode === 'append' ? new Set(props.locked
 const lockedCount = computed(() => lockedIds.value.size);
 const selectedCount = computed(() => checked.value.length);
 const totalSelectedCount = computed(() => lockedCount.value + selectedCount.value);
-const pendingThumbCount = computed(() => pendingThumbnailIds(records.value).size);
 const confirmLabel = computed(() =>
   $t(props.mode === 'append' ? 'page.attachment.pickerAssociate' : 'page.attachment.pickerConfirm')
 );
 
 const thumbs = useAttachmentGridThumbs(records, { concurrency: 3, enabled: gridEnabled });
-let thumbPollTimer: number | null = null;
-let thumbPollInFlight = false;
-
-function stopThumbPolling() {
-  if (thumbPollTimer !== null) window.clearInterval(thumbPollTimer);
-  thumbPollTimer = null;
-}
-
-async function refreshPendingThumbs() {
-  if (!props.show || tab.value !== 'mine' || thumbPollInFlight) return;
-  const pending = pendingThumbnailIds(records.value);
-  if (pending.size === 0) {
-    stopThumbPolling();
-    return;
-  }
-
-  thumbPollInFlight = true;
-  try {
-    const pageCount = Math.max(1, Math.ceil(Math.min(records.value.length, MAX_LOADED) / THUMB_POLL_PAGE_SIZE));
-    const responses = await Promise.all(
-      Array.from({ length: pageCount }, (_, index) =>
-        fetchMyAttachmentList({
-          page: index + 1,
-          page_size: THUMB_POLL_PAGE_SIZE,
-          keyword: keyword.value.trim() || undefined,
-          status: 'ready'
-        })
-      )
-    );
-    if (!props.show || tab.value !== 'mine') return;
-    const refreshed = responses.flatMap(response => response.data?.items || []).filter(item => pending.has(item.id));
-    records.value = mergePendingThumbnailStatuses(records.value, refreshed);
-  } catch {
-    // Polling is best effort; the next interval retries without replacing the current grid.
-  } finally {
-    thumbPollInFlight = false;
-  }
-}
-
-function syncThumbPolling() {
-  stopThumbPolling();
-  if (!props.show || tab.value !== 'mine' || pendingThumbCount.value === 0) return;
-  void refreshPendingThumbs();
-  thumbPollTimer = window.setInterval(() => void refreshPendingThumbs(), THUMB_POLL_INTERVAL_MS);
-}
-
-watch([() => props.show, tab, pendingThumbCount], syncThumbPolling, { immediate: true });
-onBeforeUnmount(stopThumbPolling);
+useAttachmentThumbStatusPolling(records, { enabled: gridEnabled, keyword, maxItems: MAX_LOADED });
 
 watch(
   () => props.show,

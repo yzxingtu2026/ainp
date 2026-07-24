@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mergePendingThumbnailStatuses, pendingThumbnailIds } from './attachment-thumb-poll';
+import { mergePendingThumbnailStatuses, pendingThumbnailIds } from '@/hooks/business/attachment-thumb-status';
 
 function attachment(id: string, thumbStatus: Api.Attachment.Item['thumb_status'], contentType = 'image/png') {
   return {

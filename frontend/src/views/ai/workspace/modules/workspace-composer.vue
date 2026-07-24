@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue';
 import { isImageContentType, useAttachmentGridThumbs } from '@/hooks/business/attachment';
 import { useAttachmentUploadQueue } from '@/hooks/business/attachment-upload-queue';
+import { useAttachmentThumbStatusPolling } from '@/hooks/business/attachment-thumb-poll';
 import AttachmentPicker from '@/components/common/attachment-picker.vue';
 import { $t } from '@/locales';
 import { clipboardImageExts, clipboardImageMimes, normalizeClipboardImage } from './clipboard-image';
@@ -19,7 +20,9 @@ const images = defineModel<Api.Attachment.Item[]>('images', { default: () => [] 
 const emit = defineEmits<{ send: []; stop: [] }>();
 
 const pickerVisible = ref(false);
-const thumbs = useAttachmentGridThumbs(images, { enabled: computed(() => images.value.length > 0) });
+const thumbsEnabled = computed(() => images.value.length > 0);
+const thumbs = useAttachmentGridThumbs(images, { enabled: thumbsEnabled });
+useAttachmentThumbStatusPolling(images, { enabled: thumbsEnabled, maxItems: 4 });
 const uploadQueue = useAttachmentUploadQueue({
   maxCount: () => Math.max(0, 4 - images.value.length),
   allowedExt: clipboardImageExts,
