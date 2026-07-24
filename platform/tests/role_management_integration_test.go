@@ -236,26 +236,6 @@ func TestRoleManagementTenantIsolationAndProtection(t *testing.T) {
 	if !containsString(adminPermissions, "system.shared") || containsString(adminPermissions, "system.authenticated") {
 		t.Fatalf("built-in admin projection = %#v", adminPermissions)
 	}
-	if err := actions.Register(action.Action{ID: "system.new_permission", Handler: dummy, Meta: action.Metadata{
-		Capability: "system", Name: "New permission", HTTP: &action.HTTPMeta{Method: "POST", Path: "/system.new_permission"},
-	}}); err != nil {
-		t.Fatal(err)
-	}
-	_, adminPermissions, err = authService.LoadRolesAndPermissions(context.Background(), "user-a", "tenant-a")
-	if err != nil || !containsString(adminPermissions, "system.new_permission") {
-		t.Fatalf("new permission was not projected dynamically: %#v, %v", adminPermissions, err)
-	}
-	if err := testDB.Model(&admin).Update("status", status.ActivationDisabled).Error; err != nil {
-		t.Fatal(err)
-	}
-	_, disabledPermissions, err := authService.LoadRolesAndPermissions(context.Background(), "user-a", "tenant-a")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if containsString(disabledPermissions, "system.new_permission") {
-		t.Fatalf("disabled built-in admin expanded permissions: %#v", disabledPermissions)
-	}
-
 	catalogAny, err := service.PermissionCatalog(ctxA, json.RawMessage(`{}`))
 	if err != nil {
 		t.Fatal(err)
@@ -278,6 +258,26 @@ func TestRoleManagementTenantIsolationAndProtection(t *testing.T) {
 			t.Fatalf("shared permission was not deduplicated: %#v", item)
 		}
 	}
+	if err := actions.Register(action.Action{ID: "system.new_permission", Handler: dummy, Meta: action.Metadata{
+		Capability: "system", Name: "New permission", HTTP: &action.HTTPMeta{Method: "POST", Path: "/system.new_permission"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	_, adminPermissions, err = authService.LoadRolesAndPermissions(context.Background(), "user-a", "tenant-a")
+	if err != nil || !containsString(adminPermissions, "system.new_permission") {
+		t.Fatalf("new permission was not projected dynamically: %#v, %v", adminPermissions, err)
+	}
+	if err := testDB.Model(&admin).Update("status", status.ActivationDisabled).Error; err != nil {
+		t.Fatal(err)
+	}
+	_, disabledPermissions, err := authService.LoadRolesAndPermissions(context.Background(), "user-a", "tenant-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if containsString(disabledPermissions, "system.new_permission") {
+		t.Fatalf("disabled built-in admin expanded permissions: %#v", disabledPermissions)
+	}
+
 }
 
 func containsString(values []string, wanted string) bool {
