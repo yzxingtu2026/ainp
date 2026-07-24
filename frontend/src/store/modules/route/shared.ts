@@ -3,6 +3,9 @@ import type { ElegantConstRoute, LastLevelRouteKey, RouteKey, RouteMap } from '@
 import { isDev } from '@/constants/env';
 import { useSvgIcon } from '@/hooks/common/icon';
 import { $t } from '@/locales';
+import { hasVisibleMenuProjection } from './menu-visibility';
+
+export { hasVisibleMenuProjection } from './menu-visibility';
 
 /**
  * Filter auth routes by roles
@@ -119,10 +122,10 @@ export function getGlobalMenusByAuthRoutes(routes: ElegantConstRoute[]) {
   const menus: App.Global.Menu[] = [];
 
   routes.forEach(route => {
-    if (!route.meta?.hideInMenu) {
+    if (hasVisibleMenuProjection(route)) {
       const menu = getGlobalMenuByBaseRoute(route);
 
-      if (route.children?.some(child => !child.meta?.hideInMenu)) {
+      if (route.children?.length) {
         menu.children = getGlobalMenusByAuthRoutes(route.children);
       }
 
