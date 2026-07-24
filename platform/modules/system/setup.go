@@ -244,22 +244,9 @@ func (s *SetupService) Initialize(ctx context.Context, input json.RawMessage) (a
 		return nil, err
 	}
 
-	// 写入状态文件
-	now := time.Now().UTC()
-	s.st.Installed = true
-	s.st.InstalledAt = now
-	if req.DSN != "" {
-		s.st.DSN = req.DSN // 仅当用户手动填写时才写入（env 注入的不落盘）
-	}
-	enabled := req.JobsEnabled
-	s.st.Jobs.Enabled = &enabled
-	s.st.Jobs.EmbeddedWorker = req.JobsEnabled && req.EmbeddedWorker
-	if req.JobsEnabled {
-		s.st.Redis = state.Redis{Addr: strings.TrimSpace(req.RedisAddr), DB: req.RedisDB}
-	} else {
-		s.st.Redis = state.Redis{}
-	}
-	if err := state.Save(s.statePath, s.st); err != nil {
+	// 状态文件成功落盘后再替换内存状态，避免失败请求被误判为已安装。
+	now, err := s.persistInstalledState(req)
+	if err != nil {
 		return nil, errs.Wrap(errs.CodeInternal, "save state failed", err)
 	}
 
@@ -279,6 +266,29 @@ func (s *SetupService) Initialize(ctx context.Context, input json.RawMessage) (a
 		"jobs_enabled":    req.JobsEnabled,
 		"embedded_worker": req.JobsEnabled && req.EmbeddedWorker,
 	}, nil
+}
+
+func (s *SetupService) persistInstalledState(req initRequest) (time.Time, error) {
+	now := time.Now().UTC()
+	next := *s.st
+	next.Installed = true
+	next.InstalledAt = now
+	if req.DSN != "" {
+		next.DSN = req.DSN // 仅当用户手动填写时才写入（env 注入的不落盘）
+	}
+	enabled := req.JobsEnabled
+	next.Jobs.Enabled = &enabled
+	next.Jobs.EmbeddedWorker = req.JobsEnabled && req.EmbeddedWorker
+	if req.JobsEnabled {
+		next.Redis = state.Redis{Addr: strings.TrimSpace(req.RedisAddr), DB: req.RedisDB}
+	} else {
+		next.Redis = state.Redis{}
+	}
+	if err := state.Save(s.statePath, &next); err != nil {
+		return time.Time{}, err
+	}
+	*s.st = next
+	return now, nil
 }
 
 func (s *SetupService) createInitialData(ctx context.Context, db *gorm.DB, tenantName, username, password string) error {

@@ -23,6 +23,16 @@ x-backend: &backend
       condition: service_healthy
 
 services:
+  storage-init:
+    image: ${AINP_IMAGE_REGISTRY:-ghcr.io}/yzxingtu2026/ainp-backend:${AINP_IMAGE_TAG:?set AINP_IMAGE_TAG to vMAJOR.MINOR.PATCH}
+    user: "0:0"
+    restart: "no"
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["chown 10001:10001 /var/lib/ainp/state /var/lib/ainp/objects && chmod 0750 /var/lib/ainp/state /var/lib/ainp/objects"]
+    volumes:
+      - state:/var/lib/ainp/state
+      - objects:/var/lib/ainp/objects
+
   postgres:
     image: pgvector/pgvector:pg17
     restart: unless-stopped
@@ -53,6 +63,13 @@ services:
   api:
     <<: *backend
     command: ["-config", "/app/config/config.yaml"]
+    depends_on:
+      storage-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8080/healthz"]
       interval: 10s
