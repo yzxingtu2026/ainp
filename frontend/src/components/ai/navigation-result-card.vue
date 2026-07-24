@@ -43,6 +43,11 @@ function available(item: Api.Route.NavigationSearchResult) {
   return routeStore.isNavigationTargetAvailable(item.menu_id, item.path);
 }
 
+function tooltip(item: Api.Route.NavigationSearchResult) {
+  if (!available(item)) return $t('chat.navigationUnavailable');
+  return [item.breadcrumb.join(' / '), item.description].filter(Boolean).join(' · ');
+}
+
 async function open(item: Api.Route.NavigationSearchResult) {
   if (!available(item)) {
     window.$message?.warning($t('chat.navigationUnavailable'));
@@ -59,33 +64,40 @@ async function open(item: Api.Route.NavigationSearchResult) {
       <span>{{ $t('chat.navigationSearching') }}</span>
     </div>
     <NEmpty v-else-if="items.length === 0" size="small" :description="$t('chat.navigationEmpty')" />
-    <article v-for="item in items" :key="`${item.menu_id}:${item.path}`" class="navigation-result">
-      <div class="navigation-result__icon" aria-hidden="true">
-        <SvgIcon :icon="item.icon || 'mdi:map-marker-path'" :local-icon="item.local_icon" />
-      </div>
-      <div class="navigation-result__body">
-        <strong class="navigation-result__title">{{ item.title }}</strong>
-        <span class="navigation-result__breadcrumb">{{ item.breadcrumb.join(' / ') }}</span>
-        <p v-if="item.description" class="navigation-result__description">{{ item.description }}</p>
-      </div>
-      <NTooltip :disabled="available(item)">
-        <template #trigger>
-          <NButton size="small" type="primary" secondary :disabled="!available(item)" @click="open(item)">
-            <template #icon><SvgIcon icon="mdi:arrow-right" /></template>
-            {{ $t('chat.navigationOpen') }}
-          </NButton>
-        </template>
-        {{ $t('chat.navigationUnavailable') }}
-      </NTooltip>
-    </article>
+    <NTooltip v-for="item in items" :key="`${item.menu_id}:${item.path}`">
+      <template #trigger>
+        <span class="navigation-result-trigger">
+          <button
+            type="button"
+            class="navigation-result"
+            :disabled="!available(item)"
+            :aria-label="`${$t('chat.navigationOpen')}：${item.title}`"
+            @click="open(item)"
+          >
+            <SvgIcon
+              class="navigation-result__icon"
+              :icon="item.icon || 'mdi:map-marker-path'"
+              :local-icon="item.local_icon"
+            />
+            <strong class="navigation-result__title">{{ item.title }}</strong>
+            <span v-if="item.breadcrumb.length > 1" class="navigation-result__breadcrumb">
+              {{ item.breadcrumb.slice(0, -1).join(' / ') }}
+            </span>
+            <SvgIcon class="navigation-result__arrow" icon="mdi:arrow-right" aria-hidden="true" />
+          </button>
+        </span>
+      </template>
+      {{ tooltip(item) }}
+    </NTooltip>
   </div>
 </template>
 
 <style scoped>
 .navigation-results {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
   margin-top: 8px;
 }
 
@@ -97,61 +109,72 @@ async function open(item: Api.Route.NavigationSearchResult) {
   font-size: 13px;
 }
 
-.navigation-result {
-  display: grid;
-  grid-template-columns: 36px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px;
-  min-height: 76px;
-  border: 1px solid rgba(127, 127, 127, 0.18);
-  border-radius: 8px;
-  padding: 10px 12px;
-  background: rgba(127, 127, 127, 0.04);
+.navigation-result-trigger {
+  display: inline-flex;
+  max-width: 100%;
 }
 
-.navigation-result__icon {
-  display: grid;
-  place-items: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 6px;
+.navigation-result {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  height: 32px;
+  border: 1px solid rgba(127, 127, 127, 0.18);
+  border-radius: 999px;
+  padding: 0 10px;
+  background: rgba(127, 127, 127, 0.06);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  transition:
+    border-color 0.2s ease,
+    background 0.2s ease,
+    color 0.2s ease;
+}
+
+.navigation-result:hover:not(:disabled),
+.navigation-result:focus-visible {
+  border-color: rgba(var(--primary-color), 0.4);
+  outline: none;
   background: rgba(var(--primary-color), 0.1);
   color: rgb(var(--primary-color));
-  font-size: 20px;
 }
 
-.navigation-result__body {
-  min-width: 0;
+.navigation-result:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
+
+.navigation-result__icon,
+.navigation-result__arrow {
+  flex: none;
+  font-size: 16px;
+  color: rgb(var(--primary-color));
+}
+
 .navigation-result__title,
 .navigation-result__breadcrumb {
-  display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .navigation-result__title {
-  font-size: 14px;
+  max-width: 160px;
+  font-size: 13px;
+  font-weight: 600;
 }
 .navigation-result__breadcrumb {
-  margin-top: 2px;
+  max-width: 120px;
+  padding-left: 6px;
+  border-left: 1px solid rgba(127, 127, 127, 0.22);
   color: rgba(127, 127, 127, 0.95);
-  font-size: 12px;
-}
-.navigation-result__description {
-  margin: 4px 0 0;
-  color: rgba(127, 127, 127, 0.95);
-  font-size: 12px;
-  line-height: 1.45;
+  font-size: 11px;
 }
 
 @media (max-width: 640px) {
-  .navigation-result {
-    grid-template-columns: 32px minmax(0, 1fr);
-  }
-  .navigation-result :deep(.n-button) {
-    grid-column: 1 / -1;
-    width: 100%;
+  .navigation-result__breadcrumb {
+    display: none;
   }
 }
 </style>
