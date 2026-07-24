@@ -14,7 +14,7 @@ type Definition struct {
 
 // DefinitionRegistry maps event_type → Definition. Duplicate registration fails at boot.
 type DefinitionRegistry struct {
-	mu   sync.RWMutex
+	mu     sync.RWMutex
 	byType map[string]Definition
 }
 

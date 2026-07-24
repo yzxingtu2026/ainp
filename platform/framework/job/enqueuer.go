@@ -28,11 +28,11 @@ type Enqueuer interface {
 }
 
 type enqueuer struct {
-	db       *gorm.DB
-	registry *Registry
-	store    RunStore
-	transport Transport
-	enabled  bool
+	db         *gorm.DB
+	registry   *Registry
+	store      RunStore
+	transport  Transport
+	enabled    bool
 	maxPayload int
 }
 
@@ -174,10 +174,10 @@ func RecoverPendingEnqueue(ctx context.Context, e *enqueuer, limit int) (int, er
 }
 
 type storeReporter struct {
-	store      RunStore
-	runID      string
-	mu         sync.Mutex
-	lastWrite  time.Time
+	store       RunStore
+	runID       string
+	mu          sync.Mutex
+	lastWrite   time.Time
 	minInterval time.Duration
 }
 

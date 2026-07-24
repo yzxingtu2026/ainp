@@ -23,7 +23,7 @@ jobs:
         run: git diff --check
       - name: Check Agent rules
         run: |
-          npx -y @yz-xingtu/agent-rules@latest sync
+          npx -y @yz-xingtu/agent-rules@latest sync --target=qoder,cursor
           npx -y @yz-xingtu/agent-rules@latest doctor
 
   backend:
