@@ -4,14 +4,18 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/yzxingtu2026/ainp/platform/framework/config"
+	"github.com/yzxingtu2026/ainp/platform/framework/database"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 	setupstate "github.com/yzxingtu2026/ainp/platform/framework/state"
 	"github.com/yzxingtu2026/ainp/platform/modules/system"
@@ -82,6 +86,66 @@ func TestSetupInitializeRejectsEnabledJobsWhenRedisUnavailable(t *testing.T) {
 	appErr, ok := err.(*errs.AppError)
 	if !ok || appErr.MessageKey != "setup.redis_unreachable" {
 		t.Fatalf("expected redis validation error, got %v", err)
+	}
+}
+
+func TestSetupInitializeKeepsUninstalledStateWhenStateSaveFails(t *testing.T) {
+	dsn := os.Getenv("AINP_TEST_DATABASE_DSN")
+	if dsn == "" {
+		t.Skip("AINP_TEST_DATABASE_DSN is not set")
+	}
+	root, err := database.Open(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	schema := "ainp_setup_state_" + uuid.NewString()[:8]
+	if err := root.Exec(fmt.Sprintf(`CREATE SCHEMA %q`, schema)).Error; err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = root.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE`, schema)).Error })
+	testDSN := dsn + " search_path=" + schema
+
+	blockedParent := filepath.Join(t.TempDir(), "not-a-directory")
+	if err := os.WriteFile(blockedParent, []byte("blocked"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	st := &setupstate.State{}
+	installedCallback := false
+	svc := system.NewSetupService(
+		&config.Config{Database: config.DatabaseConfig{DSN: testDSN}},
+		filepath.Join(blockedParent, "state.yaml"),
+		st,
+		func() { installedCallback = true },
+	)
+
+	_, err = svc.Initialize(context.Background(), json.RawMessage(`{
+		"tenant_name":"State Failure Tenant",
+		"username":"state-failure-admin",
+		"password":"Admin1234",
+		"jobs_enabled":false
+	}`))
+	if err == nil {
+		t.Fatal("expected state save failure")
+	}
+	if installedCallback {
+		t.Fatal("failed state save must not invoke the installed callback")
+	}
+	status, err := svc.Status(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(status)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Installed bool `json:"installed"`
+	}
+	if err := json.Unmarshal(encoded, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Installed || st.Installed {
+		t.Fatal("failed state save must keep setup status uninstalled")
 	}
 }
 
