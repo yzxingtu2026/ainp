@@ -1,7 +1,7 @@
 name: ainp-demo
 
 x-backend: &backend
-  image: ghcr.io/yzxingtu2026/ainp-backend:${AINP_IMAGE_TAG:?set AINP_IMAGE_TAG to vMAJOR.MINOR.PATCH}
+  image: ${AINP_IMAGE_REGISTRY:-ghcr.io}/yzxingtu2026/ainp-backend:${AINP_IMAGE_TAG:?set AINP_IMAGE_TAG to vMAJOR.MINOR.PATCH}
   restart: unless-stopped
   environment:
     DATABASE_DSN: host=postgres user=${POSTGRES_USER:-ainp} password=${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD} dbname=${POSTGRES_DB:-ainp} port=5432 sslmode=disable TimeZone=UTC
@@ -68,7 +68,7 @@ services:
         condition: service_healthy
 
   web:
-    image: ghcr.io/yzxingtu2026/ainp-web:${AINP_IMAGE_TAG:?set AINP_IMAGE_TAG to vMAJOR.MINOR.PATCH}
+    image: ${AINP_IMAGE_REGISTRY:-ghcr.io}/yzxingtu2026/ainp-web:${AINP_IMAGE_TAG:?set AINP_IMAGE_TAG to vMAJOR.MINOR.PATCH}
     restart: unless-stopped
     ports:
       - "${WEB_BIND_ADDR:-127.0.0.1}:${WEB_PORT:-8080}:8080"

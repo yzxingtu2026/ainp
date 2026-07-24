@@ -15,7 +15,7 @@ docker build -f docker/web.Dockerfile --build-arg VERSION=dev --build-arg COMMIT
 
 ## 演示 Compose
 
-复制 `deploy/demo/.env.example` 为 `deploy/demo/.env`，替换其中全部示例密钥，并将 `AINP_IMAGE_TAG` 固定为完整 SemVer Tag。然后运行：
+复制 `deploy/demo/.env.example` 为 `deploy/demo/.env`，替换其中全部示例密钥，并将 `AINP_IMAGE_TAG` 固定为完整 SemVer Tag。`AINP_IMAGE_REGISTRY` 默认使用 `ghcr.io`；受限网络可改为可信的 GHCR 镜像代理（例如 `ghcr.nju.edu.cn`），Compose 拉取与部署 digest 记录会统一使用该地址。代理必须完整同步 `yzxingtu2026/ainp-backend`、`yzxingtu2026/ainp-web` 的不可变 Tag，且其可用性与内容一致性由部署方验证。然后运行：
 
 ```bash
 docker compose --env-file deploy/demo/.env -f deploy/demo/compose.yaml config

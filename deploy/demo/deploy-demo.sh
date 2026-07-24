@@ -53,6 +53,7 @@ write_tag() {
 
 compose=(docker compose --env-file "$env_file" -f "$compose_file")
 old_tag=$(read_env AINP_IMAGE_TAG)
+image_registry=$(read_env AINP_IMAGE_REGISTRY ghcr.io)
 postgres_user=$(read_env POSTGRES_USER ainp)
 postgres_db=$(read_env POSTGRES_DB ainp)
 web_bind=$(read_env WEB_BIND_ADDR 127.0.0.1)
@@ -60,6 +61,11 @@ web_port=$(read_env WEB_PORT 8080)
 health_url="http://${web_bind}:${web_port}/healthz"
 health_retries=$(read_env HEALTH_RETRIES 30)
 backup_retention_days=$(read_env BACKUP_RETENTION_DAYS 14)
+
+if [[ ! $image_registry =~ ^[A-Za-z0-9.-]+(:[0-9]+)?(/[A-Za-z0-9._-]+)*$ ]]; then
+  echo "invalid AINP_IMAGE_REGISTRY: use a registry host or host/path without a scheme" >&2
+  exit 2
+fi
 
 verify_health() {
   local expected=$1 response
@@ -101,7 +107,7 @@ if ! "${compose[@]}" pull api worker web; then
 fi
 
 for image in backend web; do
-  reference="ghcr.io/yzxingtu2026/ainp-${image}:${target_tag}"
+  reference="${image_registry}/yzxingtu2026/ainp-${image}:${target_tag}"
   digest=$(docker image inspect --format '{{join .RepoDigests " "}}' "$reference")
   [[ -n $digest ]] || { echo "image digest missing: $reference"; rollback; exit 1; }
   echo "$image digest: $digest"
