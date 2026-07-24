@@ -48,6 +48,10 @@ func TestMigrationRunnerAppliesCurrentSchemaOnce(t *testing.T) {
 	if len(first.Pending) != 0 || len(first.Applied) == 0 {
 		t.Fatalf("unexpected first migration status: %#v", first)
 	}
+	repeatedBaseline, err := migrations.Baseline(db)
+	if err != nil || len(repeatedBaseline.Pending) != 0 || len(repeatedBaseline.Applied) != len(first.Applied) {
+		t.Fatalf("baseline retry was not idempotent: %#v %v", repeatedBaseline, err)
+	}
 	second, err := migrations.Up(db)
 	if err != nil {
 		t.Fatal(err)

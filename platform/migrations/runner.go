@@ -133,17 +133,18 @@ func Up(db *gorm.DB) (Status, error) {
 	if len(status.Applied) == 0 {
 		return Status{}, fmt.Errorf("migration history is empty; verify the current schema and run baseline once")
 	}
-	if err := db.Exec("SELECT pg_advisory_lock(?)", advisoryLockID).Error; err != nil {
-		return Status{}, fmt.Errorf("acquire migration lock: %w", err)
-	}
-	defer db.Exec("SELECT pg_advisory_unlock(?)", advisoryLockID)
-
-	status, err = Inspect(db)
-	if err != nil {
-		return Status{}, err
-	}
-	for _, migration := range status.Pending {
-		err = db.Transaction(func(tx *gorm.DB) error {
+	err = db.Transaction(func(tx *gorm.DB) error {
+		if lockErr := tx.Exec("SELECT pg_advisory_xact_lock(?)", advisoryLockID).Error; lockErr != nil {
+			return fmt.Errorf("acquire migration lock: %w", lockErr)
+		}
+		lockedStatus, inspectErr := Inspect(tx)
+		if inspectErr != nil {
+			return inspectErr
+		}
+		if len(lockedStatus.Applied) == 0 && len(lockedStatus.Pending) != 0 {
+			return fmt.Errorf("migration history is empty; verify the current schema and run baseline once")
+		}
+		for _, migration := range lockedStatus.Pending {
 			if execErr := tx.Exec(migration.SQL).Error; execErr != nil {
 				return fmt.Errorf("execute %s: %w", migration.Name, execErr)
 			}
@@ -151,11 +152,11 @@ func Up(db *gorm.DB) (Status, error) {
 			if createErr := tx.Create(&row).Error; createErr != nil {
 				return fmt.Errorf("record %s: %w", migration.Name, createErr)
 			}
-			return nil
-		})
-		if err != nil {
-			return Status{}, err
 		}
+		return nil
+	})
+	if err != nil {
+		return Status{}, err
 	}
 	return Inspect(db)
 }
@@ -165,11 +166,27 @@ func Baseline(db *gorm.DB) (Status, error) {
 	if err != nil || !status.Initialized {
 		return status, err
 	}
+	if len(status.Pending) == 0 {
+		return status, nil
+	}
 	if len(status.Applied) != 0 {
 		return Status{}, fmt.Errorf("migration baseline requires empty history")
 	}
 	if err := db.Transaction(func(tx *gorm.DB) error {
-		for _, migration := range status.Pending {
+		if lockErr := tx.Exec("SELECT pg_advisory_xact_lock(?)", advisoryLockID).Error; lockErr != nil {
+			return fmt.Errorf("acquire migration lock: %w", lockErr)
+		}
+		lockedStatus, inspectErr := Inspect(tx)
+		if inspectErr != nil {
+			return inspectErr
+		}
+		if len(lockedStatus.Pending) == 0 {
+			return nil
+		}
+		if len(lockedStatus.Applied) != 0 {
+			return fmt.Errorf("migration baseline requires empty history")
+		}
+		for _, migration := range lockedStatus.Pending {
 			row := Applied{Version: migration.Version, Name: migration.Name, Checksum: migration.Checksum, AppliedAt: time.Now().UTC()}
 			if createErr := tx.Create(&row).Error; createErr != nil {
 				return fmt.Errorf("baseline %s: %w", migration.Name, createErr)

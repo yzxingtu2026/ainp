@@ -1,6 +1,8 @@
 import importlib.util
+import json
 import unittest
 from pathlib import Path
+from unittest import mock
 
 SPEC = importlib.util.spec_from_file_location("release", Path(__file__).with_name("release.py"))
 release = importlib.util.module_from_spec(SPEC)
@@ -28,6 +30,49 @@ class ReleaseValidationTest(unittest.TestCase):
             {"name": "unrelated", "conclusion": "success"},
         ]}
         self.assertEqual(release.successful_checks(payload), {"backend", "frontend"})
+
+    def successful_preflight_run(self, overrides=None):
+        overrides = overrides or {}
+        root = str(Path.cwd().resolve())
+        successes = {"check_runs": [{"name": name, "conclusion": "success"} for name in release.REQUIRED_CHECKS]}
+        responses = {
+            ("git", "rev-parse", "--show-toplevel"): root,
+            ("git", "branch", "--show-current"): "main",
+            ("git", "status", "--porcelain=v1", "--untracked-files=all"): "",
+            ("git", "remote", "get-url", "origin"): "https://github.com/yzxingtu2026/ainp.git",
+            ("gh", "auth", "status", "--hostname", "github.com"): "",
+            ("git", "fetch", "origin", "main", "--tags", "--prune"): "",
+            ("git", "rev-parse", "HEAD"): "abc",
+            ("git", "rev-parse", "origin/main"): "abc",
+            ("git", "tag", "--list", "v1.2.3"): "",
+            ("git", "ls-remote", "--tags", "origin", "refs/tags/v1.2.3"): "",
+            ("gh", "api", "repos/yzxingtu2026/ainp/commits/abc/check-runs?per_page=100"): json.dumps(successes),
+            ("gh", "variable", "get", "DEMO_URL", "--env", "demo"): "https://demo.example.com",
+        }
+        responses.update(overrides)
+
+        def fake_run(*args, check=True):
+            del check
+            return responses[args]
+
+        return fake_run
+
+    def test_preflight_accepts_only_fully_synchronized_main(self):
+        with mock.patch.object(release, "run", side_effect=self.successful_preflight_run()):
+            self.assertEqual(release.preflight("v1.2.3"), ("abc", "https://demo.example.com"))
+
+    def test_preflight_rejects_dirty_diverged_duplicate_and_missing_ci(self):
+        cases = [
+            ({("git", "branch", "--show-current"): "feature"}, "from main"),
+            ({("git", "status", "--porcelain=v1", "--untracked-files=all"): "?? secret.env"}, "not clean"),
+            ({("git", "rev-parse", "origin/main"): "def"}, "exactly match"),
+            ({("git", "tag", "--list", "v1.2.3"): "v1.2.3"}, "already exists"),
+            ({("gh", "api", "repos/yzxingtu2026/ainp/commits/abc/check-runs?per_page=100"): '{"check_runs":[]}'}, "CI is not successful"),
+        ]
+        for overrides, message in cases:
+            with self.subTest(message=message), mock.patch.object(release, "run", side_effect=self.successful_preflight_run(overrides)):
+                with self.assertRaisesRegex(release.ReleaseError, message):
+                    release.preflight("v1.2.3")
 
 
 if __name__ == "__main__":
