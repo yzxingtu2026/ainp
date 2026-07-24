@@ -3,6 +3,7 @@ package tests
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/yzxingtu2026/ainp/platform/framework/action"
@@ -118,7 +119,7 @@ func TestAIClassificationIsMutuallyExclusiveAndFailClosed(t *testing.T) {
 func TestSideEffectingAIActionRequiresConfirmation(t *testing.T) {
 	meta := &action.AIMeta{
 		ExposeTool: true, Risk: "medium", SideEffect: "write",
-		Summary: "更新资源", HumanDescription: "更新资源", ResultSummary: "资源已更新",
+		ToolTitle: "更新资源", Summary: "更新资源", HumanDescription: "更新指定资源", ResultSummary: "资源已更新",
 		InputSchema: action.InputSchemaFor[struct{}](),
 	}
 	if err := action.ValidateAIClassification("demo.update", meta); err == nil {
@@ -127,5 +128,20 @@ func TestSideEffectingAIActionRequiresConfirmation(t *testing.T) {
 	meta.RequiresConfirmation = true
 	if err := action.ValidateAIClassification("demo.update", meta); err != nil {
 		t.Fatalf("confirmed side-effecting AI action rejected: %v", err)
+	}
+}
+
+func TestExposedAIActionRequiresToolTitle(t *testing.T) {
+	meta := &action.AIMeta{
+		ExposeTool: true, Risk: "low", SideEffect: "read",
+		Summary: "读取指定资源", HumanDescription: "读取当前用户有权访问的资源", ResultSummary: "资源已读取",
+		InputSchema: action.InputSchemaFor[struct{}](),
+	}
+	if err := action.ValidateAIClassification("demo.read", meta); err == nil || !strings.Contains(err.Error(), "tool title") {
+		t.Fatalf("missing tool title must fail with a useful error: %v", err)
+	}
+	meta.ToolTitle = "   "
+	if err := action.ValidateAIClassification("demo.read", meta); err == nil {
+		t.Fatal("blank tool title must fail")
 	}
 }

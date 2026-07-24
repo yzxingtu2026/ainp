@@ -195,8 +195,8 @@ func registerAuditLogActions(a *app.App) error {
 		handler                                action.Handler
 		ai                                     *action.AIMeta
 	}{
-		{ActionAuditLogList, "/api/v1/operations/audit-logs/list", "审计列表", "action.system.audit_log_list.name", "查询当前租户操作审计", "action.system.audit_log_list.description", action.JSON(svc.list), readAIMeta("查询当前租户操作审计，可按时间、用户、操作、结果和资源筛选", "查询操作审计列表", "已返回当前租户可见的操作审计记录", action.InputSchemaFor[auditLogListRequest](), action.SchemaFor[pagination.Result[AuditLogItem]](), "运维", "审计", "操作记录")},
-		{ActionAuditLogGet, "/api/v1/operations/audit-logs/get", "审计详情", "action.system.audit_log_get.name", "查询当前租户操作审计详情", "action.system.audit_log_get.description", action.JSON(svc.get), readAIMeta("按审计记录 ID 查询当前租户操作审计详情", "查询操作审计详情", "已返回指定操作审计详情", action.InputSchemaFor[auditLogGetRequest](), action.SchemaFor[struct {
+		{ActionAuditLogList, "/api/v1/operations/audit-logs/list", "审计列表", "action.system.audit_log_list.name", "查询当前租户操作审计", "action.system.audit_log_list.description", action.JSON(svc.list), readAIMeta("查询当前租户操作审计，可按时间、用户、操作、结果和资源筛选", "查询操作审计列表", "查询当前租户操作审计，可按时间、用户、操作、结果和资源筛选", "已返回当前租户可见的操作审计记录", action.InputSchemaFor[auditLogListRequest](), action.SchemaFor[pagination.Result[AuditLogItem]](), "运维", "审计", "操作记录")},
+		{ActionAuditLogGet, "/api/v1/operations/audit-logs/get", "审计详情", "action.system.audit_log_get.name", "查询当前租户操作审计详情", "action.system.audit_log_get.description", action.JSON(svc.get), readAIMeta("按审计记录 ID 查询当前租户操作审计详情", "查询操作审计详情", "按审计记录 ID 查询当前租户操作审计详情", "已返回指定操作审计详情", action.InputSchemaFor[auditLogGetRequest](), action.SchemaFor[struct {
 			AuditLog AuditLogItem `json:"audit_log"`
 		}](), "运维", "审计", "详情")},
 	} {

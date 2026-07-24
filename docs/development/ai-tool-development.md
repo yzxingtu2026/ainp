@@ -47,8 +47,9 @@ if err := a.RegisterAction(action.Action{
         PermissionGroup: "purchase.order",
         AI: &action.AIMeta{
             ExposeTool:          true,
+            ToolTitle:           "查询采购单",
             Summary:             "根据采购单 ID 查询当前用户有权访问的采购单",
-            HumanDescription:    "读取指定采购单",
+            HumanDescription:    "根据采购单 ID 读取当前用户有权访问的采购单",
             Tags:                []string{"采购单", "采购", "查询"},
             Risk:                "low",
             SideEffect:          "read",
@@ -73,8 +74,9 @@ if err := a.RegisterAction(action.Action{
 ```go
 AI: &action.AIMeta{
     ExposeTool:           true,
+    ToolTitle:            "创建采购订单",
     Summary:              "创建采购订单",
-    HumanDescription:     "创建一张新的采购订单",
+    HumanDescription:     "在当前租户创建一张新的采购订单",
     ResultSummary:        "采购订单已创建",
     Risk:                 "medium",
     SideEffect:           "write",
@@ -83,6 +85,8 @@ AI: &action.AIMeta{
     OutputSchema:         action.SchemaFor[OrderView](),
 }
 ```
+
+`ToolTitle` 是工具过程卡片使用的简短动作标题，必须由 Action 注册处显式声明为“动作 + 对象”，例如“查询采购单”“准备下载附件”“预览通知模板”。`Summary` 面向模型描述能力，`HumanDescription` 面向用户补充范围与约束，`ResultSummary` 描述结果类别。禁止根据 `SideEffect`、Action ID 或模型工具名推导标题。
 
 写操作还应按业务约定配置 `IdempotencyMeta`。模型不能传 `skip_confirmation`，也不能降低风险等级。
 

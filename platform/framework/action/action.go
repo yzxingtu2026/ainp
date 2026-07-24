@@ -43,6 +43,7 @@ func (h *HTTPMeta) IsEnabled() bool {
 type AIMeta struct {
 	ExposeTool           bool
 	ExclusionReason      string
+	ToolTitle            string
 	Risk                 string
 	SideEffect           string
 	RequiresConfirmation bool
@@ -227,8 +228,8 @@ func ValidateAIClassification(actionID string, meta *AIMeta) error {
 }
 
 func validateAIMeta(actionID string, meta *AIMeta) error {
-	if meta.Summary == "" || meta.HumanDescription == "" {
-		return fmt.Errorf("action %s: AI summary and human description are required", actionID)
+	if strings.TrimSpace(meta.ToolTitle) == "" || strings.TrimSpace(meta.Summary) == "" || strings.TrimSpace(meta.HumanDescription) == "" {
+		return fmt.Errorf("action %s: AI tool title, summary and human description are required", actionID)
 	}
 	if strings.TrimSpace(meta.ResultSummary) == "" {
 		return fmt.Errorf("action %s: AI result summary is required", actionID)
