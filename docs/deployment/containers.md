@@ -58,3 +58,5 @@ GitHub `release` Environment 可配置 Secret `RELEASE_NOTES_API_KEY`，以及 V
 推送格式为 `vMAJOR.MINOR.PATCH` 的 Tag 后，`release-images.yml` 先确认该提交的 `backend`、`frontend`、`repository-gates`、`containers` 四项 CI 成功，再构建镜像。每个镜像发布 `<tag>` 和 `sha-<short-sha>` 两个标签，Actions Summary 记录不可变 digest。
 
 workflow 的构建 Job 仅使用仓库内置 `GITHUB_TOKEN` 和 `packages: write`。公开发布前，需要在 GitHub Package 设置中确认两个 Package 的可见性为 Public；部署服务器不应保存具有写权限的 GHCR Token。
+
+仓库或 Package 仍为 Private 时，首次演示部署前需由 deploy 用户执行 `docker login ghcr.io`，使用仅有 `read:packages` 的凭据；不得把该凭据写入 Compose、`.env`、部署日志或 GitHub Release。两个 Package 改为 Public 并验证匿名拉取后，应移除服务器上的临时私有拉取凭据。
