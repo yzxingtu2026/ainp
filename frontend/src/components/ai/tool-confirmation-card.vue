@@ -14,7 +14,7 @@ async function approve() {
   loading.value = true;
   try {
     const { data, error } = await approveAIToolConfirmation(props.confirmation.id);
-    if (!error && data) emit('resolved', 'approved', data);
+    emit('resolved', 'approved', !error && data ? data : undefined);
   } finally {
     loading.value = false;
   }
@@ -22,8 +22,8 @@ async function approve() {
 async function reject() {
   loading.value = true;
   try {
-    const { error } = await rejectAIToolConfirmation(props.confirmation.id);
-    if (!error) emit('resolved', 'rejected');
+    await rejectAIToolConfirmation(props.confirmation.id);
+    emit('resolved', 'rejected');
   } finally {
     loading.value = false;
   }
@@ -75,7 +75,9 @@ async function reject() {
     <template #footer>
       <NSpace justify="end">
         <NButton :disabled="loading" @click="reject">{{ $t('toolConfirmation.reject') }}</NButton>
-        <NButton type="warning" :loading="loading" @click="approve">{{ $t('toolConfirmation.approveOnce') }}</NButton>
+        <NButton type="warning" :loading="loading" :disabled="loading" @click="approve">
+          {{ $t('toolConfirmation.approveOnce') }}
+        </NButton>
       </NSpace>
     </template>
   </NCard>

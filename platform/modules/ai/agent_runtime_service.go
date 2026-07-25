@@ -439,7 +439,7 @@ func (s *AgentRuntimeService) WakeExpiredConfirmation(ctx context.Context, runID
 	if err := s.db.WithContext(ctx).Where("id=?", *step.ConfirmationID).First(&c).Error; err != nil {
 		return false, err
 	}
-	if c.Status == "pending" && c.ExpiresAt.After(s.now()) {
+	if c.Status == ToolConfirmationPending && c.ExpiresAt.After(s.now()) {
 		return false, nil
 	}
 	if auth.MustFromContext(ctx).TenantID == "" {
@@ -1526,7 +1526,12 @@ func toolExecutionFailure(callID string, err error) (*aitool.Result, bool) {
 	summary := "tool execution failed"
 	recoverable := category == "invalid_arguments"
 	if recoverable {
-		summary = "tool arguments are invalid; correct them to match the input schema and retry"
+		var appErr *errs.AppError
+		if errors.As(err, &appErr) && strings.TrimSpace(appErr.Message) != "" {
+			summary = appErr.Message
+		} else {
+			summary = "tool arguments are invalid; correct them to match the input schema and retry"
+		}
 	}
 	return &aitool.Result{CallID: callID, Status: "failed", Summary: summary, ErrorCategory: category}, recoverable
 }
@@ -1562,20 +1567,29 @@ func (s *AgentRuntimeService) resumeConfirmation(ctx context.Context, run *Agent
 		return false, s.fail(ctx, run, "confirmation_missing")
 	}
 	call := aimodelruntime.OutputItem{ToolCallID: c.ToolCallID, ToolName: modelToolName(c.ToolID)}
-	if c.Status == "pending" && c.ExpiresAt.After(s.now()) {
-		return false, s.waitForConfirmation(ctx, run, c.ID)
+	if c.Status == ToolConfirmationPending {
+		if c.ExpiresAt.After(s.now()) {
+			return false, s.waitForConfirmation(ctx, run, c.ID)
+		}
+		return false, s.finishRejectedConfirmation(ctx, run, &step, call, "confirmation_expired", "tool call was not executed because confirmation expired")
 	}
-	if c.Status == "rejected" {
+	if c.Status == ToolConfirmationRejected {
 		return false, s.finishRejectedConfirmation(ctx, run, &step, call, "confirmation_rejected", "tool call was not executed because confirmation was rejected")
 	}
-	if c.ExpiresAt.Before(s.now()) {
+	if c.Status == ToolConfirmationExpired {
 		return false, s.finishRejectedConfirmation(ctx, run, &step, call, "confirmation_expired", "tool call was not executed because confirmation expired")
+	}
+	if c.Status == ToolConfirmationCancelled {
+		return false, s.finishRejectedConfirmation(ctx, run, &step, call, "confirmation_cancelled", "tool call was not executed because confirmation was cancelled")
+	}
+	if c.Status != ToolConfirmationConsumed {
+		return false, s.fail(ctx, run, "confirmation_execution_unavailable")
 	}
 	if s.currentConversationRevision(ctx, run) != run.ConversationRevision {
 		return false, s.fail(ctx, run, "conversation_revision_changed")
 	}
 	var inv ToolInvocation
-	if err := s.db.WithContext(ctx).Where("id=? AND status=?", c.InvocationID, "completed").First(&inv).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("id=? AND status IN ?", c.InvocationID, []string{ToolInvocationCompleted, ToolInvocationFailed}).First(&inv).Error; err != nil {
 		return false, s.fail(ctx, run, "confirmation_execution_unavailable")
 	}
 	var result aitool.Result
@@ -1586,10 +1600,14 @@ func (s *AgentRuntimeService) resumeConfirmation(ctx context.Context, run *Agent
 	if err == nil && step.ParentStepID != nil {
 		var parent AgentStep
 		if s.db.WithContext(ctx).Where("id=?", *step.ParentStepID).First(&parent).Error == nil {
-			_ = s.finishStep(ctx, run, &parent, "completed", map[string]any{"confirmation_id": c.ID, "executed": true}, "")
+			parentStatus, category := "completed", ""
+			if inv.Status == ToolInvocationFailed {
+				parentStatus, category = "failed", result.ErrorCategory
+			}
+			_ = s.finishStep(ctx, run, &parent, parentStatus, map[string]any{"confirmation_id": c.ID, "executed": true}, category)
 		}
 	}
-	return err == nil, err
+	return err == nil && inv.Status == ToolInvocationCompleted, err
 }
 
 func (s *AgentRuntimeService) finishRejectedConfirmation(ctx context.Context, run *AgentRun, step *AgentStep, call aimodelruntime.OutputItem, category, summary string) error {
