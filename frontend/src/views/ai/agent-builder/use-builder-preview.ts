@@ -390,8 +390,9 @@ export function useBuilderPreview(options: {
     }
   }
 
-  async function onConfirmationResolved() {
-    confirmations.value = [];
+  async function onConfirmationResolved(_status?: 'approved' | 'rejected', result?: Api.AI.ToolResult) {
+    await refreshConfirmations();
+    if (result?.status === 'failed') error.value = result.summary;
     if (!run.value) return;
     busy.value = true;
     try {

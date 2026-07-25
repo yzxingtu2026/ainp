@@ -8,6 +8,8 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -17,6 +19,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/config"
 	"github.com/yzxingtu2026/ainp/platform/framework/database"
+	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
 	"github.com/yzxingtu2026/ainp/platform/framework/pagination"
 	"github.com/yzxingtu2026/ainp/platform/framework/permission"
@@ -48,11 +51,22 @@ func (p *fakeToolProvider) Get(_ context.Context, id string) (*aitool.Definition
 	return nil, context.Canceled
 }
 
-type fakeToolExecutor struct{ called bool }
+type fakeToolExecutor struct {
+	calls atomic.Int32
+	err   error
+}
 
 func (e *fakeToolExecutor) Execute(_ context.Context, _ aitool.LoadedTool, _ json.RawMessage) (*aitool.Result, error) {
-	e.called = true
+	e.calls.Add(1)
+	if e.err != nil {
+		return nil, e.err
+	}
 	return &aitool.Result{Status: "completed"}, nil
+}
+
+func isAppErrorCode(err error, code int) bool {
+	var appErr *errs.AppError
+	return errors.As(err, &appErr) && appErr.Code == code
 }
 
 type fakeToolEmbeddingRuntime struct {
@@ -576,7 +590,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, 0, ?)`, restri
 	if _, err = service.Execute(ctx, ai.ToolExecuteRequest{Handle: handle, ToolCallID: "call-1", Arguments: json.RawMessage(`{"supplier_id":"s1"}`)}); err != nil {
 		t.Fatal(err)
 	}
-	if !executor.called {
+	if executor.calls.Load() == 0 {
 		t.Fatal("executor was not called")
 	}
 	var inv ai.ToolInvocation
@@ -641,17 +655,92 @@ VALUES (?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, 0, ?)`, restri
 	if err = guarded.WithContext(ctx).Where("id=?", confirmation.InvocationID).First(&confirmedInvocation).Error; err != nil || confirmedInvocation.Status != "completed" {
 		t.Fatalf("confirmed invocation was not completed: %#v %v", confirmedInvocation, err)
 	}
-	recoveryValue, err := service.Execute(ctx, ai.ToolExecuteRequest{Handle: confirmationHandle, ToolCallID: "call-confirm-recovery", Arguments: json.RawMessage(`{"supplier_id":"s1"}`)})
+	executor.err = errs.Validation("supplier is invalid")
+	failureValue, err := service.Execute(ctx, ai.ToolExecuteRequest{Handle: confirmationHandle, ToolCallID: "call-confirm-failure", Arguments: json.RawMessage(`{"supplier_id":"invalid"}`)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	recoveryConfirmation := recoveryValue.(*aitool.Result).Data.(ai.ToolConfirmation)
-	decidedAt := time.Now().UTC()
-	if err = guarded.WithContext(ctx).Model(&ai.ToolConfirmation{}).Where("id=? AND status='pending'", recoveryConfirmation.ID).Updates(map[string]any{"status": "approved", "decided_at": decidedAt}).Error; err != nil {
+	failureConfirmation := failureValue.(*aitool.Result).Data.(ai.ToolConfirmation)
+	callsBeforeFailureApproval := executor.calls.Load()
+	failedValue, err := service.Approve(ctx, ai.ToolConfirmationRequest{ID: failureConfirmation.ID})
+	if err != nil {
+		t.Fatalf("approve with executor failure returned an API error: %v", err)
+	}
+	failedResult := failedValue.(*aitool.Result)
+	if failedResult.Status != "failed" || failedResult.ErrorCategory != "invalid_arguments" || failedResult.Summary != "supplier is invalid" || strings.Contains(failedResult.Summary, `"supplier_id"`) {
+		t.Fatalf("unsafe or invalid failure result: %#v", failedResult)
+	}
+	if executor.calls.Load() != callsBeforeFailureApproval+1 {
+		t.Fatalf("executor calls = %d, want %d", executor.calls.Load(), callsBeforeFailureApproval+1)
+	}
+	var failedConfirmation ai.ToolConfirmation
+	if err = guarded.WithContext(ctx).Where("id=?", failureConfirmation.ID).First(&failedConfirmation).Error; err != nil || failedConfirmation.Status != "consumed" || failedConfirmation.ConsumedAt == nil {
+		t.Fatalf("failed confirmation was not consumed: %#v %v", failedConfirmation, err)
+	}
+	var failedInvocation ai.ToolInvocation
+	if err = guarded.WithContext(ctx).Where("id=?", failureConfirmation.InvocationID).First(&failedInvocation).Error; err != nil || failedInvocation.Status != "failed" || failedInvocation.ErrorCategory != "invalid_arguments" {
+		t.Fatalf("failed invocation was not finalized: %#v %v", failedInvocation, err)
+	}
+	var persistedFailure aitool.Result
+	if err = json.Unmarshal(failedInvocation.ResultJSON, &persistedFailure); err != nil || persistedFailure.CallID != failureConfirmation.ToolCallID || persistedFailure.Status != "failed" || persistedFailure.ErrorCategory != "invalid_arguments" {
+		t.Fatalf("failed result was not safely persisted: %#v %v", persistedFailure, err)
+	}
+	if _, err = service.Approve(ctx, ai.ToolConfirmationRequest{ID: failureConfirmation.ID}); !isAppErrorCode(err, errs.CodeConflict) {
+		t.Fatalf("repeat approve error = %v, want conflict", err)
+	}
+	if _, err = service.Reject(ctx, ai.ToolConfirmationRequest{ID: failureConfirmation.ID}); !isAppErrorCode(err, errs.CodeConflict) {
+		t.Fatalf("repeat reject error = %v, want conflict", err)
+	}
+	if executor.calls.Load() != callsBeforeFailureApproval+1 {
+		t.Fatalf("repeat decisions re-executed tool: calls=%d", executor.calls.Load())
+	}
+	executor.err = nil
+	concurrentValue, err := service.Execute(ctx, ai.ToolExecuteRequest{Handle: confirmationHandle, ToolCallID: "call-confirm-concurrent", Arguments: json.RawMessage(`{"supplier_id":"s1"}`)})
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = service.Approve(ctx, ai.ToolConfirmationRequest{ID: recoveryConfirmation.ID}); err != nil {
-		t.Fatalf("stale approved confirmation did not recover: %v", err)
+	concurrentConfirmation := concurrentValue.(*aitool.Result).Data.(ai.ToolConfirmation)
+	callsBeforeConcurrentApproval := executor.calls.Load()
+	approvalErrors := make(chan error, 2)
+	var approvals sync.WaitGroup
+	approvals.Add(2)
+	for range 2 {
+		go func() {
+			defer approvals.Done()
+			_, approveErr := service.Approve(ctx, ai.ToolConfirmationRequest{ID: concurrentConfirmation.ID})
+			approvalErrors <- approveErr
+		}()
+	}
+	approvals.Wait()
+	close(approvalErrors)
+	successes, conflicts := 0, 0
+	for approveErr := range approvalErrors {
+		switch {
+		case approveErr == nil:
+			successes++
+		case isAppErrorCode(approveErr, errs.CodeConflict):
+			conflicts++
+		default:
+			t.Fatalf("unexpected concurrent approve error: %v", approveErr)
+		}
+	}
+	if successes != 1 || conflicts != 1 || executor.calls.Load() != callsBeforeConcurrentApproval+1 {
+		t.Fatalf("concurrent approve successes=%d conflicts=%d calls=%d", successes, conflicts, executor.calls.Load()-callsBeforeConcurrentApproval)
+	}
+	rejectValue, err := service.Execute(ctx, ai.ToolExecuteRequest{Handle: confirmationHandle, ToolCallID: "call-confirm-reject", Arguments: json.RawMessage(`{"supplier_id":"s1"}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rejectedConfirmation := rejectValue.(*aitool.Result).Data.(ai.ToolConfirmation)
+	if _, err = service.Reject(ctx, ai.ToolConfirmationRequest{ID: rejectedConfirmation.ID}); err != nil {
+		t.Fatalf("reject confirmation failed: %v", err)
+	}
+	var rejectedInvocation ai.ToolInvocation
+	if err = guarded.WithContext(ctx).Where("id=?", rejectedConfirmation.InvocationID).First(&rejectedInvocation).Error; err != nil || rejectedInvocation.Status != "failed" || rejectedInvocation.ErrorCategory != "confirmation_rejected" {
+		t.Fatalf("rejected invocation was not finalized: %#v %v", rejectedInvocation, err)
+	}
+	if _, err = service.Reject(ctx, ai.ToolConfirmationRequest{ID: rejectedConfirmation.ID}); !isAppErrorCode(err, errs.CodeConflict) {
+		t.Fatalf("repeat rejection error = %v, want conflict", err)
 	}
 	revoked := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t1", UserID: "u1", SessionID: "s1", AuthVersion: 1, Realm: auth.RealmTenant})
 	if _, err = service.Execute(revoked, ai.ToolExecuteRequest{Handle: handle, ToolCallID: "call-revoked", Arguments: json.RawMessage(`{"supplier_id":"s1"}`)}); err == nil {

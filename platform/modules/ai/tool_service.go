@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"slices"
@@ -380,8 +381,8 @@ func (s *ToolService) Approve(ctx context.Context, r ToolConfirmationRequest) (a
 	if err = s.db.WithContext(ctx).Where("id=? AND user_id=?", r.ID, ac.UserID).First(&c).Error; err != nil {
 		return nil, err
 	}
-	if (c.Status != "pending" && c.Status != "approved") || time.Now().UTC().After(c.ExpiresAt) {
-		return nil, errs.New(errs.CodeConflict, "confirmation is not pending")
+	if c.Status != ToolConfirmationPending || time.Now().UTC().After(c.ExpiresAt) {
+		return nil, confirmationDecisionConflict(c.Status)
 	}
 	scope, err := s.scope(ctx, ac, c.ScopeID)
 	if err != nil {
@@ -395,18 +396,28 @@ func (s *ToolService) Approve(ctx context.Context, r ToolConfirmationRequest) (a
 	if err != nil || !ok {
 		return nil, errs.New(errs.CodeConflict, "tool authorization changed")
 	}
-	if c.Status == "pending" {
-		now := time.Now().UTC()
-		claim := s.db.WithContext(ctx).Model(&ToolConfirmation{}).Where("id=? AND user_id=? AND status='pending'", c.ID, ac.UserID).Updates(map[string]any{"status": "approved", "decided_at": now})
-		if claim.Error != nil {
-			return nil, claim.Error
+	now := time.Now().UTC()
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		claimConfirmation := tx.Model(&ToolConfirmation{}).Where("id=? AND user_id=? AND status=?", c.ID, ac.UserID, ToolConfirmationPending).Updates(map[string]any{"status": ToolConfirmationApproved, "decided_at": now})
+		if claimConfirmation.Error != nil {
+			return claimConfirmation.Error
 		}
-		if claim.RowsAffected == 0 {
-			return nil, errs.New(errs.CodeConflict, "confirmation is not pending")
+		if claimConfirmation.RowsAffected != 1 {
+			return confirmationDecisionConflict("")
 		}
-		c.Status = "approved"
-		c.DecidedAt = &now
+		claimInvocation := tx.Model(&ToolInvocation{}).Where("id=? AND user_id=? AND status=?", c.InvocationID, ac.UserID, ToolInvocationWaitingConfirmation).Update("status", ToolInvocationRunning)
+		if claimInvocation.Error != nil {
+			return claimInvocation.Error
+		}
+		if claimInvocation.RowsAffected != 1 {
+			return confirmationDecisionConflict("")
+		}
+		return nil
+	}); err != nil {
+		return nil, err
 	}
+	c.Status = ToolConfirmationApproved
+	c.DecidedAt = &now
 	loaded := aitool.LoadedTool{Definition: d}
 	result, err := s.execute(ctx, ac, scope, loaded, c.ToolCallID, c.ArgumentsJSON, &c)
 	if err != nil {
@@ -428,22 +439,22 @@ func (s *ToolService) Reject(ctx context.Context, r ToolConfirmationRequest) (an
 		return nil, err
 	}
 	var c ToolConfirmation
-	if err := s.db.WithContext(ctx).Where("id=? AND user_id=? AND status='pending'", r.ID, ac.UserID).First(&c).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("id=? AND user_id=?", r.ID, ac.UserID).First(&c).Error; err != nil {
 		return nil, err
 	}
+	if c.Status != ToolConfirmationPending {
+		return nil, confirmationDecisionConflict(c.Status)
+	}
 	now := time.Now().UTC()
-	res := s.db.WithContext(ctx).Model(&ToolConfirmation{}).Where("id=? AND user_id=? AND status='pending'", r.ID, ac.UserID).Updates(map[string]any{"status": "rejected", "decided_at": now})
-	if res.Error != nil {
-		return nil, res.Error
-	}
-	if res.RowsAffected == 0 {
-		return nil, errs.New(errs.CodeConflict, "confirmation is not pending")
-	}
 	var inv ToolInvocation
-	if err := s.db.WithContext(ctx).Where("id=?", c.InvocationID).First(&inv).Error; err == nil {
-		_ = s.finishInvocation(ctx, &inv, nil, "failed", "confirmation_rejected", nil)
+	if err := s.db.WithContext(ctx).Where("id=?", c.InvocationID).First(&inv).Error; err != nil {
+		return nil, err
 	}
-	c.Status = "rejected"
+	rejectedResult := &aitool.Result{CallID: c.ToolCallID, Status: "failed", Summary: "tool call was not executed because confirmation was rejected", ErrorCategory: "confirmation_rejected"}
+	if err := s.finishConfirmedInvocation(ctx, &inv, &c, rejectedResult, ToolInvocationFailed, "confirmation_rejected", ToolConfirmationRejected, now); err != nil {
+		return nil, err
+	}
+	c.Status = ToolConfirmationRejected
 	c.DecidedAt = &now
 	if s.onConfirmationDecided != nil {
 		if err := s.onConfirmationDecided(ctx, &c); err != nil {
@@ -452,12 +463,16 @@ func (s *ToolService) Reject(ctx context.Context, r ToolConfirmationRequest) (an
 	}
 	return map[string]any{"id": r.ID, "status": "rejected"}, nil
 }
+
+func confirmationDecisionConflict(_ string) error {
+	return errs.New(errs.CodeConflict, "confirmation has already been handled")
+}
 func (s *ToolService) ListConfirmations(ctx context.Context, r ToolConfirmationListRequest) (any, error) {
 	ac, err := toolActor(ctx)
 	if err != nil {
 		return nil, err
 	}
-	q := s.db.WithContext(ctx).Where("user_id=? AND status='pending' AND expires_at>?", ac.UserID, time.Now().UTC())
+	q := s.db.WithContext(ctx).Where("user_id=? AND status=? AND expires_at>?", ac.UserID, ToolConfirmationPending, time.Now().UTC())
 	if r.ScopeID != "" {
 		q = q.Where("scope_id=?", r.ScopeID)
 	}
@@ -477,13 +492,13 @@ func (s *ToolService) execute(ctx context.Context, ac *auth.Context, scope *Tool
 	now := time.Now().UTC()
 	var inv ToolInvocation
 	if approved == nil {
-		inv = ToolInvocation{ID: uuid.NewString(), TenantID: ac.TenantID, UserID: ac.UserID, ScopeID: scope.ID, AgentRunID: scope.AgentRunID, ToolCallID: callID, ToolID: d.ID, Source: string(d.Source), TargetAction: d.RuntimeRef, Risk: string(d.Risk), SideEffect: string(d.SideEffect), Status: "running", StartedAt: now, RequestID: ac.RequestID, TraceID: ac.TraceID}
+		inv = ToolInvocation{ID: uuid.NewString(), TenantID: ac.TenantID, UserID: ac.UserID, ScopeID: scope.ID, AgentRunID: scope.AgentRunID, ToolCallID: callID, ToolID: d.ID, Source: string(d.Source), TargetAction: d.RuntimeRef, Risk: string(d.Risk), SideEffect: string(d.SideEffect), Status: ToolInvocationRunning, StartedAt: now, RequestID: ac.RequestID, TraceID: ac.TraceID}
 	}
 	if approved == nil && needs {
 		hash := hashJSON(args)
 		summary := redactArguments(args)
-		c := ToolConfirmation{ID: uuid.NewString(), TenantID: ac.TenantID, UserID: ac.UserID, ScopeID: scope.ID, InvocationID: inv.ID, ToolCallID: callID, ToolID: d.ID, SchemaHash: d.SchemaHash, ArgumentsHash: hash, ArgumentsJSON: append(json.RawMessage(nil), args...), ArgumentsSummaryJSON: summary, Risk: string(d.Risk), SideEffect: string(d.SideEffect), Status: "pending", ExpiresAt: now.Add(10 * time.Minute)}
-		inv.Status = "waiting_confirmation"
+		c := ToolConfirmation{ID: uuid.NewString(), TenantID: ac.TenantID, UserID: ac.UserID, ScopeID: scope.ID, InvocationID: inv.ID, ToolCallID: callID, ToolID: d.ID, SchemaHash: d.SchemaHash, ArgumentsHash: hash, ArgumentsJSON: append(json.RawMessage(nil), args...), ArgumentsSummaryJSON: summary, Risk: string(d.Risk), SideEffect: string(d.SideEffect), Status: ToolConfirmationPending, ExpiresAt: now.Add(10 * time.Minute)}
+		inv.Status = ToolInvocationWaitingConfirmation
 		inv.ConfirmationID = &c.ID
 		if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 			presentation := s.registry.PresentConfirmation(ctx, d, args)
@@ -506,14 +521,7 @@ func (s *ToolService) execute(ctx context.Context, ac *auth.Context, scope *Tool
 		return &aitool.Result{CallID: callID, Status: "confirmation_required", Summary: "user confirmation is required", Data: c}, nil
 	}
 	if approved != nil {
-		claim := s.db.WithContext(ctx).Model(&ToolInvocation{}).Where("id=? AND user_id=? AND status='waiting_confirmation'", approved.InvocationID, ac.UserID).Update("status", "running")
-		if claim.Error != nil {
-			return nil, claim.Error
-		}
-		if claim.RowsAffected != 1 {
-			return nil, errs.New(errs.CodeConflict, "confirmation invocation is not waiting")
-		}
-		if err := s.db.WithContext(ctx).Where("id=? AND user_id=? AND status='running'", approved.InvocationID, ac.UserID).First(&inv).Error; err != nil {
+		if err := s.db.WithContext(ctx).Where("id=? AND user_id=? AND status=?", approved.InvocationID, ac.UserID, ToolInvocationRunning).First(&inv).Error; err != nil {
 			return nil, err
 		}
 	} else if err := s.db.WithContext(ctx).Create(&inv).Error; err != nil {
@@ -522,12 +530,20 @@ func (s *ToolService) execute(ctx context.Context, ac *auth.Context, scope *Tool
 	if metadata, isSlot := s.registry.SlotMetadata(d.ID); isSlot && metadata.MaxCallsPerRun > 0 && scope.AgentRunID != nil {
 		var calls int64
 		if err := s.db.WithContext(ctx).Model(&ToolInvocation{}).Where("agent_run_id=? AND tool_id=?", *scope.AgentRunID, d.ID).Count(&calls).Error; err != nil {
-			_ = s.finishInvocation(ctx, &inv, nil, "failed", "budget_check_failed", err)
+			if approved != nil {
+				result := &aitool.Result{CallID: callID, Status: "failed", Summary: "tool execution failed", ErrorCategory: "execution_failed"}
+				if finishErr := s.finishApprovedExecution(ctx, &inv, approved, result, "failed", result.ErrorCategory); finishErr != nil {
+					return nil, errors.Join(err, finishErr)
+				}
+				return result, nil
+			} else {
+				_ = s.finishInvocation(ctx, &inv, nil, "failed", "budget_check_failed", err)
+			}
 			return nil, err
 		}
 		if calls > int64(metadata.MaxCallsPerRun) {
-			result := &aitool.Result{Status: "failed", Summary: metadata.BudgetCategory + " budget exhausted", ErrorCategory: metadata.BudgetCategory + "_budget_exhausted"}
-			if err := s.finishInvocation(ctx, &inv, result, "failed", result.ErrorCategory, nil); err != nil {
+			result := &aitool.Result{CallID: callID, Status: "failed", Summary: metadata.BudgetCategory + " budget exhausted", ErrorCategory: metadata.BudgetCategory + "_budget_exhausted"}
+			if err := s.finishExecution(ctx, &inv, approved, result, "failed", result.ErrorCategory); err != nil {
 				return nil, err
 			}
 			return result, nil
@@ -535,7 +551,11 @@ func (s *ToolService) execute(ctx context.Context, ac *auth.Context, scope *Tool
 	}
 	executor, ok := s.registry.ExecutorFor(d)
 	if !ok {
-		return nil, s.finishInvocation(ctx, &inv, nil, "failed", "execution_failed", fmt.Errorf("tool executor unavailable"))
+		result := &aitool.Result{CallID: callID, Status: "failed", Summary: "tool execution failed", ErrorCategory: "execution_failed"}
+		if err := s.finishExecution(ctx, &inv, approved, result, "failed", result.ErrorCategory); err != nil {
+			return nil, err
+		}
+		return result, nil
 	}
 	loaded.Handle = ""
 	executionCtx := ctx
@@ -546,8 +566,11 @@ func (s *ToolService) execute(ctx context.Context, ac *auth.Context, scope *Tool
 	}
 	result, execErr := executor.Execute(aitool.WithScopeID(executionCtx, scope.ID), loaded, args)
 	if execErr != nil {
-		_ = s.finishInvocation(ctx, &inv, nil, "failed", "execution_failed", execErr)
-		return nil, execErr
+		if approved == nil {
+			_ = s.finishInvocation(ctx, &inv, nil, "failed", "execution_failed", execErr)
+			return nil, execErr
+		}
+		result, _ = toolExecutionFailure(callID, execErr)
 	}
 	result.CallID = callID
 	result.Data, result.Truncated = sanitizeToolData(result.Data, 0, 64<<10)
@@ -559,14 +582,21 @@ func (s *ToolService) execute(ctx context.Context, ac *auth.Context, scope *Tool
 			result.ErrorCategory = category
 		}
 	}
-	if err := s.finishInvocation(ctx, &inv, result, invocationStatus, category, nil); err != nil {
+	if err := s.finishExecution(ctx, &inv, approved, result, invocationStatus, category); err != nil {
 		return nil, err
 	}
-	if approved != nil {
-		done := time.Now().UTC()
-		_ = s.db.WithContext(ctx).Model(&ToolConfirmation{}).Where("id=? AND status='approved'", approved.ID).Updates(map[string]any{"status": "consumed", "consumed_at": done}).Error
-	}
 	return result, nil
+}
+
+func (s *ToolService) finishExecution(ctx context.Context, inv *ToolInvocation, approved *ToolConfirmation, result *aitool.Result, status, category string) error {
+	if approved != nil {
+		return s.finishApprovedExecution(ctx, inv, approved, result, status, category)
+	}
+	return s.finishInvocation(ctx, inv, result, status, category, nil)
+}
+
+func (s *ToolService) finishApprovedExecution(ctx context.Context, inv *ToolInvocation, approved *ToolConfirmation, result *aitool.Result, status, category string) error {
+	return s.finishConfirmedInvocation(ctx, inv, approved, result, status, category, ToolConfirmationConsumed, time.Now().UTC())
 }
 
 func (s *ToolService) finishInvocation(ctx context.Context, inv *ToolInvocation, result *aitool.Result, status, category string, cause error) error {
@@ -594,6 +624,51 @@ func (s *ToolService) finishInvocation(ctx context.Context, inv *ToolInvocation,
 		}
 		_, err := w.Append(ctx, tx, outbox.AppendInput{EventType: toolInvocationFinishedEvent, AggregateType: "ai_tool_invocation", AggregateID: inv.ID, AggregateVersion: 1, Payload: payload})
 		return err
+	})
+}
+
+func (s *ToolService) finishConfirmedInvocation(ctx context.Context, inv *ToolInvocation, confirmation *ToolConfirmation, result *aitool.Result, invocationStatus, category, confirmationStatus string, decidedAt time.Time) error {
+	now := time.Now().UTC()
+	duration := now.Sub(inv.StartedAt).Milliseconds()
+	invocationUpdates := map[string]any{
+		"status": invocationStatus, "finished_at": now, "duration_ms": duration, "error_category": category,
+		"result_json": jsonBytes(aitool.Result{CallID: result.CallID, Status: result.Status, Summary: result.Summary, ResourceRefs: append([]string(nil), result.ResourceRefs...), Truncated: result.Truncated, ErrorCategory: result.ErrorCategory}),
+	}
+	confirmationUpdates := map[string]any{"status": confirmationStatus}
+	if confirmationStatus == ToolConfirmationConsumed {
+		confirmationUpdates["consumed_at"] = decidedAt
+	} else {
+		confirmationUpdates["decided_at"] = decidedAt
+	}
+	payload := map[string]any{"invocation_id": inv.ID, "tool_id": inv.ToolID, "source": inv.Source, "status": invocationStatus, "duration_ms": duration, "error_category": category}
+	if metadata, ok := s.registry.SlotMetadata(inv.ToolID); ok {
+		payload["invocation_class"] = metadata.InvocationClass
+		payload["budget_category"] = metadata.BudgetCategory
+	}
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		expectedInvocationStatus := ToolInvocationRunning
+		if confirmationStatus == ToolConfirmationRejected {
+			expectedInvocationStatus = ToolInvocationWaitingConfirmation
+		}
+		finished := tx.Model(&ToolInvocation{}).Where("id=? AND status=?", inv.ID, expectedInvocationStatus).Updates(invocationUpdates)
+		if finished.Error != nil {
+			return finished.Error
+		}
+		if finished.RowsAffected != 1 {
+			return confirmationDecisionConflict("")
+		}
+		resolved := tx.Model(&ToolConfirmation{}).Where("id=? AND status=?", confirmation.ID, confirmation.Status).Updates(confirmationUpdates)
+		if resolved.Error != nil {
+			return resolved.Error
+		}
+		if resolved.RowsAffected != 1 {
+			return confirmationDecisionConflict("")
+		}
+		if s.writer != nil {
+			_, err := s.writer.Append(ctx, tx, outbox.AppendInput{EventType: toolInvocationFinishedEvent, AggregateType: "ai_tool_invocation", AggregateID: inv.ID, AggregateVersion: 1, Payload: payload})
+			return err
+		}
+		return nil
 	})
 }
 

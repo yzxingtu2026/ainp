@@ -62,6 +62,10 @@ Action Tool 的 `TitleForHuman` 必须来自注册处显式声明的 `AIMeta.Too
 
 同一模型响应含多个 Tool Call 时按顺序执行。任一调用进入确认后必须立即停止执行同批后续调用，并为每个未执行调用追加配对的 `deferred_for_confirmation` Tool Result；模型在确认恢复后按需重新发起。批准、拒绝、过期及其他确认终态都必须为原 Tool Call 产生配对结果，禁止留下永久等待卡片。
 
+批准使用短事务同时将 confirmation 从 `pending` 认领为 `approved`、将 invocation 从 `waiting_confirmation` 认领为 `running`；任一条件更新失败必须整体回滚。Action Executor 在事务外最多执行一次，不允许通过重复批准重放。执行实际开始后，无论成功还是失败，invocation 终态、confirmation=`consumed`、`consumed_at`、安全 Result 与 `ai.tool_invocation.finished.v1` 必须在同一事务提交。失败 Result 只持久化 `call_id`、`status=failed`、安全摘要和稳定 `error_category`，禁止包含原始参数、Secret、数据库错误或堆栈。
+
+对 `consumed/rejected/expired/cancelled` confirmation 的重复批准或拒绝统一返回稳定业务冲突，不得暴露 invocation 内部状态或把查询不到 `pending` 映射为 500。前端在决策请求期间必须同时禁用批准和拒绝；请求完成后按服务端状态刷新列表，失败时保留第一次安全业务错误，不得让后续重复决策冲突覆盖它。
+
 工具调用事实与 `ai.tool_invocation.finished.v1` 同事务完成；目录变化写 `ai.tool_catalog.changed.v1`。Outbox、审计摘要和普通日志不得包含完整参数、结果、Secret、Credential 或第三方原始响应。
 
 Slot 的专用预算由通用 Tool Runtime 按 `BudgetCategory/MaxCallsPerRun` 计数；Agent Runtime 不识别具体 Tool ID。Step 类型、Invocation 分类和事实摘要从 Slot 元数据生成，只有 `Observations` 声明的字段及受控来源映射可以进入 Step/事件；未列入 `FailureCategories` 的失败子分类统一收敛为 `execution_failed`。知识工具只允许记录次数、候选/返回/Citation 数、耗时、降级、缓存命中与稳定失败分类；Chunk 正文只存在于发给模型的 Tool Result，不进入这些事实摘要。

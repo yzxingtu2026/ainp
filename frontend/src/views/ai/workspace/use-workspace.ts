@@ -399,8 +399,9 @@ function createAiConversationController() {
     activeConversations.value.unshift(data);
   }
 
-  async function onConfirmationResolved() {
-    confirmations.value = [];
+  async function onConfirmationResolved(_status?: 'approved' | 'rejected', result?: Api.AI.ToolResult) {
+    await refreshConfirmations();
+    if (result?.status === 'failed') error.value = result.summary;
     const run = runDetail.value?.run;
     if (run) void watchRun(run.id, eventCursor);
   }

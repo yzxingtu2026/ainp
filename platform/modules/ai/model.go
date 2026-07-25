@@ -188,6 +188,20 @@ type ToolScope struct {
 
 func (ToolScope) TableName() string { return "ai_tool_scopes" }
 
+const (
+	ToolConfirmationPending   = "pending"
+	ToolConfirmationApproved  = "approved"
+	ToolConfirmationRejected  = "rejected"
+	ToolConfirmationExpired   = "expired"
+	ToolConfirmationConsumed  = "consumed"
+	ToolConfirmationCancelled = "cancelled"
+
+	ToolInvocationRunning             = "running"
+	ToolInvocationWaitingConfirmation = "waiting_confirmation"
+	ToolInvocationCompleted           = "completed"
+	ToolInvocationFailed              = "failed"
+)
+
 type ToolConfirmation struct {
 	ID                   string                           `gorm:"primaryKey;size:64" json:"id"`
 	TenantID             string                           `gorm:"size:64;not null;index" json:"-"`
