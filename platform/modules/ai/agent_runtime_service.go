@@ -668,11 +668,19 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 		if snapshotID != nil && len(recallRefs) > 0 {
 			_ = s.attachMemoryRecallRefs(ctx, *snapshotID, recallRefs)
 		}
+		effective, err := aiagent.ResolveInstructions(s.contracts, agent.ContractKey, agent.ContractVersion, version.TenantInstructions)
+		if err != nil {
+			return s.fail(ctx, run, "agent_contract_unavailable")
+		}
 		step, err := s.newStep(ctx, run, aiagentruntime.StepModel, map[string]any{"message_count": len(messages), "context_snapshot_id": snapshotID})
 		if err != nil {
 			return err
 		}
-		request := aimodelruntime.GenerateRequest{ModelAlias: version.ModelAlias, ToolScopeID: scopeID, EnableTools: true, Instructions: version.TenantInstructions, Messages: messages, Metadata: map[string]string{"agent_id": agent.ID, "agent_run_id": run.ID}}
+		metadata := map[string]string{"agent_id": agent.ID, "agent_run_id": run.ID, "has_tenant_supplement": fmt.Sprint(effective.HasTenantSupplement)}
+		if effective.ContractKey != "" {
+			metadata["contract_key"], metadata["contract_version"] = effective.ContractKey, effective.ContractVersion
+		}
+		request := aimodelruntime.GenerateRequest{ModelAlias: version.ModelAlias, ToolScopeID: scopeID, EnableTools: true, Instructions: effective.Text, Messages: messages, Metadata: metadata}
 		response, callErr := s.streamModel(ctx, run, request)
 		run.ModelCalls++
 		if e := s.persistCounters(ctx, run); e != nil {

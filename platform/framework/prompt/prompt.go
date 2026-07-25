@@ -10,11 +10,19 @@ import (
 	"strings"
 	"sync"
 	"text/template"
+
+	"gopkg.in/yaml.v3"
 )
 
 type entry struct {
 	body     string
+	metadata Metadata
 	template *template.Template
+}
+
+type Metadata struct {
+	Description string `yaml:"description"`
+	Version     string `yaml:"version"`
 }
 
 var registry = struct {
@@ -74,6 +82,14 @@ func MustGet(key string) string {
 	return value
 }
 
+// MetadataFor returns immutable prompt source metadata without exposing its body.
+func MetadataFor(key string) (Metadata, bool) {
+	registry.RLock()
+	item, ok := registry.entries[key]
+	registry.RUnlock()
+	return item.metadata, ok
+}
+
 // Render executes a loaded prompt as a Go text/template and panics on failure.
 func Render(key string, data any) string {
 	registry.RLock()
@@ -107,7 +123,7 @@ func load(dir string) (map[string]entry, error) {
 		if err != nil {
 			return fmt.Errorf("prompt: read %s: %w", path, err)
 		}
-		body, err := stripFrontmatter(string(data))
+		metadata, body, err := parseMarkdown(string(data))
 		if err != nil {
 			return fmt.Errorf("prompt: parse %s: %w", path, err)
 		}
@@ -121,7 +137,7 @@ func load(dir string) (map[string]entry, error) {
 		if _, exists := loaded[key]; exists {
 			return fmt.Errorf("prompt: duplicate key %q", key)
 		}
-		loaded[key] = entry{body: body, template: parsed}
+		loaded[key] = entry{body: body, metadata: metadata, template: parsed}
 		return nil
 	})
 	if err != nil {
@@ -133,14 +149,18 @@ func load(dir string) (map[string]entry, error) {
 	return loaded, nil
 }
 
-func stripFrontmatter(content string) (string, error) {
+func parseMarkdown(content string) (Metadata, string, error) {
 	normalized := strings.ReplaceAll(content, "\r\n", "\n")
 	if !strings.HasPrefix(normalized, "---\n") {
-		return strings.TrimSpace(normalized), nil
+		return Metadata{}, strings.TrimSpace(normalized), nil
 	}
 	end := strings.Index(normalized[4:], "\n---\n")
 	if end < 0 {
-		return "", fmt.Errorf("frontmatter closing delimiter is missing")
+		return Metadata{}, "", fmt.Errorf("frontmatter closing delimiter is missing")
 	}
-	return strings.TrimSpace(normalized[4+end+5:]), nil
+	var metadata Metadata
+	if err := yaml.Unmarshal([]byte(normalized[4:4+end]), &metadata); err != nil {
+		return Metadata{}, "", fmt.Errorf("invalid frontmatter: %w", err)
+	}
+	return metadata, strings.TrimSpace(normalized[4+end+5:]), nil
 }

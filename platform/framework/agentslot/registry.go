@@ -119,6 +119,33 @@ func (r *Registry) Current(key string) (Slot, bool) {
 	sort.Strings(keys)
 	return versions[keys[len(keys)-1]], true
 }
+
+// AcceptsContract allows registered versions of the same contract only for compatible slots.
+func (r *Registry) AcceptsContract(slot Slot, key, version string) bool {
+	if key != slot.DefaultContractKey {
+		return false
+	}
+	if version == slot.DefaultContractVersion {
+		return true
+	}
+	if slot.UpgradePolicy != UpgradeCompatible {
+		return false
+	}
+	contract, ok := r.contracts.Get(key, version)
+	if !ok {
+		return false
+	}
+	available := map[string]bool{}
+	for _, capability := range contract.RequiredModelCapabilities {
+		available[capability] = true
+	}
+	for _, capability := range slot.RequiredCapabilities {
+		if !available[capability] {
+			return false
+		}
+	}
+	return true
+}
 func (r *Registry) List() []Slot {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

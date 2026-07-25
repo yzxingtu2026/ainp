@@ -15,7 +15,26 @@ func contracts(t *testing.T) *aiagent.Registry {
 	if err != nil {
 		t.Fatal(err)
 	}
+	err = r.Register(aiagent.Contract{Key: "system.operations", Version: "2.2.0", Name: "Operations", BaseInstructions: "safe", RequiredModelCapabilities: []string{"chat", "tools"}, ConfigSchema: json.RawMessage(`{"type":"object"}`), SingletonScope: aiagent.SingletonTenant, UpgradePolicy: "manual"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	return r
+}
+
+func TestCompatibleSlotAcceptsOnlyRegisteredContractVersions(t *testing.T) {
+	r := NewRegistry(contracts(t))
+	slot := validSlot()
+	if !r.AcceptsContract(slot, "system.operations", "1.0.0") || !r.AcceptsContract(slot, "system.operations", "2.2.0") {
+		t.Fatal("compatible slot must accept registered versions of its contract")
+	}
+	if r.AcceptsContract(slot, "system.operations", "9.9.9") || r.AcceptsContract(slot, "other.contract", "1.0.0") {
+		t.Fatal("compatible slot must reject unknown contract references")
+	}
+	slot.UpgradePolicy = UpgradePinned
+	if r.AcceptsContract(slot, "system.operations", "2.2.0") {
+		t.Fatal("pinned slot must reject other contract versions")
+	}
 }
 
 func validSlot() Slot {

@@ -16,7 +16,7 @@ func TestLoadGetRenderAndReload(t *testing.T) {
 		t.Fatal(err)
 	}
 	file := filepath.Join(path, "hello.md")
-	if err := os.WriteFile(file, []byte("---\ndescription: test\n---\n\n你好，{{.Name}}"), 0o600); err != nil {
+	if err := os.WriteFile(file, []byte("---\ndescription: test\nversion: 1.2.3\n---\n\n你好，{{.Name}}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := LoadDir(dir); err != nil {
@@ -24,6 +24,9 @@ func TestLoadGetRenderAndReload(t *testing.T) {
 	}
 	if got := Get("ai/hello"); got != "你好，{{.Name}}" {
 		t.Fatalf("unexpected body: %q", got)
+	}
+	if metadata, ok := MetadataFor("ai/hello"); !ok || metadata.Version != "1.2.3" || metadata.Description != "test" {
+		t.Fatalf("unexpected metadata: %#v, %v", metadata, ok)
 	}
 	if got := Render("ai/hello", map[string]string{"Name": "小明"}); got != "你好，小明" {
 		t.Fatalf("unexpected render: %q", got)

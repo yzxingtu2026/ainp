@@ -5,7 +5,7 @@ Agent Contract 定义智能体能力和安全约束，Agent Definition 是租户
 ## 注册与解析
 
 - Slot Definition 由模块代码注册，稳定标识为 `key + version`；数据库不得动态创建 builtin Slot。
-- 首个内置 Slot 是 `workspace.default@1.0.0`，默认 Contract 为 `system.operations@1.0.0`。
+- 首个内置 Slot 是 `workspace.default@1.0.0`，默认 Contract 为 `system.operations@1.0.0`。Slot 固定能力契约版本，不跟随只影响基础指令内容的 Prompt Version 变化。
 - 解析优先级为：允许时的用户偏好、租户绑定、系统默认。只有某层从未配置时才读取下一层。
 - 显式配置指向不可见、停用、未发布、不兼容或 diagnostics 异常的 Agent 时必须 fail-closed，并返回结构化 diagnostics，禁止静默回退。
 - Binding 和用户偏好保存稳定 `agent_id`；解析时读取当前 release Version。
