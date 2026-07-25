@@ -7,8 +7,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
+	"github.com/yzxingtu2026/ainp/platform/framework/diagnostic"
 	"github.com/yzxingtu2026/ainp/platform/framework/job"
 	"github.com/yzxingtu2026/ainp/platform/framework/logging"
 	"github.com/yzxingtu2026/ainp/platform/framework/status"
@@ -187,7 +189,7 @@ func process(ctx context.Context, db *gorm.DB, registry *job.Registry, store job
 		TenantID:      run.TenantID,
 		Realm:         auth.Realm(run.Realm),
 		UserID:        run.CreatedBy,
-		RequestID:     run.CorrelationID,
+		RequestID:     uuid.NewString(),
 		TraceID:       run.CorrelationID,
 		Client:        "job",
 		Authenticated: true,
@@ -229,8 +231,7 @@ func process(ctx context.Context, db *gorm.DB, registry *job.Registry, store job
 		_ = store.UpdateFields(ctx, run.ID, map[string]any{
 			"status": status.JobDead, "finished_at": finished, "last_error": job.TruncateError(err),
 		})
-		logging.Warn(jobCtx, "job permanent failure",
-			"job_id", run.ID, "job_type", run.JobType, "attempt", attempt, "error", job.TruncateError(err))
+		logJobFailure(jobCtx, "job permanent failure", run.ID, run.JobType, attempt, dur, err, true)
 		return fmt.Errorf("%w: %v", asynq.SkipRetry, err)
 	}
 
@@ -242,8 +243,7 @@ func process(ctx context.Context, db *gorm.DB, registry *job.Registry, store job
 		_ = store.UpdateFields(ctx, run.ID, map[string]any{
 			"status": status.JobDead, "finished_at": finished, "last_error": job.TruncateError(err),
 		})
-		logging.Warn(jobCtx, "job dead",
-			"job_id", run.ID, "job_type", run.JobType, "attempt", attempt, "error", job.TruncateError(err))
+		logJobFailure(jobCtx, "job dead", run.ID, run.JobType, attempt, dur, err, true)
 		return fmt.Errorf("%w: %v", asynq.SkipRetry, err)
 	}
 	_ = store.UpdateFields(ctx, run.ID, map[string]any{
@@ -252,4 +252,14 @@ func process(ctx context.Context, db *gorm.DB, registry *job.Registry, store job
 	logging.Warn(jobCtx, "job retryable failure",
 		"job_id", run.ID, "job_type", run.JobType, "attempt", attempt, "error", job.TruncateError(err))
 	return err
+}
+
+func logJobFailure(ctx context.Context, message, id, jobType string, attempt int, duration time.Duration, err error, final bool) {
+	meta := diagnostic.Describe(err, "job.handler")
+	attrs := []any{"job_id", id, "job_type", jobType, "attempt", attempt, "duration_ms", duration.Milliseconds(), "final", final, "error_category", meta.Category, "error_stage", meta.Stage, "safe_summary", meta.SafeSummary}
+	if final {
+		logging.Error(ctx, message, err, attrs...)
+		return
+	}
+	logging.Warn(ctx, message, append(attrs, "error", job.TruncateError(err))...)
 }

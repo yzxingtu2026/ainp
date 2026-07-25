@@ -1,6 +1,9 @@
 package errs
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
 
 const (
 	CodeOK = 0
@@ -136,8 +139,6 @@ func AsAppError(err error) (*AppError, bool) {
 	if err == nil {
 		return nil, false
 	}
-	if ae, ok := err.(*AppError); ok {
-		return ae, true
-	}
-	return nil, false
+	var ae *AppError
+	return ae, errors.As(err, &ae)
 }

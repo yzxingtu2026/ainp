@@ -16,6 +16,7 @@ x-backend: &backend
     - ./config.yaml:/app/config/config.yaml:ro
     - state:/var/lib/ainp/state
     - objects:/var/lib/ainp/objects
+    - ${AINP_LOG_DIR:-./runtime/app-logs}:/var/lib/ainp/logs
   depends_on:
     postgres:
       condition: service_healthy
@@ -28,10 +29,11 @@ services:
     user: "0:0"
     restart: "no"
     entrypoint: ["/bin/sh", "-c"]
-    command: ["chown 10001:10001 /var/lib/ainp/state /var/lib/ainp/objects && chmod 0750 /var/lib/ainp/state /var/lib/ainp/objects"]
+    command: ["chown 10001:10001 /var/lib/ainp/state /var/lib/ainp/objects /var/lib/ainp/logs && chmod 0750 /var/lib/ainp/state /var/lib/ainp/objects /var/lib/ainp/logs"]
     volumes:
       - state:/var/lib/ainp/state
       - objects:/var/lib/ainp/objects
+      - ${AINP_LOG_DIR:-./runtime/app-logs}:/var/lib/ainp/logs
 
   postgres:
     image: pgvector/pgvector:pg17
@@ -80,6 +82,17 @@ services:
     <<: *backend
     entrypoint: ["/usr/local/bin/ainp-worker"]
     command: ["-config", "/app/config/config.yaml"]
+    environment:
+      DATABASE_DSN: host=postgres user=${POSTGRES_USER:-ainp} password=${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD} dbname=${POSTGRES_DB:-ainp} port=5432 sslmode=disable TimeZone=UTC
+      REDIS_ADDR: redis:6379
+      STORAGE_PROVIDER: local
+      STORAGE_LOCAL_ROOT: /var/lib/ainp/objects
+      MCP_BASE_URL: ${PUBLIC_BASE_URL:?set PUBLIC_BASE_URL}
+      MCP_WEB_BASE_URL: ${PUBLIC_BASE_URL:?set PUBLIC_BASE_URL}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
+      AI_CREDENTIAL_ENCRYPTION_KEY: ${AI_CREDENTIAL_ENCRYPTION_KEY:?set AI_CREDENTIAL_ENCRYPTION_KEY}
+      LOG_SERVICE: worker
+      LOG_FILE_PATH: /var/lib/ainp/logs/worker.jsonl
     depends_on:
       api:
         condition: service_healthy

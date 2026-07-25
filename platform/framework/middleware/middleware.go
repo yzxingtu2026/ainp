@@ -1,14 +1,19 @@
 package middleware
 
 import (
+	"fmt"
 	"net/http"
+	"runtime/debug"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
+	"github.com/yzxingtu2026/ainp/platform/framework/diagnostic"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 	"github.com/yzxingtu2026/ainp/platform/framework/i18n"
+	"github.com/yzxingtu2026/ainp/platform/framework/logging"
 	"github.com/yzxingtu2026/ainp/platform/framework/response"
 )
 
@@ -42,9 +47,23 @@ func RequestID() gin.HandlerFunc {
 
 func Recover() gin.HandlerFunc {
 	return gin.CustomRecovery(func(c *gin.Context, recovered any) {
-		response.Fail(c, errs.Wrap(errs.CodeInternal, "panic", nil))
+		err := diagnostic.New(diagnostic.Panic, "http.panic", "request panicked", fmt.Errorf("%v", recovered), nil)
+		logging.Error(c.Request.Context(), "http request panic", err,
+			"method", c.Request.Method, "route", c.FullPath(), "error_category", diagnostic.Panic,
+			"error_stage", "http.panic", "safe_summary", "request panicked", "stack", string(debug.Stack()))
+		response.Fail(c, errs.Wrap(errs.CodeInternal, "panic", err))
 		c.Abort()
 	})
+}
+
+func RequestLog() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		started := time.Now()
+		c.Next()
+		attrs := []any{"method", c.Request.Method, "route", c.FullPath(), "status", c.Writer.Status(), "duration_ms", time.Since(started).Milliseconds()}
+		attrs = append(attrs, "ok", len(c.Errors) == 0 && c.Writer.Status() < http.StatusInternalServerError)
+		logging.Info(c.Request.Context(), "http request finished", attrs...)
+	}
 }
 
 // AcceptLanguage 解析 Accept-Language 请求头，将协商后的语言写入 AuthContext.Language。

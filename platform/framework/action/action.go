@@ -9,6 +9,7 @@ import (
 
 	"github.com/yzxingtu2026/ainp/platform/framework/audit"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
+	"github.com/yzxingtu2026/ainp/platform/framework/diagnostic"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 	"github.com/yzxingtu2026/ainp/platform/framework/logging"
 	"github.com/yzxingtu2026/ainp/platform/framework/permission"
@@ -277,31 +278,35 @@ func (r *Registry) SetIdempotencyExecutor(executor IdempotencyExecutor) {
 }
 
 func (r *Registry) Invoke(ctx context.Context, actionID string, input json.RawMessage) (any, error) {
+	start := time.Now()
 	a, ok := r.items[actionID]
 	if !ok {
-		return nil, errs.New(errs.CodeActionNotFound, "action not found")
+		err := errs.New(errs.CodeActionNotFound, "action not found")
+		logActionFailure(ctx, actionID, "", false, start, "action.lookup", err)
+		return nil, err
 	}
 
 	ac := auth.MustFromContext(ctx)
 	if auth.NormalizeRealm(ac.Realm) != a.Meta.Surface {
 		err := errs.New(errs.CodeForbidden, "action is not available in current realm")
 		r.writeAudit(ctx, a, a.Meta.PermissionCode(a.ID), "failure", err)
+		logActionFailure(ctx, a.ID, a.Meta.Capability, false, start, "action.realm", err)
 		return nil, err
 	}
 	perm := a.Meta.PermissionCode(a.ID)
 	if a.Meta.AccessMode() != AccessPublic {
 		if err := RequireAuthenticated(ctx); err != nil {
 			r.writeAudit(ctx, a, perm, "failure", err)
+			logActionFailure(ctx, a.ID, a.Meta.Capability, false, start, "action.authentication", err)
 			return nil, err
 		}
 		if a.Meta.AccessMode() == AccessPermission && r.checker != nil && !r.checker.Allow(ac, perm) {
 			err := errs.New(errs.CodeForbidden, "forbidden")
 			r.writeAudit(ctx, a, perm, "failure", err)
+			logActionFailure(ctx, a.ID, a.Meta.Capability, false, start, "action.authorization", err)
 			return nil, err
 		}
 	}
-
-	start := time.Now()
 
 	var data any
 	var isReplay bool
@@ -318,33 +323,58 @@ func (r *Registry) Invoke(ctx context.Context, actionID string, input json.RawMe
 		}
 		var execErr error
 		data, isReplay, execErr = r.idempotencyExecutor.Execute(ctx, a.ID, input, a.Handler, a.Meta.Idempotency.Mode, a.Meta.Idempotency.CacheBusinessErrors, ttl, ipt)
-		logging.Info(ctx, "action finished",
-			"action_id", a.ID,
-			"duration_ms", time.Since(start).Milliseconds(),
-			"ok", execErr == nil,
-			"replay", isReplay,
-		)
 		if execErr != nil {
+			logActionFailure(ctx, a.ID, a.Meta.Capability, isReplay, start, "action.idempotency_or_handler", execErr)
 			r.writeAuditWithReplay(ctx, a, perm, "failure", execErr, isReplay)
 			return nil, execErr
 		}
 		r.writeAuditWithReplay(ctx, a, perm, "success", nil, isReplay)
+		logging.Info(ctx, "action finished", "action_id", a.ID, "capability", a.Meta.Capability, "duration_ms", time.Since(start).Milliseconds(), "ok", true, "replay", isReplay)
 		return data, nil
 	}
 
 	// Normal execution path
 	data, err := a.Handler(ctx, input)
-	logging.Info(ctx, "action finished",
-		"action_id", a.ID,
-		"duration_ms", time.Since(start).Milliseconds(),
-		"ok", err == nil,
-	)
 	if err != nil {
+		logActionFailure(ctx, a.ID, a.Meta.Capability, false, start, "action.handler", err)
 		r.writeAudit(ctx, a, perm, "failure", err)
 		return nil, err
 	}
 	r.writeAudit(ctx, a, perm, "success", nil)
+	logging.Info(ctx, "action finished", "action_id", a.ID, "capability", a.Meta.Capability, "duration_ms", time.Since(start).Milliseconds(), "ok", true, "replay", false)
 	return data, nil
+}
+
+func logActionFailure(ctx context.Context, actionID, capability string, replay bool, started time.Time, fallbackStage string, err error) {
+	meta := diagnostic.Describe(err, fallbackStage)
+	code, messageKey := errs.CodeInternal, "common.internal_error"
+	if appErr, ok := errs.AsAppError(err); ok {
+		code, messageKey = appErr.Code, appErr.Key()
+		if code != errs.CodeInternal {
+			meta.SafeSummary = appErr.Message
+		}
+	}
+	if meta.Category == diagnostic.Internal {
+		switch code {
+		case errs.CodeValidation:
+			meta.Category = diagnostic.Validation
+		case errs.CodeUnauthorized:
+			meta.Category = diagnostic.Authentication
+		case errs.CodeForbidden:
+			meta.Category = diagnostic.Authorization
+		case errs.CodeNotFound, errs.CodeActionNotFound:
+			meta.Category = diagnostic.NotFound
+		case errs.CodeConflict:
+			meta.Category = diagnostic.Conflict
+		case errs.CodeTooManyRequests:
+			meta.Category = diagnostic.RateLimited
+		}
+	}
+	attrs := []any{"action_id", actionID, "capability", capability, "duration_ms", time.Since(started).Milliseconds(), "ok", false, "replay", replay, "error_code", code, "message_key", messageKey, "error_category", meta.Category, "error_stage", meta.Stage, "safe_summary", meta.SafeSummary}
+	for key, value := range meta.Attributes {
+		attrs = append(attrs, key, value)
+	}
+	logging.Error(ctx, "action finished", err, attrs...)
 }
 
 // AuditRejected records a transport adapter rejection for a registered Action

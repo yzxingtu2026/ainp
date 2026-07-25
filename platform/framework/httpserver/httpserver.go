@@ -44,6 +44,7 @@ func New(opts Options) *gin.Engine {
 	r.Use(
 		middleware.Recover(),
 		middleware.RequestID(),
+		middleware.RequestLog(),
 		middleware.SetupGate(opts.Installed),
 		middleware.AcceptLanguage(),
 		middleware.Auth(middleware.AuthOptions{

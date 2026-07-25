@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/logging"
 	"github.com/yzxingtu2026/ainp/platform/framework/status"
 	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
@@ -175,20 +176,31 @@ func (d *Dispatcher) claimBatch(ctx context.Context) ([]Event, error) {
 }
 
 func (d *Dispatcher) processOne(ctx context.Context, ev Event) {
+	traceID := ev.CorrelationID
+	if traceID == "" {
+		traceID = ev.ID
+	}
+	ctx = auth.WithContext(ctx, &auth.Context{RequestID: uuid.NewString(), TraceID: traceID, TenantID: ev.TenantID, Realm: auth.Realm(ev.Realm), UserID: ev.ActorID, Client: "system", Authenticated: true})
 	start := time.Now()
 	env := rowToEnvelope(ev)
 	err := d.transport.Publish(ctx, env)
 	dur := time.Since(start)
 	if err != nil {
-		logging.Warn(ctx, "outbox publish failed",
+		attrs := []any{
 			"event_id", ev.ID,
 			"event_type", ev.EventType,
 			"tenant_id", ev.TenantID,
 			"transport", d.transport.Name(),
-			"attempt", ev.Attempts+1,
+			"attempt", ev.Attempts + 1,
 			"duration_ms", dur.Milliseconds(),
 			"error", truncateError(err),
-		)
+			"error_category", "internal", "error_stage", "outbox.publish", "safe_summary", "outbox publish failed",
+		}
+		if ev.Attempts+1 >= d.cfg.MaxAttempts {
+			logging.Error(ctx, "outbox publish failed", err, attrs...)
+		} else {
+			logging.Warn(ctx, "outbox publish failed", attrs...)
+		}
 		d.markFailure(ctx, ev, err)
 		return
 	}

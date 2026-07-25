@@ -12,7 +12,7 @@ Agent 只读要点：`.agent/rules/logging.md`。本文档为运行日志与审�
 
 | 类型 | 用途 | 落点 | API |
 |------|------|------|-----|
-| 运行日志 | 排障、观测、告警 | stdout（JSON）/ 日志采集 | 框架 `Logger`（`slog`） |
+| 运行日志 | 排障、观测、告警 | stdout + 可轮转 JSONL 文件 | 框架 `Logger`（`slog`） |
 | 审计日志 | 谁、何租户、对何 Action、结果如何 | DB 或专用存储，可查询与保留 | 框架 `Audit`（另文/后续包） |
 
 业务代码不得用运行日志替代审计；审计实现未就绪前，也不得用 `fmt.Println` 临时代替运行日志。
@@ -23,11 +23,26 @@ Agent 只读要点：`.agent/rules/logging.md`。本文档为运行日志与审�
 |----|------|
 | 门面 | 项目封装（建议包路径 `platform/framework/logging` 或等价） |
 | 实现 | Go 标准库 `log/slog` |
-| 生产格式 | JSON，写 stdout |
+| 生产格式 | stdout 与文件均为 JSON；文件固定单行 JSONL |
 | 本地开发 | text 或 JSON，由配置切换 |
 | 替换策略 | 业务只依赖门面；Handler 日后可换（如 zap 适配），不改调用方 |
 
 禁止：业务直接依赖 zap/logrus/zerolog；禁止零散 `print` / `fmt.Print*` / 标准库 `log` 包作为业务日志。
+
+生产配置可组合 `outputs: [stdout, file]`。文件 Sink 使用并发安全轮转 Writer，支持 `max_size_mb`、`max_backups`、`max_age_days` 和 `compress`；文件初始化或写入失败只向 stderr 输出 `logging ... degraded` 并继续服务。API、Worker 必须使用不同路径，并通过 `service`、`instance_id` 区分进程和副本。进程退出尽力关闭 Writer。
+
+```yaml
+logging:
+  level: info
+  format: json
+  outputs: [stdout, file]
+  file:
+    path: /var/lib/ainp/logs/api.jsonl
+    max_size_mb: 100
+    max_backups: 14
+    max_age_days: 14
+    compress: true
+```
 
 ## 上下文与字段
 
@@ -44,6 +59,13 @@ Agent 只读要点：`.agent/rules/logging.md`。本文档为运行日志与审�
 | `module` | 子系统或包名 |
 | `err` | 错误对象/消息（Error 级） |
 | `duration_ms` | 耗时（请求/Action 结束时） |
+| `service` / `instance_id` | 进程类型与副本标识 |
+
+`request_id` 表示一次 HTTP/RPC/Job 执行，`trace_id` 表示跨 HTTP、Outbox、Job、Agent Run 和 Tool Invocation 的链路。异步执行必须生成自己的 `request_id` 并继承原始 `trace_id`。这些高基数字段只作为 JSON 字段，不作为集中日志 label。
+
+## 内部诊断错误
+
+`framework/diagnostic.Error` 将对外 `AppError` 与内部诊断分离，提供稳定 `error_category`、`error_stage`、`safe_summary`、白名单 `attributes` 和可 `errors.Is/As/Unwrap` 的 cause。分类描述原因，stage 描述位置；业务不得通过字符串解析类型或创建同义分类。公共最终边界负责 Error 日志，Service/Adapter 只包装诊断元数据，避免逐层重复输出。
 
 业务可追加领域字段，但不得覆盖上表语义，不得使用驼峰或中文 key。
 
@@ -73,6 +95,9 @@ Agent 只读要点：`.agent/rules/logging.md`。本文档为运行日志与审�
 - 密码、刷新令牌、API Key、Authorization 头全量
 - 身份证、银行卡等明文证件号
 - 大段用户隐私正文（按需哈希或截断）
+- URL query/fragment、请求/响应正文、SQL 参数和连接串
+
+Logger 对敏感键统一替换为 `***`，普通字符串属性最多 1024 字节；诊断属性还必须通过固定白名单。外部 URL 只记录 host 与无 query/fragment 的路径。
 
 AI 相关：
 
@@ -102,6 +127,8 @@ logging.Error(ctx, "purchase create failed", err, "purchase_id", id)
 ## 日志中心查询架构
 
 - 运行日志继续输出结构化 stdout，由 Loki/OpenSearch 等外部系统采集；AINP 业务数据库不得作为运行日志主存储。
+- 当前 demo 同时持久化 `/var/lib/ainp/logs/api.jsonl` 与 `worker.jsonl`，不引入 Loki。宿主机使用 `deploy/demo/search-logs.sh request_id <id>` 或 `trace_id <id>` 检索当前及 `.gz` 历史轮转文件；脚本只读取 `.env` 声明的 `AINP_LOG_DIR`。
+- 容量上限需按 `service × instance × max_size_mb × (max_backups + 1)` 估算；部署负责人必须监控日志目录磁盘空间。压缩会降低历史占用，但不能替代容量告警。
 - 框架层 `framework/logcenter` 定义只读 Provider、来源 Registry、统一 `Entry/Query/Page` 和错误语义；业务模块不得按 Provider 类型分支，也不得透传 Loki/SQL 等原生 DSL。
 - 日志中心不读取任意服务器文件，不返回 Provider 凭证、服务器路径，不提供 Shell、SQL 或命令执行能力。
 - 操作审计、运行日志、JobRun、Outbox Event 各自保持独立事实源，关联只使用稳定 ID，不复制日志正文。
