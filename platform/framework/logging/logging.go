@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -33,11 +34,34 @@ type Config struct {
 	InstanceID string
 }
 
+func FilePathForService(path, service, instanceID string) string {
+	path = strings.ReplaceAll(path, "{service}", safeFilePart(service))
+	return strings.ReplaceAll(path, "{instance_id}", safeFilePart(instanceID))
+}
+
+// WorkerFilePath keeps a standalone worker out of the API file when both
+// processes load the same local config. An explicit LOG_FILE_PATH still wins.
+func WorkerFilePath(path string) string {
+	if path == "" || strings.Contains(path, "{service}") {
+		return path
+	}
+	return filepath.Join(filepath.Dir(path), "worker.jsonl")
+}
+
+func safeFilePart(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "unknown"
+	}
+	return filenamePartPattern.ReplaceAllString(value, "_")
+}
+
 func Init(level, format string) {
 	_ = InitConfig(Config{Level: level, Format: format, Outputs: []string{"stdout"}})
 }
 
 func InitConfig(cfg Config) io.Closer {
+	cfg.File.Path = FilePathForService(cfg.File.Path, cfg.Service, cfg.InstanceID)
 	var lvl slog.Level
 	switch strings.ToLower(cfg.Level) {
 	case "debug":
@@ -112,8 +136,9 @@ func positive(value, fallback int) int {
 const maxLogValueLength = 1024
 
 var (
-	credentialPattern = regexp.MustCompile(`(?i)(password|authorization|cookie|api[_-]?key|token|dsn|connection_string)(\s*[:=]\s*)([^\s,;]+)`)
-	urlQueryPattern   = regexp.MustCompile(`(https?://[^\s?]+)\?[^\s]+`)
+	credentialPattern   = regexp.MustCompile(`(?i)(password|authorization|cookie|api[_-]?key|token|dsn|connection_string)(\s*[:=]\s*)([^\s,;]+)`)
+	urlQueryPattern     = regexp.MustCompile(`(https?://[^\s?]+)\?[^\s]+`)
+	filenamePartPattern = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
 )
 
 func sanitizeAttr(_ []string, attr slog.Attr) slog.Attr {

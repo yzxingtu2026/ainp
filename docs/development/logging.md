@@ -29,7 +29,7 @@ Agent 只读要点：`.agent/rules/logging.md`。本文档为运行日志与审�
 
 禁止：业务直接依赖 zap/logrus/zerolog；禁止零散 `print` / `fmt.Print*` / 标准库 `log` 包作为业务日志。
 
-生产配置可组合 `outputs: [stdout, file]`。文件 Sink 使用并发安全轮转 Writer，支持 `max_size_mb`、`max_backups`、`max_age_days` 和 `compress`；文件初始化或写入失败只向 stderr 输出 `logging ... degraded` 并继续服务。API、Worker 必须使用不同路径，并通过 `service`、`instance_id` 区分进程和副本。进程退出尽力关闭 Writer。
+生产配置可组合 `outputs: [stdout, file]`。文件 Sink 使用并发安全轮转 Writer，支持 `max_size_mb`、`max_backups`、`max_age_days` 和 `compress`；文件初始化或写入失败只向 stderr 输出 `logging ... degraded` 并继续服务。API、Worker 必须使用不同路径，并通过 `service`、`instance_id` 区分进程和副本。路径支持 `{service}`、`{instance_id}` 占位符；独立 Worker 读取无占位符的共享本地配置时，默认改写为同目录 `worker.jsonl`，显式 `LOG_FILE_PATH` 优先。进程退出尽力关闭 Writer。
 
 ```yaml
 logging:
@@ -37,7 +37,7 @@ logging:
   format: json
   outputs: [stdout, file]
   file:
-    path: /var/lib/ainp/logs/api.jsonl
+    path: /var/lib/ainp/logs/{service}.jsonl
     max_size_mb: 100
     max_backups: 14
     max_age_days: 14

@@ -78,6 +78,15 @@ func TestLoggingFileSinkConcurrentWritesAndRestartAppend(t *testing.T) {
 	}
 }
 
+func TestLoggingSeparatesStandaloneWorkerFile(t *testing.T) {
+	if got := logging.WorkerFilePath("data/logs/api.jsonl"); got != filepath.Join("data", "logs", "worker.jsonl") {
+		t.Fatalf("worker path = %q", got)
+	}
+	if got := logging.FilePathForService("data/logs/{service}-{instance_id}.jsonl", "worker", "host/1"); got != filepath.Join("data", "logs", "worker-host_1.jsonl") {
+		t.Fatalf("templated path = %q", got)
+	}
+}
+
 func TestActionInternalFailureWritesCorrelatedDiagnosticLog(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "api.jsonl")
 	closer := logging.InitConfig(logging.Config{Level: "info", Outputs: []string{"file"}, Service: "api", InstanceID: "test-1", File: logging.FileConfig{Path: path, MaxSizeMB: 1}})

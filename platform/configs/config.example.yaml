@@ -13,7 +13,7 @@ logging:
   # service: api # API/Worker 启动时自动补齐，也可用 LOG_SERVICE 覆盖
   # instance_id: local-1 # 默认 hostname，也可用 INSTANCE_ID 覆盖
   file:
-    path: data/logs/api.jsonl # 可用 LOG_FILE_PATH 覆盖
+    path: data/logs/{service}.jsonl # API/独立 Worker 自动分文件；可用 LOG_FILE_PATH 覆盖
     max_size_mb: 100
     max_backups: 14
     max_age_days: 14
