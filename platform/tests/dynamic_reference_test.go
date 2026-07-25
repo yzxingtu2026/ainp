@@ -158,12 +158,12 @@ func TestDynamicReferenceToolEvidenceAndStaleConfirmation(t *testing.T) {
 	readMeta := dynamicReferenceMeta("read")
 	if err = actions.Register(action.Action{ID: "demo.catalog", Handler: func(context.Context, json.RawMessage) (any, error) {
 		return map[string]any{"items": []string{"a"}}, nil
-	}, Meta: action.Metadata{Capability: "demo", Access: action.AccessAuthenticated, AI: readMeta}}); err != nil {
+	}, Meta: action.Metadata{Capability: "demo", Name: "测试引用目录", Access: action.AccessAuthenticated, AI: readMeta}}); err != nil {
 		t.Fatal(err)
 	}
 	writeMeta := dynamicReferenceMeta("write")
 	writeMeta.DynamicReferences = []action.DynamicReference{{Field: "values[]", ResolverID: "demo.values", DiscoveryAction: "demo.catalog", RequireEvidence: true}}
-	if err = actions.Register(action.Action{ID: "demo.write", Handler: func(context.Context, json.RawMessage) (any, error) { return map[string]any{"ok": true}, nil }, Meta: action.Metadata{Capability: "demo", Access: action.AccessAuthenticated, AI: writeMeta}}); err != nil {
+	if err = actions.Register(action.Action{ID: "demo.write", Handler: func(context.Context, json.RawMessage) (any, error) { return map[string]any{"ok": true}, nil }, Meta: action.Metadata{Capability: "demo", Name: "测试引用写入", Access: action.AccessAuthenticated, AI: writeMeta}}); err != nil {
 		t.Fatal(err)
 	}
 	var mu sync.RWMutex
