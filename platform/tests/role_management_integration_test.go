@@ -162,6 +162,11 @@ func TestRoleManagementTenantIsolationAndProtection(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	if err := actions.RegisterReferenceResolver("system.assignable_permissions", action.ReferenceResolverFunc(func(context.Context) (action.ReferenceSnapshot, error) {
+		return action.ReferenceSnapshot{Values: system.AssignablePermissions(actions)}, nil
+	})); err != nil {
+		t.Fatal(err)
+	}
 	authService := system.NewAuthService(testDB, actions)
 	service := system.NewRoleService(testDB, authService, actions, capabilities)
 	ctxA := auth.WithContext(context.Background(), &auth.Context{TenantID: "tenant-a", UserID: "user-a", Realm: auth.RealmTenant, Authenticated: true})
