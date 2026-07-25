@@ -30,6 +30,9 @@ func registerRoleActions(a *app.App, svc *RoleService) error {
 	}
 	for _, definition := range definitions {
 		definition := definition
+		if definition.id == ActionRoleCreate || definition.id == ActionRolePermissionsUpdate {
+			definition.ai.DynamicReferences = []action.DynamicReference{{Field: "permissions[]", ResolverID: "system.assignable_permissions", DiscoveryAction: ActionPermissionCatalog, RequireEvidence: true, MaxInvalidValues: 8, MaxInvalidBytes: 512}}
+		}
 		if err := a.RegisterAction(action.Action{
 			ID: definition.id, Handler: definition.handler,
 			Meta: action.Metadata{

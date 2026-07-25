@@ -54,6 +54,7 @@ type AIMeta struct {
 	ResultSummary        string
 	InputSchema          json.RawMessage
 	OutputSchema         json.RawMessage
+	DynamicReferences    []DynamicReference
 }
 
 const (
@@ -154,6 +155,7 @@ type Action struct {
 
 type Registry struct {
 	items               map[string]Action
+	resolvers           map[string]ReferenceResolver
 	checker             *permission.Checker
 	auditor             audit.Recorder
 	idempotencyExecutor IdempotencyExecutor
@@ -166,9 +168,10 @@ type IdempotencyExecutor interface {
 
 func NewRegistry(checker *permission.Checker, auditor audit.Recorder) *Registry {
 	return &Registry{
-		items:   make(map[string]Action),
-		checker: checker,
-		auditor: auditor,
+		items:     make(map[string]Action),
+		resolvers: make(map[string]ReferenceResolver),
+		checker:   checker,
+		auditor:   auditor,
 	}
 }
 
@@ -203,6 +206,9 @@ func (r *Registry) Register(a Action) error {
 		if err := ValidateAIClassification(a.ID, a.Meta.AI); err != nil {
 			return err
 		}
+	}
+	if err := validateDynamicReferenceShapes(a); err != nil {
+		return err
 	}
 	if _, exists := r.items[a.ID]; exists {
 		return fmt.Errorf("action already registered: %s", a.ID)
@@ -285,7 +291,6 @@ func (r *Registry) Invoke(ctx context.Context, actionID string, input json.RawMe
 		logActionFailure(ctx, actionID, "", false, start, "action.lookup", err)
 		return nil, err
 	}
-
 	ac := auth.MustFromContext(ctx)
 	if auth.NormalizeRealm(ac.Realm) != a.Meta.Surface {
 		err := errs.New(errs.CodeForbidden, "action is not available in current realm")
@@ -306,6 +311,11 @@ func (r *Registry) Invoke(ctx context.Context, actionID string, input json.RawMe
 			logActionFailure(ctx, a.ID, a.Meta.Capability, false, start, "action.authorization", err)
 			return nil, err
 		}
+	}
+	if err := r.validateActionReferences(ctx, a, input); err != nil {
+		logActionFailure(ctx, a.ID, a.Meta.Capability, false, start, "action.reference_validation", err)
+		r.writeAudit(ctx, a, perm, "failure", err)
+		return nil, err
 	}
 
 	var data any

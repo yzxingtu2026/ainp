@@ -16,6 +16,9 @@ func (p *ActionProvider) List(context.Context) ([]Definition, error) {
 	if p.Actions == nil {
 		return nil, fmt.Errorf("action registry is required")
 	}
+	if err := p.Actions.ValidateDynamicReferences(); err != nil {
+		return nil, err
+	}
 	out := []Definition{}
 	for _, a := range p.Actions.List() {
 		if a.Meta.AI == nil || !a.Meta.AI.ExposeTool {
@@ -40,10 +43,21 @@ func actionDefinition(a action.Action) Definition {
 	if a.Meta.AccessMode() == action.AccessPermission {
 		permission = []string{a.Meta.PermissionCode(a.ID)}
 	}
-	return Definition{ID: "action:" + a.ID, Source: SourceAction, Name: a.Meta.Name, TitleForHuman: strings.TrimSpace(m.ToolTitle), DescriptionForLLM: m.Summary, DescriptionForHuman: m.HumanDescription, ResultSummary: m.ResultSummary, Capability: a.Meta.Capability, Tags: append([]string(nil), m.Tags...), InputSchema: action.ToolInputSchema(m.InputSchema), OutputSchema: m.OutputSchema, Risk: Risk(m.Risk), SideEffect: SideEffect(m.SideEffect), RequiresConfirmation: m.RequiresConfirmation, BindingMode: BindingForbidden, LoadingMode: LoadingProgressive, PermissionRefs: permission, RuntimeRef: a.ID, SchemaVersion: 1, Status: "enabled"}
+	refs := make([]DynamicReference, 0, len(m.DynamicReferences))
+	for _, ref := range m.DynamicReferences {
+		refs = append(refs, DynamicReference{Field: ref.Field, ResolverID: ref.ResolverID, DiscoveryToolID: "action:" + ref.DiscoveryAction, RequireEvidence: ref.RequireEvidence, MaxInvalidValues: ref.MaxInvalidValues, MaxInvalidBytes: ref.MaxInvalidBytes})
+	}
+	return Definition{ID: "action:" + a.ID, Source: SourceAction, Name: a.Meta.Name, TitleForHuman: strings.TrimSpace(m.ToolTitle), DescriptionForLLM: m.Summary, DescriptionForHuman: m.HumanDescription, ResultSummary: m.ResultSummary, Capability: a.Meta.Capability, Tags: append([]string(nil), m.Tags...), InputSchema: action.ToolInputSchema(m.InputSchema), OutputSchema: m.OutputSchema, Risk: Risk(m.Risk), SideEffect: SideEffect(m.SideEffect), RequiresConfirmation: m.RequiresConfirmation, BindingMode: BindingForbidden, LoadingMode: LoadingProgressive, PermissionRefs: permission, RuntimeRef: a.ID, SchemaVersion: 1, Status: "enabled", DynamicReferences: refs}
 }
 
 type ActionExecutor struct{ Actions *action.Registry }
+
+func (e *ActionExecutor) ResolveReference(ctx context.Context, id string) (action.ReferenceSnapshot, error) {
+	if e.Actions == nil {
+		return action.ReferenceSnapshot{}, fmt.Errorf("action registry is required")
+	}
+	return e.Actions.ResolveReference(ctx, id)
+}
 
 func (e *ActionExecutor) Execute(ctx context.Context, tool LoadedTool, args json.RawMessage) (*Result, error) {
 	if e.Actions == nil {

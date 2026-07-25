@@ -42,6 +42,10 @@ JSON Decode → Normalize → validation.Struct → Validate(ctx) → Service
 
 非法 JSON 和类型错误使用 `validation.invalid_json`；未知字段使用 `validation.unknown_field`。
 
+## Safe Details
+
+需要跨 HTTP、Tool Result 和 Agent 恢复提供纠错信息时，只能使用 `errs.SafeDetails` 审核字段，禁止业务附加任意 map。动态引用错误允许 `field`、`reason`、调用者已提交且去重/排序/数量与字节受限的 `invalid_values`、`invalid_count`、`values_truncated`、`refresh_action` 和刷新建议。不得返回完整合法目录、不可见资源、完整参数、Secret、数据库错误或堆栈。
+
 ## 与列表协议的关系
 
 列表分页和筛选 Request DTO 嵌入 `pagination.Request`，并复用 `action.JSON[T]` 与本验证器，不得建立第二套解析或验证逻辑。完整协议见 `list-query.md`。

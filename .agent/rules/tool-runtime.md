@@ -16,6 +16,8 @@
 - Catalog 在模块注册完成、新租户初始化或显式 rebuild 时幂等投影；请求路径禁止写 Catalog。变更以单调 revision 同事务写 Outbox，移除/停用立即 stale，重复/乱序事件不得覆盖当前 Search Document。
 - 语义索引只经统一 Embedding Runtime（`purpose=tool_index`）和 Outbox→Job 写 pgvector；Alias、deployment、dimensions、preprocessing、schema/revision 必须匹配。失败自动降级 exact + 中文词法/FTS，混合排序不得先于权限和 Scope 过滤。
 - search/load/execute 每次重新应用 tenant、realm、permission、Scope 与启用状态；Embedding/索引绝不是权限事实源。
+- Dynamic Reference prerequisite 必须随 search/load 投影但不进入稳定 Schema。`require_evidence` 写调用仅接受同 actor/session/auth version/Scope/Run 的成功 Discovery 摘要证据；缺证据、目录外值在确认前失败且不创建 confirmation，批准后按当前 Resolver 版本和值重校验，失败沿用 consumed/failed 配对 Result 收口。
+- Scope 只保存 Resolver ID、Discovery Tool、版本摘要、读取时间和 Invocation ID；禁止保存完整候选。Runtime 只按通用 Dynamic Reference 元数据执行，禁止识别角色等业务 Action ID。
 - project/search/load/execute 共用 Slot 动态可用性协议且只能收紧权限；Step/Invocation 分类、专用预算和事实摘要由 Slot 元数据生成，观测只持久化白名单字段。
 - Handle 绑定 actor/session/auth version/scope/tool/runtime/schema hash/TTL；任何变化立即失效。
 - 写/外部/付费/破坏性/high 必须单次确认，critical 默认禁止；批准后重新鉴权，不支持始终允许。

@@ -1275,7 +1275,7 @@ func (s *AgentRuntimeService) ensureToolScope(ctx context.Context, run *AgentRun
 		}
 	}
 	rid := run.ID
-	scope := ToolScope{ID: uuid.NewString(), TenantID: run.TenantID, UserID: run.UserID, Realm: string(auth.RealmTenant), SessionID: run.SessionID, AuthVersion: run.AuthVersion, AgentRunID: &rid, AllowedToolsJSON: jsonBytes(allowed), AllowedSourcesJSON: jsonBytes(allowedSources), AllowedCapabilitiesJSON: jsonBytes(allowedCapabilities), LoadedToolsJSON: jsonBytes([]string{}), ExpiresAt: s.now().Add(30 * time.Minute)}
+	scope := ToolScope{ID: uuid.NewString(), TenantID: run.TenantID, UserID: run.UserID, Realm: string(auth.RealmTenant), SessionID: run.SessionID, AuthVersion: run.AuthVersion, AgentRunID: &rid, AllowedToolsJSON: jsonBytes(allowed), AllowedSourcesJSON: jsonBytes(allowedSources), AllowedCapabilitiesJSON: jsonBytes(allowedCapabilities), LoadedToolsJSON: jsonBytes([]string{}), ReferenceEvidenceJSON: jsonBytes([]referenceEvidence{}), ExpiresAt: s.now().Add(30 * time.Minute)}
 	return scope.ID, s.db.WithContext(ctx).Create(&scope).Error
 }
 
@@ -1525,15 +1525,20 @@ func toolExecutionFailure(callID string, err error) (*aitool.Result, bool) {
 	category := toolExecutionErrorCategory(err)
 	summary := "tool execution failed"
 	recoverable := category == "invalid_arguments"
+	var details *errs.SafeDetails
 	if recoverable {
 		var appErr *errs.AppError
 		if errors.As(err, &appErr) && strings.TrimSpace(appErr.Message) != "" {
 			summary = appErr.Message
+			details = appErr.Details
+			if appErr.Details != nil && appErr.Details.Reason != "" {
+				category = appErr.Details.Reason
+			}
 		} else {
 			summary = "tool arguments are invalid; correct them to match the input schema and retry"
 		}
 	}
-	return &aitool.Result{CallID: callID, Status: "failed", Summary: summary, ErrorCategory: category}, recoverable
+	return &aitool.Result{CallID: callID, Status: "failed", Summary: summary, ErrorCategory: category, ErrorDetails: details}, recoverable
 }
 
 func toolExecutionErrorCategory(err error) string {

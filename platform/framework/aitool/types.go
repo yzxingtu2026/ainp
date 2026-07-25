@@ -7,6 +7,9 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/yzxingtu2026/ainp/platform/framework/action"
+	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 )
 
 type Source string
@@ -16,57 +19,70 @@ type BindingMode string
 type LoadingMode string
 
 const (
-	SettingKeySearch                   = "ai.tool_search"
-	SettingFieldModelAlias             = "embedding_model_alias"
-	SourceMeta             Source      = "meta"
-	SourceAction           Source      = "action"
-	SourceBuiltin          Source      = "builtin"
-	SourcePlugin           Source      = "plugin"
-	SourceHTTP             Source      = "http"
-	SourceMCP              Source      = "mcp"
-	RiskLow                Risk        = "low"
-	RiskMedium             Risk        = "medium"
-	RiskHigh               Risk        = "high"
-	RiskCritical           Risk        = "critical"
-	SideEffectNone         SideEffect  = "none"
-	SideEffectRead         SideEffect  = "read"
-	SideEffectWrite        SideEffect  = "write"
-	SideEffectExternal     SideEffect  = "external"
-	SideEffectPaid         SideEffect  = "paid"
-	SideEffectDestructive  SideEffect  = "destructive"
-	BindingForbidden       BindingMode = "forbidden"
-	BindingOptional        BindingMode = "optional"
-	LoadingDirect          LoadingMode = "direct"
-	LoadingConditional     LoadingMode = "conditional"
-	LoadingProgressive     LoadingMode = "progressive"
+	SettingKeySearch                             = "ai.tool_search"
+	SettingFieldModelAlias                       = "embedding_model_alias"
+	SourceMeta                       Source      = "meta"
+	SourceAction                     Source      = "action"
+	SourceBuiltin                    Source      = "builtin"
+	SourcePlugin                     Source      = "plugin"
+	SourceHTTP                       Source      = "http"
+	SourceMCP                        Source      = "mcp"
+	RiskLow                          Risk        = "low"
+	RiskMedium                       Risk        = "medium"
+	RiskHigh                         Risk        = "high"
+	RiskCritical                     Risk        = "critical"
+	SideEffectNone                   SideEffect  = "none"
+	SideEffectRead                   SideEffect  = "read"
+	SideEffectWrite                  SideEffect  = "write"
+	SideEffectExternal               SideEffect  = "external"
+	SideEffectPaid                   SideEffect  = "paid"
+	SideEffectDestructive            SideEffect  = "destructive"
+	BindingForbidden                 BindingMode = "forbidden"
+	BindingOptional                  BindingMode = "optional"
+	LoadingDirect                    LoadingMode = "direct"
+	LoadingConditional               LoadingMode = "conditional"
+	LoadingProgressive               LoadingMode = "progressive"
+	ResultStatusCompleted                        = "completed"
+	ResultStatusFailed                           = "failed"
+	ResultStatusConfirmationRequired             = "confirmation_required"
 )
 
 var toolIDPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]*:[a-z][a-z0-9_.-]*$`)
 var observationFieldPattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 
 type Definition struct {
-	ID                   string          `json:"id"`
-	Source               Source          `json:"source"`
-	Name                 string          `json:"name"`
-	TitleForHuman        string          `json:"title_for_human"`
-	DescriptionForLLM    string          `json:"description_for_llm"`
-	DescriptionForHuman  string          `json:"description_for_human"`
-	ResultSummary        string          `json:"result_summary"`
-	Capability           string          `json:"capability"`
-	Tags                 []string        `json:"tags,omitempty"`
-	InputSchema          json.RawMessage `json:"input_schema"`
-	OutputSchema         json.RawMessage `json:"output_schema,omitempty"`
-	Risk                 Risk            `json:"risk"`
-	SideEffect           SideEffect      `json:"side_effect"`
-	RequiresConfirmation bool            `json:"requires_confirmation"`
-	BindingMode          BindingMode     `json:"binding_mode"`
-	LoadingMode          LoadingMode     `json:"loading_mode"`
-	BindingGroup         string          `json:"binding_group,omitempty"`
-	PermissionRefs       []string        `json:"permission_refs,omitempty"`
-	RuntimeRef           string          `json:"-"`
-	SchemaVersion        int             `json:"schema_version"`
-	SchemaHash           string          `json:"schema_hash"`
-	Status               string          `json:"status"`
+	ID                   string             `json:"id"`
+	Source               Source             `json:"source"`
+	Name                 string             `json:"name"`
+	TitleForHuman        string             `json:"title_for_human"`
+	DescriptionForLLM    string             `json:"description_for_llm"`
+	DescriptionForHuman  string             `json:"description_for_human"`
+	ResultSummary        string             `json:"result_summary"`
+	Capability           string             `json:"capability"`
+	Tags                 []string           `json:"tags,omitempty"`
+	InputSchema          json.RawMessage    `json:"input_schema"`
+	OutputSchema         json.RawMessage    `json:"output_schema,omitempty"`
+	Risk                 Risk               `json:"risk"`
+	SideEffect           SideEffect         `json:"side_effect"`
+	RequiresConfirmation bool               `json:"requires_confirmation"`
+	BindingMode          BindingMode        `json:"binding_mode"`
+	LoadingMode          LoadingMode        `json:"loading_mode"`
+	BindingGroup         string             `json:"binding_group,omitempty"`
+	PermissionRefs       []string           `json:"permission_refs,omitempty"`
+	RuntimeRef           string             `json:"-"`
+	SchemaVersion        int                `json:"schema_version"`
+	SchemaHash           string             `json:"schema_hash"`
+	Status               string             `json:"status"`
+	DynamicReferences    []DynamicReference `json:"dynamic_references,omitempty"`
+}
+
+type DynamicReference struct {
+	Field            string `json:"field"`
+	ResolverID       string `json:"resolver_id"`
+	DiscoveryToolID  string `json:"discovery_tool_id"`
+	RequireEvidence  bool   `json:"require_evidence"`
+	MaxInvalidValues int    `json:"max_invalid_values,omitempty"`
+	MaxInvalidBytes  int    `json:"max_invalid_bytes,omitempty"`
 }
 
 func (d Definition) Validate() error {
@@ -98,18 +114,19 @@ func (d Definition) Validate() error {
 }
 
 type Candidate struct {
-	ID           string      `json:"id"`
-	Name         string      `json:"name"`
-	Summary      string      `json:"summary"`
-	Source       Source      `json:"source"`
-	Capability   string      `json:"capability"`
-	Risk         Risk        `json:"risk"`
-	SideEffect   SideEffect  `json:"side_effect"`
-	InputHints   []string    `json:"input_hints"`
-	BindingMode  BindingMode `json:"binding_mode"`
-	LoadingMode  LoadingMode `json:"loading_mode"`
-	BindingGroup string      `json:"binding_group,omitempty"`
-	Score        float64     `json:"score"`
+	ID            string             `json:"id"`
+	Name          string             `json:"name"`
+	Summary       string             `json:"summary"`
+	Source        Source             `json:"source"`
+	Capability    string             `json:"capability"`
+	Risk          Risk               `json:"risk"`
+	SideEffect    SideEffect         `json:"side_effect"`
+	InputHints    []string           `json:"input_hints"`
+	BindingMode   BindingMode        `json:"binding_mode"`
+	LoadingMode   LoadingMode        `json:"loading_mode"`
+	BindingGroup  string             `json:"binding_group,omitempty"`
+	Prerequisites []DynamicReference `json:"prerequisites,omitempty"`
+	Score         float64            `json:"score"`
 }
 type LoadedTool struct {
 	Definition Definition `json:"definition"`
@@ -117,13 +134,14 @@ type LoadedTool struct {
 	ExpiresAt  int64      `json:"expires_at"`
 }
 type Result struct {
-	CallID        string   `json:"call_id"`
-	Status        string   `json:"status"`
-	Summary       string   `json:"summary"`
-	Data          any      `json:"data,omitempty"`
-	ResourceRefs  []string `json:"resource_refs,omitempty"`
-	Truncated     bool     `json:"truncated"`
-	ErrorCategory string   `json:"error_category,omitempty"`
+	CallID        string            `json:"call_id"`
+	Status        string            `json:"status"`
+	Summary       string            `json:"summary"`
+	Data          any               `json:"data,omitempty"`
+	ResourceRefs  []string          `json:"resource_refs,omitempty"`
+	Truncated     bool              `json:"truncated"`
+	ErrorCategory string            `json:"error_category,omitempty"`
+	ErrorDetails  *errs.SafeDetails `json:"error_details,omitempty"`
 }
 
 type Provider interface {
@@ -133,6 +151,10 @@ type Provider interface {
 }
 type Executor interface {
 	Execute(context.Context, LoadedTool, json.RawMessage) (*Result, error)
+}
+
+type ReferenceValidator interface {
+	ResolveReference(context.Context, string) (action.ReferenceSnapshot, error)
 }
 type DiscoveryMode string
 

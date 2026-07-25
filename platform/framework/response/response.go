@@ -95,6 +95,12 @@ func Fail(c *gin.Context, err error) {
 		}
 		data = gin.H{"fields": fields}
 	}
+	if ae.Details != nil {
+		if data == nil {
+			data = gin.H{}
+		}
+		data.(gin.H)["details"] = ae.Details
+	}
 
 	c.JSON(httpStatus, Envelope{
 		Code:       ae.Code,
