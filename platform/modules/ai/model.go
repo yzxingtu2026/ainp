@@ -180,6 +180,7 @@ type ToolScope struct {
 	AllowedCapabilitiesJSON json.RawMessage `gorm:"type:jsonb;not null;default:'[]'" json:"-"`
 	AllowedToolsJSON        json.RawMessage `gorm:"type:jsonb;not null;default:'[]'" json:"-"`
 	LoadedToolsJSON         json.RawMessage `gorm:"type:jsonb;not null;default:'[]'" json:"loaded_tool_ids"`
+	ReferenceEvidenceJSON   json.RawMessage `gorm:"type:jsonb;not null;default:'[]'" json:"-"`
 	SchemaBytes             int             `gorm:"not null;default:0" json:"schema_bytes"`
 	ExpiresAt               time.Time       `gorm:"not null;index" json:"expires_at"`
 	CreatedAt               time.Time       `json:"created_at"`

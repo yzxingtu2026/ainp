@@ -26,6 +26,9 @@ func registerUserActions(a *app.App, svc *UserService) error {
 	}
 	for _, definition := range definitions {
 		definition := definition
+		if definition.id == ActionUserRolesUpdate {
+			definition.ai.DynamicReferences = []action.DynamicReference{{Field: "role_ids[]", ResolverID: "system.assignable_roles", DiscoveryAction: ActionRoleList, RequireEvidence: true, MaxInvalidValues: 8, MaxInvalidBytes: 512}}
+		}
 		if err := a.RegisterAction(action.Action{
 			ID: definition.id, Handler: definition.handler,
 			Meta: action.Metadata{

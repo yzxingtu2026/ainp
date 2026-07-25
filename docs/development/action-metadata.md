@@ -168,6 +168,12 @@ purchase_order_create    # 禁止缺少 capability 点分前缀（除非 capabil
 | `input_schema` | JSON Schema | 由 `action.InputSchemaFor[Request]()` 生成；字段 required/optional 必须显式声明 |
 | `output_schema` | JSON Schema | 由 `action.SchemaFor[Response]()` 生成 |
 
+#### Dynamic Reference Contract
+
+当输入值必须来自当前 tenant/actor 下的实时目录时，在 `AIMeta.DynamicReferences` 显式声明字段 JSON Path（数组使用 `permissions[]`）、稳定 Resolver ID、只读 Discovery Action 与 `require_evidence`。Action Registry 在 Tool Provider 刷新前校验字段类型、Resolver、Discovery Action 暴露/只读/同 realm 契约并 fail closed。
+
+Resolver 是候选与版本摘要的领域事实源；Discovery Action、HTTP 写入和 Action Tool 最终校验必须复用它。候选值不得写入 Input Schema `enum`、Catalog 搜索文档、日志、审计或长期运行事实。Tool Runtime 只消费通用元数据，禁止维护 Action ID 映射。
+
 ### 预留（Phase 1 不强制）
 
 `workflow`、`ui`、更细的 MCP 开关等：结构可先占位，业务可不填。

@@ -14,10 +14,12 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/yzxingtu2026/ainp/platform/framework/action"
 	"github.com/yzxingtu2026/ainp/platform/framework/aimodelruntime"
 	"github.com/yzxingtu2026/ainp/platform/framework/aitool"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
+	"github.com/yzxingtu2026/ainp/platform/framework/logging"
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
 	"github.com/yzxingtu2026/ainp/platform/framework/pagecontext"
 	"github.com/yzxingtu2026/ainp/platform/framework/setting"
@@ -31,6 +33,14 @@ const toolCatalogChangedEvent = "ai.tool_catalog.changed.v1"
 const toolInvocationFinishedEvent = "ai.tool_invocation.finished.v1"
 const toolScopeTTL = 30 * time.Minute
 const toolHandleTTL = 10 * time.Minute
+
+type referenceEvidence struct {
+	ResolverID      string    `json:"resolver_id"`
+	DiscoveryToolID string    `json:"discovery_tool_id"`
+	Version         string    `json:"version"`
+	InvocationID    string    `json:"invocation_id"`
+	ReadAt          time.Time `json:"read_at"`
+}
 
 type ToolService struct {
 	db                    tenantdata.GuardedDatabase
@@ -485,6 +495,21 @@ func (s *ToolService) ListConfirmations(ctx context.Context, r ToolConfirmationL
 
 func (s *ToolService) execute(ctx context.Context, ac *auth.Context, scope *ToolScope, loaded aitool.LoadedTool, callID string, args json.RawMessage, approved *ToolConfirmation) (any, error) {
 	d := loaded.Definition
+	if failure, err := s.validateDynamicReferences(ctx, scope, d, args); err != nil {
+		return nil, err
+	} else if failure != nil {
+		failure.CallID = callID
+		if approved != nil {
+			var inv ToolInvocation
+			if err := s.db.WithContext(ctx).Where("id=? AND user_id=? AND status=?", approved.InvocationID, ac.UserID, ToolInvocationRunning).First(&inv).Error; err != nil {
+				return nil, err
+			}
+			if err := s.finishApprovedExecution(ctx, &inv, approved, failure, "failed", failure.ErrorCategory); err != nil {
+				return nil, err
+			}
+		}
+		return failure, nil
+	}
 	needs := d.RequiresConfirmation || d.Risk == aitool.RiskHigh || d.SideEffect == aitool.SideEffectWrite || d.SideEffect == aitool.SideEffectExternal || d.SideEffect == aitool.SideEffectPaid || d.SideEffect == aitool.SideEffectDestructive
 	if d.Risk == aitool.RiskCritical {
 		return nil, errs.New(errs.CodeForbidden, "critical tool execution is disabled")
@@ -573,9 +598,14 @@ func (s *ToolService) execute(ctx context.Context, ac *auth.Context, scope *Tool
 		result, _ = toolExecutionFailure(callID, execErr)
 	}
 	result.CallID = callID
+	if execErr == nil && result.Status != aitool.ResultStatusFailed {
+		if err := s.recordReferenceEvidence(executionCtx, scope, d, inv.ID); err != nil {
+			return nil, err
+		}
+	}
 	result.Data, result.Truncated = sanitizeToolData(result.Data, 0, 64<<10)
 	invocationStatus, category := "completed", ""
-	if result.Status == "failed" {
+	if result.Status == aitool.ResultStatusFailed {
 		invocationStatus, category = "failed", result.ErrorCategory
 		if metadata, isSlot := s.registry.SlotMetadata(d.ID); isSlot && !slices.Contains(metadata.FailureCategories, category) {
 			category = "execution_failed"
@@ -586,6 +616,131 @@ func (s *ToolService) execute(ctx context.Context, ac *auth.Context, scope *Tool
 		return nil, err
 	}
 	return result, nil
+}
+
+func (s *ToolService) validateDynamicReferences(ctx context.Context, scope *ToolScope, d aitool.Definition, args json.RawMessage) (*aitool.Result, error) {
+	if len(d.DynamicReferences) == 0 {
+		return nil, nil
+	}
+	executor, ok := s.registry.ExecutorFor(d)
+	validator, ok := executor.(aitool.ReferenceValidator)
+	if !ok {
+		return nil, fmt.Errorf("tool %s reference validator is unavailable", d.ID)
+	}
+	evidence := decodeReferenceEvidence(scope.ReferenceEvidenceJSON)
+	for _, ref := range d.DynamicReferences {
+		values, err := action.ExtractReferenceValues(args, ref.Field)
+		if err != nil {
+			return nil, err
+		}
+		var proof *referenceEvidence
+		for i := range evidence {
+			if evidence[i].ResolverID == ref.ResolverID && evidence[i].DiscoveryToolID == ref.DiscoveryToolID {
+				proof = &evidence[i]
+				break
+			}
+		}
+		if ref.RequireEvidence && proof == nil {
+			failure := referenceFailure(ref, action.ReferenceRequired, nil)
+			logReferenceFailure(ctx, ref, failure)
+			return failure, nil
+		}
+		snapshot, err := validator.ResolveReference(ctx, ref.ResolverID)
+		if err != nil {
+			return nil, err
+		}
+		if proof != nil && proof.Version != snapshot.Version {
+			failure := referenceFailure(ref, action.ReferenceStale, nil)
+			logReferenceFailure(ctx, ref, failure)
+			return failure, nil
+		}
+		invalid := action.InvalidReferenceValues(values, snapshot.Values)
+		if len(invalid) > 0 {
+			failure := referenceFailure(ref, action.InvalidReference, invalid)
+			logReferenceFailure(ctx, ref, failure)
+			return failure, nil
+		}
+	}
+	return nil, nil
+}
+
+func logReferenceFailure(ctx context.Context, ref aitool.DynamicReference, failure *aitool.Result) {
+	invalidCount, truncated := 0, false
+	if failure.ErrorDetails != nil {
+		invalidCount, truncated = failure.ErrorDetails.InvalidCount, failure.ErrorDetails.ValuesTruncated
+	}
+	logging.Warn(ctx, "tool dynamic reference rejected", "error_category", failure.ErrorCategory, "resolver_id", ref.ResolverID, "field", ref.Field, "invalid_count", invalidCount, "values_truncated", truncated)
+}
+
+func referenceFailure(ref aitool.DynamicReference, reason string, invalid []string) *aitool.Result {
+	maxValues, maxBytes := ref.MaxInvalidValues, ref.MaxInvalidBytes
+	if maxValues <= 0 {
+		maxValues = 8
+	}
+	if maxBytes <= 0 {
+		maxBytes = 512
+	}
+	count, size, truncated := len(invalid), 0, false
+	limited := make([]string, 0, len(invalid))
+	for _, value := range invalid {
+		if len(limited) >= maxValues || size+len(value) > maxBytes {
+			truncated = true
+			break
+		}
+		limited = append(limited, value)
+		size += len(value)
+	}
+	details := &errs.SafeDetails{Field: ref.Field, Reason: reason, InvalidValues: limited, InvalidCount: count, ValuesTruncated: truncated, RefreshAction: strings.TrimPrefix(ref.DiscoveryToolID, "action:"), RefreshRecommended: true}
+	return &aitool.Result{Status: "failed", Summary: "dynamic reference validation failed", ErrorCategory: reason, ErrorDetails: details}
+}
+
+func decodeReferenceEvidence(raw json.RawMessage) []referenceEvidence {
+	var out []referenceEvidence
+	if len(raw) > 0 {
+		_ = json.Unmarshal(raw, &out)
+	}
+	return out
+}
+
+func (s *ToolService) recordReferenceEvidence(ctx context.Context, scope *ToolScope, d aitool.Definition, invocationID string) error {
+	definitions := s.registry.List()
+	needed := map[string]bool{}
+	for _, candidate := range definitions {
+		for _, ref := range candidate.DynamicReferences {
+			if ref.DiscoveryToolID == d.ID {
+				needed[ref.ResolverID] = true
+			}
+		}
+	}
+	if len(needed) == 0 {
+		return nil
+	}
+	executor, ok := s.registry.ExecutorFor(d)
+	validator, ok := executor.(aitool.ReferenceValidator)
+	if !ok {
+		return fmt.Errorf("discovery tool reference validator is unavailable")
+	}
+	evidence := decodeReferenceEvidence(scope.ReferenceEvidenceJSON)
+	now := time.Now().UTC()
+	for resolverID := range needed {
+		snapshot, err := validator.ResolveReference(ctx, resolverID)
+		if err != nil {
+			return err
+		}
+		next := evidence[:0]
+		for _, item := range evidence {
+			if item.ResolverID != resolverID {
+				next = append(next, item)
+			}
+		}
+		evidence = next
+		evidence = append(evidence, referenceEvidence{ResolverID: resolverID, DiscoveryToolID: d.ID, Version: snapshot.Version, InvocationID: invocationID, ReadAt: now})
+	}
+	if len(evidence) > 16 {
+		evidence = evidence[len(evidence)-16:]
+	}
+	scope.ReferenceEvidenceJSON = jsonBytes(evidence)
+	return s.db.WithContext(ctx).Model(&ToolScope{}).Where("id=? AND user_id=?", scope.ID, scope.UserID).Update("reference_evidence_json", scope.ReferenceEvidenceJSON).Error
 }
 
 func (s *ToolService) finishExecution(ctx context.Context, inv *ToolInvocation, approved *ToolConfirmation, result *aitool.Result, status, category string) error {
@@ -604,7 +759,7 @@ func (s *ToolService) finishInvocation(ctx context.Context, inv *ToolInvocation,
 	duration := now.Sub(inv.StartedAt).Milliseconds()
 	updates := map[string]any{"status": status, "finished_at": now, "duration_ms": duration, "error_category": category}
 	if result != nil {
-		updates["result_json"] = jsonBytes(aitool.Result{CallID: result.CallID, Status: result.Status, Summary: result.Summary, ResourceRefs: append([]string(nil), result.ResourceRefs...), Truncated: result.Truncated, ErrorCategory: result.ErrorCategory})
+		updates["result_json"] = jsonBytes(aitool.Result{CallID: result.CallID, Status: result.Status, Summary: result.Summary, ResourceRefs: append([]string(nil), result.ResourceRefs...), Truncated: result.Truncated, ErrorCategory: result.ErrorCategory, ErrorDetails: result.ErrorDetails})
 	}
 	payload := map[string]any{"invocation_id": inv.ID, "tool_id": inv.ToolID, "source": inv.Source, "status": status, "duration_ms": duration, "error_category": category}
 	if metadata, ok := s.registry.SlotMetadata(inv.ToolID); ok {
@@ -632,7 +787,7 @@ func (s *ToolService) finishConfirmedInvocation(ctx context.Context, inv *ToolIn
 	duration := now.Sub(inv.StartedAt).Milliseconds()
 	invocationUpdates := map[string]any{
 		"status": invocationStatus, "finished_at": now, "duration_ms": duration, "error_category": category,
-		"result_json": jsonBytes(aitool.Result{CallID: result.CallID, Status: result.Status, Summary: result.Summary, ResourceRefs: append([]string(nil), result.ResourceRefs...), Truncated: result.Truncated, ErrorCategory: result.ErrorCategory}),
+		"result_json": jsonBytes(aitool.Result{CallID: result.CallID, Status: result.Status, Summary: result.Summary, ResourceRefs: append([]string(nil), result.ResourceRefs...), Truncated: result.Truncated, ErrorCategory: result.ErrorCategory, ErrorDetails: result.ErrorDetails}),
 	}
 	confirmationUpdates := map[string]any{"status": confirmationStatus}
 	if confirmationStatus == ToolConfirmationConsumed {
@@ -711,7 +866,7 @@ func (s *ToolService) project(ctx context.Context, scope *ToolScope, d aitool.De
 func (s *ToolService) scope(ctx context.Context, ac *auth.Context, id string) (*ToolScope, error) {
 	now := time.Now().UTC()
 	if id == "" {
-		v := &ToolScope{ID: uuid.NewString(), TenantID: ac.TenantID, UserID: ac.UserID, Realm: string(auth.NormalizeRealm(ac.Realm)), SessionID: ac.SessionID, AuthVersion: ac.AuthVersion, AllowedSourcesJSON: jsonBytes([]string{}), AllowedCapabilitiesJSON: jsonBytes([]string{}), AllowedToolsJSON: jsonBytes([]string{}), LoadedToolsJSON: jsonBytes([]string{}), ExpiresAt: now.Add(toolScopeTTL)}
+		v := &ToolScope{ID: uuid.NewString(), TenantID: ac.TenantID, UserID: ac.UserID, Realm: string(auth.NormalizeRealm(ac.Realm)), SessionID: ac.SessionID, AuthVersion: ac.AuthVersion, AllowedSourcesJSON: jsonBytes([]string{}), AllowedCapabilitiesJSON: jsonBytes([]string{}), AllowedToolsJSON: jsonBytes([]string{}), LoadedToolsJSON: jsonBytes([]string{}), ReferenceEvidenceJSON: jsonBytes([]referenceEvidence{}), ExpiresAt: now.Add(toolScopeTTL)}
 		if err := s.db.WithContext(ctx).Create(v).Error; err != nil {
 			return nil, err
 		}

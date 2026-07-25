@@ -32,6 +32,10 @@ Reconcile 按 Tool ID 比较完整安全定义：新增和变更写入 Catalog�
 
 ## Search、Scope 与 Handle
 
+Dynamic Reference 随 `tool.search` 候选 prerequisite 和 `tool.load` Definition 投影，但候选集合永不进入稳定 Input Schema。Discovery Action 成功后，Scope 仅记录 Resolver ID、Discovery Tool ID、候选版本摘要、读取时间和 Invocation ID；证据天然绑定 Scope 的 tenant、actor、session、auth version 与 Agent Run，禁止跨 Scope 复用或复制完整目录。
+
+`require_evidence=true` 的写调用在 confirmation 前执行通用批量预检：缺证据返回 `reference_required`，目录外值返回 `invalid_reference`，均不创建 confirmation。批准后、Executor 前重新解析当前 Resolver；版本变化返回 `reference_stale`，值失效返回 `invalid_reference`，并按统一 confirmation=`consumed`、invocation=`failed`、配对失败 Result 收口。纠正只能重新读取目录并创建新 Tool Call/confirmation。
+
 搜索顺序为安全过滤、精确 ID/名称、关键词/FTS、可选 Embedding 融合。Embedding 不可用时必须退化；向量和搜索文档不是权限事实源。`ProjectModelTools`、`tool.search`、`tool.load`、Handle 执行和确认后执行统一调用 Registry 的动态投影协议，并重新应用 tenant、realm、user permission、Scope 白名单、启用状态和实时资源条件。动态投影只能收紧静态结果，不能把 Scope 外工具扩权加入候选。
 
 模型侧 `tool.search` 的 `source` / `capability` 是可选的稳定代码精确过滤器，不是自然语言检索词；不确定时必须省略并只填写 `query`。Meta Tool Schema 必须暴露 source 枚举和字段说明，`ToolService.Search` 必须在所有入口自行校验，非法过滤不得静默返回空结果。

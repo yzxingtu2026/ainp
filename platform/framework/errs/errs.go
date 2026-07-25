@@ -74,6 +74,24 @@ type AppError struct {
 	Message    string
 	Fields     []FieldError
 	Cause      error
+	Details    *SafeDetails
+}
+
+// SafeDetails is a reviewed cross-channel error payload. Arbitrary maps are
+// deliberately unsupported so internal objects cannot leak into responses.
+type SafeDetails struct {
+	Field              string   `json:"field,omitempty"`
+	Reason             string   `json:"reason,omitempty"`
+	InvalidValues      []string `json:"invalid_values,omitempty"`
+	InvalidCount       int      `json:"invalid_count,omitempty"`
+	ValuesTruncated    bool     `json:"values_truncated,omitempty"`
+	RefreshAction      string   `json:"refresh_action,omitempty"`
+	RefreshRecommended bool     `json:"refresh_recommended,omitempty"`
+}
+
+func WithSafeDetails(err *AppError, details SafeDetails) *AppError {
+	err.Details = &details
+	return err
 }
 
 type FieldError struct {

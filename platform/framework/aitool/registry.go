@@ -275,7 +275,7 @@ func search(ctx context.Context, definitions []Definition, query, capability str
 		if score <= 0 {
 			continue
 		}
-		out = append(out, Candidate{ID: d.ID, Name: d.Name, Summary: d.DescriptionForLLM, Source: d.Source, Capability: d.Capability, Risk: d.Risk, SideEffect: d.SideEffect, InputHints: InputHints(d.InputSchema), BindingMode: d.BindingMode, LoadingMode: d.LoadingMode, BindingGroup: d.BindingGroup, Score: score})
+		out = append(out, Candidate{ID: d.ID, Name: d.Name, Summary: d.DescriptionForLLM, Source: d.Source, Capability: d.Capability, Risk: d.Risk, SideEffect: d.SideEffect, InputHints: InputHints(d.InputSchema), BindingMode: d.BindingMode, LoadingMode: d.LoadingMode, BindingGroup: d.BindingGroup, Prerequisites: append([]DynamicReference(nil), d.DynamicReferences...), Score: score})
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Score == out[j].Score {

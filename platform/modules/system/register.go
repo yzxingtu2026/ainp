@@ -65,6 +65,9 @@ func Register(a *app.App) error {
 	}
 
 	roleSvc := NewRoleService(a.DB, svc, a.Actions, a.Capabilities)
+	if err := registerReferenceResolvers(a); err != nil {
+		return err
+	}
 	if err := registerRoleActions(a, roleSvc); err != nil {
 		return err
 	}

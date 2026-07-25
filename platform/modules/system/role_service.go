@@ -219,7 +219,7 @@ func (s *RoleService) Create(ctx context.Context, input json.RawMessage) (any, e
 	if !validateRoleStatus(req.Status) {
 		return nil, errs.ValidationKey("common.validation_failed", "invalid status")
 	}
-	permissions, err := s.validatePermissions(req.Permissions)
+	permissions, err := s.validatePermissions(ctx, req.Permissions)
 	if err != nil {
 		return nil, err
 	}
@@ -353,7 +353,7 @@ func (s *RoleService) UpdatePermissions(ctx context.Context, input json.RawMessa
 	if err := decodeRoleRequest(input, &req); err != nil {
 		return nil, err
 	}
-	permissions, err := s.validatePermissions(req.Permissions)
+	permissions, err := s.validatePermissions(ctx, req.Permissions)
 	if err != nil {
 		return nil, err
 	}
@@ -385,11 +385,19 @@ func (s *RoleService) PermissionCatalog(ctx context.Context, _ json.RawMessage) 
 	if _, _, err := tenantIdentity(ctx); err != nil {
 		return nil, err
 	}
+	snapshot, err := s.actions.ResolveReference(ctx, "system.assignable_permissions")
+	if err != nil {
+		return nil, err
+	}
+	assignable := make(map[string]bool, len(snapshot.Values))
+	for _, value := range snapshot.Values {
+		assignable[value] = true
+	}
 	groups := make(map[string]*PermissionCatalogGroup)
 	items := make(map[string]map[string]*PermissionCatalogItem)
 	lang := auth.MustFromContext(ctx).Language
 	for _, registered := range s.actions.List() {
-		if auth.NormalizeRealm(registered.Meta.Surface) != auth.RealmTenant || registered.Meta.AccessMode() != action.AccessPermission {
+		if !assignable[registered.Meta.PermissionCode(registered.ID)] {
 			continue
 		}
 		capabilityID := registered.Meta.Capability
@@ -433,16 +441,15 @@ func (s *RoleService) PermissionCatalog(ctx context.Context, _ json.RawMessage) 
 	return map[string]any{"groups": result}, nil
 }
 
-func (s *RoleService) assignablePermissions() map[string]struct{} {
-	allowed := make(map[string]struct{})
-	for _, permission := range AssignablePermissions(s.actions) {
-		allowed[permission] = struct{}{}
+func (s *RoleService) validatePermissions(ctx context.Context, values []string) ([]string, error) {
+	snapshot, err := s.actions.ResolveReference(ctx, "system.assignable_permissions")
+	if err != nil {
+		return nil, err
 	}
-	return allowed
-}
-
-func (s *RoleService) validatePermissions(values []string) ([]string, error) {
-	allowed := s.assignablePermissions()
+	allowed := make(map[string]struct{}, len(snapshot.Values))
+	for _, value := range snapshot.Values {
+		allowed[value] = struct{}{}
+	}
 	seen := make(map[string]struct{})
 	result := make([]string, 0, len(values))
 	for _, value := range values {
