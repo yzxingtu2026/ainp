@@ -1,5 +1,5 @@
 import { getAuthorization } from '@/service/request/shared';
-import { getServiceBaseURL } from '@/utils/service';
+import { buildServiceURL, getServiceBaseURL } from '@/utils/service';
 import { localStg } from '@/utils/storage';
 
 export function agentRunEventDelta(event: Api.AI.AgentRunEvent): string {
@@ -17,7 +17,7 @@ export async function subscribeAgentRun(
 ) {
   const isProxy = import.meta.env.DEV && import.meta.env.VITE_HTTP_PROXY === 'Y';
   const { baseURL } = getServiceBaseURL(import.meta.env, isProxy);
-  const response = await fetch(`${baseURL}/api/v1/ai/agent-runs/subscribe`, {
+  const response = await fetch(buildServiceURL(baseURL, '/api/v1/ai/agent-runs/subscribe'), {
     method: 'POST',
     signal,
     headers: {

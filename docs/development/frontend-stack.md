@@ -43,12 +43,15 @@ Soybean Admin（壳）
 
 全局 AI 侧边栏与 Workspace 必须复用应用级 `useAiConversationController()` 和 `AiConversationSurface`；应用壳 Store 只管理面板与二级视图，不持有第二套 Conversation/Run/SSE 状态。完整边界见 `global-ai-assistant.md`。
 
+普通 API 请求使用统一 Axios 客户端，由客户端处理 Service Base URL。必须使用原生 `fetch` 的流式或特殊请求，通过 `src/utils/service.ts` 的 `buildServiceURL()` 构造地址；调用方只传受控的应用内绝对路径，查询参数使用 `URLSearchParams`，禁止用模板字符串直接拼接 Base URL、API 路径或未编码查询参数。
+
 开始前端任务前确认：
 
 - [ ] 未引入其他后台脚手架作为主壳
 - [ ] 页面组件基于 Naive UI，而非其他主 UI 库
 - [ ] 菜单图标为 Iconify `collection:name`（默认 `mdi`），见 [图标库规范](./icon-library.md)
 - [ ] 未在业务页复制 Layout / 请求 / 权限逻辑
+- [ ] 原生 `fetch` 使用 `buildServiceURL()`，未直接拼接 Service Base URL
 - [ ] 复杂表格优先 TanStack Table
 - [ ] 用户可见时间使用 `formatDateTime` / `DateTimeText`，见 [时间展示规范](./datetime-display.md)
 - [ ] 新增公共 UI 约定已写入本文档或 `.agent/rules/frontend-stack.md`

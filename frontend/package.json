@@ -34,6 +34,7 @@
     "test:attachment-picker": "tsx --test src/components/common/attachment-thumb-poll.test.ts",
     "test:composer": "tsx --test src/views/ai/workspace/modules/clipboard-image.test.ts",
     "test:menu": "tsx --test src/store/modules/route/shared.test.ts",
+    "test:service-url": "tsx --test src/utils/service.test.ts",
     "typecheck": "vue-tsc --noEmit --skipLibCheck",
     "update-pkg": "sa update-pkg"
   },

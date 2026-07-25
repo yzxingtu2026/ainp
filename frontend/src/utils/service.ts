@@ -62,6 +62,25 @@ export function getServiceBaseURL(env: Env.ImportMeta, isProxy: boolean) {
 }
 
 /**
+ * Build a URL for native service requests that do not use the Axios client.
+ *
+ * @param baseURL - service base URL from getServiceBaseURL
+ * @param path - controlled application path, starting with exactly one slash
+ * @param query - optional structured query parameters
+ */
+export function buildServiceURL(baseURL: string, path: string, query?: URLSearchParams) {
+  if (!path.startsWith('/') || path.startsWith('//')) {
+    throw new Error('Service path must be an application-relative path starting with one slash');
+  }
+
+  const normalizedBaseURL = baseURL.replace(/\/+$/, '');
+  const url = `${normalizedBaseURL}${path}`;
+  const queryString = query?.toString();
+
+  return queryString ? `${url}?${queryString}` : url;
+}
+
+/**
  * Get proxy pattern of backend service base url
  *
  * @param key If not set, will use the default key

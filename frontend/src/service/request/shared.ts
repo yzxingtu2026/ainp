@@ -1,7 +1,7 @@
 import { useAuthStore } from '@/store/modules/auth';
 import { localStg } from '@/utils/storage';
 import { sessionStg } from '@/utils/storage';
-import { getServiceBaseURL } from '@/utils/service';
+import { buildServiceURL, getServiceBaseURL } from '@/utils/service';
 import type { RequestInstanceState } from './type';
 
 export function getAuthorization() {
@@ -21,7 +21,7 @@ async function handleRefreshToken() {
   const isProxy = import.meta.env.DEV && import.meta.env.VITE_HTTP_PROXY === 'Y';
   const { baseURL } = getServiceBaseURL(import.meta.env, isProxy);
   try {
-    const response = await fetch(`${baseURL}/api/v1/system/auth/refresh`, {
+    const response = await fetch(buildServiceURL(baseURL, '/api/v1/system/auth/refresh'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Accept-Language': localStg.get('lang') || 'zh-CN' },
       body: JSON.stringify({ refresh_token: refreshToken })
