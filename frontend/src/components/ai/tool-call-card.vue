@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { $t } from '@/locales';
-import { formatToolPayload, toolResultFailed, toolResultSummary } from './tool-activity';
+import { formatToolPayload, toolResultFailed, toolResultRehydrated, toolResultSummary } from './tool-activity';
 
 defineOptions({ name: 'ToolCallCard' });
 
@@ -20,10 +20,14 @@ const props = defineProps<{
 
 const expanded = ref(false);
 
-type ToolCallStatus = 'running' | 'success' | 'failed' | 'waiting';
+type ToolCallStatus = 'running' | 'success' | 'failed' | 'waiting' | 'rehydrated';
 
 const status = computed<ToolCallStatus>(() => {
-  if (props.hasResult) return toolResultFailed(props.result) ? 'failed' : 'success';
+  if (props.hasResult) {
+    if (toolResultFailed(props.result)) return 'failed';
+    if (toolResultRehydrated(props.result)) return 'rehydrated';
+    return 'success';
+  }
   return props.pending ? 'running' : 'waiting';
 });
 
@@ -31,6 +35,7 @@ const statusIcon = computed(() => {
   if (status.value === 'success') return 'mdi:check-circle';
   if (status.value === 'failed') return 'mdi:close-circle';
   if (status.value === 'waiting') return 'mdi:clock-outline';
+  if (status.value === 'rehydrated') return 'mdi:restore';
   return '';
 });
 
@@ -38,6 +43,7 @@ const statusText = computed(() => {
   if (status.value === 'running') return $t('chat.toolRunning');
   if (status.value === 'success') return $t('chat.toolSuccess');
   if (status.value === 'failed') return $t('chat.toolFailed');
+  if (status.value === 'rehydrated') return $t('chat.toolRehydrated');
   return $t('chat.toolWaiting');
 });
 
@@ -169,6 +175,10 @@ const displayName = computed(() => props.presentation?.title || props.toolName |
 
 .tool-call--waiting .tool-call__status {
   color: rgba(127, 127, 127, 0.85);
+}
+
+.tool-call--rehydrated .tool-call__status {
+  color: rgba(127, 127, 127, 0.95);
 }
 
 .tool-call__status-text {

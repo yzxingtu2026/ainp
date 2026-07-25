@@ -486,6 +486,7 @@ func TestToolRuntimePostgresLifecycleAndIsolation(t *testing.T) {
 	if err = guarded.WithContext(ctx).Where("tool_id=?", actionTool.ID).First(&actionDocument).Error; err != nil || actionDocument.IndexStatus != "ready" || actionDocument.EmbeddingAlias != "tool-embed" || actionDocument.EmbeddingDeploymentID != "embed-deployment" || actionDocument.EmbeddingDimensions != 2 || actionDocument.EmbeddingVector == nil || len(*actionDocument.EmbeddingVector) != 2 {
 		t.Fatalf("tool vector projection is invalid: %#v %v", actionDocument, err)
 	}
+	conversationID := "conversation-tools"
 	restrictedScope := ai.ToolScope{
 		ID:                      "scope-progressive",
 		TenantID:                "t1",
@@ -493,19 +494,24 @@ func TestToolRuntimePostgresLifecycleAndIsolation(t *testing.T) {
 		Realm:                   string(auth.RealmTenant),
 		SessionID:               "s1",
 		AuthVersion:             1,
+		ConversationID:          &conversationID,
 		AllowedSourcesJSON:      json.RawMessage(`["action"]`),
 		AllowedCapabilitiesJSON: json.RawMessage(`["demo"]`),
 		AllowedToolsJSON:        json.RawMessage(`["meta:tool.search","meta:tool.load"]`),
 		LoadedToolsJSON:         json.RawMessage(`[]`),
 		ExpiresAt:               time.Now().Add(time.Hour),
 	}
+	conversation := ai.Conversation{ID: "conversation-tools", TenantID: "t1", OwnerUserID: "u1", Title: "Tools", AgentID: "agent-tools", AgentVersionID: "agent-version-tools", Purpose: ai.ConversationPurposeWorkspace, Visibility: "private", Status: "active"}
+	if err = guarded.WithContext(ctx).Create(&conversation).Error; err != nil {
+		t.Fatal(err)
+	}
 	tenantDB, err := tenantdata.TenantDB(ctx, db)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err = tenantdata.TenantExec(tenantDB, `INSERT INTO ai_tool_scopes
-(tenant_id, id, user_id, realm, session_id, auth_version, allowed_sources_json, allowed_capabilities_json, allowed_tools_json, loaded_tools_json, schema_bytes, expires_at)
-VALUES (?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, 0, ?)`, restrictedScope.ID, restrictedScope.UserID, restrictedScope.Realm, restrictedScope.SessionID, restrictedScope.AuthVersion, restrictedScope.AllowedSourcesJSON, restrictedScope.AllowedCapabilitiesJSON, restrictedScope.AllowedToolsJSON, restrictedScope.LoadedToolsJSON, restrictedScope.ExpiresAt); err != nil {
+(tenant_id, id, user_id, realm, session_id, auth_version, conversation_id, allowed_sources_json, allowed_capabilities_json, allowed_tools_json, loaded_tools_json, schema_bytes, expires_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, 0, ?)`, restrictedScope.ID, restrictedScope.UserID, restrictedScope.Realm, restrictedScope.SessionID, restrictedScope.AuthVersion, *restrictedScope.ConversationID, restrictedScope.AllowedSourcesJSON, restrictedScope.AllowedCapabilitiesJSON, restrictedScope.AllowedToolsJSON, restrictedScope.LoadedToolsJSON, restrictedScope.ExpiresAt); err != nil {
 		t.Fatal(err)
 	}
 	var catalogEventsBefore int64
@@ -583,6 +589,10 @@ VALUES (?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, 0, ?)`, restri
 	if len(repeatedResponse.NewlyLoadedToolIDs) != 0 || !slices.Equal(repeatedResponse.AlreadyLoadedToolIDs, []string{"action:purchase.order_read"}) {
 		t.Fatalf("repeat load must preserve cumulative scope without reclassification: %#v", repeatedResponse)
 	}
+	var workingSet ai.ConversationToolWorkingSet
+	if err = guarded.WithContext(ctx).Where("conversation_id=? AND tool_id=?", conversation.ID, actionTool.ID).First(&workingSet).Error; err != nil || workingSet.UseCount != 0 || workingSet.SchemaHash == "" {
+		t.Fatalf("load must upsert activation without counting use: %#v %v", workingSet, err)
+	}
 	_, projected, err = service.ProjectModelTools(ctx, scopeID)
 	if err != nil || len(projected) != 3 {
 		t.Fatalf("loaded tool was not projected: %#v %v", projected, err)
@@ -605,6 +615,9 @@ VALUES (?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, 0, ?)`, restri
 	inv = invocations[0]
 	if inv.Status != "completed" {
 		t.Fatalf("unexpected invocation: %#v %v", inv, err)
+	}
+	if err = guarded.WithContext(ctx).Where("id=?", workingSet.ID).First(&workingSet).Error; err != nil || workingSet.UseCount != 1 || workingSet.LastUsedAt == nil {
+		t.Fatalf("completed invocation must count exactly once: %#v %v", workingSet, err)
 	}
 	var events []outbox.Event
 	if err = db.Where("event_type='ai.tool_invocation.finished.v1'").Find(&events).Error; err != nil || len(events) != 1 {
@@ -654,6 +667,9 @@ VALUES (?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, 0, ?)`, restri
 	var confirmedInvocation ai.ToolInvocation
 	if err = guarded.WithContext(ctx).Where("id=?", confirmation.InvocationID).First(&confirmedInvocation).Error; err != nil || confirmedInvocation.Status != "completed" {
 		t.Fatalf("confirmed invocation was not completed: %#v %v", confirmedInvocation, err)
+	}
+	if err = guarded.WithContext(ctx).Where("id=?", workingSet.ID).First(&workingSet).Error; err != nil || workingSet.UseCount != 2 {
+		t.Fatalf("confirmed completion must count exactly once: %#v %v", workingSet, err)
 	}
 	executor.err = errs.Validation("supplier is invalid")
 	failureValue, err := service.Execute(ctx, ai.ToolExecuteRequest{Handle: confirmationHandle, ToolCallID: "call-confirm-failure", Arguments: json.RawMessage(`{"supplier_id":"invalid"}`)})

@@ -35,6 +35,8 @@ const (
 	agentRunTerminalEvent            = "ai.agent_run.terminal.v1"
 	agentRunConfirmationTimeoutEvent = "ai.agent_run.confirmation_timeout.v1"
 	confirmationResumeStepAllowance  = 4
+	conversationToolRestoreLimit     = 4
+	toolRehydrateLimitPerRun         = 3
 )
 
 type AgentRuntimeService struct {
@@ -1275,8 +1277,26 @@ func (s *AgentRuntimeService) ensureToolScope(ctx context.Context, run *AgentRun
 		}
 	}
 	rid := run.ID
-	scope := ToolScope{ID: uuid.NewString(), TenantID: run.TenantID, UserID: run.UserID, Realm: string(auth.RealmTenant), SessionID: run.SessionID, AuthVersion: run.AuthVersion, AgentRunID: &rid, AllowedToolsJSON: jsonBytes(allowed), AllowedSourcesJSON: jsonBytes(allowedSources), AllowedCapabilitiesJSON: jsonBytes(allowedCapabilities), LoadedToolsJSON: jsonBytes([]string{}), ReferenceEvidenceJSON: jsonBytes([]referenceEvidence{}), ExpiresAt: s.now().Add(30 * time.Minute)}
-	return scope.ID, s.db.WithContext(ctx).Create(&scope).Error
+	conversationID := run.ConversationID
+	scope := ToolScope{ID: uuid.NewString(), TenantID: run.TenantID, UserID: run.UserID, Realm: string(auth.RealmTenant), SessionID: run.SessionID, AuthVersion: run.AuthVersion, AgentRunID: &rid, ConversationID: &conversationID, AllowedToolsJSON: jsonBytes(allowed), AllowedSourcesJSON: jsonBytes(allowedSources), AllowedCapabilitiesJSON: jsonBytes(allowedCapabilities), LoadedToolsJSON: jsonBytes([]string{}), ReferenceEvidenceJSON: jsonBytes([]referenceEvidence{}), ExpiresAt: s.now().Add(30 * time.Minute)}
+	candidates, err := s.tools.WorkingSetCandidates(ctx, run.ConversationID, conversationToolRestoreLimit)
+	if err != nil {
+		return "", err
+	}
+	if err := s.db.WithContext(ctx).Create(&scope).Error; err != nil {
+		return "", err
+	}
+	for _, candidate := range candidates {
+		if _, activateErr := s.tools.ActivateIntoScope(ctx, scope.ID, candidate.ToolID); activateErr != nil {
+			var appErr *errs.AppError
+			if errors.As(activateErr, &appErr) && (appErr.Code == errs.CodeForbidden || appErr.Code == errs.CodeValidation) {
+				continue
+			}
+			_ = s.db.WithContext(ctx).Where("id=?", scope.ID).Delete(&ToolScope{}).Error
+			return "", activateErr
+		}
+	}
+	return scope.ID, nil
 }
 
 func (s *AgentRuntimeService) executeToolCall(ctx context.Context, run *AgentRun, scopeID string, call aimodelruntime.OutputItem) (bool, error) {
@@ -1326,7 +1346,27 @@ func (s *AgentRuntimeService) executeToolCall(ctx context.Context, run *AgentRun
 		return s.appendToolResult(ctx, run, step, call, nil, err)
 	}
 	if !projectedInScope {
-		return s.appendToolResult(ctx, run, step, call, nil, &toolRuntimeError{category: "tool_not_loaded", summary: "tool is not loaded; call meta__tool_load first", recoverable: true})
+		workingSet, workingSetErr := s.tools.WorkingSetEntry(ctx, run.ConversationID, toolID)
+		if errors.Is(workingSetErr, gorm.ErrRecordNotFound) {
+			return s.appendToolResult(ctx, run, step, call, nil, &toolRuntimeError{category: "tool_not_loaded", summary: "tool is not loaded; call meta__tool_load first", recoverable: true})
+		}
+		if workingSetErr != nil {
+			return s.appendToolResult(ctx, run, step, call, nil, workingSetErr)
+		}
+		allowed, allowanceErr := s.allowToolRehydrate(ctx, run.ID, toolID)
+		if allowanceErr != nil {
+			return s.appendToolResult(ctx, run, step, call, nil, allowanceErr)
+		}
+		if !allowed {
+			return s.appendToolResult(ctx, run, step, call, nil, &toolRuntimeError{category: "tool_rehydrate_limit", summary: "tool restore limit reached; use tool.search and tool.load before retrying", recoverable: false})
+		}
+		activation, activateErr := s.tools.ActivateIntoScope(ctx, scopeID, toolID)
+		if activateErr != nil {
+			return s.appendToolResult(ctx, run, step, call, nil, activateErr)
+		}
+		if workingSet.SchemaHash != activation.Definition.SchemaHash {
+			return s.appendRehydratedToolResult(ctx, run, step, call, toolID)
+		}
 	}
 	loadedValue, err := s.tools.Load(ctx, ToolLoadRequest{ScopeID: scopeID, ToolIDs: []string{toolID}})
 	if err != nil {
@@ -1370,12 +1410,41 @@ func (s *AgentRuntimeService) registryToolID(name string) string {
 }
 
 func resolveRegistryToolID(definitions []aitool.Definition, name string) string {
+	resolved := ""
 	for _, definition := range definitions {
 		if definition.ID == name || modelToolName(definition.ID) == name {
-			return definition.ID
+			if resolved != "" && resolved != definition.ID {
+				return ""
+			}
+			resolved = definition.ID
 		}
 	}
-	return ""
+	return resolved
+}
+
+func (s *AgentRuntimeService) allowToolRehydrate(ctx context.Context, runID, toolID string) (bool, error) {
+	var total int64
+	if err := s.db.WithContext(ctx).Model(&AgentStep{}).Where("run_id=? AND error_category=?", runID, "rehydrated").Count(&total).Error; err != nil {
+		return false, err
+	}
+	if total >= toolRehydrateLimitPerRun {
+		return false, nil
+	}
+	var repeated int64
+	if err := s.db.WithContext(ctx).Model(&AgentStep{}).
+		Where("run_id=? AND error_category=? AND output_summary->>'tool_id'=?", runID, "rehydrated", toolID).
+		Count(&repeated).Error; err != nil {
+		return false, err
+	}
+	return repeated == 0, nil
+}
+
+func (s *AgentRuntimeService) appendRehydratedToolResult(ctx context.Context, run *AgentRun, step *AgentStep, call aimodelruntime.OutputItem, toolID string) (bool, error) {
+	result := &aitool.Result{CallID: call.ToolCallID, Status: "rehydrated", Summary: "tool restored; retry after its current schema is projected"}
+	encoded, _ := json.Marshal(result)
+	_, messageErr := s.conversations.AppendRuntimeMessage(ctx, run.ConversationID, run.ID, "tool", fmt.Sprintf("run:%s:tool-result:%s", run.ID, call.ToolCallID), []aimodelruntime.ContentPart{{Type: aimodelruntime.PartToolResult, ToolCallID: call.ToolCallID, Result: encoded}})
+	stepErr := s.finishStep(ctx, run, step, "completed", map[string]any{"tool_call_id": call.ToolCallID, "tool_id": toolID, "status": "rehydrated"}, "rehydrated")
+	return false, errors.Join(messageErr, stepErr)
 }
 
 type modelToolLoadResult struct {

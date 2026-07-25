@@ -50,6 +50,7 @@ var tenantModelClassifications = map[string]tenantModelClassification{
 	"modules/ai/knowledge_model.go:KnowledgeDocument":                      {Registered: true},
 	"modules/ai/knowledge_model.go:KnowledgeIndexVersion":                  {Registered: true},
 	"modules/ai/model.go:Alias":                                            {Registered: true},
+	"modules/ai/model.go:ConversationToolWorkingSet":                       {Registered: true},
 	"modules/ai/model.go:Deployment":                                       {Registered: true},
 	"modules/ai/model.go:ModelInvocation":                                  {Registered: true},
 	"modules/ai/model.go:NavigationSearchDocument":                         {Registered: true},

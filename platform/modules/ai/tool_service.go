@@ -25,6 +25,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/setting"
 	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 var toolCapabilityPattern = regexp.MustCompile(`^[a-z][a-z0-9_.-]*$`)
@@ -33,6 +34,12 @@ const toolCatalogChangedEvent = "ai.tool_catalog.changed.v1"
 const toolInvocationFinishedEvent = "ai.tool_invocation.finished.v1"
 const toolScopeTTL = 30 * time.Minute
 const toolHandleTTL = 10 * time.Minute
+const conversationToolWorkingSetLimit = 32
+
+type ToolActivationResult struct {
+	Definition     aitool.Definition
+	NewlyActivated bool
+}
 
 type referenceEvidence struct {
 	ResolverID      string    `json:"resolver_id"`
@@ -276,41 +283,23 @@ func (s *ToolService) Load(ctx context.Context, r ToolLoadRequest) (any, error) 
 	if err != nil {
 		return nil, err
 	}
-	loaded := decodeStrings(scope.LoadedToolsJSON)
-	set := map[string]bool{}
-	for _, id := range loaded {
-		set[id] = true
-	}
 	now := time.Now().UTC()
 	out := []aitool.LoadedTool{}
 	newlyLoaded := []string{}
 	alreadyLoaded := []string{}
-	bytes := scope.SchemaBytes
 	for _, id := range r.ToolIDs {
-		d, ok := s.registry.Get(id)
-		if !ok || d.Status != "enabled" || !scopeAllows(scope, d) || !toolVisible(ac, d) {
-			return nil, errs.New(errs.CodeForbidden, "tool is not visible")
+		activation, activateErr := s.activateIntoScope(ctx, ac, scope, id)
+		if activateErr != nil {
+			return nil, activateErr
 		}
-		d, ok, err = s.project(ctx, scope, d)
-		if err != nil {
-			return nil, err
-		}
-		if !ok {
-			return nil, errs.New(errs.CodeForbidden, "tool is not visible")
-		}
-		if !set[id] {
-			if len(loaded) >= 8 {
-				return nil, errs.Validation("tool scope limit exceeded")
-			}
-			bytes += len(d.InputSchema) + len(d.OutputSchema)
-			if bytes > 32<<10 {
-				return nil, errs.Validation("tool schema budget exceeded")
-			}
-			loaded = append(loaded, id)
-			set[id] = true
+		d := activation.Definition
+		if activation.NewlyActivated {
 			newlyLoaded = append(newlyLoaded, id)
 		} else {
 			alreadyLoaded = append(alreadyLoaded, id)
+		}
+		if err := s.recordWorkingSetActivation(ctx, scope, d, now); err != nil {
+			return nil, err
 		}
 		exp := now.Add(toolHandleTTL)
 		if exp.After(scope.ExpiresAt) {
@@ -322,10 +311,101 @@ func (s *ToolService) Load(ctx context.Context, r ToolLoadRequest) (any, error) 
 		}
 		out = append(out, aitool.LoadedTool{Definition: d, Handle: token, ExpiresAt: exp.Unix()})
 	}
-	if err = s.db.WithContext(ctx).Model(&ToolScope{}).Where("id=? AND user_id=?", scope.ID, ac.UserID).Updates(map[string]any{"loaded_tools_json": jsonBytes(loaded), "schema_bytes": bytes}).Error; err != nil {
+	return ToolLoadResponse{ScopeID: scope.ID, Tools: out, NewlyLoadedToolIDs: newlyLoaded, AlreadyLoadedToolIDs: alreadyLoaded}, nil
+}
+
+func (s *ToolService) ActivateIntoScope(ctx context.Context, scopeID, toolID string) (ToolActivationResult, error) {
+	if err := s.registry.Refresh(ctx); err != nil {
+		return ToolActivationResult{}, err
+	}
+	ac, err := toolActor(ctx)
+	if err != nil {
+		return ToolActivationResult{}, err
+	}
+	scope, err := s.scope(ctx, ac, scopeID)
+	if err != nil {
+		return ToolActivationResult{}, err
+	}
+	return s.activateIntoScope(ctx, ac, scope, toolID)
+}
+
+func (s *ToolService) activateIntoScope(ctx context.Context, ac *auth.Context, scope *ToolScope, toolID string) (ToolActivationResult, error) {
+	d, ok := s.registry.Get(toolID)
+	if !ok || d.Status != "enabled" || !scopeAllows(scope, d) || !toolVisible(ac, d) {
+		return ToolActivationResult{}, errs.New(errs.CodeForbidden, "tool is not visible")
+	}
+	d, ok, err := s.project(ctx, scope, d)
+	if err != nil {
+		return ToolActivationResult{}, err
+	}
+	if !ok {
+		return ToolActivationResult{}, errs.New(errs.CodeForbidden, "tool is not visible")
+	}
+	loaded := decodeStrings(scope.LoadedToolsJSON)
+	if contains(loaded, toolID) {
+		return ToolActivationResult{Definition: d}, nil
+	}
+	if len(loaded) >= 8 {
+		return ToolActivationResult{}, errs.Validation("tool scope limit exceeded")
+	}
+	bytes := scope.SchemaBytes + len(d.InputSchema) + len(d.OutputSchema)
+	if bytes > 32<<10 {
+		return ToolActivationResult{}, errs.Validation("tool schema budget exceeded")
+	}
+	loaded = append(loaded, toolID)
+	if err := s.db.WithContext(ctx).Model(&ToolScope{}).Where("id=? AND user_id=?", scope.ID, ac.UserID).Updates(map[string]any{"loaded_tools_json": jsonBytes(loaded), "schema_bytes": bytes}).Error; err != nil {
+		return ToolActivationResult{}, err
+	}
+	scope.LoadedToolsJSON = jsonBytes(loaded)
+	scope.SchemaBytes = bytes
+	return ToolActivationResult{Definition: d, NewlyActivated: true}, nil
+}
+
+func (s *ToolService) recordWorkingSetActivation(ctx context.Context, scope *ToolScope, d aitool.Definition, now time.Time) error {
+	if scope.ConversationID == nil || *scope.ConversationID == "" {
+		return nil
+	}
+	row := ConversationToolWorkingSet{ID: uuid.NewString(), TenantID: scope.TenantID, ConversationID: *scope.ConversationID, ToolID: d.ID, SchemaHash: d.SchemaHash, ActivatedAt: now}
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "tenant_id"}, {Name: "conversation_id"}, {Name: "tool_id"}},
+			DoUpdates: clause.Assignments(map[string]any{"schema_hash": d.SchemaHash, "activated_at": now, "updated_at": now}),
+		}).Create(&row).Error; err != nil {
+			return err
+		}
+		var stale []ConversationToolWorkingSet
+		if err := tx.Where("conversation_id=?", *scope.ConversationID).
+			Order("COALESCE(last_used_at, activated_at) ASC, use_count ASC, tool_id ASC").
+			Offset(conversationToolWorkingSetLimit).Find(&stale).Error; err != nil {
+			return err
+		}
+		if len(stale) == 0 {
+			return nil
+		}
+		ids := make([]string, 0, len(stale))
+		for _, item := range stale {
+			ids = append(ids, item.ID)
+		}
+		return tx.Where("conversation_id=? AND id IN ?", *scope.ConversationID, ids).Delete(&ConversationToolWorkingSet{}).Error
+	})
+}
+
+func (s *ToolService) WorkingSetCandidates(ctx context.Context, conversationID string, limit int) ([]ConversationToolWorkingSet, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+	var rows []ConversationToolWorkingSet
+	err := s.db.WithContext(ctx).Where("conversation_id=?", conversationID).
+		Order("last_used_at DESC NULLS LAST, use_count DESC, activated_at DESC, tool_id ASC").Limit(limit).Find(&rows).Error
+	return rows, err
+}
+
+func (s *ToolService) WorkingSetEntry(ctx context.Context, conversationID, toolID string) (*ConversationToolWorkingSet, error) {
+	var row ConversationToolWorkingSet
+	if err := s.db.WithContext(ctx).Where("conversation_id=? AND tool_id=?", conversationID, toolID).First(&row).Error; err != nil {
 		return nil, err
 	}
-	return ToolLoadResponse{ScopeID: scope.ID, Tools: out, NewlyLoadedToolIDs: newlyLoaded, AlreadyLoadedToolIDs: alreadyLoaded}, nil
+	return &row, nil
 }
 
 func (s *ToolService) IsLoaded(ctx context.Context, scopeID, toolID string) (bool, error) {
@@ -766,10 +846,7 @@ func (s *ToolService) finishInvocation(ctx context.Context, inv *ToolInvocation,
 		payload["invocation_class"] = metadata.InvocationClass
 		payload["budget_category"] = metadata.BudgetCategory
 	}
-	if s.writer == nil {
-		return s.db.WithContext(ctx).Model(&ToolInvocation{}).Where("id=? AND status IN ?", inv.ID, []string{"running", "waiting_confirmation"}).Updates(updates).Error
-	}
-	return outbox.WithinTx(ctx, s.db.WithContext(ctx), s.writer, func(tx *gorm.DB, w outbox.Writer) error {
+	finish := func(tx *gorm.DB, w outbox.Writer) error {
 		res := tx.Model(&ToolInvocation{}).Where("id=? AND status IN ?", inv.ID, []string{"running", "waiting_confirmation"}).Updates(updates)
 		if res.Error != nil {
 			return res.Error
@@ -777,9 +854,21 @@ func (s *ToolService) finishInvocation(ctx context.Context, inv *ToolInvocation,
 		if res.RowsAffected == 0 {
 			return nil
 		}
-		_, err := w.Append(ctx, tx, outbox.AppendInput{EventType: toolInvocationFinishedEvent, AggregateType: "ai_tool_invocation", AggregateID: inv.ID, AggregateVersion: 1, Payload: payload})
-		return err
-	})
+		if status == ToolInvocationCompleted {
+			if err := recordWorkingSetUse(tx, inv, now); err != nil {
+				return err
+			}
+		}
+		if w != nil {
+			_, err := w.Append(ctx, tx, outbox.AppendInput{EventType: toolInvocationFinishedEvent, AggregateType: "ai_tool_invocation", AggregateID: inv.ID, AggregateVersion: 1, Payload: payload})
+			return err
+		}
+		return nil
+	}
+	if s.writer == nil {
+		return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error { return finish(tx, nil) })
+	}
+	return outbox.WithinTx(ctx, s.db.WithContext(ctx), s.writer, finish)
 }
 
 func (s *ToolService) finishConfirmedInvocation(ctx context.Context, inv *ToolInvocation, confirmation *ToolConfirmation, result *aitool.Result, invocationStatus, category, confirmationStatus string, decidedAt time.Time) error {
@@ -812,6 +901,11 @@ func (s *ToolService) finishConfirmedInvocation(ctx context.Context, inv *ToolIn
 		if finished.RowsAffected != 1 {
 			return confirmationDecisionConflict("")
 		}
+		if invocationStatus == ToolInvocationCompleted {
+			if err := recordWorkingSetUse(tx, inv, now); err != nil {
+				return err
+			}
+		}
 		resolved := tx.Model(&ToolConfirmation{}).Where("id=? AND status=?", confirmation.ID, confirmation.Status).Updates(confirmationUpdates)
 		if resolved.Error != nil {
 			return resolved.Error
@@ -825,6 +919,19 @@ func (s *ToolService) finishConfirmedInvocation(ctx context.Context, inv *ToolIn
 		}
 		return nil
 	})
+}
+
+func recordWorkingSetUse(tx *gorm.DB, inv *ToolInvocation, now time.Time) error {
+	var scope ToolScope
+	if err := tx.Select("tenant_id", "conversation_id").Where("id=?", inv.ScopeID).First(&scope).Error; err != nil {
+		return err
+	}
+	if scope.ConversationID == nil || *scope.ConversationID == "" {
+		return nil
+	}
+	return tx.Model(&ConversationToolWorkingSet{}).
+		Where("conversation_id=? AND tool_id=?", *scope.ConversationID, inv.ToolID).
+		Updates(map[string]any{"last_used_at": now, "use_count": gorm.Expr("use_count + 1"), "updated_at": now}).Error
 }
 
 func (s *ToolService) resolveLoaded(ctx context.Context, ac *auth.Context, token string) (aitool.LoadedTool, *ToolScope, error) {

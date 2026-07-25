@@ -13,7 +13,7 @@ var toolModelRegistration struct {
 
 func registerToolTenantModels() error {
 	toolModelRegistration.Do(func() {
-		for _, model := range []any{ToolCatalog{}, ToolSearchDocument{}, ToolScope{}, ToolConfirmation{}, ToolInvocation{}} {
+		for _, model := range []any{ToolCatalog{}, ToolSearchDocument{}, ToolScope{}, ConversationToolWorkingSet{}, ToolConfirmation{}, ToolInvocation{}} {
 			if err := tenantdata.DefaultRegistry.Register(model, tenantdata.ModelOptions{Kind: tenantdata.TenantOwned, InjectOnCreate: true, SystemAccess: true}); err != nil {
 				toolModelRegistration.err = err
 				return

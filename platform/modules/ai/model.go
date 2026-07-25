@@ -176,6 +176,7 @@ type ToolScope struct {
 	SessionID               string          `gorm:"size:64;not null" json:"-"`
 	AuthVersion             uint64          `gorm:"not null" json:"-"`
 	AgentRunID              *string         `gorm:"size:64" json:"agent_run_id,omitempty"`
+	ConversationID          *string         `gorm:"size:64;index" json:"conversation_id,omitempty"`
 	AllowedSourcesJSON      json.RawMessage `gorm:"type:jsonb;not null;default:'[]'" json:"-"`
 	AllowedCapabilitiesJSON json.RawMessage `gorm:"type:jsonb;not null;default:'[]'" json:"-"`
 	AllowedToolsJSON        json.RawMessage `gorm:"type:jsonb;not null;default:'[]'" json:"-"`
@@ -188,6 +189,23 @@ type ToolScope struct {
 }
 
 func (ToolScope) TableName() string { return "ai_tool_scopes" }
+
+type ConversationToolWorkingSet struct {
+	ID             string     `gorm:"primaryKey;size:64" json:"id"`
+	TenantID       string     `gorm:"size:64;not null;uniqueIndex:ux_conversation_tool_working_set,priority:1" json:"-"`
+	ConversationID string     `gorm:"size:64;not null;uniqueIndex:ux_conversation_tool_working_set,priority:2;index" json:"conversation_id"`
+	ToolID         string     `gorm:"size:255;not null;uniqueIndex:ux_conversation_tool_working_set,priority:3" json:"tool_id"`
+	SchemaHash     string     `gorm:"size:64;not null" json:"schema_hash"`
+	ActivatedAt    time.Time  `gorm:"not null" json:"activated_at"`
+	LastUsedAt     *time.Time `json:"last_used_at,omitempty"`
+	UseCount       uint64     `gorm:"not null;default:0" json:"use_count"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+}
+
+func (ConversationToolWorkingSet) TableName() string {
+	return "ai_conversation_tool_working_set"
+}
 
 const (
 	ToolConfirmationPending   = "pending"
@@ -296,7 +314,7 @@ func AutoMigrate(db *gorm.DB) error {
 			return err
 		}
 	}
-	if err := db.AutoMigrate(&Provider{}, &Deployment{}, &Alias{}, &ModelInvocation{}, &ToolCatalog{}, &ToolSearchDocument{}, &NavigationSearchDocument{}, &ToolScope{}, &ToolConfirmation{}, &ToolInvocation{}, &Agent{}, &AgentVersion{}, &AgentToolBinding{}, &AgentSlotBinding{}, &AgentSlotPreference{}, &Conversation{}, &ConversationMessage{}, &AssistantStream{}, &AssistantStreamDelta{}, &ContextSnapshot{}, &AgentRun{}, &AgentStep{}, &AgentRunEvent{}, &MemoryItem{}, &MemoryItemVersion{}, &MemoryEvidence{}, &MemoryProjection{}, &MemoryDaySummary{}, &MemoryCurrentProfile{}, &MemoryEvaluation{}, &MemoryGovernanceDecision{}, &MemoryRelation{}, &MemoryConsolidationBatch{}, &AssistantPersonalizationSnapshot{}); err != nil {
+	if err := db.AutoMigrate(&Provider{}, &Deployment{}, &Alias{}, &ModelInvocation{}, &ToolCatalog{}, &ToolSearchDocument{}, &NavigationSearchDocument{}, &ToolScope{}, &ConversationToolWorkingSet{}, &ToolConfirmation{}, &ToolInvocation{}, &Agent{}, &AgentVersion{}, &AgentToolBinding{}, &AgentSlotBinding{}, &AgentSlotPreference{}, &Conversation{}, &ConversationMessage{}, &AssistantStream{}, &AssistantStreamDelta{}, &ContextSnapshot{}, &AgentRun{}, &AgentStep{}, &AgentRunEvent{}, &MemoryItem{}, &MemoryItemVersion{}, &MemoryEvidence{}, &MemoryProjection{}, &MemoryDaySummary{}, &MemoryCurrentProfile{}, &MemoryEvaluation{}, &MemoryGovernanceDecision{}, &MemoryRelation{}, &MemoryConsolidationBatch{}, &AssistantPersonalizationSnapshot{}); err != nil {
 		return err
 	}
 	return AutoMigrateKnowledge(db)

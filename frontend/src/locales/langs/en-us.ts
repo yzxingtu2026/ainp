@@ -1081,6 +1081,7 @@ const local: App.I18n.Schema = {
     toolRunning: 'Running',
     toolSuccess: 'Completed',
     toolFailed: 'Failed',
+    toolRehydrated: 'Tool restored',
     toolWaiting: 'Waiting for result',
     toolArguments: 'Arguments',
     toolResult: 'Result',

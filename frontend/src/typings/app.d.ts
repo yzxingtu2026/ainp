@@ -1219,6 +1219,7 @@ declare namespace App {
         toolRunning: string;
         toolSuccess: string;
         toolFailed: string;
+        toolRehydrated: string;
         toolWaiting: string;
         toolArguments: string;
         toolResult: string;
