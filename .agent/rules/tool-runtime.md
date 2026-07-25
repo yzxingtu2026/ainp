@@ -12,7 +12,7 @@
 - MCP Action Adapter 与 Agent 共用 ActionProvider，但独立应用 OAuth scope；`tools/list` 和 `tools/call` 都必须实时复核 realm、permission、scope 与 Action 状态。敏感 Action 需要 sensitive scope 才投影，首次调用返回确认 URL 和 opaque confirmation ID；批准后只允许固定治理工具按 ID 单次恢复，治理工具不得接受 Action ID 或业务参数。外部 MCP Provider 接入 Agent 不属于此适配器。
 - Scope 精确 Tool 与来源/能力白名单按“精确命中或来源+能力命中”授权，但 Action 禁止通过精确 Binding 授权，只能命中 Contract 来源+能力；来源/能力只开放渐进 search/load，禁止未 load Schema 进入模型初始投影。
 - 新增 Action Tool Capability 时必须同步评估并更新目标 Agent Contract 的来源/能力白名单；测试至少覆盖一个目标 Contract 创建的 Scope 能搜索到该 Action，以及无权限 actor 仍不可见。Action Provider 投影测试不能替代 Scope 可达性测试。
-- 同一 Run 的 loaded tools 只能递增；Progressive 工具未投影时必须先显式 load，普通执行禁止隐式扩容。重复 load 只返回紧凑状态，不重复写完整 Schema；不同 Run 不继承 Scope。Registry ID 只用于 search/load，执行只接受投影模型名；名称混用必须可恢复且不得阻断同批后续发现调用。
+- 同一 Run 的 loaded tools 只能递增；重复 load 只返回紧凑状态，不重复写完整 Schema。Conversation 工作集只表达有界投影偏好，不是授权凭证；显式 Load、新 Scope 恢复和 rehydrate 必须复用统一激活原语并实时重验权限、Contract、动态投影与预算。工作集未命中禁止隐式扩容；Schema 变化时只写配对的中性恢复结果并由主循环基于正式 Schema 重试，禁止执行旧参数。Registry ID 只用于 search/load，执行只接受唯一映射的投影模型名；名称歧义必须 fail-closed。
 - Catalog 在模块注册完成、新租户初始化或显式 rebuild 时幂等投影；请求路径禁止写 Catalog。变更以单调 revision 同事务写 Outbox，移除/停用立即 stale，重复/乱序事件不得覆盖当前 Search Document。
 - 语义索引只经统一 Embedding Runtime（`purpose=tool_index`）和 Outbox→Job 写 pgvector；Alias、deployment、dimensions、preprocessing、schema/revision 必须匹配。失败自动降级 exact + 中文词法/FTS，混合排序不得先于权限和 Scope 过滤。
 - search/load/execute 每次重新应用 tenant、realm、permission、Scope 与启用状态；Embedding/索引绝不是权限事实源。

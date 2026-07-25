@@ -46,6 +46,8 @@ Page Context 的 server-owned tool hints 只能在 Registry 投影、ToolScope�
 
 ToolScope 的授权由两类白名单组成：精确 `allowed_tools` 用于 meta、RuntimeSlot、合法显式 Binding 和已知特殊工具；`allowed_sources + allowed_capabilities` 用于渐进发现。非 Action 工具满足精确 Tool 白名单，或同时满足来源与能力白名单时才进入 Scope；Action 禁止通过精确 Binding 授权，只能命中 Contract 的来源与能力白名单。来源/能力授权只允许 search/load，未 load 的 Action Schema 不得进入模型初始工具列表。
 
+同一 Conversation 已合法激活或完成执行的工具维护为最多 32 项的有界工作集。新 ToolScope 按最近使用、频率、最近激活与 Tool ID 的确定性顺序恢复最多 4 项；工作集只表示投影偏好，不保存 Handle、Schema、参数或结果，也不构成授权凭证。显式 Load、跨 Run 恢复与运行中 rehydrate 必须复用同一激活原语并实时重验 Registry、Scope、actor 权限、动态投影和 Schema 预算。未投影调用只有在当前 Conversation 工作集命中后才可恢复；Schema hash 变化时必须返回配对的中性 `rehydrated` 结果，让现有主循环在正式 Schema 投影后重新生成调用，禁止执行旧参数。
+
 因此新增 Action Tool 必须同时完成三层验证：Action Registry 中 `ExposeTool=true` 且契约完整；目标 Agent Contract 明确允许其 source/capability；当前 actor 拥有 Action permission。缺少任一层都应从 `tool.search` 候选中消失。模块新增 Capability 或扩大 AI 暴露范围时必须同步更新目标 Contract，并增加基于真实 ToolScope 的可达性与无权限不可见测试；只验证全局 Registry 投影会漏掉 Contract Scope 回归。
 
 Handle 使用服务端签名并绑定 tenant、user、realm、session/auth version、scope、tool、runtime ref、schema hash 和 TTL。任何绑定变化、过期或 Schema 变化均拒绝。

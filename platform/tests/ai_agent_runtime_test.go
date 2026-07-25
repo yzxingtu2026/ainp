@@ -147,6 +147,29 @@ func TestAgentRuntimeMigrationHasRecoveryConstraints(t *testing.T) {
 	}
 }
 
+func TestConversationToolWorkingSetMigrationAndRuntimeContract(t *testing.T) {
+	body, err := os.ReadFile("../migrations/0052_conversation_tool_working_set.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := string(body)
+	for _, expected := range []string{"ai_conversation_tool_working_set", "conversation_id", "schema_hash", "last_used_at DESC NULLS LAST", "use_count DESC", "activated_at DESC", "tool_id ASC", "ON DELETE CASCADE", "ON DELETE SET NULL"} {
+		if !strings.Contains(sql, expected) {
+			t.Fatalf("working set migration missing %q", expected)
+		}
+	}
+	runtimeBody, err := os.ReadFile("../modules/ai/agent_runtime_service.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeSource := string(runtimeBody)
+	for _, expected := range []string{"conversationToolRestoreLimit     = 4", "toolRehydrateLimitPerRun         = 3", "WorkingSetCandidates", "WorkingSetEntry", `Status: "rehydrated"`, "SchemaHash != activation.Definition.SchemaHash"} {
+		if !strings.Contains(runtimeSource, expected) {
+			t.Fatalf("agent runtime working set contract missing %q", expected)
+		}
+	}
+}
+
 func TestTrustedRuntimeContextMigrationStoresOnlyTimeAndRefs(t *testing.T) {
 	body, err := os.ReadFile("../migrations/0034_trusted_runtime_context.sql")
 	if err != nil {
