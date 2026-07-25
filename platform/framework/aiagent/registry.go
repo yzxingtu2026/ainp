@@ -22,6 +22,7 @@ type Contract struct {
 	Name                      string          `json:"name"`
 	Description               string          `json:"description"`
 	BaseInstructions          string          `json:"-"`
+	BaseInstructionsVersion   string          `json:"base_instructions_version,omitempty"`
 	RequiredModelCapabilities []string        `json:"required_model_capabilities"`
 	RequiredToolSelectors     []string        `json:"required_tool_selectors"`
 	AllowedToolSources        []string        `json:"allowed_tool_sources,omitempty"`
@@ -42,6 +43,9 @@ var managed = map[string]bool{"code": true, "source": true, "contract_key": true
 func (c Contract) Validate() error {
 	if !keyPattern.MatchString(c.Key) || !versionPattern.MatchString(c.Version) || strings.TrimSpace(c.Name) == "" || strings.TrimSpace(c.BaseInstructions) == "" {
 		return fmt.Errorf("invalid agent contract identity")
+	}
+	if c.BaseInstructionsVersion != "" && !versionPattern.MatchString(c.BaseInstructionsVersion) {
+		return fmt.Errorf("invalid base instructions version")
 	}
 	if !json.Valid(c.ConfigSchema) {
 		return fmt.Errorf("invalid config schema")
@@ -87,6 +91,44 @@ func (c Contract) Validate() error {
 type Registry struct {
 	mu        sync.RWMutex
 	contracts map[string]map[string]Contract
+}
+
+const TenantSupplementSeparator = "--- tenant supplemental instructions ---"
+
+type InstructionError struct {
+	Code string
+}
+
+func (e *InstructionError) Error() string { return e.Code }
+
+type EffectiveInstructions struct {
+	Text                string
+	ContractKey         string
+	ContractVersion     string
+	HasTenantSupplement bool
+}
+
+// ResolveInstructions is the single composition path for preview and release runs.
+func ResolveInstructions(registry *Registry, contractKey, contractVersion, tenantInstructions string) (EffectiveInstructions, error) {
+	key := strings.TrimSpace(contractKey)
+	version := strings.TrimSpace(contractVersion)
+	supplement := strings.TrimSpace(tenantInstructions)
+	if key == "" && version == "" {
+		return EffectiveInstructions{Text: supplement, HasTenantSupplement: supplement != ""}, nil
+	}
+	if key == "" || version == "" || registry == nil {
+		return EffectiveInstructions{}, &InstructionError{Code: "agent.contract_unavailable"}
+	}
+	contract, ok := registry.Get(key, version)
+	if !ok || strings.TrimSpace(contract.BaseInstructions) == "" {
+		return EffectiveInstructions{}, &InstructionError{Code: "agent.contract_unavailable"}
+	}
+	base := strings.TrimSpace(contract.BaseInstructions)
+	result := EffectiveInstructions{Text: base, ContractKey: key, ContractVersion: version, HasTenantSupplement: supplement != ""}
+	if supplement != "" {
+		result.Text += "\n\n" + TenantSupplementSeparator + "\n\n" + supplement
+	}
+	return result, nil
 }
 
 func NewRegistry() *Registry { return &Registry{contracts: map[string]map[string]Contract{}} }

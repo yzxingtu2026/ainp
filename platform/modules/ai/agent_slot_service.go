@@ -128,7 +128,7 @@ func (s *AgentSlotService) resolveAgent(ctx context.Context, slot agentslot.Slot
 	if agent.Status != "enabled" || agent.CurrentVersion <= 0 {
 		return slotUnavailable("agent.disabled_or_unpublished", "configured agent is disabled or unpublished", slot, source), nil
 	}
-	if agent.ContractKey != slot.DefaultContractKey || agent.ContractVersion != slot.DefaultContractVersion {
+	if !s.slots.AcceptsContract(slot, agent.ContractKey, agent.ContractVersion) {
 		return slotUnavailable("agent.contract_mismatch", "configured agent does not satisfy the slot contract", slot, source), nil
 	}
 	version, err := repos.versions.First("agent_id=? AND version=? AND kind=?", agent.ID, agent.CurrentVersion, AgentVersionKindRelease)
@@ -184,7 +184,7 @@ func (s *AgentSlotService) Resolve(ctx context.Context, r AgentSlotGetRequest) (
 	if err != nil {
 		return nil, err
 	}
-	agent, err := repos.agents.First("source='builtin' AND contract_key=? AND contract_version=?", slot.DefaultContractKey, slot.DefaultContractVersion)
+	agent, err := repos.agents.First("source='builtin' AND contract_key=?", slot.DefaultContractKey)
 	if err != nil {
 		return slotUnavailable("default.unavailable", "system default agent is unavailable", slot, "builtin"), nil
 	}

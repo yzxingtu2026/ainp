@@ -10,5 +10,7 @@
 - Agent Builder 是配置/调试入口，不得旁路 Runtime；实时预览必须物化 `kind=preview` Version（不晋升 current）并走 `purpose=builder_preview` Conversation/Run。
 - Builder「保存」把提示词等运行配置写入 Agent 草稿列（与元数据同事务），不晋升 current；正式发布 release 后清空草稿，Workspace 才消费新 Version。
 - Agent Version 不提供 `user_instructions`；可配置补充指令只有租户指令，用户偏好交给 Workspace/记忆。
+- Contract Base 与租户补充指令必须经共享解析器按 Base 在前的顺序合成；Preview/正式 Run 共用，Contract 缺失或错配 fail-closed，正文不得进入日志、审计、diagnostics 或调用账本。
+- Builder 只读展示 Contract Base；“恢复内置默认”只能清空当前补充指令草稿，保存并发布后才影响正式 Run。
 - Memory Policy 在发布/preview 物化时按 Agent 输入→租户设置→系统默认解析并冻结到 Version；启用时模型 Alias 必须通过 Structured Output diagnostics，旧 Version 禁止随设置漂移。
 - 详细扩展方式见 `docs/development/agent-management.md`。

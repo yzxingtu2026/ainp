@@ -24,7 +24,7 @@ Agent Contract（代码注册的能力与安全契约）
 
 ## 指令与诊断
 
-指令固定按 Contract Base、Tenant、未来 Run 的顺序合成。Tenant 指令是 Agent Version 上唯一可配置的补充人设/业务约束，不能改写 Contract 安全边界。不提供 `user_instructions`：会话态任务交给 Workspace 对话，跨会话偏好交给记忆系统，禁止写入不可变 Version 快照。当前版本、Model Alias、Contract 必需模型能力和必需工具任何一项不可用时，保留配置并返回结构化 diagnostics；不得静默降级为健康。
+有效指令由后端共享解析器确定性合成：Contract Base 在前，非空 Tenant 补充指令通过固定分隔段追加在后。Builder Preview 与正式 Workspace Run 必须调用同一解析器，禁止分别拼接。Tenant 指令是 Agent Version 上唯一可配置的补充人设/业务约束，不能改写 Contract 安全边界；personal/tenant Agent 没有 Contract 时只使用自身 Tenant 指令。Contract key/version 无法精确解析或 Base 为空时返回 `agent.contract_unavailable` 并 fail-closed。不得在日志、审计、diagnostics 或模型调用账本记录 Base、Tenant 或最终有效指令正文，只允许记录 Contract key/version 和是否存在补充指令等来源元数据。不提供 `user_instructions`：会话态任务交给 Workspace 对话，跨会话偏好交给记忆系统，禁止写入不可变 Version 快照。
 
 ## Setup 与 reconcile
 
@@ -32,7 +32,7 @@ Agent Contract（代码注册的能力与安全契约）
 
 ## Agent Builder
 
-智能体编排工作台（Agent Builder）是面向创建者与租户管理员的配置/调试入口，路由为 `/ai/agent-builder`（列表 `/ai/agents` 负责入口跳转）。Builder 复用本层 Action：创建、元数据更新、版本发布、工具绑定与 diagnostics；`agent_get` 额外返回只读 Contract 覆盖字段：`base_instructions`、`managed_fields`、`required_tool_selectors`。编排页左栏整栏为租户指令（人设提示词）编辑区，使用 Markdown 语法高亮编辑器（CodeMirror）；**不展示** Contract `base_instructions`（由代码契约托管，运行时自动合成），也不提供用户指令或 Run 指令字段。工具绑定在中间栏展示“Contract 必选 + 用户可选”的有效绑定；Contract 必选项不复制为数据库事实且不可移除。候选搜索、绑定写入、有效列表与 Run Scope 统一读取 Tool Definition 的 `binding_mode` / `loading_mode`。Action 声明 `forbidden + progressive`，只能由 Contract source/capability Scope 经已绑定的 `tool.search` / `tool.load` 发现；Meta Tool 可选绑定且搜索/加载以 `binding_group=tool_discovery` 原子处理；`knowledge.search` / `memory.search` 可选绑定并标记 `conditional`，只有实时资源与权限条件满足时才投影。管理端 Browse 上限 100，模型侧 `tool.search` 硬顶 10。
+智能体编排工作台（Agent Builder）是面向创建者与租户管理员的配置/调试入口，路由为 `/ai/agent-builder`（列表 `/ai/agents` 负责入口跳转）。Builder 复用本层 Action：创建、元数据更新、版本发布、工具绑定与 diagnostics；`agent_get` 额外返回只读 Contract 覆盖字段：`base_instructions`、`managed_fields`、`required_tool_selectors`。存在 Contract Base 时，桌面和移动端均默认折叠展示“内置基础指令”，只读显示正文与 Contract key/version，并标记系统托管、运行时自动加载；“补充人设与回复逻辑”默认展开并绑定 `draft_tenant_instructions`。builtin 的“恢复内置默认”只把当前补充指令草稿置空并标记未保存，不写库、不发布，也不修改模型、工具、知识库、记忆或生成参数；正式行为仍需保存并发布新 Version 后才变化。personal/tenant Agent 不显示不存在的 Contract Base 或恢复按钮。工具绑定在中间栏展示“Contract 必选 + 用户可选”的有效绑定；Contract 必选项不复制为数据库事实且不可移除。
 
 「保存基本信息」经 `ai.agent_update` 同时写入名称/描述与 Builder 草稿运行配置（`has_draft` + `draft_tenant_instructions` / `draft_model_alias` / `draft_generation_config` / `draft_tool_policy`），**不**创建 release Version、**不**晋升 `current_version`。Workspace 与正式 Run 仍只消费 current Version；草稿仅供 Builder 回填编辑器与预览物化。点「发布新版本」创建 `kind=release` 并清空草稿后，新配置才对正式会话生效。
 

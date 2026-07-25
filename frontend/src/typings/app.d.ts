@@ -686,6 +686,18 @@ declare namespace App {
           avatarImageOnly: string;
           avatarUpdateFailed: string;
           tenantPlaceholder: string;
+          builtinBaseTitle: string;
+          systemManaged: string;
+          builtinBaseHint: string;
+          supplementTitle: string;
+          supplementHint: string;
+          supplementPlaceholder: string;
+          customInstructionsTitle: string;
+          customInstructionsHint: string;
+          restoreBuiltin: string;
+          restoreBuiltinTitle: string;
+          restoreBuiltinContent: string;
+          restoreBuiltinConfirm: string;
           instructionTooLong: string;
           name: string;
           code: string;

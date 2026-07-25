@@ -491,7 +491,20 @@ func Register(a *app.App) error {
 }
 
 func NewBuiltinAgentContractRegistry() (*aiagent.Registry, error) {
+	const promptKey = "agent/system-operations"
+	metadata, ok := prompt.MetadataFor(promptKey)
+	if !ok || metadata.Version != "2.2.0" {
+		return nil, fmt.Errorf("agent contract system.operations@1.0.0 requires prompt %s@2.2.0", promptKey)
+	}
 	contracts := aiagent.NewRegistry()
-	err := contracts.Register(aiagent.Contract{Key: "system.operations", Version: "1.0.0", Name: "系统运营助手", Description: "通过当前用户权限安全操作后台系统", BaseInstructions: prompt.MustGet("agent/system-operations"), RequiredModelCapabilities: []string{"chat", "tools"}, RequiredToolSelectors: []string{"meta:tool.search", "meta:tool.load", navigationtool.ToolID, navigationtool.HelpToolID}, AllowedToolSources: []string{"action"}, AllowedToolCapabilities: []string{"system", "operations", "ai"}, ConfigSchema: json.RawMessage(`{"type":"object","additionalProperties":false}`), SingletonScope: aiagent.SingletonTenant, ManagedFields: []string{"code", "source", "contract_key", "contract_version", "base_instructions", "visibility"}, UpgradePolicy: "managed-fields"})
-	return contracts, err
+	contract := aiagent.Contract{Key: "system.operations", Version: "1.0.0", Name: "系统运营助手", Description: "通过当前用户权限安全操作后台系统", BaseInstructions: prompt.MustGet(promptKey), BaseInstructionsVersion: metadata.Version, RequiredModelCapabilities: []string{"chat", "tools"}, RequiredToolSelectors: []string{"meta:tool.search", "meta:tool.load", navigationtool.ToolID, navigationtool.HelpToolID}, AllowedToolSources: []string{"action"}, AllowedToolCapabilities: []string{"system", "operations", "ai"}, ConfigSchema: json.RawMessage(`{"type":"object","additionalProperties":false}`), SingletonScope: aiagent.SingletonTenant, ManagedFields: []string{"code", "source", "contract_key", "contract_version", "base_instructions", "visibility"}, UpgradePolicy: "managed-fields"}
+	if err := contracts.Register(contract); err != nil {
+		return nil, err
+	}
+	// Compatibility alias for Definitions written by the short-lived Issue #184 build.
+	contract.Version = "2.2.0"
+	if err := contracts.Register(contract); err != nil {
+		return nil, err
+	}
+	return contracts, nil
 }

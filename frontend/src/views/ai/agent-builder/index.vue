@@ -6,6 +6,7 @@ import {
   NButton,
   NCollapse,
   NCollapseItem,
+  NCode,
   NDrawer,
   NDrawerContent,
   NEmpty,
@@ -275,6 +276,24 @@ const instructionError = computed(() => {
   }
   return '';
 });
+const hasContractBase = computed(() => Boolean(agent.value?.contract_key && agent.value.base_instructions));
+const canRestoreBuiltinDefault = computed(
+  () => agent.value?.source === 'builtin' && hasContractBase.value && Boolean(draft.tenant_instructions)
+);
+
+function restoreBuiltinDefault() {
+  if (!canRestoreBuiltinDefault.value) return;
+  dialog.warning({
+    title: $t('page.agentBuilder.restoreBuiltinTitle'),
+    content: $t('page.agentBuilder.restoreBuiltinContent'),
+    positiveText: $t('page.agentBuilder.restoreBuiltinConfirm'),
+    negativeText: $t('common.cancel'),
+    onPositiveClick: () => {
+      draft.tenant_instructions = '';
+      markDirty();
+    }
+  });
+}
 
 function markDirty() {
   if (!hydrating.value && !loading.value) dirty.value = true;
@@ -803,13 +822,38 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
           :style="{ width: `${leftWidth}px` }"
         >
           <div class="shrink-0 border-b px-12px py-8px font-600">{{ $t('page.agentBuilder.panePrompt') }}</div>
-          <div class="min-h-0 flex flex-1 flex-col gap-8px overflow-hidden px-12px py-10px">
+          <div class="min-h-0 flex flex-1 flex-col gap-8px overflow-y-auto px-12px py-10px">
+            <NCollapse v-if="hasContractBase" display-directive="show" class="shrink-0">
+              <NCollapseItem :title="$t('page.agentBuilder.builtinBaseTitle')" name="builtin-base">
+                <NSpace vertical size="small">
+                  <NSpace align="center" size="small">
+                    <NTag size="small" type="info">{{ $t('page.agentBuilder.systemManaged') }}</NTag>
+                    <span class="text-xs text-gray-500">{{ agent?.contract_key }}@{{ agent?.contract_version }}</span>
+                  </NSpace>
+                  <NAlert type="info">{{ $t('page.agentBuilder.builtinBaseHint') }}</NAlert>
+                  <div class="max-h-240px overflow-auto rounded-4px bg-gray-50 p-8px dark:bg-gray-900">
+                    <NCode :code="agent?.base_instructions || ''" language="markdown" word-wrap />
+                  </div>
+                </NSpace>
+              </NCollapseItem>
+            </NCollapse>
+            <div class="flex shrink-0 items-start justify-between gap-8px">
+              <div>
+                <div class="font-600">{{ hasContractBase ? $t('page.agentBuilder.supplementTitle') : $t('page.agentBuilder.customInstructionsTitle') }}</div>
+                <div class="text-xs text-gray-500">{{ hasContractBase ? $t('page.agentBuilder.supplementHint') : $t('page.agentBuilder.customInstructionsHint') }}</div>
+              </div>
+              <NButton v-if="agent?.source === 'builtin' && hasContractBase" size="small" :disabled="!canRestoreBuiltinDefault" @click="restoreBuiltinDefault">
+                {{ $t('page.agentBuilder.restoreBuiltin') }}
+              </NButton>
+            </div>
             <NAlert v-if="instructionError" type="error" class="shrink-0">{{ instructionError }}</NAlert>
-            <MarkdownPromptEditor
-              v-model="draft.tenant_instructions"
-              :maxlength="instructionLimit"
-              :placeholder="$t('page.agentBuilder.tenantPlaceholder')"
-            />
+            <div class="min-h-280px flex-1">
+              <MarkdownPromptEditor
+                v-model="draft.tenant_instructions"
+                :maxlength="instructionLimit"
+                :placeholder="hasContractBase ? $t('page.agentBuilder.supplementPlaceholder') : $t('page.agentBuilder.tenantPlaceholder')"
+              />
+            </div>
           </div>
         </section>
         <div
@@ -924,19 +968,19 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
                       <NListItem v-for="binding in boundTools" :key="binding.id">
                         <NSpace justify="space-between" class="w-full">
                           <NSpace>
-							<span>{{ binding.name || binding.tool_id }}</span>
-							<NTag v-if="binding.required" size="small" type="warning">
+                            <span>{{ binding.name || binding.tool_id }}</span>
+                            <NTag v-if="binding.required" size="small" type="warning">
                               {{ $t('page.agentBuilder.requiredTool') }}
                             </NTag>
-							<NTag v-if="binding.loading_mode === 'conditional'" size="small" type="info">
-							  {{ $t('page.agentBuilder.conditionalLoading') }}
-							</NTag>
-							<NTag v-if="binding.binding_group === 'tool_discovery'" size="small" type="info">
-							  {{ $t('page.agentBuilder.toolDiscovery') }}
-							</NTag>
+                            <NTag v-if="binding.loading_mode === 'conditional'" size="small" type="info">
+                              {{ $t('page.agentBuilder.conditionalLoading') }}
+                            </NTag>
+                            <NTag v-if="binding.binding_group === 'tool_discovery'" size="small" type="info">
+                              {{ $t('page.agentBuilder.toolDiscovery') }}
+                            </NTag>
                           </NSpace>
                           <NButton
-							v-if="can(AI_ACTIONS.agentToolUnbind) && !binding.required"
+                            v-if="can(AI_ACTIONS.agentToolUnbind) && !binding.required"
                             size="small"
                             type="error"
                             ghost
@@ -962,8 +1006,8 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
                         size="small"
                         :disabled="
                           !can(AI_ACTIONS.agentKnowledgeBind) ||
-                          !can(AI_ACTIONS.agentKnowledgeList) ||
-                          !can(AI_ACTIONS.knowledgeBaseList)
+                            !can(AI_ACTIONS.agentKnowledgeList) ||
+                            !can(AI_ACTIONS.knowledgeBaseList)
                         "
                         @click="knowledgePickerVisible = true"
                       >
@@ -980,7 +1024,7 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
                           :title="knowledgeBaseByID.get(binding.knowledge_base_id)?.name || binding.knowledge_base_id"
                           :description="
                             knowledgeBaseByID.get(binding.knowledge_base_id)?.description ||
-                            $t('page.agentBuilder.noKnowledgeDescription')
+                              $t('page.agentBuilder.noKnowledgeDescription')
                           "
                         >
                           <template #header-extra>
@@ -1121,12 +1165,38 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
         </NTabs>
         <div class="min-h-0 flex-1 overflow-y-auto px-12px py-10px">
           <template v-if="mobileTab === 'prompt'">
-            <div class="h-360px flex flex-col">
-              <MarkdownPromptEditor
-                v-model="draft.tenant_instructions"
-                :maxlength="instructionLimit"
-                :placeholder="$t('page.agentBuilder.tenantPlaceholder')"
-              />
+            <div class="flex min-h-full flex-col gap-8px">
+              <NCollapse v-if="hasContractBase" display-directive="show" class="shrink-0">
+                <NCollapseItem :title="$t('page.agentBuilder.builtinBaseTitle')" name="builtin-base-mobile">
+                  <NSpace vertical size="small">
+                    <NSpace align="center" size="small">
+                      <NTag size="small" type="info">{{ $t('page.agentBuilder.systemManaged') }}</NTag>
+                      <span class="text-xs text-gray-500">{{ agent?.contract_key }}@{{ agent?.contract_version }}</span>
+                    </NSpace>
+                    <NAlert type="info">{{ $t('page.agentBuilder.builtinBaseHint') }}</NAlert>
+                    <div class="max-h-240px overflow-auto rounded-4px bg-gray-50 p-8px dark:bg-gray-900">
+                      <NCode :code="agent?.base_instructions || ''" language="markdown" word-wrap />
+                    </div>
+                  </NSpace>
+                </NCollapseItem>
+              </NCollapse>
+              <div class="flex items-start justify-between gap-8px">
+                <div>
+                  <div class="font-600">{{ hasContractBase ? $t('page.agentBuilder.supplementTitle') : $t('page.agentBuilder.customInstructionsTitle') }}</div>
+                  <div class="text-xs text-gray-500">{{ hasContractBase ? $t('page.agentBuilder.supplementHint') : $t('page.agentBuilder.customInstructionsHint') }}</div>
+                </div>
+                <NButton v-if="agent?.source === 'builtin' && hasContractBase" size="small" :disabled="!canRestoreBuiltinDefault" @click="restoreBuiltinDefault">
+                  {{ $t('page.agentBuilder.restoreBuiltin') }}
+                </NButton>
+              </div>
+              <NAlert v-if="instructionError" type="error">{{ instructionError }}</NAlert>
+              <div class="h-360px">
+                <MarkdownPromptEditor
+                  v-model="draft.tenant_instructions"
+                  :maxlength="instructionLimit"
+                  :placeholder="hasContractBase ? $t('page.agentBuilder.supplementPlaceholder') : $t('page.agentBuilder.tenantPlaceholder')"
+                />
+              </div>
             </div>
           </template>
           <template v-else-if="mobileTab === 'config'">

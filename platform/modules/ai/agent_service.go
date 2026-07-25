@@ -951,6 +951,12 @@ func (s *AgentService) Diagnostics(ctx context.Context, r IDRequest) (any, error
 
 func (s *AgentService) agentDiagnostics(ctx context.Context, row *Agent) AgentDiagnostics {
 	issues := []AgentDiagnosticIssue{}
+	if row.ContractKey != "" {
+		contract, ok := s.contracts.Get(row.ContractKey, row.ContractVersion)
+		if !ok || strings.TrimSpace(contract.BaseInstructions) == "" {
+			issues = append(issues, AgentDiagnosticIssue{Code: "agent.contract_unavailable", Resource: row.ContractKey + "@" + row.ContractVersion, Message: "agent contract is unavailable"})
+		}
+	}
 	if row.CurrentVersion <= 0 {
 		issues = append(issues, AgentDiagnosticIssue{Code: "version.missing", Message: "publish the first version before enabling"})
 	} else {
@@ -1031,6 +1037,18 @@ func (s *AgentService) ReconcileBuiltin(ctx context.Context, _ AgentEmptyRequest
 	}
 	row, e := repos.agents.First("contract_key=?", c.Key)
 	if e == nil {
+		if row.ContractVersion != c.Version || row.Code != "system-operations" || row.Source != "builtin" || row.Visibility != "tenant" {
+			result := repos.agents.Where("id=? AND revision=?", row.ID, row.Revision).Updates(map[string]any{
+				"contract_version": c.Version, "code": "system-operations", "source": "builtin", "visibility": "tenant", "revision": gorm.Expr("revision + 1"),
+			})
+			if result.Error != nil {
+				return nil, result.Error
+			}
+			if result.RowsAffected != 1 {
+				return nil, errs.New(errs.CodeConflict, "agent revision conflict")
+			}
+			row.ContractVersion, row.Code, row.Source, row.Visibility, row.Revision = c.Version, "system-operations", "builtin", "tenant", row.Revision+1
+		}
 		return map[string]any{"created": false, "agent": row}, nil
 	}
 	if e != gorm.ErrRecordNotFound {

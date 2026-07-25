@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -119,6 +120,33 @@ func TestAgentContractRegistryFailClosed(t *testing.T) {
 	}
 }
 
+func TestEffectiveAgentInstructions(t *testing.T) {
+	registry := aiagent.NewRegistry()
+	contract := validAgentContract()
+	if err := registry.Register(contract); err != nil {
+		t.Fatal(err)
+	}
+	effective, err := aiagent.ResolveInstructions(registry, contract.Key, contract.Version, "  Use concise replies.  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "Keep tenant boundaries.\n\n--- tenant supplemental instructions ---\n\nUse concise replies."
+	if effective.Text != want || !effective.HasTenantSupplement || effective.ContractKey != contract.Key {
+		t.Fatalf("unexpected effective instructions: %#v", effective)
+	}
+	baseOnly, err := aiagent.ResolveInstructions(registry, contract.Key, contract.Version, "")
+	if err != nil || baseOnly.Text != contract.BaseInstructions || baseOnly.HasTenantSupplement {
+		t.Fatalf("unexpected base-only instructions: %#v, %v", baseOnly, err)
+	}
+	personal, err := aiagent.ResolveInstructions(registry, "", "", "Personal instructions")
+	if err != nil || personal.Text != "Personal instructions" || personal.ContractKey != "" {
+		t.Fatalf("unexpected personal instructions: %#v, %v", personal, err)
+	}
+	if _, err = aiagent.ResolveInstructions(registry, contract.Key, "9.9.9", "secret supplement"); err == nil || err.Error() != "agent.contract_unavailable" || strings.Contains(err.Error(), "secret") {
+		t.Fatalf("contract mismatch must fail closed without content: %v", err)
+	}
+}
+
 func TestSystemOperationsContractUsesProgressiveActionScope(t *testing.T) {
 	if err := prompt.LoadDir("../prompts"); err != nil {
 		t.Fatal(err)
@@ -131,11 +159,40 @@ func TestSystemOperationsContractUsesProgressiveActionScope(t *testing.T) {
 	if !ok {
 		t.Fatal("system.operations contract is not registered")
 	}
+	if contract.BaseInstructionsVersion != "2.2.0" {
+		t.Fatalf("unexpected base instructions version: %s", contract.BaseInstructionsVersion)
+	}
+	compatibilityContract, ok := registry.Get("system.operations", "2.2.0")
+	if !ok || compatibilityContract.BaseInstructions != contract.BaseInstructions {
+		t.Fatal("temporary 2.2.0 compatibility contract is not registered")
+	}
 	if !slices.Equal(contract.AllowedToolSources, []string{"action"}) || !slices.Equal(contract.AllowedToolCapabilities, []string{"system", "operations", "ai"}) {
 		t.Fatalf("unexpected progressive tool scope: %#v", contract)
 	}
 	if !slices.Contains(contract.RequiredToolSelectors, "builtin:navigation.search") {
 		t.Fatalf("default system agent must receive direct navigation search: %#v", contract.RequiredToolSelectors)
+	}
+}
+
+func TestSystemOperationsContractRejectsPromptVersionDrift(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "agent")
+	if err := os.Mkdir(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(path, "system-operations.md"), []byte("---\nversion: 2.1.0\n---\n\nSafe base."), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := prompt.LoadDir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := prompt.LoadDir("../prompts"); err != nil {
+			t.Errorf("restore prompt registry: %v", err)
+		}
+	})
+	if _, err := ai.NewBuiltinAgentContractRegistry(); err == nil || !strings.Contains(err.Error(), "requires prompt agent/system-operations@2.2.0") {
+		t.Fatalf("expected prompt version mismatch, got %v", err)
 	}
 }
 
