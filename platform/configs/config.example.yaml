@@ -9,6 +9,15 @@ database:
 logging:
   level: info
   format: text # text | json
+  outputs: [stdout] # 生产可设为 [stdout, file]；文件始终为 JSONL
+  # service: api # API/Worker 启动时自动补齐，也可用 LOG_SERVICE 覆盖
+  # instance_id: local-1 # 默认 hostname，也可用 INSTANCE_ID 覆盖
+  file:
+    path: data/logs/{service}.jsonl # API/独立 Worker 自动分文件；可用 LOG_FILE_PATH 覆盖
+    max_size_mb: 100
+    max_backups: 14
+    max_age_days: 14
+    compress: true
 
 auth:
   # refresh token 会话有效期；仅保存摘要并在每次刷新时轮换

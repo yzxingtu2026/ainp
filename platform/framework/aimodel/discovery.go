@@ -3,6 +3,7 @@ package aimodel
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -10,6 +11,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/yzxingtu2026/ainp/platform/framework/diagnostic"
 )
 
 const MaxDiscoveryBody = 2 << 20
@@ -78,11 +81,23 @@ func (a *HTTPDiscoveryAdapter) Discover(ctx context.Context, in DiscoveryRequest
 	}
 	resp, err := a.Client.Do(req)
 	if err != nil {
-		return RemoteModelPage{}, fmt.Errorf("model discovery request failed")
+		category := diagnostic.UpstreamConnect
+		if errors.Is(err, context.DeadlineExceeded) {
+			category = diagnostic.UpstreamTimeout
+		}
+		var dnsErr *net.DNSError
+		if errors.As(err, &dnsErr) {
+			category = diagnostic.UpstreamDNS
+		}
+		return RemoteModelPage{}, diagnostic.New(category, "ai.model_discovery.request", "model discovery request failed", err, upstreamAttributes(u, 0))
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return RemoteModelPage{}, fmt.Errorf("model discovery returned status %d", resp.StatusCode)
+		category := diagnostic.UpstreamHTTPStatus
+		if resp.StatusCode == http.StatusTooManyRequests {
+			category = diagnostic.RateLimited
+		}
+		return RemoteModelPage{}, diagnostic.New(category, "ai.model_discovery.response_status", "model discovery returned non-success status", fmt.Errorf("status %d", resp.StatusCode), upstreamAttributes(u, resp.StatusCode))
 	}
 	var raw struct {
 		Data []struct {
@@ -94,7 +109,7 @@ func (a *HTTPDiscoveryAdapter) Discover(ctx context.Context, in DiscoveryRequest
 	}
 	dec := json.NewDecoder(io.LimitReader(resp.Body, MaxDiscoveryBody+1))
 	if err := dec.Decode(&raw); err != nil {
-		return RemoteModelPage{}, fmt.Errorf("invalid model discovery response")
+		return RemoteModelPage{}, diagnostic.New(diagnostic.UpstreamInvalidResponse, "ai.model_discovery.decode", "invalid model discovery response", err, upstreamAttributes(u, resp.StatusCode))
 	}
 	if len(raw.Data) > 1000 {
 		return RemoteModelPage{}, fmt.Errorf("model discovery response exceeds item limit")
@@ -113,6 +128,10 @@ func (a *HTTPDiscoveryAdapter) Discover(ctx context.Context, in DiscoveryRequest
 		out.NextCursor = raw.LastID
 	}
 	return out, nil
+}
+
+func upstreamAttributes(u *url.URL, status int) map[string]any {
+	return map[string]any{"upstream_service": "ai_model_provider", "upstream_host": u.Host, "upstream_method": http.MethodGet, "upstream_path": u.EscapedPath(), "upstream_status": status}
 }
 
 func SafeEndpoint(raw string) (*url.URL, error) {

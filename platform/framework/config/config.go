@@ -147,8 +147,20 @@ func (c DatabaseConfig) IsAutoMigrateEnabled() bool {
 }
 
 type LoggingConfig struct {
-	Level  string `yaml:"level"`
-	Format string `yaml:"format"`
+	Level      string            `yaml:"level"`
+	Format     string            `yaml:"format"`
+	Outputs    []string          `yaml:"outputs"`
+	Service    string            `yaml:"service"`
+	InstanceID string            `yaml:"instance_id"`
+	File       LoggingFileConfig `yaml:"file"`
+}
+
+type LoggingFileConfig struct {
+	Path       string `yaml:"path"`
+	MaxSizeMB  int    `yaml:"max_size_mb"`
+	MaxBackups int    `yaml:"max_backups"`
+	MaxAgeDays int    `yaml:"max_age_days"`
+	Compress   bool   `yaml:"compress"`
 }
 
 type AuthConfig struct {
@@ -223,6 +235,21 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Logging.Format == "" {
 		c.Logging.Format = "text"
+	}
+	if len(c.Logging.Outputs) == 0 {
+		c.Logging.Outputs = []string{"stdout"}
+	}
+	if c.Logging.InstanceID == "" {
+		c.Logging.InstanceID, _ = os.Hostname()
+	}
+	if c.Logging.File.MaxSizeMB <= 0 {
+		c.Logging.File.MaxSizeMB = 100
+	}
+	if c.Logging.File.MaxBackups <= 0 {
+		c.Logging.File.MaxBackups = 14
+	}
+	if c.Logging.File.MaxAgeDays <= 0 {
+		c.Logging.File.MaxAgeDays = 14
 	}
 	if c.Auth.JWT.Issuer == "" {
 		c.Auth.JWT.Issuer = "ainp"
@@ -311,6 +338,15 @@ func (c *Config) applyDefaults() {
 
 // applyEnvOverrides 环境变量优先级高于配置文件。
 func (c *Config) applyEnvOverrides() {
+	if service := os.Getenv("LOG_SERVICE"); service != "" {
+		c.Logging.Service = service
+	}
+	if instanceID := os.Getenv("INSTANCE_ID"); instanceID != "" {
+		c.Logging.InstanceID = instanceID
+	}
+	if path := os.Getenv("LOG_FILE_PATH"); path != "" {
+		c.Logging.File.Path = path
+	}
 	if dsn := os.Getenv("DATABASE_DSN"); dsn != "" {
 		c.Database.DSN = dsn
 	}

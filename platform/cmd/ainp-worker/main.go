@@ -26,7 +26,14 @@ func main() {
 		fmt.Fprintf(os.Stderr, "load config: %v\n", err)
 		os.Exit(1)
 	}
-	logging.Init(cfg.Logging.Level, cfg.Logging.Format)
+	if cfg.Logging.Service == "" {
+		cfg.Logging.Service = "worker"
+	}
+	if os.Getenv("LOG_FILE_PATH") == "" {
+		cfg.Logging.File.Path = logging.WorkerFilePath(cfg.Logging.File.Path)
+	}
+	logCloser := logging.InitConfig(logging.Config{Level: cfg.Logging.Level, Format: cfg.Logging.Format, Outputs: cfg.Logging.Outputs, Service: cfg.Logging.Service, InstanceID: cfg.Logging.InstanceID, File: logging.FileConfig{Path: cfg.Logging.File.Path, MaxSizeMB: cfg.Logging.File.MaxSizeMB, MaxBackups: cfg.Logging.File.MaxBackups, MaxAgeDays: cfg.Logging.File.MaxAgeDays, Compress: cfg.Logging.File.Compress}})
+	defer logCloser.Close()
 
 	st, err := state.Load(cfg.StateFile)
 	if err != nil {
