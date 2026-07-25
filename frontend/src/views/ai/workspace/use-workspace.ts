@@ -17,6 +17,7 @@ import {
 import { agentRunEventDelta, subscribeAgentRun } from '@/service/ai-run-stream';
 import { $t } from '@/locales';
 import { capturePageContext } from '@/composables/page-context';
+import { createLatestRequestGate, loadAllCursorPages } from './modules/message-sync';
 
 export type WorkspaceStatus =
   | 'idle'
@@ -86,6 +87,7 @@ function createAiConversationController() {
   let pollTimer: number | null = null;
   let initialized = false;
   let initializePromise: Promise<void> | null = null;
+  const messageRefreshGate = createLatestRequestGate();
 
   const canSend = computed(() =>
     Boolean(slot.value?.healthy && !busy.value && (input.value.trim() || images.value.length > 0))
@@ -165,10 +167,23 @@ function createAiConversationController() {
   }
 
   async function refreshMessages() {
-    if (!conversation.value) return;
-    const { data } = await fetchAIMessages(conversation.value.id, 0, 100);
-    messages.value = data?.items || [];
+    const currentConversation = conversation.value;
+    if (!currentConversation) return false;
+    const requestVersion = messageRefreshGate.begin();
+    let nextMessages: Api.AI.ConversationMessage[];
+    try {
+      nextMessages = await loadAllCursorPages<Api.AI.ConversationMessage>(async afterSequence => {
+        const { data, error: fetchError } = await fetchAIMessages(currentConversation.id, afterSequence, 100);
+        if (fetchError) throw fetchError;
+        return data || { items: [], next_sequence: afterSequence, has_more: false };
+      });
+    } catch {
+      return false;
+    }
+    if (!messageRefreshGate.isCurrent(requestVersion) || conversation.value?.id !== currentConversation.id) return false;
+    messages.value = nextMessages;
     await scrollToBottom();
+    return true;
   }
 
   async function refreshConfirmations() {
@@ -192,8 +207,8 @@ function createAiConversationController() {
     if (data.run.status === 'failed') error.value = runFailureMessage(data);
     if (data.run.status === 'waiting_confirmation' || data.run.status === 'paused') await refreshConfirmations();
     if (refreshContent || isRunTerminal(data.run.status)) {
-      await refreshMessages();
-      if (isRunTerminal(data.run.status)) streamingText.value = '';
+      const refreshed = await refreshMessages();
+      if (isRunTerminal(data.run.status) && refreshed) streamingText.value = '';
     }
     return data.run;
   }
@@ -262,6 +277,7 @@ function createAiConversationController() {
   async function selectConversation(item: Api.AI.Conversation) {
     abort?.abort();
     stopPolling();
+    messageRefreshGate.invalidate();
     conversation.value = item;
     storeConversationId(item.id);
     messages.value = [];
@@ -290,6 +306,7 @@ function createAiConversationController() {
   function newConversation() {
     abort?.abort();
     stopPolling();
+    messageRefreshGate.invalidate();
     conversation.value = null;
     storeConversationId();
     messages.value = [];
@@ -436,6 +453,7 @@ function createAiConversationController() {
     abort?.abort();
     abort = null;
     stopPolling();
+    messageRefreshGate.invalidate();
   }
 
   function reset() {
