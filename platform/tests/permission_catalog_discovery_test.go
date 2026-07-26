@@ -159,7 +159,9 @@ func TestPermissionCatalogUsesCompactToolDiscoveryAndRichHTTPProjection(t *testi
 }
 
 func TestRegisteredPermissionGroupsStayWithinCompactDiscoveryLimit(t *testing.T) {
-	application := app.New(&config.Config{}, openOutboxTestDB(t), nil, nil)
+	application := app.New(&config.Config{AI: config.AIConfig{
+		CredentialEncryptionKey: "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
+	}}, openOutboxTestDB(t), nil, nil)
 	attachStorage(t, application)
 	if err := system.Register(application); err != nil {
 		t.Fatal(err)
