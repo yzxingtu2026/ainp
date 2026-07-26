@@ -13,7 +13,10 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/capability"
 	"github.com/yzxingtu2026/ainp/platform/framework/config"
+	"github.com/yzxingtu2026/ainp/platform/framework/job"
+	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
 	"github.com/yzxingtu2026/ainp/platform/framework/permission"
+	"github.com/yzxingtu2026/ainp/platform/framework/prompt"
 	"github.com/yzxingtu2026/ainp/platform/modules/ai"
 	"github.com/yzxingtu2026/ainp/platform/modules/demo"
 	"github.com/yzxingtu2026/ainp/platform/modules/operations"
@@ -159,9 +162,27 @@ func TestPermissionCatalogUsesCompactToolDiscoveryAndRichHTTPProjection(t *testi
 }
 
 func TestRegisteredPermissionGroupsStayWithinCompactDiscoveryLimit(t *testing.T) {
-	application := app.New(&config.Config{AI: config.AIConfig{
-		CredentialEncryptionKey: "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
-	}}, openOutboxTestDB(t), nil, nil)
+	application := app.New(&config.Config{
+		Auth: config.AuthConfig{JWT: config.JWTConfig{Secret: "permission-catalog-test-secret"}},
+		AI: config.AIConfig{
+			CredentialEncryptionKey: "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
+		},
+	}, openOutboxTestDB(t), nil, nil)
+	var err error
+	application.Outbox, err = outbox.NewRuntime(application.DB, config.OutboxConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	application.Jobs, err = job.NewRuntime(application.DB, job.RuntimeOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ai.AutoMigrate(application.DB); err != nil {
+		t.Fatal(err)
+	}
+	if err := prompt.LoadDir("../prompts"); err != nil {
+		t.Fatal(err)
+	}
 	attachStorage(t, application)
 	if err := system.Register(application); err != nil {
 		t.Fatal(err)
