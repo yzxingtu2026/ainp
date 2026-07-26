@@ -9,6 +9,7 @@
 - 权限目录、角色写入校验、管理员最低权限不变量和超级管理员授权投影必须复用同一 tenant `access=permission` 判定。
 - 多个 Action 可共享一个 permission，权限目录按 permission 去重并保留关联 Action ID。
 - `system.assignable_permissions` Dynamic Reference Resolver 是可分配权限候选与版本摘要的唯一事实源；权限目录、角色创建、角色权限替换和 HTTP/Tool 最终校验都复用它。AI 调用 `permissions[]` 前必须在同一 Scope/Run 读取 `system.permission_catalog`，不得猜测通配符或历史权限代码。
+- `system.permission_catalog` 的 HTTP 管理端保持完整 rich 树；可信 Tool Invocation 自动获得有界 compact 投影，不暴露由模型选择 rich/compact 的开关。关键词只用于定位稳定 Capability/PermissionGroup，最终权限集合必须按 capability/group 代码确定性枚举；超限响应按层提供下一步可用 capability/group 与固定 hint，不使用 cursor 或平行权限清单。
 - `system.user_roles_update.role_ids[]` 使用 `system.assignable_roles` Resolver 与 `system.role_list` Discovery Action 作为第二 adopter，仅验证公共框架契约，不改变用户管理 UI。
 
 ## 写操作
