@@ -6,10 +6,6 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/pagination"
 )
 
-type permissionCatalogResponse struct {
-	Groups []PermissionCatalogGroup `json:"groups"`
-}
-
 func registerRoleActions(a *app.App, svc *RoleService) error {
 	auditOn := true
 	definitions := []struct {
@@ -26,7 +22,7 @@ func registerRoleActions(a *app.App, svc *RoleService) error {
 		{ActionRoleUpdate, "/api/v1/system/roles/update", "更新角色", "更新当前租户角色资料与状态", typedAction[roleUpdateRequest](svc.Update), writeAIMeta("更新当前租户角色的名称、说明和状态", "更新系统角色", "更新当前租户角色的名称、说明和状态", "角色已更新", "high", action.InputSchemaFor[roleUpdateRequest](), action.SchemaFor[RoleView](), "角色", "更新", "状态")},
 		{ActionRoleDelete, "/api/v1/system/roles/delete", "删除角色", "删除未分配用户的非内置角色", typedAction[roleIDRequest](svc.Delete), destructiveAIMeta("删除当前租户中未绑定用户的非内置角色", "删除系统角色", "删除当前租户中未绑定用户的非内置角色", "角色已删除", action.InputSchemaFor[roleIDRequest](), nil, "角色", "删除", "权限")},
 		{ActionRolePermissionsUpdate, "/api/v1/system/roles/permissions/update", "更新角色权限", "事务化替换角色权限并使旧 Token 失效", typedAction[rolePermissionsRequest](svc.UpdatePermissions), writeAIMeta("替换当前租户指定角色的权限集合，相关用户旧会话会失效", "更新系统角色权限", "替换当前租户指定角色的权限集合，相关用户旧会话会失效", "角色权限已更新", "high", action.InputSchemaFor[rolePermissionsRequest](), action.SchemaFor[RoleView](), "角色", "权限", "更新")},
-		{ActionPermissionCatalog, "/api/v1/system/permissions/catalog", "权限目录", "从 Action Registry 返回可分配权限目录", svc.PermissionCatalog, readAIMeta("查询当前租户可分配的权限目录及其功能分组", "查询系统权限目录", "查询当前租户可分配的权限目录及其功能分组", "已返回当前用户有权查看的系统权限目录", action.InputSchemaFor[struct{}](), action.SchemaFor[permissionCatalogResponse](), "权限", "权限目录", "功能", "查询")},
+		{ActionPermissionCatalog, "/api/v1/system/permissions/catalog", "权限目录", "从 Action Registry 返回可分配权限目录", action.JSON(svc.permissionCatalog), readAIMeta("按关键词、Capability 或权限组查询当前租户可分配权限；结果有界时根据 available_capabilities、available_groups 和 hint 继续收窄", "查询系统权限目录", "按关键词或稳定分组查询当前租户可分配的权限目录", "已返回当前用户有权查看的系统权限目录", action.InputSchemaFor[permissionCatalogRequest](), action.SchemaFor[permissionCatalogResponse](), "权限", "权限目录", "功能", "查询", "搜索")},
 	}
 	for _, definition := range definitions {
 		definition := definition

@@ -23,6 +23,8 @@ import (
 
 var roleCodePattern = regexp.MustCompile(`^[a-z][a-z0-9_]{1,63}$`)
 
+const permissionCatalogCompactLimit = 150
+
 type RoleService struct {
 	db           *gorm.DB
 	auth         *AuthService
@@ -64,6 +66,18 @@ type rolePermissionsRequest struct {
 	Permissions []string `json:"permissions" validate:"required,max=200,dive,required"`
 }
 
+type permissionCatalogRequest struct {
+	Query        string   `json:"query,omitempty" validate:"omitempty,max=64"`
+	Capabilities []string `json:"capabilities,omitempty" validate:"omitempty,max=8,dive,required"`
+	Groups       []string `json:"groups,omitempty" validate:"omitempty,max=16,dive,required"`
+}
+
+func (r *permissionCatalogRequest) Normalize() {
+	r.Query = strings.TrimSpace(r.Query)
+	r.Capabilities = normalizedCatalogFilters(r.Capabilities)
+	r.Groups = normalizedCatalogFilters(r.Groups)
+}
+
 type RoleView struct {
 	ID          string                  `json:"id"`
 	Code        string                  `json:"code"`
@@ -89,6 +103,7 @@ type PermissionCatalogItem struct {
 	DescriptionKey string   `json:"description_key,omitempty"`
 	Risk           string   `json:"risk,omitempty"`
 	Audit          bool     `json:"audit"`
+	searchText     string
 }
 
 type PermissionCatalogGroup struct {
@@ -98,6 +113,17 @@ type PermissionCatalogGroup struct {
 	Description    string                  `json:"description,omitempty"`
 	DescriptionKey string                  `json:"description_key,omitempty"`
 	Items          []PermissionCatalogItem `json:"items"`
+}
+
+type permissionCatalogResponse struct {
+	Groups                []PermissionCatalogGroup `json:"groups"`
+	Total                 int                      `json:"total"`
+	ReturnedCount         int                      `json:"returned_count"`
+	HasMore               bool                     `json:"has_more"`
+	CatalogVersion        string                   `json:"catalog_version"`
+	AvailableCapabilities []string                 `json:"available_capabilities,omitempty"`
+	AvailableGroups       []string                 `json:"available_groups,omitempty"`
+	Hint                  string                   `json:"hint,omitempty"`
 }
 
 func decodeRoleRequest(input json.RawMessage, target any) error {
@@ -381,7 +407,11 @@ func (s *RoleService) UpdatePermissions(ctx context.Context, input json.RawMessa
 	return map[string]any{"id": req.ID, "permissions": permissions}, nil
 }
 
-func (s *RoleService) PermissionCatalog(ctx context.Context, _ json.RawMessage) (any, error) {
+func (s *RoleService) PermissionCatalog(ctx context.Context, input json.RawMessage) (any, error) {
+	return action.JSON(s.permissionCatalog)(ctx, input)
+}
+
+func (s *RoleService) permissionCatalog(ctx context.Context, req permissionCatalogRequest) (any, error) {
 	if _, _, err := tenantIdentity(ctx); err != nil {
 		return nil, err
 	}
@@ -396,7 +426,9 @@ func (s *RoleService) PermissionCatalog(ctx context.Context, _ json.RawMessage) 
 	groups := make(map[string]*PermissionCatalogGroup)
 	items := make(map[string]map[string]*PermissionCatalogItem)
 	lang := auth.MustFromContext(ctx).Language
-	for _, registered := range s.actions.List() {
+	registeredActions := s.actions.List()
+	sort.Slice(registeredActions, func(i, j int) bool { return registeredActions[i].ID < registeredActions[j].ID })
+	for _, registered := range registeredActions {
 		if !assignable[registered.Meta.PermissionCode(registered.ID)] {
 			continue
 		}
@@ -427,18 +459,147 @@ func (s *RoleService) PermissionCatalog(ctx context.Context, _ json.RawMessage) 
 			items[capabilityID][permission] = item
 		}
 		item.ActionIDs = append(item.ActionIDs, registered.ID)
+		tags := ""
+		if registered.Meta.AI != nil {
+			tags = strings.Join(registered.Meta.AI.Tags, " ")
+		}
+		item.searchText += " " + strings.Join([]string{capabilityID, groups[capabilityID].Name, groups[capabilityID].Description, registered.Meta.PermissionGroup, item.GroupName, permission, item.Name, item.Description, registered.ID, tags}, " ")
 	}
+	capabilityFilter := catalogFilterSet(req.Capabilities)
+	groupFilter := catalogFilterSet(req.Groups)
+	query := strings.ToLower(req.Query)
 	result := make([]PermissionCatalogGroup, 0, len(groups))
 	for capabilityID, group := range groups {
+		if len(capabilityFilter) > 0 && !capabilityFilter[capabilityID] {
+			continue
+		}
 		for _, item := range items[capabilityID] {
+			if len(groupFilter) > 0 && !groupFilter[item.Group] {
+				continue
+			}
+			if query != "" && !strings.Contains(strings.ToLower(item.searchText), query) {
+				continue
+			}
 			sort.Strings(item.ActionIDs)
 			group.Items = append(group.Items, *item)
+		}
+		if len(group.Items) == 0 {
+			continue
 		}
 		sort.Slice(group.Items, func(i, j int) bool { return group.Items[i].Permission < group.Items[j].Permission })
 		result = append(result, *group)
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].Capability < result[j].Capability })
-	return map[string]any{"groups": result}, nil
+	total := permissionCatalogItemCount(result)
+	response := permissionCatalogResponse{Groups: result, Total: total, ReturnedCount: total, CatalogVersion: snapshot.Version}
+	if auth.MustFromContext(ctx).ToolInvocationID == "" {
+		return permissionCatalogResponseMap(response), nil
+	}
+	response.Groups, response.ReturnedCount = compactPermissionCatalog(result, permissionCatalogCompactLimit)
+	response.HasMore = response.ReturnedCount < total
+	if response.HasMore {
+		if len(req.Capabilities) == 0 {
+			response.AvailableCapabilities = permissionCatalogCapabilities(result)
+			response.Hint = "Result is bounded. Retry with one capability code from available_capabilities."
+		} else {
+			response.AvailableGroups = permissionCatalogGroups(result)
+			response.Hint = "Result is bounded. Retry with one group code from available_groups."
+		}
+	}
+	return permissionCatalogResponseMap(response), nil
+}
+
+func permissionCatalogResponseMap(response permissionCatalogResponse) map[string]any {
+	out := map[string]any{
+		"groups": response.Groups, "total": response.Total, "returned_count": response.ReturnedCount,
+		"has_more": response.HasMore, "catalog_version": response.CatalogVersion,
+	}
+	if len(response.AvailableCapabilities) > 0 {
+		out["available_capabilities"] = response.AvailableCapabilities
+	}
+	if len(response.AvailableGroups) > 0 {
+		out["available_groups"] = response.AvailableGroups
+	}
+	if response.Hint != "" {
+		out["hint"] = response.Hint
+	}
+	return out
+}
+
+func normalizedCatalogFilters(values []string) []string {
+	seen := make(map[string]bool, len(values))
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		out = append(out, value)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func catalogFilterSet(values []string) map[string]bool {
+	out := make(map[string]bool, len(values))
+	for _, value := range values {
+		out[value] = true
+	}
+	return out
+}
+
+func permissionCatalogItemCount(groups []PermissionCatalogGroup) int {
+	total := 0
+	for _, group := range groups {
+		total += len(group.Items)
+	}
+	return total
+}
+
+func compactPermissionCatalog(groups []PermissionCatalogGroup, limit int) ([]PermissionCatalogGroup, int) {
+	out := make([]PermissionCatalogGroup, 0, len(groups))
+	count := 0
+	for _, group := range groups {
+		compactGroup := PermissionCatalogGroup{Capability: group.Capability, Name: group.Name}
+		for _, item := range group.Items {
+			if count >= limit {
+				break
+			}
+			compactGroup.Items = append(compactGroup.Items, PermissionCatalogItem{Permission: item.Permission, Group: item.Group, ActionIDs: []string{}, Name: item.Name, Risk: item.Risk})
+			count++
+		}
+		if len(compactGroup.Items) > 0 {
+			out = append(out, compactGroup)
+		}
+		if count >= limit {
+			break
+		}
+	}
+	return out, count
+}
+
+func permissionCatalogCapabilities(groups []PermissionCatalogGroup) []string {
+	out := make([]string, 0, len(groups))
+	for _, group := range groups {
+		out = append(out, group.Capability)
+	}
+	return out
+}
+
+func permissionCatalogGroups(groups []PermissionCatalogGroup) []string {
+	seen := map[string]bool{}
+	out := []string{}
+	for _, capability := range groups {
+		for _, item := range capability.Items {
+			if !seen[item.Group] {
+				seen[item.Group] = true
+				out = append(out, item.Group)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 func (s *RoleService) validatePermissions(ctx context.Context, values []string) ([]string, error) {
