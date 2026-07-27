@@ -683,7 +683,7 @@ func (s *ToolService) execute(ctx context.Context, ac *auth.Context, scope *Tool
 			return nil, err
 		}
 	}
-	result.Data, result.Truncated = sanitizeToolData(result.Data, 0, 64<<10)
+	aitool.SanitizeResult(result, 64<<10)
 	invocationStatus, category := "completed", ""
 	if result.Status == aitool.ResultStatusFailed {
 		invocationStatus, category = "failed", result.ErrorCategory
@@ -1037,49 +1037,6 @@ func (s *ToolService) mergeFTS(ctx context.Context, ac *auth.Context, scope *Too
 		current = current[:limit]
 	}
 	return current
-}
-
-func sanitizeToolData(value any, depth, budget int) (any, bool) {
-	if depth > 8 {
-		return "[truncated]", true
-	}
-	if encoded, err := json.Marshal(value); err == nil && len(encoded) > budget && depth > 0 {
-		return "[truncated]", true
-	}
-	switch v := value.(type) {
-	case map[string]any:
-		out := map[string]any{}
-		cut := false
-		for k, item := range v {
-			lower := strings.ToLower(k)
-			if strings.Contains(lower, "password") || strings.Contains(lower, "secret") || strings.Contains(lower, "token") || strings.Contains(lower, "authorization") || strings.Contains(lower, "credential") {
-				out[k] = "[REDACTED]"
-				continue
-			}
-			clean, itemCut := sanitizeToolData(item, depth+1, budget/2)
-			out[k] = clean
-			cut = cut || itemCut
-		}
-		return out, cut
-	case []any:
-		limit := len(v)
-		cut := false
-		if limit > 100 {
-			limit = 100
-			cut = true
-		}
-		out := make([]any, 0, limit)
-		for _, item := range v[:limit] {
-			clean, itemCut := sanitizeToolData(item, depth+1, budget/2)
-			out = append(out, clean)
-			cut = cut || itemCut
-		}
-		return out, cut
-	case []byte:
-		return "[binary omitted]", true
-	default:
-		return value, false
-	}
 }
 
 func validateToolArguments(schema, arguments json.RawMessage) error {

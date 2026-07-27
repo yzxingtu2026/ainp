@@ -74,6 +74,8 @@ Action Tool 的 `TitleForHuman` 必须来自注册处显式声明的 `AIMeta.Too
 
 工具调用事实与 `ai.tool_invocation.finished.v1` 同事务完成；目录变化写 `ai.tool_catalog.changed.v1`。Outbox、审计摘要和普通日志不得包含完整参数、结果、Secret、Credential 或第三方原始响应。
 
+所有 Executor Result 在返回模型前统一规范化为 JSON value。typed/untyped struct、map、slice、array、pointer 与 interface 使用同一递归脱敏规则；password、secret、token、authorization、credential 字段一律脱敏。Runtime 使用单一共享编码字节预算约束 `data + truncation`，按稳定 key/数组前缀裁剪且保持 object/array JSON 类型；受控 `truncation.entries` 只报告 path、kind、returned/omitted count 与原因，不生成业务 cursor。Invocation、Outbox 和审计仍只保存安全摘要，不因裁剪诊断扩大 Result 留存。
+
 Slot 的专用预算由通用 Tool Runtime 按 `BudgetCategory/MaxCallsPerRun` 计数；Agent Runtime 不识别具体 Tool ID。Step 类型、Invocation 分类和事实摘要从 Slot 元数据生成，只有 `Observations` 声明的字段及受控来源映射可以进入 Step/事件；未列入 `FailureCategories` 的失败子分类统一收敛为 `execution_failed`。知识工具只允许记录次数、候选/返回/Citation 数、耗时、降级、缓存命中与稳定失败分类；Chunk 正文只存在于发给模型的 Tool Result，不进入这些事实摘要。
 
 ## 扩展示例
