@@ -44,9 +44,13 @@ CodeSet：`operations.outbox_status`、`operations.delivery_status`。
 ## Dispatcher（postgres）
 
 - `FOR UPDATE SKIP LOCKED` 批量领取；多实例安全。
+- Writer 在 Outbox Event 同一事务内调用固定通道 `pg_notify`；PostgreSQL 只在 COMMIT 后广播。通知为空的非可靠唤醒提示，不含 tenant、event payload 或业务数据，事实源始终是 `outbox_events`。
+- Dispatcher 使用一条专用 pgx 监听连接；容量 1 的非阻塞 wake channel 合并通知，唯一主循环连续领取到不足一批，禁止并发 Tick 和按通知 payload 定向发布。
+- Listener 断线指数退避重连，并在每次成功 LISTEN 后主动扫描一次连接建立期间的缺口；周期 `poll_interval` 始终保留，覆盖通知丢失、断线、重启和历史积压。
 - `lock_timeout` 后恢复卡死的 `processing`。
 - 失败指数退避 + jitter；`max_attempts` 后 `dead`。
 - 仅当 Transport `Publish` 成功后标记 `published`。
+- 成功日志输出 `outbox_publish_latency_ms=published_at-occurred_at`；ID 只作为结构化日志关联字段，不作为指标 label。
 - 配置见 `configs/config.example.yaml` 的 `outbox:`；`enabled` 省略默认开启。
 
 ## 运维 Action（租户域）

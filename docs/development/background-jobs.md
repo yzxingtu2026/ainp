@@ -43,6 +43,10 @@ jobs:
 - `jobs.enabled=false`：核心 HTTP 可启动；Job API 返回 `job.unavailable`
 - `enabled=true` 且 Redis 不可用：Worker/组装失败（明确错误）
 - `embedded_worker=true`（仅开发/单机）：在 `cmd/ainp` 内嵌启动 Asynq Worker，关停时一并优雅退出；生产保持 `false` 并独立跑 `cmd/ainp-worker`
+- 稳定资源队列集合固定为 `critical/default/file/notification/ai`；`ai.agent_run.execute` 进入 `ai`。禁止按 tenant、Agent 或 Job Type 动态创建队列。
+- 独立 `ainp-worker` 可用 `WORKER_QUEUES=queue=weight,...` 和 `WORKER_CONCURRENCY` 覆盖当前进程；覆盖优先于共享 `jobs.queues/concurrency`，不写回 config/state，也不影响 embedded Worker 或其他进程。空集合、未知/重复队列、非正权重和非正并发启动即失败。
+- 未设置覆盖时，独立与 embedded Worker 均保持共享配置的一进程全队列模式。本地无需第二个 Worker；生产/Demo 可用同一二进制部署互不重叠的通用 Worker 与 AI Worker。
+- Worker 启动日志必须输出最终 queues、weights、concurrency、service、instance_id；Job 开始日志输出 `job_queue_latency_ms=started-(queued/retrying updated_at)`，高基数关联字段不得作为指标 label。
 
 ## 首次安装
 

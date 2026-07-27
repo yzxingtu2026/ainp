@@ -23,7 +23,7 @@ type Runtime struct {
 func NewRuntime(db *gorm.DB, cfg config.OutboxConfig) (*Runtime, error) {
 	defs := NewDefinitionRegistry()
 	handlers := NewHandlerRegistry()
-	writer := NewWriter(defs)
+	writer := NewWriterWithNotifier(defs, NewPostgresCommitNotifier())
 	deliveries := NewDeliveryStore(db)
 
 	var transport Transport
@@ -46,13 +46,15 @@ func NewRuntime(db *gorm.DB, cfg config.OutboxConfig) (*Runtime, error) {
 			Max:  cfg.BackoffMaxDuration(),
 		},
 	}
+	dispatcher := NewDispatcher(db, transport, dcfg)
+	dispatcher.SetNotificationListener(NewPostgresNotificationListener(db))
 	return &Runtime{
 		Definitions: defs,
 		Handlers:    handlers,
 		Writer:      writer,
 		Deliveries:  deliveries,
 		Transport:   transport,
-		Dispatcher:  NewDispatcher(db, transport, dcfg),
+		Dispatcher:  dispatcher,
 		Enabled:     cfg.IsEnabled(),
 	}, nil
 }

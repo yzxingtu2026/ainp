@@ -33,11 +33,16 @@ func WorkerConfigFromJobs(cfg config.JobsConfig) WorkerConfig {
 	}
 }
 
+func WorkerConfigFromProfile(profile job.WorkerProfile) WorkerConfig {
+	return WorkerConfig{Concurrency: profile.Concurrency, Queues: profile.Queues}
+}
+
 // Runner owns an Asynq server lifecycle for standalone or embedded workers.
 type Runner struct {
 	server *asynq.Server
 	mux    *asynq.ServeMux
 	done   chan error
+	config WorkerConfig
 }
 
 // NewRunner builds a worker runner (does not start yet).
@@ -46,13 +51,14 @@ func NewRunner(redis RedisOpt, wcfg WorkerConfig, db *gorm.DB, registry *job.Reg
 		server: NewServer(redis, wcfg, db, registry, store),
 		mux:    NewMux(db, registry, store),
 		done:   make(chan error, 1),
+		config: wcfg,
 	}
 }
 
 // Start runs the Asynq server in a background goroutine.
 func (r *Runner) Start(ctx context.Context) {
 	go func() {
-		logging.Info(ctx, "asynq worker starting")
+		logging.Info(ctx, "asynq worker starting", "queues", job.FormatWorkerQueues(r.config.Queues), "concurrency", r.config.Concurrency)
 		r.done <- r.server.Run(r.mux)
 	}()
 }

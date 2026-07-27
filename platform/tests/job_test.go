@@ -6,6 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -17,6 +20,8 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/i18n"
 	"github.com/yzxingtu2026/ainp/platform/framework/job"
 	"github.com/yzxingtu2026/ainp/platform/framework/status"
+	"github.com/yzxingtu2026/ainp/platform/modules/ai"
+	"gopkg.in/yaml.v3"
 	"gorm.io/gorm"
 )
 
@@ -60,6 +65,70 @@ func TestJobRunStatusCodeSet(t *testing.T) {
 		}
 	}
 }
+
+func TestWorkerProfileOverridesAndAgentQueue(t *testing.T) {
+	base := job.WorkerProfile{Concurrency: 10, Queues: map[string]int{job.QueueCritical: 6, job.QueueDefault: 3, job.QueueFile: 2, job.QueueNotification: 2, job.QueueAI: 1}}
+	queues, concurrency := "ai=2", "4"
+	resolved, err := job.ResolveWorkerProfile(base, job.WorkerProfileOverrides{Queues: &queues, Concurrency: &concurrency})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.Concurrency != 4 || len(resolved.Queues) != 1 || resolved.Queues[job.QueueAI] != 2 {
+		t.Fatalf("unexpected worker profile: %#v", resolved)
+	}
+	if base.Concurrency != 10 || len(base.Queues) != 5 {
+		t.Fatalf("process override mutated shared config: %#v", base)
+	}
+	if def := ai.AgentRunJobDefinition(); def.Queue != job.QueueAI {
+		t.Fatalf("agent run queue=%q want ai", def.Queue)
+	}
+	for _, input := range []job.WorkerProfileOverrides{
+		{Queues: stringPtr("")},
+		{Queues: stringPtr("tenant-a=1")},
+		{Queues: stringPtr("ai=0")},
+		{Queues: stringPtr("ai=1,ai=2")},
+		{Concurrency: stringPtr("0")},
+		{Concurrency: stringPtr("invalid")},
+	} {
+		if _, err := job.ResolveWorkerProfile(base, input); err == nil {
+			t.Fatalf("invalid override accepted: %#v", input)
+		}
+	}
+	defaulted, err := job.ResolveWorkerProfile(base, job.WorkerProfileOverrides{})
+	if err != nil || defaulted.Concurrency != 10 || len(defaulted.Queues) != 5 {
+		t.Fatalf("default worker compatibility failed: %#v %v", defaulted, err)
+	}
+}
+
+func TestDemoWorkerProfilesAreDisjoint(t *testing.T) {
+	_, current, _, _ := runtime.Caller(0)
+	composePath := filepath.Join(filepath.Dir(current), "..", "..", "deploy", "demo", "compose.yaml")
+	body, err := os.ReadFile(composePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var compose struct {
+		Services map[string]struct {
+			Environment map[string]string `yaml:"environment"`
+		} `yaml:"services"`
+	}
+	if err = yaml.Unmarshal(body, &compose); err != nil {
+		t.Fatal(err)
+	}
+	worker := compose.Services["worker"].Environment
+	aiWorker := compose.Services["ai-worker"].Environment
+	if worker[job.WorkerQueuesEnv] != "critical=6,default=3,file=2,notification=2" || strings.Contains(worker[job.WorkerQueuesEnv], "ai") {
+		t.Fatalf("general worker queues overlap ai: %#v", worker)
+	}
+	if aiWorker[job.WorkerQueuesEnv] != "ai=1" {
+		t.Fatalf("ai worker consumes non-ai queues: %#v", aiWorker)
+	}
+	if worker["LOG_SERVICE"] == aiWorker["LOG_SERVICE"] || worker["LOG_FILE_PATH"] == aiWorker["LOG_FILE_PATH"] || worker["INSTANCE_ID"] == aiWorker["INSTANCE_ID"] {
+		t.Fatalf("worker identities are not distinct: worker=%#v ai=%#v", worker, aiWorker)
+	}
+}
+
+func stringPtr(value string) *string { return &value }
 
 func TestJobRegistryAndDisabledEnqueue(t *testing.T) {
 	db := openJobTestDB(t)

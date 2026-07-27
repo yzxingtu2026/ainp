@@ -178,6 +178,7 @@ func process(ctx context.Context, db *gorm.DB, registry *job.Registry, store job
 	attempt, _ := asynq.GetRetryCount(ctx)
 	attempt = attempt + 1
 	now := time.Now().UTC()
+	queueLatency := now.Sub(run.UpdatedAt).Milliseconds()
 	_ = store.UpdateFields(ctx, run.ID, map[string]any{
 		"status":     status.JobRunning,
 		"attempt":    attempt,
@@ -194,6 +195,7 @@ func process(ctx context.Context, db *gorm.DB, registry *job.Registry, store job
 		Client:        "job",
 		Authenticated: true,
 	})
+	logging.Info(jobCtx, "job started", "job_type", run.JobType, "queue", run.Queue, "job_queue_latency_ms", queueLatency)
 	env := job.Envelope{
 		ID: run.ID, Type: run.JobType, SchemaVersion: run.SchemaVersion,
 		TenantID: run.TenantID, Realm: auth.Realm(run.Realm),

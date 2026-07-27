@@ -35,7 +35,8 @@ type Writer interface {
 }
 
 type gormWriter struct {
-	defs *DefinitionRegistry
+	defs     *DefinitionRegistry
+	notifier CommitNotifier
 }
 
 func NewWriter(defs *DefinitionRegistry) Writer {
@@ -43,6 +44,13 @@ func NewWriter(defs *DefinitionRegistry) Writer {
 		defs = NewDefinitionRegistry()
 	}
 	return &gormWriter{defs: defs}
+}
+
+func NewWriterWithNotifier(defs *DefinitionRegistry, notifier CommitNotifier) Writer {
+	if defs == nil {
+		defs = NewDefinitionRegistry()
+	}
+	return &gormWriter{defs: defs, notifier: notifier}
 }
 
 func (w *gormWriter) Append(ctx context.Context, tx *gorm.DB, in AppendInput) (Envelope, error) {
@@ -100,6 +108,11 @@ func (w *gormWriter) Append(ctx context.Context, tx *gorm.DB, in AppendInput) (E
 	}
 	if err := tx.WithContext(ctx).Create(&row).Error; err != nil {
 		return Envelope{}, fmt.Errorf("outbox: insert event: %w", err)
+	}
+	if w.notifier != nil {
+		if err := w.notifier.Notify(ctx, tx); err != nil {
+			return Envelope{}, err
+		}
 	}
 	return rowToEnvelope(row), nil
 }

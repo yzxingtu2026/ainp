@@ -738,6 +738,7 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 			if e = s.conversations.Append(ctx, streamID, aiconversation.StreamDelta{Cursor: 1, Type: "output_text.delta", Data: []byte(text)}); e != nil {
 				return s.fail(ctx, run, "finalize_failed")
 			}
+			logging.Info(ctx, "agent first delta persisted", "agent_first_delta_latency_ms", s.now().Sub(startedAt).Milliseconds())
 			_, e = s.conversations.Commit(ctx, streamID, []aimodelruntime.ContentPart{{Type: aimodelruntime.PartOutputText, Text: text}})
 			if e != nil {
 				return s.fail(ctx, run, "finalize_failed")

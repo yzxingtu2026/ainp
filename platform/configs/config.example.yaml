@@ -98,3 +98,6 @@ jobs:
   # 开发可用 embedded_worker=true：HTTP 进程内嵌 Asynq Worker，无需另起 ainp-worker
   # 生产请保持 false，独立部署 cmd/ainp-worker 以便扩容
   embedded_worker: false
+  # 独立 Worker 可用进程环境变量覆盖且不修改此共享配置：
+  # WORKER_QUEUES=critical=6,default=3,file=2,notification=2
+  # WORKER_CONCURRENCY=10；AI Worker 使用 WORKER_QUEUES=ai=1

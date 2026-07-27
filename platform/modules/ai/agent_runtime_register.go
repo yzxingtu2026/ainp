@@ -18,6 +18,10 @@ import (
 
 const AgentRunJobType = "ai.agent_run.execute"
 
+func AgentRunJobDefinition() job.Definition {
+	return job.Definition{Type: AgentRunJobType, SchemaVersion: 1, Queue: job.QueueAI, MaxAttempts: 3, Timeout: 10 * time.Minute, Description: "Execute an Agent Run with lease and recovery"}
+}
+
 type agentRunJobPayload struct {
 	RunID string `json:"run_id"`
 	Mode  string `json:"mode,omitempty"`
@@ -100,7 +104,7 @@ func RegisterAgentRuntime(a *app.App, runtime *AgentRuntimeService) error {
 		}
 	}
 	if a.Jobs != nil {
-		if err := a.Jobs.Register(job.Definition{Type: AgentRunJobType, SchemaVersion: 1, Queue: job.QueueDefault, MaxAttempts: 3, Timeout: 10 * time.Minute, Description: "Execute an Agent Run with lease and recovery"}, job.HandlerFunc{JobType: AgentRunJobType, Fn: func(ctx context.Context, env job.Envelope, payload json.RawMessage, reporter job.Reporter) error {
+		if err := a.Jobs.Register(AgentRunJobDefinition(), job.HandlerFunc{JobType: AgentRunJobType, Fn: func(ctx context.Context, env job.Envelope, payload json.RawMessage, reporter job.Reporter) error {
 			var p agentRunJobPayload
 			if err := json.Unmarshal(payload, &p); err != nil {
 				return job.Permanent(err)
