@@ -11,6 +11,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/asynqadapter"
 	"github.com/yzxingtu2026/ainp/platform/framework/buildinfo"
 	"github.com/yzxingtu2026/ainp/platform/framework/config"
+	"github.com/yzxingtu2026/ainp/platform/framework/job"
 	"github.com/yzxingtu2026/ainp/platform/framework/logging"
 	"github.com/yzxingtu2026/ainp/platform/framework/state"
 	"github.com/yzxingtu2026/ainp/platform/internal/boot"
@@ -49,6 +50,14 @@ func main() {
 		logging.Error(ctx, "jobs disabled", fmt.Errorf("set jobs.enabled=true"))
 		os.Exit(1)
 	}
+	profile, err := job.ResolveWorkerProfile(
+		job.WorkerProfile{Queues: cfg.Jobs.Queues, Concurrency: cfg.Jobs.Concurrency},
+		job.WorkerProfileOverrides{Queues: optionalEnv(job.WorkerQueuesEnv), Concurrency: optionalEnv(job.WorkerConcurrencyEnv)},
+	)
+	if err != nil {
+		logging.Error(ctx, "invalid worker profile", err)
+		os.Exit(1)
+	}
 
 	p, err := boot.OpenInstalled(ctx, cfg)
 	if err != nil {
@@ -76,7 +85,7 @@ func main() {
 
 	runner := asynqadapter.NewRunner(
 		asynqadapter.RedisOptFromConfig(cfg.Redis),
-		asynqadapter.WorkerConfigFromJobs(cfg.Jobs),
+		asynqadapter.WorkerConfigFromProfile(profile),
 		p.DB,
 		p.App.Jobs.Registry,
 		p.App.Jobs.Store,
@@ -85,7 +94,10 @@ func main() {
 	info := buildinfo.Current()
 	logging.Info(runCtx, "ainp-worker starting",
 		"jobs", len(p.App.Jobs.Registry.List()),
-		"concurrency", cfg.Jobs.Concurrency,
+		"queues", job.FormatWorkerQueues(profile.Queues),
+		"concurrency", profile.Concurrency,
+		"service", cfg.Logging.Service,
+		"instance_id", cfg.Logging.InstanceID,
 		"version", info.Version,
 		"commit", info.Commit,
 		"build_time", info.BuildTime,
@@ -97,4 +109,12 @@ func main() {
 		logging.Error(ctx, "worker stopped", err)
 		os.Exit(1)
 	}
+}
+
+func optionalEnv(key string) *string {
+	value, exists := os.LookupEnv(key)
+	if !exists {
+		return nil
+	}
+	return &value
 }

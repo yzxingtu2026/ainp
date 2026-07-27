@@ -21,6 +21,36 @@ import (
 	"gorm.io/gorm"
 )
 
+type reconnectingOutboxListener struct {
+	calls   atomic.Int32
+	trigger chan struct{}
+	stopped chan struct{}
+}
+
+func (l *reconnectingOutboxListener) Listen(ctx context.Context, wake func()) error {
+	if l.calls.Add(1) == 1 {
+		return errors.New("listener disconnected")
+	}
+	select {
+	case <-ctx.Done():
+		select {
+		case <-l.stopped:
+		default:
+			close(l.stopped)
+		}
+		return ctx.Err()
+	case <-l.trigger:
+		wake()
+		<-ctx.Done()
+		select {
+		case <-l.stopped:
+		default:
+			close(l.stopped)
+		}
+		return ctx.Err()
+	}
+}
+
 func TestOutboxStatusAndCodeSet(t *testing.T) {
 	if !status.OutboxPending.Valid() || status.OutboxStatus("x").Valid() {
 		t.Fatal("outbox status validity")
@@ -305,6 +335,172 @@ func TestOutboxRuntimeConfig(t *testing.T) {
 	if _, err := outbox.NewRuntime(db, config.OutboxConfig{Transport: "kafka"}); err == nil {
 		t.Fatal("unsupported transport must fail")
 	}
+}
+
+func TestOutboxCommitNotificationWakesDispatcher(t *testing.T) {
+	db := openOutboxTestDB(t)
+	rt, err := outbox.NewRuntime(db, config.OutboxConfig{PollInterval: "1h"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = rt.RegisterDefinition(outbox.Definition{EventType: "demo.wakeup.v1", SchemaVersion: 1}); err != nil {
+		t.Fatal(err)
+	}
+	published := make(chan string, 2)
+	if err = rt.RegisterHandler(outbox.HandlerFunc{HandlerName: "wakeup-handler", Types: []string{"demo.wakeup.v1"}, Fn: func(_ context.Context, env outbox.Envelope) error {
+		published <- env.ID
+		return nil
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	rt.Start(ctx)
+	t.Cleanup(func() { cancel(); rt.Stop() })
+	eventCtx := auth.WithContext(context.Background(), &auth.Context{TenantID: "t1", Realm: auth.RealmTenant, UserID: "u1", Authenticated: true})
+	var committed outbox.Envelope
+	if err = outbox.WithinTx(eventCtx, db, rt.Writer, func(tx *gorm.DB, writer outbox.Writer) error {
+		committed, err = writer.Append(eventCtx, tx, outbox.AppendInput{EventType: "demo.wakeup.v1", AggregateType: "demo", AggregateID: "committed", Payload: map[string]any{"ok": true}})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case id := <-published:
+		if id != committed.ID {
+			t.Fatalf("published id=%s want %s", id, committed.ID)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("committed event waited for periodic poll instead of notification")
+	}
+	rollbackErr := outbox.WithinTx(eventCtx, db, rt.Writer, func(tx *gorm.DB, writer outbox.Writer) error {
+		if _, appendErr := writer.Append(eventCtx, tx, outbox.AppendInput{EventType: "demo.wakeup.v1", AggregateType: "demo", AggregateID: "rolled-back", Payload: map[string]any{}}); appendErr != nil {
+			return appendErr
+		}
+		return errors.New("rollback")
+	})
+	if rollbackErr == nil {
+		t.Fatal("expected rollback")
+	}
+	select {
+	case id := <-published:
+		t.Fatalf("rolled-back event was published: %s", id)
+	case <-time.After(150 * time.Millisecond):
+	}
+	var count int64
+	if err = db.Model(&outbox.Event{}).Where("aggregate_id=?", "rolled-back").Count(&count).Error; err != nil || count != 0 {
+		t.Fatalf("rolled-back event persisted: count=%d err=%v", count, err)
+	}
+}
+
+func TestOutboxListenerReconnectsAndStopsGracefully(t *testing.T) {
+	db := openOutboxTestDB(t)
+	defs := outbox.NewDefinitionRegistry()
+	if err := defs.Register(outbox.Definition{EventType: "demo.reconnect.v1", SchemaVersion: 1}); err != nil {
+		t.Fatal(err)
+	}
+	writer := outbox.NewWriter(defs)
+	listener := &reconnectingOutboxListener{trigger: make(chan struct{}, 1), stopped: make(chan struct{})}
+	transport := &outbox.RecordingTransport{}
+	dispatcher := outbox.NewDispatcher(db, transport, outbox.DispatcherConfig{PollInterval: time.Hour, BatchSize: 2})
+	dispatcher.SetNotificationListener(listener)
+	ctx, cancel := context.WithCancel(context.Background())
+	dispatcher.Start(ctx)
+	eventCtx := auth.WithContext(context.Background(), &auth.Context{TenantID: "t1", Realm: auth.RealmTenant, UserID: "u1", Authenticated: true})
+	var env outbox.Envelope
+	if err := outbox.WithinTx(eventCtx, db, writer, func(tx *gorm.DB, w outbox.Writer) error {
+		var appendErr error
+		env, appendErr = w.Append(eventCtx, tx, outbox.AppendInput{EventType: "demo.reconnect.v1", AggregateType: "demo", AggregateID: "reconnect", Payload: map[string]any{}})
+		return appendErr
+	}); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for listener.calls.Load() < 2 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if listener.calls.Load() < 2 {
+		t.Fatal("listener did not reconnect")
+	}
+	listener.trigger <- struct{}{}
+	if !waitOutboxStatus(db, env.ID, status.OutboxPublished, 2*time.Second) {
+		t.Fatal("reconnected listener did not wake dispatcher")
+	}
+	cancel()
+	dispatcher.Stop()
+	select {
+	case <-listener.stopped:
+	case <-time.After(time.Second):
+		t.Fatal("listener did not stop with dispatcher")
+	}
+}
+
+func TestOutboxPollingRemainsReliableFallback(t *testing.T) {
+	db := openOutboxTestDB(t)
+	defs := outbox.NewDefinitionRegistry()
+	_ = defs.Register(outbox.Definition{EventType: "demo.poll.v1", SchemaVersion: 1})
+	writer := outbox.NewWriter(defs)
+	transport := &outbox.RecordingTransport{}
+	dispatcher := outbox.NewDispatcher(db, transport, outbox.DispatcherConfig{PollInterval: 20 * time.Millisecond})
+	ctx, cancel := context.WithCancel(context.Background())
+	dispatcher.Start(ctx)
+	t.Cleanup(func() { cancel(); dispatcher.Stop() })
+	eventCtx := auth.WithContext(context.Background(), &auth.Context{TenantID: "t1", Realm: auth.RealmTenant, UserID: "u1", Authenticated: true})
+	var env outbox.Envelope
+	if err := outbox.WithinTx(eventCtx, db, writer, func(tx *gorm.DB, w outbox.Writer) error {
+		var appendErr error
+		env, appendErr = w.Append(eventCtx, tx, outbox.AppendInput{EventType: "demo.poll.v1", AggregateType: "demo", AggregateID: "poll", Payload: map[string]any{}})
+		return appendErr
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !waitOutboxStatus(db, env.ID, status.OutboxPublished, time.Second) {
+		t.Fatal("poll fallback did not publish event")
+	}
+}
+
+func TestOutboxCoalescedWakeDrainsMultipleBatches(t *testing.T) {
+	db := openOutboxTestDB(t)
+	defs := outbox.NewDefinitionRegistry()
+	_ = defs.Register(outbox.Definition{EventType: "demo.coalesced.v1", SchemaVersion: 1})
+	writer := outbox.NewWriter(defs)
+	transport := &outbox.RecordingTransport{}
+	dispatcher := outbox.NewDispatcher(db, transport, outbox.DispatcherConfig{PollInterval: time.Hour, BatchSize: 2})
+	ctx, cancel := context.WithCancel(context.Background())
+	dispatcher.Start(ctx)
+	t.Cleanup(func() { cancel(); dispatcher.Stop() })
+	// Let the initial startup scan finish before inserting without notifications.
+	time.Sleep(50 * time.Millisecond)
+	eventCtx := auth.WithContext(context.Background(), &auth.Context{TenantID: "t1", Realm: auth.RealmTenant, UserID: "u1", Authenticated: true})
+	for i := 0; i < 5; i++ {
+		if err := outbox.WithinTx(eventCtx, db, writer, func(tx *gorm.DB, w outbox.Writer) error {
+			_, appendErr := w.Append(eventCtx, tx, outbox.AppendInput{EventType: "demo.coalesced.v1", AggregateType: "demo", AggregateID: fmt.Sprintf("coalesced-%d", i), Payload: map[string]any{}})
+			return appendErr
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	dispatcher.Wake()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		var published int64
+		if err := db.Model(&outbox.Event{}).Where("status=?", status.OutboxPublished).Count(&published).Error; err == nil && published == 5 {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("one coalesced wake did not drain all batches")
+}
+
+func waitOutboxStatus(db *gorm.DB, eventID string, expected status.OutboxStatus, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		var event outbox.Event
+		if err := db.First(&event, "id=?", eventID).Error; err == nil && event.Status == expected {
+			return true
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return false
 }
 
 func openOutboxTestDB(t *testing.T) *gorm.DB {

@@ -3,6 +3,7 @@ package outbox
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -54,6 +55,9 @@ type Dispatcher struct {
 	db        *gorm.DB
 	transport Transport
 	cfg       DispatcherConfig
+	listener  NotificationListener
+	wake      chan struct{}
+	listenWG  sync.WaitGroup
 
 	cancel context.CancelFunc
 	done   chan struct{}
@@ -65,7 +69,12 @@ func NewDispatcher(db *gorm.DB, transport Transport, cfg DispatcherConfig) *Disp
 		transport: transport,
 		cfg:       cfg.withDefaults(),
 		done:      make(chan struct{}),
+		wake:      make(chan struct{}, 1),
 	}
+}
+
+func (d *Dispatcher) SetNotificationListener(listener NotificationListener) {
+	d.listener = listener
 }
 
 func (d *Dispatcher) Start(parent context.Context) {
@@ -73,7 +82,15 @@ func (d *Dispatcher) Start(parent context.Context) {
 	d.cancel = cancel
 	go func() {
 		defer close(d.done)
+		if d.listener != nil {
+			d.listenWG.Add(1)
+			go func() {
+				defer d.listenWG.Done()
+				d.listen(ctx)
+			}()
+		}
 		d.loop(ctx)
+		d.listenWG.Wait()
 	}()
 }
 
@@ -101,7 +118,36 @@ func (d *Dispatcher) loop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+		case <-d.wake:
 		}
+	}
+}
+
+func (d *Dispatcher) listen(ctx context.Context) {
+	backoff := 250 * time.Millisecond
+	for ctx.Err() == nil {
+		err := d.listener.Listen(ctx, d.Wake)
+		if ctx.Err() != nil {
+			return
+		}
+		logging.Warn(ctx, "outbox notification listener disconnected", "worker_id", d.cfg.WorkerID, "retry_in_ms", backoff.Milliseconds(), "error", truncateError(err))
+		timer := time.NewTimer(backoff)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
+		backoff = min(backoff*2, 30*time.Second)
+	}
+}
+
+// Wake non-blockingly coalesces commit notifications. The main loop remains the
+// only Tick caller, so notification storms cannot create overlapping claims.
+func (d *Dispatcher) Wake() {
+	select {
+	case d.wake <- struct{}{}:
+	default:
 	}
 }
 
@@ -113,17 +159,21 @@ func (d *Dispatcher) Tick(ctx context.Context) error {
 	if err := d.recoverStaleLocks(ctx); err != nil {
 		return err
 	}
-	events, err := d.claimBatch(ctx)
-	if err != nil {
-		return err
-	}
-	for _, ev := range events {
-		if ctx.Err() != nil {
-			return ctx.Err()
+	for {
+		events, err := d.claimBatch(ctx)
+		if err != nil {
+			return err
 		}
-		d.processOne(ctx, ev)
+		for _, ev := range events {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			d.processOne(ctx, ev)
+		}
+		if len(events) < d.cfg.BatchSize {
+			return nil
+		}
 	}
-	return nil
 }
 
 func (d *Dispatcher) recoverStaleLocks(ctx context.Context) error {
@@ -224,6 +274,7 @@ func (d *Dispatcher) processOne(ctx context.Context, ev Event) {
 		"transport", d.transport.Name(),
 		"attempt", ev.Attempts+1,
 		"duration_ms", dur.Milliseconds(),
+		"outbox_publish_latency_ms", now.Sub(ev.OccurredAt).Milliseconds(),
 	)
 }
 

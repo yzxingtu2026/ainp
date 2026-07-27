@@ -5,6 +5,7 @@
 - Handler 必须幂等、响应 `ctx.Done()`；错误用 `Retryable`/`Permanent`/`Cancelled`；禁止自建 sleep/retry 循环。
 - Worker 以 PostgreSQL JobRun 为可信源，不信任 Redis 中的 tenant/payload 篡改；加载可信事实后恢复 AuthContext、重新鉴权并获取 TenantDB，禁止回退根 DB。
 - 开发可用 `jobs.embedded_worker=true` 内嵌 Worker；生产独立部署 `ainp-worker`。
+- 稳定队列仅 `critical/default/file/notification/ai`；Agent Run 固定进 `ai`。独立 Worker 可用进程级 queues/concurrency 覆盖，必须 fail-fast 校验且不得修改共享配置；未覆盖时本地/embedded 继续消费全部配置队列。
 - 安装向导可选启用 Job；启用前及初始化时必须探测 Redis。非密钥意图写 `state.yaml`，Redis 凭据只走环境变量，且环境变量优先。
 - 大结果用 `result_ref`；Progress 经 Reporter；取消为协作式。
 - 变更同步 `docs/development/background-jobs.md` 并 `agent-rules sync`。

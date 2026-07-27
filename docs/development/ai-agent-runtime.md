@@ -57,3 +57,5 @@ Builder 预览约束：
 Run 事件使用单调 sequence，查询和 SSE 均按 tenant/user + run 过滤，支持 `after_sequence` 续传。事件仅包含状态、游标、Step 类型、安全错误分类和可展示文本 delta；不包含 Secret、工具 Handle、完整敏感参数、压缩摘要或供应商原始响应。
 
 Run/Step 终态与 `ai.agent_run.terminal.v1` 在同一事务提交。requested/resume 事件经 Outbox → Job，Job 使用稳定 idempotency key，崩溃后从 canonical Message、Snapshot、ToolInvocation 和 Confirmation 重建。
+
+`ai.agent_run.execute` 固定路由到稳定 `ai` 资源队列。Demo/生产可部署只消费 `ai` 的独立 Worker，与不消费 `ai` 的通用 Worker 隔离执行槽；本地未配置进程覆盖时仍由单 Worker 消费全部队列。首次持久化 Stream Delta 时记录 `agent_first_delta_latency_ms=first_delta_at-run.started_at`，仅作为结构化时延字段，不把 tenant/user/run ID 作为指标 label。

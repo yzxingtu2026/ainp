@@ -6,6 +6,7 @@
 - Handler 必须幂等；不假设全局 FIFO；payload 禁止 GORM Model / 密钥 / 文件内容 / 完整请求响应。
 - 租户上下文只来自 AuthContext / 受校验 EventContext；缺失 fail-closed。
 - Outbox 不替代 Audit；长任务（转码/AI）只触发，执行交给任务队列。
+- PostgreSQL 提交通知只允许作为固定通道的空唤醒提示；Event 与通知同事务，Dispatcher 必须通知合并、Tick 单飞、断线重连并保留周期轮询兜底，禁止把通知当事实源或携带 payload。
 - 新增事件须同步 Definition、schema version、Handler 幂等、DTO 与 `platform/tests/`。
 
 详规：`docs/development/transactional-outbox.md`

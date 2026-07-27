@@ -32,7 +32,7 @@
 | `RevisionDocService.AutoMigrate` | AutoMigrate | Demo 表启动建表 | 不执行 tenant-owned 业务 CRUD |
 | `framework/revision`、`framework/dblock` | Table/Exec | 通用并发基础设施 | 调用方必须来自 scoped transaction；本 Issue 后续迁移 |
 | `framework/audit.GormRecorder` | mixed-realm write | `audit_logs` 同时记录 tenant 与 platform realm | tenant 管理查询只走 TenantRaw；写入 tenant/realm 来自已认证 Action AuthContext |
-| `framework/outbox.Dispatcher`、`gormDeliveryStore.RunHandler/ListByEvent` | trusted dispatcher | Dispatcher 在请求 AuthContext 外跨租户 claim/publish/投递 | tenant 管理查询与手动重试走 TenantRaw；能力不向业务暴露 |
+| `framework/outbox.Dispatcher`、`gormDeliveryStore.RunHandler/ListByEvent`、`notify.go` | trusted dispatcher | Dispatcher 在请求 AuthContext 外跨租户 claim/publish/投递；notify 只控制固定 PostgreSQL LISTEN/NOTIFY 通道 | tenant 管理查询与手动重试走 TenantRaw；通知为空且不查询/承载 tenant 数据；能力不向业务暴露 |
 | `framework/job.GetTrusted`、`RunStore.Create/UpdateFields/ListPendingEnqueue`、`CreateIdempotent` | trusted worker | Worker/Enqueuer 首次加载或写入 JobRun 时尚未恢复业务 AuthContext | tenant 列表/详情/取消走 TenantRaw；tenant 来自 ResolveTenantContext 或可信 JobRun |
 | `InvocationService.RecoverStale` | trusted startup recovery | 启动时尚无 tenant AuthContext，需要发现跨租户遗留的 running 调用 | 仅允许私有固定 SQL 扫描未注册 DTO；逐行恢复 AuthContext 后通过 GuardedDatabase 更新与写 Outbox |
 | `system.preAuthStore` | authentication bootstrap | 身份、会话和授权查询发生在完整 AuthContext 建立前 | 私有固定查询；tenant 来自已校验租户/身份；不暴露通用 DB |

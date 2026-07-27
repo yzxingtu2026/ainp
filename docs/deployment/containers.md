@@ -24,7 +24,9 @@ docker compose --env-file deploy/demo/.env -f deploy/demo/compose.yaml up -d
 
 `PUBLIC_BASE_URL` 必须是用户实际访问的 HTTPS 同源地址且不带尾部斜杠。公网入口应由宿主机 TLS 反向代理转发到 `WEB_BIND_ADDR:WEB_PORT`；PostgreSQL 和 Redis 不发布宿主端口。
 
-持久化卷包括 PostgreSQL、Redis AOF、安装状态和附件对象目录。API 与独立 Worker 共享状态和附件卷，并固定 `jobs.enabled=true`、`jobs.embedded_worker=false`。
+持久化卷包括 PostgreSQL、Redis AOF、安装状态和附件对象目录。API 与独立 Worker 共享状态和附件卷，并固定 `jobs.enabled=true`、`jobs.embedded_worker=false`。Demo 同时启动通用 `worker` 与 `ai-worker`：前者只消费 `critical/default/file/notification`，后者只消费 `ai`；两者复用同一镜像和二进制，通过进程环境覆盖队列与并发，不修改共享配置。
+
+通用 Worker 并发由 `WORKER_CONCURRENCY` 控制，AI Worker 并发由 `AI_WORKER_CONCURRENCY` 控制；可分别执行 `docker compose ... up -d --scale worker=N --scale ai-worker=M` 扩容。日志分别写入 `worker.jsonl`、`ai-worker.jsonl`，启动行必须核对最终 queues、weights、concurrency、service 和 instance_id，确保消费者集合没有重叠。
 
 部署后的基础校验必须读取 `PUBLIC_BASE_URL/healthz`，同时确认 `data.status == "ok"` 且 `data.version == AINP_IMAGE_TAG`。仅 HTTP 200 不代表版本部署成功。
 
