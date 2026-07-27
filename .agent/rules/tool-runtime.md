@@ -23,6 +23,7 @@
 - 写/外部/付费/破坏性/high 必须单次确认，critical 默认禁止；批准后重新鉴权，不支持始终允许。
 - 同批 Tool Call 遇确认后停止执行剩余调用并逐个追加 deferred Tool Result；批准、拒绝、过期等确认终态必须保证所有 Tool Call/Result 配对，禁止永久等待。
 - Invocation 终态与 Outbox 同事务，日志/Outbox/审计禁止完整参数、结果、Secret 和原始第三方响应。
+- Executor Result 必须统一规范化并递归脱敏 typed/untyped JSON 结构；`data + truncation` 共用单一编码字节预算，object/array 裁剪保持类型且数组只保留稳定前缀。通用 Runtime 只报告 returned/omitted 等受控诊断，禁止伪造业务 cursor。
 - Tool Call 创建时必须固化 Definition 的 `ToolPresentation`；确认创建事务必须固化版本化 `ConfirmationPresentation`。展示快照只用于解释，禁止作为执行输入；前端禁止解析模型工具名或按 Tool ID 维护业务名称映射。
 - 批准必须在短事务中原子认领 confirmation 与 invocation；Executor 在事务外最多执行一次。成功或失败都必须在同一终态事务写 invocation、confirmation=`consumed`、安全 Result 与 finished Outbox；重复决策只返回稳定业务冲突，不得重放或暴露内部状态。
 - Agent 恢复必须消费 completed/failed invocation 的配对 Tool Result；可纠正失败只能通过新参数、新 Tool Call 和新逐次确认重试。前端决策期间同时禁用批准/拒绝，并在完成后刷新移除非 pending 卡片。

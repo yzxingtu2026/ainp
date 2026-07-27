@@ -140,8 +140,21 @@ type Result struct {
 	Data          any               `json:"data,omitempty"`
 	ResourceRefs  []string          `json:"resource_refs,omitempty"`
 	Truncated     bool              `json:"truncated"`
+	Truncation    *Truncation       `json:"truncation,omitempty"`
 	ErrorCategory string            `json:"error_category,omitempty"`
 	ErrorDetails  *errs.SafeDetails `json:"error_details,omitempty"`
+}
+
+type Truncation struct {
+	Entries []TruncationEntry `json:"entries"`
+}
+
+type TruncationEntry struct {
+	Path          string `json:"path"`
+	Kind          string `json:"kind"`
+	ReturnedCount int    `json:"returned_count"`
+	OmittedCount  int    `json:"omitted_count"`
+	Reason        string `json:"reason"`
 }
 
 type Provider interface {
