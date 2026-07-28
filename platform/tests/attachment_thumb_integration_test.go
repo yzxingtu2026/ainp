@@ -22,10 +22,12 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/config"
 	"github.com/yzxingtu2026/ainp/platform/framework/database"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
+	"github.com/yzxingtu2026/ainp/platform/framework/job"
 	"github.com/yzxingtu2026/ainp/platform/framework/status"
 	"github.com/yzxingtu2026/ainp/platform/framework/storage"
 	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"github.com/yzxingtu2026/ainp/platform/modules/system"
+	systemjobs "github.com/yzxingtu2026/ainp/platform/modules/system/jobs"
 	"github.com/yzxingtu2026/ainp/platform/modules/system/model"
 )
 
@@ -192,6 +194,36 @@ func TestAttachmentThumbSkippedAndVariantGate(t *testing.T) {
 		t.Fatalf("content-type=%q", ct)
 	}
 
+	// Compensation requeues pending and explicitly retryable failures only.
+	retryable, permanent := true, false
+	for _, candidate := range []model.Attachment{
+		{ID: "thumb-pending", TenantID: "tenant-a", Provider: "local", ObjectKey: "pending", OriginalName: "pending.png", ContentType: "image/png", Status: status.AttachmentReady, UploaderID: "user-a", ThumbStatus: thumbStatusPtr(status.AttachmentThumbPending)},
+		{ID: "thumb-retryable", TenantID: "tenant-a", Provider: "local", ObjectKey: "retryable", OriginalName: "retryable.png", ContentType: "image/png", Status: status.AttachmentReady, UploaderID: "user-a", ThumbStatus: thumbStatusPtr(status.AttachmentThumbFailed), ThumbRetryable: &retryable},
+		{ID: "thumb-permanent", TenantID: "tenant-a", Provider: "local", ObjectKey: "permanent", OriginalName: "permanent.png", ContentType: "image/png", Status: status.AttachmentReady, UploaderID: "user-a", ThumbStatus: thumbStatusPtr(status.AttachmentThumbFailed), ThumbRetryable: &permanent},
+		{ID: "thumb-historical", TenantID: "tenant-a", Provider: "local", ObjectKey: "historical", OriginalName: "historical.png", ContentType: "image/png", Status: status.AttachmentReady, UploaderID: "user-a", ThumbStatus: thumbStatusPtr(status.AttachmentThumbFailed)},
+	} {
+		if err := attachments.Create(&candidate); err != nil {
+			t.Fatal(err)
+		}
+	}
+	enqueuer := &recordingJobEnqueuer{}
+	application.Jobs = &job.Runtime{Enabled: true, Enqueuer: enqueuer}
+	count, err := systemjobs.RequeuePendingThumbs(ctxA, application, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 2 || len(enqueuer.inputs) != 2 {
+		t.Fatalf("requeued=%d inputs=%d", count, len(enqueuer.inputs))
+	}
+	requeued := map[string]bool{}
+	for _, input := range enqueuer.inputs {
+		payload := input.Payload.(systemjobs.GenerateThumbPayload)
+		requeued[payload.AttachmentID] = true
+	}
+	if !requeued["thumb-pending"] || !requeued["thumb-retryable"] || requeued["thumb-permanent"] || requeued["thumb-historical"] {
+		t.Fatalf("unexpected requeue set: %#v", requeued)
+	}
+
 	// Delete cascades thumb object.
 	if _, err := svc.Delete(ctxA, json.RawMessage(fmt.Sprintf(`{"id":%q}`, imgPrep.Attachment.ID))); err != nil {
 		t.Fatal(err)
@@ -200,6 +232,8 @@ func TestAttachmentThumbSkippedAndVariantGate(t *testing.T) {
 		t.Fatal("expected thumb object deleted")
 	}
 }
+
+func thumbStatusPtr(value status.AttachmentThumbStatus) *status.AttachmentThumbStatus { return &value }
 
 func mustPNG(t *testing.T, w, h int) []byte {
 	t.Helper()

@@ -29,28 +29,32 @@ const (
 // GenerateImageThumb decodes an image and produces a ~200² JPEG cover crop.
 // Supports JPEG/PNG/GIF (first frame)/WebP. Caller should bound upstream object size.
 func GenerateImageThumb(r io.Reader) ([]byte, error) {
-	raw, err := io.ReadAll(io.LimitReader(r, ThumbMaxSourceBytes))
+	raw, err := io.ReadAll(io.LimitReader(r, ThumbMaxSourceBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("read image: %w", err)
 	}
+	if len(raw) > ThumbMaxSourceBytes {
+		return nil, &ThumbError{Category: ThumbErrorSourceTooLarge, SourceSize: int64(len(raw))}
+	}
 	cfg, format, err := image.DecodeConfig(bytes.NewReader(raw))
 	if err != nil {
-		return nil, fmt.Errorf("decode image config: %w", err)
+		return nil, &ThumbError{Category: ThumbErrorDecodeFailed, SourceSize: int64(len(raw)), Cause: err}
 	}
 	if cfg.Width <= 0 || cfg.Height <= 0 {
-		return nil, fmt.Errorf("invalid image dimensions")
+		return nil, &ThumbError{Category: ThumbErrorInvalidDimension, Width: cfg.Width, Height: cfg.Height, SourceSize: int64(len(raw))}
 	}
-	if int64(cfg.Width)*int64(cfg.Height) > ThumbMaxDecodePixels {
-		return nil, fmt.Errorf("image too large to decode")
+	pixels := int64(cfg.Width) * int64(cfg.Height)
+	if pixels > ThumbMaxDecodePixels {
+		return nil, &ThumbError{Category: ThumbErrorPixelLimit, Width: cfg.Width, Height: cfg.Height, PixelCount: pixels, PixelLimit: ThumbMaxDecodePixels, SourceSize: int64(len(raw))}
 	}
 	img, err := decodeImage(bytes.NewReader(raw), format)
 	if err != nil {
-		return nil, err
+		return nil, &ThumbError{Category: ThumbErrorDecodeFailed, Width: cfg.Width, Height: cfg.Height, PixelCount: pixels, PixelLimit: ThumbMaxDecodePixels, SourceSize: int64(len(raw)), Cause: err}
 	}
 	cover := coverCropResize(img, ThumbCoverSize)
 	var out bytes.Buffer
 	if err := jpeg.Encode(&out, cover, &jpeg.Options{Quality: ThumbJPEGQuality}); err != nil {
-		return nil, fmt.Errorf("encode thumb jpeg: %w", err)
+		return nil, &ThumbError{Category: ThumbErrorEncodeFailed, Width: cfg.Width, Height: cfg.Height, PixelCount: pixels, PixelLimit: ThumbMaxDecodePixels, SourceSize: int64(len(raw)), Cause: err}
 	}
 	return out.Bytes(), nil
 }

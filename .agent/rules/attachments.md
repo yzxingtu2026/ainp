@@ -7,6 +7,7 @@
 - Picker / 对话只调用 authenticated `system.attachment_mine_list` 查询本人附件；租户附件中心继续使用权限型 `system.attachment_list`，禁止为自助选择器开放管理列表。
 - 派生：`thumb` 为标准变体（约 200²）；状态走独立 CodeSet `system.attachment_thumb_status`；原图 ready 不依赖派生。
 - 生成经 Outbox `attachment.ready.v1` → Job `attachment.generate_thumb`；下载 `variant=thumb` 须鉴权；禁止暴露 OSS 处理 URL。
+- 缩略图确定性输入错误必须 permanent，基础设施错误 retryable，取消/超时 cancelled；补偿只重放 pending 或 `thumb_retryable=true`，历史/永久 failed 禁止自动重放。
 - 后处理扩展（转码/OCR/向量化等非本阶段）：仍走 Outbox→Job→独立 object_key→variant token；多产物再拆 derivatives 表，禁止堆列/另起协议。
 - 删除须级联清理 `thumb_object_key`；变更同步 `docs/development/attachments.md` 并 `agent-rules sync`。
 

@@ -34,6 +34,17 @@ type GenerateThumbPayload struct {
 	ContentType  string `json:"content_type,omitempty"`
 }
 
+type thumbOperationalError struct {
+	category string
+	cause    error
+}
+
+func (e *thumbOperationalError) Error() string { return e.category }
+func (e *thumbOperationalError) Unwrap() error { return e.cause }
+func thumbOperation(category string, cause error) error {
+	return &thumbOperationalError{category: category, cause: cause}
+}
+
 // Register wires attachment thumb Job + Outbox enqueue handler.
 func Register(a *app.App) error {
 	if a == nil || a.Jobs == nil {
@@ -115,7 +126,7 @@ func makeGenerateThumbHandler(a *app.App) func(ctx context.Context, env job.Enve
 
 		row, err := attachments.GetByID(p.AttachmentID)
 		if err != nil {
-			return job.Retryable(err)
+			return job.Retryable(errors.New("database_read_failed"))
 		}
 		if row.Status != status.AttachmentReady {
 			return job.Permanent(errors.New("attachment not ready"))
@@ -132,7 +143,7 @@ func makeGenerateThumbHandler(a *app.App) func(ctx context.Context, env job.Enve
 		if !attachment.IsThumbMediaMIME(row.ContentType) {
 			now := time.Now().UTC()
 			_ = attachments.Where("id = ?", row.ID).Updates(map[string]any{
-				"thumb_status": status.AttachmentThumbSkipped, "thumb_error": "", "thumb_updated_at": now, "updated_at": now,
+				"thumb_status": status.AttachmentThumbSkipped, "thumb_error": "", "thumb_error_category": "", "thumb_retryable": nil, "thumb_updated_at": now, "updated_at": now,
 			}).Error
 			return nil
 		}
@@ -140,7 +151,7 @@ func makeGenerateThumbHandler(a *app.App) func(ctx context.Context, env job.Enve
 		_ = reporter.Progress(ctx, 20, "open")
 		rc, _, err := a.Storage.Open(ctx, row.ObjectKey)
 		if err != nil {
-			return markThumbFailed(ctx, a, row.ID, err)
+			return markThumbFailed(ctx, a, row.ID, row.Size, env.Attempt, thumbOperation("storage_open_failed", err))
 		}
 		defer rc.Close()
 
@@ -153,6 +164,7 @@ func makeGenerateThumbHandler(a *app.App) func(ctx context.Context, env job.Enve
 				now := time.Now().UTC()
 				_ = attachments.Where("id = ?", row.ID).Updates(map[string]any{
 					"thumb_status": status.AttachmentThumbSkipped, "thumb_error": "ffmpeg unavailable",
+					"thumb_error_category": attachment.ThumbErrorVideoToolMissing, "thumb_retryable": false,
 					"thumb_updated_at": now, "updated_at": now,
 				}).Error
 				logging.Warn(ctx, "video thumb skipped: ffmpeg unavailable", "attachment_id", row.ID)
@@ -165,6 +177,7 @@ func makeGenerateThumbHandler(a *app.App) func(ctx context.Context, env job.Enve
 				now := time.Now().UTC()
 				_ = attachments.Where("id = ?", row.ID).Updates(map[string]any{
 					"thumb_status": status.AttachmentThumbSkipped, "thumb_error": "ffmpeg unavailable",
+					"thumb_error_category": attachment.ThumbErrorVideoToolMissing, "thumb_retryable": false,
 					"thumb_updated_at": now, "updated_at": now,
 				}).Error
 				return nil
@@ -172,7 +185,7 @@ func makeGenerateThumbHandler(a *app.App) func(ctx context.Context, env job.Enve
 		default:
 			now := time.Now().UTC()
 			_ = attachments.Where("id = ?", row.ID).Updates(map[string]any{
-				"thumb_status": status.AttachmentThumbSkipped, "thumb_updated_at": now, "updated_at": now,
+				"thumb_status": status.AttachmentThumbSkipped, "thumb_error_category": "", "thumb_retryable": nil, "thumb_updated_at": now, "updated_at": now,
 			}).Error
 			return nil
 		}
@@ -180,7 +193,7 @@ func makeGenerateThumbHandler(a *app.App) func(ctx context.Context, env job.Enve
 			if ctx.Err() != nil {
 				return job.Cancelled(ctx.Err())
 			}
-			return markThumbFailed(ctx, a, row.ID, err)
+			return markThumbFailed(ctx, a, row.ID, row.Size, env.Attempt, err)
 		}
 		_ = reporter.Progress(ctx, 70, "put")
 
@@ -188,13 +201,13 @@ func makeGenerateThumbHandler(a *app.App) func(ctx context.Context, env job.Enve
 			TenantID: row.TenantID, Namespace: "attachments",
 		})
 		if err != nil {
-			return markThumbFailed(ctx, a, row.ID, err)
+			return markThumbFailed(ctx, a, row.ID, row.Size, env.Attempt, thumbOperation("thumb_key_failed", err))
 		}
 		info, err := a.Storage.Put(ctx, storage.PutRequest{
 			Key: thumbKey, Body: bytes.NewReader(thumb), Size: int64(len(thumb)), ContentType: "image/jpeg",
 		})
 		if err != nil {
-			return markThumbFailed(ctx, a, row.ID, err)
+			return markThumbFailed(ctx, a, row.ID, row.Size, env.Attempt, thumbOperation("storage_put_failed", err))
 		}
 
 		// Replace previous thumb object if any (retry after partial success).
@@ -203,10 +216,11 @@ func makeGenerateThumbHandler(a *app.App) func(ctx context.Context, env job.Enve
 		if err := attachments.Where("id = ?", row.ID).Updates(map[string]any{
 			"thumb_status": status.AttachmentThumbReady, "thumb_object_key": info.Key,
 			"thumb_content_type": "image/jpeg", "thumb_size": info.Size, "thumb_error": "",
+			"thumb_error_category": "", "thumb_retryable": nil,
 			"thumb_updated_at": now, "updated_at": now,
 		}).Error; err != nil {
 			_ = a.Storage.Delete(ctx, info.Key)
-			return job.Retryable(err)
+			return job.Retryable(errors.New("database_update_failed"))
 		}
 		if oldKey != "" && oldKey != info.Key {
 			_ = a.Storage.Delete(ctx, oldKey)
@@ -217,23 +231,47 @@ func makeGenerateThumbHandler(a *app.App) func(ctx context.Context, env job.Enve
 	}
 }
 
-func markThumbFailed(ctx context.Context, a *app.App, attachmentID string, cause error) error {
-	msg := cause.Error()
-	if len(msg) > 500 {
-		msg = msg[:500]
+func ThumbJobDisposition(cause error) (category string, retryable bool, result error) {
+	if errors.Is(cause, context.Canceled) || errors.Is(cause, context.DeadlineExceeded) {
+		return "cancelled", false, job.Cancelled(cause)
+	}
+	if typed, ok := attachment.AsThumbError(cause); ok {
+		category = string(typed.Category)
+		return category, false, job.Permanent(errors.New(category))
+	}
+	var operational *thumbOperationalError
+	if errors.As(cause, &operational) {
+		return operational.category, true, job.Retryable(errors.New(operational.category))
+	}
+	return "infrastructure", true, job.Retryable(errors.New("thumbnail infrastructure failure"))
+}
+
+func markThumbFailed(ctx context.Context, a *app.App, attachmentID string, sourceSize int64, attempt int, cause error) error {
+	category, retryable, disposition := ThumbJobDisposition(cause)
+	if job.IsCancelled(disposition) {
+		return disposition
+	}
+	msg := "thumbnail generation failed"
+	fields := []any{"attachment_id", attachmentID, "error_category", category, "source_size", sourceSize, "attempt", attempt}
+	if typed, ok := attachment.AsThumbError(cause); ok {
+		msg = typed.SafeMessage()
+		fields = append(fields, "width", typed.Width, "height", typed.Height, "pixel_count", typed.PixelCount, "pixel_limit", typed.PixelLimit)
 	}
 	now := time.Now().UTC()
 	if tdb, err := tenant.TenantDB(ctx, a.DB); err == nil {
 		attachments, _ := tenant.NewTenantRepository[model.Attachment](tdb)
-		_ = attachments.Where("id = ?", attachmentID).Updates(map[string]any{
-			"thumb_status": status.AttachmentThumbFailed, "thumb_error": msg, "thumb_updated_at": now, "updated_at": now,
-		}).Error
+		if updateErr := attachments.Where("id = ?", attachmentID).Updates(map[string]any{
+			"thumb_status": status.AttachmentThumbFailed, "thumb_error": msg,
+			"thumb_error_category": category, "thumb_retryable": retryable,
+			"thumb_updated_at": now, "updated_at": now,
+		}).Error; updateErr != nil {
+			return job.Retryable(errors.New("database_update_failed"))
+		}
+	} else {
+		return job.Retryable(errors.New("database_context_failed"))
 	}
-	logging.Info(ctx, "attachment thumb failed", "attachment_id", attachmentID, "error", msg)
-	if ctx.Err() != nil {
-		return job.Cancelled(ctx.Err())
-	}
-	return job.Retryable(cause)
+	logging.Info(ctx, "attachment thumb failed", fields...)
+	return disposition
 }
 
 // RequeuePendingThumbs enqueues generate_thumb for ready attachments still in thumb pending/failed.
@@ -255,9 +293,7 @@ func RequeuePendingThumbs(ctx context.Context, a *app.App, limit int) (int, erro
 	}
 	attachments, _ := tenant.NewTenantRepository[model.Attachment](tdb)
 	rows, err := attachments.
-		Where("status = ? AND thumb_status IN ?", status.AttachmentReady, []status.AttachmentThumbStatus{
-			status.AttachmentThumbPending, status.AttachmentThumbFailed,
-		}).
+		Where("status = ? AND (thumb_status = ? OR (thumb_status = ? AND thumb_retryable = TRUE))", status.AttachmentReady, status.AttachmentThumbPending, status.AttachmentThumbFailed).
 		Order("updated_at ASC").List(0, limit)
 	if err != nil {
 		return 0, err

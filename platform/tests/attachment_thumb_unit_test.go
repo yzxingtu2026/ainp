@@ -2,13 +2,20 @@ package tests
 
 import (
 	"bytes"
+	"context"
+	"encoding/binary"
+	"errors"
+	"hash/crc32"
 	"image"
 	"image/color"
 	"image/png"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/yzxingtu2026/ainp/platform/framework/attachment"
+	"github.com/yzxingtu2026/ainp/platform/framework/job"
+	systemjobs "github.com/yzxingtu2026/ainp/platform/modules/system/jobs"
 )
 
 func TestGenerateImageThumbCover(t *testing.T) {
@@ -39,6 +46,51 @@ func TestGenerateImageThumbCover(t *testing.T) {
 	if cfg.Width != attachment.ThumbCoverSize || cfg.Height != attachment.ThumbCoverSize {
 		t.Fatalf("size = %dx%d", cfg.Width, cfg.Height)
 	}
+}
+
+func TestGenerateImageThumbRejectsOversizedHeaderWithoutDecode(t *testing.T) {
+	_, err := attachment.GenerateImageThumb(bytes.NewReader(fakePNGHeader(8000, 6000)))
+	typed, ok := attachment.AsThumbError(err)
+	if !ok || typed.Category != attachment.ThumbErrorPixelLimit {
+		t.Fatalf("error = %#v", err)
+	}
+	if typed.Width != 8000 || typed.Height != 6000 || typed.PixelCount != 48_000_000 || typed.PixelLimit != attachment.ThumbMaxDecodePixels {
+		t.Fatalf("diagnostics = %#v", typed)
+	}
+}
+
+func TestThumbJobDisposition(t *testing.T) {
+	permanent := &attachment.ThumbError{Category: attachment.ThumbErrorDecodeFailed}
+	category, retryable, result := systemjobs.ThumbJobDisposition(permanent)
+	if category != string(attachment.ThumbErrorDecodeFailed) || retryable || !job.IsPermanent(result) {
+		t.Fatalf("permanent mapping = %q %v %v", category, retryable, result)
+	}
+	category, retryable, result = systemjobs.ThumbJobDisposition(errors.New("object store unavailable"))
+	if category != "infrastructure" || !retryable || !job.IsRetryable(result) {
+		t.Fatalf("retry mapping = %q %v %v", category, retryable, result)
+	}
+	if strings.Contains(result.Error(), "object store unavailable") {
+		t.Fatalf("job error leaked underlying cause: %v", result)
+	}
+	category, retryable, result = systemjobs.ThumbJobDisposition(context.Canceled)
+	if category != "cancelled" || retryable || !job.IsCancelled(result) {
+		t.Fatalf("cancel mapping = %q %v %v", category, retryable, result)
+	}
+}
+
+func fakePNGHeader(width, height uint32) []byte {
+	var data bytes.Buffer
+	data.Write([]byte("\x89PNG\r\n\x1a\n"))
+	_ = binary.Write(&data, binary.BigEndian, uint32(13))
+	data.WriteString("IHDR")
+	chunk := make([]byte, 13)
+	binary.BigEndian.PutUint32(chunk[0:4], width)
+	binary.BigEndian.PutUint32(chunk[4:8], height)
+	chunk[8], chunk[9] = 8, 2
+	data.Write(chunk)
+	crcInput := append([]byte("IHDR"), chunk...)
+	_ = binary.Write(&data, binary.BigEndian, crc32.ChecksumIEEE(crcInput))
+	return data.Bytes()
 }
 
 func TestIsThumbMediaMIME(t *testing.T) {
