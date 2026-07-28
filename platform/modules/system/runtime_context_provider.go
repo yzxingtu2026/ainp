@@ -50,7 +50,7 @@ func (p *RuntimeContextProvider) Build(ctx context.Context, req runtimecontext.B
 	if err != nil {
 		return nil, err
 	}
-	tenantTimezone, tenantLocale, tenantSource := "UTC", "zh-CN", "system_default"
+	tenantTimezone, tenantLocale, tenantSource := runtimecontext.SystemFallbackTimezone, "zh-CN", "system_default"
 	if p.tenantSettings != nil {
 		if eff, loadErr := p.tenantSettings.Get(ctx, req.TenantID, "general.runtime_defaults"); loadErr == nil {
 			if value, ok := eff.Values["timezone"].(string); ok && value != "" {
@@ -113,7 +113,7 @@ func registerRuntimeContextDefaultsSetting(a interface {
 	RegisterSettingDefinition(setting.Definition) error
 }) error {
 	return a.RegisterSettingDefinition(setting.Definition{Key: "general.runtime_defaults", CategoryKey: "general", Title: "Runtime 默认值", Description: "用户未主动设置时使用的可信运行时默认值", Scope: setting.ScopeTenant, Surface: auth.RealmTenant, Permission: ActionSettingList, Order: 30, SchemaVersion: 1, Fields: []setting.Field{
-		{Key: "timezone", Type: setting.FieldSelect, Label: "默认时区", Required: true, Default: "UTC", Options: []setting.FieldOption{{Value: "UTC", Label: "UTC"}, {Value: "Asia/Shanghai", Label: "Asia/Shanghai"}, {Value: "America/New_York", Label: "America/New_York"}}},
+		{Key: "timezone", Type: setting.FieldSelect, Label: "默认时区", Required: true, Default: runtimecontext.ProductDefaultTimezone, Options: []setting.FieldOption{{Value: "UTC", Label: "UTC"}, {Value: "Asia/Shanghai", Label: "Asia/Shanghai"}, {Value: "America/New_York", Label: "America/New_York"}}},
 		{Key: "locale", Type: setting.FieldSelect, Label: "默认语言", Required: true, Default: "zh-CN", Options: []setting.FieldOption{{Value: "zh-CN", Label: "简体中文"}, {Value: "en-US", Label: "English"}}},
 	}})
 }

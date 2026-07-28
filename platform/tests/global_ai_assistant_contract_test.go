@@ -32,6 +32,16 @@ func TestGlobalAiAssistantUsesOneControllerAndConversationSurface(t *testing.T) 
 	}
 }
 
+func TestHomeGreetingDoesNotUseBrowserLocalTime(t *testing.T) {
+	home := readFrontendContract(t, "views/home/index.vue")
+	if strings.Contains(home, "new Date().getHours()") || strings.Contains(home, "greetingPeriod") {
+		t.Fatal("home must use the server-derived trusted greeting instead of browser-local time")
+	}
+	if !strings.Contains(home, "personalization.greeting.value") {
+		t.Fatal("home must consume the shared personalization greeting")
+	}
+}
+
 func TestGlobalAiAssistantShellLifecycleAndLaunchers(t *testing.T) {
 	header := readFrontendContract(t, "layouts/modules/global-header/index.vue")
 	launcher := readFrontendContract(t, "layouts/modules/ai-workspace-launcher/index.vue")

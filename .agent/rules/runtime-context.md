@@ -8,5 +8,6 @@
 - ContextSnapshot 只存版本、timezone、evaluated_at 与 run refs；日志/事件/审计禁止称呼或记忆正文。
 - Agent Runtime、Memory Retriever 与 Runtime Tool 必须消费同一 Provider/Run Snapshot；工具参数不得提供 tenant/user/run/timezone。
 - Memory Recall 的绝对/相对日期过滤必须使用 Context 中同一 evaluated_at/timezone，Slot 参数只能提供 query/filter，不能覆盖主体或时间事实。
+- 动态问候只消费当前 Trusted Runtime Context 的 locale 与 TimeSnapshot；统一边界为 00-04:59 夜深、05-11:59 早、12-13:59 中午、14-17:59 下午、18+ 晚，前端不得按浏览器时间另算。
 
 详规：`docs/development/runtime-context.md`

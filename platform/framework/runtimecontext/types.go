@@ -3,13 +3,80 @@ package runtimecontext
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 )
 
 const (
-	ContextVersion = "runtime-context.v1"
-	PolicyVersion  = "trusted-identity-time.v1"
+	ContextVersion         = "runtime-context.v1"
+	PolicyVersion          = "trusted-identity-time.v1"
+	SystemFallbackTimezone = "UTC"
+	ProductDefaultTimezone = "Asia/Shanghai"
 )
+
+func RenderTimeGreeting(body, locale string, snapshot TimeSnapshot) string {
+	hour := snapshot.EvaluatedAtUTC.In(mustLocation(snapshot.Timezone)).Hour()
+	english := strings.HasPrefix(strings.ToLower(locale), "en")
+	period := "夜深了"
+	if english {
+		period = "Working late"
+	}
+	switch {
+	case hour >= 5 && hour < 12:
+		if english {
+			period = "Good morning"
+		} else {
+			period = "早上好"
+		}
+	case hour >= 12 && hour < 14:
+		if english {
+			period = "Good afternoon"
+		} else {
+			period = "中午好"
+		}
+	case hour >= 14 && hour < 18:
+		if english {
+			period = "Good afternoon"
+		} else {
+			period = "下午好"
+		}
+	case hour >= 18:
+		if english {
+			period = "Good evening"
+		} else {
+			period = "晚上好"
+		}
+	}
+	body = strings.TrimSpace(body)
+	if body == "" {
+		return period
+	}
+	if english {
+		return period + ", " + body
+	}
+	return period + "，" + body
+}
+
+func NormalizeGreetingBody(value string) string {
+	value = strings.TrimSpace(value)
+	prefixes := []string{"早上好", "上午好", "中午好", "下午好", "晚上好", "夜深了", "good morning", "good afternoon", "good evening", "working late"}
+	lower := strings.ToLower(value)
+	for _, prefix := range prefixes {
+		if strings.HasPrefix(lower, prefix) {
+			value = strings.TrimSpace(value[len(prefix):])
+			return strings.TrimLeft(value, "，,：:！!。. ")
+		}
+	}
+	return value
+}
+
+func mustLocation(timezone string) *time.Location {
+	location, err := time.LoadLocation(timezone)
+	if err != nil {
+		return time.UTC
+	}
+	return location
+}
 
 type Clock interface{ Now() time.Time }
 type ClockFunc func() time.Time

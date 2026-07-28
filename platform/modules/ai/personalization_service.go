@@ -67,30 +67,37 @@ func (s *PersonalizationService) config(ctx context.Context, tenant string) (boo
 	alias, _ := v.Values["model_alias"].(string)
 	return enabled, strings.TrimSpace(alias), v.Revision, nil
 }
-func (s *PersonalizationService) fallback(ctx context.Context, ac *auth.Context) PersonalizationResponse {
-	locale, timezone, address := ac.Language, "UTC", ""
+func (s *PersonalizationService) fallback(ctx context.Context, ac *auth.Context) (PersonalizationResponse, *runtimecontext.TrustedRuntimeContext, error) {
+	trusted := &runtimecontext.TrustedRuntimeContext{Locale: ac.Language}
+	trusted.Time, _ = runtimecontext.NewTimeSnapshot(s.now(), runtimecontext.SystemFallbackTimezone, "system_default")
 	if s.runtimeContext != nil {
-		if trusted, err := s.runtimeContext.Build(ctx, runtimecontext.BuildRequest{TenantID: ac.TenantID, UserID: ac.UserID}); err == nil {
-			locale, timezone, address = trusted.Locale, trusted.Time.Timezone, trusted.PreferredAddress
+		var err error
+		trusted, err = s.runtimeContext.Build(ctx, runtimecontext.BuildRequest{TenantID: ac.TenantID, UserID: ac.UserID})
+		if err != nil {
+			return PersonalizationResponse{}, nil, err
 		}
 	}
+	locale, address := trusted.Locale, trusted.PreferredAddress
 	if strings.HasPrefix(strings.ToLower(locale), "en") {
 		body := "What would you like to work on today?"
 		if address != "" {
 			body = address + ", " + body
 		}
-		return PersonalizationResponse{Greeting: renderTimeGreeting(body, locale, timezone, s.now()), Suggestions: []PersonalizationSuggestion{{Title: "Continue recent work", Prompt: "Help me continue my unfinished recent work", SourceType: "general"}, {Title: "Review priorities", Prompt: "Help me identify today's highest priority work", SourceType: "general"}}, ContextScope: "global"}
+		return PersonalizationResponse{Greeting: renderTimeGreeting(body, locale, trusted.Time), Suggestions: []PersonalizationSuggestion{{Title: "Continue recent work", Prompt: "Help me continue my unfinished recent work", SourceType: "general"}, {Title: "Review priorities", Prompt: "Help me identify today's highest priority work", SourceType: "general"}}, ContextScope: "global"}, trusted, nil
 	}
 	body := "今天想先处理什么？"
 	if address != "" {
 		body = address + "。" + body
 	}
-	return PersonalizationResponse{Greeting: renderTimeGreeting(body, locale, timezone, s.now()), Suggestions: []PersonalizationSuggestion{{Title: "继续最近的工作", Prompt: "帮我继续整理最近未完成的工作", SourceType: "general"}, {Title: "查看当前重点", Prompt: "帮我梳理今天最值得优先处理的事项", SourceType: "general"}}, ContextScope: "global"}
+	return PersonalizationResponse{Greeting: renderTimeGreeting(body, locale, trusted.Time), Suggestions: []PersonalizationSuggestion{{Title: "继续最近的工作", Prompt: "帮我继续整理最近未完成的工作", SourceType: "general"}, {Title: "查看当前重点", Prompt: "帮我梳理今天最值得优先处理的事项", SourceType: "general"}}, ContextScope: "global"}, trusted, nil
 }
 
 func (s *PersonalizationService) Read(ctx context.Context, _ struct{}) (PersonalizationResponse, error) {
 	ac := auth.MustFromContext(ctx)
-	result := s.fallback(ctx, ac)
+	result, trusted, e := s.fallback(ctx, ac)
+	if e != nil {
+		return result, e
+	}
 	enabled, _, rev, e := s.config(ctx, ac.TenantID)
 	if e != nil {
 		return result, e
@@ -113,7 +120,7 @@ func (s *PersonalizationService) Read(ctx context.Context, _ struct{}) (Personal
 		return result, e
 	}
 	_ = json.Unmarshal(row.SuggestionsJSON, &result.Suggestions)
-	result.Greeting = renderTimeGreeting(row.Greeting, row.Locale, row.Timezone, s.now())
+	result.Greeting = renderTimeGreeting(row.Greeting, trusted.Locale, trusted.Time)
 	result.GeneratedAt = &row.GeneratedAt
 	result.ContextScope = row.ContextScope
 	result.Freshness = "fresh"
@@ -429,58 +436,12 @@ func optionalPersonalizationSnapshot(repo *tenantdata.Repository[AssistantPerson
 }
 
 func canonicalGreeting(value string) string {
-	value = strings.TrimSpace(value)
-	prefixes := []string{"早上好", "上午好", "中午好", "下午好", "晚上好", "夜深了", "good morning", "good afternoon", "good evening"}
-	lower := strings.ToLower(value)
-	for _, prefix := range prefixes {
-		if strings.HasPrefix(lower, prefix) {
-			value = strings.TrimSpace(value[len(prefix):])
-			value = strings.TrimLeft(value, "，,：:！!。. ")
-			break
-		}
-	}
-	return value
+	return runtimecontext.NormalizeGreetingBody(value)
 }
 
-func renderTimeGreeting(body, locale, timezone string, now time.Time) string {
-	location, err := time.LoadLocation(timezone)
-	if err != nil {
-		location = time.UTC
-	}
-	hour := now.In(location).Hour()
-	english := strings.HasPrefix(strings.ToLower(locale), "en")
-	period := "晚上好"
-	if english {
-		period = "Good evening"
-	}
-	switch {
-	case hour >= 5 && hour < 12:
-		if english {
-			period = "Good morning"
-		} else {
-			period = "早上好"
-		}
-	case hour >= 12 && hour < 14:
-		if english {
-			period = "Good afternoon"
-		} else {
-			period = "中午好"
-		}
-	case hour >= 14 && hour < 18:
-		if english {
-			period = "Good afternoon"
-		} else {
-			period = "下午好"
-		}
-	}
+func renderTimeGreeting(body, locale string, snapshot runtimecontext.TimeSnapshot) string {
 	body = canonicalGreeting(body)
-	if body == "" {
-		return period
-	}
-	if english {
-		return period + ", " + body
-	}
-	return period + "，" + body
+	return runtimecontext.RenderTimeGreeting(body, locale, snapshot)
 }
 func validatePersonalization(g string, ss []PersonalizationSuggestion) error {
 	if len([]rune(g)) == 0 || len([]rune(g)) > 120 || len(ss) == 0 || len(ss) > 4 || strings.ContainsAny(g, "<>") {

@@ -6,7 +6,7 @@ Trusted Runtime Context 为 Agent Run、记忆召回和时间语义工具提供�
 
 - tenant/user 只来自已认证 AuthContext，并必须与 BuildRequest 固定主体一致。
 - preferred address：用户手动覆盖 → ready 的全局 memory current profile → display_name → username。
-- timezone/locale：用户已保存偏好 → `general.runtime_defaults` 租户覆盖 → 系统安全默认 `UTC` / `zh-CN`。
+- timezone/locale：用户已保存偏好 → `general.runtime_defaults` 租户覆盖 → 产品新租户默认 `Asia/Shanghai` / `zh-CN` → 系统故障安全回退 `UTC` / `zh-CN`。Demo 新安装必须显式保留目标租户默认时区，不得依赖容器 `TZ` 或数据库 DSN 时区。
 - Conversation、Agent Version、Run ID 只接受服务端已加载的持久事实；客户端/模型参数不能提供当前时间或身份。
 
 ## Run Time Snapshot
@@ -29,3 +29,4 @@ Trusted Runtime Context 为 Agent Run、记忆召回和时间语义工具提供�
 - 自动记忆召回与 `builtin:memory.search` 从只读 Context Accessor 获取完全相同的 evaluated_at/timezone；日期参数只能缩小可信 owner 范围。
 - Tool 仅获取完成裁剪的只读上下文，禁止从模型参数接收 tenant/user/run/timezone。
 - 日志、审计、Outbox、Run Event 只能记录版本、timezone/source、evaluated_at 和错误分类，不记录私人画像内容。
+- 动态时间段问候统一使用可信 `TimeSnapshot`：00:00-04:59 夜深、05:00-11:59 早上、12:00-13:59 中午、14:00-17:59 下午、18:00 后晚上；英文中午与下午均为 `Good afternoon`。浏览器和模型不得另行判断时间段。

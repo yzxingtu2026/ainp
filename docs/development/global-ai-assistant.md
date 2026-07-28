@@ -45,7 +45,7 @@ Header launcher 在所有 layout mode 中显示，并以动态路由中的 `shel
 
 完成 Run、Memory Current Profile 重建以及 `workspace.default` Slot 绑定/个人偏好变化后，将当前用户快照标记为 stale 并通过 Outbox 延迟合并刷新。同一当前 generation 的连续事件使用相同下一 revision 幂等键，避免 Run 结束和画像重建连续调用模型。
 
-时间段问候属于读取时确定性派生值，不属于模型快照。模型只保存稳定 greeting body；读取接口按快照 locale、用户时区和当前服务器 UTC 时间动态组合早上/中午/下午/晚上问候，并兼容清理旧快照中的时段前缀。禁止依赖快照生成时间判断当前时段。
+时间段问候属于读取时确定性派生值，不属于模型快照。模型只保存稳定 greeting body；每次读取均重新构建当前 Trusted Runtime Context，按当前 locale、有效时区和可信 UTC 时刻动态组合问候，并兼容清理旧快照中的时段前缀。首页在接口返回前只显示无时间段的中性文案，不得使用浏览器本地时间；时区或 locale 变更后的下一次读取立即生效，无需重建快照。
 
 ## 二级视图
 

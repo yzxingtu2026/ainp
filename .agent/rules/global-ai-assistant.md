@@ -16,6 +16,7 @@
 - 快照不得写入 Conversation/Memory；生成仅走 Model Runtime，不得创建 Agent Run、调用工具或回退未配置模型。
 - 个性化输入只允许预算化 Runtime Context、Agent Slot Version、Memory Current Profile、近期 Run 摘要及最近 Workspace 会话结尾最多 4 条纯文本；会话片段必须标记 untrusted，禁止完整历史、工具参数、原始记忆与页面正文。
 - 时段问候必须由服务端在每次读取时按用户时区动态计算；模型快照只保存稳定 greeting body，禁止固化“早上好/下午好/晚上好”。
+- greeting body 可复用旧快照，但时段前缀必须使用本次读取的 Trusted Runtime Context；首页加载态只用中性文案，不得读取浏览器时钟。
 - 桌面宽度、移动全屏、长内容 overflow、焦点返回、Escape、ARIA、Tooltip 与 reduced-motion 必须验证。
 
 详规：`docs/development/global-ai-assistant.md`

@@ -57,3 +57,42 @@ func TestTrustedContextAccessorReturnsReadOnlyCopy(t *testing.T) {
 		t.Fatal("consumer mutated shared trusted context")
 	}
 }
+
+func TestRenderTimeGreetingUsesUnifiedLocaleAndTimezoneBoundaries(t *testing.T) {
+	tests := []struct {
+		name, timezone, locale, body, want string
+		at                                 time.Time
+	}{
+		{"shanghai midnight", "Asia/Shanghai", "zh-CN", "继续工作", "夜深了，继续工作", time.Date(2026, 7, 27, 16, 0, 0, 0, time.UTC)},
+		{"shanghai five", "Asia/Shanghai", "zh-CN", "继续工作", "早上好，继续工作", time.Date(2026, 7, 27, 21, 0, 0, 0, time.UTC)},
+		{"utc six", "UTC", "zh-CN", "继续工作", "早上好，继续工作", time.Date(2026, 7, 28, 6, 0, 0, 0, time.UTC)},
+		{"utc noon", "UTC", "zh-CN", "继续工作", "中午好，继续工作", time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)},
+		{"utc fourteen", "UTC", "zh-CN", "继续工作", "下午好，继续工作", time.Date(2026, 7, 28, 14, 0, 0, 0, time.UTC)},
+		{"utc eighteen", "UTC", "zh-CN", "继续工作", "晚上好，继续工作", time.Date(2026, 7, 28, 18, 0, 0, 0, time.UTC)},
+		{"new york noon", "America/New_York", "en-US", "continue working", "Good afternoon, continue working", time.Date(2026, 7, 28, 16, 0, 0, 0, time.UTC)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			snapshot, err := NewTimeSnapshot(tt.at, tt.timezone, "test")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := RenderTimeGreeting(tt.body, tt.locale, snapshot); got != tt.want {
+				t.Fatalf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNormalizeGreetingBodyRemovesLegacyPrefixes(t *testing.T) {
+	tests := map[string]string{
+		"晚上好，继续工作":                       "继续工作",
+		"Good evening, continue working": "continue working",
+		"Working late, continue working": "continue working",
+	}
+	for input, want := range tests {
+		if got := NormalizeGreetingBody(input); got != want {
+			t.Fatalf("got %q, want %q", got, want)
+		}
+	}
+}

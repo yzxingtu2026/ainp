@@ -36,19 +36,8 @@ const robotMode = ref<RobotMode>(null);
 const navigating = ref(false);
 let navigationTimer: number | null = null;
 
-const greetingPeriod = computed(() => {
-  const hour = new Date().getHours();
-  if (hour < 6) return $t('page.home.periodLateNight');
-  if (hour < 12) return $t('page.home.periodMorning');
-  if (hour < 18) return $t('page.home.periodAfternoon');
-  return $t('page.home.periodEvening');
-});
-
 const greeting = computed(() =>
-  personalization.greeting.value || $t('page.home.greeting', {
-    period: greetingPeriod.value,
-    name: authStore.userInfo.userName || $t('page.home.defaultUser')
-  })
+  personalization.greeting.value || $t('page.aiWorkspace.greeting', { name: authStore.userInfo.userName || $t('page.home.defaultUser') })
 );
 
 function firstTrustedTarget(menu: App.Global.Menu): App.Global.Menu | null {
