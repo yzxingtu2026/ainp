@@ -15,13 +15,13 @@
 ## 数据模型
 
 - `attachments`：`tenant_id` 强制非空；`provider` / `object_key` / `original_name` / `content_type` / `size` / `sha256` / `status` / `uploader_id`；`upload_jti` 仅存一次性上传令牌 ID（非 token 明文）；`expires_at` 用于 pending 临时保留。
-- **派生（thumb）列**（#36，Phase 1 单变体）：`thumb_status` / `thumb_object_key` / `thumb_content_type` / `thumb_size` / `thumb_error` / `thumb_updated_at`。未选独立 `attachment_derivatives` 表（多变体时可再拆）。
+- **派生（thumb）列**（#36，Phase 1 单变体）：`thumb_status` / `thumb_object_key` / `thumb_content_type` / `thumb_size` / `thumb_error` / `thumb_error_category` / nullable `thumb_retryable` / `thumb_updated_at`。`thumb_retryable=NULL` 表示未分类的历史状态，不自动补偿重放。未选独立 `attachment_derivatives` 表（多变体时可再拆）。
 - `attachment_links`：`(tenant_id, attachment_id, resource_type, resource_id, field)` 唯一；查询写入经 TenantDB Repository 与 GORM tenant Callback fail-closed。
 - 原图状态机：`pending` / `ready` / `deleting` / `deleted` / `failed`（CodeSet `system.attachment_status`）。
 - **派生状态机（独立 CodeSet，禁止复用 AttachmentStatus）**：`pending` / `ready` / `failed` / `skipped`（CodeSet `system.attachment_thumb_status`）。原图 `ready` **不依赖**派生成功。
 - `original_name` 仅展示；`object_key` / `thumb_object_key` 由服务端 `storage.BuildKey` 生成（独立 object_id，租户隔离）。
 
-迁移：`platform/migrations/0005_attachments.sql`、`0008_attachment_thumbs.sql`；开发可用 AutoMigrate + CHECK。
+迁移：`platform/migrations/0005_attachments.sql`、`0008_attachment_thumbs.sql`、`0053_attachment_thumb_failures.sql`；开发可用 AutoMigrate + CHECK。
 
 ## 上传协议
 
@@ -48,10 +48,13 @@ Local Provider 返回本服务流式 URL；未来 S3/OSS 可换预签名 URL，�
 | 视频 | 封面帧经主机 `ffmpeg`；不可用则 `skipped`（`thumb_error=ffmpeg unavailable`），不回滚原图 |
 | Job | `attachment.generate_thumb`；可靠路径：Outbox → Enqueuer → Asynq Worker（见 `docs/development/background-jobs.md`） |
 | 幂等 | 已 `thumb_status=ready` 直接成功；重试可替换旧 thumb key |
-| 补偿 | `jobs.RequeuePendingThumbs`：扫 `ready` + `thumb_status in (pending,failed)` 再入队（进程重启 / jobs 曾关闭时） |
+| 失败 | 像素/源文件上限、无效尺寸、损坏/不支持编码为 permanent；ObjectStore/数据库为 retryable；取消/超时为 cancelled。失败只保存稳定类别和安全摘要。 |
+| 补偿 | `jobs.RequeuePendingThumbs`：只扫描 `ready + pending` 或 `ready + failed + thumb_retryable=true`；permanent 与历史 NULL failed 不自动重放。 |
 | 删除 | Delete / CleanupExpired 同步删 `thumb_object_key` 与原图 |
 
 部署：生产 Worker 主机若需视频封面，须安装 `ffmpeg` 并在 PATH 中；CI 可用 fixture 测图片，视频依赖缺失时期望 `skipped`。
+
+缩略图默认保留 4000 万像素与 64 MiB 源文件读取上限。结构化失败日志可记录 `error_category`、width/height、pixel_count/pixel_limit、source_size 与 attempt；禁止记录 object key、原文件内容、URL 或底层错误全文。提高限制或引入超大图处理器必须另行评估 Worker 内存预算。
 
 ## 后处理扩展约定（基建，非本阶段实现）
 

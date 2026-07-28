@@ -62,14 +62,14 @@ func GenerateVideoThumb(ctx context.Context, r io.Reader, ext string) ([]byte, e
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		return nil, fmt.Errorf("ffmpeg: %w (%s)", err, truncateErr(stderr.String(), 200))
+		return nil, &ThumbError{Category: ThumbErrorDecodeFailed, Cause: fmt.Errorf("ffmpeg: %w (%s)", err, truncateErr(stderr.String(), 200))}
 	}
 	frame, err := os.ReadFile(outPath)
 	if err != nil {
 		return nil, err
 	}
 	if len(frame) == 0 {
-		return nil, fmt.Errorf("ffmpeg produced empty frame")
+		return nil, &ThumbError{Category: ThumbErrorDecodeFailed, Cause: fmt.Errorf("ffmpeg produced empty frame")}
 	}
 	// Re-encode through image pipeline for consistent JPEG cover.
 	return GenerateImageThumb(bytes.NewReader(frame))

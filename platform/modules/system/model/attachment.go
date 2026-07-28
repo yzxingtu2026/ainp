@@ -24,15 +24,17 @@ type Attachment struct {
 	ExpiresAt    *time.Time              // pending temp retain deadline
 	// Thumb* holds the standard `thumb` derivative (cover ~200² JPEG). Independent of Status.
 	// Pointer so upload_prepare inserts NULL (empty string violates ck_attachments_thumb_status).
-	ThumbStatus      *status.AttachmentThumbStatus `gorm:"size:32;index:idx_attachments_thumb_status"`
-	ThumbObjectKey   string                        `gorm:"size:512"`
-	ThumbContentType string                        `gorm:"size:128"`
-	ThumbSize        int64                         `gorm:"not null;default:0"`
-	ThumbError       string                        `gorm:"size:512"`
-	ThumbUpdatedAt   *time.Time
-	CreatedAt        time.Time      `gorm:"autoCreateTime"`
-	UpdatedAt        time.Time      `gorm:"autoUpdateTime"`
-	DeletedAt        gorm.DeletedAt `gorm:"index"`
+	ThumbStatus        *status.AttachmentThumbStatus `gorm:"size:32;index:idx_attachments_thumb_status"`
+	ThumbObjectKey     string                        `gorm:"size:512"`
+	ThumbContentType   string                        `gorm:"size:128"`
+	ThumbSize          int64                         `gorm:"not null;default:0"`
+	ThumbError         string                        `gorm:"size:512"`
+	ThumbErrorCategory string                        `gorm:"size:64;index:idx_attachments_thumb_retry"`
+	ThumbRetryable     *bool                         `gorm:"index:idx_attachments_thumb_retry"`
+	ThumbUpdatedAt     *time.Time
+	CreatedAt          time.Time      `gorm:"autoCreateTime"`
+	UpdatedAt          time.Time      `gorm:"autoUpdateTime"`
+	DeletedAt          gorm.DeletedAt `gorm:"index"`
 }
 
 func (Attachment) TableName() string { return "attachments" }

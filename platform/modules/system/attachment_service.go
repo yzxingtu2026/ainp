@@ -609,7 +609,7 @@ func (s *AttachmentService) CompleteUpload(ctx context.Context, claims *attachme
 	updates := map[string]any{
 		"status": status.AttachmentReady, "size": info.Size, "sha256": sum,
 		"content_type": contentType, "upload_jti": "", "updated_at": now,
-		"thumb_status": thumbStatus, "thumb_error": "", "thumb_updated_at": now,
+		"thumb_status": thumbStatus, "thumb_error": "", "thumb_error_category": "", "thumb_retryable": nil, "thumb_updated_at": now,
 	}
 
 	applyReady := func(tx *gorm.DB) error {
