@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 	"sync"
+
+	"github.com/yzxingtu2026/ainp/platform/framework/action"
 )
 
 type SingletonScope string
@@ -174,4 +176,58 @@ func (r *Registry) List() []Contract {
 		return out[i].Key < out[j].Key
 	})
 	return out
+}
+
+// ValidateActionToolCapabilityCoverage ensures every exposed Action capability is
+// deliberately reachable from at least one builtin Agent Contract. Exclusions are
+// explicit safety decisions and are checked in both directions to prevent drift.
+func (r *Registry) ValidateActionToolCapabilityCoverage(actions *action.Registry, exclusions []string) error {
+	if actions == nil {
+		return fmt.Errorf("action registry is required for Agent Contract capability coverage")
+	}
+	exposed := map[string]struct{}{}
+	for _, registered := range actions.List() {
+		if registered.Meta.AI != nil && registered.Meta.AI.ExposeTool {
+			exposed[registered.Meta.Capability] = struct{}{}
+		}
+	}
+	covered := map[string]struct{}{}
+	for _, contract := range r.List() {
+		for _, capability := range contract.AllowedToolCapabilities {
+			covered[capability] = struct{}{}
+		}
+	}
+	excluded := map[string]struct{}{}
+	for _, capability := range exclusions {
+		capability = strings.TrimSpace(capability)
+		if capability == "" {
+			return fmt.Errorf("Agent Contract capability coverage exclusion must not be empty")
+		}
+		if _, exists := excluded[capability]; exists {
+			return fmt.Errorf("duplicate Agent Contract capability coverage exclusion: %s", capability)
+		}
+		excluded[capability] = struct{}{}
+	}
+	var missing, stale []string
+	for capability := range exposed {
+		if _, ok := covered[capability]; ok {
+			continue
+		}
+		if _, ok := excluded[capability]; !ok {
+			missing = append(missing, capability)
+		}
+	}
+	for capability := range excluded {
+		_, isExposed := exposed[capability]
+		_, isCovered := covered[capability]
+		if !isExposed || isCovered {
+			stale = append(stale, capability)
+		}
+	}
+	if len(missing) == 0 && len(stale) == 0 {
+		return nil
+	}
+	sort.Strings(missing)
+	sort.Strings(stale)
+	return fmt.Errorf("Agent Contract capability coverage invalid: missing=%v stale_exclusions=%v; review AllowedToolCapabilities in modules/ai/register.go", missing, stale)
 }
