@@ -1,4 +1,4 @@
-package system
+package access
 
 import (
 	"context"
@@ -12,7 +12,7 @@ type RevokeSessionRequest struct {
 	SessionID string `json:"session_id" validate:"required,max=64"`
 }
 
-func registerAuthenticationActions(a *app.App, service *UnifiedAuthService, auditOn, auditOff bool) error {
+func RegisterAuthenticationActions(a *app.App, service *UnifiedAuthService, auditOn, auditOff bool) error {
 	actions := []action.Action{
 		{ID: "system.auth_methods", Handler: func(context.Context, json.RawMessage) (any, error) { return service.Methods(), nil }, Meta: authMeta(action.AccessPublic, "认证方式", "action.system.auth_methods", &auditOff, "GET", "/api/v1/system/auth/methods")},
 		{ID: "system.auth_challenge", Handler: action.JSON(func(ctx context.Context, req ChallengeRequest) (any, error) { return service.Begin(ctx, req) }), Meta: authMeta(action.AccessPublic, "创建认证挑战", "action.system.auth_challenge", &auditOn, "POST", "/api/v1/system/auth/challenges")},

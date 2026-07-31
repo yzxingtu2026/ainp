@@ -1,4 +1,4 @@
-package system
+package access
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/action"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
-	"github.com/yzxingtu2026/ainp/platform/modules/system/model"
+	"github.com/yzxingtu2026/ainp/platform/modules/system/access/model"
 	"gorm.io/gorm"
 )
 

@@ -1,4 +1,4 @@
-package system
+package access
 
 import (
 	"context"
@@ -11,11 +11,11 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 )
 
-type userRolesConfirmationPresenter struct {
+type UserRolesConfirmationPresenter struct {
 	users *UserService
 }
 
-func (p userRolesConfirmationPresenter) PresentConfirmation(ctx context.Context, request aitool.ConfirmationPresentationRequest) (aitool.ConfirmationPresentation, error) {
+func (p UserRolesConfirmationPresenter) PresentConfirmation(ctx context.Context, request aitool.ConfirmationPresentationRequest) (aitool.ConfirmationPresentation, error) {
 	actor, ok := auth.FromContext(ctx)
 	if !ok || actor == nil || !actor.HasPermission(ActionUserRolesUpdate) {
 		return aitool.ConfirmationPresentation{}, fmt.Errorf("user roles presentation is not authorized")
@@ -49,4 +49,8 @@ func (p userRolesConfirmationPresenter) PresentConfirmation(ctx context.Context,
 			{Label: "调整后的角色", Value: rolesText},
 		},
 	}, nil
+}
+
+func NewUserRolesConfirmationPresenter(users *UserService) UserRolesConfirmationPresenter {
+	return UserRolesConfirmationPresenter{users: users}
 }

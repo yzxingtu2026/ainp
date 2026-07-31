@@ -1,4 +1,4 @@
-package system
+package access
 
 import (
 	"context"
@@ -16,7 +16,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/authentication"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 	"github.com/yzxingtu2026/ainp/platform/framework/status"
-	"github.com/yzxingtu2026/ainp/platform/modules/system/model"
+	"github.com/yzxingtu2026/ainp/platform/modules/system/access/model"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )

@@ -1,21 +1,23 @@
 package system
 
-const (
-	ActionRoleList              = "system.role_list"
-	ActionRoleGet               = "system.role_get"
-	ActionRoleCreate            = "system.role_create"
-	ActionRoleUpdate            = "system.role_update"
-	ActionRoleDelete            = "system.role_delete"
-	ActionRolePermissionsUpdate = "system.role_permissions_update"
-	ActionPermissionCatalog     = "system.permission_catalog"
+import "github.com/yzxingtu2026/ainp/platform/modules/system/access"
 
-	ActionUserList          = "system.user_list"
-	ActionUserGet           = "system.user_get"
-	ActionUserCreate        = "system.user_create"
-	ActionUserUpdate        = "system.user_update"
-	ActionUserStatusUpdate  = "system.user_status_update"
-	ActionUserRolesUpdate   = "system.user_roles_update"
-	ActionUserPasswordReset = "system.user_password_reset"
+const (
+	ActionRoleList              = access.ActionRoleList
+	ActionRoleGet               = access.ActionRoleGet
+	ActionRoleCreate            = access.ActionRoleCreate
+	ActionRoleUpdate            = access.ActionRoleUpdate
+	ActionRoleDelete            = access.ActionRoleDelete
+	ActionRolePermissionsUpdate = access.ActionRolePermissionsUpdate
+	ActionPermissionCatalog     = access.ActionPermissionCatalog
+
+	ActionUserList          = access.ActionUserList
+	ActionUserGet           = access.ActionUserGet
+	ActionUserCreate        = access.ActionUserCreate
+	ActionUserUpdate        = access.ActionUserUpdate
+	ActionUserStatusUpdate  = access.ActionUserStatusUpdate
+	ActionUserRolesUpdate   = access.ActionUserRolesUpdate
+	ActionUserPasswordReset = access.ActionUserPasswordReset
 
 	ActionSettingList   = "system.setting_list"
 	ActionSettingGet    = "system.setting_get"
@@ -40,11 +42,13 @@ const (
 	ActionAttachmentGet             = "system.attachment_get"
 	ActionAttachmentPolicyGet       = "system.attachment_policy_get"
 
-	MenuRoleManagement    = "system.roles"
-	MenuUserManagement    = "system.users"
+	MenuRoleManagement    = access.MenuRoleManagement
+	MenuUserManagement    = access.MenuUserManagement
 	MenuSettingManagement = "system.settings"
 	MenuAttachmentCenter  = "system.attachments"
-	BuiltinAdminCode      = "admin"
+	BuiltinAdminCode      = access.BuiltinAdminCode
+	PageTypeSystemUsers   = access.PageTypeSystemUsers
+	PageTypeSystemRoles   = access.PageTypeSystemRoles
 )
 
 var adminMinimumPermissions = []string{

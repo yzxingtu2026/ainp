@@ -8,6 +8,7 @@ import (
 
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
+	"github.com/yzxingtu2026/ainp/platform/framework/i18n"
 	"github.com/yzxingtu2026/ainp/platform/framework/logging"
 	"github.com/yzxingtu2026/ainp/platform/framework/setting"
 	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
@@ -20,6 +21,17 @@ type SettingService struct {
 	provider *setting.Provider
 	store    setting.ValueStore
 	changes  *setting.ChangeRegistry
+}
+
+func localizedDefinition(lang, key, fallback string) string {
+	if key == "" {
+		return fallback
+	}
+	translated := i18n.T(lang, key)
+	if translated == key {
+		return fallback
+	}
+	return translated
 }
 
 func NewSettingService(db *gorm.DB, registry *setting.Registry) *SettingService {

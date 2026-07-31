@@ -1,4 +1,4 @@
-package system
+package access
 
 import (
 	"context"
@@ -9,29 +9,33 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/pagecontext"
 	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
-	"github.com/yzxingtu2026/ainp/platform/modules/system/model"
+	"github.com/yzxingtu2026/ainp/platform/modules/system/access/model"
 	"gorm.io/gorm"
 )
 
-const PageTypeSystemUsers = "system.users"
+const PageTypeSystemRoles = "system.roles"
 
-type userPageContextResolver struct{ db *gorm.DB }
+type RolePageContextResolver struct{ DB *gorm.DB }
 
-func (r userPageContextResolver) Resolve(ctx context.Context, envelope pagecontext.Envelope) (pagecontext.Snapshot, error) {
+func (r RolePageContextResolver) Resolve(ctx context.Context, envelope pagecontext.Envelope) (pagecontext.Snapshot, error) {
 	ac := auth.MustFromContext(ctx)
-	permission := ActionUserList
+	permission := ActionRoleList
 	if envelope.Mode == "detail" || envelope.Mode == "edit" {
-		permission = ActionUserGet
+		permission = ActionRoleGet
 	}
 	if envelope.Mode == "create" {
-		permission = ActionUserCreate
+		permission = ActionRoleCreate
 	}
 	if !ac.Authenticated || !ac.HasPermission(permission) {
 		return pagecontext.Snapshot{}, fmt.Errorf("page context unavailable")
 	}
 	snapshot := pagecontext.Snapshot{
-		SafeSummary: "System user management " + envelope.Mode + " page",
-		ToolHints:   pagecontext.ToolHints{Capabilities: []string{"system"}, Tags: []string{"user", "user-management"}, Queries: []string{"系统用户管理", "查询用户列表"}},
+		SafeSummary: "System role and permission management " + envelope.Mode + " page",
+		ToolHints: pagecontext.ToolHints{
+			Capabilities: []string{"system"},
+			Tags:         []string{"role", "permission-management"},
+			Queries:      []string{"系统角色管理", "查询角色与权限"},
+		},
 	}
 	if envelope.Mode == "list" || envelope.Mode == "create" {
 		if len(envelope.ResourceRefs) != 0 {
@@ -50,27 +54,27 @@ func (r userPageContextResolver) Resolve(ctx context.Context, envelope pageconte
 		}
 		return snapshot, nil
 	}
-	if len(envelope.ResourceRefs) != 1 || envelope.ResourceRefs[0].ResourceType != "system.user" {
+	if len(envelope.ResourceRefs) != 1 || envelope.ResourceRefs[0].ResourceType != "system.role" {
 		return pagecontext.Snapshot{}, fmt.Errorf("page context unavailable")
 	}
-	tdb, err := tenant.TenantDB(ctx, r.db)
+	tdb, err := tenant.TenantDB(ctx, r.DB)
 	if err != nil {
 		return pagecontext.Snapshot{}, err
 	}
-	users, err := tenant.TenantRaw[model.User](tdb, "SELECT * FROM users WHERE tenant_id = ? AND id = ? LIMIT 1", envelope.ResourceRefs[0].ResourceID)
-	if err != nil || len(users) != 1 {
+	roles, err := tenant.TenantRaw[model.Role](tdb, "SELECT * FROM roles WHERE tenant_id = ? AND id = ? LIMIT 1", envelope.ResourceRefs[0].ResourceID)
+	if err != nil || len(roles) != 1 {
 		return pagecontext.Snapshot{}, fmt.Errorf("page context unavailable")
 	}
-	user := users[0]
-	revision := user.UpdatedAt.UTC().Format(time.RFC3339Nano)
+	role := roles[0]
+	revision := role.UpdatedAt.UTC().Format(time.RFC3339Nano)
 	if supplied := envelope.ResourceRefs[0].Revision; supplied != "" {
 		parsed, parseErr := time.Parse(time.RFC3339Nano, supplied)
-		if parseErr != nil || !parsed.Equal(user.UpdatedAt) {
+		if parseErr != nil || !parsed.Equal(role.UpdatedAt) {
 			return pagecontext.Snapshot{}, fmt.Errorf("page context unavailable")
 		}
 	}
-	snapshot.TrustedRefs = []pagecontext.ResourceRef{{ResourceType: "system.user", ResourceID: user.ID, Revision: revision}}
-	snapshot.SafeSummary = fmt.Sprintf("System user %q (%s), status %s; %s page", user.DisplayName, user.Username, user.Status, envelope.Mode)
-	snapshot.ToolHints.Queries = []string{"查询系统用户详情", "管理用户"}
+	snapshot.TrustedRefs = []pagecontext.ResourceRef{{ResourceType: "system.role", ResourceID: role.ID, Revision: revision}}
+	snapshot.SafeSummary = fmt.Sprintf("System role %q (%s), status %s; %s page", role.Name, role.Code, role.Status, envelope.Mode)
+	snapshot.ToolHints.Queries = []string{"查询系统角色详情", "管理角色权限"}
 	return snapshot, nil
 }

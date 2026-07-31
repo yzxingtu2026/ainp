@@ -13,6 +13,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/i18n"
 	"github.com/yzxingtu2026/ainp/platform/framework/mcpserver"
 	"github.com/yzxingtu2026/ainp/platform/framework/menu"
+	"github.com/yzxingtu2026/ainp/platform/modules/system/access"
 	systemhelp "github.com/yzxingtu2026/ainp/platform/modules/system/help"
 	"github.com/yzxingtu2026/ainp/platform/modules/system/jobs"
 )
@@ -82,16 +83,16 @@ func Register(a *app.App) error {
 	if a.ToolRegistry == nil {
 		return fmt.Errorf("tool registry is required")
 	}
-	if err := a.ToolRegistry.RegisterConfirmationPresenter("action:"+ActionUserRolesUpdate, userRolesConfirmationPresenter{users: userSvc}); err != nil {
+	if err := a.ToolRegistry.RegisterConfirmationPresenter("action:"+ActionUserRolesUpdate, access.NewUserRolesConfirmationPresenter(userSvc)); err != nil {
 		return err
 	}
 	if a.PageContexts == nil {
 		return fmt.Errorf("page context registry is required")
 	}
-	if err := a.PageContexts.Register(PageTypeSystemUsers, userPageContextResolver{db: a.DB}); err != nil {
+	if err := a.PageContexts.Register(access.PageTypeSystemUsers, access.UserPageContextResolver{DB: a.DB}); err != nil {
 		return err
 	}
-	if err := a.PageContexts.Register(PageTypeSystemRoles, rolePageContextResolver{db: a.DB}); err != nil {
+	if err := a.PageContexts.Register(access.PageTypeSystemRoles, access.RolePageContextResolver{DB: a.DB}); err != nil {
 		return err
 	}
 	if err := registerRuntimePreferencesSetting(a); err != nil {

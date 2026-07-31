@@ -1,4 +1,4 @@
-package system
+package access
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
 )
 
-func registerReferenceResolvers(a *app.App) error {
+func RegisterReferenceResolvers(a *app.App) error {
 	if err := a.Actions.RegisterReferenceResolver("system.assignable_permissions", action.ReferenceResolverFunc(func(context.Context) (action.ReferenceSnapshot, error) {
 		return action.ReferenceSnapshot{Values: AssignablePermissions(a.Actions)}, nil
 	})); err != nil {
