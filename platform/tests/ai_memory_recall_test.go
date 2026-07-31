@@ -9,10 +9,14 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/yzxingtu2026/ainp/platform/framework/action"
 	"github.com/yzxingtu2026/ainp/platform/framework/aimemory"
 	"github.com/yzxingtu2026/ainp/platform/framework/aimodelruntime"
+	"github.com/yzxingtu2026/ainp/platform/framework/app"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
+	"github.com/yzxingtu2026/ainp/platform/framework/capability"
 	"github.com/yzxingtu2026/ainp/platform/framework/database"
+	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 	"github.com/yzxingtu2026/ainp/platform/framework/runtimecontext"
 	"github.com/yzxingtu2026/ainp/platform/framework/status"
 	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
@@ -68,10 +72,16 @@ func TestMemoryHybridRecallHardFiltersAndDegrades(t *testing.T) {
 	if err = db.Create(&tenant.Tenant{ID: "tenant-a", Name: "A", Status: status.ActivationEnabled}).Error; err != nil {
 		t.Fatal(err)
 	}
+	if err = db.Create(&tenant.Tenant{ID: "tenant-b", Name: "B", Status: status.ActivationEnabled}).Error; err != nil {
+		t.Fatal(err)
+	}
 	for _, u := range []model.User{{ID: "user-a", TenantID: "tenant-a", Username: "alice", PasswordHash: "x", Status: status.ActivationEnabled}, {ID: "user-b", TenantID: "tenant-a", Username: "bob", PasswordHash: "x", Status: status.ActivationEnabled}} {
 		if err = db.Create(&u).Error; err != nil {
 			t.Fatal(err)
 		}
+	}
+	if err = db.Create(&model.User{ID: "user-c", TenantID: "tenant-b", Username: "carol", PasswordHash: "x", Status: status.ActivationEnabled}).Error; err != nil {
+		t.Fatal(err)
 	}
 	now := time.Date(2026, 7, 19, 10, 0, 0, 0, time.UTC)
 	day := time.Date(2026, 7, 18, 0, 0, 0, 0, time.UTC)
@@ -85,7 +95,21 @@ func TestMemoryHybridRecallHardFiltersAndDegrades(t *testing.T) {
 	insert("revoked", "user-a", "revoked", "上海会议已撤销", &day)
 	insert("other", "user-b", "active", "上海会议他人", &day)
 	insert("future", "user-a", "active", "上海会议未来", nil)
-	if err := db.Exec(`UPDATE ai_memory_items SET valid_from=? WHERE id='future'`, future).Error; err != nil {
+	for _, row := range []struct {
+		id, state string
+		local     time.Time
+	}{{"pending-confirm", "pending_review", day}, {"pending-reject", "pending_review", day}, {"active-delete", "active", day.Add(-72 * time.Hour)}} {
+		if err = db.Exec(`INSERT INTO ai_memory_items(id,tenant_id,user_id,type,status,summary,content,confidence,sensitivity,importance,revision,occurred_timezone,local_date,date_precision,observed_at,recorded_at,policy_json,created_at,updated_at) VALUES (?,'tenant-a','user-a','event',?,?,'并发测试',0.9,'normal',80,2,'Asia/Shanghai',?,'exact_day',?,?, '{}'::jsonb,?,?)`, row.id, row.state, row.id, row.local, now, now, now, now).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err = db.Exec(`INSERT INTO ai_memory_evidence(id,tenant_id,user_id,item_id,source_kind,citation,content_hash,source_revision,created_at) VALUES ('e-active','tenant-a','user-a','active','user_statement','sensitive citation','hash',1,?)`, now).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err = db.Exec(`INSERT INTO ai_memory_items(id,tenant_id,user_id,type,status,summary,content,confidence,sensitivity,importance,revision,occurred_timezone,local_date,date_precision,observed_at,recorded_at,policy_json,created_at,updated_at) VALUES ('tenant-b-memory','tenant-b','user-c','event','active','其他租户','其他租户',0.9,'normal',80,1,'Asia/Shanghai',?,'exact_day',?,?, '{}'::jsonb,?,?)`, day, now, now, now, now).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`UPDATE ai_memory_items SET valid_from=? WHERE id IN ('future','active-delete')`, future).Error; err != nil {
 		t.Fatal(err)
 	}
 	vector, _ := json.Marshal([]float32{1, 0})
@@ -114,19 +138,54 @@ func TestMemoryHybridRecallHardFiltersAndDegrades(t *testing.T) {
 	}
 	governance := ai.NewMemoryGovernanceService(db, nil)
 	management := ai.NewMemoryManagementService(db, governance, nil)
+	capabilities := capability.NewRegistry()
+	if err = capabilities.Register(capability.Capability{ID: "ai", Name: "AI"}); err != nil {
+		t.Fatal(err)
+	}
+	application := &app.App{Actions: action.NewRegistry(nil, nil), Capabilities: capabilities}
+	if err = ai.RegisterMemoryManagement(application, management); err != nil {
+		t.Fatal(err)
+	}
+	detail, err := application.Actions.Invoke(ctx, ai.ActionMemoryGet, json.RawMessage(`{"id":"active"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	detailView := detail.(ai.MemoryItemView)
+	if detailView.ID != "active" || len(detailView.Evidence) != 1 || detailView.Evidence[0].Citation != "" {
+		t.Fatalf("memory detail was incomplete or leaked evidence: %#v", detailView)
+	}
+	if _, err = application.Actions.Invoke(ctx, ai.ActionMemoryGet, json.RawMessage(`{"id":"other"}`)); errorCode(err) != errs.CodeNotFound {
+		t.Fatalf("cross-user detail did not fail closed: %v", err)
+	}
+	if _, err = application.Actions.Invoke(ctx, ai.ActionMemoryGet, json.RawMessage(`{"id":"tenant-b-memory"}`)); errorCode(err) != errs.CodeNotFound {
+		t.Fatalf("cross-tenant detail did not fail closed: %v", err)
+	}
+	for _, actionID := range []string{ai.ActionMemoryConfirm, ai.ActionMemoryReject, ai.ActionMemoryDelete} {
+		if _, err = application.Actions.Invoke(ctx, actionID, json.RawMessage(`{"id":"active"}`)); errorCode(err) != errs.CodeValidation {
+			t.Fatalf("mutation %s accepted missing revision: %v", actionID, err)
+		}
+	}
+	staleMutations := []struct{ actionID, itemID string }{{ai.ActionMemoryConfirm, "pending-confirm"}, {ai.ActionMemoryReject, "pending-reject"}, {ai.ActionMemoryDelete, "active-delete"}}
+	for _, mutation := range staleMutations {
+		staleCtx := auth.WithContext(context.Background(), &auth.Context{TenantID: "tenant-a", UserID: "user-a", Realm: auth.RealmTenant, Authenticated: true, IdempotencyKey: "stale-" + mutation.actionID})
+		input := json.RawMessage(fmt.Sprintf(`{"id":%q,"revision":1}`, mutation.itemID))
+		if _, err = application.Actions.Invoke(staleCtx, mutation.actionID, input); errorCode(err) != errs.CodeConflict {
+			t.Fatalf("stale revision for %s did not fail closed: %v", mutation.actionID, err)
+		}
+	}
 	listed, err := management.List(ctx, ai.MemoryListRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	listResult := listed.(ai.MemoryListResult)
-	if listResult.Total != 3 {
+	if listResult.Total != 6 {
 		t.Fatalf("self list leaked or omitted rows: %#v", listed)
 	}
-	if _, err = management.Get(ctx, ai.MemoryIDRequest{ID: "other"}); err == nil {
+	if _, err = management.Get(ctx, ai.MemoryGetRequest{ID: "other"}); err == nil {
 		t.Fatal("cross-user detail read was allowed")
 	}
 	foreignMutationCtx := auth.WithContext(context.Background(), &auth.Context{TenantID: "tenant-a", UserID: "user-a", Realm: auth.RealmTenant, Authenticated: true, IdempotencyKey: "foreign-delete"})
-	if _, err = management.Decision(foreignMutationCtx, ai.MemoryIDRequest{ID: "other", Revision: 1}, "revoke"); err == nil {
+	if _, err = management.Decision(foreignMutationCtx, ai.MemoryMutationRequest{ID: "other", Revision: 1}, "revoke"); err == nil {
 		t.Fatal("cross-user mutation was allowed")
 	}
 	correctCtx := auth.WithContext(context.Background(), &auth.Context{TenantID: "tenant-a", UserID: "user-a", Realm: auth.RealmTenant, Authenticated: true, IdempotencyKey: "correct-1"})

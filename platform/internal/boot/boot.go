@@ -183,6 +183,12 @@ func OpenInstalled(ctx context.Context, cfg *config.Config) (*Platform, error) {
 	if err := validateAgentToolCapabilityCoverage(application); err != nil {
 		return nil, err
 	}
+	if err := application.PageHelp.ValidateMenus(application.Menus); err != nil {
+		return nil, fmt.Errorf("validate page help: %w", err)
+	}
+	if err := application.PageHelp.ValidateAllModulesCoverage(application.Menus, "zh-CN"); err != nil {
+		return nil, fmt.Errorf("validate page help coverage: %w", err)
+	}
 	if err := reconcileToolCatalogs(ctx, db, application); err != nil {
 		return nil, fmt.Errorf("reconcile tool catalogs: %w", err)
 	}
