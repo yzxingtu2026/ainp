@@ -196,6 +196,14 @@ func TestRegisteredPermissionGroupsStayWithinCompactDiscoveryLimit(t *testing.T)
 	if err := demo.Register(application); err != nil {
 		t.Fatal(err)
 	}
+	if err := application.AgentContracts.ValidateActionToolCapabilityCoverage(application.Actions, nil); err != nil {
+		t.Fatalf("real module Action capabilities must be covered without stale exclusions: %v", err)
+	}
+	for _, registered := range application.Actions.List() {
+		if registered.Meta.Capability == "demo" && registered.Meta.AI != nil && registered.Meta.AI.ExposeTool {
+			t.Fatalf("demo Action must not be exposed as an AI tool: %s", registered.ID)
+		}
+	}
 	catalogAction, ok := application.Actions.Get(system.ActionPermissionCatalog)
 	if !ok {
 		t.Fatal("permission catalog Action is not registered")
