@@ -312,6 +312,23 @@
       }
     },
     {
+      "id": "ai-capability-packages",
+      "source": ".agent/rules/ai-capability-packages.md",
+      "qoder": {
+        "path": ".qoder/rules/ai-capability-packages.md",
+        "frontmatter": {
+          "trigger": "always_on"
+        }
+      },
+      "cursor": {
+        "path": ".cursor/rules/ai-capability-packages.mdc",
+        "frontmatter": {
+          "description": "AI 能力域、单向依赖、根 Facade 兼容窗口与逐文件迁移契约",
+          "alwaysApply": true
+        }
+      }
+    },
+    {
       "id": "code-sets-and-status",
       "source": ".agent/rules/code-sets-and-status.md",
       "qoder": {
