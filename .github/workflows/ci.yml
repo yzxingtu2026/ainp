@@ -95,7 +95,9 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
       - name: Unit tests
-        run: pnpm test:attachment-picker && pnpm test:composer && pnpm test:menu
+        run: pnpm test:attachment-picker && pnpm test:composer && pnpm test:menu && pnpm test:select
+      - name: AppSelect architecture check
+        run: pnpm test:app-select-architecture
       - name: Lint
         run: pnpm exec oxlint . && pnpm exec eslint .
       - name: Production build

@@ -28,7 +28,7 @@ const themeStore = useThemeStore();
       <NInputNumber v-model:value="themeStore.tab.height" size="small" :step="1" class="w-120px" />
     </SettingItem>
     <SettingItem v-if="themeStore.tab.visible" key="4" :label="$t('theme.layout.tab.mode.title')">
-      <NSelect
+      <AppSelect
         v-model:value="themeStore.tab.mode"
         :options="translateOptions(themeTabModeOptions)"
         size="small"

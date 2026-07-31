@@ -16,7 +16,6 @@ import {
   NInputNumber,
   NList,
   NListItem,
-  NSelect,
   NSpace,
   NSpin,
   NSwitch,
@@ -887,7 +886,7 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
                   </NFormItem>
                   <div class="grid grid-cols-2 gap-12px">
                     <NFormItem :label="$t('page.agentBuilder.source')">
-                      <NSelect
+                      <AppSelect
                         v-model:value="draft.source"
                         :disabled="!isCreate || isManaged('source')"
                         :options="[
@@ -898,7 +897,7 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
                       />
                     </NFormItem>
                     <NFormItem :label="$t('page.agentBuilder.visibility')">
-                      <NSelect
+                      <AppSelect
                         v-model:value="draft.visibility"
                         :disabled="!isCreate || isManaged('visibility')"
                         :options="[
@@ -909,7 +908,7 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
                     </NFormItem>
                   </div>
                   <NFormItem :label="$t('page.agentBuilder.modelAlias')">
-                    <NSelect
+                    <AppSelect
                       v-model:value="draft.model_alias"
                       filterable
                       clearable
@@ -938,13 +937,13 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
                   <NAlert v-if="draft.memory_inherit" type="info" class="mb-12px">{{ $t('page.agentBuilder.memoryInheritedHint') }}</NAlert>
                   <template v-else>
                     <NFormItem :label="$t('page.agentBuilder.memoryEnabled')"><NSwitch v-model:value="draft.memory_enabled" /></NFormItem>
-                    <NFormItem :label="$t('page.agentBuilder.memoryModel')"><NSelect v-model:value="draft.memory_extraction_alias" filterable clearable :disabled="!draft.memory_enabled" :options="memoryAliasOptions" /></NFormItem>
-                    <NFormItem :label="$t('page.agentBuilder.memoryConsolidationModel')"><NSelect v-model:value="draft.memory_consolidation_alias" filterable clearable :disabled="!draft.memory_enabled" :options="memoryAliasOptions" :placeholder="$t('page.agentBuilder.memoryConsolidationFallback')" /></NFormItem>
+                    <NFormItem :label="$t('page.agentBuilder.memoryModel')"><AppSelect v-model:value="draft.memory_extraction_alias" filterable clearable :disabled="!draft.memory_enabled" :options="memoryAliasOptions" /></NFormItem>
+                    <NFormItem :label="$t('page.agentBuilder.memoryConsolidationModel')"><AppSelect v-model:value="draft.memory_consolidation_alias" filterable clearable :disabled="!draft.memory_enabled" :options="memoryAliasOptions" :placeholder="$t('page.agentBuilder.memoryConsolidationFallback')" /></NFormItem>
                     <div class="grid grid-cols-2 gap-12px">
                       <NFormItem :label="$t('page.agentBuilder.memoryAutoSave')"><NSwitch v-model:value="draft.memory_auto_save" /></NFormItem>
                       <NFormItem :label="$t('page.agentBuilder.memoryAgentScope')"><NSwitch v-model:value="draft.memory_agent_scope" /></NFormItem>
                     </div>
-                    <NFormItem :label="$t('page.agentBuilder.memoryApproval')"><NSelect v-model:value="draft.memory_approval_mode" :options="[{ label: $t('page.agentBuilder.memoryApprovalAlways'), value: 'always' }, { label: $t('page.agentBuilder.memoryApprovalSensitive'), value: 'sensitive_only' }, { label: $t('page.agentBuilder.memoryApprovalNever'), value: 'never' }]" /></NFormItem>
+                    <NFormItem :label="$t('page.agentBuilder.memoryApproval')"><AppSelect v-model:value="draft.memory_approval_mode" :options="[{ label: $t('page.agentBuilder.memoryApprovalAlways'), value: 'always' }, { label: $t('page.agentBuilder.memoryApprovalSensitive'), value: 'sensitive_only' }, { label: $t('page.agentBuilder.memoryApprovalNever'), value: 'never' }]" /></NFormItem>
                   </template>
                 </NCollapseItem>
 
@@ -1208,7 +1207,7 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
                     <NInput v-model:value="draft.code" :disabled="!isCreate" />
                   </NFormItem>
                   <NFormItem :label="$t('page.agentBuilder.modelAlias')">
-                    <NSelect v-model:value="draft.model_alias" filterable :options="modelOptions" />
+                    <AppSelect v-model:value="draft.model_alias" filterable :options="modelOptions" />
                   </NFormItem>
                 </NCollapseItem>
                 <NCollapseItem :title="$t('page.agentBuilder.generationParams')" name="generation">
@@ -1226,8 +1225,8 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
                   <NFormItem :label="$t('page.agentBuilder.memoryInherit')"><NSwitch v-model:value="draft.memory_inherit" /></NFormItem>
                   <template v-if="!draft.memory_inherit">
                     <NFormItem :label="$t('page.agentBuilder.memoryEnabled')"><NSwitch v-model:value="draft.memory_enabled" /></NFormItem>
-                    <NFormItem :label="$t('page.agentBuilder.memoryModel')"><NSelect v-model:value="draft.memory_extraction_alias" filterable :disabled="!draft.memory_enabled" :options="memoryAliasOptions" /></NFormItem>
-                    <NFormItem :label="$t('page.agentBuilder.memoryApproval')"><NSelect v-model:value="draft.memory_approval_mode" :options="[{ label: $t('page.agentBuilder.memoryApprovalAlways'), value: 'always' }, { label: $t('page.agentBuilder.memoryApprovalSensitive'), value: 'sensitive_only' }, { label: $t('page.agentBuilder.memoryApprovalNever'), value: 'never' }]" /></NFormItem>
+                    <NFormItem :label="$t('page.agentBuilder.memoryModel')"><AppSelect v-model:value="draft.memory_extraction_alias" filterable :disabled="!draft.memory_enabled" :options="memoryAliasOptions" /></NFormItem>
+                    <NFormItem :label="$t('page.agentBuilder.memoryApproval')"><AppSelect v-model:value="draft.memory_approval_mode" :options="[{ label: $t('page.agentBuilder.memoryApprovalAlways'), value: 'always' }, { label: $t('page.agentBuilder.memoryApprovalSensitive'), value: 'sensitive_only' }, { label: $t('page.agentBuilder.memoryApprovalNever'), value: 'never' }]" /></NFormItem>
                   </template>
                 </NCollapseItem>
                 <NCollapseItem :title="$t('page.agentBuilder.diagnostics')" name="diagnostics">

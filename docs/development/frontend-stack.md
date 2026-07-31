@@ -33,6 +33,8 @@ Soybean Admin（壳）
 
 `CodeSelect` 与 `RemoteSelect` 必须复用 `AppSelect`。筛选器中的“全部”若使用 `{ label: '全部', value: '' }`，保持该 option 即可，不得在全局请求层或组件层无条件把空字符串转换为 `null`。新增或迁移表单时必须测试初始化、清空、异步 options、合法空字符串和 API DTO 转换。
 
+`frontend/src` 的业务页面、公共业务组件和应用壳设置禁止直接导入或渲染 Naive UI `NSelect`；只有 `components/common/app-select.vue` 及其白盒测试可以访问底层组件。`pnpm test:app-select-architecture` 会扫描源码并阻止旁路，新增 Select 场景必须通过 `AppSelect`、`CodeSelect` 或 `RemoteSelect` 接入。
+
 ## 起壳与裁剪建议
 
 1. 以 Soybean Admin 的 Naive UI 版为起点初始化 `frontend/`。

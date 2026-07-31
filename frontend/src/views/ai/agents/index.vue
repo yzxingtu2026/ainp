@@ -211,7 +211,7 @@ onMounted(load);
         :placeholder="$t('page.aiAgents.keyword')"
         @keyup.enter="search"
       />
-      <NSelect
+      <AppSelect
         v-model:value="query.source"
         class="agent-filters__select"
         :options="[
@@ -222,7 +222,7 @@ onMounted(load);
         ]"
         @update:value="search"
       />
-      <NSelect
+      <AppSelect
         v-model:value="query.status"
         class="agent-filters__select"
         :options="[

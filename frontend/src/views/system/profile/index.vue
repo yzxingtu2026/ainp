@@ -318,19 +318,19 @@ onMounted(load);
             <NFormItem label="AI 称呼我的方式" feedback="可留空；留空后依次使用记忆画像、显示名称和用户名">
               <NInput v-model:value="values.preferred_address_override" maxlength="64" clearable />
             </NFormItem>
-            <NFormItem label="语言"><NSelect v-model:value="values.locale" :options="optionMap.locale" /></NFormItem>
+            <NFormItem label="语言"><AppSelect v-model:value="values.locale" :options="optionMap.locale" /></NFormItem>
             <NFormItem label="时区">
-              <NSelect v-model:value="values.timezone" filterable :options="optionMap.timezone" />
+              <AppSelect v-model:value="values.timezone" filterable :options="optionMap.timezone" />
             </NFormItem>
             <NFormItem label="回答风格">
-              <NSelect v-model:value="values.response_style" :options="optionMap.response_style" />
+              <AppSelect v-model:value="values.response_style" :options="optionMap.response_style" />
             </NFormItem>
             <div class="grid gap-16px sm:grid-cols-2">
               <NFormItem label="日期格式">
-                <NSelect v-model:value="values.date_format" :options="optionMap.date_format" />
+                <AppSelect v-model:value="values.date_format" :options="optionMap.date_format" />
               </NFormItem>
               <NFormItem label="时间格式">
-                <NSelect v-model:value="values.time_format" :options="optionMap.time_format" />
+                <AppSelect v-model:value="values.time_format" :options="optionMap.time_format" />
               </NFormItem>
             </div>
             <NButton type="primary" :loading="saving" @click="savePreferences">保存对话偏好</NButton>

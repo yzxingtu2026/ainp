@@ -70,8 +70,8 @@ onMounted(load);
   <div class="flex-col-stretch gap-16px">
     <div class="slot-toolbar">
       <NInput v-model:value="query.keyword" class="slot-toolbar__search" clearable placeholder="搜索业务功能" @keyup.enter="search" />
-      <NSelect v-model:value="query.status" class="slot-toolbar__status" clearable placeholder="筛选当前状态" :options="[{ label: '健康', value: 'healthy' }, { label: '异常', value: 'unhealthy' }]" />
-      <NSelect v-model:value="query.source" class="slot-toolbar__source" clearable placeholder="筛选配置来源" :options="[{ label: '租户指定', value: 'tenant' }, { label: '系统默认', value: 'builtin' }, { label: '用户偏好', value: 'user' }]" />
+      <AppSelect v-model:value="query.status" class="slot-toolbar__status" clearable placeholder="筛选当前状态" :options="[{ label: '健康', value: 'healthy' }, { label: '异常', value: 'unhealthy' }]" />
+      <AppSelect v-model:value="query.source" class="slot-toolbar__source" clearable placeholder="筛选配置来源" :options="[{ label: '租户指定', value: 'tenant' }, { label: '系统默认', value: 'builtin' }, { label: '用户偏好', value: 'user' }]" />
       <NButton @click="search">查询</NButton>
       <NButton v-if="can(AI_ACTIONS.agentSlotReconcile)" @click="reconcile">同步内置功能</NButton>
     </div>
@@ -102,7 +102,7 @@ onMounted(load);
           <NDescriptionsItem label="能力要求">{{ selected.slot.required_capabilities.join(', ') }}</NDescriptionsItem>
         </NDescriptions>
         <NFormItem class="mt-20px" label="默认智能体">
-          <NSelect v-model:value="agentID" filterable :options="candidateOptions" placeholder="选择已启用且已发布的兼容智能体" />
+          <AppSelect v-model:value="agentID" filterable :options="candidateOptions" placeholder="选择已启用且已发布的兼容智能体" />
         </NFormItem>
         <NAlert v-if="!candidates.length" type="warning" title="没有可配置的兼容智能体" />
         <template #footer>

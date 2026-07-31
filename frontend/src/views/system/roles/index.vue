@@ -284,7 +284,7 @@ onMounted(loadRoles);
     <NCard :title="$t('page.role.title')" :bordered="false" class="card-wrapper">
       <NSpace class="mb-16px" align="center">
         <NInput v-model:value="query.keyword" clearable :placeholder="$t('common.keywordSearch')" @keyup.enter="loadRoles" />
-        <NSelect v-model:value="query.status" clearable class="w-160px" :options="statusOptions" :placeholder="$t('page.role.status')" />
+        <AppSelect v-model:value="query.status" clearable class="w-160px" :options="statusOptions" :placeholder="$t('page.role.status')" />
         <NButton type="primary" @click="query.page = 1; loadRoles()">{{ $t('common.search') }}</NButton>
         <NButton @click="resetQuery">{{ $t('common.reset') }}</NButton>
         <NButton v-if="can(SYSTEM_ACTIONS.roleCreate)" type="primary" secondary @click="openEditor()">{{ $t('common.add') }}</NButton>
@@ -303,7 +303,7 @@ onMounted(loadRoles);
         <NFormItem :label="$t('page.role.name')" path="name" :rule="{ required: true }"><NInput v-model:value="form.name" /></NFormItem>
         <NFormItem :label="$t('page.role.description')"><NInput v-model:value="form.description" type="textarea" /></NFormItem>
         <NFormItem :label="$t('page.role.status')">
-          <NSelect v-model:value="form.status" :options="statusOptions" :disabled="Boolean(editing?.is_builtin)" />
+          <AppSelect v-model:value="form.status" :options="statusOptions" :disabled="Boolean(editing?.is_builtin)" />
         </NFormItem>
       </NForm>
       <template #footer><NSpace justify="end"><NButton @click="editorVisible = false">{{ $t('common.cancel') }}</NButton><NButton type="primary" :loading="saving" @click="saveRole">{{ $t('common.confirm') }}</NButton></NSpace></template>

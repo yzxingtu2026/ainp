@@ -3,7 +3,7 @@ import { computed, h, onMounted, reactive, ref } from 'vue';
 import type { DataTableColumns } from 'naive-ui';
 import {
   NButton, NCard, NDataTable, NDescriptions, NDescriptionsItem, NDivider,
-  NDrawer, NDrawerContent, NEmpty, NPagination, NPopconfirm, NSelect, NSpace, NTag
+  NDrawer, NDrawerContent, NEmpty, NPagination, NPopconfirm, NSpace, NTag
 } from 'naive-ui';
 import { $t } from '@/locales';
 import { useAuth } from '@/hooks/business/auth';
@@ -190,7 +190,7 @@ function handleFilterChange() {
   <div class="min-h-500px flex-col-stretch gap-16px overflow-hidden lt-sm:overflow-auto">
     <NCard :title="$t('notificationAdmin.deliveryTitle')" :bordered="false" class="card-wrapper">
       <NSpace class="mb-12px">
-        <NSelect
+        <AppSelect
           v-model:value="query.status"
           clearable
           class="w-160px"
@@ -198,7 +198,7 @@ function handleFilterChange() {
           :placeholder="$t('notificationAdmin.filterStatus')"
           @update:value="handleFilterChange"
         />
-        <NSelect
+        <AppSelect
           v-model:value="query.channel"
           clearable
           class="w-160px"

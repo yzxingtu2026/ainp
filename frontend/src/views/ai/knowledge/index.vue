@@ -677,7 +677,7 @@ onMounted(() => {
         </NFormItem>
         <NGrid responsive="screen" cols="1 s:2" :x-gap="16">
           <NFormItemGi :label="$t('page.knowledge.visibility')">
-            <NSelect
+            <AppSelect
               v-model:value="form.visibility"
               :options="[
                 { label: $t('page.knowledge.private'), value: 'private' },
@@ -686,7 +686,7 @@ onMounted(() => {
             />
           </NFormItemGi>
           <NFormItemGi :label="$t('page.knowledge.embeddingAlias')">
-            <NSelect
+            <AppSelect
               v-model:value="embeddingAliasValue"
               :options="embeddingAliasOptions"
               :loading="embeddingAliasesLoading"

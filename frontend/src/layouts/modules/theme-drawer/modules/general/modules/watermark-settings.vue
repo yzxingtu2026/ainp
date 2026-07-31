@@ -33,7 +33,7 @@ const isWatermarkTextVisible = computed(
       key="4"
       :label="$t('theme.general.watermark.timeFormat')"
     >
-      <NSelect
+      <AppSelect
         v-model:value="themeStore.watermark.timeFormat"
         :options="watermarkTimeFormatOptions"
         size="small"

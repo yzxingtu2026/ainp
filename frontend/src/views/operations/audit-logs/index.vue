@@ -12,7 +12,6 @@ import {
   NDrawerContent,
   NInput,
   NPagination,
-  NSelect,
   NSpace,
   NTag
 } from 'naive-ui';
@@ -150,7 +149,7 @@ onMounted(load);
         <NDatePicker v-model:value="range" type="datetimerange" clearable class="w-360px" />
         <NInput v-model:value="query.user_keyword" clearable :placeholder="$t('auditLog.userKeyword')" />
         <NInput v-model:value="query.action_id" clearable placeholder="Action ID" />
-        <NSelect
+        <AppSelect
           v-model:value="query.result"
           clearable
           class="w-140px"

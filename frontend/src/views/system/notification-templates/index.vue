@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { h, onMounted, reactive, ref, computed } from 'vue';
 import type { DataTableColumns } from 'naive-ui';
-import { NButton, NCard, NDataTable, NDivider, NFormItem, NInput, NModal, NPopconfirm, NSelect, NSpace, NSwitch, NTab, NTabPane, NTag, NTabs } from 'naive-ui';
+import { NButton, NCard, NDataTable, NDivider, NFormItem, NInput, NModal, NPopconfirm, NSpace, NSwitch, NTab, NTabPane, NTag, NTabs } from 'naive-ui';
 import { $t } from '@/locales';
 import {
   fetchNotificationTemplates,
@@ -430,7 +430,7 @@ onMounted(loadList);
         <span>{{ $t('notificationAdmin.colChannel') }}: <strong>{{ $t((channelI18n[previewForm.channel] || previewForm.channel) as any) || previewForm.channel }}</strong></span>
       </div>
       <NFormItem :label="$t('notificationAdmin.colLocale')">
-        <NSelect v-model:value="previewForm.locale" :options="previewLocaleOptions" class="w-200px" />
+        <AppSelect v-model:value="previewForm.locale" :options="previewLocaleOptions" class="w-200px" />
       </NFormItem>
       <NFormItem :label="$t('notificationAdmin.formVariables')">
         <NInput v-model:value="previewForm.variables" type="textarea" :rows="3" />
