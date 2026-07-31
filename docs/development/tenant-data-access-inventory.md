@@ -28,7 +28,7 @@
 |---|---|---|---|
 | `framework/{job,idempotency,outbox}/migrate.go:ensureConstraints` | Exec/DDL | schema constraint 与索引维护 | 只在启动 migration 阶段 |
 | `modules/ai/model.go:AutoMigrate`、`knowledge_model.go:AutoMigrateKnowledge/addKnowledgeConstraint` | Exec/DDL | AI schema、vector/FTS 与复合约束维护（含 tenant-owned `NavigationSearchDocument` 注册） | 只在启动 migration 阶段 |
-| `modules/system/seed.go:ensure*Constraint(s)` | Exec/Table | system schema 约束维护与固定表校验 | 只在启动 migration 阶段；固定内部表清单 |
+| `modules/system/setup/seed.go:ensure*Constraint(s)` | Exec/Table | system schema 约束维护与固定表校验 | 只在启动 migration 阶段；固定内部表清单 |
 | `RevisionDocService.AutoMigrate` | AutoMigrate | Demo 表启动建表 | 不执行 tenant-owned 业务 CRUD |
 | `framework/revision`、`framework/dblock` | Table/Exec | 通用并发基础设施 | 调用方必须来自 scoped transaction；本 Issue 后续迁移 |
 | `framework/audit.GormRecorder` | mixed-realm write | `audit_logs` 同时记录 tenant 与 platform realm | tenant 管理查询只走 TenantRaw；写入 tenant/realm 来自已认证 Action AuthContext |
