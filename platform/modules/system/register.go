@@ -14,8 +14,12 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/mcpserver"
 	"github.com/yzxingtu2026/ainp/platform/framework/menu"
 	"github.com/yzxingtu2026/ainp/platform/modules/system/access"
-	systemhelp "github.com/yzxingtu2026/ainp/platform/modules/system/help"
+	accesshelp "github.com/yzxingtu2026/ainp/platform/modules/system/access/help"
+	"github.com/yzxingtu2026/ainp/platform/modules/system/attachments"
+	attachmentshelp "github.com/yzxingtu2026/ainp/platform/modules/system/attachments/help"
 	"github.com/yzxingtu2026/ainp/platform/modules/system/jobs"
+	notificationshelp "github.com/yzxingtu2026/ainp/platform/modules/system/notifications/help"
+	settingshelp "github.com/yzxingtu2026/ainp/platform/modules/system/settings/help"
 )
 
 func Register(a *app.App) error {
@@ -125,7 +129,7 @@ func Register(a *app.App) error {
 	if a.AttachmentPolicies == nil {
 		a.AttachmentPolicies = attachment.NewPolicyRegistry()
 	}
-	if err := a.AttachmentPolicies.Register(userProfileAttachmentPolicy{}); err != nil {
+	if err := a.AttachmentPolicies.Register(attachments.NewUserProfileAttachmentPolicy()); err != nil {
 		return err
 	}
 	policyProvider := NewSettingUploadPolicyProvider(settingSvc.Provider())
@@ -347,7 +351,16 @@ func Register(a *app.App) error {
 	if err := registerNotificationActions(a); err != nil {
 		return err
 	}
-	if err := systemhelp.Register(a.PageHelp, a.Menus); err != nil {
+	for _, registerHelp := range []func(*menu.HelpRegistry) error{
+		accesshelp.Register,
+		settingshelp.Register,
+		attachmentshelp.Register,
+	} {
+		if err := registerHelp(a.PageHelp); err != nil {
+			return fmt.Errorf("register page help: %w", err)
+		}
+	}
+	if err := notificationshelp.Register(a.PageHelp, a.Menus); err != nil {
 		return fmt.Errorf("register page help: %w", err)
 	}
 	if err := a.PageHelp.ValidateMenus(a.Menus); err != nil {

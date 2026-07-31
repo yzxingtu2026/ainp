@@ -15,7 +15,9 @@
 - 后端 `_test.go` 统一放在 `platform/tests/`，使用外部测试包通过公开 API 测试；禁止散落到 `framework/*`、`modules/*`，由架构门禁扫描防回流。
 - `modules/<module>` 根包只保留 `register.go`、命名明确的稳定 Facade、contracts 与必要常量；实现进入按能力域或技术角色组织的按需子包，禁止空目录和 `common`/`utils`/`misc` 等兜底包。
 - `modules/A` 默认禁止 import `modules/B`；例外必须在 `platform/tests/testdata/module_architecture_baseline.tsv` 精确登记源文件、目标 import 与原因。AST 门禁同时拒绝新增违规和已失效的基线。
-- `system/access` 持有认证、会话、用户、角色、权限投影与身份模型，依赖方向为 `system root Facade → access → access/model`；AST 门禁禁止 `access` 反向 import `system` 根包。
+- `system` 根包只保留 `Register`、Facade、contracts 与常量；能力归档为 `access`、`settings`、`attachments`、`notifications`、`setup`，子包禁止反向 import 根包。
+- 依赖方向固定为 `system root Facade → access → access/model`、`root → settings`、`root → attachments → attachments/model|jobs`、`root → notifications → notifications/jobs`、`root → setup → access`。
+- `system/model` 与 `system/jobs` 仅保留临时兼容 alias；已知下游迁移并经过一个发布周期后删除，稳定协议 ID/key 不删除。
 - 迁移测试要合并重复覆盖并记录替代位置；禁止为测试新增生产导出 API、测试桥接或其他边界绕过。
 
 详规：`docs/development/backend-layout.md`
