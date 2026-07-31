@@ -2,6 +2,7 @@ package tests
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"testing/fstest"
 
@@ -108,5 +109,44 @@ func TestHelpRegistryRequiresDefaultLocaleForSearchableModuleMenus(t *testing.T)
 	}
 	if err := help.ValidateModuleCoverage(registry, "system", "zh-CN"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestHelpRegistryValidatesAllProductionModulesWithoutManualWiring(t *testing.T) {
+	registry := NewRegistry()
+	for _, item := range []Menu{
+		{ID: "system.users", Type: TypeMenu, Path: "/system/users", Module: "system", Surface: auth.RealmTenant},
+		{ID: "foundation.profile", Type: TypeMenu, Path: "/foundation/profile", Module: "foundation", Surface: auth.RealmTenant},
+		{ID: "demo.notes", Type: TypeMenu, Path: "/demo/notes", Module: "demo", Surface: auth.RealmTenant},
+	} {
+		if err := registry.Register(item); err != nil {
+			t.Fatal(err)
+		}
+	}
+	help := NewHelpRegistry()
+	for _, source := range []struct{ name, menuID string }{{"system.md", "system.users"}, {"foundation.md", "foundation.profile"}} {
+		document, err := ParseHelpDocument(source.name, []byte("---\nmenu_id: "+source.menuID+"\nversion: 1.0.0\nlocale: zh-CN\nuse_cases: [查询]\n---\n# 帮助"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := help.Register(document); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := help.ValidateAllModulesCoverage(registry, "zh-CN"); err != nil {
+		t.Fatalf("all production modules are covered: %v", err)
+	}
+	if err := registry.Register(Menu{ID: "inventory.items", Type: TypeMenu, Path: "/inventory/items", Module: "inventory", Surface: auth.RealmTenant}); err != nil {
+		t.Fatal(err)
+	}
+	if err := help.ValidateAllModulesCoverage(registry, "zh-CN"); err == nil || !strings.Contains(err.Error(), "inventory.items") {
+		t.Fatalf("new module without help must fail globally: %v", err)
+	}
+	missingModule := NewRegistry()
+	if err := missingModule.Register(Menu{ID: "orphan.page", Type: TypeMenu, Path: "/orphan", Surface: auth.RealmTenant}); err != nil {
+		t.Fatal(err)
+	}
+	if err := help.ValidateAllModulesCoverage(missingModule, "zh-CN"); err == nil || !strings.Contains(err.Error(), "requires module") {
+		t.Fatalf("searchable production menu without module must fail: %v", err)
 	}
 }

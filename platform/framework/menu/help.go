@@ -166,6 +166,33 @@ func (r *HelpRegistry) ValidateModuleCoverage(registry *Registry, module, locale
 	return nil
 }
 
+// ValidateAllModulesCoverage derives production modules from the Menu Registry,
+// so a module cannot bypass page-help coverage by omitting its own validation call.
+func (r *HelpRegistry) ValidateAllModulesCoverage(registry *Registry, locale string) error {
+	modules := map[string]struct{}{}
+	for _, item := range registry.List() {
+		if !isSearchableMenu(item) || item.Module == "demo" {
+			continue
+		}
+		module := strings.TrimSpace(item.Module)
+		if module == "" {
+			return fmt.Errorf("searchable production menu requires module for page help coverage: %s", item.ID)
+		}
+		modules[module] = struct{}{}
+	}
+	ordered := make([]string, 0, len(modules))
+	for module := range modules {
+		ordered = append(ordered, module)
+	}
+	sort.Strings(ordered)
+	for _, module := range ordered {
+		if err := r.ValidateModuleCoverage(registry, module, locale); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (r *HelpRegistry) Get(menuID, locale string) (HelpDocument, bool) {
 	document, ok := r.documents[helpKey(menuID, locale)]
 	if !ok && locale != "zh-CN" {

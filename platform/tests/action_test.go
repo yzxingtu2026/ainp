@@ -116,6 +116,20 @@ func TestAIClassificationIsMutuallyExclusiveAndFailClosed(t *testing.T) {
 	}
 }
 
+func TestRegistryRequiresExplicitAIClassificationOutsideDemo(t *testing.T) {
+	r := action.NewRegistry(nil, nil)
+	handler := func(context.Context, json.RawMessage) (any, error) { return nil, nil }
+	if err := r.Register(action.Action{ID: "foundation.profile_get", Handler: handler, Meta: action.Metadata{Capability: "foundation"}}); err == nil || !strings.Contains(err.Error(), "AI classification is required") {
+		t.Fatalf("production Action without AI classification must fail: %v", err)
+	}
+	if err := r.Register(action.Action{ID: "foundation.profile_update", Handler: handler, Meta: action.Metadata{Capability: "foundation", AI: action.ExcludeFromAI(action.AIExcludePendingSafetyReview)}}); err != nil {
+		t.Fatalf("explicit production exclusion must pass: %v", err)
+	}
+	if err := r.Register(action.Action{ID: "demo.unclassified", Handler: handler, Meta: action.Metadata{Capability: "demo"}}); err != nil {
+		t.Fatalf("demo Action must retain the migration exemption: %v", err)
+	}
+}
+
 func TestSideEffectingAIActionRequiresConfirmation(t *testing.T) {
 	meta := &action.AIMeta{
 		ExposeTool: true, Risk: "medium", SideEffect: "write",

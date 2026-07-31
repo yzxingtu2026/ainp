@@ -58,6 +58,23 @@ func TestPageContextEnvelopeBudgetsAndResolverOwnership(t *testing.T) {
 	}
 }
 
+func TestPageContextRegistryExposesStablePageTypeManifest(t *testing.T) {
+	registry := pagecontext.NewRegistry()
+	for _, pageType := range []string{"system.users", "operations.audit-logs"} {
+		if err := registry.Register(pageType, fixedPageResolver{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pageTypes := registry.PageTypes()
+	if got := strings.Join(pageTypes, ","); got != "operations.audit-logs,system.users" {
+		t.Fatalf("unexpected page type manifest: %s", got)
+	}
+	pageTypes[0] = "mutated"
+	if got := strings.Join(registry.PageTypes(), ","); got != "operations.audit-logs,system.users" {
+		t.Fatalf("caller must not mutate registry state: %s", got)
+	}
+}
+
 func TestSystemUserPageContextRevalidatesPermissionTenantAndRevision(t *testing.T) {
 	db := openOutboxTestDB(t)
 	if err := system.AutoMigrate(db); err != nil {

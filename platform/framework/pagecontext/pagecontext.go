@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 )
@@ -204,6 +205,19 @@ func (r *Registry) Count() int {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return len(r.resolvers)
+}
+
+// PageTypes returns a stable manifest of registered server-side resolvers for
+// frontend-provider contract checks. Resolver implementations remain private.
+func (r *Registry) PageTypes() []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	pageTypes := make([]string, 0, len(r.resolvers))
+	for pageType := range r.resolvers {
+		pageTypes = append(pageTypes, pageType)
+	}
+	sort.Strings(pageTypes)
+	return pageTypes
 }
 
 type snapshotKey struct{}

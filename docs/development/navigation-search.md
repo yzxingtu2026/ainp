@@ -52,6 +52,6 @@ Navigation Catalog 是从 Menu Registry 实时派生的授权搜索视图。Menu
 
 `menu.HelpRegistry` 在启动注册期校验菜单存在、可搜索以及 permission ref 与菜单权限一致。帮助是 Git 审核后的事实源，不得从 DOM、组件实例或运行时页面抓取；AI 可以辅助起草，但生成内容必须经过代码评审后提交。
 
-每个可搜索的生产 `menu` 必须在所属业务模块内提供默认 `zh-CN` 帮助文档，并由该模块通过独立 `embed.FS` 注册。模块完成菜单与文档注册后调用 `ValidateModuleCoverage`，缺失文档时启动和测试直接失败。普通可见菜单默认属于覆盖范围；隐藏菜单只有显式 `Searchable: true` 时才要求文档。可选功能只加载当前实际注册菜单对应的文档，禁止留下引用未启用菜单的悬空文档。Demo 菜单不纳入生产模块覆盖门禁。
+每个可搜索的生产 `menu` 必须声明非空 `module`，并在所属业务模块内提供默认 `zh-CN` 帮助文档，由该模块通过独立 `embed.FS` 注册。模块可调用 `ValidateModuleCoverage` 做局部快速校验；统一 boot 必须调用 `ValidateAllModulesCoverage`，从 Menu Registry 反推全部生产模块并执行全局门禁，新增模块无需额外接线。普通可见菜单默认属于覆盖范围；隐藏菜单只有显式 `Searchable: true` 时才要求文档。可选功能只加载当前实际注册菜单对应的文档，禁止留下引用未启用菜单的悬空文档。Demo 菜单不纳入生产模块覆盖门禁。
 
 `builtin:navigation.help` 只接受 `navigation.search` 返回的稳定 `menu_id`、可选受信 use case 与 locale。执行时重新校验当前 realm、permission 和菜单状态，返回 Markdown、版本与来源引用。帮助只用于说明，不得自动点击、填写、提交或触发 Action。

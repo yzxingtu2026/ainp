@@ -39,7 +39,7 @@ func TestPermissionCatalogUsesCompactToolDiscoveryAndRichHTTPProjection(t *testi
 		t.Helper()
 		if err := actions.Register(action.Action{ID: id, Handler: dummy, Meta: action.Metadata{
 			Capability: capabilityID, PermissionGroup: group, PermissionGroupName: group,
-			Name: name, Description: name + " description", HTTP: &action.HTTPMeta{Method: "POST", Path: "/" + id},
+			Name: name, Description: name + " description", AI: action.ExcludeFromAI(action.AIExcludePendingSafetyReview), HTTP: &action.HTTPMeta{Method: "POST", Path: "/" + id},
 		}}); err != nil {
 			t.Fatal(err)
 		}
@@ -53,7 +53,7 @@ func TestPermissionCatalogUsesCompactToolDiscoveryAndRichHTTPProjection(t *testi
 	}
 	register("system.role_list", "system", "system.roles", "角色列表")
 	if err := actions.Register(action.Action{ID: "system.authenticated", Handler: dummy, Meta: action.Metadata{
-		Capability: "system", Access: action.AccessAuthenticated, Name: "Authenticated", HTTP: &action.HTTPMeta{Method: "POST", Path: "/system.authenticated"},
+		Capability: "system", Access: action.AccessAuthenticated, Name: "Authenticated", AI: action.ExcludeFromAI(action.AIExcludePendingSafetyReview), HTTP: &action.HTTPMeta{Method: "POST", Path: "/system.authenticated"},
 	}}); err != nil {
 		t.Fatal(err)
 	}

@@ -202,7 +202,7 @@ func (r *Registry) Register(a Action) error {
 	if err := validateIdempotency(a.Meta.Idempotency); err != nil {
 		return fmt.Errorf("action %s: %w", a.ID, err)
 	}
-	if a.Meta.AI != nil {
+	if a.Meta.Capability != "demo" || a.Meta.AI != nil {
 		if err := ValidateAIClassification(a.ID, a.Meta.AI); err != nil {
 			return err
 		}

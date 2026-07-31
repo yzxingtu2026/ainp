@@ -91,7 +91,7 @@ func TestActionInternalFailureWritesCorrelatedDiagnosticLog(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "api.jsonl")
 	closer := logging.InitConfig(logging.Config{Level: "info", Outputs: []string{"file"}, Service: "api", InstanceID: "test-1", File: logging.FileConfig{Path: path, MaxSizeMB: 1}})
 	registry := action.NewRegistry(nil, nil)
-	if err := registry.Register(action.Action{ID: "test.fail", Meta: action.Metadata{Capability: "test", Access: action.AccessPublic}, Handler: func(context.Context, json.RawMessage) (any, error) {
+	if err := registry.Register(action.Action{ID: "test.fail", Meta: action.Metadata{Capability: "test", Access: action.AccessPublic, AI: action.ExcludeFromAI(action.AIExcludePendingSafetyReview)}, Handler: func(context.Context, json.RawMessage) (any, error) {
 		return nil, errors.New("database password=must-not-leak")
 	}}); err != nil {
 		t.Fatal(err)
