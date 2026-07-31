@@ -1,0 +1,43 @@
+# 本地开发基础设施：PostgreSQL (pgvector) + Redis
+# 启动：docker compose -f compose.dev.yaml up -d
+# 停止：docker compose -f compose.dev.yaml down
+# 清数据重来：docker compose -f compose.dev.yaml down -v
+name: ainp-dev
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: ainp-dev-pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ainp
+      POSTGRES_PASSWORD: ainp
+      POSTGRES_DB: ainp
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ainp -d ainp"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: ainp-dev-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
+    ports:
+      - "6380:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:
+  redisdata:
