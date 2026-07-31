@@ -95,6 +95,31 @@ modules/A    ❌ modules/B（默认；共享进 framework）
 tests        → framework + modules（仅测试依赖）
 ```
 
+## Module 包架构
+
+`platform/modules/<module>` 的根包是模块对外公开面，不是业务实现的默认落点：
+
+- 根包仅保留 `register.go`、稳定 Facade、跨包 contracts 和必要常量；对应文件使用 `facade.go` / `*_facade.go`、`contracts.go` / `*_contracts.go`、`constants.go` / `*_constants.go` 命名。
+- Action 注册、Service、Repository、模型和领域流程进入子包。大模块优先按能力域拆分（例如 `identity`、`attachment`、`knowledge`），能力包内部再按复杂度组织；小模块可直接采用 `model`、`repository`、`service` 等简单角色分层。
+- `model`、`repository`、`service`、`pagecontext`、`jobs`、`help`、`tools` 均为按需目录，禁止为了满足布局检查创建空目录。
+- 禁止新增 `common`、`commons`、`util`、`utils`、`misc`、`shared`、`helpers` 等兜底包；无法明确归属的跨模块抽象应先审查其所有权，再放入具体能力包或 `framework` 的稳定契约包。
+- 模块内子包可以依赖同模块的根包或其他子包，但必须避免循环依赖；根包 Facade 只做稳定编排和委托，不重新承载实现。
+
+### 跨模块依赖
+
+`modules/A` 默认禁止 import `modules/B`（包括 B 的子包）。共享机制应下沉 `framework`，业务协作应通过由所有者定义的最小 contract 注入。确需跨模块依赖时，必须在 `platform/tests/testdata/module_architecture_baseline.tsv` 中登记精确源文件、目标 import 和审查原因；该清单是迁移基线，不是永久白名单。
+
+### 渐进式门禁
+
+`platform/tests/module_architecture_test.go` 使用 Go parser 扫描源文件和 import，不依赖文本匹配。门禁规则如下：
+
+1. 新增模块根目录实现文件失败，并给出建议目标位置。
+2. 新增未登记的跨模块 import 失败。
+3. 新增兜底包失败。
+4. 存量违规按精确基线暂时放行；代码迁移后若基线未同步删除，以 stale baseline 失败。
+
+基线变更必须与实际迁移在同一 PR 中完成并说明原因；禁止用宽泛目录、通配符或无原因条目绕过检查。
+
 tenant-owned 数据依赖固定为：
 
 ```text
