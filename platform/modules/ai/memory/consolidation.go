@@ -1,4 +1,4 @@
-package ai
+package memory
 
 import (
 	"context"
@@ -20,6 +20,18 @@ const MemoryConsolidationJobType = "ai.memory.consolidate"
 type MemoryConsolidationService struct {
 	db          tenantdata.GuardedDatabase
 	invocations MemoryCandidateExtractor
+}
+
+func asGenerateResponse(value any) (aimodelruntime.GenerateResponse, bool) {
+	response, ok := value.(aimodelruntime.GenerateResponse)
+	if ok {
+		return response, true
+	}
+	pointer, ok := value.(*aimodelruntime.GenerateResponse)
+	if ok && pointer != nil {
+		return *pointer, true
+	}
+	return aimodelruntime.GenerateResponse{}, false
 }
 
 func NewMemoryConsolidationService(db *gorm.DB, invocations MemoryCandidateExtractor) *MemoryConsolidationService {

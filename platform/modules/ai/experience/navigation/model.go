@@ -31,4 +31,6 @@ type SearchDocument struct {
 	UpdatedAt              time.Time
 }
 
+type NavigationSearchDocument = SearchDocument
+
 func (SearchDocument) TableName() string { return "navigation_search_documents" }

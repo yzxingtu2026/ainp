@@ -1,4 +1,4 @@
-package ai
+package knowledge
 
 import (
 	"context"
@@ -14,7 +14,6 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/aiknowledge"
 	"github.com/yzxingtu2026/ainp/platform/framework/aitool"
 	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
-	"github.com/yzxingtu2026/ainp/platform/modules/ai/agent"
 	"gorm.io/gorm"
 )
 
@@ -29,6 +28,14 @@ type knowledgeToolCacheEntry struct {
 	Response aiknowledge.RetrievalResponse
 }
 
+type toolScopeProjection struct {
+	ID, TenantID, UserID string
+	AgentRunID           *string
+	AuthVersion          uint64
+}
+type runAgentProjection struct{ AgentVersionID string }
+type versionAgentProjection struct{ AgentID string }
+
 type KnowledgeTool struct {
 	db        tenantdata.GuardedDatabase
 	access    aiknowledge.Service
@@ -38,9 +45,6 @@ type KnowledgeTool struct {
 }
 
 func NewKnowledgeTool(db *gorm.DB, access aiknowledge.Service, retriever aiknowledge.KnowledgeRetriever) *KnowledgeTool {
-	if err := registerToolTenantModels(); err != nil {
-		panic(err)
-	}
 	return &KnowledgeTool{db: tenantdata.GuardedDB(db), access: access, retriever: retriever, cache: map[string]knowledgeToolCacheEntry{}}
 }
 
@@ -48,10 +52,15 @@ func (t *KnowledgeTool) Project(ctx context.Context, runtimeScope aitool.Runtime
 	if runtimeScope.ID == "" || runtimeScope.AgentRunID == "" {
 		return definition, false, nil
 	}
-	var scope ToolScope
-	if err := t.db.WithContext(ctx).Where("id=? AND user_id=?", runtimeScope.ID, runtimeScope.UserID).First(&scope).Error; err != nil {
+	tdb, err := t.db.Tenant(ctx)
+	if err != nil {
 		return definition, false, err
 	}
+	rows, err := tenantdata.TenantRaw[toolScopeProjection](tdb, `SELECT id,tenant_id,user_id,agent_run_id,auth_version FROM ai_tool_scopes WHERE tenant_id=? AND id=? AND user_id=? LIMIT 1`, runtimeScope.ID, runtimeScope.UserID)
+	if err != nil || len(rows) != 1 {
+		return definition, false, err
+	}
+	scope := rows[0]
 	candidates, err := t.candidates(ctx, &scope)
 	if err != nil || len(candidates) == 0 {
 		return definition, false, err
@@ -71,10 +80,18 @@ func (t *KnowledgeTool) Project(ctx context.Context, runtimeScope aitool.Runtime
 func (t *KnowledgeTool) Execute(ctx context.Context, _ aitool.LoadedTool, arguments json.RawMessage) (*aitool.Result, error) {
 	started := time.Now()
 	scopeID := aitool.ScopeIDFromContext(ctx)
-	var scope ToolScope
-	if scopeID == "" || t.db.WithContext(ctx).Where("id=?", scopeID).First(&scope).Error != nil || scope.AgentRunID == nil {
+	if scopeID == "" {
 		return nil, fmt.Errorf("knowledge search requires an agent run scope")
 	}
+	tdb, queryErr := t.db.Tenant(ctx)
+	if queryErr != nil {
+		return nil, queryErr
+	}
+	rows, queryErr := tenantdata.TenantRaw[toolScopeProjection](tdb, `SELECT id,tenant_id,user_id,agent_run_id,auth_version FROM ai_tool_scopes WHERE tenant_id=? AND id=? LIMIT 1`, scopeID)
+	if queryErr != nil || len(rows) != 1 || rows[0].AgentRunID == nil {
+		return nil, fmt.Errorf("knowledge search requires an agent run scope")
+	}
+	scope := rows[0]
 	var input aitool.KnowledgeSearchInput
 	if json.Unmarshal(arguments, &input) != nil || strings.TrimSpace(input.Query) == "" || len(input.Query) > 4096 {
 		return &aitool.Result{Status: "failed", Summary: "knowledge search input is invalid", ErrorCategory: "invalid_request"}, nil
@@ -153,28 +170,34 @@ func (t *KnowledgeTool) Execute(ctx context.Context, _ aitool.LoadedTool, argume
 	return &aitool.Result{Status: "completed", Summary: fmt.Sprintf("knowledge search returned %d references", len(response.Items)), Data: data, ResourceRefs: citationRefs(citations)}, nil
 }
 
-func (t *KnowledgeTool) candidates(ctx context.Context, scope *ToolScope) ([]knowledgeToolCandidate, error) {
+func (t *KnowledgeTool) candidates(ctx context.Context, scope *toolScopeProjection) ([]knowledgeToolCandidate, error) {
 	if scope == nil || scope.AgentRunID == nil {
 		return nil, nil
-	}
-	var run AgentRun
-	if err := t.db.WithContext(ctx).Where("user_id=? AND id=?", scope.UserID, *scope.AgentRunID).First(&run).Error; err != nil {
-		return nil, err
-	}
-	version, err := agent.GetVersion(ctx, t.db.WithContext(ctx), run.AgentVersionID)
-	if err != nil {
-		return nil, err
 	}
 	tdb, err := t.db.Tenant(ctx)
 	if err != nil {
 		return nil, err
+	}
+	runs, err := tenantdata.TenantRaw[runAgentProjection](tdb, `SELECT agent_version_id FROM ai_agent_runs WHERE tenant_id=? AND user_id=? AND id=? LIMIT 1`, scope.UserID, *scope.AgentRunID)
+	if err != nil || len(runs) != 1 {
+		if err != nil {
+			return nil, err
+		}
+		return nil, gorm.ErrRecordNotFound
+	}
+	versions, err := tenantdata.TenantRaw[versionAgentProjection](tdb, `SELECT agent_id FROM ai_agent_versions WHERE tenant_id=? AND id=? LIMIT 1`, runs[0].AgentVersionID)
+	if err != nil || len(versions) != 1 {
+		if err != nil {
+			return nil, err
+		}
+		return nil, gorm.ErrRecordNotFound
 	}
 	rows, err := tenantdata.TenantRaw[knowledgeToolCandidate](tdb, `SELECT kb.id,kb.name,kb.description,iv.id AS index_version_id
 FROM ai_agent_knowledge_bindings b
 JOIN ai_knowledge_bases kb ON kb.tenant_id=b.tenant_id AND kb.id=b.knowledge_base_id AND kb.deleted_at IS NULL
 JOIN ai_knowledge_index_versions iv ON iv.tenant_id=kb.tenant_id AND iv.id=kb.current_index_version_id AND iv.knowledge_base_id=kb.id
 WHERE b.tenant_id=? AND b.agent_id=? AND kb.status=? AND iv.status=? ORDER BY kb.id`,
-		version.AgentID, aiknowledge.KnowledgeBaseEnabled, aiknowledge.IndexReady)
+		versions[0].AgentID, aiknowledge.KnowledgeBaseEnabled, aiknowledge.IndexReady)
 	if err != nil {
 		return nil, err
 	}
@@ -187,7 +210,7 @@ WHERE b.tenant_id=? AND b.agent_id=? AND kb.status=? AND iv.status=? ORDER BY kb
 	return out, nil
 }
 
-func (t *KnowledgeTool) cacheKey(scope *ToolScope, candidates []knowledgeToolCandidate, request aiknowledge.RetrievalRequest) string {
+func (t *KnowledgeTool) cacheKey(scope *toolScopeProjection, candidates []knowledgeToolCandidate, request aiknowledge.RetrievalRequest) string {
 	versions := make([]string, 0, len(candidates))
 	selected := make(map[string]bool, len(request.KnowledgeBaseIDs))
 	for _, id := range request.KnowledgeBaseIDs {

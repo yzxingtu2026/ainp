@@ -1,4 +1,4 @@
-package ai
+package memory
 
 import (
 	"context"
@@ -6,7 +6,11 @@ import (
 
 	"github.com/yzxingtu2026/ainp/platform/framework/action"
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
+	"github.com/yzxingtu2026/ainp/platform/modules/ai/internal/actionmeta"
 )
+
+var readAIMeta = actionmeta.Read
+var mutationAIMeta = actionmeta.Mutation
 
 const (
 	ActionMemoryList    = "ai.memory_list"

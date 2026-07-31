@@ -7,7 +7,7 @@
 - Tool ID 必须 namespaced；Provider/Executor 统一注册，未知来源、重复、非法 Schema 与缺失风险元数据 fail-closed。
 - Tool Definition 分离稳定 `Name`/`DescriptionForLLM` 与插件自带 `TitleForHuman`/`DescriptionForHuman`；管理界面只展示 Human 契约，插件无需注册平台 i18n key，Human 文案不得进入 Schema Hash/Handle/Embedding 文档。
 - Definition 必须显式声明 `binding_mode` 与 `loading_mode`；绑定组必须原子处理。Runtime 只投影 Contract 必选与用户可选有效绑定，禁止全局默认注入 Meta/Slot。
-- 核心工具必须实现独立 `RuntimeSlot` 并经 `platform/modules/ai/tools/register.go` 显式聚合；禁止扫描源码、Go Plugin、隐藏 `init()`，禁止在 ToolService/Agent Runtime 增加业务 Tool ID 分支。
+- 核心工具必须在能力 owner 包实现独立 `RuntimeSlot`，并经 `tooling.RegisterBuiltins` 显式聚合；禁止恢复横切 `modules/ai/tools` 包，禁止扫描源码、Go Plugin、隐藏 `init()`，禁止在 ToolService/Agent Runtime 增加业务 Tool ID 分支。
 - Action 是否暴露以注册处的 `Metadata.AI` 为唯一事实源；仅 `AIMeta.ExposeTool=true` 自动投影，`AI=nil` 默认不暴露。exposed Action 必须显式声明“动作 + 对象”的 `AIMeta.ToolTitle` 并投影为 `TitleForHuman`，缺失时 fail-closed；禁止按 `Metadata.Name`、SideEffect、Action ID 或模型工具名推导标题。输入使用 `action.InputSchemaFor` 显式声明 required/optional，响应使用 `action.SchemaFor`；HTTP/Tool 复用同一 DTO 和 Handler，Tool Runtime 禁止补字段、修正类型或把局部更新缺失字段解释为清空。Action Tool 只经 `ActionRegistry.Invoke`，禁止维护平行暴露清单。
 - MCP Action Adapter 与 Agent 共用 ActionProvider，但独立应用 OAuth scope；`tools/list` 和 `tools/call` 都必须实时复核 realm、permission、scope 与 Action 状态。敏感 Action 需要 sensitive scope 才投影，首次调用返回确认 URL 和 opaque confirmation ID；批准后只允许固定治理工具按 ID 单次恢复，治理工具不得接受 Action ID 或业务参数。外部 MCP Provider 接入 Agent 不属于此适配器。
 - Scope 精确 Tool 与来源/能力白名单按“精确命中或来源+能力命中”授权，但 Action 禁止通过精确 Binding 授权，只能命中 Contract 来源+能力；来源/能力只开放渐进 search/load，禁止未 load Schema 进入模型初始投影。

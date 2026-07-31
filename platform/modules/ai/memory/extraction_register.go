@@ -1,4 +1,4 @@
-package ai
+package memory
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/yzxingtu2026/ainp/platform/framework/action"
+	"github.com/yzxingtu2026/ainp/platform/framework/aiagentruntime"
 	"github.com/yzxingtu2026/ainp/platform/framework/aimodelruntime"
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
@@ -29,7 +30,7 @@ func jobPermanent(err error) error               { return permanentExtractionErr
 
 func RegisterMemoryExtraction(a *app.App, service *MemoryExtractionService, governance *MemoryGovernanceService) error {
 	if a.Outbox != nil {
-		if err := a.Outbox.RegisterHandler(outbox.HandlerFunc{HandlerName: "ai.enqueue_memory_extraction", Types: []string{agentRunTerminalEvent}, Fn: func(ctx context.Context, env outbox.Envelope) error {
+		if err := a.Outbox.RegisterHandler(outbox.HandlerFunc{HandlerName: "ai.enqueue_memory_extraction", Types: []string{aiagentruntime.EventRunTerminal}, Fn: func(ctx context.Context, env outbox.Envelope) error {
 			var payload struct {
 				Status string `json:"status"`
 			}

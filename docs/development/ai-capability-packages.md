@@ -41,7 +41,7 @@ all capabilities ──> ai/internal/actionmeta (private leaf, when needed)
 
 未列出的能力间直接 import 一律禁止。优先把跨域需求表达为 `framework/aimodel`、`aimodelruntime`、`aitool`、`aiagent`、`aiconversation`、`aiknowledge`、`aimemory`、`runtimecontext` 等 Provider-neutral contracts，并由根 `Register` 注入实现。能力包不得 import `modules/ai` 根包；根包只向下装配。
 
-`help` 与现有 `tools` 是迁移期遗留包，不代表可新增的能力节点；架构门禁允许它们继续存在直到对应批次归档，但拒绝其他未在本契约声明的 AI 一级包。
+`help` 是迁移期共享资源包，不代表可新增的能力节点；原 `tools` 已在 #221 归档到各 owner 与 `tooling`。架构门禁拒绝恢复横切 Tool Slot 包，也拒绝其他未在本契约声明的 AI 一级包。
 
 允许的直接依赖有明确方向：Conversation 固定 Agent Version 并由 Runtime 编排模型调用与 Tool 执行；Knowledge 管理 Agent 绑定；Memory 从 Conversation 事实提取候选；Personalization 只读解析 Agent Slot。反向需求必须通过 framework contract、事件或根装配回调解决，不能增加反向 import。
 
@@ -66,7 +66,7 @@ all capabilities ──> ai/internal/actionmeta (private leaf, when needed)
 | --- | --- | --- |
 | `register.go -> modules/system` | 创建附件知识来源 resolver | 在 Knowledge 迁移批次将 `aiknowledge.DocumentSourceResolver` 由 boot/root 注入；AI 子能力不 import system |
 | `agent_service.go -> system/model` | 读取用户展示信息 | 抽取/复用 access 的最小只读身份 contract，由根装配注入；不得依赖兼容 model alias |
-| `knowledge_service.go -> system/model` | 解析知识库 owner | 使用相同身份 contract 或 owner resolver；Knowledge 只持有接口 |
+| `knowledge/service.go` | 使用固定 `TenantRaw` 附件元数据投影 | 不 import System model；附件内容仍由根注入的 `aiknowledge.DocumentSourceResolver` 解析 |
 
 迁移完成条件是 `modules/ai/<capability>` 对 `modules/system`、`modules/system/model` 和 `modules/ai` 根包的 import 均为零。根 `register.go` 的临时 system 依赖可在对应注入边界落地前保留在精确架构基线中。
 
@@ -108,3 +108,11 @@ all capabilities ──> ai/internal/actionmeta (private leaf, when needed)
 - Run terminal 事件名由 `framework/aiagentruntime.EventRunTerminal` 稳定；Memory Recall 由根装配转换为 `conversation.MemoryRecallFunc`，Conversation 不反向依赖 Memory 实现。
 - Agent 头像校验由根 composition root 注入，`agent` 能力不再 import `modules/system/model`。
 - 根 `agent_facade.go`、`conversation_facade.go`、`personalization_facade.go` 保留兼容 aliases、构造器与注册委托；新代码直接 import owner 包。
+
+### Issue #221：Knowledge、Memory 与 Navigation
+
+- `knowledge` 持有知识库模型、Repository、Service、摄取、检索、Job/Action 注册与 Knowledge Tool Slot；附件元数据通过固定租户投影读取，内容解析继续由根注入 Provider-neutral resolver。
+- `memory` 持有时态事实、提取、治理、投影、管理、召回、合并、Job/Action 注册与 Memory Tool Slot；只依赖 `conversation` 事实，Agent Version 通过固定租户投影读取冻结策略。
+- `experience/navigation` 持有导航投影、词法/语义检索、Embedding Job、Navigation/Help Tool Slot；Tool ID、Job type、Action ID、索引表和授权投影语义保持不变。
+- 通用 Tool Slot 聚合入口迁入 `tooling.RegisterBuiltins`，原迁移期 `ai/tools` 包已归档；共享帮助文档仍由 `ai/help` 嵌入并在根装配。
+- 根 `knowledge_facade.go`、`memory_facade.go`、`navigation_facade.go` 保留兼容 aliases 与薄委托；`ai_capability_migration.tsv` 和 module root implementation 基线清零。
