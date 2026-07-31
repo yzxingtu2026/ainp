@@ -120,6 +120,46 @@ func TestAgentContractRegistryFailClosed(t *testing.T) {
 	}
 }
 
+func TestAgentContractActionToolCapabilityCoverage(t *testing.T) {
+	registerAction := func(t *testing.T, registry *action.Registry, id, capability string) {
+		t.Helper()
+		err := registry.Register(action.Action{ID: id, Handler: func(context.Context, json.RawMessage) (any, error) { return nil, nil }, Meta: action.Metadata{Capability: capability, AI: &action.AIMeta{ExposeTool: true, ToolTitle: "测试工具", Summary: "测试工具", HumanDescription: "测试工具", ResultSummary: "测试完成", Risk: "low", SideEffect: "read", InputSchema: action.InputSchemaFor[ai.AgentEmptyRequest]()}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	actions := action.NewRegistry(nil, nil)
+	registerAction(t, actions, "foundation.profile_get", "foundation")
+	contracts := aiagent.NewRegistry()
+	contract := validAgentContract()
+	contract.AllowedToolCapabilities = []string{"system"}
+	if err := contracts.Register(contract); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := contracts.ValidateActionToolCapabilityCoverage(actions, nil); err == nil || !strings.Contains(err.Error(), "missing=[foundation]") || !strings.Contains(err.Error(), "modules/ai/register.go") {
+		t.Fatalf("missing capability must point to the builtin Contract whitelist: %v", err)
+	}
+	if err := contracts.ValidateActionToolCapabilityCoverage(actions, []string{"foundation"}); err != nil {
+		t.Fatalf("reviewed exclusion must allow an intentionally unreachable capability: %v", err)
+	}
+	if err := contracts.ValidateActionToolCapabilityCoverage(actions, []string{"legacy"}); err == nil || !strings.Contains(err.Error(), "stale_exclusions=[legacy]") {
+		t.Fatalf("stale exclusion must fail: %v", err)
+	}
+
+	covered := aiagent.NewRegistry()
+	contract.AllowedToolCapabilities = []string{"foundation"}
+	if err := covered.Register(contract); err != nil {
+		t.Fatal(err)
+	}
+	if err := covered.ValidateActionToolCapabilityCoverage(actions, nil); err != nil {
+		t.Fatalf("covered capability must pass: %v", err)
+	}
+	if err := covered.ValidateActionToolCapabilityCoverage(actions, []string{"foundation"}); err == nil || !strings.Contains(err.Error(), "stale_exclusions=[foundation]") {
+		t.Fatalf("covered exclusion must be removed: %v", err)
+	}
+}
+
 func TestEffectiveAgentInstructions(t *testing.T) {
 	registry := aiagent.NewRegistry()
 	contract := validAgentContract()
