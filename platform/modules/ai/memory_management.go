@@ -39,7 +39,10 @@ type MemoryListRequest struct {
 	DateFrom    string               `json:"date_from" validate:"omitempty"`
 	DateTo      string               `json:"date_to" validate:"omitempty"`
 }
-type MemoryIDRequest struct {
+type MemoryGetRequest struct {
+	ID string `json:"id" validate:"required"`
+}
+type MemoryMutationRequest struct {
 	ID       string `json:"id" validate:"required"`
 	Revision uint64 `json:"revision" validate:"required"`
 }
@@ -148,7 +151,7 @@ func (s *MemoryManagementService) List(ctx context.Context, r MemoryListRequest)
 	page := pagination.NewResult(views, total, r.Request)
 	return MemoryListResult{Items: page.Items, Total: page.Total, Page: page.Page, PageSize: page.PageSize, RevisionToken: token}, nil
 }
-func (s *MemoryManagementService) Get(ctx context.Context, r MemoryIDRequest) (any, error) {
+func (s *MemoryManagementService) Get(ctx context.Context, r MemoryGetRequest) (any, error) {
 	ac, err := memoryActor(ctx)
 	if err != nil {
 		return nil, err
@@ -184,7 +187,7 @@ func (s *MemoryManagementService) Profile(ctx context.Context, _ json.RawMessage
 	_ = json.Unmarshal(row.SourceItemsJSON, &refs)
 	return map[string]any{"profile": profile, "source_items": refs, "source_revision": row.SourceRevision, "updated_at": row.UpdatedAt}, nil
 }
-func (s *MemoryManagementService) Decision(ctx context.Context, r MemoryIDRequest, action string) (any, error) {
+func (s *MemoryManagementService) Decision(ctx context.Context, r MemoryMutationRequest, action string) (any, error) {
 	ac, err := memoryActor(ctx)
 	if err != nil {
 		return nil, err

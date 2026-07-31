@@ -48,6 +48,20 @@ func TestMemoryManagementActionsAreSelfServiceContracts(t *testing.T) {
 			t.Fatalf("read memory action %s has unsafe metadata: %#v", id, registered.Meta.AI)
 		}
 	}
+	getAction, _ := application.Actions.Get(ai.ActionMemoryGet)
+	var getSchema struct {
+		Properties map[string]json.RawMessage `json:"properties"`
+		Required   []string                   `json:"required"`
+	}
+	if err := json.Unmarshal(getAction.Meta.AI.InputSchema, &getSchema); err != nil {
+		t.Fatal(err)
+	}
+	if len(getSchema.Required) != 1 || getSchema.Required[0] != "id" {
+		t.Fatalf("memory get required fields = %v, want [id]", getSchema.Required)
+	}
+	if _, ok := getSchema.Properties["revision"]; ok {
+		t.Fatal("memory get schema must not expose mutation revision")
+	}
 	for _, id := range mutationActions {
 		registered, _ := application.Actions.Get(id)
 		if registered.Meta.IdempotencyMode() != "required" {
@@ -55,6 +69,17 @@ func TestMemoryManagementActionsAreSelfServiceContracts(t *testing.T) {
 		}
 		if !registered.Meta.AI.RequiresConfirmation {
 			t.Fatalf("mutation %s must require tool confirmation", id)
+		}
+		if id == ai.ActionMemoryConfirm || id == ai.ActionMemoryReject || id == ai.ActionMemoryDelete {
+			var schema struct {
+				Required []string `json:"required"`
+			}
+			if err := json.Unmarshal(registered.Meta.AI.InputSchema, &schema); err != nil {
+				t.Fatal(err)
+			}
+			if len(schema.Required) != 2 || schema.Required[0] != "id" || schema.Required[1] != "revision" {
+				t.Fatalf("mutation %s required fields = %v, want [id revision]", id, schema.Required)
+			}
 		}
 	}
 }
