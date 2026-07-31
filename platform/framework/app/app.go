@@ -67,6 +67,7 @@ type App struct {
 	KnowledgeService         aiknowledge.Service
 	KnowledgeAccessPolicy    aiknowledge.AccessPolicy
 	KnowledgeSourceResolver  aiknowledge.DocumentSourceResolver
+	KnowledgeSourceFactory   func(aiknowledge.Service) aiknowledge.DocumentSourceResolver
 	KnowledgeParser          aiknowledge.DocumentParser
 	KnowledgeChunker         aiknowledge.Chunker
 	KnowledgeRetriever       aiknowledge.KnowledgeRetriever
@@ -80,6 +81,7 @@ type App struct {
 	Storage                  storage.ObjectStore
 	AttachmentPolicies       *attachment.PolicyRegistry
 	AttachmentResourceLinker attachment.ResourceLinker
+	AgentAvatarValidator     attachment.AvatarValidator
 	TransferTokens           *attachment.TransferTokenService
 	Outbox                   *outbox.Runtime
 	Jobs                     *job.Runtime

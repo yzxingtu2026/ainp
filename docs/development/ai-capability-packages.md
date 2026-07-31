@@ -4,7 +4,7 @@
 
 本契约冻结 `modules/ai` 的目标能力域、单向依赖、根 Facade 兼容窗口和逐文件迁移位置。迁移只改变代码归属，不改变模型调用、Tool、Agent、Conversation Runtime、知识库、记忆、导航或个性化协议。
 
-逐文件事实源为 `platform/tests/testdata/ai_capability_migration.tsv`。架构测试要求每个 AI 根目录 Go 实现文件（`register.go` 除外）恰好存在一条映射，并拒绝过期映射。
+AI 拆包迁移已完成，逐文件迁移清单和架构豁免已经删除。架构测试直接拒绝新的 AI 根目录实现文件、未冻结一级能力包、非法能力依赖与子包反向 import 根包。
 
 ## 能力域与所有权
 
@@ -115,4 +115,10 @@ all capabilities ──> ai/internal/actionmeta (private leaf, when needed)
 - `memory` 持有时态事实、提取、治理、投影、管理、召回、合并、Job/Action 注册与 Memory Tool Slot；只依赖 `conversation` 事实，Agent Version 通过固定租户投影读取冻结策略。
 - `experience/navigation` 持有导航投影、词法/语义检索、Embedding Job、Navigation/Help Tool Slot；Tool ID、Job type、Action ID、索引表和授权投影语义保持不变。
 - 通用 Tool Slot 聚合入口迁入 `tooling.RegisterBuiltins`，原迁移期 `ai/tools` 包已归档；共享帮助文档仍由 `ai/help` 嵌入并在根装配。
-- 根 `knowledge_facade.go`、`memory_facade.go`、`navigation_facade.go` 保留兼容 aliases 与薄委托；`ai_capability_migration.tsv` 和 module root implementation 基线清零。
+- 根 `knowledge_facade.go`、`memory_facade.go`、`navigation_facade.go` 保留兼容 aliases 与薄委托；迁移清单和 module root implementation 基线已删除。
+
+### Issue #222：严格门禁收口
+
+- AI 与 System 的附件协作通过 framework contract 注入：System 提供知识源解析器工厂与 Agent 头像校验器，AI 根包不再 import System。
+- 本轮审计保留 #215～#221 建立的 deprecated Facade；它们尚未经过一个发布周期，不满足删除条件。后续删除仍须独立 Issue、下游零引用证据和编译验证。
+- 新能力不得恢复迁移清单或依赖白名单；接入步骤统一遵循[模块包开发指南](./module-package-guide.md)。

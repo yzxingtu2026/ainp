@@ -90,7 +90,7 @@ auth:
 
 ## 目录
 
-见仓库 `docs/development/backend-layout.md`。
+见仓库 `docs/development/backend-layout.md`；新建模块或迁移下游模块按 `docs/development/module-package-guide.md` 执行。
 
 后端单元测试与集成测试统一位于 `tests/`，执行方式见 `tests/README.md`。
 

@@ -107,18 +107,21 @@ tests        → framework + modules（仅测试依赖）
 
 ### 跨模块依赖
 
-`modules/A` 默认禁止 import `modules/B`（包括 B 的子包）。共享机制应下沉 `framework`，业务协作应通过由所有者定义的最小 contract 注入。确需跨模块依赖时，必须在 `platform/tests/testdata/module_architecture_baseline.tsv` 中登记精确源文件、目标 import 和审查原因；该清单是迁移基线，不是永久白名单。
+`modules/A` 禁止 import `modules/B`（包括 B 的子包），不再接受迁移基线或依赖白名单。共享机制应下沉 `framework`，业务协作应通过由所有者定义的最小 contract 注入，并由 `internal/boot` 或模块根 composition root 装配。
 
-### 渐进式门禁
+### 严格门禁
 
 `platform/tests/module_architecture_test.go` 使用 Go parser 扫描源文件和 import，不依赖文本匹配。门禁规则如下：
 
 1. 新增模块根目录实现文件失败，并给出建议目标位置。
-2. 新增未登记的跨模块 import 失败。
-3. 新增兜底包失败。
-4. 存量违规按精确基线暂时放行；代码迁移后若基线未同步删除，以 stale baseline 失败。
+2. 任意跨模块 import 失败，必须改为 framework contract + composition root 注入。
+3. 新增兜底包、空目录或未冻结的 AI 一级包失败。
+4. 子包 import 本模块根包失败，避免形成父子循环依赖。
+5. 每个模块必须有 `register.go`，并提供返回 `error` 的 `Register` 函数。
 
-基线变更必须与实际迁移在同一 PR 中完成并说明原因；禁止用宽泛目录、通配符或无原因条目绕过检查。
+迁移期 `module_architecture_baseline.tsv` 与 `ai_capability_migration.tsv` 已删除。门禁不接受新增豁免文件；特殊职责只能通过收窄正式架构契约解决。
+
+完整的新模块与下游迁移步骤见[模块包开发指南](./module-package-guide.md)。
 
 ### 试点迁移兼容出口
 

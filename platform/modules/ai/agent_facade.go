@@ -48,9 +48,7 @@ const (
 )
 
 func NewAgentService(db *gorm.DB, contracts *aiagent.Registry, models aimodel.Resolver, tools *aitool.Registry) *AgentService {
-	service := agent.NewAgentService(db, contracts, models, tools)
-	service.SetAvatarValidator(rootAvatarValidator{db: db})
-	return service
+	return agent.NewAgentService(db, contracts, models, tools)
 }
 
 func NewAgentSlotService(db *gorm.DB, slots *agentslot.Registry, agents *AgentService) *AgentSlotService {

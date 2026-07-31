@@ -22,37 +22,13 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
 	"github.com/yzxingtu2026/ainp/platform/framework/prompt"
 	"github.com/yzxingtu2026/ainp/platform/framework/setting"
-	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	navigation "github.com/yzxingtu2026/ainp/platform/modules/ai/experience/navigation"
 	aihelp "github.com/yzxingtu2026/ainp/platform/modules/ai/help"
 	knowledgepkg "github.com/yzxingtu2026/ainp/platform/modules/ai/knowledge"
 	memorypkg "github.com/yzxingtu2026/ainp/platform/modules/ai/memory"
 	"github.com/yzxingtu2026/ainp/platform/modules/ai/tooling"
-	"github.com/yzxingtu2026/ainp/platform/modules/system"
-	systemmodel "github.com/yzxingtu2026/ainp/platform/modules/system/model"
 	"gorm.io/gorm"
 )
-
-type rootAvatarValidator struct{ db *gorm.DB }
-
-func (v rootAvatarValidator) ValidateAvatar(ctx context.Context, id, userID string, canManage bool) error {
-	tdb, err := tenantdata.TenantDB(ctx, v.db)
-	if err != nil {
-		return err
-	}
-	repo, err := tenantdata.NewTenantRepository[systemmodel.Attachment](tdb)
-	if err != nil {
-		return err
-	}
-	row, err := repo.First("id=? AND status=?", id, "ready")
-	if err != nil || (!canManage && row.UploaderID != userID) {
-		return errs.New(errs.CodeNotFound, "avatar attachment not found")
-	}
-	if !strings.HasPrefix(row.ContentType, "image/") {
-		return errs.New(errs.CodeValidation, "avatar attachment must be an image")
-	}
-	return nil
-}
 
 const (
 	ActionProviderList                 = "ai.provider_list"
@@ -230,6 +206,10 @@ func Register(a *app.App) error {
 	}
 	a.AgentContracts = contracts
 	agents := NewAgentService(a.DB, contracts, svc, toolRegistry)
+	if a.AgentAvatarValidator == nil {
+		return fmt.Errorf("agent avatar validator is required")
+	}
+	agents.SetAvatarValidator(a.AgentAvatarValidator)
 	if a.AttachmentPolicies == nil {
 		return fmt.Errorf("attachment policy registry is required")
 	}
@@ -254,7 +234,13 @@ func Register(a *app.App) error {
 	if err != nil {
 		return err
 	}
-	a.KnowledgeSourceResolver = system.NewKnowledgeSourceResolver(a.DB, a.Storage, knowledge)
+	if a.KnowledgeSourceFactory == nil {
+		return fmt.Errorf("knowledge source resolver factory is required")
+	}
+	a.KnowledgeSourceResolver = a.KnowledgeSourceFactory(knowledge)
+	if a.KnowledgeSourceResolver == nil {
+		return fmt.Errorf("knowledge source resolver factory returned nil")
+	}
 	a.KnowledgeParser = parserRegistry
 	a.KnowledgeChunker = aiknowledge.NewFixedTokenChunker()
 	ingestion := NewKnowledgeIngestionService(a.DB, a.KnowledgeSourceResolver, a.KnowledgeParser, a.KnowledgeChunker, svc, a.EmbeddingRuntime)
@@ -350,14 +336,14 @@ func Register(a *app.App) error {
 		{ActionToolCatalogRebuild, "/api/v1/ai/tools/catalog/rebuild", "重建工具目录", "ai.tool_runtime", "工具运行时", action.JSON(func(ctx context.Context, _ struct{}) (any, error) { return tools.ReconcileCatalog(ctx, true) }), nil},
 		{ActionToolIndexStatus, "/api/v1/ai/tools/index/status", "工具索引状态", "ai.tool_runtime", "工具运行时", action.JSON(func(ctx context.Context, _ struct{}) (any, error) {
 			ac := auth.MustFromContext(ctx)
-			if !ac.HasPermission(system.ActionSettingList) {
+			if !ac.HasPermission(setting.ActionListPermission) {
 				return nil, errs.NewKey(errs.CodeForbidden, "common.forbidden", "forbidden")
 			}
 			return tools.IndexStatus(ctx)
 		}), nil},
 		{ActionToolIndexRebuild, "/api/v1/ai/tools/index/rebuild", "重建工具索引", "ai.tool_runtime", "工具运行时", action.JSON(func(ctx context.Context, _ struct{}) (any, error) {
 			ac := auth.MustFromContext(ctx)
-			if !ac.HasPermission(system.ActionSettingUpdate) {
+			if !ac.HasPermission(setting.ActionUpdatePermission) {
 				return nil, errs.NewKey(errs.CodeForbidden, "common.forbidden", "forbidden")
 			}
 			if _, err := tools.ReconcileCatalog(ctx, true); err != nil {
@@ -367,14 +353,14 @@ func Register(a *app.App) error {
 		}), nil},
 		{ActionNavigationIndexStatus, "/api/v1/ai/navigation/index/status", "导航索引状态", "ai.navigation", "功能导航", action.JSON(func(ctx context.Context, _ struct{}) (any, error) {
 			ac := auth.MustFromContext(ctx)
-			if !ac.HasPermission(system.ActionSettingList) {
+			if !ac.HasPermission(setting.ActionListPermission) {
 				return nil, errs.NewKey(errs.CodeForbidden, "common.forbidden", "forbidden")
 			}
 			return navigationSearch.IndexStatus(ctx, ac.TenantID)
 		}), nil},
 		{ActionNavigationIndexRebuild, "/api/v1/ai/navigation/index/rebuild", "重建导航索引", "ai.navigation", "功能导航", action.JSON(func(ctx context.Context, _ struct{}) (any, error) {
 			ac := auth.MustFromContext(ctx)
-			if !ac.HasPermission(system.ActionSettingUpdate) {
+			if !ac.HasPermission(setting.ActionUpdatePermission) {
 				return nil, errs.NewKey(errs.CodeForbidden, "common.forbidden", "forbidden")
 			}
 			if err := navigationSearch.ReconcileForTenant(ctx, ac.TenantID, true); err != nil {

@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/yzxingtu2026/ainp/platform/framework/action"
+	"github.com/yzxingtu2026/ainp/platform/framework/aiknowledge"
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
 	"github.com/yzxingtu2026/ainp/platform/framework/attachment"
 	"github.com/yzxingtu2026/ainp/platform/framework/capability"
@@ -136,6 +137,10 @@ func Register(a *app.App) error {
 	attachSvc := NewAttachmentService(a.DB, a.Storage, a.TransferTokens, a.AttachmentPolicies, policyProvider)
 	a.AIAssetResolver = attachSvc
 	a.AttachmentResourceLinker = attachSvc
+	a.AgentAvatarValidator = attachments.NewAvatarValidator(a.DB)
+	a.KnowledgeSourceFactory = func(knowledge aiknowledge.Service) aiknowledge.DocumentSourceResolver {
+		return attachments.NewKnowledgeSourceResolver(a.DB, a.Storage, knowledge)
+	}
 	if a.Outbox != nil {
 		attachSvc.SetOutboxWriter(a.Outbox.Writer)
 	}
