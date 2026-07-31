@@ -120,6 +120,10 @@ tests        → framework + modules（仅测试依赖）
 
 基线变更必须与实际迁移在同一 PR 中完成并说明原因；禁止用宽泛目录、通配符或无原因条目绕过检查。
 
+### 试点迁移兼容出口
+
+`operations` 与 `demo` 的实现分别迁入 `center`（运维中心）和 `showcase`（演示能力）包后，根包继续提供稳定 `Register`、公开 ID 常量和必要 contracts。旧的 Service 构造器与 DTO 仅通过类型别名/委托 Facade 兼容现有调用方；当仓库及已知下游不再从模块根包引用对应 Service/DTO，且完成一个发布周期的迁移窗口后，应删除这些非注册类兼容出口。稳定注册入口和协议 ID 不在该删除范围。
+
 tenant-owned 数据依赖固定为：
 
 ```text

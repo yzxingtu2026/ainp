@@ -1,4 +1,4 @@
-package demo
+package showcase
 
 import "github.com/yzxingtu2026/ainp/platform/framework/codeset"
 
