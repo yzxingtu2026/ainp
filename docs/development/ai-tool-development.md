@@ -69,6 +69,12 @@ if err := a.RegisterAction(action.Action{
 
 未声明 `AIMeta` 的 Action 不会进入 Tool Registry，也不会被 `tool.search`、`tool.load` 或模型调用。需要新增暴露能力时，直接修改该 Action 的注册定义并补齐契约测试，不同步维护第二份 ID 清单。
 
+### Capability 白名单门禁
+
+`ExposeTool=true` 只表示 Action 可以投影为工具，不代表 Agent 可以发现它。新增或首次暴露一个 Capability 时，必须在 `platform/modules/ai/register.go` 审查 builtin Agent Contract，并显式更新目标 Contract 的 `AllowedToolCapabilities`。框架 boot 会汇总真实 Action Registry 与所有 builtin Contract：任何暴露 Capability 未被至少一个 Contract 覆盖时直接启动失败，错误会指向该注册文件；禁止通过自动聚合绕过安全审查。
+
+确有安全原因需要让某个暴露 Capability 暂时不属于任何 builtin Contract 时，可在统一 boot 校验调用中加入显式排除。排除清单会双向校验：Capability 不再暴露或已被 Contract 覆盖后，旧排除同样导致失败，必须及时删除。下游新增模块的测试还应从目标 Contract 创建真实 ToolScope，验证授权用户可发现、无权限用户不可见。
+
 ### 写操作示例
 
 ```go
@@ -297,6 +303,7 @@ func TestWeatherToolExecutor(t *testing.T) {
 - [ ] DTO 与 Schema 同源，没有手写平行契约。
 - [ ] 风险、副作用和确认策略按最严格原则配置。
 - [ ] permission、tenant 和 realm 沿用事实源，不复制权限逻辑。
+- [ ] 新增或首次暴露 Capability 已审查并同步 builtin Contract 白名单，架构门禁无遗漏或 stale 排除。
 - [ ] Executor 不绕过 Tool Runtime，不记录敏感输入输出。
 - [ ] 核心 Slot 只修改独立工具目录和显式聚合入口，公共主循环没有业务 Tool ID 分支。
 - [ ] project/search/load/execute 共用动态可用性判定，投影后撤权会立即拒绝执行。
