@@ -141,6 +141,10 @@ system root Facade
 
 根包继续提供稳定构造器、DTO aliases、Action/Menu ID 与装配入口。`system/model` 和 `system/jobs` 仅为已知下游保留临时 type/function aliases；仓库及已知下游完成 import 迁移并经过一个发布周期后删除。认证协议、Setting Definition key、附件 resource type、通知 Definition/Job type、Action ID 与帮助文档 key 均属于稳定协议，不在兼容出口删除范围。
 
+### AI 能力域
+
+`ai` 目标能力域、依赖图、根 Facade 兼容窗口和逐文件迁移顺序见 [`ai-capability-packages.md`](ai-capability-packages.md)。新增 AI 根实现文件或能力间 import 必须通过对应迁移映射与 AST 门禁。
+
 tenant-owned 数据依赖固定为：
 
 ```text

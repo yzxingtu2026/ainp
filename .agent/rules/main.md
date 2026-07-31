@@ -25,6 +25,7 @@
 - 统一认证与会话见 `authentication-and-session`（Authenticator / Identity / Session / refresh 轮换；渠道禁止旁路签 Token）。
 - 审计最小集见 `audit`。
 - 后端目录与模块边界见 `backend-layout`。
+- AI 能力域拆包与 Facade 生命周期见 `ai-capability-packages`。
 - CodeSet、状态机与字符串常量见 `code-sets-and-status`。
 - 租户角色、权限目录与管理员保护见 `role-management`。
 - 后端多语言 i18n 见 `i18n`；前端多语言见 `frontend-i18n`。
@@ -106,6 +107,7 @@
 - `i18n` → `docs/development/api-response.md`
 - `frontend-i18n` → `docs/development/frontend-stack.md`
 - `backend-layout` → `docs/development/backend-layout.md`
+- `ai-capability-packages` → `docs/development/ai-capability-packages.md`
 - `code-sets-and-status` → `docs/development/code-sets-and-status.md`
 - `role-management` → `docs/development/role-management.md`
 - `team-escalation`
