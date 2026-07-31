@@ -25,6 +25,14 @@ Soybean Admin（壳）
 └── 业务菜单 ← 平台 Metadata / 后端动态路由（icon 为 Iconify 字符串）
 ```
 
+## Select 空值契约
+
+业务单选优先使用 `AppSelect`，可选值在 UI 模型中使用 `null` 表示未选择；API 请求边界再根据 DTO 需要显式转换为 `undefined` 或 `''`。禁止使用 `value || fallback` 转换 Select 值，因为 `0` 与合法空字符串都可能是业务值。
+
+`AppSelect` 默认使用 `empty-string-policy="auto"` 兼容历史模型：仅当当前 options 中不存在合法 `value: ''` 时，视图才把 `''` 作为未选择并展示 placeholder，且初次渲染不会回写业务模型。options 包含空字符串时保留其选项语义；异步 options 到达后自动重新判断。确需在无对应 option 时保留空字符串显示语义，可显式设置 `empty-string-policy="preserve"`。多选数组、数字 `0`、非空历史值均不归一化。
+
+`CodeSelect` 与 `RemoteSelect` 必须复用 `AppSelect`。筛选器中的“全部”若使用 `{ label: '全部', value: '' }`，保持该 option 即可，不得在全局请求层或组件层无条件把空字符串转换为 `null`。新增或迁移表单时必须测试初始化、清空、异步 options、合法空字符串和 API DTO 转换。
+
 ## 起壳与裁剪建议
 
 1. 以 Soybean Admin 的 Naive UI 版为起点初始化 `frontend/`。

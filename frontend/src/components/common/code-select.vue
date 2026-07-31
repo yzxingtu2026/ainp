@@ -4,21 +4,27 @@ import { useCodeSetStore } from '@/store/modules/codeset';
 
 defineOptions({ name: 'CodeSelect' });
 
-const props = withDefaults(defineProps<{ codeSet: string; disabled?: boolean; filterable?: boolean }>(), { filterable: true });
-const model = defineModel<string | null>();
+const props = withDefaults(defineProps<{ codeSet: string; disabled?: boolean; filterable?: boolean }>(), {
+  filterable: true
+});
+const model = defineModel<string | null>('value');
 const store = useCodeSetStore();
-const options = computed(() => (store.get(props.codeSet)?.items || [])
-  .slice()
-  .sort((a, b) => a.order - b.order)
-  .map(item => ({ label: item.label, value: item.value, disabled: item.deprecated })));
+const options = computed(() =>
+  (store.get(props.codeSet)?.items || [])
+    .slice()
+    .sort((a, b) => a.order - b.order)
+    .map(item => ({ label: item.label, value: item.value, disabled: item.deprecated }))
+);
 
-async function ensureLoaded() { await store.load([props.codeSet]); }
+async function ensureLoaded() {
+  await store.load([props.codeSet]);
+}
 onMounted(ensureLoaded);
 watch(() => props.codeSet, ensureLoaded);
 </script>
 
 <template>
-  <NSelect
+  <AppSelect
     v-model:value="model"
     :options="options"
     :loading="store.loading"

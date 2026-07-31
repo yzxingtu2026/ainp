@@ -9,5 +9,6 @@
 - 页面语义只经统一 Page Context Provider Registry 注册；全局 AI 禁止读取 DOM/组件实例或按路由维护业务分支，Provider 禁止上传表单草稿和敏感状态。
 - 全局 AI Sidebar 与 Workspace 必须复用单例 Conversation controller 和共享 Surface；壳级 Store 只管理开关/视图，禁止复制发送、SSE、恢复或确认逻辑。
 - 智能体头像统一使用 `AgentAvatar`，只传 attachment ID、名称和尺寸；禁止业务页直接拼图片 URL，加载必须去重、限并发并回收 Object URL。
+- 业务单选优先使用 `AppSelect`；UI 未选择统一为 `null`，API 边界按 DTO 显式转换。历史 `''` 仅在 options 不含合法空字符串值时由视图归一化，禁止全局无条件转换；`CodeSelect` / `RemoteSelect` 必须复用同一契约。
 
 详规：`docs/development/frontend-stack.md`
