@@ -15,3 +15,11 @@ func requireTenant(ctx context.Context) (*auth.Context, error) {
 	}
 	return ac, nil
 }
+
+func tenantIdentity(ctx context.Context) (string, string, error) {
+	ac := auth.MustFromContext(ctx)
+	if !ac.Authenticated || ac.Realm != auth.RealmTenant || ac.TenantID == "" || ac.UserID == "" {
+		return "", "", errs.NewKey(errs.CodeUnauthorized, "common.unauthorized", "unauthorized")
+	}
+	return ac.TenantID, ac.UserID, nil
+}

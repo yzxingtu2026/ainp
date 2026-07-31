@@ -122,6 +122,12 @@ func scanModuleArchitecture(modulesRoot string) (map[string]moduleArchitectureVi
 			if !strings.HasPrefix(importPath, moduleImportPrefix) {
 				continue
 			}
+			if strings.HasPrefix(rel, "modules/system/access/") && importPath == moduleImportPrefix+"system" {
+				addModuleArchitectureViolation(violations, moduleArchitectureViolation{
+					Rule: "system-access-parent-import", Source: rel, Target: importPath,
+				})
+				continue
+			}
 			targetParts := strings.Split(strings.TrimPrefix(importPath, moduleImportPrefix), "/")
 			if len(targetParts) == 0 || targetParts[0] == "" || targetParts[0] == sourceModule {
 				continue
@@ -206,6 +212,8 @@ func formatModuleArchitectureFailure(violation moduleArchitectureViolation, stal
 		return fmt.Sprintf("%s: rule %s imports %s; depend on a framework contract or add an explicitly reviewed baseline entry with a reason", violation.Source, violation.Rule, violation.Target)
 	case "fallback-package":
 		return fmt.Sprintf("%s: rule %s; choose a capability or technical-role package name instead of a catch-all package", violation.Source, violation.Rule)
+	case "system-access-parent-import":
+		return fmt.Sprintf("%s: rule %s imports %s; depend on access contracts or framework packages to avoid a parent-package cycle", violation.Source, violation.Rule, violation.Target)
 	default:
 		return fmt.Sprintf("%s: rule %s", violation.Source, violation.Rule)
 	}

@@ -124,6 +124,14 @@ tests        → framework + modules（仅测试依赖）
 
 `operations` 与 `demo` 的实现分别迁入 `center`（运维中心）和 `showcase`（演示能力）包后，根包继续提供稳定 `Register`、公开 ID 常量和必要 contracts。旧的 Service 构造器与 DTO 仅通过类型别名/委托 Facade 兼容现有调用方；当仓库及已知下游不再从模块根包引用对应 Service/DTO，且完成一个发布周期的迁移窗口后，应删除这些非注册类兼容出口。稳定注册入口和协议 ID 不在该删除范围。
 
+### System 身份与访问控制
+
+`system` 的认证/会话、用户、角色、权限投影、pre-auth 和用户/角色 Page Context 归 `system/access` 所有，身份数据模型归 `system/access/model`。依赖方向固定为 `system root Facade -> access -> access/model`；`access` 禁止反向 import `system` 根包。原 `system/model` 只为已知下游保留身份模型 type alias，设置与附件模型仍由原包持有。
+
+根包继续提供认证、用户和角色的稳定构造器、DTO aliases、Action/Menu ID 与 `Register` 装配入口。兼容 aliases 在仓库和已知下游完成 import 迁移并经过一个发布周期后删除；认证协议、会话接口和稳定 ID 不属于可删除兼容项。
+
+个人资料的身份读写由 `access.UserService` 持有；根包 `profile_register` 只负责把身份资料与用户偏好/MCP 信息组合注册。tenant identity guard 在 `access` 内闭合，用户偏好及 `RuntimeContextProvider` 属于 settings/context 投影，继续留待对应能力迁移，不得反向塞入认证服务。
+
 tenant-owned 数据依赖固定为：
 
 ```text

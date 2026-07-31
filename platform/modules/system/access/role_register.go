@@ -1,4 +1,4 @@
-package system
+package access
 
 import (
 	"github.com/yzxingtu2026/ainp/platform/framework/action"
@@ -6,7 +6,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/pagination"
 )
 
-func registerRoleActions(a *app.App, svc *RoleService) error {
+func RegisterRoleActions(a *app.App, svc *RoleService) error {
 	auditOn := true
 	definitions := []struct {
 		id          string

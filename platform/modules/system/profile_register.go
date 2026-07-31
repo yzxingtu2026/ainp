@@ -17,6 +17,24 @@ type MCPConnectionInfoView struct {
 	Scopes       []string `json:"scopes"`
 }
 
+type selfProfileUpdateRequest struct {
+	DisplayName        string  `json:"display_name" validate:"required,max=128"`
+	AvatarAttachmentID *string `json:"avatar_attachment_id,omitempty" validate:"omitempty"`
+}
+
+type selfPasswordUpdateRequest struct {
+	CurrentPassword string `json:"current_password" validate:"required"`
+	NewPassword     string `json:"new_password" validate:"required"`
+}
+
+func authMeta(access action.AccessMode, name, key string, audit *bool, method, path string) action.Metadata {
+	reason := action.AIExcludePendingSafetyReview
+	if access == action.AccessPublic {
+		reason = action.AIExcludePublicAuthentication
+	}
+	return action.Metadata{Capability: "system", Access: access, Name: name, NameKey: key + ".name", Description: name, DescriptionKey: key + ".description", Audit: audit, AI: action.ExcludeFromAI(reason), HTTP: &action.HTTPMeta{Method: method, Path: path}}
+}
+
 func registerProfileActions(a *app.App, users *UserService, prefs *UserSettingService) error {
 	auditOn, auditOff := true, false
 	actions := []action.Action{
