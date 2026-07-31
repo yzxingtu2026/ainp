@@ -9,5 +9,7 @@
 - 根 Facade 只允许 alias、薄委托和装配，禁止复制业务逻辑；稳定 Action/Job/Event/Setting/resource ID 与协议值不得因迁移改变。
 - Service/DTO/model/repository 兼容出口须在已知下游迁移并经过至少一个发布周期后，另开 Issue 删除；根 `Register` 和稳定协议常量长期保留。
 - `ai` 子能力不得依赖 `system` 或其兼容 model；附件与身份能力通过 framework/owner contracts 注入。
+- PostgreSQL vector GORM 值类型统一使用 `framework/database.PGVector`；禁止各能力复制 Scan/Value 实现或借用 Knowledge 模型类型。
+- #219 后模型运行时与 Tooling 新代码直接 import owner 包；根 deprecated Facade 仅用于兼容，禁止继续扩大。
 
 详规：`docs/development/ai-capability-packages.md`

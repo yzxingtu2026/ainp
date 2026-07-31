@@ -1257,14 +1257,14 @@ func (s *AgentRuntimeService) ensureToolScope(ctx context.Context, run *AgentRun
 	allowedSources := []string{}
 	allowedCapabilities := []string{}
 	for _, b := range bindings {
-		if s.tools.registry.IsBindable(b.ToolID) {
+		if s.tools.Registry().IsBindable(b.ToolID) {
 			allowed = append(allowed, b.ToolID)
 		}
 	}
 	if s.contracts != nil && agent.ContractKey != "" {
 		if contract, ok := s.contracts.Get(agent.ContractKey, agent.ContractVersion); ok {
 			for _, id := range contract.RequiredToolSelectors {
-				group := s.tools.registry.BindingGroup(id)
+				group := s.tools.Registry().BindingGroup(id)
 				if len(group) == 0 {
 					allowed = append(allowed, id)
 					continue
@@ -1309,7 +1309,7 @@ func (s *AgentRuntimeService) executeToolCall(ctx context.Context, run *AgentRun
 	if toolID == "meta:tool.load" {
 		stepType = aiagentruntime.StepToolLoad
 	}
-	if metadata, ok := s.tools.registry.SlotMetadata(toolID); ok {
+	if metadata, ok := s.tools.Registry().SlotMetadata(toolID); ok {
 		stepType = aiagentruntime.StepType(metadata.StepType)
 	}
 	step, stepErr := s.newStep(ctx, run, stepType, map[string]any{"tool_name": call.ToolName, "tool_call_id": call.ToolCallID})
@@ -1407,7 +1407,7 @@ func (s *AgentRuntimeService) executeToolCall(ctx context.Context, run *AgentRun
 }
 
 func (s *AgentRuntimeService) registryToolID(name string) string {
-	return resolveRegistryToolID(s.tools.registry.List(), name)
+	return resolveRegistryToolID(s.tools.Registry().List(), name)
 }
 
 func resolveRegistryToolID(definitions []aitool.Definition, name string) string {
@@ -1491,7 +1491,7 @@ func (s *AgentRuntimeService) appendAssistantToolCalls(ctx context.Context, run 
 			Arguments:  args,
 		}
 		if toolID := s.registryToolID(call.ToolName); toolID != "" {
-			if definition, ok := s.tools.registry.Get(toolID); ok {
+			if definition, ok := s.tools.Registry().Get(toolID); ok {
 				presentation := aitool.PresentationFor(definition)
 				part.Presentation = &presentation
 			}
@@ -1535,13 +1535,13 @@ func (s *AgentRuntimeService) appendToolResult(ctx context.Context, run *AgentRu
 		summary := map[string]any{"tool_call_id": call.ToolCallID}
 		category := ""
 		toolID := ""
-		for _, d := range s.tools.registry.List() {
+		for _, d := range s.tools.Registry().List() {
 			if modelToolName(d.ID) == call.ToolName {
 				toolID = d.ID
 				break
 			}
 		}
-		if metadata, exists := s.tools.registry.SlotMetadata(toolID); exists {
+		if metadata, exists := s.tools.Registry().SlotMetadata(toolID); exists {
 			if result, resultOK := value.(*aitool.Result); resultOK {
 				category = result.ErrorCategory
 				data, _ := result.Data.(map[string]any)

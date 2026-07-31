@@ -24,6 +24,21 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/modules/ai"
 )
 
+func TestPGVectorDatabaseValueKeepsAIRootCompatibility(t *testing.T) {
+	var legacy ai.PGVector = database.PGVector{0.25, -1.5, 3}
+	value, err := legacy.Value()
+	if err != nil || value != "[0.25,-1.5,3]" {
+		t.Fatalf("unexpected pgvector value: %v %v", value, err)
+	}
+	var decoded database.PGVector
+	if err = decoded.Scan([]byte("[0.25,-1.5,3]")); err != nil {
+		t.Fatal(err)
+	}
+	if len(decoded) != len(legacy) || decoded[0] != legacy[0] || decoded[1] != legacy[1] || decoded[2] != legacy[2] {
+		t.Fatalf("pgvector round trip mismatch: %#v", decoded)
+	}
+}
+
 func TestEmbeddingAdapterRegistryFailsClosed(t *testing.T) {
 	r := aimodelruntime.NewEmbeddingAdapterRegistry()
 	if _, ok := r.Get("missing"); ok {

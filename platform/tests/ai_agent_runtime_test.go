@@ -226,7 +226,7 @@ func TestAgentActionAuditContextIsCanonicalAndPersisted(t *testing.T) {
 			t.Fatalf("agent execution context missing %q", expected)
 		}
 	}
-	toolSource, err := os.ReadFile("../modules/ai/tool_service.go")
+	toolSource, err := os.ReadFile("../modules/ai/tooling/tool_service.go")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -241,7 +241,7 @@ func TestAgentRuntimeUsesSlotMetadataWithoutBusinessToolBranches(t *testing.T) {
 		t.Fatal(err)
 	}
 	src := string(body)
-	for _, expected := range []string{"contract.RequiredToolSelectors", "registry.IsBindable(b.ToolID)", "SlotMetadata(toolID)", "metadata.Observations"} {
+	for _, expected := range []string{"contract.RequiredToolSelectors", "Registry().IsBindable(b.ToolID)", "SlotMetadata(toolID)", "metadata.Observations"} {
 		if !strings.Contains(src, expected) {
 			t.Fatalf("agent slot integration missing %q", expected)
 		}
@@ -273,7 +273,7 @@ func TestKnowledgeToolIsRegisteredAndKeepsChunkTextOutOfFacts(t *testing.T) {
 			t.Fatalf("knowledge slot missing %q", expected)
 		}
 	}
-	toolService, err := os.ReadFile("../modules/ai/tool_service.go")
+	toolService, err := os.ReadFile("../modules/ai/tooling/tool_service.go")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -310,7 +310,7 @@ func TestMemorySearchIsSingleDirectSlotWithoutRuntimeIDBranch(t *testing.T) {
 	if strings.Count(string(register), "memorytool.New(") != 1 {
 		t.Fatal("memory search slot must be registered exactly once")
 	}
-	toolService, err := os.ReadFile("../modules/ai/tool_service.go")
+	toolService, err := os.ReadFile("../modules/ai/tooling/tool_service.go")
 	if err != nil {
 		t.Fatal(err)
 	}

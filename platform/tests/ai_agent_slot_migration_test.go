@@ -9,7 +9,7 @@ import (
 func TestAgentSlotModelsAreIncludedInStartupMigrations(t *testing.T) {
 	files := []string{
 		"../modules/ai/agent_model.go",
-		"../modules/ai/model.go",
+		"../modules/ai/model_facade.go",
 	}
 	for _, file := range files {
 		body, err := os.ReadFile(file)
