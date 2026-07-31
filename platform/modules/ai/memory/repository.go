@@ -1,4 +1,4 @@
-package ai
+package memory
 
 import (
 	"context"
@@ -23,6 +23,8 @@ func registerMemoryTenantModels() error {
 	})
 	return memoryModelRegistration.err
 }
+
+func RegisterTenantModels() error { return registerMemoryTenantModels() }
 
 type MemoryRepository struct{}
 

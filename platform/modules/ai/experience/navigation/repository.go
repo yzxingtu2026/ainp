@@ -1,4 +1,4 @@
-package ai
+package navigation
 
 import (
 	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
@@ -16,3 +16,5 @@ func registerNavigationTenantModels() error {
 	})
 	return navigationModelRegistration.err
 }
+
+func RegisterTenantModels() error { return registerNavigationTenantModels() }

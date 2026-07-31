@@ -1,4 +1,4 @@
-package ai
+package knowledge
 
 import (
 	"sync"

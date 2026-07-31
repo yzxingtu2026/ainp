@@ -1,4 +1,4 @@
-package ai
+package memory
 
 import (
 	"bytes"
@@ -20,8 +20,16 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/logging"
 	"github.com/yzxingtu2026/ainp/platform/framework/prompt"
 	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
+	"github.com/yzxingtu2026/ainp/platform/modules/ai/conversation"
 	"gorm.io/gorm"
 )
+
+type AgentRun = conversation.AgentRun
+type ConversationMessage = conversation.ConversationMessage
+type agentVersionProjection struct {
+	ID, AgentID  string
+	MemoryPolicy json.RawMessage
+}
 
 const (
 	MemoryExtractionJobType       = "ai.memory.evaluate_run"
@@ -88,10 +96,18 @@ func (s *MemoryExtractionService) EvaluateRun(ctx context.Context, runID string)
 	if existing.ID != "" && existing.Status == "running" && existing.UpdatedAt.After(time.Now().UTC().Add(-5*time.Minute)) {
 		return nil
 	}
-	var version AgentVersion
-	if err := db.Where("id=?", run.AgentVersionID).First(&version).Error; err != nil {
+	tdb, err := s.db.Tenant(ctx)
+	if err != nil {
 		return err
 	}
+	versions, err := tenantdata.TenantRaw[agentVersionProjection](tdb, `SELECT id,agent_id,memory_policy FROM ai_agent_versions WHERE tenant_id=? AND id=? LIMIT 1`, run.AgentVersionID)
+	if err != nil || len(versions) != 1 {
+		if err != nil {
+			return err
+		}
+		return gorm.ErrRecordNotFound
+	}
+	version := versions[0]
 	var policy aimemory.Policy
 	if err := strictJSON(version.MemoryPolicy, &policy); err != nil || policy.Validate() != nil {
 		return jobPermanent(fmt.Errorf("invalid frozen memory policy"))
@@ -272,7 +288,7 @@ func (s *MemoryExtractionService) markFailed(ctx context.Context, id, category s
 	return s.db.WithContext(ctx).Model(&MemoryEvaluation{}).Where("id=?", id).Updates(map[string]any{"status": "failed", "error_category": category}).Error
 }
 
-func (s *MemoryExtractionService) persistCandidates(ctx context.Context, run AgentRun, version AgentVersion, policy aimemory.Policy, evaluation MemoryEvaluation, invocationID, argsHash string, allowed map[string]bool, candidates []memoryCandidate) error {
+func (s *MemoryExtractionService) persistCandidates(ctx context.Context, run AgentRun, version agentVersionProjection, policy aimemory.Policy, evaluation MemoryEvaluation, invocationID, argsHash string, allowed map[string]bool, candidates []memoryCandidate) error {
 	now := time.Now().UTC()
 	policyJSON, _ := json.Marshal(policy)
 	db := s.db.WithContext(ctx)

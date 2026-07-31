@@ -98,7 +98,7 @@ AI: &action.AIMeta{
 
 ## 新增 Provider 和 Executor
 
-框架内置、需要动态可用性或专用预算/观测的核心工具应实现 `aitool.RuntimeSlot`，放在 `platform/modules/ai/tools/{tool}/`，并只在 `platform/modules/ai/tools/register.go` 的显式聚合调用处注册。Slot 必须声明：
+框架内置、需要动态可用性或专用预算/观测的核心工具应在能力 owner 包实现 `aitool.RuntimeSlot`，并只通过根装配中的 `tooling.RegisterBuiltins` 显式聚合。禁止恢复横切 `platform/modules/ai/tools` 包。Slot 必须声明：
 
 - `Definition` 与 `direct/progressive` 发现模式；
 - 基于可信 `RuntimeScope` 的动态投影；

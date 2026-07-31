@@ -1,4 +1,4 @@
-package ai
+package knowledge
 
 import (
 	"fmt"
@@ -6,7 +6,11 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/action"
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
 	"github.com/yzxingtu2026/ainp/platform/framework/codeset"
+	"github.com/yzxingtu2026/ainp/platform/modules/ai/internal/actionmeta"
 )
+
+var readAIMeta = actionmeta.Read
+var mutationAIMeta = actionmeta.Mutation
 
 const (
 	ActionKnowledgeBaseList   = "ai.knowledge_base_list"

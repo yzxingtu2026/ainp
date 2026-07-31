@@ -40,12 +40,12 @@ func TestMemoryExtractionMigrationAndReliableChainContract(t *testing.T) {
 			t.Fatalf("migration missing %q", expected)
 		}
 	}
-	register, err := os.ReadFile("../modules/ai/memory_extraction_register.go")
+	register, err := os.ReadFile("../modules/ai/memory/extraction_register.go")
 	if err != nil {
 		t.Fatal(err)
 	}
 	code := string(register)
-	for _, expected := range []string{"agentRunTerminalEvent", "MemoryExtractionJobType", "MaxAttempts: 5", "job.Permanent", "ActionMemoryExtractionRecover", "memory-recovery:"} {
+	for _, expected := range []string{"aiagentruntime.EventRunTerminal", "MemoryExtractionJobType", "MaxAttempts: 5", "job.Permanent", "ActionMemoryExtractionRecover", "memory-recovery:"} {
 		if !strings.Contains(code, expected) {
 			t.Fatalf("reliable chain missing %q", expected)
 		}

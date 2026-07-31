@@ -254,7 +254,7 @@ func TestAgentRuntimeUsesSlotMetadataWithoutBusinessToolBranches(t *testing.T) {
 }
 
 func TestKnowledgeToolIsRegisteredAndKeepsChunkTextOutOfFacts(t *testing.T) {
-	body, err := os.ReadFile("../modules/ai/knowledge_tool.go")
+	body, err := os.ReadFile("../modules/ai/knowledge/tool.go")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -264,7 +264,7 @@ func TestKnowledgeToolIsRegisteredAndKeepsChunkTextOutOfFacts(t *testing.T) {
 			t.Fatalf("knowledge tool missing %q", expected)
 		}
 	}
-	slot, err := os.ReadFile("../modules/ai/tools/knowledge/slot.go")
+	slot, err := os.ReadFile("../modules/ai/knowledge/slot.go")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -293,7 +293,7 @@ func TestKnowledgeToolIsRegisteredAndKeepsChunkTextOutOfFacts(t *testing.T) {
 }
 
 func TestMemorySearchIsSingleDirectSlotWithoutRuntimeIDBranch(t *testing.T) {
-	slot, err := os.ReadFile("../modules/ai/tools/memory/slot.go")
+	slot, err := os.ReadFile("../modules/ai/memory/slot.go")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -307,7 +307,7 @@ func TestMemorySearchIsSingleDirectSlotWithoutRuntimeIDBranch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Count(string(register), "memorytool.New(") != 1 {
+	if strings.Count(string(register), "memorypkg.New(") != 1 {
 		t.Fatal("memory search slot must be registered exactly once")
 	}
 	toolService, err := os.ReadFile("../modules/ai/tooling/tool_service.go")

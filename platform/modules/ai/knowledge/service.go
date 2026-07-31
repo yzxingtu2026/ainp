@@ -1,4 +1,4 @@
-package ai
+package knowledge
 
 import (
 	"context"
@@ -18,7 +18,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/pagination"
 	"github.com/yzxingtu2026/ainp/platform/framework/status"
 	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
-	systemmodel "github.com/yzxingtu2026/ainp/platform/modules/system/model"
+	"github.com/yzxingtu2026/ainp/platform/modules/ai/agent"
 	"gorm.io/gorm"
 )
 
@@ -41,7 +41,7 @@ var sha256Pattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 type KnowledgeService struct {
 	db        tenantdata.GuardedDatabase
 	models    aimodel.Resolver
-	agents    *AgentService
+	agents    *agent.AgentService
 	links     attachment.ResourceLinker
 	events    outbox.Writer
 	retriever aiknowledge.KnowledgeRetriever
@@ -55,7 +55,7 @@ func (s *KnowledgeService) SetRetrievalServices(retriever aiknowledge.KnowledgeR
 	s.citations = citations
 }
 
-func NewKnowledgeService(db *gorm.DB, models aimodel.Resolver, agents *AgentService, links attachment.ResourceLinker) *KnowledgeService {
+func NewKnowledgeService(db *gorm.DB, models aimodel.Resolver, agents *agent.AgentService, links attachment.ResourceLinker) *KnowledgeService {
 	if err := registerKnowledgeTenantModels(); err != nil {
 		panic(err)
 	}
@@ -683,19 +683,21 @@ func (s *KnowledgeService) DeleteDocument(ctx context.Context, request Knowledge
 	return map[string]any{"deleted": true}, nil
 }
 
-func (s *KnowledgeService) attachmentSnapshot(ctx context.Context, ac *auth.Context, id string) (*systemmodel.Attachment, error) {
-	tdb, repoErr := s.db.Tenant(ctx)
-	if repoErr != nil {
-		return nil, repoErr
+type attachmentSnapshot struct {
+	ID, UploaderID, Status, OriginalName, ContentType, SHA256 string
+	Size                                                      int64
+}
+
+func (s *KnowledgeService) attachmentSnapshot(ctx context.Context, ac *auth.Context, id string) (*attachmentSnapshot, error) {
+	tdb, queryErr := s.db.Tenant(ctx)
+	if queryErr != nil {
+		return nil, queryErr
 	}
-	repo, repoErr := tenantdata.NewTenantRepository[systemmodel.Attachment](tdb)
-	if repoErr != nil {
-		return nil, repoErr
-	}
-	row, repoErr := repo.First("id=? AND status=?", id, status.AttachmentReady)
-	if repoErr != nil {
+	rows, queryErr := tenantdata.TenantRaw[attachmentSnapshot](tdb, `SELECT id,uploader_id,status,original_name,content_type,sha256,size FROM attachments WHERE tenant_id=? AND id=? AND status=? LIMIT 1`, id, status.AttachmentReady)
+	if queryErr != nil || len(rows) != 1 {
 		return nil, errs.NewKey(errs.CodeNotFound, "ai.knowledge.attachment_not_found", "ready attachment not found")
 	}
+	row := rows[0]
 	if row.UploaderID != ac.UserID {
 		return nil, errs.NewKey(errs.CodeNotFound, "ai.knowledge.attachment_not_found", "ready attachment not found")
 	}

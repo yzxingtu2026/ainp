@@ -23,11 +23,11 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/prompt"
 	"github.com/yzxingtu2026/ainp/platform/framework/setting"
 	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
+	navigation "github.com/yzxingtu2026/ainp/platform/modules/ai/experience/navigation"
 	aihelp "github.com/yzxingtu2026/ainp/platform/modules/ai/help"
-	aitools "github.com/yzxingtu2026/ainp/platform/modules/ai/tools"
-	knowledgetool "github.com/yzxingtu2026/ainp/platform/modules/ai/tools/knowledge"
-	memorytool "github.com/yzxingtu2026/ainp/platform/modules/ai/tools/memory"
-	navigationtool "github.com/yzxingtu2026/ainp/platform/modules/ai/tools/navigation"
+	knowledgepkg "github.com/yzxingtu2026/ainp/platform/modules/ai/knowledge"
+	memorypkg "github.com/yzxingtu2026/ainp/platform/modules/ai/memory"
+	"github.com/yzxingtu2026/ainp/platform/modules/ai/tooling"
 	"github.com/yzxingtu2026/ainp/platform/modules/system"
 	systemmodel "github.com/yzxingtu2026/ainp/platform/modules/system/model"
 	"gorm.io/gorm"
@@ -451,7 +451,7 @@ func Register(a *app.App) error {
 	if err := toolRegistry.RegisterProvider(&aitool.ActionProvider{Actions: a.Actions}, &aitool.ActionExecutor{Actions: a.Actions}); err != nil {
 		return err
 	}
-	if err := aitools.RegisterBuiltins(toolRegistry, knowledgetool.New(knowledgeTool.Project, knowledgeTool), memorytool.New(memoryRuntimeTool.Project, memoryRuntimeTool), navigationtool.New(a.Menus), navigationtool.NewHelp(a.Menus, a.PageHelp)); err != nil {
+	if err := tooling.RegisterBuiltins(toolRegistry, knowledgepkg.New(knowledgeTool.Project, knowledgeTool), memorypkg.New(memoryRuntimeTool.Project, memoryRuntimeTool), navigation.New(a.Menus), navigation.NewHelp(a.Menus, a.PageHelp)); err != nil {
 		return err
 	}
 	meta := []aitool.Definition{{ID: "meta:tool.search", Source: aitool.SourceMeta, Name: "tool.search", TitleForHuman: "工具搜索", DescriptionForLLM: "Search visible tools by intent and return compact candidates", DescriptionForHuman: "按意图搜索当前智能体可用的工具", Capability: "ai", InputSchema: action.SchemaFor[aitool.MetaSearchInput](), Risk: aitool.RiskLow, SideEffect: aitool.SideEffectRead, BindingMode: aitool.BindingOptional, LoadingMode: aitool.LoadingDirect, BindingGroup: "tool_discovery", RuntimeRef: "tool.search", SchemaVersion: 1, Status: "enabled"}, {ID: "meta:tool.load", Source: aitool.SourceMeta, Name: "tool.load", TitleForHuman: "工具加载", DescriptionForLLM: "Load a small number of candidate tools into the current scope", DescriptionForHuman: "将少量候选工具加载到当前运行范围", Capability: "ai", InputSchema: action.SchemaFor[aitool.MetaLoadInput](), Risk: aitool.RiskLow, SideEffect: aitool.SideEffectRead, BindingMode: aitool.BindingOptional, LoadingMode: aitool.LoadingDirect, BindingGroup: "tool_discovery", RuntimeRef: "tool.load", SchemaVersion: 1, Status: "enabled"}}
@@ -520,7 +520,7 @@ func NewBuiltinAgentContractRegistry() (*aiagent.Registry, error) {
 		return nil, fmt.Errorf("agent contract system.operations@1.0.0 requires prompt %s@2.2.0", promptKey)
 	}
 	contracts := aiagent.NewRegistry()
-	contract := aiagent.Contract{Key: "system.operations", Version: "1.0.0", Name: "系统运营助手", Description: "通过当前用户权限安全操作后台系统", BaseInstructions: prompt.MustGet(promptKey), BaseInstructionsVersion: metadata.Version, RequiredModelCapabilities: []string{"chat", "tools"}, RequiredToolSelectors: []string{"meta:tool.search", "meta:tool.load", navigationtool.ToolID, navigationtool.HelpToolID}, AllowedToolSources: []string{"action"}, AllowedToolCapabilities: []string{"system", "operations", "ai"}, ConfigSchema: json.RawMessage(`{"type":"object","additionalProperties":false}`), SingletonScope: aiagent.SingletonTenant, ManagedFields: []string{"code", "source", "contract_key", "contract_version", "base_instructions", "visibility"}, UpgradePolicy: "managed-fields"}
+	contract := aiagent.Contract{Key: "system.operations", Version: "1.0.0", Name: "系统运营助手", Description: "通过当前用户权限安全操作后台系统", BaseInstructions: prompt.MustGet(promptKey), BaseInstructionsVersion: metadata.Version, RequiredModelCapabilities: []string{"chat", "tools"}, RequiredToolSelectors: []string{"meta:tool.search", "meta:tool.load", navigation.ToolID, navigation.HelpToolID}, AllowedToolSources: []string{"action"}, AllowedToolCapabilities: []string{"system", "operations", "ai"}, ConfigSchema: json.RawMessage(`{"type":"object","additionalProperties":false}`), SingletonScope: aiagent.SingletonTenant, ManagedFields: []string{"code", "source", "contract_key", "contract_version", "base_instructions", "visibility"}, UpgradePolicy: "managed-fields"}
 	if err := contracts.Register(contract); err != nil {
 		return nil, err
 	}

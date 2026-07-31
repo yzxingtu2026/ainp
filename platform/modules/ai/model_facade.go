@@ -5,6 +5,8 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/modules/ai/conversation"
 	"github.com/yzxingtu2026/ainp/platform/modules/ai/experience/navigation"
 	"github.com/yzxingtu2026/ainp/platform/modules/ai/experience/personalization"
+	"github.com/yzxingtu2026/ainp/platform/modules/ai/knowledge"
+	"github.com/yzxingtu2026/ainp/platform/modules/ai/memory"
 	"github.com/yzxingtu2026/ainp/platform/modules/ai/modelruntime"
 	"github.com/yzxingtu2026/ainp/platform/modules/ai/tooling"
 	"gorm.io/gorm"
@@ -54,10 +56,10 @@ func AutoMigrate(db *gorm.DB) error {
 	if err := db.Exec("CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public").Error; err != nil {
 		return err
 	}
-	if err := registerMemoryTenantModels(); err != nil {
+	if err := memory.RegisterTenantModels(); err != nil {
 		return err
 	}
-	if err := registerNavigationTenantModels(); err != nil {
+	if err := navigation.RegisterTenantModels(); err != nil {
 		return err
 	}
 	if db.Migrator().HasTable(&Provider{}) && db.Migrator().HasColumn(&Provider{}, "credential_ref") && !db.Migrator().HasColumn(&Provider{}, "credential_ciphertext") {
@@ -77,5 +79,5 @@ func AutoMigrate(db *gorm.DB) error {
 	if err := db.AutoMigrate(&Provider{}, &Deployment{}, &Alias{}, &ModelInvocation{}, &ToolCatalog{}, &ToolSearchDocument{}, &NavigationSearchDocument{}, &ToolScope{}, &ConversationToolWorkingSet{}, &ToolConfirmation{}, &ToolInvocation{}, &Agent{}, &AgentVersion{}, &AgentToolBinding{}, &AgentSlotBinding{}, &AgentSlotPreference{}, &Conversation{}, &ConversationMessage{}, &AssistantStream{}, &AssistantStreamDelta{}, &ContextSnapshot{}, &AgentRun{}, &AgentStep{}, &AgentRunEvent{}, &MemoryItem{}, &MemoryItemVersion{}, &MemoryEvidence{}, &MemoryProjection{}, &MemoryDaySummary{}, &MemoryCurrentProfile{}, &MemoryEvaluation{}, &MemoryGovernanceDecision{}, &MemoryRelation{}, &MemoryConsolidationBatch{}, &AssistantPersonalizationSnapshot{}); err != nil {
 		return err
 	}
-	return AutoMigrateKnowledge(db)
+	return knowledge.AutoMigrateKnowledge(db)
 }

@@ -1,4 +1,4 @@
-package ai
+package memory
 
 import (
 	"context"
@@ -15,6 +15,16 @@ import (
 	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"gorm.io/gorm"
 )
+
+func clampScore(value float64) float64 {
+	if value < 0 {
+		return 0
+	}
+	if value > 1 {
+		return 1
+	}
+	return value
+}
 
 type MemoryRecallRequest struct {
 	Query            string

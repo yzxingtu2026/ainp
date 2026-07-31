@@ -1,0 +1,15 @@
+package ai
+
+import navigation "github.com/yzxingtu2026/ainp/platform/modules/ai/experience/navigation"
+
+type NavigationSearchService = navigation.NavigationSearchService
+type NavigationDocumentRef = navigation.NavigationDocumentRef
+type NavigationDocumentsChangedPayload = navigation.NavigationDocumentsChangedPayload
+type NavigationIndexStatus = navigation.NavigationIndexStatus
+
+var NewNavigationSearchService = navigation.NewNavigationSearchService
+var RegisterNavigationEmbedding = navigation.RegisterNavigationEmbedding
+var ErrNavigationEmbeddingSuperseded = navigation.ErrNavigationEmbeddingSuperseded
+
+const NavigationEmbeddingJobType = navigation.NavigationEmbeddingJobType
+const navigationDocumentChangedEvent = navigation.DocumentChangedEvent

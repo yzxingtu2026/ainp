@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	. "github.com/yzxingtu2026/ainp/platform/modules/ai"
-	navigationtool "github.com/yzxingtu2026/ainp/platform/modules/ai/tools/navigation"
+	navigation "github.com/yzxingtu2026/ainp/platform/modules/ai/experience/navigation"
 )
 
 func TestSystemOperationsIncludesDirectNavigationSearchAndHelp(t *testing.T) {
@@ -17,7 +17,7 @@ func TestSystemOperationsIncludesDirectNavigationSearchAndHelp(t *testing.T) {
 	if !ok {
 		t.Fatal("system operations contract missing")
 	}
-	for _, toolID := range []string{navigationtool.ToolID, navigationtool.HelpToolID} {
+	for _, toolID := range []string{navigation.ToolID, navigation.HelpToolID} {
 		if !slices.Contains(contract.RequiredToolSelectors, toolID) {
 			t.Fatalf("required navigation slot missing: %s", toolID)
 		}

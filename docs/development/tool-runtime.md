@@ -18,9 +18,9 @@ Action 是否暴露以注册处的 `Metadata.AI` 为唯一事实源：仅 `AIMet
 
 远程 MCP 的 OAuth/transport 不属于 Tool Provider。MCP Action Adapter 只复用现有 ActionProvider 投影，并在 list/call 时求 Action 状态、tenant realm、实时 permission 与 OAuth scope 的交集；执行只进入 `ActionRegistry.Invoke`。普通写由 `actions:write` 持续授权；敏感 Action 只有在 Grant 包含 `actions:sensitive` 时投影，首次调用返回逐次确认请求。批准后通过固定 `ainp_confirmation_execute` 治理工具和 opaque confirmation ID 单次恢复原 Action；该工具禁止接收 Action ID 或业务参数，不构成通用 `tool.execute`。外部 `source=mcp` Provider 仍是独立后续能力，禁止借本功能接入 Agent Runtime。
 
-框架核心工具通过 `RuntimeSlot` 注册。Slot 同时声明稳定 Definition、`direct/progressive` 发现模式、动态投影、Executor、Step/Invocation 分类、预算类别与安全观测字段。`platform/modules/ai/tools/register.go` 是唯一显式聚合入口；每个核心工具位于独立子目录，例如 `tools/knowledge/slot.go`。生产启动不扫描源码、不使用 Go Plugin，也不依赖隐藏 `init()`。
+框架核心工具通过 `RuntimeSlot` 注册。Slot 同时声明稳定 Definition、`direct/progressive` 发现模式、动态投影、Executor、Step/Invocation 分类、预算类别与安全观测字段。Slot 跟随能力 owner，例如 `modules/ai/knowledge/slot.go`；根装配只调用 `tooling.RegisterBuiltins` 显式聚合。生产启动不扫描源码、不使用 Go Plugin，也不依赖隐藏 `init()`。
 
-Registry 按 Tool ID 稳定排序，并在启动时拒绝重复 Tool ID、重复 RuntimeRef、非法发现模式或非法元数据。新增 Slot 只允许新增工具目录并在聚合入口增加注册项，不得修改 `ToolService`、`AgentRuntimeService` 或已有工具实现。
+Registry 按 Tool ID 稳定排序，并在启动时拒绝重复 Tool ID、重复 RuntimeRef、非法发现模式或非法元数据。新增 Slot 归属能力 owner，并在根装配的聚合调用增加注册项，不得修改 `ToolService`、`AgentRuntimeService` 或已有工具实现。
 
 Tool Catalog 是完整 Registry 的租户级派生事实，不是权限事实源。应用完成全部模块注册后为已有租户执行幂等 Reconcile，新租户初始化时同步投影；运维可调用 `ai.tool_catalog_rebuild` 修复当前租户。`tool.search` 只读 Registry、Catalog/Search Document 与 Scope，禁止在请求路径刷新或写入 Catalog。
 

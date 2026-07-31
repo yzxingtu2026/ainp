@@ -1,4 +1,4 @@
-package ai
+package memory
 
 import (
 	"github.com/yzxingtu2026/ainp/platform/framework/aimemory"

@@ -1,4 +1,4 @@
-package ai
+package navigation
 
 import (
 	"context"
@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/yzxingtu2026/ainp/platform/framework/aimodelruntime"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
+	"github.com/yzxingtu2026/ainp/platform/framework/database"
 	"github.com/yzxingtu2026/ainp/platform/framework/menu"
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
 	"github.com/yzxingtu2026/ainp/platform/framework/setting"
@@ -20,8 +21,11 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+type PGVector = database.PGVector
+
 const navigationEmbeddingSchemaVersion = 1
 const navigationDocumentChangedEvent = "ai.navigation_document.changed.v1"
+const DocumentChangedEvent = navigationDocumentChangedEvent
 
 var ErrNavigationEmbeddingSuperseded = errors.New("navigation embedding request is superseded")
 
