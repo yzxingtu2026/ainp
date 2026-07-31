@@ -304,14 +304,14 @@ onMounted(async () => {
           :placeholder="$t('common.keywordSearch')"
           @keyup.enter="loadUsers"
         />
-        <NSelect
+        <AppSelect
           v-model:value="query.status"
           clearable
           class="w-160px"
           :options="statusOptions"
           :placeholder="$t('page.user.status')"
         />
-        <NSelect
+        <AppSelect
           v-model:value="query.role_id"
           clearable
           class="w-200px"
@@ -386,10 +386,10 @@ onMounted(async () => {
             <NInput v-model:value="form.confirm_password" type="password" show-password-on="click" />
           </NFormItem>
           <NFormItem :label="$t('page.user.status')">
-            <NSelect v-model:value="form.status" :options="statusOptions" />
+            <AppSelect v-model:value="form.status" :options="statusOptions" />
           </NFormItem>
           <NFormItem :label="$t('page.user.roles')" path="role_ids">
-            <NSelect v-model:value="form.role_ids" multiple filterable :options="roleOptions" />
+            <AppSelect v-model:value="form.role_ids" multiple filterable :options="roleOptions" />
           </NFormItem>
         </template>
       </NForm>
@@ -409,7 +409,7 @@ onMounted(async () => {
     >
       <NForm ref="rolesFormRef" :model="rolesForm" label-placement="left" label-width="90">
         <NFormItem :label="$t('page.user.roles')" path="role_ids">
-          <NSelect v-model:value="rolesForm.role_ids" multiple filterable :options="roleOptions" />
+          <AppSelect v-model:value="rolesForm.role_ids" multiple filterable :options="roleOptions" />
         </NFormItem>
       </NForm>
       <template #footer>

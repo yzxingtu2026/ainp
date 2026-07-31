@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
-import { NButton, NCard, NEmpty, NPagination, NSelect, NSpace, NSpin, NTag } from 'naive-ui';
+import { NButton, NCard, NEmpty, NPagination, NSpace, NSpin, NTag } from 'naive-ui';
 import { useRouter } from 'vue-router';
 import { $t } from '@/locales';
 import {
@@ -150,7 +150,7 @@ onMounted(loadList);
       </template>
 
       <NSpace class="mb-16px" align="center">
-        <NSelect
+        <AppSelect
           v-model:value="currentFilter"
           class="w-160px"
           :options="filterOptions"

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, h, onMounted, reactive, ref } from 'vue';
 import type { DataTableColumns } from 'naive-ui';
-import { NButton, NCard, NDataTable, NDescriptions, NDescriptionsItem, NDrawer, NDrawerContent, NInput, NPagination, NPopconfirm, NSelect, NSpace, NTag } from 'naive-ui';
+import { NButton, NCard, NDataTable, NDescriptions, NDescriptionsItem, NDrawer, NDrawerContent, NInput, NPagination, NPopconfirm, NSpace, NTag } from 'naive-ui';
 import { useAuth } from '@/hooks/business/auth';
 import { OPERATIONS_ACTIONS } from '@/constants/operations';
 import { $t } from '@/locales';
@@ -57,7 +57,7 @@ onMounted(load);
     <NCard :title="$t('operations.jobsTitle')" :bordered="false">
       <NSpace class="mb-12px">
         <NInput v-model:value="query.job_type" clearable :placeholder="$t('operations.jobType')" @keyup.enter="search" />
-        <NSelect v-model:value="query.status" clearable class="w-180px" :options="statusOptions" :placeholder="$t('operations.statusLabel')" />
+        <AppSelect v-model:value="query.status" clearable class="w-180px" :options="statusOptions" :placeholder="$t('operations.statusLabel')" />
         <NButton type="primary" @click="search">{{ $t('common.search') }}</NButton>
       </NSpace>
       <NDataTable :columns="columns" :data="rows" :loading="loading" :row-key="row => row.id" :scroll-x="1000" />

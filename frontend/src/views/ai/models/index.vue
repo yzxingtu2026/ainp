@@ -366,7 +366,7 @@ onMounted(load);
       <NSpace>
         <NInput v-model:value="query.keyword" placeholder="搜索模型" @keyup.enter="load" />
         <NButton @click="load">查询</NButton>
-        <NSelect
+        <AppSelect
           v-model:value="discoveryProvider"
           class="w-180px"
           placeholder="选择供应商"
@@ -410,7 +410,7 @@ onMounted(load);
         </NFormItem>
         <NFormItem label="显示名称"><NInput v-model:value="form.display_name" /></NFormItem>
         <NFormItem label="模型类型">
-          <NSelect v-model:value="form.model_type" :options="MODEL_TYPES.map(x => ({ label: x, value: x }))" />
+          <AppSelect v-model:value="form.model_type" :options="MODEL_TYPES.map(x => ({ label: x, value: x }))" />
         </NFormItem>
         <NFormItem :label="$t('aiModel.inputModalities')">
           <NCheckboxGroup v-model:value="form.input_modalities">
@@ -428,7 +428,7 @@ onMounted(load);
           </NCheckboxGroup>
         </NFormItem>
         <NFormItem v-if="form.features.includes('structured_output')" label="输出策略">
-          <NSelect
+          <AppSelect
             v-model:value="form.structured_output_strategies"
             multiple
             :options="STRUCTURED_OUTPUT_STRATEGIES.map(x => ({ label: strategyLabel(x), value: x }))"
@@ -454,7 +454,7 @@ onMounted(load);
       <NAlert type="warning" class="mb-12px">供应商未提供可信能力元数据。请确认本批模型的类型和能力后再导入。</NAlert>
       <NSpace class="mb-12px">
         <NInput v-model:value="remoteKeyword" :disabled="discoveryLoading" placeholder="搜索模型 ID" />
-        <NSelect
+        <AppSelect
           v-model:value="importType"
           class="w-150px"
           :disabled="discoveryLoading"
@@ -474,7 +474,7 @@ onMounted(load);
         <NSpace><NCheckbox v-for="x in MODEL_FEATURES" :key="x" :value="x" :label="featureLabel(x)" /></NSpace>
       </NCheckboxGroup>
       <div v-if="importFeatures.includes('structured_output')" class="mb-8px">结构化输出策略</div>
-      <NSelect
+      <AppSelect
         v-if="importFeatures.includes('structured_output')"
         v-model:value="importStructuredOutputStrategies"
         multiple

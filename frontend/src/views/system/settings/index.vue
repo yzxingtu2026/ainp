@@ -381,12 +381,12 @@ onBeforeUnmount(clearIndexPoll);
                     :step="field.step || 1"
                   />
                   <NSwitch v-else-if="field.type === 'boolean'" v-model:value="(formModel[field.key] as boolean)" />
-                  <NSelect
+                  <AppSelect
                     v-else-if="field.type === 'select'"
                     v-model:value="(formModel[field.key] as string)"
                     :options="selectOptions(field)"
                   />
-                  <NSelect
+                  <AppSelect
                     v-else-if="field.type === 'multi_select'"
                     v-model:value="(formModel[field.key] as string[])"
                     multiple

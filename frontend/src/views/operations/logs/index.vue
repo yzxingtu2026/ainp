@@ -14,7 +14,6 @@ import {
   NEmpty,
   NInput,
   NPagination,
-  NSelect,
   NSpace,
   NSpin,
   NTabPane,
@@ -180,7 +179,7 @@ onMounted(() => {
           </NTabs>
           <NSpace class="mb-12px" wrap>
             <NDatePicker v-model:value="range" type="datetimerange" clearable class="w-360px" />
-            <NSelect
+            <AppSelect
               v-model:value="query.level"
               clearable
               class="w-130px"

@@ -22,7 +22,7 @@ const isWrapperScrollMode = computed(() => themeStore.layout.scrollMode === 'wra
       <template #suffix>
         <IconTooltip :desc="$t('theme.layout.content.scrollMode.tip')" />
       </template>
-      <NSelect
+      <AppSelect
         v-model:value="themeStore.layout.scrollMode"
         :options="translateOptions(themeScrollModeOptions)"
         size="small"
@@ -33,7 +33,7 @@ const isWrapperScrollMode = computed(() => themeStore.layout.scrollMode === 'wra
       <NSwitch v-model:value="themeStore.page.animate" />
     </SettingItem>
     <SettingItem v-if="themeStore.page.animate" key="3" :label="$t('theme.layout.content.page.mode.title')">
-      <NSelect
+      <AppSelect
         v-model:value="themeStore.page.animateMode"
         :options="translateOptions(themePageAnimationModeOptions)"
         size="small"

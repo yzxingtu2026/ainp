@@ -181,7 +181,7 @@ onMounted(() => Promise.all([store.load(), store.loadProfile(), store.loadPendin
               type="date"
               clearable
             />
-            <NSelect
+            <AppSelect
               v-model:value="store.filters.type"
               clearable
               placeholder="记忆类型"
@@ -247,13 +247,13 @@ onMounted(() => Promise.all([store.load(), store.loadProfile(), store.loadPendin
         <NTabPane name="all" tab="全部记忆">
           <div class="mb-16px grid gap-12px md:grid-cols-[minmax(180px,1fr)_minmax(180px,1fr)_minmax(180px,1fr)_96px]">
             <NInput v-model:value="store.filters.keyword" clearable placeholder="搜索记忆" @keyup.enter="search" />
-            <NSelect
+            <AppSelect
               v-model:value="store.filters.status"
               clearable
               placeholder="状态"
               :options="Object.entries(statusLabel).map(([value, label]) => ({ value, label }))"
             />
-            <NSelect
+            <AppSelect
               v-model:value="store.filters.sensitivity"
               clearable
               placeholder="敏感级别"
@@ -367,7 +367,7 @@ onMounted(() => Promise.all([store.load(), store.loadProfile(), store.loadPendin
             />
           </NFormItem>
           <NFormItem label="日期精度">
-            <NSelect
+            <AppSelect
               v-model:value="correction.date_precision"
               :options="[
                 { label: '精确日期', value: 'exact_day' },
