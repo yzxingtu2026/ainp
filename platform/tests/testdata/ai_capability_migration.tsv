@@ -1,19 +1,5 @@
 # source<TAB>target capability path(s)<TAB>root compatibility<TAB>migration note
 action_ai_meta.go	internal/actionmeta	no	Split the private Action metadata helper before capability moves.
-agent_model.go	agent/model	alias	Agent persistence types remain available from the root Facade during migration.
-agent_repository.go	agent	no	Move the tenant repository with Agent ownership.
-agent_runtime_definitions.go	conversation/runtime	alias	Keep stable run status and protocol constants at the root Facade.
-agent_runtime_model.go	conversation/runtime/model	alias	Keep run, step, and event model aliases during the compatibility window.
-agent_runtime_register.go	conversation/runtime	delegate	Keep stable Job type and registration delegates.
-agent_runtime_repository.go	conversation/runtime	no	Move the runtime repository with the state machine.
-agent_runtime_service.go	conversation/runtime	alias	Keep service, request DTO, and constructor aliases.
-agent_service.go	agent	alias	Keep service, public DTO, and constructor aliases.
-agent_slot_model.go	agent/slots/model	alias	Keep slot model aliases.
-agent_slot_service.go	agent/slots	alias	Keep slot key, service, DTO, and constructor aliases.
-context_compaction_service.go	conversation/compaction	alias	Keep compaction contracts and constructor aliases.
-conversation_model.go	conversation/model	alias	Keep conversation and message model aliases.
-conversation_repository.go	conversation	no	Move the tenant repository with Conversation ownership.
-conversation_service.go	conversation	alias	Keep service, DTO, and constructor aliases.
 knowledge_ingestion.go	knowledge/ingestion	alias	Keep ingestion events, Job payload, service, and constructor aliases.
 knowledge_ingestion_register.go	knowledge/ingestion	delegate	Keep stable Action and Job registration delegates.
 knowledge_model.go	knowledge/model	alias	Keep knowledge model and PGVector aliases.
@@ -37,7 +23,3 @@ memory_tool.go	memory/tooling	alias	Keep the memory tool constructor alias while
 navigation_embedding_register.go	experience/navigation	delegate	Keep stable embedding Job and registration delegates.
 navigation_repository.go	experience/navigation	no	Move the tenant repository with navigation ownership.
 navigation_search_service.go	experience/navigation	alias	Keep search contracts, errors, service, and constructor aliases.
-personalization_model.go	experience/personalization/model	alias	Keep snapshot model alias.
-personalization_register.go	experience/personalization	delegate	Keep stable Action and Job registration delegates.
-personalization_repository.go	experience/personalization	no	Move the tenant repository with personalization ownership.
-personalization_service.go	experience/personalization	alias	Keep stable setting, event, Job constants, DTO, service, and constructor aliases.

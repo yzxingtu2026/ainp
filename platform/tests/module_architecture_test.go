@@ -20,10 +20,10 @@ var aiCapabilityImports = map[string]map[string]bool{
 	"modelruntime": {},
 	"tooling":      {},
 	"agent":        {},
-	"conversation": {"modelruntime": true, "tooling": true},
+	"conversation": {"agent": true, "modelruntime": true, "tooling": true},
 	"knowledge":    {"agent": true},
 	"memory":       {"conversation": true},
-	"experience":   {},
+	"experience":   {"agent": true},
 	"internal":     {},
 }
 

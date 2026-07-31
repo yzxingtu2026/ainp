@@ -1,4 +1,4 @@
-package ai
+package personalization
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/yzxingtu2026/ainp/platform/framework/action"
+	"github.com/yzxingtu2026/ainp/platform/framework/aiagentruntime"
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/job"
@@ -53,7 +54,7 @@ func RegisterPersonalization(a *app.App, service *PersonalizationService) error 
 	}}); err != nil {
 		return err
 	}
-	if err := a.Outbox.RegisterHandler(outbox.HandlerFunc{HandlerName: "ai.invalidate_assistant_personalization_after_run", Types: []string{agentRunTerminalEvent}, Fn: func(ctx context.Context, env outbox.Envelope) error {
+	if err := a.Outbox.RegisterHandler(outbox.HandlerFunc{HandlerName: "ai.invalidate_assistant_personalization_after_run", Types: []string{aiagentruntime.EventRunTerminal}, Fn: func(ctx context.Context, env outbox.Envelope) error {
 		var payload struct {
 			Status string `json:"status"`
 		}

@@ -1,4 +1,4 @@
-package ai
+package agent
 
 import (
 	"context"
@@ -19,7 +19,6 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/pagination"
 	"github.com/yzxingtu2026/ainp/platform/framework/setting"
 	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
-	systemmodel "github.com/yzxingtu2026/ainp/platform/modules/system/model"
 	"gorm.io/gorm"
 )
 
@@ -34,7 +33,14 @@ type AgentService struct {
 	models    aimodel.Resolver
 	tools     *aitool.Registry
 	settings  *setting.Provider
+	avatars   AvatarValidator
 }
+
+type AvatarValidator interface {
+	ValidateAvatar(context.Context, string, string, bool) error
+}
+
+func (s *AgentService) SetAvatarValidator(validator AvatarValidator) { s.avatars = validator }
 
 func (s *AgentService) SetMemoryPolicyProvider(p *setting.Provider) { s.settings = p }
 
@@ -161,9 +167,9 @@ func agentActor(ctx context.Context) (*auth.Context, error) {
 }
 func canManageTenant(ac *auth.Context) bool {
 	for _, permission := range []string{
-		ActionAgentCreate, ActionAgentUpdate, ActionAgentDuplicate, ActionAgentStatus,
-		ActionAgentVersionCreate, ActionAgentVersionPublish, ActionAgentPreviewMaterialize,
-		ActionAgentToolBind, ActionAgentToolUnbind, ActionAgentBuiltinReconcile,
+		ActionCreate, ActionUpdate, ActionDuplicate, ActionStatus,
+		ActionVersionCreate, ActionVersionPublish, ActionPreviewMaterialize,
+		ActionToolBind, ActionToolUnbind, ActionBuiltinReconcile,
 	} {
 		if ac.HasPermission(permission) {
 			return true
@@ -176,29 +182,18 @@ func (s *AgentService) validateAvatar(ctx context.Context, ac *auth.Context, id 
 	if id == nil || strings.TrimSpace(*id) == "" {
 		return nil
 	}
-	tdb, repoErr := tenantdata.TenantDB(ctx, s.db)
-	if repoErr != nil {
-		return repoErr
+	if s.avatars == nil {
+		return errs.New(errs.CodeInternal, "avatar validator unavailable")
 	}
-	repo, repoErr := tenantdata.NewTenantRepository[systemmodel.Attachment](tdb)
-	if repoErr != nil {
-		return repoErr
-	}
-	attachment, repoErr := repo.First("id=? AND status=?", *id, "ready")
-	if repoErr != nil {
-		return errs.New(errs.CodeNotFound, "avatar attachment not found")
-	}
-	if !canManageTenant(ac) && attachment.UploaderID != ac.UserID {
-		return errs.New(errs.CodeNotFound, "avatar attachment not found")
-	}
-	if !strings.HasPrefix(attachment.ContentType, "image/") {
-		return errs.New(errs.CodeValidation, "avatar attachment must be an image")
-	}
-	return nil
+	return s.avatars.ValidateAvatar(ctx, *id, ac.UserID, canManageTenant(ac))
 }
 
 type agentAvatarAttachmentPolicy struct {
 	service *AgentService
+}
+
+func NewAvatarAttachmentPolicy(service *AgentService) attachment.AccessPolicy {
+	return agentAvatarAttachmentPolicy{service: service}
 }
 
 func (p agentAvatarAttachmentPolicy) ResourceType() string { return AgentAvatarResourceType }
@@ -277,6 +272,10 @@ func (s *AgentService) get(ctx context.Context, id string, edit bool) (*Agent, *
 		return nil, nil, errs.New(errs.CodeNotFound, "agent not found")
 	}
 	return &row, ac, nil
+}
+
+func (s *AgentService) GetVisible(ctx context.Context, id string, edit bool) (*Agent, *auth.Context, error) {
+	return s.get(ctx, id, edit)
 }
 
 // AgentDetail is the builder-facing agent payload. Contract fields are read-only overlays.

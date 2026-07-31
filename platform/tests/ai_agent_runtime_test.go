@@ -158,7 +158,7 @@ func TestConversationToolWorkingSetMigrationAndRuntimeContract(t *testing.T) {
 			t.Fatalf("working set migration missing %q", expected)
 		}
 	}
-	runtimeBody, err := os.ReadFile("../modules/ai/agent_runtime_service.go")
+	runtimeBody, err := os.ReadFile("../modules/ai/conversation/runtime_service.go")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +189,7 @@ func TestTrustedRuntimeContextMigrationStoresOnlyTimeAndRefs(t *testing.T) {
 }
 
 func TestAgentRunOutboxEnqueueInjectsAuthFromEnvelope(t *testing.T) {
-	body, err := os.ReadFile("../modules/ai/agent_runtime_register.go")
+	body, err := os.ReadFile("../modules/ai/conversation/runtime_register.go")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -217,7 +217,7 @@ func TestAgentActionAuditContextIsCanonicalAndPersisted(t *testing.T) {
 			t.Fatalf("agent audit migration missing %q", expected)
 		}
 	}
-	runtimeSource, err := os.ReadFile("../modules/ai/agent_runtime_service.go")
+	runtimeSource, err := os.ReadFile("../modules/ai/conversation/runtime_service.go")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -236,7 +236,7 @@ func TestAgentActionAuditContextIsCanonicalAndPersisted(t *testing.T) {
 }
 
 func TestAgentRuntimeUsesSlotMetadataWithoutBusinessToolBranches(t *testing.T) {
-	body, err := os.ReadFile("../modules/ai/agent_runtime_service.go")
+	body, err := os.ReadFile("../modules/ai/conversation/runtime_service.go")
 	if err != nil {
 		t.Fatal(err)
 	}

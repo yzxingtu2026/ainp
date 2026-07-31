@@ -1,4 +1,4 @@
-package ai
+package conversation
 
 import (
 	"sync"

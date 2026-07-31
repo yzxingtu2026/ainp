@@ -30,10 +30,10 @@ ai root Register / Facade
 ├── modelruntime
 ├── tooling
 ├── agent
-├── conversation ──> modelruntime, tooling
+├── conversation ──> agent, modelruntime, tooling
 ├── knowledge ──> agent
 ├── memory ──> conversation
-└── experience
+└── experience ──> agent
 
 all capabilities ──> framework contracts
 all capabilities ──> ai/internal/actionmeta (private leaf, when needed)
@@ -43,7 +43,7 @@ all capabilities ──> ai/internal/actionmeta (private leaf, when needed)
 
 `help` 与现有 `tools` 是迁移期遗留包，不代表可新增的能力节点；架构门禁允许它们继续存在直到对应批次归档，但拒绝其他未在本契约声明的 AI 一级包。
 
-允许的三条直接依赖有明确方向：Conversation Runtime 编排模型调用与 Tool 执行；Knowledge 管理 Agent 绑定；Memory 从 Conversation 事实提取候选。反向需求必须通过 framework contract、事件或根装配回调解决，不能增加反向 import。
+允许的直接依赖有明确方向：Conversation 固定 Agent Version 并由 Runtime 编排模型调用与 Tool 执行；Knowledge 管理 Agent 绑定；Memory 从 Conversation 事实提取候选；Personalization 只读解析 Agent Slot。反向需求必须通过 framework contract、事件或根装配回调解决，不能增加反向 import。
 
 ## 公开符号与启动装配盘点
 
@@ -99,3 +99,12 @@ all capabilities ──> ai/internal/actionmeta (private leaf, when needed)
 - `model.go` 已按 owner 拆分；Navigation 仅移动 `SearchDocument` 数据模型，不迁移导航 Service 行为。
 - 根 `model_facade.go`、`modelruntime_facade.go`、`tooling_facade.go` 保留 deprecated alias/薄委托。新代码直接 import owner；兼容出口按一个发布周期与零引用条件删除。
 - `runtime_budget.go` 依据 #219 的明确范围随底层 runtime provider 迁入 `modelruntime`；后续 Conversation Runtime 只依赖其 `aiagentruntime.BudgetProvider` contract，不反向持有模型实现。
+
+### Issue #220：Agent、Conversation Runtime 与 Personalization
+
+- `agent` 持有 Agent/Version/Tool Binding、Slot 模型与管理服务；Conversation 通过 owner 的只读查询契约固定版本、读取运行态 Agent 与 Tool Binding。
+- `conversation` 持有 Conversation/Message/Stream/Snapshot、Run/Step/Event、Context Compaction 与 Runtime；聚合内用文件分责，不建立互相引用的父子 Go 包。
+- `experience/personalization` 持有助手个性化快照、生成与注册；跨 Memory/Run/Conversation 的读取使用最小只读投影，不借用其他能力的 GORM owner model。
+- Run terminal 事件名由 `framework/aiagentruntime.EventRunTerminal` 稳定；Memory Recall 由根装配转换为 `conversation.MemoryRecallFunc`，Conversation 不反向依赖 Memory 实现。
+- Agent 头像校验由根 composition root 注入，`agent` 能力不再 import `modules/system/model`。
+- 根 `agent_facade.go`、`conversation_facade.go`、`personalization_facade.go` 保留兼容 aliases、构造器与注册委托；新代码直接 import owner 包。

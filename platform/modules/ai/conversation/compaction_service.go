@@ -1,4 +1,4 @@
-package ai
+package conversation
 
 import (
 	"context"
@@ -13,6 +13,8 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 	"github.com/yzxingtu2026/ainp/platform/framework/prompt"
 	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
+	"github.com/yzxingtu2026/ainp/platform/modules/ai/agent"
+	"github.com/yzxingtu2026/ainp/platform/modules/ai/modelruntime"
 	"gorm.io/gorm"
 )
 
@@ -20,13 +22,13 @@ type ContextCompactionService struct {
 	db            *gorm.DB
 	conversations *ConversationService
 	models        aimodel.Resolver
-	invocations   *InvocationService
+	invocations   *modelruntime.InvocationService
 	tokenizer     aiconversation.Tokenizer
 	memory        aiconversation.DurableMemoryFlushHook
 	tools         *aitool.Registry
 }
 
-func NewContextCompactionService(db *gorm.DB, conversations *ConversationService, models aimodel.Resolver, invocations *InvocationService, tools *aitool.Registry) *ContextCompactionService {
+func NewContextCompactionService(db *gorm.DB, conversations *ConversationService, models aimodel.Resolver, invocations *modelruntime.InvocationService, tools *aitool.Registry) *ContextCompactionService {
 	return &ContextCompactionService{db: db, conversations: conversations, models: models, invocations: invocations, tokenizer: aiconversation.JSONTokenizer{}, memory: aiconversation.NoopMemoryFlushHook{}, tools: tools}
 }
 func (s *ContextCompactionService) SetMemoryFlushHook(h aiconversation.DurableMemoryFlushHook) {
@@ -80,7 +82,7 @@ func (s *ContextCompactionService) ContextTokenLimit(ctx context.Context, modelA
 }
 
 type runtimeCompactionProvider struct {
-	invocations *InvocationService
+	invocations *modelruntime.InvocationService
 	modelAlias  string
 }
 
@@ -141,17 +143,13 @@ func (s *ContextCompactionService) Compact(ctx context.Context, r aiconversation
 	if budgetErr != nil {
 		return &aiconversation.CompactionResult{Status: "failed", Reason: "model_context_window_unavailable"}, nil
 	}
-	repos, repoErr := newAgentRepositories(ctx, s.db)
-	if repoErr != nil {
-		return nil, repoErr
-	}
-	version, err := repos.versions.GetByID(visible.AgentVersionID)
+	version, err := agent.GetVersion(ctx, s.db, visible.AgentVersionID)
 	if err != nil {
 		return nil, errs.New(errs.CodeNotFound, "agent version not found")
 	}
 	fixedTokens, _ := s.tokenizer.Count(ctx, version.TenantInstructions)
 	toolSchemaBytes := r.ToolSchemaBytes
-	bindings, err := repos.tools.Find("agent_id=? AND status=?", visible.AgentID, "enabled")
+	bindings, err := agent.ListEnabledToolBindings(ctx, s.db, visible.AgentID)
 	if err != nil {
 		return nil, err
 	}

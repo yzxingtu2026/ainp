@@ -711,7 +711,7 @@ func (s *KnowledgeService) ListAgentKnowledge(ctx context.Context, request Agent
 	if err != nil {
 		return nil, err
 	}
-	agent, _, err := s.agents.get(ctx, request.AgentID, false)
+	agent, _, err := s.agents.GetVisible(ctx, request.AgentID, false)
 	if err != nil {
 		return nil, err
 	}
@@ -745,7 +745,7 @@ func (s *KnowledgeService) BindAgentKnowledge(ctx context.Context, request Agent
 	if _, err := knowledgeActor(ctx); err != nil {
 		return nil, err
 	}
-	agent, ac, err := s.agents.get(ctx, request.AgentID, true)
+	agent, ac, err := s.agents.GetVisible(ctx, request.AgentID, true)
 	if err != nil {
 		return nil, err
 	}
@@ -783,7 +783,7 @@ func (s *KnowledgeService) UnbindAgentKnowledge(ctx context.Context, request Age
 	if _, err := knowledgeActor(ctx); err != nil {
 		return nil, err
 	}
-	agent, _, err := s.agents.get(ctx, request.AgentID, true)
+	agent, _, err := s.agents.GetVisible(ctx, request.AgentID, true)
 	if err != nil {
 		return nil, err
 	}

@@ -1,4 +1,4 @@
-package ai
+package personalization
 
 import (
 	"context"
@@ -17,6 +17,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/runtimecontext"
 	"github.com/yzxingtu2026/ainp/platform/framework/setting"
 	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
+	"github.com/yzxingtu2026/ainp/platform/modules/ai/agent"
 	"gorm.io/gorm"
 )
 
@@ -41,17 +42,55 @@ type PersonalizationResponse struct {
 type personalizationGenerator interface {
 	Generate(context.Context, aimodelruntime.GenerateRequest) (any, error)
 }
+
+func asGenerateResponse(value any) (aimodelruntime.GenerateResponse, bool) {
+	response, ok := value.(aimodelruntime.GenerateResponse)
+	if ok {
+		return response, true
+	}
+	pointer, ok := value.(*aimodelruntime.GenerateResponse)
+	if ok && pointer != nil {
+		return *pointer, true
+	}
+	return aimodelruntime.GenerateResponse{}, false
+}
+
+type memoryProfileProjection struct {
+	ProfileJSON    json.RawMessage
+	SourceRevision uint64
+}
+
+type runProjection struct {
+	ConversationID  string
+	PageContextType string
+	FinishedAt      *time.Time
+	Revision        uint64
+}
+
+type conversationProjection struct {
+	ID            string
+	Title         string
+	Revision      uint64
+	LastMessageAt *time.Time
+}
+
+type messageProjection struct {
+	Role     string
+	Content  json.RawMessage
+	Sequence uint64
+}
+
 type PersonalizationService struct {
 	db             *gorm.DB
 	settings       *setting.Provider
 	writer         outbox.Writer
 	generator      personalizationGenerator
-	slots          *AgentSlotService
+	slots          *agent.AgentSlotService
 	runtimeContext runtimecontext.Provider
 	now            func() time.Time
 }
 
-func (s *PersonalizationService) SetContextSources(slots *AgentSlotService, provider runtimecontext.Provider) {
+func (s *PersonalizationService) SetContextSources(slots *agent.AgentSlotService, provider runtimecontext.Provider) {
 	s.slots, s.runtimeContext = slots, provider
 }
 
@@ -110,7 +149,7 @@ func (s *PersonalizationService) Read(ctx context.Context, _ struct{}) (Personal
 	if e != nil {
 		return result, e
 	}
-	row, found, e := optionalPersonalizationSnapshot(repo, ac.UserID, WorkspaceDefaultSlot)
+	row, found, e := optionalPersonalizationSnapshot(repo, ac.UserID, agent.WorkspaceDefaultSlot)
 	if !found && e == nil {
 		result.Freshness = "missing"
 		_ = s.request(ctx, uint64(rev))
@@ -136,7 +175,7 @@ func (s *PersonalizationService) request(ctx context.Context, revision uint64) e
 	}
 	ac := auth.MustFromContext(ctx)
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		_, e := s.writer.Append(ctx, tx, outbox.AppendInput{EventType: AssistantPersonalizationEvent, AggregateType: "assistant_personalization", AggregateID: ac.UserID + ":" + WorkspaceDefaultSlot, AggregateVersion: int64(revision), Payload: map[string]any{"user_id": ac.UserID, "slot_key": WorkspaceDefaultSlot, "generation_revision": revision}})
+		_, e := s.writer.Append(ctx, tx, outbox.AppendInput{EventType: AssistantPersonalizationEvent, AggregateType: "assistant_personalization", AggregateID: ac.UserID + ":" + agent.WorkspaceDefaultSlot, AggregateVersion: int64(revision), Payload: map[string]any{"user_id": ac.UserID, "slot_key": agent.WorkspaceDefaultSlot, "generation_revision": revision}})
 		return e
 	})
 }
@@ -153,7 +192,7 @@ func (s *PersonalizationService) Rebuild(ctx context.Context, _ struct{}) (map[s
 	if e != nil {
 		return nil, e
 	}
-	if e = repo.Where("user_id=? AND slot_key=?", ac.UserID, WorkspaceDefaultSlot).Updates(map[string]any{"status": "stale"}).Error; e != nil {
+	if e = repo.Where("user_id=? AND slot_key=?", ac.UserID, agent.WorkspaceDefaultSlot).Updates(map[string]any{"status": "stale"}).Error; e != nil {
 		return nil, e
 	}
 	e = s.request(ctx, uint64(rev+1))
@@ -170,10 +209,10 @@ func (s *PersonalizationService) InvalidateAndRequest(ctx context.Context, userI
 	if err != nil {
 		return err
 	}
-	if current, found, lookupErr := optionalPersonalizationSnapshot(repo, userID, WorkspaceDefaultSlot); lookupErr == nil && found {
+	if current, found, lookupErr := optionalPersonalizationSnapshot(repo, userID, agent.WorkspaceDefaultSlot); lookupErr == nil && found {
 		revision = current.GenerationRevision + 1
 	}
-	if result := repo.Where("user_id=? AND slot_key=?", userID, WorkspaceDefaultSlot).Updates(map[string]any{"status": "stale"}); result.Error != nil {
+	if result := repo.Where("user_id=? AND slot_key=?", userID, agent.WorkspaceDefaultSlot).Updates(map[string]any{"status": "stale"}); result.Error != nil {
 		return result.Error
 	}
 	requestContext := ctx
@@ -216,7 +255,7 @@ func (s *PersonalizationService) buildContext(ctx context.Context, user, slot st
 	versions := map[string]any{"prompt": assistantPersonalizationPromptVersion}
 	var agentID string
 	if s.slots != nil {
-		resolved, err := s.slots.Resolve(ctx, AgentSlotGetRequest{SlotKey: slot})
+		resolved, err := s.slots.Resolve(ctx, agent.AgentSlotGetRequest{SlotKey: slot})
 		if err == nil && resolved.AgentVersion != nil {
 			input.AgentVersionID = resolved.AgentVersion.ID
 			agentID = resolved.Agent.ID
@@ -237,18 +276,15 @@ func (s *PersonalizationService) buildContext(ctx context.Context, user, slot st
 	if err != nil {
 		return input, nil, err
 	}
-	profiles, _ := tenantdata.NewTenantRepository[MemoryCurrentProfile](tdb)
-	if rows, e := profiles.Where("user_id=? AND status=?", user, "ready").Order("source_revision DESC").List(0, 1); e == nil && len(rows) == 1 {
+	if rows, e := tenantdata.TenantRaw[memoryProfileProjection](tdb, `SELECT profile_json,source_revision FROM ai_memory_current_profiles WHERE tenant_id=? AND user_id=? AND status='ready' ORDER BY source_revision DESC LIMIT 1`, user); e == nil && len(rows) == 1 {
 		input.MemoryProfile = safeProfile(rows[0].ProfileJSON)
 		versions["memory_profile_revision"] = rows[0].SourceRevision
 	}
-	runs, _ := tenantdata.NewTenantRepository[AgentRun](tdb)
-	conversations, _ := tenantdata.NewTenantRepository[Conversation](tdb)
-	if rows, e := runs.Where("user_id=? AND status=?", user, "completed").Order("finished_at DESC").List(0, 5); e == nil {
+	if rows, e := tenantdata.TenantRaw[runProjection](tdb, `SELECT conversation_id,page_context_type,finished_at,revision FROM ai_agent_runs WHERE tenant_id=? AND user_id=? AND status='completed' ORDER BY finished_at DESC LIMIT 5`, user); e == nil {
 		for _, run := range rows {
 			item := map[string]any{"page_context_type": run.PageContextType, "finished_at": run.FinishedAt}
-			if conversation, lookupErr := conversations.GetByID(run.ConversationID); lookupErr == nil {
-				title := strings.TrimSpace(conversation.Title)
+			if matches, lookupErr := tenantdata.TenantRaw[conversationProjection](tdb, `SELECT id,title,revision,last_message_at FROM ai_conversations WHERE tenant_id=? AND id=? LIMIT 1`, run.ConversationID); lookupErr == nil && len(matches) == 1 {
+				title := strings.TrimSpace(matches[0].Title)
 				if len([]rune(title)) > 120 {
 					title = string([]rune(title)[:120])
 				}
@@ -260,9 +296,8 @@ func (s *PersonalizationService) buildContext(ctx context.Context, user, slot st
 			versions["recent_run_revision"] = rows[0].Revision
 		}
 	}
-	if rows, e := conversations.Where("owner_user_id=? AND purpose=? AND last_message_at IS NOT NULL", user, ConversationPurposeWorkspace).Order("last_message_at DESC").List(0, 1); e == nil && len(rows) == 1 {
-		messages, _ := tenantdata.NewTenantRepository[ConversationMessage](tdb)
-		if records, messageErr := messages.Where("conversation_id=? AND status=? AND role IN ?", rows[0].ID, "committed", []string{"user", "assistant"}).Order("sequence DESC").List(0, 4); messageErr == nil {
+	if rows, e := tenantdata.TenantRaw[conversationProjection](tdb, `SELECT id,title,revision,last_message_at FROM ai_conversations WHERE tenant_id=? AND owner_user_id=? AND purpose='workspace' AND last_message_at IS NOT NULL ORDER BY last_message_at DESC LIMIT 1`, user); e == nil && len(rows) == 1 {
+		if records, messageErr := tenantdata.TenantRaw[messageProjection](tdb, `SELECT role,content,sequence FROM ai_messages WHERE tenant_id=? AND conversation_id=? AND status='committed' AND role IN ('user','assistant') ORDER BY sequence DESC LIMIT 4`, rows[0].ID); messageErr == nil {
 			projected := projectConversationEnding(records, 1200)
 			if len(projected) > 0 {
 				input.RecentConversation = &recentConversationContext{Title: truncateRunes(strings.TrimSpace(rows[0].Title), 120), Messages: projected, Untrusted: true}
@@ -273,7 +308,7 @@ func (s *PersonalizationService) buildContext(ctx context.Context, user, slot st
 	return input, versions, nil
 }
 
-func projectConversationEnding(records []ConversationMessage, budget int) []recentConversationMessage {
+func projectConversationEnding(records []messageProjection, budget int) []recentConversationMessage {
 	if budget <= 0 {
 		return nil
 	}

@@ -93,7 +93,7 @@ func TestGlobalAiAssistantRuntimeActionsAreAuthenticatedSelfService(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	runtimeRegister, err := os.ReadFile("../modules/ai/agent_runtime_register.go")
+	runtimeRegister, err := os.ReadFile("../modules/ai/conversation/runtime_register.go")
 	if err != nil {
 		t.Fatal(err)
 	}

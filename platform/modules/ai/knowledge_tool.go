@@ -14,6 +14,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/aiknowledge"
 	"github.com/yzxingtu2026/ainp/platform/framework/aitool"
 	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
+	"github.com/yzxingtu2026/ainp/platform/modules/ai/agent"
 	"gorm.io/gorm"
 )
 
@@ -160,11 +161,7 @@ func (t *KnowledgeTool) candidates(ctx context.Context, scope *ToolScope) ([]kno
 	if err := t.db.WithContext(ctx).Where("user_id=? AND id=?", scope.UserID, *scope.AgentRunID).First(&run).Error; err != nil {
 		return nil, err
 	}
-	repos, repoErr := newAgentRepositories(ctx, t.db.WithContext(ctx))
-	if repoErr != nil {
-		return nil, repoErr
-	}
-	version, err := repos.versions.GetByID(run.AgentVersionID)
+	version, err := agent.GetVersion(ctx, t.db.WithContext(ctx), run.AgentVersionID)
 	if err != nil {
 		return nil, err
 	}

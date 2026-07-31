@@ -12,7 +12,7 @@ import (
 
 func TestAgentManagementUsesTenantRepository(t *testing.T) {
 	_, file, _, _ := runtime.Caller(0)
-	path := filepath.Join(filepath.Dir(file), "..", "modules", "ai", "agent_service.go")
+	path := filepath.Join(filepath.Dir(file), "..", "modules", "ai", "agent", "service.go")
 	f, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
 	if err != nil {
 		t.Fatal(err)
