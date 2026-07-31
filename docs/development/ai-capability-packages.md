@@ -21,6 +21,8 @@
 
 模型必须归业务事实的唯一 owner。现有 `model.go` 在迁移时拆为 `modelruntime/model`、`tooling/model` 与 `experience/navigation/model`，禁止创建新的横切 `ai/model` 巨型包。
 
+跨 Knowledge、Tooling 与 Navigation 使用的 PostgreSQL vector GORM 值类型归 `framework/database.PGVector`；各域模型只引用该数据库技术类型，根 `ai.PGVector` 继续通过 alias 兼容。它不承载 Embedding 业务协议或模型选择逻辑。
+
 ## 依赖图
 
 ```text
@@ -87,3 +89,13 @@ all capabilities ──> ai/internal/actionmeta (private leaf, when needed)
 7. `experience`：迁移 Navigation/Personalization，最后清理根帮助与剩余基线。
 
 每批必须独立提交，更新 TSV 实际位置/兼容状态、架构基线和集中测试；不得用一次大规模移动跳过中间可编译状态。
+
+## 迁移进度
+
+### Issue #219：Model Runtime 与 Tooling
+
+- 已迁移到 `modelruntime`：Provider/Deployment/Alias/ModelInvocation、模型管理 Service/Repository、InvocationService/Repository、RuntimeBudgetProvider。
+- 已迁移到 `tooling`：Tool Catalog/Search/Scope/Confirmation/Invocation 模型、ToolService/Repository、目录投影、Embedding Job 与向量检索。
+- `model.go` 已按 owner 拆分；Navigation 仅移动 `SearchDocument` 数据模型，不迁移导航 Service 行为。
+- 根 `model_facade.go`、`modelruntime_facade.go`、`tooling_facade.go` 保留 deprecated alias/薄委托。新代码直接 import owner；兼容出口按一个发布周期与零引用条件删除。
+- `runtime_budget.go` 依据 #219 的明确范围随底层 runtime provider 迁入 `modelruntime`；后续 Conversation Runtime 只依赖其 `aiagentruntime.BudgetProvider` contract，不反向持有模型实现。

@@ -14,7 +14,6 @@ context_compaction_service.go	conversation/compaction	alias	Keep compaction cont
 conversation_model.go	conversation/model	alias	Keep conversation and message model aliases.
 conversation_repository.go	conversation	no	Move the tenant repository with Conversation ownership.
 conversation_service.go	conversation	alias	Keep service, DTO, and constructor aliases.
-invocation_service.go	modelruntime	alias	Keep invocation service and projector contracts at the root Facade.
 knowledge_ingestion.go	knowledge/ingestion	alias	Keep ingestion events, Job payload, service, and constructor aliases.
 knowledge_ingestion_register.go	knowledge/ingestion	delegate	Keep stable Action and Job registration delegates.
 knowledge_model.go	knowledge/model	alias	Keep knowledge model and PGVector aliases.
@@ -35,9 +34,6 @@ memory_repository.go	memory	alias	Keep repository constructor alias until tests 
 memory_retrieval.go	memory/retrieval	alias	Keep recall contracts, service, and constructor aliases.
 memory_service.go	memory	alias	Keep append service and request validation aliases.
 memory_tool.go	memory/tooling	alias	Keep the memory tool constructor alias while Tool Registry callers migrate.
-model.go	modelruntime/model,tooling/model,experience/navigation/model	alias	Split mixed persistence types by owner and keep all existing root type aliases.
-model_catalog_repository.go	modelruntime/catalog	no	Move the tenant repository with model catalog ownership.
-model_invocation_repository.go	modelruntime	no	Move the tenant repository with invocation ownership.
 navigation_embedding_register.go	experience/navigation	delegate	Keep stable embedding Job and registration delegates.
 navigation_repository.go	experience/navigation	no	Move the tenant repository with navigation ownership.
 navigation_search_service.go	experience/navigation	alias	Keep search contracts, errors, service, and constructor aliases.
@@ -45,10 +41,3 @@ personalization_model.go	experience/personalization/model	alias	Keep snapshot mo
 personalization_register.go	experience/personalization	delegate	Keep stable Action and Job registration delegates.
 personalization_repository.go	experience/personalization	no	Move the tenant repository with personalization ownership.
 personalization_service.go	experience/personalization	alias	Keep stable setting, event, Job constants, DTO, service, and constructor aliases.
-runtime_budget.go	conversation/runtime	alias	Keep setting key, provider, and constructor aliases.
-service.go	modelruntime/catalog	alias	Keep model administration service, DTO, and constructor aliases.
-tool_catalog_embedding_register.go	tooling/catalog	delegate	Keep stable embedding Job and registration delegates.
-tool_catalog_service.go	tooling/catalog	alias	Keep catalog reconciliation and indexing contracts.
-tool_repository.go	tooling	no	Move the tenant repository with Tool ownership.
-tool_service.go	tooling	alias	Keep Tool service, public request/response DTO, and constructor aliases.
-tool_vector_search.go	tooling/search	alias	Keep vector search service and constructor aliases.

@@ -1,4 +1,4 @@
-package ai
+package tooling
 
 import (
 	"context"
@@ -30,8 +30,12 @@ import (
 
 var toolCapabilityPattern = regexp.MustCompile(`^[a-z][a-z0-9_.-]*$`)
 
-const toolCatalogChangedEvent = "ai.tool_catalog.changed.v1"
-const toolInvocationFinishedEvent = "ai.tool_invocation.finished.v1"
+const (
+	ToolCatalogChangedEvent     = "ai.tool_catalog.changed.v1"
+	ToolInvocationFinishedEvent = "ai.tool_invocation.finished.v1"
+	toolCatalogChangedEvent     = ToolCatalogChangedEvent
+	toolInvocationFinishedEvent = ToolInvocationFinishedEvent
+)
 const toolScopeTTL = 30 * time.Minute
 const toolHandleTTL = 10 * time.Minute
 const conversationToolWorkingSetLimit = 32
@@ -67,6 +71,10 @@ func NewToolService(db *gorm.DB, r *aitool.Registry, signer *aitool.HandleSigner
 	}
 	return &ToolService{db: tenantdata.GuardedDB(db), registry: r, signer: signer, writer: w}
 }
+
+func (s *ToolService) Registry() *aitool.Registry { return s.registry }
+
+func ModelToolName(id string) string                                         { return modelToolName(id) }
 func (s *ToolService) SetEmbeddingRuntime(v aimodelruntime.EmbeddingRuntime) { s.embeddings = v }
 func (s *ToolService) SetSettingProvider(v *setting.Provider)                { s.settings = v }
 func (s *ToolService) SetCatalogProjectionSynchronous(enabled bool) {
@@ -675,7 +683,7 @@ func (s *ToolService) execute(ctx context.Context, ac *auth.Context, scope *Tool
 			_ = s.finishInvocation(ctx, &inv, nil, "failed", "execution_failed", execErr)
 			return nil, execErr
 		}
-		result, _ = toolExecutionFailure(callID, execErr)
+		result = executionFailure(callID, execErr)
 	}
 	result.CallID = callID
 	if execErr == nil && result.Status != aitool.ResultStatusFailed {
@@ -696,6 +704,33 @@ func (s *ToolService) execute(ctx context.Context, ac *auth.Context, scope *Tool
 		return nil, err
 	}
 	return result, nil
+}
+
+func executionFailure(callID string, err error) *aitool.Result {
+	category := "execution_failed"
+	summary := "tool execution failed"
+	var details *errs.SafeDetails
+	var appErr *errs.AppError
+	if errors.As(err, &appErr) {
+		switch appErr.Code {
+		case errs.CodeValidation:
+			category = "invalid_arguments"
+			if strings.TrimSpace(appErr.Message) != "" {
+				summary = appErr.Message
+				details = appErr.Details
+				if appErr.Details != nil && appErr.Details.Reason != "" {
+					category = appErr.Details.Reason
+				}
+			} else {
+				summary = "tool arguments are invalid; correct them to match the input schema and retry"
+			}
+		case errs.CodeUnauthorized, errs.CodeForbidden:
+			category = "authorization_failed"
+		case errs.CodeConflict, errs.CodeRevisionConflict:
+			category = "authorization_changed"
+		}
+	}
+	return &aitool.Result{CallID: callID, Status: "failed", Summary: summary, ErrorCategory: category, ErrorDetails: details}
 }
 
 func (s *ToolService) validateDynamicReferences(ctx context.Context, scope *ToolScope, d aitool.Definition, args json.RawMessage) (*aitool.Result, error) {

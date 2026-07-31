@@ -1,4 +1,4 @@
-package ai
+package modelruntime
 
 import (
 	"context"

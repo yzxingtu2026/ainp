@@ -68,7 +68,7 @@ func TestAICapabilityMigrationMapCoversRootFiles(t *testing.T) {
 	}
 	seen := map[string]bool{}
 	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".go" || entry.Name() == "register.go" {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".go" || isAllowedModuleRootFile(entry.Name()) {
 			continue
 		}
 		seen[entry.Name()] = true

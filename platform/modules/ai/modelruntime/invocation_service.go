@@ -1,4 +1,4 @@
-package ai
+package modelruntime
 
 import (
 	"context"
@@ -19,7 +19,9 @@ import (
 	"gorm.io/gorm"
 )
 
-const invocationFinishedEvent = "ai.model_invocation.finished.v1"
+const InvocationFinishedEvent = "ai.model_invocation.finished.v1"
+
+const invocationFinishedEvent = InvocationFinishedEvent
 
 type InvocationService struct {
 	db                tenantdata.GuardedDatabase

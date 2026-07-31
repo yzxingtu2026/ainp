@@ -1,4 +1,4 @@
-package ai
+package tooling
 
 import (
 	"sync"
@@ -22,3 +22,5 @@ func registerToolTenantModels() error {
 	})
 	return toolModelRegistration.err
 }
+
+func RegisterTenantModels() error { return registerToolTenantModels() }
