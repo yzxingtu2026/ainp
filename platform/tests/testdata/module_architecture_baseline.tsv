@@ -1,4 +1,0 @@
-# Exact migration baseline. Columns: rule<TAB>source<TAB>target<TAB>reason.
-# Remove entries as code moves; the architecture test rejects stale entries.
-cross-module-import	modules/ai/register.go	github.com/yzxingtu2026/ainp/platform/modules/system	Boot composition currently injects system-owned resolvers pending a framework contract boundary.
-cross-module-import	modules/ai/register.go	github.com/yzxingtu2026/ainp/platform/modules/system/model	Boot composition injects the system-owned avatar attachment validator into the Agent capability.

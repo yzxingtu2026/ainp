@@ -27,6 +27,7 @@
 - [统一认证与会话](./authentication-and-session.md)
 - [审计日志（最小集）](./audit.md)
 - [后端目录与模块边界](./backend-layout.md)
+- [模块包开发指南](./module-package-guide.md)：新建模块、迁移下游模块及严格架构门禁验证。
 - [CodeSet、状态机与字符串常量](./code-sets-and-status.md)
 - [租户角色与权限管理](./role-management.md)
 - [时间展示与本地化](./datetime-display.md)

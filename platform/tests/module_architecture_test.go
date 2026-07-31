@@ -1,14 +1,14 @@
 package tests
 
 import (
-	"bufio"
 	"fmt"
+	"go/ast"
 	"go/parser"
 	"go/token"
 	"os"
 	"path/filepath"
 	"runtime"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -45,76 +45,13 @@ func TestModulePackageArchitecture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	baseline, err := readModuleArchitectureBaseline(filepath.Join(platformRoot, "tests", "testdata", "module_architecture_baseline.tsv"))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	failures := reconcileModuleArchitecture(discovered, baseline)
-	if len(failures) > 0 {
-		t.Fatalf("module package architecture violations:\n%s", strings.Join(failures, "\n"))
-	}
-}
-
-func TestAICapabilityMigrationMapCoversRootFiles(t *testing.T) {
-	platformRoot := moduleArchitecturePlatformRoot()
-	mapped, err := readAICapabilityMigrationMap(filepath.Join(platformRoot, "tests", "testdata", "ai_capability_migration.tsv"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	entries, err := os.ReadDir(filepath.Join(platformRoot, "modules", "ai"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	seen := map[string]bool{}
-	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".go" || isAllowedModuleRootFile(entry.Name()) {
-			continue
+	if len(discovered) > 0 {
+		failures := make([]string, 0, len(discovered))
+		for _, violation := range discovered {
+			failures = append(failures, formatModuleArchitectureFailure(violation))
 		}
-		seen[entry.Name()] = true
-		if _, ok := mapped[entry.Name()]; !ok {
-			t.Errorf("modules/ai/%s: missing capability migration mapping", entry.Name())
-		}
-	}
-	for source := range mapped {
-		if !seen[source] {
-			t.Errorf("modules/ai/%s: stale capability migration mapping", source)
-		}
-	}
-}
-
-func reconcileModuleArchitecture(discovered, baseline map[string]moduleArchitectureViolation) []string {
-	var failures []string
-	for key, violation := range discovered {
-		if _, ok := baseline[key]; ok {
-			continue
-		}
-		failures = append(failures, formatModuleArchitectureFailure(violation, false))
-	}
-	for key, violation := range baseline {
-		if _, ok := discovered[key]; ok {
-			continue
-		}
-		failures = append(failures, formatModuleArchitectureFailure(violation, true))
-	}
-	sort.Strings(failures)
-	return failures
-}
-
-func TestModuleArchitectureBaselineIsBidirectional(t *testing.T) {
-	violation := moduleArchitectureViolation{Rule: "module-root-implementation", Source: "modules/demo/service.go"}
-	discovered := map[string]moduleArchitectureViolation{violation.key(): violation}
-	baseline := map[string]moduleArchitectureViolation{}
-	failures := reconcileModuleArchitecture(discovered, baseline)
-	if len(failures) != 1 || !strings.Contains(failures[0], "move implementation") {
-		t.Fatalf("new violation should fail with migration advice, got %v", failures)
-	}
-
-	baseline[violation.key()] = violation
-	delete(discovered, violation.key())
-	failures = reconcileModuleArchitecture(discovered, baseline)
-	if len(failures) != 1 || !strings.Contains(failures[0], "stale baseline") {
-		t.Fatalf("removed violation should require baseline cleanup, got %v", failures)
+		slices.Sort(failures)
+		t.Fatalf("module package architecture violations (no migration baseline is allowed):\n%s", strings.Join(failures, "\n"))
 	}
 }
 
@@ -143,7 +80,7 @@ func TestAICapabilityDependencyGraph(t *testing.T) {
 	if _, ok := violations[(moduleArchitectureViolation{Rule: "ai-capability-dependency", Source: "modules/ai/tooling/reverse.go", Target: moduleImportPrefix + "ai/conversation"}).key()]; !ok {
 		t.Fatal("reverse AI capability dependency should be rejected")
 	}
-	if _, ok := violations[(moduleArchitectureViolation{Rule: "ai-capability-parent-import", Source: "modules/ai/knowledge/parent.go", Target: moduleImportPrefix + "ai"}).key()]; !ok {
+	if _, ok := violations[(moduleArchitectureViolation{Rule: "module-child-parent-import", Source: "modules/ai/knowledge/parent.go", Target: moduleImportPrefix + "ai"}).key()]; !ok {
 		t.Fatal("AI capability parent import should be rejected")
 	}
 	if _, ok := violations[(moduleArchitectureViolation{Rule: "ai-unplanned-package", Source: "modules/ai/unplanned/service.go"}).key()]; !ok {
@@ -152,6 +89,45 @@ func TestAICapabilityDependencyGraph(t *testing.T) {
 	for _, violation := range violations {
 		if violation.Source == "modules/ai/conversation/runtime.go" {
 			t.Fatalf("approved AI capability dependency should pass, got %+v", violation)
+		}
+	}
+}
+
+func TestModuleStrictArchitectureFailures(t *testing.T) {
+	modulesRoot := filepath.Join(t.TempDir(), "modules")
+	files := map[string]string{
+		"valid/register.go":       "package valid\nfunc Register() error { return nil }\n",
+		"valid/service.go":        "package valid\n",
+		"missing/service/main.go": "package service\n",
+	}
+	for rel, content := range files {
+		path := filepath.Join(modulesRoot, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.MkdirAll(filepath.Join(modulesRoot, "valid", "empty"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	violations, err := scanModuleArchitecture(modulesRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []moduleArchitectureViolation{
+		{Rule: "module-root-implementation", Source: "modules/valid/service.go"},
+		{Rule: "module-register-entrypoint", Source: "modules/missing/register.go"},
+		{Rule: "empty-package-directory", Source: "modules/valid/empty"},
+	}
+	for _, violation := range want {
+		if _, ok := violations[violation.key()]; !ok {
+			t.Errorf("expected strict architecture violation %+v, got %v", violation, violations)
+		}
+		if message := formatModuleArchitectureFailure(violation); !strings.Contains(message, violation.Rule) {
+			t.Errorf("failure message must name rule %s, got %q", violation.Rule, message)
 		}
 	}
 }
@@ -170,10 +146,22 @@ func scanModuleArchitecture(modulesRoot string) (map[string]moduleArchitectureVi
 		rel = filepath.ToSlash(rel)
 		parts := strings.Split(rel, "/")
 		if info.IsDir() {
+			entries, err := os.ReadDir(path)
+			if err != nil {
+				return err
+			}
+			if len(parts) >= 3 && len(entries) == 0 {
+				addModuleArchitectureViolation(violations, moduleArchitectureViolation{Rule: "empty-package-directory", Source: rel})
+			}
 			if len(parts) >= 3 && isFallbackPackage(info.Name()) {
 				addModuleArchitectureViolation(violations, moduleArchitectureViolation{
 					Rule: "fallback-package", Source: rel,
 				})
+			}
+			if len(parts) == 2 {
+				if err := validateModuleRegister(path, rel, violations); err != nil {
+					return err
+				}
 			}
 			return nil
 		}
@@ -207,9 +195,9 @@ func scanModuleArchitecture(modulesRoot string) (map[string]moduleArchitectureVi
 			if !strings.HasPrefix(importPath, moduleImportPrefix) {
 				continue
 			}
-			if isSystemCapability(rel) && importPath == moduleImportPrefix+"system" {
+			if len(parts) >= 4 && importPath == moduleImportPrefix+sourceModule {
 				addModuleArchitectureViolation(violations, moduleArchitectureViolation{
-					Rule: "system-capability-parent-import", Source: rel, Target: importPath,
+					Rule: "module-child-parent-import", Source: rel, Target: importPath,
 				})
 				continue
 			}
@@ -240,6 +228,29 @@ func scanModuleArchitecture(modulesRoot string) (map[string]moduleArchitectureVi
 	return violations, err
 }
 
+func validateModuleRegister(modulePath, rel string, violations map[string]moduleArchitectureViolation) error {
+	registerPath := filepath.Join(modulePath, "register.go")
+	file, err := parser.ParseFile(token.NewFileSet(), registerPath, nil, 0)
+	if err != nil {
+		if os.IsNotExist(err) {
+			addModuleArchitectureViolation(violations, moduleArchitectureViolation{Rule: "module-register-entrypoint", Source: rel + "/register.go"})
+			return nil
+		}
+		return err
+	}
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if ok && fn.Recv == nil && fn.Name.Name == "Register" && fn.Type.Results != nil && len(fn.Type.Results.List) == 1 {
+			result, ok := fn.Type.Results.List[0].Type.(*ast.Ident)
+			if ok && result.Name == "error" {
+				return nil
+			}
+		}
+	}
+	addModuleArchitectureViolation(violations, moduleArchitectureViolation{Rule: "module-register-entrypoint", Source: rel + "/register.go"})
+	return nil
+}
+
 func aiCapabilityForPath(rel string) (string, bool) {
 	parts := strings.Split(rel, "/")
 	if len(parts) < 4 || parts[0] != "modules" || parts[1] != "ai" {
@@ -257,86 +268,6 @@ func aiCapabilityForImport(importPath string) (string, bool) {
 	capability := strings.Split(strings.TrimPrefix(importPath, prefix), "/")[0]
 	_, ok := aiCapabilityImports[capability]
 	return capability, ok
-}
-
-func readAICapabilityMigrationMap(path string) (map[string]string, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-	mapped := map[string]string{}
-	scanner := bufio.NewScanner(file)
-	for lineNumber := 1; scanner.Scan(); lineNumber++ {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		fields := strings.Split(line, "\t")
-		if len(fields) != 4 {
-			return nil, fmt.Errorf("%s:%d: expected source, target, compatibility, and note", path, lineNumber)
-		}
-		source, targets, compatibility, note := strings.TrimSpace(fields[0]), strings.TrimSpace(fields[1]), strings.TrimSpace(fields[2]), strings.TrimSpace(fields[3])
-		if filepath.Ext(source) != ".go" || targets == "" || compatibility == "" || note == "" {
-			return nil, fmt.Errorf("%s:%d: migration mapping fields must be complete", path, lineNumber)
-		}
-		if _, exists := mapped[source]; exists {
-			return nil, fmt.Errorf("%s:%d: duplicate migration mapping for %s", path, lineNumber, source)
-		}
-		for _, target := range strings.Split(targets, ",") {
-			root := strings.Split(strings.TrimSpace(target), "/")[0]
-			if _, ok := aiCapabilityImports[root]; !ok {
-				return nil, fmt.Errorf("%s:%d: unknown AI capability %s", path, lineNumber, root)
-			}
-		}
-		mapped[source] = targets
-	}
-	return mapped, scanner.Err()
-}
-
-func isSystemCapability(rel string) bool {
-	parts := strings.Split(rel, "/")
-	return len(parts) >= 4 && parts[0] == "modules" && parts[1] == "system"
-}
-
-func readModuleArchitectureBaseline(path string) (map[string]moduleArchitectureViolation, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
-	baseline := map[string]moduleArchitectureViolation{}
-	scanner := bufio.NewScanner(file)
-	for lineNumber := 1; scanner.Scan(); lineNumber++ {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		fields := strings.Split(line, "\t")
-		if len(fields) != 4 || strings.TrimSpace(fields[3]) == "" {
-			return nil, fmt.Errorf("%s:%d: expected rule, source, target, and reason", path, lineNumber)
-		}
-		sources := []string{fields[1]}
-		if fields[0] == "module-root-implementation" {
-			sources = strings.Split(fields[1], ",")
-		}
-		for _, source := range sources {
-			target := fields[2]
-			if target == "-" {
-				target = ""
-			}
-			violation := moduleArchitectureViolation{Rule: fields[0], Source: strings.TrimSpace(source), Target: target}
-			if violation.Source == "" {
-				return nil, fmt.Errorf("%s:%d: baseline source must not be empty", path, lineNumber)
-			}
-			if _, exists := baseline[violation.key()]; exists {
-				return nil, fmt.Errorf("%s:%d: duplicate baseline entry %q", path, lineNumber, violation.key())
-			}
-			baseline[violation.key()] = violation
-		}
-	}
-	return baseline, scanner.Err()
 }
 
 func addModuleArchitectureViolation(target map[string]moduleArchitectureViolation, violation moduleArchitectureViolation) {
@@ -359,21 +290,20 @@ func isFallbackPackage(name string) bool {
 	}
 }
 
-func formatModuleArchitectureFailure(violation moduleArchitectureViolation, stale bool) string {
-	if stale {
-		return fmt.Sprintf("%s: stale baseline for rule %s; remove the entry from tests/testdata/module_architecture_baseline.tsv", violation.Source, violation.Rule)
-	}
+func formatModuleArchitectureFailure(violation moduleArchitectureViolation) string {
 	switch violation.Rule {
 	case "module-root-implementation":
 		return fmt.Sprintf("%s: rule %s; move implementation into a capability or role package, keeping only register.go or a named facade/contracts/constants file at module root", violation.Source, violation.Rule)
 	case "cross-module-import":
-		return fmt.Sprintf("%s: rule %s imports %s; depend on a framework contract or add an explicitly reviewed baseline entry with a reason", violation.Source, violation.Rule, violation.Target)
+		return fmt.Sprintf("%s: rule %s imports %s; depend on a framework contract injected by the composition root", violation.Source, violation.Rule, violation.Target)
 	case "fallback-package":
 		return fmt.Sprintf("%s: rule %s; choose a capability or technical-role package name instead of a catch-all package", violation.Source, violation.Rule)
-	case "system-capability-parent-import":
+	case "module-child-parent-import":
 		return fmt.Sprintf("%s: rule %s imports %s; depend on capability contracts or framework packages to avoid a parent-package cycle", violation.Source, violation.Rule, violation.Target)
-	case "ai-capability-parent-import":
-		return fmt.Sprintf("%s: rule %s imports %s; use framework or capability-owned contracts instead of the AI root Facade", violation.Source, violation.Rule, violation.Target)
+	case "empty-package-directory":
+		return fmt.Sprintf("%s: rule %s; remove the empty directory or add its owned implementation", violation.Source, violation.Rule)
+	case "module-register-entrypoint":
+		return fmt.Sprintf("%s: rule %s; every module must expose a root Register entrypoint returning an error", violation.Source, violation.Rule)
 	case "ai-capability-dependency":
 		return fmt.Sprintf("%s: rule %s imports %s; follow the frozen AI capability dependency graph or inject a framework contract", violation.Source, violation.Rule, violation.Target)
 	case "ai-unplanned-package":

@@ -8,12 +8,13 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/action"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
+	"github.com/yzxingtu2026/ainp/platform/framework/setting"
 )
 
 const (
-	ActionSettingList                = "system.setting_list"
+	ActionSettingList                = setting.ActionListPermission
 	ActionSettingGet                 = "system.setting_get"
-	ActionSettingUpdate              = "system.setting_update"
+	ActionSettingUpdate              = setting.ActionUpdatePermission
 	ActionSettingReset               = "system.setting_reset"
 	ActionProfileGet                 = "system.profile_get"
 	ActionProfileUpdate              = "system.profile_update"

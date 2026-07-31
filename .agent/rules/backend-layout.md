@@ -14,7 +14,8 @@
 - Job / Outbox / 通知投递管理 Action、API、菜单统一归 `modules/operations` 与 `operations.*` 语义；领域服务通过接口注入，`operations` 禁止反向依赖 `system`。
 - 后端 `_test.go` 统一放在 `platform/tests/`，使用外部测试包通过公开 API 测试；禁止散落到 `framework/*`、`modules/*`，由架构门禁扫描防回流。
 - `modules/<module>` 根包只保留 `register.go`、命名明确的稳定 Facade、contracts 与必要常量；实现进入按能力域或技术角色组织的按需子包，禁止空目录和 `common`/`utils`/`misc` 等兜底包。
-- `modules/A` 默认禁止 import `modules/B`；例外必须在 `platform/tests/testdata/module_architecture_baseline.tsv` 精确登记源文件、目标 import 与原因。AST 门禁同时拒绝新增违规和已失效的基线。
+- `modules/A` 禁止 import `modules/B`，不再接受迁移基线或依赖白名单；跨模块协作必须通过 `framework` contract 和 composition root 注入。
+- 每个模块必须在根目录提供返回 `error` 的 `Register` 入口；禁止空目录、根目录实现文件、子包反向 import 模块根包及 `common`/`utils`/`misc` 等兜底包。
 - `system` 根包只保留 `Register`、Facade、contracts 与常量；能力归档为 `access`、`settings`、`attachments`、`notifications`、`setup`，子包禁止反向 import 根包。
 - 依赖方向固定为 `system root Facade → access → access/model`、`root → settings`、`root → attachments → attachments/model|jobs`、`root → notifications → notifications/jobs`、`root → setup → access`。
 - `system/model` 与 `system/jobs` 仅保留临时兼容 alias；已知下游迁移并经过一个发布周期后删除，稳定协议 ID/key 不删除。
