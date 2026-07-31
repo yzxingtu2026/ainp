@@ -49,7 +49,7 @@ async function loadOptions() {
 </script>
 
 <template>
-  <NSelect
+  <AppSelect
     v-model:value="modelValue"
     filterable
     clearable

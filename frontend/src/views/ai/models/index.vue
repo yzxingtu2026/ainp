@@ -38,7 +38,7 @@ const aliasVisible = ref(false);
 const aliasDeployment = ref<Api.AI.Deployment | null>(null);
 const aliasCode = ref('');
 const form = reactive({
-  provider_id: '',
+  provider_id: '' as string | null,
   code: '',
   remote_model_id: '',
   display_name: '',
@@ -176,7 +176,7 @@ async function save() {
   const result = editing.value
     ? await updateAIDeployment({ id: editing.value.id, ...common })
     : await createAIDeployment({
-        provider_id: form.provider_id,
+        provider_id: form.provider_id ?? '',
         code: form.code,
         remote_model_id: form.remote_model_id,
         ...common,
@@ -397,10 +397,11 @@ onMounted(load);
       <NAlert v-if="!editing" type="warning" class="mb-12px">手工模型必须明确确认类型、能力和限制。</NAlert>
       <NForm :model="form" label-placement="left" label-width="110">
         <NFormItem label="供应商">
-          <NSelect
+          <AppSelect
             v-model:value="form.provider_id"
             :disabled="Boolean(editing)"
             :options="providers.filter(x => x.status === 'enabled').map(x => ({ label: x.name, value: x.id }))"
+            placeholder="请选择供应商"
           />
         </NFormItem>
         <NFormItem label="代码"><NInput v-model:value="form.code" :disabled="Boolean(editing)" /></NFormItem>

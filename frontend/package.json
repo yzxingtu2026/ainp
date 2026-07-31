@@ -34,6 +34,7 @@
     "test:attachment-picker": "tsx --test src/components/common/attachment-thumb-poll.test.ts",
     "test:composer": "tsx --test src/views/ai/workspace/modules/clipboard-image.test.ts",
     "test:menu": "tsx --test src/store/modules/route/shared.test.ts",
+    "test:select": "vitest run --config vitest.config.ts src/components/common/app-select.test.ts",
     "test:service-url": "tsx --test src/utils/service.test.ts",
     "typecheck": "vue-tsc --noEmit --skipLibCheck",
     "update-pkg": "sa update-pkg"
@@ -81,8 +82,10 @@
     "@types/nprogress": "0.2.3",
     "@vitejs/plugin-vue": "6.0.6",
     "@vitejs/plugin-vue-jsx": "5.1.5",
+    "@vue/test-utils": "^2.4.11",
     "consola": "3.4.2",
     "eslint": "10.3.0",
+    "happy-dom": "^20.11.1",
     "kolorist": "1.8.0",
     "oxfmt": "^0.49.0",
     "oxlint": "^1.64.0",
@@ -98,6 +101,7 @@
     "vite-plugin-svg-icons": "2.0.1",
     "vite-plugin-vue-devtools": "8.1.2",
     "vite-plugin-vue-transition-root-validator": "^0.1.0",
+    "vitest": "^4.1.10",
     "vue-tsc": "3.2.8"
   },
   "simple-git-hooks": {
