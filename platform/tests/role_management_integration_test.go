@@ -157,6 +157,7 @@ func TestRoleManagementTenantIsolationAndProtection(t *testing.T) {
 	} {
 		if err := actions.Register(action.Action{ID: definition.id, Handler: dummy, Meta: action.Metadata{
 			Capability: "system", Permission: definition.permission, Name: definition.id, Access: definition.access,
+			AI:   action.ExcludeFromAI(action.AIExcludePendingSafetyReview),
 			HTTP: &action.HTTPMeta{Method: "POST", Path: "/" + definition.id},
 		}}); err != nil {
 			t.Fatal(err)
@@ -264,7 +265,8 @@ func TestRoleManagementTenantIsolationAndProtection(t *testing.T) {
 		}
 	}
 	if err := actions.Register(action.Action{ID: "system.new_permission", Handler: dummy, Meta: action.Metadata{
-		Capability: "system", Name: "New permission", HTTP: &action.HTTPMeta{Method: "POST", Path: "/system.new_permission"},
+		Capability: "system", Name: "New permission", AI: action.ExcludeFromAI(action.AIExcludePendingSafetyReview),
+		HTTP: &action.HTTPMeta{Method: "POST", Path: "/system.new_permission"},
 	}}); err != nil {
 		t.Fatal(err)
 	}
