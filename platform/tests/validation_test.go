@@ -121,7 +121,7 @@ func TestActionJSONStopsBeforeHandlerAndPermissionRunsFirst(t *testing.T) {
 		return nil, nil
 	})
 	registry := action.NewRegistry(permission.NewChecker(), nil)
-	if err := registry.Register(action.Action{ID: "validation.run", Handler: typed, Meta: action.Metadata{Capability: "test"}}); err != nil {
+	if err := registry.Register(action.Action{ID: "validation.run", Handler: typed, Meta: action.Metadata{Capability: "test", AI: action.ExcludeFromAI(action.AIExcludePendingSafetyReview)}}); err != nil {
 		t.Fatal(err)
 	}
 	withoutPermission := auth.WithContext(context.Background(), &auth.Context{Realm: auth.RealmTenant, Authenticated: true})

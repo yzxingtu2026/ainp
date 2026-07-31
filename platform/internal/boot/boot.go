@@ -180,8 +180,14 @@ func OpenInstalled(ctx context.Context, cfg *config.Config) (*Platform, error) {
 	if err := demo.Register(application); err != nil {
 		return nil, fmt.Errorf("register demo: %w", err)
 	}
-	if err := application.AgentContracts.ValidateActionToolCapabilityCoverage(application.Actions, []string{"demo"}); err != nil {
-		return nil, fmt.Errorf("validate AI tool capability coverage: %w", err)
+	if err := validateAgentToolCapabilityCoverage(application); err != nil {
+		return nil, err
+	}
+	if err := application.PageHelp.ValidateMenus(application.Menus); err != nil {
+		return nil, fmt.Errorf("validate page help: %w", err)
+	}
+	if err := application.PageHelp.ValidateAllModulesCoverage(application.Menus, "zh-CN"); err != nil {
+		return nil, fmt.Errorf("validate page help coverage: %w", err)
 	}
 	if err := reconcileToolCatalogs(ctx, db, application); err != nil {
 		return nil, fmt.Errorf("reconcile tool catalogs: %w", err)
@@ -191,6 +197,13 @@ func OpenInstalled(ctx context.Context, cfg *config.Config) (*Platform, error) {
 	}
 
 	return &Platform{Config: cfg, DB: db, App: application}, nil
+}
+
+func validateAgentToolCapabilityCoverage(application *app.App) error {
+	if err := application.AgentContracts.ValidateActionToolCapabilityCoverage(application.Actions, nil); err != nil {
+		return fmt.Errorf("validate AI tool capability coverage: %w", err)
+	}
+	return nil
 }
 
 func reconcileNavigationCatalogs(ctx context.Context, db *gorm.DB, application *app.App) error {
