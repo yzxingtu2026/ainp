@@ -1,4 +1,4 @@
-package ai
+package conversation
 
 import (
 	"context"
@@ -25,6 +25,9 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/prompt"
 	"github.com/yzxingtu2026/ainp/platform/framework/runtimecontext"
 	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
+	agentpkg "github.com/yzxingtu2026/ainp/platform/modules/ai/agent"
+	"github.com/yzxingtu2026/ainp/platform/modules/ai/modelruntime"
+	"github.com/yzxingtu2026/ainp/platform/modules/ai/tooling"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -32,7 +35,7 @@ import (
 const (
 	agentRunRequestedEvent           = "ai.agent_run.requested.v1"
 	agentRunResumeEvent              = "ai.agent_run.resume_requested.v1"
-	agentRunTerminalEvent            = "ai.agent_run.terminal.v1"
+	agentRunTerminalEvent            = AgentRunTerminalEvent
 	agentRunConfirmationTimeoutEvent = "ai.agent_run.confirmation_timeout.v1"
 	confirmationResumeStepAllowance  = 4
 	conversationToolRestoreLimit     = 4
@@ -42,16 +45,16 @@ const (
 type AgentRuntimeService struct {
 	db              tenantdata.GuardedDatabase
 	conversations   *ConversationService
-	invocations     *InvocationService
-	tools           *ToolService
+	invocations     *modelruntime.InvocationService
+	tools           *tooling.ToolService
 	compactor       aiconversation.ContextCompactor
 	writer          outbox.Writer
 	authorization   auth.AuthorizationProvider
 	runtimeContext  runtimecontext.Provider
 	pageContexts    *pagecontext.Registry
-	memoryRetriever *MemoryRetrievalService
+	memoryRetriever MemoryRecallFunc
 	contracts       *aiagent.Registry
-	budgetProvider  *RuntimeBudgetProvider
+	budgetProvider  *modelruntime.RuntimeBudgetProvider
 	contextBudget   interface {
 		ContextTokenLimit(context.Context, string) (int, error)
 	}
@@ -59,7 +62,7 @@ type AgentRuntimeService struct {
 	now           func() time.Time
 }
 
-func (s *AgentRuntimeService) SetMemoryRetriever(retriever *MemoryRetrievalService) {
+func (s *AgentRuntimeService) SetMemoryRetriever(retriever MemoryRecallFunc) {
 	s.memoryRetriever = retriever
 }
 
@@ -67,7 +70,7 @@ func (s *AgentRuntimeService) SetAgentContracts(contracts *aiagent.Registry) {
 	s.contracts = contracts
 }
 
-func NewAgentRuntimeService(db *gorm.DB, c *ConversationService, i *InvocationService, t *ToolService, compactor aiconversation.ContextCompactor, w outbox.Writer, authorization auth.AuthorizationProvider, pageContexts *pagecontext.Registry, runtimeContext ...runtimecontext.Provider) *AgentRuntimeService {
+func NewAgentRuntimeService(db *gorm.DB, c *ConversationService, i *modelruntime.InvocationService, t *tooling.ToolService, compactor aiconversation.ContextCompactor, w outbox.Writer, authorization auth.AuthorizationProvider, pageContexts *pagecontext.Registry, runtimeContext ...runtimecontext.Provider) *AgentRuntimeService {
 	if err := registerAgentRuntimeTenantModels(); err != nil {
 		panic(err)
 	}
@@ -82,7 +85,7 @@ func NewAgentRuntimeService(db *gorm.DB, c *ConversationService, i *InvocationSe
 	return service
 }
 
-func (s *AgentRuntimeService) SetBudgetProvider(provider *RuntimeBudgetProvider) {
+func (s *AgentRuntimeService) SetBudgetProvider(provider *modelruntime.RuntimeBudgetProvider) {
 	s.budgetProvider = provider
 }
 
@@ -401,19 +404,19 @@ func (s *AgentRuntimeService) setQueued(ctx context.Context, run *AgentRun, revi
 	return s.Get(ctx, AgentRunIDRequest{ID: run.ID})
 }
 
-func (s *AgentRuntimeService) OnConfirmationPending(ctx context.Context, tx *gorm.DB, c *ToolConfirmation) error {
+func (s *AgentRuntimeService) OnConfirmationPending(ctx context.Context, tx *gorm.DB, c *tooling.ToolConfirmation) error {
 	if s.writer == nil {
 		return nil
 	}
-	var scope ToolScope
+	var scope tooling.ToolScope
 	if err := tx.WithContext(ctx).Where("id=?", c.ScopeID).First(&scope).Error; err != nil || scope.AgentRunID == nil {
 		return err
 	}
 	_, err := s.writer.Append(ctx, tx, outbox.AppendInput{EventType: agentRunConfirmationTimeoutEvent, AggregateType: "ai_agent_run", AggregateID: *scope.AgentRunID, AggregateVersion: 1, Payload: map[string]any{"run_id": *scope.AgentRunID, "confirmation_id": c.ID, "expires_at": c.ExpiresAt}})
 	return err
 }
-func (s *AgentRuntimeService) OnConfirmationDecided(ctx context.Context, c *ToolConfirmation) error {
-	var scope ToolScope
+func (s *AgentRuntimeService) OnConfirmationDecided(ctx context.Context, c *tooling.ToolConfirmation) error {
+	var scope tooling.ToolScope
 	if err := s.db.WithContext(ctx).Where("id=?", c.ScopeID).First(&scope).Error; err != nil || scope.AgentRunID == nil {
 		return err
 	}
@@ -437,11 +440,11 @@ func (s *AgentRuntimeService) WakeExpiredConfirmation(ctx context.Context, runID
 	if err := s.db.WithContext(ctx).Where("run_id=? AND status=? AND confirmation_id IS NOT NULL", run.ID, "waiting").Order("step_index DESC").First(&step).Error; err != nil {
 		return false, err
 	}
-	var c ToolConfirmation
+	var c tooling.ToolConfirmation
 	if err := s.db.WithContext(ctx).Where("id=?", *step.ConfirmationID).First(&c).Error; err != nil {
 		return false, err
 	}
-	if c.Status == ToolConfirmationPending && c.ExpiresAt.After(s.now()) {
+	if c.Status == tooling.ToolConfirmationPending && c.ExpiresAt.After(s.now()) {
 		return false, nil
 	}
 	if auth.MustFromContext(ctx).TenantID == "" {
@@ -592,11 +595,7 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 		startedAt = *run.StartedAt
 	}
 	deadline := startedAt.Add(time.Duration(budget.MaxDurationSeconds) * time.Second)
-	repos, repoErr := newAgentRepositories(ctx, s.db.WithContext(ctx))
-	if repoErr != nil {
-		return s.fail(ctx, run, "tenant_repository_unavailable")
-	}
-	version, err := repos.versions.GetByID(run.AgentVersionID)
+	version, err := agentpkg.GetVersion(ctx, s.db.WithContext(ctx), run.AgentVersionID)
 	if err != nil {
 		return s.fail(ctx, run, "agent_version_unavailable")
 	}
@@ -609,23 +608,17 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 		return s.fail(ctx, run, "conversation_unavailable")
 	}
 	conversation := conversations[0]
-	if conversation.Purpose == ConversationPurposeWorkspace && version.Kind == AgentVersionKindPreview {
+	if conversation.Purpose == ConversationPurposeWorkspace && version.Kind == agentpkg.AgentVersionKindPreview {
 		return s.fail(ctx, run, "preview_version_forbidden")
 	}
-	agentQuery := repos.agents.Where("id=?", version.AgentID)
-	if conversation.Purpose == ConversationPurposeBuilderPreview {
-		agentQuery = agentQuery.Where("status IN ?", []string{"enabled", "draft"})
-	} else {
-		agentQuery = agentQuery.Where("status = ?", "enabled")
-	}
-	agent, err := agentQuery.First("1=1")
+	agentRow, err := agentpkg.GetForRuntime(ctx, s.db.WithContext(ctx), version.AgentID, conversation.Purpose == ConversationPurposeBuilderPreview)
 	if err != nil {
 		return s.fail(ctx, run, "agent_unavailable")
 	}
-	if agent.Status == "disabled" {
+	if agentRow.Status == "disabled" {
 		return s.fail(ctx, run, "agent_unavailable")
 	}
-	trustedContext, err := s.resolveRuntimeContext(ctx, run, &conversation, &agent)
+	trustedContext, err := s.resolveRuntimeContext(ctx, run, &conversation, &agentRow)
 	if err != nil {
 		return s.fail(ctx, run, "runtime_context_failed")
 	}
@@ -635,7 +628,7 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 		ctx = auth.WithContext(ctx, &localizedActor)
 	}
 	ctx = runtimecontext.WithTrusted(ctx, trustedContext)
-	scopeID, err := s.ensureToolScope(ctx, run, &agent)
+	scopeID, err := s.ensureToolScope(ctx, run, &agentRow)
 	if err != nil {
 		return s.fail(ctx, run, "tool_scope_failed")
 	}
@@ -670,7 +663,7 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 		if snapshotID != nil && len(recallRefs) > 0 {
 			_ = s.attachMemoryRecallRefs(ctx, *snapshotID, recallRefs)
 		}
-		effective, err := aiagent.ResolveInstructions(s.contracts, agent.ContractKey, agent.ContractVersion, version.TenantInstructions)
+		effective, err := aiagent.ResolveInstructions(s.contracts, agentRow.ContractKey, agentRow.ContractVersion, version.TenantInstructions)
 		if err != nil {
 			return s.fail(ctx, run, "agent_contract_unavailable")
 		}
@@ -678,7 +671,7 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 		if err != nil {
 			return err
 		}
-		metadata := map[string]string{"agent_id": agent.ID, "agent_run_id": run.ID, "has_tenant_supplement": fmt.Sprint(effective.HasTenantSupplement)}
+		metadata := map[string]string{"agent_id": agentRow.ID, "agent_run_id": run.ID, "has_tenant_supplement": fmt.Sprint(effective.HasTenantSupplement)}
 		if effective.ContractKey != "" {
 			metadata["contract_key"], metadata["contract_version"] = effective.ContractKey, effective.ContractVersion
 		}
@@ -697,7 +690,7 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 			_ = s.finishStep(ctx, run, step, "failed", map[string]any{}, "model_failed")
 			return s.fail(ctx, run, "model_failed")
 		}
-		var invocation ModelInvocation
+		var invocation modelruntime.ModelInvocation
 		if s.db.WithContext(ctx).Where("agent_run_id=?", run.ID).Order("created_at DESC").First(&invocation).Error == nil {
 			step.ModelInvocationID = &invocation.ID
 			_ = s.db.WithContext(ctx).Model(&AgentStep{}).Where("id=?", step.ID).Update("model_invocation_id", invocation.ID).Error
@@ -954,7 +947,7 @@ func injectPageContext(messages []aimodelruntime.Message, snapshot *pagecontext.
 	return out
 }
 
-func (s *AgentRuntimeService) resolveRuntimeContext(ctx context.Context, run *AgentRun, conversation *Conversation, agent *Agent) (*runtimecontext.TrustedRuntimeContext, error) {
+func (s *AgentRuntimeService) resolveRuntimeContext(ctx context.Context, run *AgentRun, conversation *Conversation, agentRow *agentpkg.Agent) (*runtimecontext.TrustedRuntimeContext, error) {
 	if s.runtimeContext == nil {
 		return nil, fmt.Errorf("runtime context provider unavailable")
 	}
@@ -966,7 +959,7 @@ func (s *AgentRuntimeService) resolveRuntimeContext(ctx context.Context, run *Ag
 		}
 		existing = &snap
 	}
-	trusted, err := s.runtimeContext.Build(ctx, runtimecontext.BuildRequest{TenantID: run.TenantID, UserID: run.UserID, ConversationID: conversation.ID, ConversationCreatedAt: conversation.CreatedAt, AgentID: agent.ID, AgentVersionID: run.AgentVersionID, RunID: run.ID, TimeSnapshot: existing})
+	trusted, err := s.runtimeContext.Build(ctx, runtimecontext.BuildRequest{TenantID: run.TenantID, UserID: run.UserID, ConversationID: conversation.ID, ConversationCreatedAt: conversation.CreatedAt, AgentID: agentRow.ID, AgentVersionID: run.AgentVersionID, RunID: run.ID, TimeSnapshot: existing})
 	if err != nil {
 		return nil, err
 	}
@@ -985,7 +978,7 @@ func (s *AgentRuntimeService) resolveRuntimeContext(ctx context.Context, run *Ag
 			if json.Unmarshal(current.TimeSnapshotJSON, &snap) != nil {
 				return nil, fmt.Errorf("invalid concurrent time snapshot")
 			}
-			return s.runtimeContext.Build(ctx, runtimecontext.BuildRequest{TenantID: run.TenantID, UserID: run.UserID, ConversationID: conversation.ID, ConversationCreatedAt: conversation.CreatedAt, AgentID: agent.ID, AgentVersionID: run.AgentVersionID, RunID: run.ID, TimeSnapshot: &snap})
+			return s.runtimeContext.Build(ctx, runtimecontext.BuildRequest{TenantID: run.TenantID, UserID: run.UserID, ConversationID: conversation.ID, ConversationCreatedAt: conversation.CreatedAt, AgentID: agentRow.ID, AgentVersionID: run.AgentVersionID, RunID: run.ID, TimeSnapshot: &snap})
 		}
 		run.EvaluatedAtUTC = &trusted.Time.EvaluatedAtUTC
 		run.Timezone = trusted.Time.Timezone
@@ -1032,7 +1025,7 @@ func (s *AgentRuntimeService) attachRuntimeContextRefs(ctx context.Context, snap
 	return nil
 }
 
-func (s *AgentRuntimeService) injectMemoryRecall(ctx context.Context, run *AgentRun, version AgentVersion, messages []aimodelruntime.Message, trusted *runtimecontext.TrustedRuntimeContext) ([]aimodelruntime.Message, []MemoryProvenanceRef) {
+func (s *AgentRuntimeService) injectMemoryRecall(ctx context.Context, run *AgentRun, version agentpkg.AgentVersion, messages []aimodelruntime.Message, trusted *runtimecontext.TrustedRuntimeContext) ([]aimodelruntime.Message, []MemoryProvenanceRef) {
 	if s.memoryRetriever == nil || trusted == nil || !trusted.AutoMemoryEnabled {
 		return messages, nil
 	}
@@ -1057,7 +1050,7 @@ func (s *AgentRuntimeService) injectMemoryRecall(ctx context.Context, run *Agent
 	if query == "" {
 		return messages, nil
 	}
-	response, err := s.memoryRetriever.Retrieve(ctx, MemoryRecallRequest{Query: query, AgentID: trusted.AgentID, Types: []aimemory.ItemType{aimemory.TypeFact, aimemory.TypeContext, aimemory.TypeEvent}, Limit: policy.MaxRecallItems, MaxTokens: policy.MaxRecallTokens, NormalOnly: true})
+	response, err := s.memoryRetriever(ctx, MemoryRecallRequest{Query: query, AgentID: trusted.AgentID, Types: []aimemory.ItemType{aimemory.TypeFact, aimemory.TypeContext, aimemory.TypeEvent}, Limit: policy.MaxRecallItems, MaxTokens: policy.MaxRecallTokens, NormalOnly: true})
 	if err != nil || len(response.Items) == 0 {
 		return messages, nil
 	}
@@ -1240,16 +1233,12 @@ func asGenerateResponse(value any) (aimodelruntime.GenerateResponse, bool) {
 	return aimodelruntime.GenerateResponse{}, false
 }
 
-func (s *AgentRuntimeService) ensureToolScope(ctx context.Context, run *AgentRun, agent *Agent) (string, error) {
-	var existing ToolScope
+func (s *AgentRuntimeService) ensureToolScope(ctx context.Context, run *AgentRun, agentRow *agentpkg.Agent) (string, error) {
+	var existing tooling.ToolScope
 	if err := s.db.WithContext(ctx).Where("user_id=? AND agent_run_id=? AND expires_at>?", run.UserID, run.ID, s.now()).First(&existing).Error; err == nil {
 		return existing.ID, nil
 	}
-	repos, repoErr := newAgentRepositories(ctx, s.db.WithContext(ctx))
-	if repoErr != nil {
-		return "", repoErr
-	}
-	bindings, err := repos.tools.Find("agent_id=? AND status=?", agent.ID, "enabled")
+	bindings, err := agentpkg.ListEnabledToolBindings(ctx, s.db.WithContext(ctx), agentRow.ID)
 	if err != nil {
 		return "", err
 	}
@@ -1261,8 +1250,8 @@ func (s *AgentRuntimeService) ensureToolScope(ctx context.Context, run *AgentRun
 			allowed = append(allowed, b.ToolID)
 		}
 	}
-	if s.contracts != nil && agent.ContractKey != "" {
-		if contract, ok := s.contracts.Get(agent.ContractKey, agent.ContractVersion); ok {
+	if s.contracts != nil && agentRow.ContractKey != "" {
+		if contract, ok := s.contracts.Get(agentRow.ContractKey, agentRow.ContractVersion); ok {
 			for _, id := range contract.RequiredToolSelectors {
 				group := s.tools.Registry().BindingGroup(id)
 				if len(group) == 0 {
@@ -1279,7 +1268,7 @@ func (s *AgentRuntimeService) ensureToolScope(ctx context.Context, run *AgentRun
 	}
 	rid := run.ID
 	conversationID := run.ConversationID
-	scope := ToolScope{ID: uuid.NewString(), TenantID: run.TenantID, UserID: run.UserID, Realm: string(auth.RealmTenant), SessionID: run.SessionID, AuthVersion: run.AuthVersion, AgentRunID: &rid, ConversationID: &conversationID, AllowedToolsJSON: jsonBytes(allowed), AllowedSourcesJSON: jsonBytes(allowedSources), AllowedCapabilitiesJSON: jsonBytes(allowedCapabilities), LoadedToolsJSON: jsonBytes([]string{}), ReferenceEvidenceJSON: jsonBytes([]referenceEvidence{}), ExpiresAt: s.now().Add(30 * time.Minute)}
+	scope := tooling.ToolScope{ID: uuid.NewString(), TenantID: run.TenantID, UserID: run.UserID, Realm: string(auth.RealmTenant), SessionID: run.SessionID, AuthVersion: run.AuthVersion, AgentRunID: &rid, ConversationID: &conversationID, AllowedToolsJSON: jsonBytes(allowed), AllowedSourcesJSON: jsonBytes(allowedSources), AllowedCapabilitiesJSON: jsonBytes(allowedCapabilities), LoadedToolsJSON: jsonBytes([]string{}), ReferenceEvidenceJSON: jsonBytes([]referenceEvidence{}), ExpiresAt: s.now().Add(30 * time.Minute)}
 	candidates, err := s.tools.WorkingSetCandidates(ctx, run.ConversationID, conversationToolRestoreLimit)
 	if err != nil {
 		return "", err
@@ -1293,7 +1282,7 @@ func (s *AgentRuntimeService) ensureToolScope(ctx context.Context, run *AgentRun
 			if errors.As(activateErr, &appErr) && (appErr.Code == errs.CodeForbidden || appErr.Code == errs.CodeValidation) {
 				continue
 			}
-			_ = s.db.WithContext(ctx).Where("id=?", scope.ID).Delete(&ToolScope{}).Error
+			_ = s.db.WithContext(ctx).Where("id=?", scope.ID).Delete(&tooling.ToolScope{}).Error
 			return "", activateErr
 		}
 	}
@@ -1317,14 +1306,14 @@ func (s *AgentRuntimeService) executeToolCall(ctx context.Context, run *AgentRun
 		return false, stepErr
 	}
 	if toolID != "" && call.ToolName == toolID {
-		return s.appendToolResult(ctx, run, step, call, nil, &toolRuntimeError{category: "tool_name_invalid", summary: fmt.Sprintf("tool name uses a registry ID; load it first and call the projected model tool name %s", modelToolName(toolID)), recoverable: true})
+		return s.appendToolResult(ctx, run, step, call, nil, &toolRuntimeError{category: "tool_name_invalid", summary: fmt.Sprintf("tool name uses a registry ID; load it first and call the projected model tool name %s", tooling.ModelToolName(toolID)), recoverable: true})
 	}
 	if toolID == "meta:tool.search" {
 		var input aitool.MetaSearchInput
 		if json.Unmarshal(call.Arguments, &input) != nil {
 			return s.appendToolResult(ctx, run, step, call, nil, errs.Validation("invalid tool arguments"))
 		}
-		value, err := s.tools.Search(ctx, ToolSearchRequest{ScopeID: scopeID, Query: input.Query, Capability: input.Capability, Source: input.Source, Limit: input.Limit})
+		value, err := s.tools.Search(ctx, tooling.ToolSearchRequest{ScopeID: scopeID, Query: input.Query, Capability: input.Capability, Source: input.Source, Limit: input.Limit})
 		return s.appendToolResult(ctx, run, step, call, value, err)
 	}
 	if toolID == "meta:tool.load" {
@@ -1332,11 +1321,11 @@ func (s *AgentRuntimeService) executeToolCall(ctx context.Context, run *AgentRun
 		if json.Unmarshal(call.Arguments, &input) != nil {
 			return s.appendToolResult(ctx, run, step, call, nil, errs.Validation("invalid tool arguments"))
 		}
-		value, err := s.tools.Load(ctx, ToolLoadRequest{ScopeID: scopeID, ToolIDs: input.ToolIDs})
+		value, err := s.tools.Load(ctx, tooling.ToolLoadRequest{ScopeID: scopeID, ToolIDs: input.ToolIDs})
 		if err != nil {
 			return s.appendToolResult(ctx, run, step, call, nil, err)
 		}
-		loaded := value.(ToolLoadResponse)
+		loaded := value.(tooling.ToolLoadResponse)
 		return s.appendToolResult(ctx, run, step, call, agentToolLoadResult(loaded), nil)
 	}
 	if toolID == "" {
@@ -1369,18 +1358,18 @@ func (s *AgentRuntimeService) executeToolCall(ctx context.Context, run *AgentRun
 			return s.appendRehydratedToolResult(ctx, run, step, call, toolID)
 		}
 	}
-	loadedValue, err := s.tools.Load(ctx, ToolLoadRequest{ScopeID: scopeID, ToolIDs: []string{toolID}})
+	loadedValue, err := s.tools.Load(ctx, tooling.ToolLoadRequest{ScopeID: scopeID, ToolIDs: []string{toolID}})
 	if err != nil {
 		return s.appendToolResult(ctx, run, step, call, nil, err)
 	}
-	loaded := loadedValue.(ToolLoadResponse).Tools[0]
-	value, err := s.tools.Execute(ctx, ToolExecuteRequest{Handle: loaded.Handle, ToolCallID: call.ToolCallID, Arguments: call.Arguments, IdempotencyKey: fmt.Sprintf("run:%s:tool:%s", run.ID, call.ToolCallID)})
+	loaded := loadedValue.(tooling.ToolLoadResponse).Tools[0]
+	value, err := s.tools.Execute(ctx, tooling.ToolExecuteRequest{Handle: loaded.Handle, ToolCallID: call.ToolCallID, Arguments: call.Arguments, IdempotencyKey: fmt.Sprintf("run:%s:tool:%s", run.ID, call.ToolCallID)})
 	if err != nil {
 		return s.appendToolResult(ctx, run, step, call, nil, err)
 	}
 	result := value.(*aitool.Result)
 	if result.Status == "confirmation_required" {
-		confirmation, ok := result.Data.(ToolConfirmation)
+		confirmation, ok := result.Data.(tooling.ToolConfirmation)
 		if !ok {
 			return false, fmt.Errorf("invalid confirmation")
 		}
@@ -1413,7 +1402,7 @@ func (s *AgentRuntimeService) registryToolID(name string) string {
 func resolveRegistryToolID(definitions []aitool.Definition, name string) string {
 	resolved := ""
 	for _, definition := range definitions {
-		if definition.ID == name || modelToolName(definition.ID) == name {
+		if definition.ID == name || tooling.ModelToolName(definition.ID) == name {
 			if resolved != "" && resolved != definition.ID {
 				return ""
 			}
@@ -1455,7 +1444,7 @@ type modelToolLoadResult struct {
 	AlreadyLoadedToolIDs []string            `json:"already_loaded_tool_ids"`
 }
 
-func agentToolLoadResult(loaded ToolLoadResponse) modelToolLoadResult {
+func agentToolLoadResult(loaded tooling.ToolLoadResponse) modelToolLoadResult {
 	newlyLoaded := make(map[string]bool, len(loaded.NewlyLoadedToolIDs))
 	for _, id := range loaded.NewlyLoadedToolIDs {
 		newlyLoaded[id] = true
@@ -1525,7 +1514,7 @@ func (s *AgentRuntimeService) appendToolResult(ctx context.Context, run *AgentRu
 		return false, errors.Join(err, messageErr, stepErr)
 	}
 	encoded, _ := json.Marshal(value)
-	var invocation ToolInvocation
+	var invocation tooling.ToolInvocation
 	if s.db.WithContext(ctx).Where("agent_run_id=? AND tool_call_id=?", run.ID, call.ToolCallID).Order("created_at DESC").First(&invocation).Error == nil {
 		step.ToolInvocationID = &invocation.ID
 		_ = s.db.WithContext(ctx).Model(&AgentStep{}).Where("id=?", step.ID).Update("tool_invocation_id", invocation.ID).Error
@@ -1536,7 +1525,7 @@ func (s *AgentRuntimeService) appendToolResult(ctx context.Context, run *AgentRu
 		category := ""
 		toolID := ""
 		for _, d := range s.tools.Registry().List() {
-			if modelToolName(d.ID) == call.ToolName {
+			if tooling.ModelToolName(d.ID) == call.ToolName {
 				toolID = d.ID
 				break
 			}
@@ -1637,34 +1626,34 @@ func (s *AgentRuntimeService) resumeConfirmation(ctx context.Context, run *Agent
 	} else if err != nil {
 		return false, err
 	}
-	var c ToolConfirmation
+	var c tooling.ToolConfirmation
 	if err := s.db.WithContext(ctx).Where("user_id=? AND id=?", run.UserID, *step.ConfirmationID).First(&c).Error; err != nil {
 		return false, s.fail(ctx, run, "confirmation_missing")
 	}
-	call := aimodelruntime.OutputItem{ToolCallID: c.ToolCallID, ToolName: modelToolName(c.ToolID)}
-	if c.Status == ToolConfirmationPending {
+	call := aimodelruntime.OutputItem{ToolCallID: c.ToolCallID, ToolName: tooling.ModelToolName(c.ToolID)}
+	if c.Status == tooling.ToolConfirmationPending {
 		if c.ExpiresAt.After(s.now()) {
 			return false, s.waitForConfirmation(ctx, run, c.ID)
 		}
 		return false, s.finishRejectedConfirmation(ctx, run, &step, call, "confirmation_expired", "tool call was not executed because confirmation expired")
 	}
-	if c.Status == ToolConfirmationRejected {
+	if c.Status == tooling.ToolConfirmationRejected {
 		return false, s.finishRejectedConfirmation(ctx, run, &step, call, "confirmation_rejected", "tool call was not executed because confirmation was rejected")
 	}
-	if c.Status == ToolConfirmationExpired {
+	if c.Status == tooling.ToolConfirmationExpired {
 		return false, s.finishRejectedConfirmation(ctx, run, &step, call, "confirmation_expired", "tool call was not executed because confirmation expired")
 	}
-	if c.Status == ToolConfirmationCancelled {
+	if c.Status == tooling.ToolConfirmationCancelled {
 		return false, s.finishRejectedConfirmation(ctx, run, &step, call, "confirmation_cancelled", "tool call was not executed because confirmation was cancelled")
 	}
-	if c.Status != ToolConfirmationConsumed {
+	if c.Status != tooling.ToolConfirmationConsumed {
 		return false, s.fail(ctx, run, "confirmation_execution_unavailable")
 	}
 	if s.currentConversationRevision(ctx, run) != run.ConversationRevision {
 		return false, s.fail(ctx, run, "conversation_revision_changed")
 	}
-	var inv ToolInvocation
-	if err := s.db.WithContext(ctx).Where("id=? AND status IN ?", c.InvocationID, []string{ToolInvocationCompleted, ToolInvocationFailed}).First(&inv).Error; err != nil {
+	var inv tooling.ToolInvocation
+	if err := s.db.WithContext(ctx).Where("id=? AND status IN ?", c.InvocationID, []string{tooling.ToolInvocationCompleted, tooling.ToolInvocationFailed}).First(&inv).Error; err != nil {
 		return false, s.fail(ctx, run, "confirmation_execution_unavailable")
 	}
 	var result aitool.Result
@@ -1676,13 +1665,13 @@ func (s *AgentRuntimeService) resumeConfirmation(ctx context.Context, run *Agent
 		var parent AgentStep
 		if s.db.WithContext(ctx).Where("id=?", *step.ParentStepID).First(&parent).Error == nil {
 			parentStatus, category := "completed", ""
-			if inv.Status == ToolInvocationFailed {
+			if inv.Status == tooling.ToolInvocationFailed {
 				parentStatus, category = "failed", result.ErrorCategory
 			}
 			_ = s.finishStep(ctx, run, &parent, parentStatus, map[string]any{"confirmation_id": c.ID, "executed": true}, category)
 		}
 	}
-	return err == nil && inv.Status == ToolInvocationCompleted, err
+	return err == nil && inv.Status == tooling.ToolInvocationCompleted, err
 }
 
 func (s *AgentRuntimeService) finishRejectedConfirmation(ctx context.Context, run *AgentRun, step *AgentStep, call aimodelruntime.OutputItem, category, summary string) error {

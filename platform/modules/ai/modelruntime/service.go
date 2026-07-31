@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/yzxingtu2026/ainp/platform/framework/action"
 	"github.com/yzxingtu2026/ainp/platform/framework/aimodel"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
@@ -66,9 +67,7 @@ type ListRequest struct {
 	Keyword string `json:"keyword" validate:"omitempty"`
 	Status  string `json:"status" validate:"omitempty"`
 }
-type IDRequest struct {
-	ID string `json:"id" validate:"required"`
-}
+type IDRequest = action.IDRequest
 type ProviderCreateRequest struct {
 	Code       string         `json:"code" validate:"required"`
 	Name       string         `json:"name" validate:"required"`
@@ -222,7 +221,7 @@ func (s *Service) UpdateProvider(ctx context.Context, r ProviderUpdateRequest) (
 	if res.RowsAffected == 0 {
 		return nil, errs.New(errs.CodeNotFound, "provider not found")
 	}
-	return s.GetProvider(ctx, IDRequest{r.ID})
+	return s.GetProvider(ctx, IDRequest{ID: r.ID})
 }
 func (s *Service) UpdateProviderStatus(ctx context.Context, r StatusRequest) (any, error) {
 	if !statusOK(r.Status) {
@@ -236,7 +235,7 @@ func (s *Service) UpdateProviderStatus(ctx context.Context, r StatusRequest) (an
 	if res.RowsAffected == 0 {
 		return nil, errs.New(errs.CodeNotFound, "provider not found")
 	}
-	return s.GetProvider(ctx, IDRequest{r.ID})
+	return s.GetProvider(ctx, IDRequest{ID: r.ID})
 }
 func (s *Service) Discover(ctx context.Context, r DiscoverRequest) (any, error) {
 	tid, e := tenant(ctx)
@@ -388,7 +387,7 @@ func (s *Service) UpdateDeployment(ctx context.Context, r DeploymentUpdateReques
 	if res.RowsAffected == 0 {
 		return nil, errs.New(errs.CodeNotFound, "deployment not found")
 	}
-	return s.GetDeployment(ctx, IDRequest{r.ID})
+	return s.GetDeployment(ctx, IDRequest{ID: r.ID})
 }
 func (s *Service) UpdateDeploymentStatus(ctx context.Context, r StatusRequest) (any, error) {
 	if !statusOK(r.Status) {
@@ -405,7 +404,7 @@ func (s *Service) UpdateDeploymentStatus(ctx context.Context, r StatusRequest) (
 	if res.RowsAffected == 0 {
 		return nil, errs.New(errs.CodeNotFound, "deployment not found")
 	}
-	return s.GetDeployment(ctx, IDRequest{r.ID})
+	return s.GetDeployment(ctx, IDRequest{ID: r.ID})
 }
 func (s *Service) DeleteDeployment(ctx context.Context, r IDRequest) (any, error) {
 	_, e := tenant(ctx)

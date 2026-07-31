@@ -306,7 +306,7 @@ func TestPageContextSnapshotDoesNotPersistCanonicalMessageOrSensitivePayloads(t 
 }
 
 func TestAgentRunPageContextUsesCanonicalIdempotentSnapshot(t *testing.T) {
-	source, err := os.ReadFile("../modules/ai/agent_runtime_service.go")
+	source, err := os.ReadFile("../modules/ai/conversation/runtime_service.go")
 	if err != nil {
 		t.Fatal(err)
 	}

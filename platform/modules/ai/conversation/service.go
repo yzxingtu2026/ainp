@@ -1,4 +1,4 @@
-package ai
+package conversation
 
 import (
 	"context"
@@ -15,6 +15,8 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 	"github.com/yzxingtu2026/ainp/platform/framework/pagination"
 	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
+	"github.com/yzxingtu2026/ainp/platform/modules/ai/agent"
+	"github.com/yzxingtu2026/ainp/platform/modules/ai/modelruntime"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -94,7 +96,7 @@ func conversationActor(ctx context.Context) (*auth.Context, error) {
 }
 
 func canManageConversations(ac *auth.Context) bool {
-	return ac.HasPermission(ActionAgentCreate)
+	return ac.HasPermission(agent.ActionCreate)
 }
 
 func (s *ConversationService) visibleQuery(ctx context.Context) (*gorm.DB, *auth.Context, error) {
@@ -169,15 +171,11 @@ func (s *ConversationService) Create(ctx context.Context, r ConversationCreateRe
 	if r.Visibility == "tenant" && !canManageConversations(ac) {
 		return nil, errs.New(errs.CodeForbidden, "tenant conversation permission required")
 	}
-	repos, err := newAgentRepositories(ctx, s.db.WithContext(ctx))
-	if err != nil {
-		return nil, err
-	}
-	_, err = repos.agents.First("id=? AND (owner_user_id=? OR visibility=?)", r.AgentID, ac.UserID, "tenant")
+	_, err = agent.FindVisible(ctx, s.db.WithContext(ctx), r.AgentID, ac.UserID)
 	if err != nil {
 		return nil, errs.New(errs.CodeNotFound, "agent not found")
 	}
-	version, err := repos.versions.First("id=? AND agent_id=?", r.AgentVersionID, r.AgentID)
+	version, err := agent.GetVersionForAgent(ctx, s.db.WithContext(ctx), r.AgentVersionID, r.AgentID)
 	if err != nil {
 		return nil, errs.New(errs.CodeNotFound, "agent version not found")
 	}
@@ -188,10 +186,10 @@ func (s *ConversationService) Create(ctx context.Context, r ConversationCreateRe
 	if purpose != ConversationPurposeWorkspace && purpose != ConversationPurposeBuilderPreview {
 		return nil, errs.New(errs.CodeValidation, "invalid conversation purpose")
 	}
-	if purpose == ConversationPurposeWorkspace && version.Kind == AgentVersionKindPreview {
+	if purpose == ConversationPurposeWorkspace && version.Kind == agent.AgentVersionKindPreview {
 		return nil, errs.New(errs.CodeValidation, "preview agent version cannot be used in workspace conversations")
 	}
-	if purpose == ConversationPurposeBuilderPreview && version.Kind != AgentVersionKindPreview && version.Kind != AgentVersionKindRelease {
+	if purpose == ConversationPurposeBuilderPreview && version.Kind != agent.AgentVersionKindPreview && version.Kind != agent.AgentVersionKindRelease {
 		return nil, errs.New(errs.CodeValidation, "invalid agent version kind")
 	}
 	title := strings.TrimSpace(r.Title)
@@ -217,9 +215,9 @@ func (s *ConversationService) Create(ctx context.Context, r ConversationCreateRe
 }
 
 // CreateForSlot resolves and fixes the release version in one server-side request.
-func (s *ConversationService) CreateForSlot(slots *AgentSlotService) func(context.Context, ConversationCreateForSlotRequest) (any, error) {
+func (s *ConversationService) CreateForSlot(slots *agent.AgentSlotService) func(context.Context, ConversationCreateForSlotRequest) (any, error) {
 	return func(ctx context.Context, r ConversationCreateForSlotRequest) (any, error) {
-		resolved, err := slots.Resolve(ctx, AgentSlotGetRequest{SlotKey: r.SlotKey})
+		resolved, err := slots.Resolve(ctx, agent.AgentSlotGetRequest{SlotKey: r.SlotKey})
 		if err != nil {
 			return nil, err
 		}
@@ -495,7 +493,7 @@ func (s *ConversationService) CreateSnapshot(ctx context.Context, r SnapshotCrea
 	if err != nil {
 		return nil, err
 	}
-	deployments, err := tenantdata.TenantRaw[Deployment](tdb,
+	deployments, err := tenantdata.TenantRaw[modelruntime.Deployment](tdb,
 		`SELECT * FROM ai_model_deployments WHERE tenant_id=? AND id=? LIMIT 1`, r.ModelDeploymentID)
 	if err != nil || len(deployments) != 1 {
 		return nil, errs.New(errs.CodeNotFound, "model deployment not found")

@@ -22,14 +22,37 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
 	"github.com/yzxingtu2026/ainp/platform/framework/prompt"
 	"github.com/yzxingtu2026/ainp/platform/framework/setting"
+	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	aihelp "github.com/yzxingtu2026/ainp/platform/modules/ai/help"
 	aitools "github.com/yzxingtu2026/ainp/platform/modules/ai/tools"
 	knowledgetool "github.com/yzxingtu2026/ainp/platform/modules/ai/tools/knowledge"
 	memorytool "github.com/yzxingtu2026/ainp/platform/modules/ai/tools/memory"
 	navigationtool "github.com/yzxingtu2026/ainp/platform/modules/ai/tools/navigation"
 	"github.com/yzxingtu2026/ainp/platform/modules/system"
+	systemmodel "github.com/yzxingtu2026/ainp/platform/modules/system/model"
 	"gorm.io/gorm"
 )
+
+type rootAvatarValidator struct{ db *gorm.DB }
+
+func (v rootAvatarValidator) ValidateAvatar(ctx context.Context, id, userID string, canManage bool) error {
+	tdb, err := tenantdata.TenantDB(ctx, v.db)
+	if err != nil {
+		return err
+	}
+	repo, err := tenantdata.NewTenantRepository[systemmodel.Attachment](tdb)
+	if err != nil {
+		return err
+	}
+	row, err := repo.First("id=? AND status=?", id, "ready")
+	if err != nil || (!canManage && row.UploaderID != userID) {
+		return errs.New(errs.CodeNotFound, "avatar attachment not found")
+	}
+	if !strings.HasPrefix(row.ContentType, "image/") {
+		return errs.New(errs.CodeValidation, "avatar attachment must be an image")
+	}
+	return nil
+}
 
 const (
 	ActionProviderList                 = "ai.provider_list"
@@ -210,7 +233,7 @@ func Register(a *app.App) error {
 	if a.AttachmentPolicies == nil {
 		return fmt.Errorf("attachment policy registry is required")
 	}
-	if err := a.AttachmentPolicies.Register(agentAvatarAttachmentPolicy{service: agents}); err != nil {
+	if err := a.AttachmentPolicies.Register(newAgentAvatarAttachmentPolicy(agents)); err != nil {
 		return err
 	}
 	slotRegistry := agentslot.NewRegistry(contracts)
@@ -256,7 +279,7 @@ func Register(a *app.App) error {
 	agentRuntime := NewAgentRuntimeService(a.DB, conversations, invocations, tools, compactions, writer, a.Authorization, a.PageContexts, a.RuntimeContextProvider)
 	agentRuntime.SetBudgetProvider(NewRuntimeBudgetProvider(a.SettingValues))
 	agentRuntime.SetAgentContracts(contracts)
-	agentRuntime.SetMemoryRetriever(memoryRetriever)
+	agentRuntime.SetMemoryRetriever(memoryRecallAdapter(memoryRetriever))
 	tools.SetConfirmationHooks(agentRuntime.OnConfirmationPending, agentRuntime.OnConfirmationDecided)
 	if err := RegisterAgentRuntime(a, agentRuntime); err != nil {
 		return err

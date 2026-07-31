@@ -1,4 +1,4 @@
-package ai
+package personalization
 
 import (
 	"context"
@@ -19,6 +19,8 @@ func registerPersonalizationTenantModel() error {
 	})
 	return personalizationModelRegistration.err
 }
+
+func RegisterTenantModels() error { return registerPersonalizationTenantModel() }
 
 func personalizationRepository(ctx context.Context, db *gorm.DB) (*tenantdata.Repository[AssistantPersonalizationSnapshot], error) {
 	tdb, err := tenantdata.TenantDB(ctx, db)

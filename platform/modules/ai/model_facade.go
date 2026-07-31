@@ -1,7 +1,10 @@
 package ai
 
 import (
+	"github.com/yzxingtu2026/ainp/platform/modules/ai/agent"
+	"github.com/yzxingtu2026/ainp/platform/modules/ai/conversation"
 	"github.com/yzxingtu2026/ainp/platform/modules/ai/experience/navigation"
+	"github.com/yzxingtu2026/ainp/platform/modules/ai/experience/personalization"
 	"github.com/yzxingtu2026/ainp/platform/modules/ai/modelruntime"
 	"github.com/yzxingtu2026/ainp/platform/modules/ai/tooling"
 	"gorm.io/gorm"
@@ -39,7 +42,13 @@ const (
 )
 
 func AutoMigrate(db *gorm.DB) error {
-	if err := registerPersonalizationTenantModel(); err != nil {
+	if err := personalization.RegisterTenantModels(); err != nil {
+		return err
+	}
+	if err := agent.RegisterTenantModels(); err != nil {
+		return err
+	}
+	if err := conversation.RegisterTenantModels(); err != nil {
 		return err
 	}
 	if err := db.Exec("CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public").Error; err != nil {

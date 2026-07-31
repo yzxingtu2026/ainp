@@ -1,4 +1,4 @@
-package ai
+package conversation
 
 import (
 	"sync"
@@ -21,4 +21,11 @@ func registerConversationTenantModels() error {
 		}
 	})
 	return conversationModelRegistration.err
+}
+
+func RegisterTenantModels() error {
+	if err := registerConversationTenantModels(); err != nil {
+		return err
+	}
+	return registerAgentRuntimeTenantModels()
 }
