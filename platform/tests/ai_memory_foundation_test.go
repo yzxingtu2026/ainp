@@ -56,20 +56,10 @@ func TestMemoryMigrationPostgres(t *testing.T) {
 	if err = db.Migrator().DropTable(&ai.MemoryCurrentProfile{}, &ai.MemoryDaySummary{}, &ai.MemoryProjection{}, &ai.MemoryEvidence{}, &ai.MemoryItemVersion{}, &ai.MemoryItem{}); err != nil {
 		t.Fatal(err)
 	}
-	constraints, err := os.ReadFile("../migrations/0028_tenant_composite_constraints.sql")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = db.Exec(string(constraints)).Error; err != nil {
-		t.Fatal(err)
-	}
-	body, err := os.ReadFile("../migrations/0029_ai_memory_foundation.sql")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = db.Exec(string(body)).Error; err != nil {
-		t.Fatal(err)
-	}
+	restorePre0054AccountSchema(t, db)
+	applyTestMigration(t, db, "0028_tenant_composite_constraints.sql")
+	applyTestMigration(t, db, "0029_ai_memory_foundation.sql")
+	applyTestMigration(t, db, "0054_tenant_accounts.sql")
 }
 
 func TestMemoryMigrationDefinesTemporalTenantProjectionContract(t *testing.T) {

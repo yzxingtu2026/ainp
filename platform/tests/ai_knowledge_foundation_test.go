@@ -225,11 +225,12 @@ func TestKnowledgeSQLMigrationExecutesWithTenantConstraints(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err = db.AutoMigrate(
-		&tenant.Tenant{}, &systemmodel.User{}, &systemmodel.Attachment{},
+		&tenant.Tenant{}, &systemmodel.TenantAccount{}, &systemmodel.Attachment{},
 		&ai.Provider{}, &ai.Deployment{}, &ai.Agent{},
 	); err != nil {
 		t.Fatal(err)
 	}
+	restorePre0054AccountTable(t, db)
 	migration, err := os.ReadFile("../migrations/0025_ai_knowledge_foundation.sql")
 	if err != nil {
 		t.Fatal(err)

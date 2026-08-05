@@ -108,15 +108,11 @@ func TestMemoryExtractionMigrationPostgres(t *testing.T) {
 	if err = db.Migrator().DropTable(&ai.MemoryConsolidationBatch{}, &ai.MemoryRelation{}, &ai.MemoryGovernanceDecision{}, &ai.MemoryEvaluation{}); err != nil {
 		t.Fatal(err)
 	}
+	restorePre0054AccountSchema(t, db)
 	for _, name := range []string{"0028_tenant_composite_constraints.sql", "0029_ai_memory_foundation.sql", "0030_agent_memory_policy.sql", "0031_memory_candidate_extraction.sql", "0032_memory_governance_projections.sql"} {
-		body, readErr := os.ReadFile("../migrations/" + name)
-		if readErr != nil {
-			t.Fatal(readErr)
-		}
-		if err = db.Exec(string(body)).Error; err != nil {
-			t.Fatalf("apply %s: %v", name, err)
-		}
+		applyTestMigration(t, db, name)
 	}
+	applyTestMigration(t, db, "0054_tenant_accounts.sql")
 	var count int64
 	if err = db.Raw(`SELECT COUNT(*) FROM pg_constraint WHERE conname IN ('fk_ai_memory_items_evaluation_tenant','fk_ai_memory_items_version_tenant')`).Scan(&count).Error; err != nil {
 		t.Fatal(err)

@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/yzxingtu2026/ainp/platform/framework/database"
 	"github.com/yzxingtu2026/ainp/platform/modules/system"
+	"gorm.io/gorm"
 )
 
 func TestTenantAccountMigrationContract(t *testing.T) {
@@ -122,5 +123,56 @@ func TestTenantAccountMigrationPostgres(t *testing.T) {
 	}
 	if err = db.Exec(string(body)).Error; err != nil {
 		t.Fatalf("idempotent migration must ignore a downstream business users table: %v", err)
+	}
+}
+
+func restorePre0054AccountTable(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	for _, statement := range []string{
+		`ALTER TABLE tenant_accounts RENAME TO users`,
+		`ALTER INDEX IF EXISTS ux_tenant_accounts_tenant_username RENAME TO ux_users_tenant_username`,
+	} {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatalf("restore pre-0054 account table: %v\n%s", err, statement)
+		}
+	}
+}
+
+func restorePre0054AccountSchema(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	restorePre0054AccountTable(t, db)
+	for _, statement := range []string{
+		`ALTER TABLE tenant_account_roles RENAME TO user_roles`,
+		`ALTER TABLE user_roles RENAME COLUMN account_id TO user_id`,
+		`ALTER TABLE auth_identities RENAME COLUMN account_id TO user_id`,
+		`ALTER TABLE auth_sessions RENAME COLUMN account_id TO user_id`,
+		`ALTER TABLE user_roles DROP CONSTRAINT fk_tenant_account_roles_account_tenant`,
+		`ALTER TABLE user_roles DROP CONSTRAINT fk_tenant_account_roles_role_tenant`,
+		`ALTER TABLE auth_identities DROP CONSTRAINT fk_auth_identities_account_tenant`,
+		`ALTER TABLE auth_sessions DROP CONSTRAINT fk_auth_sessions_account_tenant`,
+		`ALTER INDEX IF EXISTS ux_tenant_accounts_tenant_id RENAME TO ux_users_tenant_id`,
+		`ALTER INDEX IF EXISTS idx_tenant_account_roles_tenant_id RENAME TO idx_user_roles_tenant_id`,
+		`ALTER INDEX IF EXISTS ux_tenant_account_role RENAME TO ux_user_role`,
+		`ALTER INDEX IF EXISTS idx_auth_identities_account RENAME TO idx_auth_identities_user`,
+		`ALTER INDEX IF EXISTS idx_auth_sessions_account RENAME TO idx_auth_sessions_owner`,
+		`ALTER TABLE users RENAME CONSTRAINT tenant_accounts_pkey TO users_pkey`,
+		`ALTER TABLE users RENAME CONSTRAINT ck_tenant_accounts_auth_version TO ck_users_auth_version`,
+		`ALTER TABLE users RENAME CONSTRAINT ck_tenant_accounts_activation_status TO ck_users_activation_status`,
+		`ALTER TABLE user_roles RENAME CONSTRAINT tenant_account_roles_pkey TO user_roles_pkey`,
+	} {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatalf("restore pre-0054 account schema: %v\n%s", err, statement)
+		}
+	}
+}
+
+func applyTestMigration(t *testing.T, db *gorm.DB, name string) {
+	t.Helper()
+	body, err := os.ReadFile("../migrations/" + name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = db.Exec(string(body)).Error; err != nil {
+		t.Fatalf("apply %s: %v", name, err)
 	}
 }
