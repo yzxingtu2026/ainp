@@ -13,7 +13,7 @@ Agent 只读要点：`.agent/rules/auth-context.md`。本文档定义租户隔�
 2. **Org / Dept 仅预留字段**；行级数据权限后续按需扩展。
 3. **Phase 1 禁止普通业务跨租户**；仅显式 System 入口可做平台级操作，且须审计。
 4. **权限模型**：Role ↔ permission 字符串（默认等于 `action.id`）；先不做 ABAC/策略引擎。
-5. **一用户一租户**（一个登录身份只隶属一个 `tenant_id`）。
+5. **一账号一租户**（一个租户后台 `TenantAccount` 只隶属一个 `tenant_id`）。
 6. **预留**租户绑定**自定义域名**（Phase 1 可不实现解析，模型留字段）。
 7. **Realm 只有 `tenant` / `platform`**；当前登录固定为 `tenant`，平台入口后续独立建设。
 8. 普通 TenantDB 缺失可信 `tenant_id` 必须报错；跨租户访问只允许 SystemDB，且要求 platform realm + system operator。
@@ -25,20 +25,20 @@ System
   └── Tenant
         └── Organization（预留）
               └── Department（预留）
-                    └── User（一用户一租户）
+                    └── TenantAccount（一账号一租户）
 ```
 
 | 概念 | Phase 1 |
 |------|---------|
 | Tenant | 强制隔离边界 |
-| User | 强制；系统任务可无 user |
+| TenantAccount | 强制；系统任务可无 account |
 | Role / Permission | 强制；permission 多为 `action.id` |
 | Organization / Department | 字段预留，不做行级权限 |
 | 自定义域名 | Tenant 上预留，见 §域名 |
 
 ## AuthContext
 
-经框架写入 `context.Context`，业务只读：`auth.FromContext(ctx)`。普通登录 Token 使用 audience `ainp:tenant-console`；Token 同时校验 issuer、audience、realm、正整数 `auth_version` 与有效 `session_id`。JWT 只表达已签名的 `tenant_id + user_id + realm + auth_version + session_id`，不携带或信任角色/权限快照。会话撤销、过期或版本不一致均 fail-closed。详见 `authentication-and-session.md`；该协议启用后旧 Token 需要重新登录。
+经框架写入 `context.Context`，业务只读：`auth.FromContext(ctx)`。普通登录 Token 使用 audience `ainp:tenant-console`；Token 同时校验 issuer、audience、realm、正整数 `auth_version` 与有效 `session_id`。JWT 只表达已签名的 `tenant_id + user_id + realm + auth_version + session_id`，其中兼容字段 `user_id` 的值是 `TenantAccount.ID`；它不携带或信任角色/权限快照。会话撤销、过期或版本不一致均 fail-closed。详见 `authentication-and-session.md`。
 
 | 字段 | 必填 | 说明 |
 |------|------|------|
@@ -73,7 +73,7 @@ System
 - MCP 敏感操作确认必须绑定当前 AuthContext 的 tenant/user/client/grant 和实时授权版本；恢复凭证只能恢复同 Action、同 Schema、同参数的一次调用，不能携带或覆盖身份事实。Grant 撤销后 Access Token、Refresh family 和未消费确认全部立即失效。
 
 - 不存在「请求里带 tenant_id 就切换租户」。
-- 因一用户一租户，**Phase 1 不做租户切换 API**。
+- 因一账号一租户，**Phase 1 不做租户切换 API**。
 - 仓储/GORM：tenant-owned Model 强制经 TenantDB/GuardedDatabase 与 Callback；缺失租户上下文直接报错，不得退化为无条件查询。
 - Action 内取租户：只从 AuthContext。
 
@@ -101,8 +101,8 @@ System
 
 ## 授权版本与失效
 
-- `users.auth_version` 从 `1` 开始，只能递增；登录签发 JWT 时写入当前版本。
-- 每个正式请求验签后，`AuthorizationProvider` 必须按 `tenant_id + user_id` 实时读取用户、租户、有效角色和权限，并比较版本。
+- `tenant_accounts.auth_version` 从 `1` 开始，只能递增；登录签发 JWT 时写入当前版本。
+- 每个正式请求验签后，`AuthorizationProvider` 必须按 `tenant_id + user_id` 实时读取 `TenantAccount`、租户、有效角色和权限，并比较版本。
 - 用户启停、密码重置、用户角色变化使用单用户版本递增入口。
 - 角色权限或状态变化使用按租户角色批量递增入口。
 - 版本递增必须与对应业务变更共用一个数据库事务，禁止 Handler 散落 SQL 或提交后再补失效。
@@ -111,9 +111,9 @@ System
 
 ## 租户用户管理
 
-- 用户属于单一租户；`(tenant_id, username)` 联合唯一，username 创建后不可修改。
+- 后台账号属于单一租户；`tenant_accounts(tenant_id, username)` 联合唯一，username 创建后不可修改。下游业务可独立定义 `User/users`，不得将其接入框架后台认证链路。
 - 管理 Action：`system.user_list|get|create|update|status_update|roles_update|password_reset`；状态变更与资料编辑分离。
-- 角色全量替换并事务化：校验角色属于当前租户且 enabled → 替换 UserRole → `BumpAuthVersion`。
+- 角色全量替换并事务化：校验角色属于当前租户且 enabled → 替换 `AccountRole` → `BumpAuthVersion`。
 - 不提供物理删除；使用 `disabled` 保留审计主体。当前用户不可自停用；租户须保留至少一名 enabled 内置 `admin` 用户。
 - OrgID/DeptID 仅预留字段，本阶段不实现组织架构选择。
 - 当前用户资料使用 authenticated self-only Action；只允许修改自己的 `display_name`。user-scope Runtime Preferences 同样只从 AuthContext 解析 owner，管理员权限不允许代读或代改。
@@ -170,7 +170,7 @@ tenant realm 日志查询只允许使用声明支持可信租户过滤的 Provid
 ## 检查清单
 
 - [ ] 上下文仅由框架注入；未信任 Body 中的 tenant_id
-- [ ] 一用户一租户；未实现违规的跨租户切换
+- [ ] 一账号一租户；未实现违规的跨租户切换
 - [ ] Action 鉴权使用 permission 字符串
 - [ ] tenant-owned DB 查询从 TenantDB Repository 或 GuardedDatabase 起步
 - [ ] 正式 JWT 不携带/信任 roles 与 permissions，授权来自当前 Provider 快照

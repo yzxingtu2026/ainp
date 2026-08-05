@@ -41,6 +41,6 @@ func registerRuntimeContextDefaultsSetting(a *app.App) error {
 func registerSettingActions(a *app.App, svc *SettingService) error {
 	return settings.RegisterSettingActions(a, svc)
 }
-func registerProfileActions(a *app.App, users *UserService, prefs *UserSettingService) error {
-	return settings.RegisterProfileActions(a, users, prefs)
+func registerProfileActions(a *app.App, accounts *AccountService, prefs *UserSettingService) error {
+	return settings.RegisterProfileActions(a, accounts, prefs)
 }

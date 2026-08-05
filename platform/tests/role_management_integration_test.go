@@ -123,7 +123,7 @@ func TestRoleManagementTenantIsolationAndProtection(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	users := []model.User{
+	users := []model.TenantAccount{
 		{ID: "user-a", TenantID: "tenant-a", Username: "admin", PasswordHash: "x", Status: status.ActivationEnabled},
 		{ID: "user-b", TenantID: "tenant-b", Username: "admin", PasswordHash: "x", Status: status.ActivationEnabled},
 	}
@@ -207,13 +207,13 @@ func TestRoleManagementTenantIsolationAndProtection(t *testing.T) {
 		t.Fatalf("authenticated action permission must be rejected: %v", err)
 	}
 
-	if err := testDB.Create(&model.UserRole{ID: "ur-a", TenantID: "tenant-a", UserID: "user-a", RoleID: roleA.ID}).Error; err != nil {
+	if err := testDB.Create(&model.AccountRole{ID: "ur-a", TenantID: "tenant-a", AccountID: "user-a", RoleID: roleA.ID}).Error; err != nil {
 		t.Fatal(err)
 	}
 	if _, err := service.UpdatePermissions(ctxA, json.RawMessage(fmt.Sprintf(`{"id":%q,"permissions":["system.role_update"]}`, roleA.ID))); err != nil {
 		t.Fatal(err)
 	}
-	var userA model.User
+	var userA model.TenantAccount
 	if err := testDB.First(&userA, "id = ? AND tenant_id = ?", "user-a", "tenant-a").Error; err != nil {
 		t.Fatal(err)
 	}
@@ -232,7 +232,7 @@ func TestRoleManagementTenantIsolationAndProtection(t *testing.T) {
 	if _, err := service.UpdatePermissions(ctxA, json.RawMessage(`{"id":"admin-a","permissions":["system.role_list"]}`)); appErrorCode(err) != errs.CodeConflict {
 		t.Fatalf("built-in admin permissions must be read-only: %v", err)
 	}
-	if err := testDB.Create(&model.UserRole{ID: "ur-admin-a", TenantID: "tenant-a", UserID: "user-a", RoleID: admin.ID}).Error; err != nil {
+	if err := testDB.Create(&model.AccountRole{ID: "ur-admin-a", TenantID: "tenant-a", AccountID: "user-a", RoleID: admin.ID}).Error; err != nil {
 		t.Fatal(err)
 	}
 	_, adminPermissions, err := authService.LoadRolesAndPermissions(context.Background(), "user-a", "tenant-a")

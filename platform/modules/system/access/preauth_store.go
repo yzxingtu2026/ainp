@@ -40,15 +40,15 @@ func (s *preAuthStore) findTenant(ctx context.Context, tenantID string) (*tenant
 	return &row, err
 }
 
-func (s *preAuthStore) findUserByUsername(ctx context.Context, tenantID, username string) (*model.User, error) {
-	var row model.User
+func (s *preAuthStore) findAccountByUsername(ctx context.Context, tenantID, username string) (*model.TenantAccount, error) {
+	var row model.TenantAccount
 	err := s.db.WithContext(ctx).Where("tenant_id = ? AND username = ?", tenantID, username).First(&row).Error
 	return &row, err
 }
 
-func (s *preAuthStore) findUserByID(ctx context.Context, db *gorm.DB, tenantID, userID string) (*model.User, error) {
-	var row model.User
-	err := db.WithContext(ctx).Where("tenant_id = ? AND id = ?", tenantID, userID).First(&row).Error
+func (s *preAuthStore) findAccountByID(ctx context.Context, db *gorm.DB, tenantID, accountID string) (*model.TenantAccount, error) {
+	var row model.TenantAccount
+	err := db.WithContext(ctx).Where("tenant_id = ? AND id = ?", tenantID, accountID).First(&row).Error
 	return &row, err
 }
 
@@ -79,19 +79,19 @@ func (s *preAuthStore) rotateSession(ctx context.Context, sessionID string, fn f
 	})
 }
 
-func (s *preAuthStore) loadAuthorization(ctx context.Context, tenantID, userID, sessionID string, authVersion uint64) (*model.User, []string, []string, error) {
+func (s *preAuthStore) loadAuthorization(ctx context.Context, tenantID, accountID, sessionID string, authVersion uint64) (*model.TenantAccount, []string, []string, error) {
 	tenantRow, err := s.findTenant(ctx, tenantID)
 	if err != nil || tenantRow.Status != status.ActivationEnabled {
 		return nil, nil, nil, err
 	}
-	user, err := s.findUserByID(ctx, s.db, tenantID, userID)
-	if err != nil || user.Status != status.ActivationEnabled {
+	account, err := s.findAccountByID(ctx, s.db, tenantID, accountID)
+	if err != nil || account.Status != status.ActivationEnabled {
 		return nil, nil, nil, err
 	}
 	if sessionID != "" {
 		var count int64
 		err = s.db.WithContext(ctx).Model(&model.AuthSession{}).
-			Where("tenant_id = ? AND id = ? AND user_id = ? AND auth_version = ? AND revoked_at IS NULL AND expires_at > ?", tenantID, sessionID, userID, authVersion, time.Now().UTC()).
+			Where("tenant_id = ? AND id = ? AND account_id = ? AND auth_version = ? AND revoked_at IS NULL AND expires_at > ?", tenantID, sessionID, accountID, authVersion, time.Now().UTC()).
 			Count(&count).Error
 		if err != nil || count != 1 {
 			return nil, nil, nil, err
@@ -103,10 +103,10 @@ func (s *preAuthStore) loadAuthorization(ctx context.Context, tenantID, userID, 
 		Builtin    bool   `gorm:"column:is_builtin"`
 	}
 	err = s.db.WithContext(ctx).Raw(`SELECT r.code AS role_code, r.is_builtin, rp.permission
-FROM user_roles ur JOIN roles r ON r.tenant_id = ur.tenant_id AND r.id = ur.role_id
+FROM tenant_account_roles ur JOIN roles r ON r.tenant_id = ur.tenant_id AND r.id = ur.role_id
 LEFT JOIN role_permissions rp ON rp.role_id = r.id
-WHERE ur.tenant_id = ? AND ur.user_id = ? AND r.status = ?
-ORDER BY r.code, rp.permission`, tenantID, userID, status.ActivationEnabled).Scan(&rows).Error
+WHERE ur.tenant_id = ? AND ur.account_id = ? AND r.status = ?
+ORDER BY r.code, rp.permission`, tenantID, accountID, status.ActivationEnabled).Scan(&rows).Error
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -133,5 +133,5 @@ ORDER BY r.code, rp.permission`, tenantID, userID, status.ActivationEnabled).Sca
 	}
 	sort.Strings(roles)
 	sort.Strings(permissions)
-	return user, roles, permissions, nil
+	return account, roles, permissions, nil
 }

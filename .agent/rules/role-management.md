@@ -1,6 +1,6 @@
 # 租户角色与权限管理
 
-- Role/UserRole/RolePermission 操作必须从 AuthContext 取 tenant，并同时校验资源 tenant；禁止信任请求 tenant_id。
+- Role/AccountRole/RolePermission 操作必须从 AuthContext 取 tenant，并同时校验资源 tenant；禁止信任请求 tenant_id。账号角色关系只存于 `tenant_account_roles(account_id,role_id)`。
 - permission 只来自 tenant realm、`access=permission` 的 Action Registry；按 permission 去重，public/authenticated 不展示、不写角色权限，Menu ID 不作为权限。
 - 角色 code 创建后不可改；权限替换、启停和删除必须事务化，权限/状态变化同事务调用 #14 授权版本失效入口。
 - 启用的内置 `admin` 不可删除/停用/编辑权限；授权投影动态授予当前全部 tenant permission，前端只读展示，普通角色仍使用持久化权限集合。

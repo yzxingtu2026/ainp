@@ -49,7 +49,7 @@ func TestSettingServiceTenantIsolationAndRevision(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for _, row := range []model.User{
+	for _, row := range []model.TenantAccount{
 		{ID: "user-a", TenantID: "tenant-a", Username: "admin", PasswordHash: "x", Status: status.ActivationEnabled},
 		{ID: "user-b", TenantID: "tenant-b", Username: "admin", PasswordHash: "x", Status: status.ActivationEnabled},
 	} {

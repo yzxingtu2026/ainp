@@ -260,7 +260,7 @@ func (r *NotificationRepository) BatchLookupUserNames(ctx context.Context, tenan
 		ID          string `gorm:"column:id"`
 		Username    string `gorm:"column:username"`
 		DisplayName string `gorm:"column:display_name"`
-	}](tdb, "SELECT id, username, display_name FROM users WHERE tenant_id = ? AND id IN ?", userIDs)
+	}](tdb, "SELECT id, username, display_name FROM tenant_accounts WHERE tenant_id = ? AND id IN ?", userIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -327,7 +327,7 @@ func (r *NotificationRepository) GetDeliveryDetail(ctx context.Context, delivery
 		FROM notification_deliveries AS d
 		LEFT JOIN notification_requests AS nr ON nr.id = d.request_id AND nr.tenant_id = d.tenant_id
 		LEFT JOIN user_notifications AS un ON un.delivery_id = d.id AND un.tenant_id = d.tenant_id
-		LEFT JOIN users AS u ON u.id = d.recipient_id AND u.tenant_id = d.tenant_id
+		LEFT JOIN tenant_accounts AS u ON u.id = d.recipient_id AND u.tenant_id = d.tenant_id
 		WHERE d.tenant_id = ? AND d.id = ? LIMIT 1`, deliveryID)
 	if err != nil {
 		return nil, err

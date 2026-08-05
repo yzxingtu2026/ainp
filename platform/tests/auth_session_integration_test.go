@@ -44,7 +44,7 @@ func TestSessionRefreshRotationReplayAndTenantScope(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	user := model.User{ID: "user-a", TenantID: "tenant-a", Username: "admin", PasswordHash: "x", Status: status.ActivationEnabled, AuthVersion: 1}
+	user := model.TenantAccount{ID: "user-a", TenantID: "tenant-a", Username: "admin", PasswordHash: "x", Status: status.ActivationEnabled, AuthVersion: 1}
 	if err := testDB.Create(&user).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +75,7 @@ func TestSessionRefreshRotationReplayAndTenantScope(t *testing.T) {
 	if _, err := authService.LoadAuthorization(context.Background(), auth.AuthorizationRequest{TenantID: "tenant-b", UserID: user.ID, SessionID: created.SessionID, Realm: auth.RealmTenant, AuthVersion: 1}); err == nil {
 		t.Fatal("cross-tenant session must fail")
 	}
-	userB := model.User{ID: "user-b", TenantID: "tenant-b", Username: "admin-b", PasswordHash: "x", Status: status.ActivationEnabled, AuthVersion: 1}
+	userB := model.TenantAccount{ID: "user-b", TenantID: "tenant-b", Username: "admin-b", PasswordHash: "x", Status: status.ActivationEnabled, AuthVersion: 1}
 	if err := testDB.Create(&userB).Error; err != nil {
 		t.Fatal(err)
 	}

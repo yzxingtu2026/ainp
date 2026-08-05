@@ -87,7 +87,11 @@ func Inspect(db *gorm.DB) (Status, error) {
 	if err != nil {
 		return Status{}, err
 	}
-	initialized := db.Migrator().HasTable("users")
+	legacyInitialized := db.Migrator().HasTable("users") && db.Migrator().HasColumn("users", "password_hash") && db.Migrator().HasColumn("users", "auth_version") &&
+		db.Migrator().HasTable("user_roles") && db.Migrator().HasColumn("user_roles", "user_id") &&
+		db.Migrator().HasTable("auth_identities") && db.Migrator().HasColumn("auth_identities", "user_id") &&
+		db.Migrator().HasTable("auth_sessions") && db.Migrator().HasColumn("auth_sessions", "user_id")
+	initialized := db.Migrator().HasTable("tenant_accounts") || legacyInitialized
 	if !initialized {
 		return Status{Initialized: false, Pending: known}, nil
 	}

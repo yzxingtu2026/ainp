@@ -75,12 +75,12 @@ func TestMemoryHybridRecallHardFiltersAndDegrades(t *testing.T) {
 	if err = db.Create(&tenant.Tenant{ID: "tenant-b", Name: "B", Status: status.ActivationEnabled}).Error; err != nil {
 		t.Fatal(err)
 	}
-	for _, u := range []model.User{{ID: "user-a", TenantID: "tenant-a", Username: "alice", PasswordHash: "x", Status: status.ActivationEnabled}, {ID: "user-b", TenantID: "tenant-a", Username: "bob", PasswordHash: "x", Status: status.ActivationEnabled}} {
+	for _, u := range []model.TenantAccount{{ID: "user-a", TenantID: "tenant-a", Username: "alice", PasswordHash: "x", Status: status.ActivationEnabled}, {ID: "user-b", TenantID: "tenant-a", Username: "bob", PasswordHash: "x", Status: status.ActivationEnabled}} {
 		if err = db.Create(&u).Error; err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err = db.Create(&model.User{ID: "user-c", TenantID: "tenant-b", Username: "carol", PasswordHash: "x", Status: status.ActivationEnabled}).Error; err != nil {
+	if err = db.Create(&model.TenantAccount{ID: "user-c", TenantID: "tenant-b", Username: "carol", PasswordHash: "x", Status: status.ActivationEnabled}).Error; err != nil {
 		t.Fatal(err)
 	}
 	now := time.Date(2026, 7, 19, 10, 0, 0, 0, time.UTC)

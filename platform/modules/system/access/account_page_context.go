@@ -15,9 +15,9 @@ import (
 
 const PageTypeSystemUsers = "system.users"
 
-type UserPageContextResolver struct{ DB *gorm.DB }
+type AccountPageContextResolver struct{ DB *gorm.DB }
 
-func (r UserPageContextResolver) Resolve(ctx context.Context, envelope pagecontext.Envelope) (pagecontext.Snapshot, error) {
+func (r AccountPageContextResolver) Resolve(ctx context.Context, envelope pagecontext.Envelope) (pagecontext.Snapshot, error) {
 	ac := auth.MustFromContext(ctx)
 	permission := ActionUserList
 	if envelope.Mode == "detail" || envelope.Mode == "edit" {
@@ -57,20 +57,20 @@ func (r UserPageContextResolver) Resolve(ctx context.Context, envelope pageconte
 	if err != nil {
 		return pagecontext.Snapshot{}, err
 	}
-	users, err := tenant.TenantRaw[model.User](tdb, "SELECT * FROM users WHERE tenant_id = ? AND id = ? LIMIT 1", envelope.ResourceRefs[0].ResourceID)
-	if err != nil || len(users) != 1 {
+	accounts, err := tenant.TenantRaw[model.TenantAccount](tdb, "SELECT * FROM tenant_accounts WHERE tenant_id = ? AND id = ? LIMIT 1", envelope.ResourceRefs[0].ResourceID)
+	if err != nil || len(accounts) != 1 {
 		return pagecontext.Snapshot{}, fmt.Errorf("page context unavailable")
 	}
-	user := users[0]
-	revision := user.UpdatedAt.UTC().Format(time.RFC3339Nano)
+	account := accounts[0]
+	revision := account.UpdatedAt.UTC().Format(time.RFC3339Nano)
 	if supplied := envelope.ResourceRefs[0].Revision; supplied != "" {
 		parsed, parseErr := time.Parse(time.RFC3339Nano, supplied)
-		if parseErr != nil || !parsed.Equal(user.UpdatedAt) {
+		if parseErr != nil || !parsed.Equal(account.UpdatedAt) {
 			return pagecontext.Snapshot{}, fmt.Errorf("page context unavailable")
 		}
 	}
-	snapshot.TrustedRefs = []pagecontext.ResourceRef{{ResourceType: "system.user", ResourceID: user.ID, Revision: revision}}
-	snapshot.SafeSummary = fmt.Sprintf("System user %q (%s), status %s; %s page", user.DisplayName, user.Username, user.Status, envelope.Mode)
+	snapshot.TrustedRefs = []pagecontext.ResourceRef{{ResourceType: "system.user", ResourceID: account.ID, Revision: revision}}
+	snapshot.SafeSummary = fmt.Sprintf("System user %q (%s), status %s; %s page", account.DisplayName, account.Username, account.Status, envelope.Mode)
 	snapshot.ToolHints.Queries = []string{"查询系统用户详情", "管理用户"}
 	return snapshot, nil
 }

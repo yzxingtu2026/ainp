@@ -96,7 +96,7 @@ func TestNotificationDeliveryAdminFiltersRetryAndTenantIsolation(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := testDB.Create(&model.User{ID: "user-a", TenantID: "tenant-a", Username: "alice", DisplayName: "Alice", PasswordHash: "x", Status: status.ActivationEnabled}).Error; err != nil {
+	if err := testDB.Create(&model.TenantAccount{ID: "user-a", TenantID: "tenant-a", Username: "alice", DisplayName: "Alice", PasswordHash: "x", Status: status.ActivationEnabled}).Error; err != nil {
 		t.Fatal(err)
 	}
 	requestRepo, _ := tenant.NewSystemRepository[system.NotificationRequest](systemDB)

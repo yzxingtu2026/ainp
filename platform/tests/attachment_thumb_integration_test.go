@@ -55,7 +55,7 @@ func TestAttachmentThumbSkippedAndVariantGate(t *testing.T) {
 	if err := testDB.Create(&tenant.Tenant{ID: "tenant-a", Name: "A", Status: status.ActivationEnabled}).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := testDB.Create(&model.User{
+	if err := testDB.Create(&model.TenantAccount{
 		ID: "user-a", TenantID: "tenant-a", Username: "admin-a", PasswordHash: "x", Status: status.ActivationEnabled,
 	}).Error; err != nil {
 		t.Fatal(err)

@@ -101,20 +101,20 @@ func (s *UnifiedAuthService) Authenticate(ctx context.Context, req AuthenticateR
 	if err != nil {
 		return nil, err
 	}
-	user, err := s.resolveIdentity(ctx, verified)
+	account, err := s.resolveIdentity(ctx, verified)
 	if err != nil {
 		return nil, err
 	}
-	profile, err := s.auth.BuildProfile(ctx, user)
+	profile, err := s.auth.BuildProfile(ctx, account)
 	if err != nil {
 		return nil, err
 	}
-	tokens, err := s.sessions.Create(ctx, user, req.Client, req.DeviceSummary)
+	tokens, err := s.sessions.Create(ctx, account, req.Client, req.DeviceSummary)
 	if err != nil {
 		return nil, errs.Wrap(errs.CodeInternal, "create session failed", err)
 	}
 	if ac := auth.MustFromContext(ctx); ac != nil {
-		ac.TenantID, ac.UserID, ac.SessionID, ac.Realm = user.TenantID, user.ID, tokens.SessionID, auth.RealmTenant
+		ac.TenantID, ac.UserID, ac.SessionID, ac.Realm = account.TenantID, account.ID, tokens.SessionID, auth.RealmTenant
 		ac.Roles, ac.Permissions = append([]string(nil), profile.Roles...), append([]string(nil), profile.Permissions...)
 	}
 	return map[string]any{
@@ -128,14 +128,14 @@ func (s *UnifiedAuthService) LegacyLogin(ctx context.Context, req LegacyLoginReq
 	return s.Authenticate(ctx, AuthenticateRequest{Method: passwordMethod, Client: "web", Credentials: payload})
 }
 
-func (s *UnifiedAuthService) resolveIdentity(ctx context.Context, identity *authentication.VerifiedIdentity) (*model.User, error) {
+func (s *UnifiedAuthService) resolveIdentity(ctx context.Context, identity *authentication.VerifiedIdentity) (*model.TenantAccount, error) {
 	if identity == nil || identity.Provider == "" || identity.Subject == "" || identity.TenantID == "" {
 		return nil, errs.NewKey(errs.CodeInvalidCredentials, "auth.invalid_credentials", "invalid credentials")
 	}
-	var user *model.User
+	var account *model.TenantAccount
 	if identity.Provider == passwordMethod {
 		var err error
-		if user, err = s.preAuth.findUserByUsername(ctx, identity.TenantID, identity.Subject); err != nil {
+		if account, err = s.preAuth.findAccountByUsername(ctx, identity.TenantID, identity.Subject); err != nil {
 			return nil, errs.NewKey(errs.CodeInvalidCredentials, "auth.invalid_credentials", "invalid credentials")
 		}
 	} else {
@@ -143,25 +143,25 @@ func (s *UnifiedAuthService) resolveIdentity(ctx context.Context, identity *auth
 		if err != nil {
 			return nil, errs.NewKey(errs.CodeInvalidCredentials, "auth.invalid_credentials", "invalid credentials")
 		}
-		if user, err = s.preAuth.findUserByID(ctx, s.db, row.TenantID, row.UserID); err != nil {
+		if account, err = s.preAuth.findAccountByID(ctx, s.db, row.TenantID, row.AccountID); err != nil {
 			return nil, errs.NewKey(errs.CodeInvalidCredentials, "auth.invalid_credentials", "invalid credentials")
 		}
 	}
-	if user.Status != status.ActivationEnabled {
+	if account.Status != status.ActivationEnabled {
 		return nil, errs.NewKey(errs.CodeUserDisabled, "auth.user_disabled", "user disabled")
 	}
-	tenantRow, err := s.auth.FindTenant(ctx, user.TenantID)
+	tenantRow, err := s.auth.FindTenant(ctx, account.TenantID)
 	if err != nil || tenantRow.Status != status.ActivationEnabled {
 		return nil, errs.NewKey(errs.CodeTenantDisabled, "auth.tenant_disabled", "tenant disabled")
 	}
 	row := model.AuthIdentity{
-		ID: uuid.NewString(), TenantID: user.TenantID, UserID: user.ID, Provider: identity.Provider,
+		ID: uuid.NewString(), TenantID: account.TenantID, AccountID: account.ID, Provider: identity.Provider,
 		Subject: identity.Subject, NormalizedIdentifier: identity.NormalizedIdentifier, Status: status.ActivationEnabled, VerifiedAt: time.Now().UTC(),
 	}
 	if err := s.preAuth.upsertIdentity(ctx, &row); err != nil {
 		return nil, errs.Wrap(errs.CodeInternal, "persist verified identity failed", err)
 	}
-	return user, nil
+	return account, nil
 }
 
 func (s *UnifiedAuthService) Refresh(ctx context.Context, req RefreshRequest) (any, error) {
@@ -188,7 +188,7 @@ func (s *UnifiedAuthService) ListSessions(ctx context.Context) (any, error) {
 		return nil, err
 	}
 	rows, err := tenant.TenantRaw[model.AuthSession](tdb, `SELECT * FROM auth_sessions
-WHERE tenant_id = ? AND user_id = ? AND revoked_at IS NULL AND expires_at > ?
+WHERE tenant_id = ? AND account_id = ? AND revoked_at IS NULL AND expires_at > ?
 ORDER BY last_seen_at DESC`, ac.UserID, time.Now().UTC())
 	if err != nil {
 		return nil, err
@@ -208,7 +208,7 @@ func (s *UnifiedAuthService) RevokeSession(ctx context.Context, sessionID string
 	}
 	now := time.Now().UTC()
 	rows, err := tenant.TenantRaw[struct{ ID string }](tdb, `WITH scoped AS (
-  SELECT id FROM auth_sessions WHERE tenant_id = ? AND id = ? AND user_id = ? AND revoked_at IS NULL FOR UPDATE
+  SELECT id FROM auth_sessions WHERE tenant_id = ? AND id = ? AND account_id = ? AND revoked_at IS NULL FOR UPDATE
 )
 UPDATE auth_sessions AS s SET revoked_at = ?, updated_at = ?
 FROM scoped WHERE s.id = scoped.id RETURNING s.id`, sessionID, ac.UserID, now, now)
@@ -237,7 +237,7 @@ func (s *UnifiedAuthService) RevokeAll(ctx context.Context) (any, error) {
 	}
 	now := time.Now().UTC()
 	rows, err := tenant.TenantRaw[struct{ ID string }](tdb, `WITH scoped AS (
-  SELECT id FROM auth_sessions WHERE tenant_id = ? AND user_id = ? AND revoked_at IS NULL FOR UPDATE
+  SELECT id FROM auth_sessions WHERE tenant_id = ? AND account_id = ? AND revoked_at IS NULL FOR UPDATE
 )
 UPDATE auth_sessions AS s SET revoked_at = ?, updated_at = ?
 FROM scoped WHERE s.id = scoped.id RETURNING s.id`, ac.UserID, now, now)

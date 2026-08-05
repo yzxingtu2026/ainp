@@ -218,15 +218,15 @@ func AutoMigrateKnowledge(db *gorm.DB) error {
 			return err
 		}
 	}
-	if db.Migrator().HasTable("users") {
-		if err := db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS ux_users_tenant_id ON users (tenant_id, id)").Error; err != nil {
+	if db.Migrator().HasTable("tenant_accounts") {
+		if err := db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS ux_tenant_accounts_tenant_id ON tenant_accounts (tenant_id, id)").Error; err != nil {
 			return err
 		}
 		for _, item := range []struct {
 			table, name, definition string
 		}{
-			{"ai_knowledge_bases", "fk_ai_knowledge_base_owner_tenant", "FOREIGN KEY (tenant_id, owner_user_id) REFERENCES users(tenant_id, id) ON DELETE RESTRICT"},
-			{"ai_agent_knowledge_bindings", "fk_ai_agent_knowledge_creator_tenant", "FOREIGN KEY (tenant_id, created_by) REFERENCES users(tenant_id, id) ON DELETE RESTRICT"},
+			{"ai_knowledge_bases", "fk_ai_knowledge_base_owner_tenant", "FOREIGN KEY (tenant_id, owner_user_id) REFERENCES tenant_accounts(tenant_id, id) ON DELETE RESTRICT"},
+			{"ai_agent_knowledge_bindings", "fk_ai_agent_knowledge_creator_tenant", "FOREIGN KEY (tenant_id, created_by) REFERENCES tenant_accounts(tenant_id, id) ON DELETE RESTRICT"},
 		} {
 			if err := addKnowledgeConstraint(db, item.table, item.name, item.definition); err != nil {
 				return err

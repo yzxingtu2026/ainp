@@ -174,7 +174,7 @@ WHERE r.tenant_id = ? AND (? = '' OR r.code ILIKE ? OR r.name ILIKE ?)
 		model.Role
 		UserCount int64 `gorm:"column:user_count"`
 	}](tdb, `SELECT r.*, COUNT(ur.id) AS user_count FROM roles r
-LEFT JOIN user_roles ur ON ur.role_id = r.id AND ur.tenant_id = r.tenant_id
+LEFT JOIN tenant_account_roles ur ON ur.role_id = r.id AND ur.tenant_id = r.tenant_id
 WHERE r.tenant_id = ? AND (? = '' OR r.code ILIKE ? OR r.name ILIKE ?)
   AND (? = '' OR r.status = ?)
 GROUP BY r.id ORDER BY r.is_builtin DESC, r.created_at ASC, r.id ASC OFFSET ? LIMIT ?`,
@@ -214,7 +214,7 @@ func (s *RoleService) Get(ctx context.Context, input json.RawMessage) (any, erro
 		permissions = AssignablePermissions(s.actions)
 	}
 	counts, err := tenant.TenantRaw[struct{ Count int64 }](tdb,
-		`SELECT COUNT(*) AS count FROM user_roles WHERE tenant_id = ? AND role_id = ?`, role.ID)
+		`SELECT COUNT(*) AS count FROM tenant_account_roles WHERE tenant_id = ? AND role_id = ?`, role.ID)
 	if err != nil {
 		return nil, errs.Wrap(errs.CodeInternal, "count role users failed", err)
 	}
@@ -348,7 +348,7 @@ func (s *RoleService) Delete(ctx context.Context, input json.RawMessage) (any, e
 			return errs.NewKey(errs.CodeConflict, "role.builtin_protected", "built-in role cannot be deleted")
 		}
 		counts, err := tenant.TenantRaw[struct{ Count int64 }](tx,
-			`SELECT COUNT(*) AS count FROM user_roles WHERE tenant_id = ? AND role_id = ?`, role.ID)
+			`SELECT COUNT(*) AS count FROM tenant_account_roles WHERE tenant_id = ? AND role_id = ?`, role.ID)
 		if err != nil {
 			return err
 		}

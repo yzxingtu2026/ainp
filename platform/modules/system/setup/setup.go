@@ -294,7 +294,7 @@ func (s *SetupService) persistInstalledState(req initRequest) (time.Time, error)
 
 func (s *SetupService) createInitialData(ctx context.Context, db *gorm.DB, tenantName, username, password string) error {
 	tenantID := uuid.NewString()
-	userID := uuid.NewString()
+	accountID := uuid.NewString()
 	roleID := uuid.NewString()
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
@@ -312,16 +312,16 @@ func (s *SetupService) createInitialData(ctx context.Context, db *gorm.DB, tenan
 			return fmt.Errorf("create tenant: %w", err)
 		}
 
-		// 创建管理员
-		if err := tx.Create(&model.User{
-			ID:           userID,
+		// 创建管理员账号
+		if err := tx.Create(&model.TenantAccount{
+			ID:           accountID,
 			TenantID:     tenantID,
 			Username:     username,
 			PasswordHash: string(hash),
 			DisplayName:  username,
 			Status:       status.ActivationEnabled,
 		}).Error; err != nil {
-			return fmt.Errorf("create user: %w", err)
+			return fmt.Errorf("create tenant account: %w", err)
 		}
 
 		// 创建 admin 角色
@@ -336,24 +336,24 @@ func (s *SetupService) createInitialData(ctx context.Context, db *gorm.DB, tenan
 			return fmt.Errorf("create role: %w", err)
 		}
 
-		// 关联用户-角色
-		if err := tx.Create(&model.UserRole{
-			ID:       uuid.NewString(),
-			TenantID: tenantID,
-			UserID:   userID,
-			RoleID:   roleID,
+		// 关联账号-角色
+		if err := tx.Create(&model.AccountRole{
+			ID:        uuid.NewString(),
+			TenantID:  tenantID,
+			AccountID: accountID,
+			RoleID:    roleID,
 		}).Error; err != nil {
-			return fmt.Errorf("create user_role: %w", err)
+			return fmt.Errorf("create account_role: %w", err)
 		}
 		if s.initialDataHook != nil {
-			if err := s.initialDataHook(ctx, tx, tenantID, userID); err != nil {
+			if err := s.initialDataHook(ctx, tx, tenantID, accountID); err != nil {
 				return fmt.Errorf("initialize tenant modules: %w", err)
 			}
 		}
 
 		logging.Info(ctx, "initial data created",
 			"tenant_id", tenantID,
-			"user_id", userID,
+			"user_id", accountID,
 		)
 		return nil
 	})

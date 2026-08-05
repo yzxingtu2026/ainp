@@ -73,6 +73,26 @@ func TestTenantCompositeConstraintMigrationPostgres(t *testing.T) {
 	if err = ai.AutoMigrate(db); err != nil {
 		t.Fatal(err)
 	}
+	// Reproduce the pre-0054 names so the historical composite migration is
+	// exercised exactly as an existing installation would have applied it.
+	for _, statement := range []string{
+		`ALTER TABLE tenant_accounts RENAME TO users`,
+		`ALTER TABLE tenant_account_roles RENAME TO user_roles`,
+		`ALTER TABLE auth_identities RENAME COLUMN account_id TO user_id`,
+		`ALTER TABLE auth_sessions RENAME COLUMN account_id TO user_id`,
+		`ALTER TABLE user_roles DROP CONSTRAINT fk_tenant_account_roles_account_tenant`,
+		`ALTER TABLE user_roles DROP CONSTRAINT fk_tenant_account_roles_role_tenant`,
+		`ALTER TABLE auth_identities DROP CONSTRAINT fk_auth_identities_account_tenant`,
+		`ALTER TABLE auth_sessions DROP CONSTRAINT fk_auth_sessions_account_tenant`,
+		`ALTER INDEX IF EXISTS ux_tenant_accounts_tenant_username RENAME TO ux_users_tenant_username`,
+		`ALTER INDEX IF EXISTS ux_tenant_accounts_tenant_id RENAME TO ux_users_tenant_id`,
+		`ALTER INDEX IF EXISTS ux_tenant_account_role RENAME TO ux_user_role`,
+		`ALTER INDEX IF EXISTS idx_auth_sessions_account RENAME TO idx_auth_sessions_owner`,
+	} {
+		if err = db.Exec(statement).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
 	body, err := os.ReadFile("../migrations/0028_tenant_composite_constraints.sql")
 	if err != nil {
 		t.Fatal(err)
@@ -80,10 +100,17 @@ func TestTenantCompositeConstraintMigrationPostgres(t *testing.T) {
 	if err = db.Exec(string(body)).Error; err != nil {
 		t.Fatal(err)
 	}
+	accountMigration, err := os.ReadFile("../migrations/0054_tenant_accounts.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = db.Exec(string(accountMigration)).Error; err != nil {
+		t.Fatal(err)
+	}
 
 	var count int64
 	if err = db.Raw(`SELECT COUNT(*) FROM pg_constraint
-WHERE conname IN ('fk_ai_agent_versions_agent_tenant','fk_ai_conversations_version_tenant','fk_ai_runs_trigger_tenant','fk_user_roles_user_tenant')`).Scan(&count).Error; err != nil {
+WHERE conname IN ('fk_ai_agent_versions_agent_tenant','fk_ai_conversations_version_tenant','fk_ai_runs_trigger_tenant','fk_tenant_account_roles_account_tenant')`).Scan(&count).Error; err != nil {
 		t.Fatal(err)
 	}
 	if count != 4 {
@@ -93,7 +120,7 @@ WHERE conname IN ('fk_ai_agent_versions_agent_tenant','fk_ai_conversations_versi
 	if err = db.Exec(`INSERT INTO tenants (id,name,status) VALUES ('tenant-a','A','enabled'),('tenant-b','B','enabled')`).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err = db.Exec(`INSERT INTO users (id,tenant_id,username,password_hash,status,auth_version) VALUES ('user-a','tenant-a','a','x','enabled',1)`).Error; err != nil {
+	if err = db.Exec(`INSERT INTO tenant_accounts (id,tenant_id,username,password_hash,status,auth_version) VALUES ('user-a','tenant-a','a','x','enabled',1)`).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err = db.Exec(`INSERT INTO ai_agents (id,tenant_id,code,name,description,source,visibility,status,current_version,revision) VALUES ('agent-b','tenant-b','b','B','','tenant','tenant','draft',0,1)`).Error; err != nil {

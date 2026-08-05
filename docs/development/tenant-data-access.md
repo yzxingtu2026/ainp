@@ -31,7 +31,9 @@ AuthContext
 当前 44 个带 tenant 字段的持久化 Model 中：
 
 - 36 个注册为 TenantOwned；
-- 8 个是精确登记的基础设施或认证启动例外：`audit.Record`、`outbox.Event`、`job.Run`、`User`、`AuthIdentity`、`AuthSession`、`Role`、`UserRole`。
+- 8 个是精确登记的基础设施或认证启动例外：`audit.Record`、`outbox.Event`、`job.Run`、`TenantAccount`、`AuthIdentity`、`AuthSession`、`Role`、`AccountRole`。
+
+`TenantAccount/tenant_accounts` 是框架租户后台账号的唯一事实源，`AuthIdentity`、`AuthSession` 和 `AccountRole` 分别通过 `account_id` 关联它。生产代码禁止重新访问或创建旧框架表 `users/user_roles`；业务模块可以定义自己的 `User/users`，但不得复用 access 域 Repository、外键或认证迁移。
 
 完整机器可检查清单位于 `platform/tests/tenant_data_architecture_test.go`。新增带 GORM `TenantID` 的 Model 未注册或未分类时，默认测试立即失败。例外必须包含原因和风险，不允许目录、包或模糊正则豁免。
 
