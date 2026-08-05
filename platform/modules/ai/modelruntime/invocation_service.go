@@ -175,14 +175,14 @@ func (s *InvocationService) prepareEmbedding(ctx context.Context, req aimodelrun
 		return nil, &aimodelruntime.RuntimeError{Category: aimodelruntime.ErrorCapabilityNotSupported, Message: "embedding provider protocol is not supported"}
 	}
 	ac := auth.MustFromContext(ctx)
-	if !ac.Authenticated || ac.TenantID == "" || ac.UserID == "" {
+	if !ac.Authenticated || ac.TenantID == "" || ac.PrincipalID == "" {
 		return nil, fmt.Errorf("authenticated tenant context is required")
 	}
 	itemCount, textBytes := aimodelruntime.EmbeddingInputStats(req.Inputs)
 	modalities, _ := json.Marshal(requirements.InputModalities)
 	now := time.Now().UTC()
 	row := &ModelInvocation{
-		ID: uuid.NewString(), TenantID: ac.TenantID, UserID: ac.UserID, SessionID: ac.SessionID,
+		ID: uuid.NewString(), TenantID: ac.TenantID, UserID: ac.PrincipalID, SessionID: ac.SessionID,
 		ModelAlias: req.ModelAlias, ProviderID: resolved.ProviderID, DeploymentID: resolved.DeploymentID, RemoteModelID: resolved.RemoteModelID,
 		Mode: "embedding", Status: "running", StartedAt: now, RequestID: ac.RequestID, TraceID: ac.TraceID,
 		InputModalitiesJSON: modalities, EmbeddingPurpose: string(req.Purpose), EmbeddingItemCount: itemCount, EmbeddingTextBytes: textBytes,
@@ -256,12 +256,12 @@ func (s *InvocationService) prepare(ctx context.Context, req aimodelruntime.Gene
 		return nil, err
 	}
 	ac := auth.MustFromContext(ctx)
-	if !ac.Authenticated || ac.TenantID == "" || ac.UserID == "" {
+	if !ac.Authenticated || ac.TenantID == "" || ac.PrincipalID == "" {
 		return nil, fmt.Errorf("authenticated tenant context is required")
 	}
 	now := time.Now().UTC()
 	modalities, _ := json.Marshal(requirements.InputModalities)
-	row := &ModelInvocation{ID: uuid.NewString(), TenantID: ac.TenantID, UserID: ac.UserID, SessionID: ac.SessionID, ModelAlias: req.ModelAlias, ProviderID: resolved.ProviderID, DeploymentID: resolved.DeploymentID, RemoteModelID: resolved.RemoteModelID, Mode: mode, StructuredOutputStrategy: string(strategy), Status: "running", StartedAt: now, RequestID: ac.RequestID, TraceID: ac.TraceID, InputModalitiesJSON: modalities, InputAttachmentCount: imageCount, InputAttachmentBytes: imageBytes}
+	row := &ModelInvocation{ID: uuid.NewString(), TenantID: ac.TenantID, UserID: ac.PrincipalID, SessionID: ac.SessionID, ModelAlias: req.ModelAlias, ProviderID: resolved.ProviderID, DeploymentID: resolved.DeploymentID, RemoteModelID: resolved.RemoteModelID, Mode: mode, StructuredOutputStrategy: string(strategy), Status: "running", StartedAt: now, RequestID: ac.RequestID, TraceID: ac.TraceID, InputModalitiesJSON: modalities, InputAttachmentCount: imageCount, InputAttachmentBytes: imageBytes}
 	if v := strings.TrimSpace(req.Metadata["agent_id"]); v != "" {
 		row.AgentID = &v
 	}
@@ -523,7 +523,7 @@ func (s *InvocationService) RecoverStale(ctx context.Context, olderThan time.Dur
 	}
 	for i := range staleRows {
 		row := ModelInvocation(staleRows[i])
-		recoveryCtx := auth.WithContext(ctx, &auth.Context{Authenticated: true, Realm: auth.RealmTenant, TenantID: row.TenantID, UserID: row.UserID, SessionID: row.SessionID, RequestID: row.RequestID, TraceID: row.TraceID})
+		recoveryCtx := auth.WithContext(ctx, &auth.Context{Authenticated: true, Realm: auth.RealmTenant, TenantID: row.TenantID, PrincipalID: row.UserID, SessionID: row.SessionID, RequestID: row.RequestID, TraceID: row.TraceID})
 		if err := s.finish(recoveryCtx, &row, nil, aimodelruntime.FinishError, aimodelruntime.ErrorProviderUnavailable, "", "unknown"); err != nil {
 			return err
 		}

@@ -30,11 +30,14 @@ func TestTokenServiceIssuesTenantRealmAndAudience(t *testing.T) {
 	if claims.SessionID != "session-1" {
 		t.Fatalf("unexpected session id: %s", claims.SessionID)
 	}
+	if claims.PrincipalID != "user-1" || claims.Subject != "user-1" || claims.LegacyUserID != "user-1" {
+		t.Fatalf("unexpected principal claims: %#v", claims)
+	}
 }
 
 func TestTokenServiceRejectsLegacyTokenWithoutAudience(t *testing.T) {
 	svc, _ := auth.NewTokenService("test-secret", "ainp-test", time.Hour)
-	claims := auth.TokenClaims{TenantID: "tenant-1", UserID: "user-1", SessionID: "session-1", Realm: auth.RealmTenant, AuthVersion: 1, RegisteredClaims: jwt.RegisteredClaims{
+	claims := auth.TokenClaims{TenantID: "tenant-1", LegacyUserID: "user-1", SessionID: "session-1", Realm: auth.RealmTenant, AuthVersion: 1, RegisteredClaims: jwt.RegisteredClaims{
 		Issuer: "ainp-test", ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
 	}}
 	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte("test-secret"))
@@ -48,7 +51,7 @@ func TestTokenServiceRejectsLegacyTokenWithoutAudience(t *testing.T) {
 
 func TestTokenServiceRejectsTokenWithoutAuthVersion(t *testing.T) {
 	svc, _ := auth.NewTokenService("test-secret", "ainp-test", time.Hour)
-	claims := auth.TokenClaims{TenantID: "tenant-1", UserID: "user-1", SessionID: "session-1", Realm: auth.RealmTenant, RegisteredClaims: jwt.RegisteredClaims{
+	claims := auth.TokenClaims{TenantID: "tenant-1", LegacyUserID: "user-1", SessionID: "session-1", Realm: auth.RealmTenant, RegisteredClaims: jwt.RegisteredClaims{
 		Issuer: "ainp-test", Audience: jwt.ClaimStrings{auth.TenantAudience}, ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
 	}}
 	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte("test-secret"))
@@ -62,11 +65,22 @@ func TestTokenServiceRejectsTokenWithoutAuthVersion(t *testing.T) {
 
 func TestTokenServiceRejectsTokenWithoutSession(t *testing.T) {
 	svc, _ := auth.NewTokenService("test-secret", "ainp-test", time.Hour)
-	claims := auth.TokenClaims{TenantID: "tenant-1", UserID: "user-1", Realm: auth.RealmTenant, AuthVersion: 1, RegisteredClaims: jwt.RegisteredClaims{
+	claims := auth.TokenClaims{TenantID: "tenant-1", LegacyUserID: "user-1", Realm: auth.RealmTenant, AuthVersion: 1, RegisteredClaims: jwt.RegisteredClaims{
 		Issuer: "ainp-test", Audience: jwt.ClaimStrings{auth.TenantAudience}, ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
 	}}
 	token, _ := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte("test-secret"))
 	if _, err := svc.Parse(token); err == nil {
 		t.Fatal("expected token without session_id to be rejected")
+	}
+}
+
+func TestTokenServiceRejectsConflictingSubjectAndLegacyUID(t *testing.T) {
+	svc, _ := auth.NewTokenService("test-secret", "ainp-test", time.Hour)
+	claims := auth.TokenClaims{TenantID: "tenant-1", LegacyUserID: "legacy", SessionID: "session-1", Realm: auth.RealmTenant, AuthVersion: 1, RegisteredClaims: jwt.RegisteredClaims{
+		Issuer: "ainp-test", Subject: "canonical", Audience: jwt.ClaimStrings{auth.TenantAudience}, ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+	}}
+	token, _ := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte("test-secret"))
+	if _, err := svc.Parse(token); err == nil {
+		t.Fatal("expected conflicting sub and uid to be rejected")
 	}
 }

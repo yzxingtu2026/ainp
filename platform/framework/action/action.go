@@ -153,8 +153,18 @@ type Action struct {
 	Meta    Metadata
 }
 
+// Alias provides an explicit compatibility entry point for a canonical Action.
+// Aliases are intentionally excluded from List and Get so they cannot become
+// permissions, AI tools, or dynamic-reference discovery targets.
+type Alias struct {
+	ID       string
+	TargetID string
+	HTTP     *HTTPMeta
+}
+
 type Registry struct {
 	items               map[string]Action
+	aliases             map[string]Alias
 	resolvers           map[string]ReferenceResolver
 	checker             *permission.Checker
 	auditor             audit.Recorder
@@ -169,10 +179,51 @@ type IdempotencyExecutor interface {
 func NewRegistry(checker *permission.Checker, auditor audit.Recorder) *Registry {
 	return &Registry{
 		items:     make(map[string]Action),
+		aliases:   make(map[string]Alias),
 		resolvers: make(map[string]ReferenceResolver),
 		checker:   checker,
 		auditor:   auditor,
 	}
+}
+
+func (r *Registry) RegisterAlias(alias Alias) error {
+	if strings.TrimSpace(alias.ID) == "" {
+		return fmt.Errorf("action alias id is required")
+	}
+	if strings.TrimSpace(alias.TargetID) == "" {
+		return fmt.Errorf("action alias target id is required: %s", alias.ID)
+	}
+	if alias.ID == alias.TargetID {
+		return fmt.Errorf("action alias must not target itself: %s", alias.ID)
+	}
+	if _, exists := r.items[alias.ID]; exists {
+		return fmt.Errorf("action alias conflicts with registered action: %s", alias.ID)
+	}
+	if _, exists := r.aliases[alias.ID]; exists {
+		return fmt.Errorf("action alias already registered: %s", alias.ID)
+	}
+	if _, exists := r.items[alias.TargetID]; !exists {
+		return fmt.Errorf("action alias target not registered: %s", alias.TargetID)
+	}
+	if alias.HTTP != nil && alias.HTTP.IsEnabled() {
+		if strings.TrimSpace(alias.HTTP.Method) == "" || strings.TrimSpace(alias.HTTP.Path) == "" {
+			return fmt.Errorf("action alias %s: HTTP method and path are required", alias.ID)
+		}
+	}
+	r.aliases[alias.ID] = alias
+	return nil
+}
+
+// HTTPAliases returns compatibility routes only. Callers must not project
+// these entries into catalogs or discovery surfaces.
+func (r *Registry) HTTPAliases() []Alias {
+	out := make([]Alias, 0, len(r.aliases))
+	for _, alias := range r.aliases {
+		if alias.HTTP != nil && alias.HTTP.IsEnabled() {
+			out = append(out, alias)
+		}
+	}
+	return out
 }
 
 func (r *Registry) Register(a Action) error {
@@ -212,6 +263,9 @@ func (r *Registry) Register(a Action) error {
 	}
 	if _, exists := r.items[a.ID]; exists {
 		return fmt.Errorf("action already registered: %s", a.ID)
+	}
+	if _, exists := r.aliases[a.ID]; exists {
+		return fmt.Errorf("action conflicts with registered alias: %s", a.ID)
 	}
 	r.items[a.ID] = a
 	return nil
@@ -285,7 +339,10 @@ func (r *Registry) SetIdempotencyExecutor(executor IdempotencyExecutor) {
 
 func (r *Registry) Invoke(ctx context.Context, actionID string, input json.RawMessage) (any, error) {
 	start := time.Now()
-	a, ok := r.items[actionID]
+	if alias, ok := r.aliases[actionID]; ok {
+		logging.Warn(ctx, "identity compatibility alias used", "compatibility_kind", "action", "alias_id", alias.ID, "canonical_id", alias.TargetID)
+	}
+	a, ok := r.resolve(actionID)
 	if !ok {
 		err := errs.New(errs.CodeActionNotFound, "action not found")
 		logActionFailure(ctx, actionID, "", false, start, "action.lookup", err)
@@ -355,6 +412,18 @@ func (r *Registry) Invoke(ctx context.Context, actionID string, input json.RawMe
 	return data, nil
 }
 
+func (r *Registry) resolve(id string) (Action, bool) {
+	if a, ok := r.items[id]; ok {
+		return a, true
+	}
+	alias, ok := r.aliases[id]
+	if !ok {
+		return Action{}, false
+	}
+	a, ok := r.items[alias.TargetID]
+	return a, ok
+}
+
 func logActionFailure(ctx context.Context, actionID, capability string, replay bool, started time.Time, fallbackStage string, err error) {
 	meta := diagnostic.Describe(err, fallbackStage)
 	code, messageKey := errs.CodeInternal, "common.internal_error"
@@ -390,7 +459,7 @@ func logActionFailure(ctx context.Context, actionID, capability string, replay b
 // AuditRejected records a transport adapter rejection for a registered Action
 // that was resolved but intentionally not passed to Invoke.
 func (r *Registry) AuditRejected(ctx context.Context, actionID string, err error) {
-	a, ok := r.items[actionID]
+	a, ok := r.resolve(actionID)
 	if !ok {
 		return
 	}
@@ -398,7 +467,7 @@ func (r *Registry) AuditRejected(ctx context.Context, actionID string, err error
 }
 
 func (r *Registry) AuditDeferred(ctx context.Context, actionID, summary string) {
-	a, ok := r.items[actionID]
+	a, ok := r.resolve(actionID)
 	if !ok {
 		return
 	}
@@ -430,7 +499,7 @@ func (r *Registry) writeAuditWithReplay(ctx context.Context, a Action, perm, res
 		OccurredAt:       time.Now().UTC(),
 		TenantID:         ac.TenantID,
 		Realm:            string(auth.NormalizeRealm(ac.Realm)),
-		UserID:           ac.UserID,
+		ActorID:          ac.PrincipalID,
 		ActorType:        actorType(ac),
 		ActionID:         a.ID,
 		Result:           result,
@@ -485,8 +554,8 @@ func actorType(ac *auth.Context) string {
 			return ac.Client
 		}
 	}
-	if ac.UserID == "" {
+	if ac.PrincipalID == "" {
 		return "system"
 	}
-	return "user"
+	return "account"
 }

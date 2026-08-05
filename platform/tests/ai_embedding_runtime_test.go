@@ -367,7 +367,7 @@ func TestEmbeddingRuntimePostgresInvocationAndTenantIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc := ai.NewService(db, types, cipher)
-	ctx1 := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t1", UserID: "u1", SessionID: "s1", Realm: auth.RealmTenant, RequestID: "req-1"})
+	ctx1 := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t1", PrincipalID: "u1", SessionID: "s1", Realm: auth.RealmTenant, RequestID: "req-1"})
 	createdProvider, err := svc.CreateProvider(ctx1, ai.ProviderCreateRequest{Code: "openai-local", Name: "OpenAI", Protocol: aimodel.ProtocolOpenAI, Credential: "sk-test", Status: "enabled"})
 	if err != nil {
 		t.Fatal(err)
@@ -442,7 +442,7 @@ VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, "stale-t1", "t1", "u1", "s1", "embed-default"
 	if staleErr != nil || len(staleRows) != 1 || staleRows[0].Status != "unknown" {
 		t.Fatalf("stale invocation was not recovered: %#v %v", staleRows, staleErr)
 	}
-	ctx2 := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t2", UserID: "u2", SessionID: "s2", Realm: auth.RealmTenant})
+	ctx2 := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t2", PrincipalID: "u2", SessionID: "s2", Realm: auth.RealmTenant})
 	if _, err = invocations.Embed(ctx2, aimodelruntime.EmbeddingRequest{
 		ModelAlias: "embed-default",
 		Inputs:     []aimodelruntime.EmbeddingItem{{ID: "x", Text: "cross tenant"}},

@@ -134,7 +134,7 @@ func (s *ToolService) ReconcileCatalog(ctx context.Context, force ...bool) (Tool
 }
 
 func (s *ToolService) ReconcileCatalogForTenant(ctx context.Context, tenantID, actorID string) (ToolCatalogReconcileResult, error) {
-	ctx = auth.WithContext(ctx, &auth.Context{Authenticated: true, Realm: auth.RealmTenant, TenantID: tenantID, UserID: actorID, Client: "tool-catalog-reconciler"})
+	ctx = auth.WithContext(ctx, &auth.Context{Authenticated: true, Realm: auth.RealmTenant, TenantID: tenantID, PrincipalID: actorID, Client: "tool-catalog-reconciler"})
 	return s.ReconcileCatalog(ctx)
 }
 

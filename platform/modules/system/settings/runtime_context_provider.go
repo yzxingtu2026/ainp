@@ -31,14 +31,14 @@ func NewRuntimeContextProvider(db *gorm.DB, preferences *UserSettingService, ten
 
 func (p *RuntimeContextProvider) Build(ctx context.Context, req runtimecontext.BuildRequest) (*runtimecontext.TrustedRuntimeContext, error) {
 	ac, ok := auth.FromContext(ctx)
-	if !ok || ac == nil || !ac.Authenticated || ac.TenantID == "" || ac.UserID == "" || ac.TenantID != req.TenantID || ac.UserID != req.UserID {
+	if !ok || ac == nil || !ac.Authenticated || ac.TenantID == "" || ac.PrincipalID == "" || ac.TenantID != req.TenantID || ac.PrincipalID != req.PrincipalID {
 		return nil, tenant.ErrTenantConflict
 	}
 	tdb, err := tenant.TenantDB(ctx, p.db)
 	if err != nil {
 		return nil, err
 	}
-	users, err := tenant.TenantRaw[model.TenantAccount](tdb, `SELECT * FROM tenant_accounts WHERE tenant_id=? AND id=? AND status=? LIMIT 1`, req.UserID, status.ActivationEnabled)
+	users, err := tenant.TenantRaw[model.TenantAccount](tdb, `SELECT * FROM tenant_accounts WHERE tenant_id=? AND id=? AND status=? LIMIT 1`, req.PrincipalID, status.ActivationEnabled)
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +82,7 @@ func (p *RuntimeContextProvider) Build(ctx context.Context, req runtimecontext.B
 	}
 	preferred, preferredSource := strings.TrimSpace(prefs.PreferredAddressOverride), "user_preference"
 	if preferred == "" {
-		rows, queryErr := tenant.TenantRaw[struct{ Profile json.RawMessage }](tdb, `SELECT profile_json AS profile FROM ai_memory_current_profiles WHERE tenant_id=? AND user_id=? AND agent_id IS NULL AND status='ready' ORDER BY source_revision DESC LIMIT 1`, req.UserID)
+		rows, queryErr := tenant.TenantRaw[struct{ Profile json.RawMessage }](tdb, `SELECT profile_json AS profile FROM ai_memory_current_profiles WHERE tenant_id=? AND user_id=? AND agent_id IS NULL AND status='ready' ORDER BY source_revision DESC LIMIT 1`, req.PrincipalID)
 		if queryErr != nil {
 			return nil, queryErr
 		}
@@ -106,7 +106,7 @@ func (p *RuntimeContextProvider) Build(ctx context.Context, req runtimecontext.B
 	if prefSource != "user" {
 		locale, localeSource = tenantLocale, tenantSource
 	}
-	return &runtimecontext.TrustedRuntimeContext{TenantID: req.TenantID, UserID: req.UserID, Username: user.Username, DisplayName: user.DisplayName, PreferredAddress: preferred, PreferredAddressSource: preferredSource, Locale: locale, LocaleSource: localeSource, AutoMemoryEnabled: prefs.AutoMemoryEnabled, ConversationID: req.ConversationID, ConversationCreatedAt: req.ConversationCreatedAt, AgentID: req.AgentID, AgentVersionID: req.AgentVersionID, RunID: req.RunID, Time: snap, ContextVersion: runtimecontext.ContextVersion, PolicyVersion: runtimecontext.PolicyVersion}, nil
+	return &runtimecontext.TrustedRuntimeContext{TenantID: req.TenantID, PrincipalID: req.PrincipalID, Username: user.Username, DisplayName: user.DisplayName, PreferredAddress: preferred, PreferredAddressSource: preferredSource, Locale: locale, LocaleSource: localeSource, AutoMemoryEnabled: prefs.AutoMemoryEnabled, ConversationID: req.ConversationID, ConversationCreatedAt: req.ConversationCreatedAt, AgentID: req.AgentID, AgentVersionID: req.AgentVersionID, RunID: req.RunID, Time: snap, ContextVersion: runtimecontext.ContextVersion, PolicyVersion: runtimecontext.PolicyVersion}, nil
 }
 
 func RegisterRuntimeContextDefaultsSetting(a interface {

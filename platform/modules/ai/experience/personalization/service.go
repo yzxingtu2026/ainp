@@ -111,7 +111,7 @@ func (s *PersonalizationService) fallback(ctx context.Context, ac *auth.Context)
 	trusted.Time, _ = runtimecontext.NewTimeSnapshot(s.now(), runtimecontext.SystemFallbackTimezone, "system_default")
 	if s.runtimeContext != nil {
 		var err error
-		trusted, err = s.runtimeContext.Build(ctx, runtimecontext.BuildRequest{TenantID: ac.TenantID, UserID: ac.UserID})
+		trusted, err = s.runtimeContext.Build(ctx, runtimecontext.BuildRequest{TenantID: ac.TenantID, PrincipalID: ac.PrincipalID})
 		if err != nil {
 			return PersonalizationResponse{}, nil, err
 		}
@@ -149,7 +149,7 @@ func (s *PersonalizationService) Read(ctx context.Context, _ struct{}) (Personal
 	if e != nil {
 		return result, e
 	}
-	row, found, e := optionalPersonalizationSnapshot(repo, ac.UserID, agent.WorkspaceDefaultSlot)
+	row, found, e := optionalPersonalizationSnapshot(repo, ac.PrincipalID, agent.WorkspaceDefaultSlot)
 	if !found && e == nil {
 		result.Freshness = "missing"
 		_ = s.request(ctx, uint64(rev))
@@ -175,7 +175,7 @@ func (s *PersonalizationService) request(ctx context.Context, revision uint64) e
 	}
 	ac := auth.MustFromContext(ctx)
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		_, e := s.writer.Append(ctx, tx, outbox.AppendInput{EventType: AssistantPersonalizationEvent, AggregateType: "assistant_personalization", AggregateID: ac.UserID + ":" + agent.WorkspaceDefaultSlot, AggregateVersion: int64(revision), Payload: map[string]any{"user_id": ac.UserID, "slot_key": agent.WorkspaceDefaultSlot, "generation_revision": revision}})
+		_, e := s.writer.Append(ctx, tx, outbox.AppendInput{EventType: AssistantPersonalizationEvent, AggregateType: "assistant_personalization", AggregateID: ac.PrincipalID + ":" + agent.WorkspaceDefaultSlot, AggregateVersion: int64(revision), Payload: map[string]any{"account_id": ac.PrincipalID, "slot_key": agent.WorkspaceDefaultSlot, "generation_revision": revision}})
 		return e
 	})
 }
@@ -192,7 +192,7 @@ func (s *PersonalizationService) Rebuild(ctx context.Context, _ struct{}) (map[s
 	if e != nil {
 		return nil, e
 	}
-	if e = repo.Where("user_id=? AND slot_key=?", ac.UserID, agent.WorkspaceDefaultSlot).Updates(map[string]any{"status": "stale"}).Error; e != nil {
+	if e = repo.Where("account_id=? AND slot_key=?", ac.PrincipalID, agent.WorkspaceDefaultSlot).Updates(map[string]any{"status": "stale"}).Error; e != nil {
 		return nil, e
 	}
 	e = s.request(ctx, uint64(rev+1))
@@ -212,13 +212,13 @@ func (s *PersonalizationService) InvalidateAndRequest(ctx context.Context, userI
 	if current, found, lookupErr := optionalPersonalizationSnapshot(repo, userID, agent.WorkspaceDefaultSlot); lookupErr == nil && found {
 		revision = current.GenerationRevision + 1
 	}
-	if result := repo.Where("user_id=? AND slot_key=?", userID, agent.WorkspaceDefaultSlot).Updates(map[string]any{"status": "stale"}); result.Error != nil {
+	if result := repo.Where("account_id=? AND slot_key=?", userID, agent.WorkspaceDefaultSlot).Updates(map[string]any{"status": "stale"}); result.Error != nil {
 		return result.Error
 	}
 	requestContext := ctx
-	if userID != ac.UserID {
+	if userID != ac.PrincipalID {
 		copied := *ac
-		copied.UserID = userID
+		copied.PrincipalID = userID
 		requestContext = auth.WithContext(ctx, &copied)
 	}
 	if revision < uint64(settingRevision+1) {
@@ -263,7 +263,7 @@ func (s *PersonalizationService) buildContext(ctx context.Context, user, slot st
 		}
 	}
 	if s.runtimeContext != nil {
-		trusted, err := s.runtimeContext.Build(ctx, runtimecontext.BuildRequest{TenantID: ac.TenantID, UserID: user, AgentID: agentID, AgentVersionID: input.AgentVersionID})
+		trusted, err := s.runtimeContext.Build(ctx, runtimecontext.BuildRequest{TenantID: ac.TenantID, PrincipalID: user, AgentID: agentID, AgentVersionID: input.AgentVersionID})
 		if err != nil {
 			return input, nil, err
 		}
@@ -443,7 +443,7 @@ func (s *PersonalizationService) Generate(ctx context.Context, user, slot string
 	versionsJSON, _ := json.Marshal(sourceVersions)
 	contextDigest := sha256.Sum256(body)
 	now := s.now()
-	row := AssistantPersonalizationSnapshot{ID: uuid.NewString(), TenantID: ac.TenantID, UserID: user, SlotKey: slot, AgentVersionID: contextInput.AgentVersionID, Locale: contextInput.Locale, Timezone: contextInput.Timezone, ContextScope: "global", ContextHash: fmt.Sprintf("%x", contextDigest), Greeting: canonicalGreeting(value.Greeting), SuggestionsJSON: suggestions, SourceVersionsJSON: versionsJSON, ModelAlias: alias, PromptVersion: assistantPersonalizationPromptVersion, Status: "ready", GenerationRevision: revision, GeneratedAt: now, ExpiresAt: now.Add(24 * time.Hour)}
+	row := AssistantPersonalizationSnapshot{ID: uuid.NewString(), TenantID: ac.TenantID, AccountID: user, SlotKey: slot, AgentVersionID: contextInput.AgentVersionID, Locale: contextInput.Locale, Timezone: contextInput.Timezone, ContextScope: "global", ContextHash: fmt.Sprintf("%x", contextDigest), Greeting: canonicalGreeting(value.Greeting), SuggestionsJSON: suggestions, SourceVersionsJSON: versionsJSON, ModelAlias: alias, PromptVersion: assistantPersonalizationPromptVersion, Status: "ready", GenerationRevision: revision, GeneratedAt: now, ExpiresAt: now.Add(24 * time.Hour)}
 	repo, e := personalizationRepository(ctx, s.db)
 	if e != nil {
 		return e
@@ -463,7 +463,7 @@ func (s *PersonalizationService) Generate(ctx context.Context, user, slot string
 }
 
 func optionalPersonalizationSnapshot(repo *tenantdata.Repository[AssistantPersonalizationSnapshot], userID, slotKey string) (AssistantPersonalizationSnapshot, bool, error) {
-	rows, err := repo.Find("user_id=? AND slot_key=?", userID, slotKey)
+	rows, err := repo.Find("account_id=? AND slot_key=?", userID, slotKey)
 	if err != nil || len(rows) == 0 {
 		return AssistantPersonalizationSnapshot{}, false, err
 	}

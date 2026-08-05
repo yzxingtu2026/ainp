@@ -230,7 +230,7 @@ func (d *Dispatcher) processOne(ctx context.Context, ev Event) {
 	if traceID == "" {
 		traceID = ev.ID
 	}
-	ctx = auth.WithContext(ctx, &auth.Context{RequestID: uuid.NewString(), TraceID: traceID, TenantID: ev.TenantID, Realm: auth.Realm(ev.Realm), UserID: ev.ActorID, Client: "system", Authenticated: true})
+	ctx = auth.WithContext(ctx, &auth.Context{RequestID: uuid.NewString(), TraceID: traceID, TenantID: ev.TenantID, Realm: auth.Realm(ev.Realm), PrincipalID: ev.ActorID, Client: "system", Authenticated: true})
 	start := time.Now()
 	env := rowToEnvelope(ev)
 	err := d.transport.Publish(ctx, env)

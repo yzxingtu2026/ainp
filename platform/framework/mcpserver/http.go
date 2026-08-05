@@ -137,7 +137,7 @@ func (h *HTTPServer) authorizeInfo(c *gin.Context) {
 		c.JSON(400, gin.H{"error": "invalid_request"})
 		return
 	}
-	c.JSON(200, gin.H{"client_id": client.ID, "client_name": client.Name, "redirect_uri": c.Query("redirect_uri"), "requested_scope": strings.Fields(c.Query("scope")), "user_id": ac.UserID, "tenant_id": ac.TenantID})
+	c.JSON(200, gin.H{"client_id": client.ID, "client_name": client.Name, "redirect_uri": c.Query("redirect_uri"), "requested_scope": strings.Fields(c.Query("scope")), "account_id": ac.PrincipalID, "tenant_id": ac.TenantID})
 }
 func (h *HTTPServer) authorize(c *gin.Context) {
 	if !h.allow(c, "authorize") {

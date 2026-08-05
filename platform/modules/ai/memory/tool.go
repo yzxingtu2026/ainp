@@ -17,7 +17,7 @@ type MemoryTool struct{ retriever *MemoryRetrievalService }
 func NewMemoryTool(r *MemoryRetrievalService) *MemoryTool { return &MemoryTool{retriever: r} }
 func (t *MemoryTool) Project(ctx context.Context, scope aitool.RuntimeScope, d aitool.Definition) (aitool.Definition, bool, error) {
 	trusted, ok := runtimecontext.FromContext(ctx)
-	if !ok || scope.AgentRunID == "" || trusted.RunID != scope.AgentRunID || trusted.UserID != scope.UserID {
+	if !ok || scope.AgentRunID == "" || trusted.RunID != scope.AgentRunID || trusted.PrincipalID != scope.PrincipalID {
 		return d, false, nil
 	}
 	return d, true, nil

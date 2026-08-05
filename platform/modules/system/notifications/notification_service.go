@@ -252,7 +252,7 @@ func (h *NotificationOutboxHandler) Handle(ctx context.Context, env outbox.Envel
 	ctx = auth.WithContext(ctx, &auth.Context{
 		TenantID:      env.TenantID,
 		Realm:         auth.NormalizeRealm(env.Realm),
-		UserID:        env.ActorID,
+		PrincipalID:   env.ActorID,
 		RequestID:     env.CorrelationID,
 		Authenticated: true,
 		Client:        "outbox",

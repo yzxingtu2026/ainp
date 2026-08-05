@@ -82,19 +82,22 @@ func Register(a *app.App) error {
 	if a.Outbox != nil {
 		accountSvc.SetOutboxWriter(a.Outbox.Writer)
 	}
-	if err := registerUserActions(a, accountSvc); err != nil {
+	if err := registerAccountActions(a, accountSvc); err != nil {
 		return err
 	}
 	if a.ToolRegistry == nil {
 		return fmt.Errorf("tool registry is required")
 	}
-	if err := a.ToolRegistry.RegisterConfirmationPresenter("action:"+ActionUserRolesUpdate, access.NewAccountRolesConfirmationPresenter(accountSvc)); err != nil {
+	if err := a.ToolRegistry.RegisterConfirmationPresenter("action:"+ActionAccountRolesUpdate, access.NewAccountRolesConfirmationPresenter(accountSvc)); err != nil {
 		return err
 	}
 	if a.PageContexts == nil {
 		return fmt.Errorf("page context registry is required")
 	}
-	if err := a.PageContexts.Register(access.PageTypeSystemUsers, access.AccountPageContextResolver{DB: a.DB}); err != nil {
+	if err := a.PageContexts.Register(access.PageTypeSystemAccounts, access.AccountPageContextResolver{DB: a.DB}); err != nil {
+		return err
+	}
+	if err := a.PageContexts.RegisterAlias("system.users", access.PageTypeSystemAccounts); err != nil {
 		return err
 	}
 	if err := a.PageContexts.Register(access.PageTypeSystemRoles, access.RolePageContextResolver{DB: a.DB}); err != nil {
@@ -130,8 +133,10 @@ func Register(a *app.App) error {
 	if a.AttachmentPolicies == nil {
 		a.AttachmentPolicies = attachment.NewPolicyRegistry()
 	}
-	if err := a.AttachmentPolicies.Register(attachments.NewUserProfileAttachmentPolicy()); err != nil {
-		return err
+	for _, policy := range attachments.NewAccountProfileAttachmentPolicies() {
+		if err := a.AttachmentPolicies.Register(policy); err != nil {
+			return err
+		}
 	}
 	policyProvider := NewSettingUploadPolicyProvider(settingSvc.Provider())
 	attachSvc := NewAttachmentService(a.DB, a.Storage, a.TransferTokens, a.AttachmentPolicies, policyProvider)
@@ -304,14 +309,14 @@ func Register(a *app.App) error {
 	}
 
 	if err := a.RegisterMenu(menu.Menu{
-		ID: MenuUserManagement, ParentID: "system.root", Title: "用户管理", TitleKey: "menu.system.users.title",
-		Icon: "mdi:account-outline", Type: menu.TypeMenu, Path: "/system/users", Component: "system/users",
-		Permission: ActionUserList, BindAction: ActionUserList, Module: "system", Order: 2,
+		ID: MenuAccountManagement, ParentID: "system.root", Title: "账号管理", TitleKey: "menu.system.accounts.title",
+		Icon: "mdi:account-outline", Type: menu.TypeMenu, Path: "/system/accounts", Component: "system/accounts",
+		Permission: ActionAccountList, BindAction: ActionAccountList, Module: "system", Order: 2,
 		Navigation: &menu.NavigationMetadata{
-			Description: "管理租户用户、账号状态和基础资料", DescriptionKey: "navigation.system.users.description",
-			Keywords: []string{"账号", "成员"}, KeywordKeys: []string{"navigation.system.users.keywords"},
-			UseCases: []string{"新增或停用用户"}, UseCaseKeys: []string{"navigation.system.users.use_cases"},
-			HelpRef: "embedded:system/help/system.users.zh-CN.md",
+			Description: "管理租户后台账号、状态和基础资料", DescriptionKey: "navigation.system.accounts.description",
+			Keywords: []string{"账号", "成员"}, KeywordKeys: []string{"navigation.system.accounts.keywords"},
+			UseCases: []string{"新增或停用账号"}, UseCaseKeys: []string{"navigation.system.accounts.use_cases"},
+			HelpRef: "embedded:system/help/system.accounts.zh-CN.md",
 		},
 	}); err != nil {
 		return err

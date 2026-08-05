@@ -186,7 +186,7 @@ func TestToolSearchReturnsCompactAuthorizedCandidates(t *testing.T) {
 }
 
 func TestToolSearchNormalizesChineseIntentTerms(t *testing.T) {
-	definition := toolFixture("action:system.user_list", "用户列表", "分页查询当前租户用户")
+	definition := toolFixture("action:system.account_list", "用户列表", "分页查询当前租户用户")
 	items, err := aitool.Search(context.Background(), []aitool.Definition{definition}, "系统用户管理", "", aitool.SourceAction, 5, func(aitool.Definition) bool { return true })
 	if err != nil {
 		t.Fatal(err)
@@ -205,7 +205,7 @@ func TestToolHandleIsActorScopeAndSchemaBound(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	claims := aitool.HandleClaims{TenantID: "t1", UserID: "u1", Realm: "tenant", SessionID: "s1", AuthVersion: 2, ScopeID: "scope1", ToolID: "action:purchase.order_create", RuntimeRef: "purchase.order_create", SchemaHash: "hash1", ExpiresAt: time.Now().Add(time.Minute).Unix()}
+	claims := aitool.HandleClaims{TenantID: "t1", PrincipalID: "u1", Realm: "tenant", SessionID: "s1", AuthVersion: 2, ScopeID: "scope1", ToolID: "action:purchase.order_create", RuntimeRef: "purchase.order_create", SchemaHash: "hash1", ExpiresAt: time.Now().Add(time.Minute).Unix()}
 	token, err := s.Sign(claims)
 	if err != nil {
 		t.Fatal(err)
@@ -249,7 +249,7 @@ func TestActionToolProviderUsesTypedSchemaAndRegistryInvoke(t *testing.T) {
 	if items[0].TitleForHuman != "读取资源" || items[0].Name != "资源详情" || items[0].DescriptionForHuman != "读取当前用户有权访问的资源" {
 		t.Fatalf("action presentation metadata projected incorrectly: %#v", items[0])
 	}
-	ctx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t1", UserID: "u1", SessionID: "s1", Realm: auth.RealmTenant})
+	ctx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t1", PrincipalID: "u1", SessionID: "s1", Realm: auth.RealmTenant})
 	result, err := (&aitool.ActionExecutor{Actions: actions}).Execute(ctx, aitool.LoadedTool{Definition: items[0]}, json.RawMessage(`{"resource_id":"r1"}`))
 	if err != nil || result.Status != "completed" {
 		t.Fatalf("invoke failed: %#v %v", result, err)
@@ -331,8 +331,8 @@ func TestToolConfirmationRestoresStableActionIdempotencyPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	service := ai.NewToolService(db, registry, signer, nil)
-	ctx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t1", UserID: "u1", SessionID: "s1", AuthVersion: 1, Realm: auth.RealmTenant})
-	scope := ai.ToolScope{ID: "scope-idempotency", TenantID: "t1", UserID: "u1", Realm: string(auth.RealmTenant), SessionID: "s1", AuthVersion: 1, AllowedSourcesJSON: json.RawMessage(`["action"]`), AllowedCapabilitiesJSON: json.RawMessage(`["demo"]`), AllowedToolsJSON: json.RawMessage(`[]`), LoadedToolsJSON: json.RawMessage(`[]`), ExpiresAt: time.Now().Add(time.Hour)}
+	ctx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t1", PrincipalID: "u1", SessionID: "s1", AuthVersion: 1, Realm: auth.RealmTenant})
+	scope := ai.ToolScope{ID: "scope-idempotency", TenantID: "t1", PrincipalID: "u1", Realm: string(auth.RealmTenant), SessionID: "s1", AuthVersion: 1, AllowedSourcesJSON: json.RawMessage(`["action"]`), AllowedCapabilitiesJSON: json.RawMessage(`["demo"]`), AllowedToolsJSON: json.RawMessage(`[]`), LoadedToolsJSON: json.RawMessage(`[]`), ExpiresAt: time.Now().Add(time.Hour)}
 	if err = tenantdata.GuardedDB(db).WithContext(ctx).Create(&scope).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -357,7 +357,7 @@ func TestToolConfirmationRestoresStableActionIdempotencyPostgres(t *testing.T) {
 		if strings.Contains(string(encoded), requestKey) || strings.Contains(string(encoded), "tool-invocation:") {
 			t.Fatalf("confirmation result leaked idempotency material: %s", encoded)
 		}
-		approvalContext := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t1", UserID: "u1", SessionID: "s1", AuthVersion: 1, Realm: auth.RealmTenant, IdempotencyKey: approvalKey})
+		approvalContext := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t1", PrincipalID: "u1", SessionID: "s1", AuthVersion: 1, Realm: auth.RealmTenant, IdempotencyKey: approvalKey})
 		approved, approveErr := service.Approve(approvalContext, ai.ToolConfirmationRequest{ID: confirmation.ID})
 		if approveErr != nil || approved.(*aitool.Result).Status != "completed" {
 			t.Fatalf("approve failed: %#v %v", approved, approveErr)
@@ -441,17 +441,17 @@ func TestMetaToolSearchSchemaGuidesStableFilters(t *testing.T) {
 			t.Fatalf("meta tool search schema missing %s: %s", expected, schema)
 		}
 	}
-	if err := (ai.ToolSearchRequest{Query: "用户列表", Source: aitool.Source("tools")}).Validate(context.Background()); err == nil {
+	if err := (ai.ToolSearchRequest{Query: "账号列表", Source: aitool.Source("tools")}).Validate(context.Background()); err == nil {
 		t.Fatal("unknown source must fail before searching")
 	}
-	if err := (ai.ToolSearchRequest{Query: "用户列表", Capability: "查询系统用户列表"}).Validate(context.Background()); err == nil {
+	if err := (ai.ToolSearchRequest{Query: "账号列表", Capability: "查询后台账号列表"}).Validate(context.Background()); err == nil {
 		t.Fatal("natural-language capability must fail before searching")
 	}
 }
 
 func TestToolRegistryBindablePolicy(t *testing.T) {
 	registry := aitool.NewRegistry()
-	actionTool := toolFixture("action:system.user_list", "用户列表", "查询系统用户列表")
+	actionTool := toolFixture("action:system.account_list", "账号列表", "查询后台账号列表")
 	pluginTool := actionTool
 	pluginTool.ID = "plugin:crm.customer_list"
 	pluginTool.Source = aitool.SourcePlugin
@@ -560,7 +560,7 @@ func TestToolRuntimePostgresLifecycleAndIsolation(t *testing.T) {
 	service := ai.NewToolService(db, registry, signer, rt.Writer)
 	embeddingRuntime := &fakeToolEmbeddingRuntime{}
 	service.SetEmbeddingRuntime(embeddingRuntime)
-	ctx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t1", UserID: "u1", SessionID: "s1", AuthVersion: 1, Realm: auth.RealmTenant, Permissions: []string{"purchase.read"}})
+	ctx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t1", PrincipalID: "u1", SessionID: "s1", AuthVersion: 1, Realm: auth.RealmTenant, Permissions: []string{"purchase.read"}})
 	guarded := tenantdata.GuardedDB(db)
 	reconciled, err := service.ReconcileCatalog(ctx)
 	if err != nil || reconciled.Created != 3 {
@@ -636,7 +636,7 @@ func TestToolRuntimePostgresLifecycleAndIsolation(t *testing.T) {
 	restrictedScope := ai.ToolScope{
 		ID:                      "scope-progressive",
 		TenantID:                "t1",
-		UserID:                  "u1",
+		PrincipalID:             "u1",
 		Realm:                   string(auth.RealmTenant),
 		SessionID:               "s1",
 		AuthVersion:             1,
@@ -656,8 +656,8 @@ func TestToolRuntimePostgresLifecycleAndIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err = tenantdata.TenantExec(tenantDB, `INSERT INTO ai_tool_scopes
-(tenant_id, id, user_id, realm, session_id, auth_version, conversation_id, allowed_sources_json, allowed_capabilities_json, allowed_tools_json, loaded_tools_json, schema_bytes, expires_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, 0, ?)`, restrictedScope.ID, restrictedScope.UserID, restrictedScope.Realm, restrictedScope.SessionID, restrictedScope.AuthVersion, *restrictedScope.ConversationID, restrictedScope.AllowedSourcesJSON, restrictedScope.AllowedCapabilitiesJSON, restrictedScope.AllowedToolsJSON, restrictedScope.LoadedToolsJSON, restrictedScope.ExpiresAt); err != nil {
+(tenant_id, id, principal_id, realm, session_id, auth_version, conversation_id, allowed_sources_json, allowed_capabilities_json, allowed_tools_json, loaded_tools_json, schema_bytes, expires_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, 0, ?)`, restrictedScope.ID, restrictedScope.PrincipalID, restrictedScope.Realm, restrictedScope.SessionID, restrictedScope.AuthVersion, *restrictedScope.ConversationID, restrictedScope.AllowedSourcesJSON, restrictedScope.AllowedCapabilitiesJSON, restrictedScope.AllowedToolsJSON, restrictedScope.LoadedToolsJSON, restrictedScope.ExpiresAt); err != nil {
 		t.Fatal(err)
 	}
 	var catalogEventsBefore int64
@@ -904,15 +904,15 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, 0, ?)`, res
 	if _, err = service.Reject(ctx, ai.ToolConfirmationRequest{ID: rejectedConfirmation.ID}); !isAppErrorCode(err, errs.CodeConflict) {
 		t.Fatalf("repeat rejection error = %v, want conflict", err)
 	}
-	revoked := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t1", UserID: "u1", SessionID: "s1", AuthVersion: 1, Realm: auth.RealmTenant})
+	revoked := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t1", PrincipalID: "u1", SessionID: "s1", AuthVersion: 1, Realm: auth.RealmTenant})
 	if _, err = service.Execute(revoked, ai.ToolExecuteRequest{Handle: handle, ToolCallID: "call-revoked", Arguments: json.RawMessage(`{"supplier_id":"s1"}`)}); err == nil {
 		t.Fatal("permission revocation must invalidate an existing handle")
 	}
-	other := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t1", UserID: "u2", SessionID: "s2", AuthVersion: 1, Realm: auth.RealmTenant, Permissions: []string{"*"}})
+	other := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t1", PrincipalID: "u2", SessionID: "s2", AuthVersion: 1, Realm: auth.RealmTenant, Permissions: []string{"*"}})
 	if _, err = service.Load(other, ai.ToolLoadRequest{ScopeID: scopeID, ToolIDs: []string{"action:purchase.order_read"}}); err == nil {
 		t.Fatal("cross-user scope access must fail")
 	}
-	ctxT2 := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t2", UserID: "u2", SessionID: "s2", AuthVersion: 1, Realm: auth.RealmTenant, Permissions: []string{"purchase.read"}})
+	ctxT2 := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t2", PrincipalID: "u2", SessionID: "s2", AuthVersion: 1, Realm: auth.RealmTenant, Permissions: []string{"purchase.read"}})
 	if reconciled, err = service.ReconcileCatalog(ctxT2); err != nil || reconciled.Created != 3 {
 		t.Fatalf("second tenant catalog reconcile failed: %#v %v", reconciled, err)
 	}

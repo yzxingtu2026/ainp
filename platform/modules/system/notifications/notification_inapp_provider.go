@@ -42,10 +42,10 @@ func (p *InAppProvider) Send(ctx context.Context, input notification.ProviderInp
 		actionJSON = b
 	}
 
-	// Create user_notification (idempotent via delivery_id + user_id unique constraint)
+	// Create user_notification (idempotent via delivery_id + account_id unique constraint)
 	n := UserNotification{
 		ID:         uuid.NewString(),
-		UserID:     input.RecipientID,
+		AccountID:  input.RecipientID,
 		RequestID:  input.RequestID,
 		DeliveryID: input.DeliveryID,
 		Title:      input.Content.Title,
@@ -66,7 +66,7 @@ func (p *InAppProvider) Send(ctx context.Context, input notification.ProviderInp
 			// Already created (idempotent), return success
 			logging.Info(ctx, "in_app: duplicate delivery, idempotent skip",
 				"delivery_id", input.DeliveryID,
-				"user_id", input.RecipientID,
+				"account_id", input.RecipientID,
 			)
 			return &notification.ProviderReceipt{
 				Provider:   "in_app",
@@ -80,7 +80,7 @@ func (p *InAppProvider) Send(ctx context.Context, input notification.ProviderInp
 
 	logging.Info(ctx, "in_app: notification created",
 		"delivery_id", input.DeliveryID,
-		"user_id", input.RecipientID,
+		"account_id", input.RecipientID,
 		"notification_id", n.ID,
 	)
 

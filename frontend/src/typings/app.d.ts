@@ -891,7 +891,7 @@ declare namespace App {
             empty: string;
           };
         };
-        user: {
+        account: {
           title: string;
           createTitle: string;
           editTitle: string;

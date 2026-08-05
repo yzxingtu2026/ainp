@@ -14,20 +14,20 @@ type semanticRecorder struct{ request SemanticSearchRequest }
 
 func (s *semanticRecorder) SearchNavigation(_ context.Context, request SemanticSearchRequest) SemanticSearchResult {
 	s.request = request
-	return SemanticSearchResult{Candidates: []SemanticCandidate{{MenuID: "system.users", Score: .8}}}
+	return SemanticSearchResult{Candidates: []SemanticCandidate{{MenuID: "system.accounts", Score: .8}}}
 }
 
 func TestParseAndValidateHelpDocument(t *testing.T) {
-	data := []byte("---\nmenu_id: system.users\nversion: 1.2.0\nlocale: zh-CN\nuse_cases: [新增用户]\npermission_refs: [system.user_list]\n---\n# 用户管理\n\n操作说明")
+	data := []byte("---\nmenu_id: system.accounts\nversion: 1.2.0\nlocale: zh-CN\nuse_cases: [新增用户]\npermission_refs: [system.account_list]\n---\n# 用户管理\n\n操作说明")
 	document, err := ParseHelpDocument("users.md", data)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if document.MenuID != "system.users" || document.Version != "1.2.0" || document.Content == "" {
+	if document.MenuID != "system.accounts" || document.Version != "1.2.0" || document.Content == "" {
 		t.Fatalf("unexpected document: %#v", document)
 	}
 	registry := NewRegistry()
-	if err := registry.Register(Menu{ID: "system.users", Type: TypeMenu, Path: "/system/users", Surface: auth.RealmTenant, Permission: "system.user_list"}); err != nil {
+	if err := registry.Register(Menu{ID: "system.accounts", Type: TypeMenu, Path: "/system/accounts", Surface: auth.RealmTenant, Permission: "system.account_list"}); err != nil {
 		t.Fatal(err)
 	}
 	help := NewHelpRegistry()
@@ -41,7 +41,7 @@ func TestParseAndValidateHelpDocument(t *testing.T) {
 
 func TestSemanticSearchReceivesOnlyAuthorizedMenusAndRegistryProjectsPath(t *testing.T) {
 	registry := NewRegistry()
-	for _, item := range []Menu{{ID: "root", Title: "系统", Type: TypeDirectory, Surface: auth.RealmTenant}, {ID: "system.users", ParentID: "root", Title: "用户管理", Type: TypeMenu, Path: "/trusted/users", Permission: "user.list", Surface: auth.RealmTenant}, {ID: "system.roles", ParentID: "root", Title: "角色管理", Type: TypeMenu, Path: "/system/roles", Permission: "role.list", Surface: auth.RealmTenant}} {
+	for _, item := range []Menu{{ID: "root", Title: "系统", Type: TypeDirectory, Surface: auth.RealmTenant}, {ID: "system.accounts", ParentID: "root", Title: "用户管理", Type: TypeMenu, Path: "/trusted/users", Permission: "user.list", Surface: auth.RealmTenant}, {ID: "system.roles", ParentID: "root", Title: "角色管理", Type: TypeMenu, Path: "/system/roles", Permission: "role.list", Surface: auth.RealmTenant}} {
 		if err := registry.Register(item); err != nil {
 			t.Fatal(err)
 		}
@@ -53,7 +53,7 @@ func TestSemanticSearchReceivesOnlyAuthorizedMenusAndRegistryProjectsPath(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(recorder.request.AllowedMenuIDs) != 1 || recorder.request.AllowedMenuIDs[0] != "system.users" {
+	if len(recorder.request.AllowedMenuIDs) != 1 || recorder.request.AllowedMenuIDs[0] != "system.accounts" {
 		t.Fatalf("semantic scope was not prefiltered: %#v", recorder.request)
 	}
 	if len(results) != 1 || results[0].Path != "/trusted/users" {
@@ -64,9 +64,9 @@ func TestSemanticSearchReceivesOnlyAuthorizedMenusAndRegistryProjectsPath(t *tes
 func TestHelpRegistryRejectsInvalidAssets(t *testing.T) {
 	invalid := map[string]string{
 		"missing-frontmatter.md": "# no metadata",
-		"invalid-version.md":     "---\nmenu_id: system.users\nversion: latest\nlocale: zh-CN\nuse_cases: [新增用户]\n---\n# 用户管理",
-		"duplicate-use-case.md":  "---\nmenu_id: system.users\nversion: 1.0.0\nlocale: zh-CN\nuse_cases: [新增用户, 新增用户]\n---\n# 用户管理",
-		"forbidden-path.md":      "---\nmenu_id: system.users\nversion: 1.0.0\nlocale: zh-CN\npath: /system/users\nuse_cases: [新增用户]\n---\n# 用户管理",
+		"invalid-version.md":     "---\nmenu_id: system.accounts\nversion: latest\nlocale: zh-CN\nuse_cases: [新增用户]\n---\n# 用户管理",
+		"duplicate-use-case.md":  "---\nmenu_id: system.accounts\nversion: 1.0.0\nlocale: zh-CN\nuse_cases: [新增用户, 新增用户]\n---\n# 用户管理",
+		"forbidden-path.md":      "---\nmenu_id: system.accounts\nversion: 1.0.0\nlocale: zh-CN\npath: /system/accounts\nuse_cases: [新增用户]\n---\n# 用户管理",
 	}
 	for name, content := range invalid {
 		t.Run(name, func(t *testing.T) {
@@ -88,7 +88,7 @@ func TestHelpRegistryRejectsInvalidAssets(t *testing.T) {
 func TestHelpRegistryRequiresDefaultLocaleForSearchableModuleMenus(t *testing.T) {
 	registry := NewRegistry()
 	for _, item := range []Menu{
-		{ID: "system.users", Type: TypeMenu, Path: "/system/users", Module: "system", Surface: auth.RealmTenant},
+		{ID: "system.accounts", Type: TypeMenu, Path: "/system/accounts", Module: "system", Surface: auth.RealmTenant},
 		{ID: "system.hidden", Type: TypeMenu, Path: "/system/hidden", Module: "system", HideInMenu: true, Surface: auth.RealmTenant},
 		{ID: "operations.jobs", Type: TypeMenu, Path: "/operations/jobs", Module: "operations", Surface: auth.RealmTenant},
 	} {
@@ -100,7 +100,7 @@ func TestHelpRegistryRequiresDefaultLocaleForSearchableModuleMenus(t *testing.T)
 	if err := help.ValidateModuleCoverage(registry, "system", "zh-CN"); err == nil {
 		t.Fatal("expected missing searchable system menu help")
 	}
-	document, err := ParseHelpDocument("system.users.zh-CN.md", []byte("---\nmenu_id: system.users\nversion: 1.0.0\nlocale: zh-CN\nuse_cases: [查询用户]\n---\n# 用户管理"))
+	document, err := ParseHelpDocument("system.accounts.zh-CN.md", []byte("---\nmenu_id: system.accounts\nversion: 1.0.0\nlocale: zh-CN\nuse_cases: [查询用户]\n---\n# 用户管理"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +115,7 @@ func TestHelpRegistryRequiresDefaultLocaleForSearchableModuleMenus(t *testing.T)
 func TestHelpRegistryValidatesAllProductionModulesWithoutManualWiring(t *testing.T) {
 	registry := NewRegistry()
 	for _, item := range []Menu{
-		{ID: "system.users", Type: TypeMenu, Path: "/system/users", Module: "system", Surface: auth.RealmTenant},
+		{ID: "system.accounts", Type: TypeMenu, Path: "/system/accounts", Module: "system", Surface: auth.RealmTenant},
 		{ID: "foundation.profile", Type: TypeMenu, Path: "/foundation/profile", Module: "foundation", Surface: auth.RealmTenant},
 		{ID: "demo.notes", Type: TypeMenu, Path: "/demo/notes", Module: "demo", Surface: auth.RealmTenant},
 	} {
@@ -124,7 +124,7 @@ func TestHelpRegistryValidatesAllProductionModulesWithoutManualWiring(t *testing
 		}
 	}
 	help := NewHelpRegistry()
-	for _, source := range []struct{ name, menuID string }{{"system.md", "system.users"}, {"foundation.md", "foundation.profile"}} {
+	for _, source := range []struct{ name, menuID string }{{"system.md", "system.accounts"}, {"foundation.md", "foundation.profile"}} {
 		document, err := ParseHelpDocument(source.name, []byte("---\nmenu_id: "+source.menuID+"\nversion: 1.0.0\nlocale: zh-CN\nuse_cases: [查询]\n---\n# 帮助"))
 		if err != nil {
 			t.Fatal(err)

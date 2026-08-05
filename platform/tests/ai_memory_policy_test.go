@@ -70,7 +70,7 @@ func (r *memoryPolicyResolver) Resolve(_ context.Context, alias string, req aimo
 func TestMemoryPolicyOverrideIsFrozenAndRequiresStructuredOutput(t *testing.T) {
 	resolver := &memoryPolicyResolver{}
 	svc := ai.NewAgentService(nil, aiagent.NewRegistry(), resolver, aitool.NewRegistry())
-	ctx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, Realm: auth.RealmTenant, TenantID: "tenant-a", UserID: "user-a"})
+	ctx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, Realm: auth.RealmTenant, TenantID: "tenant-a", PrincipalID: "user-a"})
 	p := aimemory.SystemDefaultPolicy()
 	p.Enabled = true
 	p.ExtractionModelAlias = "memory"

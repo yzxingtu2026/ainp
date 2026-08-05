@@ -244,8 +244,8 @@ func withContext(ctx context.Context) *slog.Logger {
 		if ac.Realm != "" {
 			attrs = append(attrs, "realm", ac.Realm)
 		}
-		if ac.UserID != "" {
-			attrs = append(attrs, "user_id", ac.UserID)
+		if ac.PrincipalID != "" {
+			attrs = append(attrs, "principal_id", ac.PrincipalID)
 		}
 		if len(attrs) > 0 {
 			logger = logger.With(attrs...)

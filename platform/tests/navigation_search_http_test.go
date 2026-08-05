@@ -15,7 +15,7 @@ func TestNavigationSearchAPIUsesAuthenticatedPermissions(t *testing.T) {
 	registry := menu.NewRegistry()
 	for _, item := range []menu.Menu{
 		{ID: "system.root", Title: "系统", Type: menu.TypeDirectory},
-		{ID: "system.users", ParentID: "system.root", Title: "用户管理", Type: menu.TypeMenu, Path: "/system/users", Permission: "user.list"},
+		{ID: "system.accounts", ParentID: "system.root", Title: "用户管理", Type: menu.TypeMenu, Path: "/system/accounts", Permission: "user.list"},
 		{ID: "system.roles", ParentID: "system.root", Title: "角色管理", Type: menu.TypeMenu, Path: "/system/roles", Permission: "role.list"},
 	} {
 		if err := registry.Register(item); err != nil {
@@ -41,7 +41,7 @@ func TestNavigationSearchAPIUsesAuthenticatedPermissions(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &envelope); err != nil {
 		t.Fatal(err)
 	}
-	if envelope.Code != 0 || len(envelope.Data.Items) != 1 || envelope.Data.Items[0].MenuID != "system.users" {
+	if envelope.Code != 0 || len(envelope.Data.Items) != 1 || envelope.Data.Items[0].MenuID != "system.accounts" {
 		t.Fatalf("unexpected response: %#v", envelope)
 	}
 

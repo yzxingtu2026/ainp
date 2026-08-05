@@ -74,7 +74,7 @@ func (s *RevisionDocService) Create(ctx context.Context, input json.RawMessage) 
 		Title:     req.Title,
 		Content:   req.Content,
 		Revision:  1,
-		CreatedBy: ac.UserID,
+		CreatedBy: ac.PrincipalID,
 	}
 	repo, err := s.repository(ctx)
 	if err != nil {

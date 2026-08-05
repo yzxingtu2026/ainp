@@ -48,7 +48,7 @@ func RegisterKnowledgeIngestion(a *app.App, knowledge *KnowledgeService, ingesti
 		if err = json.Unmarshal(run.PayloadJSON, &payload); err != nil {
 			return job.Permanent(errors.New("trusted JobRun payload invalid"))
 		}
-		ctx = auth.WithContext(ctx, &auth.Context{Authenticated: true, TenantID: run.TenantID, UserID: run.CreatedBy, Realm: auth.Realm(run.Realm), RequestID: run.CorrelationID, Client: "job"})
+		ctx = auth.WithContext(ctx, &auth.Context{Authenticated: true, TenantID: run.TenantID, PrincipalID: run.CreatedBy, Realm: auth.Realm(run.Realm), RequestID: run.CorrelationID, Client: "job"})
 		_ = reporter.Progress(ctx, 10, "knowledge_ingestion.processing")
 		if payload.Operation == "cleanup" {
 			err = ingestion.Cleanup(ctx, payload.DocumentID)
@@ -77,7 +77,7 @@ func RegisterKnowledgeIngestion(a *app.App, knowledge *KnowledgeService, ingesti
 		} else {
 			payload.Operation = "ingest"
 		}
-		ctx = auth.WithContext(ctx, &auth.Context{Authenticated: true, TenantID: env.TenantID, UserID: env.ActorID, Realm: auth.Realm(env.Realm), RequestID: env.CorrelationID, Client: "outbox"})
+		ctx = auth.WithContext(ctx, &auth.Context{Authenticated: true, TenantID: env.TenantID, PrincipalID: env.ActorID, Realm: auth.Realm(env.Realm), RequestID: env.CorrelationID, Client: "outbox"})
 		_, err := a.Jobs.Enqueuer.Enqueue(ctx, job.EnqueueInput{Type: KnowledgeIngestionJobType, IdempotencyKey: env.ID + ":" + KnowledgeIngestionJobType, CausationID: env.ID, Payload: payload})
 		return err
 	}}); err != nil {

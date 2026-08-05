@@ -38,7 +38,7 @@ func RegisterNavigationEmbedding(a *app.App, navigation *NavigationSearchService
 		if json.Unmarshal(run.PayloadJSON, &payload) != nil || len(payload.documentRefs()) == 0 || payload.ModelAlias == "" {
 			return job.Permanent(errors.New("trusted JobRun payload invalid"))
 		}
-		ctx = auth.WithContext(ctx, &auth.Context{Authenticated: true, TenantID: run.TenantID, UserID: run.CreatedBy, Realm: auth.RealmTenant, RequestID: run.CorrelationID, Client: "job"})
+		ctx = auth.WithContext(ctx, &auth.Context{Authenticated: true, TenantID: run.TenantID, PrincipalID: run.CreatedBy, Realm: auth.RealmTenant, RequestID: run.CorrelationID, Client: "job"})
 		_ = reporter.Progress(ctx, 10, "navigation.embedding")
 		if err = navigation.IndexDocuments(ctx, payload.documentRefs(), payload.ModelAlias); err != nil {
 			if errors.Is(err, ErrNavigationEmbeddingSuperseded) {
@@ -57,7 +57,7 @@ func RegisterNavigationEmbedding(a *app.App, navigation *NavigationSearchService
 		if json.Unmarshal(env.Payload, &changed) != nil || len(changed.documentRefs()) == 0 {
 			return errors.New("navigation document event payload invalid")
 		}
-		ctx = auth.WithContext(ctx, &auth.Context{Authenticated: true, TenantID: env.TenantID, UserID: env.ActorID, Realm: auth.RealmTenant, RequestID: env.CorrelationID, Client: "outbox"})
+		ctx = auth.WithContext(ctx, &auth.Context{Authenticated: true, TenantID: env.TenantID, PrincipalID: env.ActorID, Realm: auth.RealmTenant, RequestID: env.CorrelationID, Client: "outbox"})
 		alias, err := navigation.embeddingAlias(ctx, env.TenantID)
 		if err != nil {
 			return err

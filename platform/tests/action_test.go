@@ -3,12 +3,17 @@ package tests
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/yzxingtu2026/ainp/platform/framework/action"
+	"github.com/yzxingtu2026/ainp/platform/framework/audit"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
+	"github.com/yzxingtu2026/ainp/platform/framework/httpserver"
 	"github.com/yzxingtu2026/ainp/platform/framework/permission"
 )
 
@@ -72,6 +77,110 @@ func TestRegistryAccessModes(t *testing.T) {
 	if _, err := r.Invoke(allowed, "demo.permission", nil); err != nil {
 		t.Fatalf("permission allowed: %v", err)
 	}
+}
+
+func TestRegistryAliasInvokesCanonicalWithoutDiscoveryProjection(t *testing.T) {
+	r := action.NewRegistry(nil, nil)
+	called := 0
+	if err := r.Register(action.Action{
+		ID:   "system.account_list",
+		Meta: action.Metadata{Capability: "demo", Access: action.AccessPublic},
+		Handler: func(context.Context, json.RawMessage) (any, error) {
+			called++
+			return "ok", nil
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.RegisterAlias(action.Alias{
+		ID:       "system.user_list",
+		TargetID: "system.account_list",
+		HTTP:     &action.HTTPMeta{Method: "POST", Path: "/api/v1/system/users/list"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := auth.WithContext(context.Background(), &auth.Context{Realm: auth.RealmTenant})
+	if result, err := r.Invoke(ctx, "system.user_list", nil); err != nil || result != "ok" || called != 1 {
+		t.Fatalf("alias invocation failed: result=%v called=%d err=%v", result, called, err)
+	}
+	if _, ok := r.Get("system.user_list"); ok {
+		t.Fatal("alias must not be returned by canonical lookup")
+	}
+	items := r.List()
+	if len(items) != 1 || items[0].ID != "system.account_list" {
+		t.Fatalf("alias leaked into canonical list: %#v", items)
+	}
+	aliases := r.HTTPAliases()
+	if len(aliases) != 1 || aliases[0].TargetID != "system.account_list" {
+		t.Fatalf("expected explicit HTTP alias: %#v", aliases)
+	}
+	if err := r.Register(action.Action{ID: "system.user_list", Meta: action.Metadata{Capability: "demo"}, Handler: func(context.Context, json.RawMessage) (any, error) { return nil, nil }}); err == nil {
+		t.Fatal("canonical action must not overwrite an alias")
+	}
+}
+
+func TestHTTPActionAliasUsesCanonicalAuditAndIdempotencyPipeline(t *testing.T) {
+	auditor := &identityAuditRecorder{}
+	executor := &identityIdempotencyExecutor{}
+	registry := action.NewRegistry(nil, auditor)
+	registry.SetIdempotencyExecutor(executor)
+	called := 0
+	if err := registry.Register(action.Action{
+		ID: "system.account_list",
+		Meta: action.Metadata{
+			Capability: "demo", Access: action.AccessPublic,
+			HTTP:        &action.HTTPMeta{Method: http.MethodPost, Path: "/api/v1/system/accounts/list"},
+			Idempotency: &action.IdempotencyMeta{Mode: "optional"},
+		},
+		Handler: func(context.Context, json.RawMessage) (any, error) {
+			called++
+			return map[string]any{"ok": true}, nil
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.RegisterAlias(action.Alias{ID: "system.user_list", TargetID: "system.account_list", HTTP: &action.HTTPMeta{Method: http.MethodPost, Path: "/api/v1/system/users/list"}}); err != nil {
+		t.Fatal(err)
+	}
+	installed := true
+	router := httpserver.New(httpserver.Options{Actions: registry, Installed: &installed})
+	for _, path := range []string{"/api/v1/system/accounts/list", "/api/v1/system/users/list"} {
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`)))
+		if response.Code != http.StatusOK {
+			t.Fatalf("POST %s status = %d, body=%s", path, response.Code, response.Body.String())
+		}
+	}
+	if called != 2 {
+		t.Fatalf("canonical handler calls = %d, want 2", called)
+	}
+	if len(executor.actionIDs) != 2 || executor.actionIDs[0] != "system.account_list" || executor.actionIDs[1] != "system.account_list" {
+		t.Fatalf("idempotency action IDs = %#v", executor.actionIDs)
+	}
+	if len(auditor.records) != 2 {
+		t.Fatalf("audit records = %d, want 2", len(auditor.records))
+	}
+	for _, record := range auditor.records {
+		if record.ActionID != "system.account_list" || record.Permission != "system.account_list" {
+			t.Fatalf("alias leaked into audit contract: %#v", record)
+		}
+	}
+}
+
+type identityAuditRecorder struct{ records []audit.Record }
+
+func (r *identityAuditRecorder) Write(_ context.Context, record audit.Record) error {
+	r.records = append(r.records, record)
+	return nil
+}
+
+type identityIdempotencyExecutor struct{ actionIDs []string }
+
+func (e *identityIdempotencyExecutor) Execute(ctx context.Context, actionID string, input json.RawMessage, handler action.Handler, _ string, _ bool, _, _ time.Duration) (any, bool, error) {
+	e.actionIDs = append(e.actionIDs, actionID)
+	result, err := handler(ctx, input)
+	return result, false, err
 }
 
 func TestRegistryRejectsInvalidAccessMetadata(t *testing.T) {

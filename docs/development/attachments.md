@@ -79,7 +79,7 @@ Local Provider 返回本服务流式 URL；未来 S3/OSS 可换预签名 URL，�
 - `resource_type` 必须代码注册 `attachment.AccessPolicy`；**未注册默认拒绝**，禁止仅凭同租户访问任意附件。
 - pending/failed：仅上传者且在 `expires_at` 内可访问；ready：无链接时仅上传者，有链接时任一链接策略通过即可。变体下载与原图共用同一套访问判定。
 - Demo 注册 `demo.task` 策略（同租户已认证即可），便于联调；真实业务须注册自己的策略。
-- 当前用户头像注册 `system.user_profile` / `avatar` 策略：`resource_id` 必须等于 AuthContext 当前用户 ID，绑定附件必须由当前用户上传且为 ready 图片。`tenant_accounts.avatar_attachment_id` 只保存附件 ID；头像读取仍逐次执行 prepare/download 鉴权，不保存对象地址或短时 token。
+- 当前账号头像注册 `system.account_profile` / `avatar` 策略：`resource_id` 必须等于 AuthContext 当前主体 ID，绑定附件必须由当前主体上传且为 ready 图片。`tenant_accounts.avatar_attachment_id` 只保存附件 ID；头像读取仍逐次执行 prepare/download 鉴权，不保存对象地址或短时 token。
 
 ## 策略与设置
 

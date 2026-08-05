@@ -215,7 +215,7 @@ func fieldValidation(field, key, fallback string) error {
 func knowledgeActor(ctx context.Context) (*auth.Context, error) {
 	ac, ok := auth.FromContext(ctx)
 	if !ok || ac == nil || !ac.Authenticated || strings.TrimSpace(ac.TenantID) == "" ||
-		strings.TrimSpace(ac.UserID) == "" || ac.Realm != auth.RealmTenant {
+		strings.TrimSpace(ac.PrincipalID) == "" || ac.Realm != auth.RealmTenant {
 		return nil, errs.NewKey(errs.CodeUnauthorized, "common.unauthorized", "unauthorized")
 	}
 	return ac, nil
@@ -247,7 +247,7 @@ func (s *KnowledgeService) visibleKnowledgeBases(ctx context.Context) (*gorm.DB,
 	if err != nil {
 		return nil, nil, err
 	}
-	query := s.dbForContext(ctx).Where("visibility = ? OR owner_user_id = ?", aiknowledge.VisibilityTenant, ac.UserID)
+	query := s.dbForContext(ctx).Where("visibility = ? OR account_id = ?", aiknowledge.VisibilityTenant, ac.PrincipalID)
 	return query, ac, nil
 }
 
@@ -260,7 +260,7 @@ func (s *KnowledgeService) getKnowledgeBase(ctx context.Context, id string, mana
 	if err = query.Where("id = ?", id).First(&row).Error; err != nil {
 		return nil, nil, knowledgeNotFound()
 	}
-	if manage && row.OwnerUserID != ac.UserID {
+	if manage && row.AccountID != ac.PrincipalID {
 		return nil, nil, knowledgeNotFound()
 	}
 	return &row, ac, nil
@@ -309,7 +309,7 @@ func (s *KnowledgeService) CreateKnowledgeBase(ctx context.Context, request Know
 	}
 	identifier := uuid.New()
 	row := KnowledgeBase{
-		ID: identifier.String(), TenantID: ac.TenantID, OwnerUserID: ac.UserID,
+		ID: identifier.String(), TenantID: ac.TenantID, AccountID: ac.PrincipalID,
 		Code: "kb_" + strings.ReplaceAll(identifier.String(), "-", ""), Name: request.Name, Description: request.Description,
 		Visibility: request.Visibility, Status: aiknowledge.KnowledgeBaseDraft,
 		EmbeddingAlias: request.EmbeddingAlias, ChunkingConfig: request.ChunkingConfig,
@@ -392,7 +392,7 @@ func (s *KnowledgeService) DeleteKnowledgeBase(ctx context.Context, request Know
 			return lockErr
 		}
 		var current KnowledgeBase
-		if queryErr := tx.Where("id=? AND owner_user_id=?", row.ID, row.OwnerUserID).
+		if queryErr := tx.Where("id=? AND account_id=?", row.ID, row.AccountID).
 			First(&current).Error; queryErr != nil {
 			return knowledgeNotFound()
 		}
@@ -550,7 +550,7 @@ func (s *KnowledgeService) CreateDocument(ctx context.Context, request Knowledge
 			return lockErr
 		}
 		var current KnowledgeBase
-		if queryErr := tx.Where("id=? AND owner_user_id=?", knowledgeBase.ID, ac.UserID).First(&current).Error; queryErr != nil {
+		if queryErr := tx.Where("id=? AND account_id=?", knowledgeBase.ID, ac.PrincipalID).First(&current).Error; queryErr != nil {
 			return knowledgeNotFound()
 		}
 		var existing KnowledgeDocument
@@ -698,7 +698,7 @@ func (s *KnowledgeService) attachmentSnapshot(ctx context.Context, ac *auth.Cont
 		return nil, errs.NewKey(errs.CodeNotFound, "ai.knowledge.attachment_not_found", "ready attachment not found")
 	}
 	row := rows[0]
-	if row.UploaderID != ac.UserID {
+	if row.UploaderID != ac.PrincipalID {
 		return nil, errs.NewKey(errs.CodeNotFound, "ai.knowledge.attachment_not_found", "ready attachment not found")
 	}
 	if !sha256Pattern.MatchString(strings.ToLower(row.SHA256)) {
@@ -724,7 +724,7 @@ func (s *KnowledgeService) ListAgentKnowledge(ctx context.Context, request Agent
 	counts, err := tenantdata.TenantRaw[struct{ Count int64 }](tdb, `SELECT COUNT(*) AS count
 FROM ai_agent_knowledge_bindings b
 JOIN ai_knowledge_bases kb ON kb.tenant_id=b.tenant_id AND kb.id=b.knowledge_base_id AND kb.deleted_at IS NULL
-WHERE b.tenant_id=? AND b.agent_id=? AND (kb.visibility=? OR kb.owner_user_id=?)`, agent.ID, aiknowledge.VisibilityTenant, ac.UserID)
+WHERE b.tenant_id=? AND b.agent_id=? AND (kb.visibility=? OR kb.account_id=?)`, agent.ID, aiknowledge.VisibilityTenant, ac.PrincipalID)
 	if err != nil {
 		return nil, dbError(err, "list agent knowledge bindings")
 	}
@@ -735,8 +735,8 @@ WHERE b.tenant_id=? AND b.agent_id=? AND (kb.visibility=? OR kb.owner_user_id=?)
 	bindings, err := tenantdata.TenantRaw[AgentKnowledgeBinding](tdb, `SELECT b.*
 FROM ai_agent_knowledge_bindings b
 JOIN ai_knowledge_bases kb ON kb.tenant_id=b.tenant_id AND kb.id=b.knowledge_base_id AND kb.deleted_at IS NULL
-WHERE b.tenant_id=? AND b.agent_id=? AND (kb.visibility=? OR kb.owner_user_id=?)
-ORDER BY b.created_at ASC LIMIT ? OFFSET ?`, agent.ID, aiknowledge.VisibilityTenant, ac.UserID, request.PageSize, request.Offset())
+WHERE b.tenant_id=? AND b.agent_id=? AND (kb.visibility=? OR kb.account_id=?)
+ORDER BY b.created_at ASC LIMIT ? OFFSET ?`, agent.ID, aiknowledge.VisibilityTenant, ac.PrincipalID, request.PageSize, request.Offset())
 	if err != nil {
 		return nil, dbError(err, "list agent knowledge bindings")
 	}
@@ -757,7 +757,7 @@ func (s *KnowledgeService) BindAgentKnowledge(ctx context.Context, request Agent
 	}
 	binding := AgentKnowledgeBinding{
 		ID: uuid.NewString(), TenantID: ac.TenantID, AgentID: agent.ID,
-		KnowledgeBaseID: knowledgeBase.ID, CreatedBy: ac.UserID,
+		KnowledgeBaseID: knowledgeBase.ID, CreatedBy: ac.PrincipalID,
 	}
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if lockErr := lockKnowledgeBase(ctx, tx, knowledgeBase.TenantID, knowledgeBase.ID); lockErr != nil {
@@ -765,7 +765,7 @@ func (s *KnowledgeService) BindAgentKnowledge(ctx context.Context, request Agent
 		}
 		var current KnowledgeBase
 		if queryErr := tx.Where("id=?", knowledgeBase.ID).
-			Where("visibility=? OR owner_user_id=?", aiknowledge.VisibilityTenant, ac.UserID).
+			Where("visibility=? OR account_id=?", aiknowledge.VisibilityTenant, ac.PrincipalID).
 			First(&current).Error; queryErr != nil {
 			return knowledgeNotFound()
 		}
@@ -822,7 +822,7 @@ func (s *KnowledgeService) GetKnowledgeBaseRef(ctx context.Context, id string) (
 		return aiknowledge.KnowledgeBaseRef{}, err
 	}
 	return aiknowledge.KnowledgeBaseRef{
-		ID: row.ID, TenantID: row.TenantID, OwnerUserID: row.OwnerUserID, Visibility: row.Visibility,
+		ID: row.ID, TenantID: row.TenantID, AccountID: row.AccountID, Visibility: row.Visibility,
 		Status: row.Status, EmbeddingAlias: row.EmbeddingAlias, Revision: row.Revision,
 	}, nil
 }
@@ -847,7 +847,7 @@ func (p knowledgeAttachmentPolicy) ResourceType() string { return KnowledgeDocum
 
 func (p knowledgeAttachmentPolicy) CanAccess(ctx context.Context, tenantID, userID, resourceID, field string) error {
 	ac, err := knowledgeActor(ctx)
-	if err != nil || ac.TenantID != tenantID || ac.UserID != userID || field != "source" {
+	if err != nil || ac.TenantID != tenantID || ac.PrincipalID != userID || field != "source" {
 		return knowledgeNotFound()
 	}
 	if attachment.ResourceLinkOperationFromContext(ctx) != "" {

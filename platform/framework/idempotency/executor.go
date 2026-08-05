@@ -91,7 +91,7 @@ func (e *Executor) Execute(ctx context.Context, in ExecuteInput) (*ExecuteResult
 	start := time.Now()
 
 	// Check for existing record
-	existing, err := e.repo.GetByKey(ctx, ac.TenantID, ac.UserID, in.ActionID, key)
+	existing, err := e.repo.GetByKey(ctx, ac.TenantID, ac.PrincipalID, in.ActionID, key)
 	if err != nil {
 		return nil, errs.Wrap(errs.CodeInternal, "idempotency lookup failed", err)
 	}
@@ -109,11 +109,11 @@ func (e *Executor) Execute(ctx context.Context, in ExecuteInput) (*ExecuteResult
 	}
 
 	// No existing record: create processing record and execute
-	rec, err := e.repo.Create(ctx, ac.TenantID, ac.UserID, in.ActionID, key, hash, ttl)
+	rec, err := e.repo.Create(ctx, ac.TenantID, ac.PrincipalID, in.ActionID, key, hash, ttl)
 	if err != nil {
 		if errors.Is(err, ErrDuplicateKey) {
 			// Race condition: another request created the record between our check and insert
-			existing, lookupErr := e.repo.GetByKey(ctx, ac.TenantID, ac.UserID, in.ActionID, key)
+			existing, lookupErr := e.repo.GetByKey(ctx, ac.TenantID, ac.PrincipalID, in.ActionID, key)
 			if lookupErr != nil {
 				return nil, errs.Wrap(errs.CodeInternal, "idempotency race lookup failed", lookupErr)
 			}

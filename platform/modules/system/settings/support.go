@@ -37,10 +37,10 @@ func withAIMeta(meta action.Metadata, ai *action.AIMeta) action.Metadata { meta.
 
 func tenantIdentity(ctx context.Context) (string, string, error) {
 	ac := auth.MustFromContext(ctx)
-	if !ac.Authenticated || ac.Realm != auth.RealmTenant || ac.TenantID == "" || ac.UserID == "" {
+	if !ac.Authenticated || ac.Realm != auth.RealmTenant || ac.TenantID == "" || ac.PrincipalID == "" {
 		return "", "", errs.NewKey(errs.CodeUnauthorized, "common.unauthorized", "unauthorized")
 	}
-	return ac.TenantID, ac.UserID, nil
+	return ac.TenantID, ac.PrincipalID, nil
 }
 
 func requireTenant(ctx context.Context) (*auth.Context, error) {

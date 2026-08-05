@@ -19,7 +19,7 @@ const ActionPersonalizationGet = "ai.assistant_personalization_get"
 const ActionPersonalizationRebuild = "ai.assistant_personalization_rebuild"
 
 type personalizationJobPayload struct {
-	UserID             string `json:"user_id"`
+	AccountID          string `json:"account_id"`
 	SlotKey            string `json:"slot_key"`
 	GenerationRevision uint64 `json:"generation_revision"`
 }
@@ -33,10 +33,10 @@ func RegisterPersonalization(a *app.App, service *PersonalizationService) error 
 	}
 	if err := a.Jobs.Register(job.Definition{Type: AssistantPersonalizationJobType, SchemaVersion: 1, Queue: job.QueueAI, MaxAttempts: 5, Timeout: 2 * time.Minute, UniqueFor: 5 * time.Minute, Description: "Generate one assistant personalization snapshot"}, job.HandlerFunc{JobType: AssistantPersonalizationJobType, Fn: func(ctx context.Context, env job.Envelope, payload json.RawMessage, _ job.Reporter) error {
 		var p personalizationJobPayload
-		if json.Unmarshal(payload, &p) != nil || p.UserID == "" || p.SlotKey == "" {
+		if json.Unmarshal(payload, &p) != nil || p.AccountID == "" || p.SlotKey == "" {
 			return job.Permanent(errors.New("invalid personalization payload"))
 		}
-		return service.Generate(ctx, p.UserID, p.SlotKey, p.GenerationRevision)
+		return service.Generate(ctx, p.AccountID, p.SlotKey, p.GenerationRevision)
 	}}); err != nil {
 		return err
 	}
@@ -45,11 +45,11 @@ func RegisterPersonalization(a *app.App, service *PersonalizationService) error 
 		if json.Unmarshal(env.Payload, &p) != nil {
 			return errors.New("invalid personalization event")
 		}
-		ctx = auth.WithContext(ctx, &auth.Context{Authenticated: true, TenantID: env.TenantID, UserID: env.ActorID, Realm: auth.RealmTenant, RequestID: env.CorrelationID, Client: "outbox"})
+		ctx = auth.WithContext(ctx, &auth.Context{Authenticated: true, TenantID: env.TenantID, PrincipalID: env.ActorID, Realm: auth.RealmTenant, RequestID: env.CorrelationID, Client: "outbox"})
 		if !a.Jobs.Enabled {
 			return nil
 		}
-		_, e := a.Jobs.Enqueuer.Enqueue(ctx, job.EnqueueInput{Type: AssistantPersonalizationJobType, IdempotencyKey: fmt.Sprintf("assistant-personalization:%s:%s:%s:%d", env.TenantID, p.UserID, p.SlotKey, p.GenerationRevision), ProcessIn: time.Minute, Payload: p, CausationID: env.ID})
+		_, e := a.Jobs.Enqueuer.Enqueue(ctx, job.EnqueueInput{Type: AssistantPersonalizationJobType, IdempotencyKey: fmt.Sprintf("assistant-personalization:%s:%s:%s:%d", env.TenantID, p.AccountID, p.SlotKey, p.GenerationRevision), ProcessIn: time.Minute, Payload: p, CausationID: env.ID})
 		return e
 	}}); err != nil {
 		return err
@@ -61,7 +61,7 @@ func RegisterPersonalization(a *app.App, service *PersonalizationService) error 
 		if json.Unmarshal(env.Payload, &payload) != nil || payload.Status != "completed" || env.ActorID == "" {
 			return nil
 		}
-		ctx = auth.WithContext(ctx, &auth.Context{Authenticated: true, TenantID: env.TenantID, UserID: env.ActorID, Realm: auth.RealmTenant, RequestID: env.CorrelationID, Client: "outbox"})
+		ctx = auth.WithContext(ctx, &auth.Context{Authenticated: true, TenantID: env.TenantID, PrincipalID: env.ActorID, Realm: auth.RealmTenant, RequestID: env.CorrelationID, Client: "outbox"})
 		return service.InvalidateAndRequest(ctx, env.ActorID, uint64(env.AggregateVersion))
 	}}); err != nil {
 		return err

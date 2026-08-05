@@ -60,17 +60,17 @@ func TestPageContextEnvelopeBudgetsAndResolverOwnership(t *testing.T) {
 
 func TestPageContextRegistryExposesStablePageTypeManifest(t *testing.T) {
 	registry := pagecontext.NewRegistry()
-	for _, pageType := range []string{"system.users", "operations.audit-logs"} {
+	for _, pageType := range []string{"system.accounts", "operations.audit-logs"} {
 		if err := registry.Register(pageType, fixedPageResolver{}); err != nil {
 			t.Fatal(err)
 		}
 	}
 	pageTypes := registry.PageTypes()
-	if got := strings.Join(pageTypes, ","); got != "operations.audit-logs,system.users" {
+	if got := strings.Join(pageTypes, ","); got != "operations.audit-logs,system.accounts" {
 		t.Fatalf("unexpected page type manifest: %s", got)
 	}
 	pageTypes[0] = "mutated"
-	if got := strings.Join(registry.PageTypes(), ","); got != "operations.audit-logs,system.users" {
+	if got := strings.Join(registry.PageTypes(), ","); got != "operations.audit-logs,system.accounts" {
 		t.Fatalf("caller must not mutate registry state: %s", got)
 	}
 }
@@ -99,13 +99,13 @@ func TestSystemUserPageContextRevalidatesPermissionTenantAndRevision(t *testing.
 			t.Fatal(err)
 		}
 	}
-	envelope := pagecontext.Envelope{SchemaVersion: pagecontext.SchemaVersion, PageType: system.PageTypeSystemUsers, RouteName: "system_users", Mode: "edit", ResourceRefs: []pagecontext.ResourceRef{{ResourceType: "system.user", ResourceID: "u1", Revision: now.Format(time.RFC3339Nano)}}, Summary: "forged admin"}
-	allowed := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t1", Realm: auth.RealmTenant, UserID: "viewer", Permissions: []string{system.ActionUserGet}})
+	envelope := pagecontext.Envelope{SchemaVersion: pagecontext.SchemaVersion, PageType: system.PageTypeSystemAccounts, RouteName: "system_accounts", Mode: "edit", ResourceRefs: []pagecontext.ResourceRef{{ResourceType: "system.account", ResourceID: "u1", Revision: now.Format(time.RFC3339Nano)}}, Summary: "forged admin"}
+	allowed := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t1", Realm: auth.RealmTenant, PrincipalID: "viewer", Permissions: []string{system.ActionAccountGet}})
 	resolved, err := application.PageContexts.Resolve(allowed, envelope)
 	if err != nil || len(resolved.TrustedRefs) != 1 || strings.Contains(resolved.SafeSummary, "forged") {
 		t.Fatalf("trusted user projection failed: %#v %v", resolved, err)
 	}
-	denied := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t1", Realm: auth.RealmTenant, UserID: "viewer"})
+	denied := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t1", Realm: auth.RealmTenant, PrincipalID: "viewer"})
 	if _, err := application.PageContexts.Resolve(denied, envelope); err == nil {
 		t.Fatal("page context without permission must fail")
 	}
@@ -145,12 +145,12 @@ func TestSystemRolePageContextRevalidatesPermissionTenantAndRevision(t *testing.
 		}
 	}
 	envelope := pagecontext.Envelope{SchemaVersion: pagecontext.SchemaVersion, PageType: system.PageTypeSystemRoles, RouteName: "system_roles", Mode: "edit", ResourceRefs: []pagecontext.ResourceRef{{ResourceType: "system.role", ResourceID: "r1", Revision: now.Format(time.RFC3339Nano)}}}
-	allowed := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t1", Realm: auth.RealmTenant, UserID: "viewer", Permissions: []string{system.ActionRoleGet}})
+	allowed := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t1", Realm: auth.RealmTenant, PrincipalID: "viewer", Permissions: []string{system.ActionRoleGet}})
 	resolved, err := application.PageContexts.Resolve(allowed, envelope)
 	if err != nil || len(resolved.TrustedRefs) != 1 || resolved.PageType != system.PageTypeSystemRoles {
 		t.Fatalf("trusted role projection failed: %#v %v", resolved, err)
 	}
-	denied := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t1", Realm: auth.RealmTenant, UserID: "viewer"})
+	denied := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t1", Realm: auth.RealmTenant, PrincipalID: "viewer"})
 	if _, err := application.PageContexts.Resolve(denied, envelope); err == nil {
 		t.Fatal("role page context without permission must fail")
 	}
@@ -179,7 +179,7 @@ func TestPageContextBoostsOnlyVisibleToolCandidates(t *testing.T) {
 	registry := aitool.NewRegistry()
 	operationsTool := toolFixture("action:operations.audit_list", "审计", "查询记录")
 	operationsTool.Capability = "operations"
-	systemTool := toolFixture("action:system.user_list", "用户", "查询记录")
+	systemTool := toolFixture("action:system.account_list", "用户", "查询记录")
 	systemTool.Capability = "system"
 	if err := registry.RegisterProvider(&fakeToolProvider{source: aitool.SourceAction, tools: []aitool.Definition{operationsTool, systemTool}}, &fakeToolExecutor{}); err != nil {
 		t.Fatal(err)
@@ -192,8 +192,8 @@ func TestPageContextBoostsOnlyVisibleToolCandidates(t *testing.T) {
 		t.Fatal(err)
 	}
 	service := ai.NewToolService(db, registry, signer, nil)
-	base := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t1", Realm: auth.RealmTenant, UserID: "u1", SessionID: "s1", AuthVersion: 1})
-	ctx := pagecontext.WithSnapshot(base, &pagecontext.Snapshot{SchemaVersion: pagecontext.SchemaVersion, PageType: "system.users", ToolHints: pagecontext.ToolHints{Capabilities: []string{"system"}}})
+	base := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t1", Realm: auth.RealmTenant, PrincipalID: "u1", SessionID: "s1", AuthVersion: 1})
+	ctx := pagecontext.WithSnapshot(base, &pagecontext.Snapshot{SchemaVersion: pagecontext.SchemaVersion, PageType: "system.accounts", ToolHints: pagecontext.ToolHints{Capabilities: []string{"system"}}})
 	value, err := service.Search(ctx, ai.ToolSearchRequest{Query: "查询记录", Limit: 2})
 	if err != nil {
 		t.Fatal(err)
@@ -202,14 +202,14 @@ func TestPageContextBoostsOnlyVisibleToolCandidates(t *testing.T) {
 	if len(items) != 2 || items[0].ID != systemTool.ID {
 		t.Fatalf("page hint did not prioritize the visible candidate: %#v", items)
 	}
-	restricted := ai.ToolScope{ID: "scope-operations", TenantID: "t1", UserID: "u1", Realm: string(auth.RealmTenant), SessionID: "s1", AuthVersion: 1, AllowedSourcesJSON: json.RawMessage(`["action"]`), AllowedCapabilitiesJSON: json.RawMessage(`["operations"]`), AllowedToolsJSON: json.RawMessage(`[]`), LoadedToolsJSON: json.RawMessage(`[]`), ExpiresAt: time.Now().Add(time.Minute)}
+	restricted := ai.ToolScope{ID: "scope-operations", TenantID: "t1", PrincipalID: "u1", Realm: string(auth.RealmTenant), SessionID: "s1", AuthVersion: 1, AllowedSourcesJSON: json.RawMessage(`["action"]`), AllowedCapabilitiesJSON: json.RawMessage(`["operations"]`), AllowedToolsJSON: json.RawMessage(`[]`), LoadedToolsJSON: json.RawMessage(`[]`), ExpiresAt: time.Now().Add(time.Minute)}
 	tdb, err := tenant.TenantDB(base, db)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := tenant.TenantExec(tdb, `INSERT INTO ai_tool_scopes
-(tenant_id, id, user_id, realm, session_id, auth_version, allowed_sources_json, allowed_capabilities_json, allowed_tools_json, loaded_tools_json, schema_bytes, expires_at)
-VALUES (?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, 0, ?)`, restricted.ID, restricted.UserID, restricted.Realm, restricted.SessionID, restricted.AuthVersion, restricted.AllowedSourcesJSON, restricted.AllowedCapabilitiesJSON, restricted.AllowedToolsJSON, restricted.LoadedToolsJSON, restricted.ExpiresAt); err != nil {
+(tenant_id, id, principal_id, realm, session_id, auth_version, allowed_sources_json, allowed_capabilities_json, allowed_tools_json, loaded_tools_json, schema_bytes, expires_at)
+VALUES (?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, 0, ?)`, restricted.ID, restricted.PrincipalID, restricted.Realm, restricted.SessionID, restricted.AuthVersion, restricted.AllowedSourcesJSON, restricted.AllowedCapabilitiesJSON, restricted.AllowedToolsJSON, restricted.LoadedToolsJSON, restricted.ExpiresAt); err != nil {
 		t.Fatal(err)
 	}
 	value, err = service.Search(ctx, ai.ToolSearchRequest{ScopeID: restricted.ID, Query: "查询记录", Limit: 2})
@@ -287,7 +287,7 @@ func TestPageContextFrontendUsesRegistryWithoutDOMOrPromptAssembly(t *testing.T)
 			t.Fatalf("page context provider is not bound to the active route: missing %q", expected)
 		}
 	}
-	if strings.Contains(string(workspace), "page_type: 'system.users'") {
+	if strings.Contains(string(workspace), "page_type: 'system.accounts'") {
 		t.Fatal("global AI consumer contains a business page branch")
 	}
 }

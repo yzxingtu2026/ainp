@@ -12,7 +12,7 @@ import (
 
 type HandleClaims struct {
 	TenantID    string `json:"tid"`
-	UserID      string `json:"uid"`
+	PrincipalID string `json:"principal_id"`
 	Realm       string `json:"realm"`
 	SessionID   string `json:"sid"`
 	AuthVersion uint64 `json:"auth_version"`

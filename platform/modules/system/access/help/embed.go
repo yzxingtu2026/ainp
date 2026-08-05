@@ -10,7 +10,7 @@ import (
 var documents embed.FS
 
 func Register(registry *menu.HelpRegistry) error {
-	for _, pattern := range []string{"system.users.*.md", "system.roles.*.md"} {
+	for _, pattern := range []string{"system.accounts.*.md", "system.roles.*.md"} {
 		if err := registry.Load(documents, pattern); err != nil {
 			return err
 		}

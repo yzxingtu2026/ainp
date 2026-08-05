@@ -89,7 +89,7 @@ type SnapshotCreateRequest struct {
 
 func conversationActor(ctx context.Context) (*auth.Context, error) {
 	ac := auth.MustFromContext(ctx)
-	if !ac.Authenticated || ac.TenantID == "" || ac.UserID == "" {
+	if !ac.Authenticated || ac.TenantID == "" || ac.PrincipalID == "" {
 		return nil, errs.New(errs.CodeUnauthorized, "unauthorized")
 	}
 	return ac, nil
@@ -104,7 +104,7 @@ func (s *ConversationService) visibleQuery(ctx context.Context) (*gorm.DB, *auth
 	if err != nil {
 		return nil, nil, err
 	}
-	q := s.db.WithContext(ctx).Where("owner_user_id = ? OR visibility = ?", ac.UserID, "tenant")
+	q := s.db.WithContext(ctx).Where("owner_user_id = ? OR visibility = ?", ac.PrincipalID, "tenant")
 	return q, ac, nil
 }
 
@@ -117,7 +117,7 @@ func (s *ConversationService) get(ctx context.Context, id string, mutate bool) (
 	if err = q.Where("id = ?", id).First(&row).Error; err != nil {
 		return nil, nil, errs.New(errs.CodeNotFound, "conversation not found")
 	}
-	if mutate && row.OwnerUserID != ac.UserID && !canManageConversations(ac) {
+	if mutate && row.OwnerUserID != ac.PrincipalID && !canManageConversations(ac) {
 		return nil, nil, errs.New(errs.CodeNotFound, "conversation not found")
 	}
 	return &row, ac, nil
@@ -171,7 +171,7 @@ func (s *ConversationService) Create(ctx context.Context, r ConversationCreateRe
 	if r.Visibility == "tenant" && !canManageConversations(ac) {
 		return nil, errs.New(errs.CodeForbidden, "tenant conversation permission required")
 	}
-	_, err = agent.FindVisible(ctx, s.db.WithContext(ctx), r.AgentID, ac.UserID)
+	_, err = agent.FindVisible(ctx, s.db.WithContext(ctx), r.AgentID, ac.PrincipalID)
 	if err != nil {
 		return nil, errs.New(errs.CodeNotFound, "agent not found")
 	}
@@ -204,7 +204,7 @@ func (s *ConversationService) Create(ctx context.Context, r ConversationCreateRe
 		return nil, errs.New(errs.CodeValidation, "title too long")
 	}
 	row := Conversation{
-		ID: uuid.NewString(), TenantID: ac.TenantID, OwnerUserID: ac.UserID, Title: title,
+		ID: uuid.NewString(), TenantID: ac.TenantID, OwnerUserID: ac.PrincipalID, Title: title,
 		AgentID: r.AgentID, AgentVersionID: r.AgentVersionID, Purpose: purpose,
 		Visibility: r.Visibility, Status: "active", Revision: 1,
 	}
@@ -334,7 +334,7 @@ func (s *ConversationService) CreateMessage(ctx context.Context, r MessageCreate
 			return e
 		}
 		now := time.Now().UTC()
-		author := ac.UserID
+		author := ac.PrincipalID
 		result = ConversationMessage{ID: uuid.NewString(), TenantID: ac.TenantID, ConversationID: row.ID, Role: "user", Status: "committed", Sequence: last + 1, ReplyToMessageID: r.ReplyToMessageID, AuthorUserID: &author, Content: payload, IdempotencyKey: key, CommittedAt: &now}
 		if e := tx.Create(&result).Error; e != nil {
 			return e

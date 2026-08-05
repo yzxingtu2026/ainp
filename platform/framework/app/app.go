@@ -154,6 +154,10 @@ func (a *App) RegisterAction(act action.Action) error {
 	return a.Actions.Register(act)
 }
 
+func (a *App) RegisterActionAlias(alias action.Alias) error {
+	return a.Actions.RegisterAlias(alias)
+}
+
 func (a *App) RegisterMenu(m menu.Menu) error {
 	if m.BindAction != "" {
 		bound, ok := a.Actions.Get(m.BindAction)

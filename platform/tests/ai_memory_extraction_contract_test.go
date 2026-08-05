@@ -137,7 +137,7 @@ func TestMemoryExtractionMigrationPostgres(t *testing.T) {
 	fake := &fakeMemoryExtractor{outputs: []string{
 		`{"candidates":[{"kind":"preference","summary":"称呼偏好","content":"用户希望被称呼为老板","occurred_at":"2026-07-18T16:30:00Z","occurred_end_at":null,"occurred_timezone":"","date_precision":"exact_time","valid_from":null,"valid_to":null,"confidence":0.98,"sensitivity":"normal","importance":90,"explicit_user_intent":true,"source_message_ids":["m1","m2"],"reason":"preference","attribute_key":"preferred_address","attribute_value":"老板"}]}`,
 	}}
-	ctx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, Realm: auth.RealmTenant, TenantID: "tenant-a", UserID: "user-a"})
+	ctx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, Realm: auth.RealmTenant, TenantID: "tenant-a", PrincipalID: "user-a"})
 	service := ai.NewMemoryExtractionService(db, fake)
 	if err = service.EvaluateRun(ctx, "run-a"); err != nil {
 		t.Fatal(err)

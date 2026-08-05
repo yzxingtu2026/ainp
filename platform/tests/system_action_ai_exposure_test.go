@@ -20,7 +20,7 @@ func TestSystemManagementAndPersonalActionsExposeSafeAIContracts(t *testing.T) {
 	}
 
 	readActions := []string{
-		system.ActionUserList, system.ActionUserGet,
+		system.ActionAccountList, system.ActionAccountGet,
 		system.ActionRoleList, system.ActionRoleGet, system.ActionPermissionCatalog,
 		system.ActionSettingList, system.ActionSettingGet,
 		system.ActionProfileGet, system.ActionUserPreferencesGet,
@@ -30,7 +30,7 @@ func TestSystemManagementAndPersonalActionsExposeSafeAIContracts(t *testing.T) {
 		system.ActionAttachmentList, system.ActionAttachmentGet, system.ActionAttachmentPolicyGet,
 	}
 	writeActions := []string{
-		system.ActionUserUpdate, system.ActionUserStatusUpdate, system.ActionUserRolesUpdate,
+		system.ActionAccountUpdate, system.ActionAccountStatusUpdate, system.ActionAccountRolesUpdate,
 		system.ActionRoleCreate, system.ActionRoleUpdate, system.ActionRoleDelete, system.ActionRolePermissionsUpdate,
 		system.ActionSettingUpdate, system.ActionSettingReset,
 		system.ActionProfileUpdate, system.ActionUserPreferencesUpdate,
@@ -48,7 +48,7 @@ func TestSystemManagementAndPersonalActionsExposeSafeAIContracts(t *testing.T) {
 		assertSystemAIContract(t, application, actionID, true)
 	}
 
-	for _, actionID := range []string{system.ActionUserCreate, system.ActionUserPasswordReset} {
+	for _, actionID := range []string{system.ActionAccountCreate, system.ActionAccountPasswordReset} {
 		credentialAction, ok := application.Actions.Get(actionID)
 		if !ok || credentialAction.Meta.AI == nil || credentialAction.Meta.AI.ExposeTool || credentialAction.Meta.AI.ExclusionReason != action.AIExcludeSensitiveCredential {
 			t.Fatalf("credential Action %s must remain behind the sensitive credential boundary: %#v", actionID, credentialAction.Meta.AI)
@@ -73,12 +73,12 @@ func TestSystemManagementAndPersonalActionsExposeSafeAIContracts(t *testing.T) {
 			t.Fatalf("second-batch action was not projected from Action Registry: %s", actionID)
 		}
 	}
-	if projectedIDs[system.ActionUserCreate] || projectedIDs[system.ActionUserPasswordReset] {
+	if projectedIDs[system.ActionAccountCreate] || projectedIDs[system.ActionAccountPasswordReset] {
 		t.Fatal("credential-bearing user Actions must not be projected as Action Tools")
 	}
 	for actionID, want := range map[string]string{
-		system.ActionUserList:                    "查询系统用户列表",
-		system.ActionUserUpdate:                  "更新系统用户资料",
+		system.ActionAccountList:                 "查询后台账号列表",
+		system.ActionAccountUpdate:               "更新后台账号资料",
 		system.ActionAttachmentDownloadPrepare:   "准备下载附件",
 		system.ActionNotificationTemplatePreview: "预览通知模板",
 	} {
@@ -86,7 +86,7 @@ func TestSystemManagementAndPersonalActionsExposeSafeAIContracts(t *testing.T) {
 			t.Fatalf("Action %s tool title = %q, want %q", actionID, got, want)
 		}
 	}
-	userUpdate, _ := application.Actions.Get(system.ActionUserUpdate)
+	userUpdate, _ := application.Actions.Get(system.ActionAccountUpdate)
 	assertSchemaRequired(t, userUpdate.Meta.AI.InputSchema, "id", "display_name")
 }
 

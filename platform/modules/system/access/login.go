@@ -12,7 +12,7 @@ import (
 
 func (s *AuthService) Me(ctx context.Context) (any, error) {
 	ac := auth.MustFromContext(ctx)
-	if ac == nil || !ac.Authenticated || ac.UserID == "" {
+	if ac == nil || !ac.Authenticated || ac.PrincipalID == "" {
 		return nil, errs.NewKey(errs.CodeUnauthorized, "common.unauthorized", "unauthorized")
 	}
 
@@ -20,7 +20,7 @@ func (s *AuthService) Me(ctx context.Context) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	rows, err := tenant.TenantRaw[model.TenantAccount](tdb, `SELECT * FROM tenant_accounts WHERE tenant_id = ? AND id = ?`, ac.UserID)
+	rows, err := tenant.TenantRaw[model.TenantAccount](tdb, `SELECT * FROM tenant_accounts WHERE tenant_id = ? AND id = ?`, ac.PrincipalID)
 	if err != nil {
 		return nil, errs.Wrap(errs.CodeInternal, "lookup user failed", err)
 	}
@@ -41,7 +41,7 @@ func (s *AuthService) Me(ctx context.Context) (any, error) {
 
 func (s *AuthService) Permissions(ctx context.Context) (any, error) {
 	ac := auth.MustFromContext(ctx)
-	if ac == nil || !ac.Authenticated || ac.UserID == "" {
+	if ac == nil || !ac.Authenticated || ac.PrincipalID == "" {
 		return nil, errs.NewKey(errs.CodeUnauthorized, "common.unauthorized", "unauthorized")
 	}
 	return map[string]any{

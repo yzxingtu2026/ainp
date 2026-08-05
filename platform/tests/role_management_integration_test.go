@@ -170,8 +170,8 @@ func TestRoleManagementTenantIsolationAndProtection(t *testing.T) {
 	}
 	authService := system.NewAuthService(testDB, actions)
 	service := system.NewRoleService(testDB, authService, actions, capabilities)
-	ctxA := auth.WithContext(context.Background(), &auth.Context{TenantID: "tenant-a", UserID: "user-a", Realm: auth.RealmTenant, Authenticated: true})
-	ctxB := auth.WithContext(context.Background(), &auth.Context{TenantID: "tenant-b", UserID: "user-b", Realm: auth.RealmTenant, Authenticated: true})
+	ctxA := auth.WithContext(context.Background(), &auth.Context{TenantID: "tenant-a", PrincipalID: "user-a", Realm: auth.RealmTenant, Authenticated: true})
+	ctxB := auth.WithContext(context.Background(), &auth.Context{TenantID: "tenant-b", PrincipalID: "user-b", Realm: auth.RealmTenant, Authenticated: true})
 
 	createdA, err := service.Create(ctxA, json.RawMessage(`{"code":"operator","name":"Operator A","status":"enabled","permissions":["system.role_list","system.shared"]}`))
 	if err != nil {

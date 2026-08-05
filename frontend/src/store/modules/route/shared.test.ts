@@ -20,7 +20,7 @@ test('hides a parent whose descendants are all hidden', () => {
 });
 
 test('keeps a parent when any nested route is visible', () => {
-  const system = route('system', false, [route('system_users', true), route('system_profile')]);
+  const system = route('system', false, [route('system_accounts', true), route('system_profile')]);
 
   assert.equal(hasVisibleMenuProjection(system), true);
 });

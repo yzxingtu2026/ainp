@@ -71,14 +71,14 @@ func TestNavigationSemanticSearchBindsEveryVectorQueryArgument(t *testing.T) {
 	}
 	service := ai.NewNavigationSearchService(db, menu.NewRegistry(), menu.NewHelpRegistry(), provider, navigationEmbeddingRuntime{}, nil)
 	ctx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, Realm: auth.RealmTenant, TenantID: "tenant-1"})
-	service.SearchNavigation(ctx, menu.SemanticSearchRequest{TenantID: "tenant-1", Language: "zh-CN", Query: "附件页面地址", AllowedMenuIDs: []string{"system.attachments", "system.users"}})
+	service.SearchNavigation(ctx, menu.SemanticSearchRequest{TenantID: "tenant-1", Language: "zh-CN", Query: "附件页面地址", AllowedMenuIDs: []string{"system.attachments", "system.accounts"}})
 	if query == "" {
 		t.Fatal("navigation vector query was not executed")
 	}
 	if got, want := len(args), 10; got != want {
 		t.Fatalf("bound arguments = %d, want %d", got, want)
 	}
-	if len(args) < 2 || args[len(args)-2] != "system.attachments" || args[len(args)-1] != "system.users" {
+	if len(args) < 2 || args[len(args)-2] != "system.attachments" || args[len(args)-1] != "system.accounts" {
 		t.Fatalf("unexpected allowed menu arguments: %#v", args)
 	}
 }

@@ -226,7 +226,7 @@ func Register(a *app.App) error {
 		if slotKey != WorkspaceDefaultSlot {
 			return nil
 		}
-		return personalization.InvalidateAndRequest(ctx, auth.MustFromContext(ctx).UserID, uint64(time.Now().UTC().Unix()))
+		return personalization.InvalidateAndRequest(ctx, auth.MustFromContext(ctx).PrincipalID, uint64(time.Now().UTC().Unix()))
 	})
 	agents.SetMemoryPolicyProvider(a.SettingValues)
 	knowledge := NewKnowledgeService(a.DB, svc, agents, a.AttachmentResourceLinker)
@@ -292,16 +292,16 @@ func Register(a *app.App) error {
 		}
 		// Indexing is best-effort when background runtimes are disabled; lexical
 		// navigation must remain available even if the embedding provider fails.
-		_ = navigationSearch.IndexPending(auth.WithContext(ctx, &auth.Context{Authenticated: true, TenantID: tenantID, UserID: actorID, Realm: auth.RealmTenant, Client: "navigation-reconciler"}), tenantID)
+		_ = navigationSearch.IndexPending(auth.WithContext(ctx, &auth.Context{Authenticated: true, TenantID: tenantID, PrincipalID: actorID, Realm: auth.RealmTenant, Client: "navigation-reconciler"}), tenantID)
 		return nil
 	}
 	if err := a.SettingChanges.Register(menu.SettingKeySemanticSearch, func(ctx context.Context, change setting.Change) error {
-		return a.NavigationInitializer(ctx, change.TenantID, change.UserID)
+		return a.NavigationInitializer(ctx, change.TenantID, change.ActorID)
 	}); err != nil {
 		return err
 	}
 	if err := a.SettingChanges.Register(aitool.SettingKeySearch, func(ctx context.Context, change setting.Change) error {
-		_, err := tools.ReconcileCatalogForTenant(ctx, change.TenantID, change.UserID)
+		_, err := tools.ReconcileCatalogForTenant(ctx, change.TenantID, change.ActorID)
 		return err
 	}); err != nil {
 		return err

@@ -16,13 +16,13 @@ const (
 	ActionRolePermissionsUpdate = access.ActionRolePermissionsUpdate
 	ActionPermissionCatalog     = access.ActionPermissionCatalog
 
-	ActionUserList          = access.ActionUserList
-	ActionUserGet           = access.ActionUserGet
-	ActionUserCreate        = access.ActionUserCreate
-	ActionUserUpdate        = access.ActionUserUpdate
-	ActionUserStatusUpdate  = access.ActionUserStatusUpdate
-	ActionUserRolesUpdate   = access.ActionUserRolesUpdate
-	ActionUserPasswordReset = access.ActionUserPasswordReset
+	ActionAccountList          = access.ActionAccountList
+	ActionAccountGet           = access.ActionAccountGet
+	ActionAccountCreate        = access.ActionAccountCreate
+	ActionAccountUpdate        = access.ActionAccountUpdate
+	ActionAccountStatusUpdate  = access.ActionAccountStatusUpdate
+	ActionAccountRolesUpdate   = access.ActionAccountRolesUpdate
+	ActionAccountPasswordReset = access.ActionAccountPasswordReset
 
 	ActionSettingList   = settings.ActionSettingList
 	ActionSettingGet    = settings.ActionSettingGet
@@ -38,18 +38,18 @@ const (
 	RuntimePreferencesKey            = settings.RuntimePreferencesKey
 	SettingKeyAttachmentUploadPolicy = settings.SettingKeyAttachmentUploadPolicy
 
-	ActionAttachmentUploadPrepare     = attachments.ActionAttachmentUploadPrepare
-	ActionAttachmentDownloadPrepare   = attachments.ActionAttachmentDownloadPrepare
-	ActionAttachmentBind              = attachments.ActionAttachmentBind
-	ActionAttachmentUnbind            = attachments.ActionAttachmentUnbind
-	ActionAttachmentListByResource    = attachments.ActionAttachmentListByResource
-	ActionAttachmentDelete            = attachments.ActionAttachmentDelete
-	ActionAttachmentList              = attachments.ActionAttachmentList
-	ActionAttachmentMineList          = attachments.ActionAttachmentMineList
-	ActionAttachmentGet               = attachments.ActionAttachmentGet
-	ActionAttachmentPolicyGet         = attachments.ActionAttachmentPolicyGet
-	UserProfileAttachmentResourceType = attachments.UserProfileAttachmentResourceType
-	UserProfileAvatarField            = attachments.UserProfileAvatarField
+	ActionAttachmentUploadPrepare        = attachments.ActionAttachmentUploadPrepare
+	ActionAttachmentDownloadPrepare      = attachments.ActionAttachmentDownloadPrepare
+	ActionAttachmentBind                 = attachments.ActionAttachmentBind
+	ActionAttachmentUnbind               = attachments.ActionAttachmentUnbind
+	ActionAttachmentListByResource       = attachments.ActionAttachmentListByResource
+	ActionAttachmentDelete               = attachments.ActionAttachmentDelete
+	ActionAttachmentList                 = attachments.ActionAttachmentList
+	ActionAttachmentMineList             = attachments.ActionAttachmentMineList
+	ActionAttachmentGet                  = attachments.ActionAttachmentGet
+	ActionAttachmentPolicyGet            = attachments.ActionAttachmentPolicyGet
+	AccountProfileAttachmentResourceType = attachments.AccountProfileAttachmentResourceType
+	AccountProfileAvatarField            = attachments.AccountProfileAvatarField
 
 	ActionNotificationList            = notifications.ActionNotificationList
 	ActionNotificationUnreadCount     = notifications.ActionNotificationUnreadCount
@@ -62,13 +62,13 @@ const (
 	ActionNotificationTemplateReset   = notifications.ActionNotificationTemplateReset
 	ActionNotificationTemplatePreview = notifications.ActionNotificationTemplatePreview
 
-	MenuRoleManagement    = access.MenuRoleManagement
-	MenuUserManagement    = access.MenuUserManagement
-	MenuSettingManagement = "system.settings"
-	MenuAttachmentCenter  = "system.attachments"
-	BuiltinAdminCode      = access.BuiltinAdminCode
-	PageTypeSystemUsers   = access.PageTypeSystemUsers
-	PageTypeSystemRoles   = access.PageTypeSystemRoles
+	MenuRoleManagement     = access.MenuRoleManagement
+	MenuAccountManagement  = access.MenuAccountManagement
+	MenuSettingManagement  = "system.settings"
+	MenuAttachmentCenter   = "system.attachments"
+	BuiltinAdminCode       = access.BuiltinAdminCode
+	PageTypeSystemAccounts = access.PageTypeSystemAccounts
+	PageTypeSystemRoles    = access.PageTypeSystemRoles
 )
 
 var adminMinimumPermissions = []string{
@@ -79,13 +79,13 @@ var adminMinimumPermissions = []string{
 	ActionRoleDelete,
 	ActionRolePermissionsUpdate,
 	ActionPermissionCatalog,
-	ActionUserList,
-	ActionUserGet,
-	ActionUserCreate,
-	ActionUserUpdate,
-	ActionUserStatusUpdate,
-	ActionUserRolesUpdate,
-	ActionUserPasswordReset,
+	ActionAccountList,
+	ActionAccountGet,
+	ActionAccountCreate,
+	ActionAccountUpdate,
+	ActionAccountStatusUpdate,
+	ActionAccountRolesUpdate,
+	ActionAccountPasswordReset,
 	ActionSettingList,
 	ActionSettingGet,
 	ActionSettingUpdate,

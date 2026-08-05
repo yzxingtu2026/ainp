@@ -44,7 +44,7 @@ func newUserSettingStore(db *gorm.DB) *userSettingStore {
 	return &userSettingStore{db: db}
 }
 
-func (s *userSettingStore) get(ctx context.Context, userID, key string) (*model.UserSettingValue, error) {
+func (s *userSettingStore) get(ctx context.Context, accountID, key string) (*model.UserSettingValue, error) {
 	tdb, err := tenant.TenantDB(ctx, s.db)
 	if err != nil {
 		return nil, err
@@ -53,14 +53,14 @@ func (s *userSettingStore) get(ctx context.Context, userID, key string) (*model.
 	if err != nil {
 		return nil, err
 	}
-	row, err := repo.First("user_id = ? AND setting_key = ?", userID, key)
+	row, err := repo.First("account_id = ? AND setting_key = ?", accountID, key)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
 	return &row, err
 }
 
-func (s *userSettingStore) put(ctx context.Context, userID, key string, expected int64, schema int, values map[string]any) (*model.UserSettingValue, error) {
+func (s *userSettingStore) put(ctx context.Context, accountID, key string, expected int64, schema int, values map[string]any) (*model.UserSettingValue, error) {
 	payload, err := json.Marshal(values)
 	if err != nil {
 		return nil, err
@@ -72,12 +72,12 @@ func (s *userSettingStore) put(ctx context.Context, userID, key string, expected
 	var out *model.UserSettingValue
 	err = tdb.Transaction(func(tx tenant.TenantDatabase) error {
 		repo, _ := tenant.NewTenantRepository[model.UserSettingValue](tx)
-		row, qerr := repo.Clauses(clause.Locking{Strength: "UPDATE"}).First("user_id = ? AND setting_key = ?", userID, key)
+		row, qerr := repo.Clauses(clause.Locking{Strength: "UPDATE"}).First("account_id = ? AND setting_key = ?", accountID, key)
 		if errors.Is(qerr, gorm.ErrRecordNotFound) {
 			if expected != 0 {
 				return setting.ErrRevisionConflict
 			}
-			created := &model.UserSettingValue{ID: uuid.NewString(), UserID: userID, SettingKey: key, SchemaVersion: schema, ValueJSON: payload, Revision: 1, UpdatedBy: userID}
+			created := &model.UserSettingValue{ID: uuid.NewString(), AccountID: accountID, SettingKey: key, SchemaVersion: schema, ValueJSON: payload, Revision: 1, UpdatedBy: accountID}
 			if err := repo.Create(created); err != nil {
 				return err
 			}
@@ -90,14 +90,14 @@ func (s *userSettingStore) put(ctx context.Context, userID, key string, expected
 		if row.Revision != expected {
 			return setting.ErrRevisionConflict
 		}
-		res := repo.Where("id = ? AND revision = ?", row.ID, expected).Updates(map[string]any{"schema_version": schema, "value_json": payload, "revision": expected + 1, "updated_by": userID, "updated_at": time.Now().UTC()})
+		res := repo.Where("id = ? AND revision = ?", row.ID, expected).Updates(map[string]any{"schema_version": schema, "value_json": payload, "revision": expected + 1, "updated_by": accountID, "updated_at": time.Now().UTC()})
 		if res.Error != nil {
 			return res.Error
 		}
 		if res.RowsAffected != 1 {
 			return setting.ErrRevisionConflict
 		}
-		row.SchemaVersion, row.ValueJSON, row.Revision, row.UpdatedBy = schema, payload, expected+1, userID
+		row.SchemaVersion, row.ValueJSON, row.Revision, row.UpdatedBy = schema, payload, expected+1, accountID
 		out = &row
 		return nil
 	})

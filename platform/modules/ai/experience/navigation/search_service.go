@@ -87,7 +87,7 @@ func (s *NavigationSearchService) ReconcileForTenant(ctx context.Context, tenant
 	if strings.TrimSpace(tenantID) == "" {
 		return errors.New("tenant id is required")
 	}
-	ctx = auth.WithContext(ctx, &auth.Context{Authenticated: true, TenantID: tenantID, Realm: auth.RealmTenant, UserID: "system:navigation-index", Client: "navigation-reconciler"})
+	ctx = auth.WithContext(ctx, &auth.Context{Authenticated: true, TenantID: tenantID, Realm: auth.RealmTenant, PrincipalID: "system:navigation-index", Client: "navigation-reconciler"})
 	alias, err := s.embeddingAlias(ctx, tenantID)
 	if err != nil {
 		return err

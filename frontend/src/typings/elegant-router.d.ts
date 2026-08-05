@@ -50,12 +50,12 @@ declare module "@elegant-router/types" {
     "profile_memory": "/profile/memory";
     "setup": "/setup";
     "system": "/system";
+    "system_accounts": "/system/accounts";
     "system_attachments": "/system/attachments";
     "system_notification-templates": "/system/notification-templates";
     "system_profile": "/system/profile";
     "system_roles": "/system/roles";
     "system_settings": "/system/settings";
-    "system_users": "/system/users";
   };
 
   /**
@@ -143,12 +143,12 @@ declare module "@elegant-router/types" {
     | "operations_notification-deliveries"
     | "operations_outbox"
     | "profile_memory"
+    | "system_accounts"
     | "system_attachments"
     | "system_notification-templates"
     | "system_profile"
     | "system_roles"
     | "system_settings"
-    | "system_users"
   >;
 
   /**

@@ -28,7 +28,7 @@ Page Context 描述用户发送消息时所在页面的受限语义。它是服�
 
 `pagecontext.Registry.PageTypes()` 提供稳定排序的后端 page type manifest，供下游 CI 与前端 Provider Registry 声明做集合校验；必须满足“前端声明 ⊆ 后端 Resolver”。该接口只枚举稳定类型代码，不暴露 Resolver 实例或运行时数据。Page Context 仍是可选能力，不要求每个页面注册 Provider。
 
-资源不存在、跨租户、撤权或 revision 冲突统一返回 page context unavailable，不泄露资源是否存在。当前 Resolver 包括 `system.users`、`system.roles` 和 `operations.audit-logs`，覆盖 list/detail/create/edit。
+资源不存在、跨租户、撤权或 revision 冲突统一返回 page context unavailable，不泄露资源是否存在。当前 Resolver 包括 `system.accounts`、`system.roles` 和 `operations.audit-logs`，覆盖 list/detail/create/edit。
 
 ## Run 与 Prompt
 

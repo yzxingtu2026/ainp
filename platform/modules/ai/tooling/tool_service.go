@@ -313,7 +313,7 @@ func (s *ToolService) Load(ctx context.Context, r ToolLoadRequest) (any, error) 
 		if exp.After(scope.ExpiresAt) {
 			exp = scope.ExpiresAt
 		}
-		token, err := s.signer.Sign(aitool.HandleClaims{TenantID: ac.TenantID, UserID: ac.UserID, Realm: string(auth.NormalizeRealm(ac.Realm)), SessionID: ac.SessionID, AuthVersion: ac.AuthVersion, ScopeID: scope.ID, ToolID: d.ID, RuntimeRef: d.RuntimeRef, SchemaHash: d.SchemaHash, ExpiresAt: exp.Unix()})
+		token, err := s.signer.Sign(aitool.HandleClaims{TenantID: ac.TenantID, PrincipalID: ac.PrincipalID, Realm: string(auth.NormalizeRealm(ac.Realm)), SessionID: ac.SessionID, AuthVersion: ac.AuthVersion, ScopeID: scope.ID, ToolID: d.ID, RuntimeRef: d.RuntimeRef, SchemaHash: d.SchemaHash, ExpiresAt: exp.Unix()})
 		if err != nil {
 			return nil, err
 		}
@@ -361,7 +361,7 @@ func (s *ToolService) activateIntoScope(ctx context.Context, ac *auth.Context, s
 		return ToolActivationResult{}, errs.Validation("tool schema budget exceeded")
 	}
 	loaded = append(loaded, toolID)
-	if err := s.db.WithContext(ctx).Model(&ToolScope{}).Where("id=? AND user_id=?", scope.ID, ac.UserID).Updates(map[string]any{"loaded_tools_json": jsonBytes(loaded), "schema_bytes": bytes}).Error; err != nil {
+	if err := s.db.WithContext(ctx).Model(&ToolScope{}).Where("id=? AND principal_id=?", scope.ID, ac.PrincipalID).Updates(map[string]any{"loaded_tools_json": jsonBytes(loaded), "schema_bytes": bytes}).Error; err != nil {
 		return ToolActivationResult{}, err
 	}
 	scope.LoadedToolsJSON = jsonBytes(loaded)
@@ -476,7 +476,7 @@ func (s *ToolService) Approve(ctx context.Context, r ToolConfirmationRequest) (a
 		return nil, err
 	}
 	var c ToolConfirmation
-	if err = s.db.WithContext(ctx).Where("id=? AND user_id=?", r.ID, ac.UserID).First(&c).Error; err != nil {
+	if err = s.db.WithContext(ctx).Where("id=? AND principal_id=?", r.ID, ac.PrincipalID).First(&c).Error; err != nil {
 		return nil, err
 	}
 	if c.Status != ToolConfirmationPending || time.Now().UTC().After(c.ExpiresAt) {
@@ -496,14 +496,14 @@ func (s *ToolService) Approve(ctx context.Context, r ToolConfirmationRequest) (a
 	}
 	now := time.Now().UTC()
 	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		claimConfirmation := tx.Model(&ToolConfirmation{}).Where("id=? AND user_id=? AND status=?", c.ID, ac.UserID, ToolConfirmationPending).Updates(map[string]any{"status": ToolConfirmationApproved, "decided_at": now})
+		claimConfirmation := tx.Model(&ToolConfirmation{}).Where("id=? AND principal_id=? AND status=?", c.ID, ac.PrincipalID, ToolConfirmationPending).Updates(map[string]any{"status": ToolConfirmationApproved, "decided_at": now})
 		if claimConfirmation.Error != nil {
 			return claimConfirmation.Error
 		}
 		if claimConfirmation.RowsAffected != 1 {
 			return confirmationDecisionConflict("")
 		}
-		claimInvocation := tx.Model(&ToolInvocation{}).Where("id=? AND user_id=? AND status=?", c.InvocationID, ac.UserID, ToolInvocationWaitingConfirmation).Update("status", ToolInvocationRunning)
+		claimInvocation := tx.Model(&ToolInvocation{}).Where("id=? AND principal_id=? AND status=?", c.InvocationID, ac.PrincipalID, ToolInvocationWaitingConfirmation).Update("status", ToolInvocationRunning)
 		if claimInvocation.Error != nil {
 			return claimInvocation.Error
 		}
@@ -537,7 +537,7 @@ func (s *ToolService) Reject(ctx context.Context, r ToolConfirmationRequest) (an
 		return nil, err
 	}
 	var c ToolConfirmation
-	if err := s.db.WithContext(ctx).Where("id=? AND user_id=?", r.ID, ac.UserID).First(&c).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("id=? AND principal_id=?", r.ID, ac.PrincipalID).First(&c).Error; err != nil {
 		return nil, err
 	}
 	if c.Status != ToolConfirmationPending {
@@ -570,7 +570,7 @@ func (s *ToolService) ListConfirmations(ctx context.Context, r ToolConfirmationL
 	if err != nil {
 		return nil, err
 	}
-	q := s.db.WithContext(ctx).Where("user_id=? AND status=? AND expires_at>?", ac.UserID, ToolConfirmationPending, time.Now().UTC())
+	q := s.db.WithContext(ctx).Where("principal_id=? AND status=? AND expires_at>?", ac.PrincipalID, ToolConfirmationPending, time.Now().UTC())
 	if r.ScopeID != "" {
 		q = q.Where("scope_id=?", r.ScopeID)
 	}
@@ -589,7 +589,7 @@ func (s *ToolService) execute(ctx context.Context, ac *auth.Context, scope *Tool
 		failure.CallID = callID
 		if approved != nil {
 			var inv ToolInvocation
-			if err := s.db.WithContext(ctx).Where("id=? AND user_id=? AND status=?", approved.InvocationID, ac.UserID, ToolInvocationRunning).First(&inv).Error; err != nil {
+			if err := s.db.WithContext(ctx).Where("id=? AND principal_id=? AND status=?", approved.InvocationID, ac.PrincipalID, ToolInvocationRunning).First(&inv).Error; err != nil {
 				return nil, err
 			}
 			if err := s.finishApprovedExecution(ctx, &inv, approved, failure, "failed", failure.ErrorCategory); err != nil {
@@ -605,12 +605,12 @@ func (s *ToolService) execute(ctx context.Context, ac *auth.Context, scope *Tool
 	now := time.Now().UTC()
 	var inv ToolInvocation
 	if approved == nil {
-		inv = ToolInvocation{ID: uuid.NewString(), TenantID: ac.TenantID, UserID: ac.UserID, ScopeID: scope.ID, AgentRunID: scope.AgentRunID, ToolCallID: callID, ToolID: d.ID, Source: string(d.Source), TargetAction: d.RuntimeRef, Risk: string(d.Risk), SideEffect: string(d.SideEffect), Status: ToolInvocationRunning, StartedAt: now, RequestID: ac.RequestID, TraceID: ac.TraceID}
+		inv = ToolInvocation{ID: uuid.NewString(), TenantID: ac.TenantID, PrincipalID: ac.PrincipalID, ScopeID: scope.ID, AgentRunID: scope.AgentRunID, ToolCallID: callID, ToolID: d.ID, Source: string(d.Source), TargetAction: d.RuntimeRef, Risk: string(d.Risk), SideEffect: string(d.SideEffect), Status: ToolInvocationRunning, StartedAt: now, RequestID: ac.RequestID, TraceID: ac.TraceID}
 	}
 	if approved == nil && needs {
 		hash := hashJSON(args)
 		summary := redactArguments(args)
-		c := ToolConfirmation{ID: uuid.NewString(), TenantID: ac.TenantID, UserID: ac.UserID, ScopeID: scope.ID, InvocationID: inv.ID, ToolCallID: callID, ToolID: d.ID, SchemaHash: d.SchemaHash, ArgumentsHash: hash, ArgumentsJSON: append(json.RawMessage(nil), args...), ArgumentsSummaryJSON: summary, Risk: string(d.Risk), SideEffect: string(d.SideEffect), Status: ToolConfirmationPending, ExpiresAt: now.Add(10 * time.Minute)}
+		c := ToolConfirmation{ID: uuid.NewString(), TenantID: ac.TenantID, PrincipalID: ac.PrincipalID, ScopeID: scope.ID, InvocationID: inv.ID, ToolCallID: callID, ToolID: d.ID, SchemaHash: d.SchemaHash, ArgumentsHash: hash, ArgumentsJSON: append(json.RawMessage(nil), args...), ArgumentsSummaryJSON: summary, Risk: string(d.Risk), SideEffect: string(d.SideEffect), Status: ToolConfirmationPending, ExpiresAt: now.Add(10 * time.Minute)}
 		inv.Status = ToolInvocationWaitingConfirmation
 		inv.ConfirmationID = &c.ID
 		if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -634,7 +634,7 @@ func (s *ToolService) execute(ctx context.Context, ac *auth.Context, scope *Tool
 		return &aitool.Result{CallID: callID, Status: "confirmation_required", Summary: "user confirmation is required", Data: c}, nil
 	}
 	if approved != nil {
-		if err := s.db.WithContext(ctx).Where("id=? AND user_id=? AND status=?", approved.InvocationID, ac.UserID, ToolInvocationRunning).First(&inv).Error; err != nil {
+		if err := s.db.WithContext(ctx).Where("id=? AND principal_id=? AND status=?", approved.InvocationID, ac.PrincipalID, ToolInvocationRunning).First(&inv).Error; err != nil {
 			return nil, err
 		}
 	} else if err := s.db.WithContext(ctx).Create(&inv).Error; err != nil {
@@ -858,7 +858,7 @@ func (s *ToolService) recordReferenceEvidence(ctx context.Context, scope *ToolSc
 		evidence = evidence[len(evidence)-16:]
 	}
 	scope.ReferenceEvidenceJSON = jsonBytes(evidence)
-	return s.db.WithContext(ctx).Model(&ToolScope{}).Where("id=? AND user_id=?", scope.ID, scope.UserID).Update("reference_evidence_json", scope.ReferenceEvidenceJSON).Error
+	return s.db.WithContext(ctx).Model(&ToolScope{}).Where("id=? AND principal_id=?", scope.ID, scope.PrincipalID).Update("reference_evidence_json", scope.ReferenceEvidenceJSON).Error
 }
 
 func (s *ToolService) finishExecution(ctx context.Context, inv *ToolInvocation, approved *ToolConfirmation, result *aitool.Result, status, category string) error {
@@ -978,7 +978,7 @@ func (s *ToolService) resolveLoaded(ctx context.Context, ac *auth.Context, token
 	if err != nil {
 		return zero, nil, errs.New(errs.CodeForbidden, err.Error())
 	}
-	if claims.TenantID != ac.TenantID || claims.UserID != ac.UserID || claims.SessionID != ac.SessionID || claims.AuthVersion != ac.AuthVersion || claims.Realm != string(auth.NormalizeRealm(ac.Realm)) {
+	if claims.TenantID != ac.TenantID || claims.PrincipalID != ac.PrincipalID || claims.SessionID != ac.SessionID || claims.AuthVersion != ac.AuthVersion || claims.Realm != string(auth.NormalizeRealm(ac.Realm)) {
 		return zero, nil, errs.New(errs.CodeForbidden, "tool handle actor mismatch")
 	}
 	scope, err := s.scope(ctx, ac, claims.ScopeID)
@@ -1002,7 +1002,7 @@ func (s *ToolService) resolveLoaded(ctx context.Context, ac *auth.Context, token
 	return aitool.LoadedTool{Definition: d, Handle: token, ExpiresAt: claims.ExpiresAt}, scope, nil
 }
 func (s *ToolService) project(ctx context.Context, scope *ToolScope, d aitool.Definition) (aitool.Definition, bool, error) {
-	runtimeScope := aitool.RuntimeScope{ID: scope.ID, TenantID: scope.TenantID, UserID: scope.UserID, Realm: scope.Realm, SessionID: scope.SessionID, AuthVersion: scope.AuthVersion}
+	runtimeScope := aitool.RuntimeScope{ID: scope.ID, TenantID: scope.TenantID, PrincipalID: scope.PrincipalID, Realm: scope.Realm, SessionID: scope.SessionID, AuthVersion: scope.AuthVersion}
 	if scope.AgentRunID != nil {
 		runtimeScope.AgentRunID = *scope.AgentRunID
 	}
@@ -1011,14 +1011,14 @@ func (s *ToolService) project(ctx context.Context, scope *ToolScope, d aitool.De
 func (s *ToolService) scope(ctx context.Context, ac *auth.Context, id string) (*ToolScope, error) {
 	now := time.Now().UTC()
 	if id == "" {
-		v := &ToolScope{ID: uuid.NewString(), TenantID: ac.TenantID, UserID: ac.UserID, Realm: string(auth.NormalizeRealm(ac.Realm)), SessionID: ac.SessionID, AuthVersion: ac.AuthVersion, AllowedSourcesJSON: jsonBytes([]string{}), AllowedCapabilitiesJSON: jsonBytes([]string{}), AllowedToolsJSON: jsonBytes([]string{}), LoadedToolsJSON: jsonBytes([]string{}), ReferenceEvidenceJSON: jsonBytes([]referenceEvidence{}), ExpiresAt: now.Add(toolScopeTTL)}
+		v := &ToolScope{ID: uuid.NewString(), TenantID: ac.TenantID, PrincipalID: ac.PrincipalID, Realm: string(auth.NormalizeRealm(ac.Realm)), SessionID: ac.SessionID, AuthVersion: ac.AuthVersion, AllowedSourcesJSON: jsonBytes([]string{}), AllowedCapabilitiesJSON: jsonBytes([]string{}), AllowedToolsJSON: jsonBytes([]string{}), LoadedToolsJSON: jsonBytes([]string{}), ReferenceEvidenceJSON: jsonBytes([]referenceEvidence{}), ExpiresAt: now.Add(toolScopeTTL)}
 		if err := s.db.WithContext(ctx).Create(v).Error; err != nil {
 			return nil, err
 		}
 		return v, nil
 	}
 	var v ToolScope
-	if err := s.db.WithContext(ctx).Where("id=? AND user_id=?", id, ac.UserID).First(&v).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("id=? AND principal_id=?", id, ac.PrincipalID).First(&v).Error; err != nil {
 		return nil, err
 	}
 	if v.SessionID != ac.SessionID || v.AuthVersion != ac.AuthVersion || v.Realm != string(auth.NormalizeRealm(ac.Realm)) || !v.ExpiresAt.After(now) {
@@ -1121,7 +1121,7 @@ func isArray(v any) bool   { _, ok := v.([]any); return ok }
 
 func toolActor(ctx context.Context) (*auth.Context, error) {
 	ac := auth.MustFromContext(ctx)
-	if !ac.Authenticated || ac.TenantID == "" || ac.UserID == "" || ac.SessionID == "" {
+	if !ac.Authenticated || ac.TenantID == "" || ac.PrincipalID == "" || ac.SessionID == "" {
 		return nil, errs.New(errs.CodeUnauthorized, "authenticated tenant actor is required")
 	}
 	return ac, nil

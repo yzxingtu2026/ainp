@@ -21,6 +21,7 @@
 - 强类型请求 DTO 与验证分层见 `validation`；列表查询接入边界见 `list-query`。
 - Action / 菜单注册见 `action-metadata`。
 - 多租户与鉴权上下文见 `auth-context`。
+- 身份字段分类与后台账号公开契约见 `identity-contract`。
 - 租户数据访问见 `tenant-data-access`（TenantDB/GuardedDatabase/SystemDB、Registry、Callback、Repository、受控 SQL、复合约束与全仓门禁）。
 - 统一认证与会话见 `authentication-and-session`（Authenticator / Identity / Session / refresh 轮换；渠道禁止旁路签 Token）。
 - 审计最小集见 `audit`。
@@ -101,6 +102,7 @@
 - `list-query` → `docs/development/list-query.md`
 - `action-metadata` → `docs/development/action-metadata.md`
 - `auth-context` → `docs/development/auth-context.md`
+- `identity-contract` → `docs/development/identity-contract.md`
 - `tenant-data-access` → `docs/development/tenant-data-access.md`
 - `authentication-and-session` → `docs/development/authentication-and-session.md`
 - `audit` → `docs/development/audit.md`

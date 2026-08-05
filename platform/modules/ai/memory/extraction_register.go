@@ -41,7 +41,7 @@ func RegisterMemoryExtraction(a *app.App, service *MemoryExtractionService, gove
 				logging.Warn(ctx, "jobs disabled; memory evaluation pending", "run_id", env.AggregateID)
 				return nil
 			}
-			ctx = auth.WithContext(ctx, &auth.Context{TenantID: env.TenantID, Realm: auth.NormalizeRealm(auth.Realm(env.Realm)), UserID: env.ActorID, RequestID: env.CorrelationID, Authenticated: true, Client: "outbox"})
+			ctx = auth.WithContext(ctx, &auth.Context{TenantID: env.TenantID, Realm: auth.NormalizeRealm(auth.Realm(env.Realm)), PrincipalID: env.ActorID, RequestID: env.CorrelationID, Authenticated: true, Client: "outbox"})
 			_, err := a.Jobs.Enqueuer.Enqueue(ctx, job.EnqueueInput{Type: MemoryExtractionJobType, IdempotencyKey: env.ID + ":" + MemoryExtractionJobType, CausationID: env.ID, Payload: memoryExtractionJobPayload{RunID: env.AggregateID}})
 			return err
 		}}); err != nil {
@@ -97,7 +97,7 @@ func RegisterMemoryExtraction(a *app.App, service *MemoryExtractionService, gove
 					continue
 				}
 				ac := *auth.MustFromContext(ctx)
-				ac.UserID = run.UserID
+				ac.PrincipalID = run.UserID
 				enqueueCtx := auth.WithContext(ctx, &ac)
 				_, err := a.Jobs.Enqueuer.Enqueue(enqueueCtx, job.EnqueueInput{Type: MemoryExtractionJobType, IdempotencyKey: "memory-recovery:" + evaluation.ID + ":" + fmt.Sprint(evaluation.Attempts), Payload: memoryExtractionJobPayload{RunID: evaluation.RunID}})
 				if err != nil {

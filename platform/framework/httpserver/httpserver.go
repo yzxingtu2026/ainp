@@ -194,40 +194,14 @@ func New(opts Options) *gin.Engine {
 			}
 			method := strings.ToUpper(a.Meta.HTTP.Method)
 			path := a.Meta.HTTP.Path
-			actionID := a.ID
-			handler := func(c *gin.Context) {
-				body, _ := io.ReadAll(c.Request.Body)
-				if len(body) == 0 {
-					body = []byte("{}")
-				}
-				// 将语言写入 context，供业务 handler 通过 i18n.FromCtx 获取
-				ac := auth.MustFromContext(c.Request.Context())
-				ctx := i18n.WithLang(c.Request.Context(), ac.Language)
-				c.Request = c.Request.WithContext(ctx)
-
-				data, err := opts.Actions.Invoke(c.Request.Context(), actionID, json.RawMessage(body))
-				if err != nil {
-					response.Fail(c, err)
-					return
-				}
-				if stream, ok := data.(action.StreamResult); ok {
-					writeActionStream(c, stream)
-					return
-				}
-				response.OK(c, data)
-			}
-			switch method {
-			case http.MethodGet:
-				r.GET(path, handler)
-			case http.MethodPost:
-				r.POST(path, handler)
-			case http.MethodPut:
-				r.PUT(path, handler)
-			case http.MethodPatch:
-				r.PATCH(path, handler)
-			case http.MethodDelete:
-				r.DELETE(path, handler)
-			}
+			handler := actionHTTPHandler(opts.Actions, a.ID)
+			registerActionHTTPRoute(r, method, path, handler)
+		}
+		for _, alias := range opts.Actions.HTTPAliases() {
+			method := strings.ToUpper(alias.HTTP.Method)
+			path := alias.HTTP.Path
+			handler := actionHTTPHandler(opts.Actions, alias.ID)
+			registerActionHTTPRoute(r, method, path, handler)
 		}
 	}
 
@@ -236,6 +210,44 @@ func New(opts Options) *gin.Engine {
 	}
 
 	return r
+}
+
+func actionHTTPHandler(actions *action.Registry, actionID string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		body, _ := io.ReadAll(c.Request.Body)
+		if len(body) == 0 {
+			body = []byte("{}")
+		}
+		ac := auth.MustFromContext(c.Request.Context())
+		ctx := i18n.WithLang(c.Request.Context(), ac.Language)
+		c.Request = c.Request.WithContext(ctx)
+
+		data, err := actions.Invoke(c.Request.Context(), actionID, json.RawMessage(body))
+		if err != nil {
+			response.Fail(c, err)
+			return
+		}
+		if stream, ok := data.(action.StreamResult); ok {
+			writeActionStream(c, stream)
+			return
+		}
+		response.OK(c, data)
+	}
+}
+
+func registerActionHTTPRoute(r *gin.Engine, method, path string, handler gin.HandlerFunc) {
+	switch method {
+	case http.MethodGet:
+		r.GET(path, handler)
+	case http.MethodPost:
+		r.POST(path, handler)
+	case http.MethodPut:
+		r.PUT(path, handler)
+	case http.MethodPatch:
+		r.PATCH(path, handler)
+	case http.MethodDelete:
+		r.DELETE(path, handler)
+	}
 }
 
 func writeActionStream(c *gin.Context, stream action.StreamResult) {

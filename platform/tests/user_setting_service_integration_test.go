@@ -65,7 +65,7 @@ func TestUserSettingsAreSelfOnlyAndRevisioned(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := fixtureDB().Create(&model.AttachmentLink{ID: "avatar-link-a", TenantID: "tenant-a", AttachmentID: "avatar-a", ResourceType: system.UserProfileAttachmentResourceType, ResourceID: "user-a", Field: system.UserProfileAvatarField}).Error; err != nil {
+	if err := fixtureDB().Create(&model.AttachmentLink{ID: "avatar-link-a", TenantID: "tenant-a", AttachmentID: "avatar-a", ResourceType: system.AccountProfileAttachmentResourceType, ResourceID: "user-a", Field: system.AccountProfileAvatarField}).Error; err != nil {
 		t.Fatal(err)
 	}
 	application := app.New(&config.Config{}, testDB, nil, nil)
@@ -75,7 +75,7 @@ func TestUserSettingsAreSelfOnlyAndRevisioned(t *testing.T) {
 	}
 	svc := system.NewUserSettingService(testDB, application.Settings)
 	ctx := func(user string) context.Context {
-		return auth.WithContext(context.Background(), &auth.Context{TenantID: "tenant-a", UserID: user, Realm: auth.RealmTenant, Authenticated: true})
+		return auth.WithContext(context.Background(), &auth.Context{TenantID: "tenant-a", PrincipalID: user, Realm: auth.RealmTenant, Authenticated: true})
 	}
 
 	defaults, err := svc.Get(ctx("user-a"), nil)
@@ -137,10 +137,10 @@ func TestUserSettingsAreSelfOnlyAndRevisioned(t *testing.T) {
 	if _, err := userService.UpdateSelfProfile(ctx("user-a"), json.RawMessage(`{"display_name":"Alice Updated","avatar_attachment_id":"avatar-b"}`)); appErrorCode(err) != errs.CodeValidation {
 		t.Fatalf("other user's avatar must be rejected: %v", err)
 	}
-	if err := application.AttachmentPolicies.Allow(ctx("user-a"), system.UserProfileAttachmentResourceType, "tenant-a", "user-a", "user-a", system.UserProfileAvatarField); err != nil {
+	if err := application.AttachmentPolicies.Allow(ctx("user-a"), system.AccountProfileAttachmentResourceType, "tenant-a", "user-a", "user-a", system.AccountProfileAvatarField); err != nil {
 		t.Fatalf("self avatar policy rejected owner: %v", err)
 	}
-	if err := application.AttachmentPolicies.Allow(ctx("user-a"), system.UserProfileAttachmentResourceType, "tenant-a", "user-a", "user-b", system.UserProfileAvatarField); err == nil {
+	if err := application.AttachmentPolicies.Allow(ctx("user-a"), system.AccountProfileAttachmentResourceType, "tenant-a", "user-a", "user-b", system.AccountProfileAvatarField); err == nil {
 		t.Fatal("self avatar policy allowed another user's resource")
 	}
 	var alice, bob model.TenantAccount

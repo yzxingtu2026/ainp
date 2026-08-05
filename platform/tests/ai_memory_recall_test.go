@@ -116,9 +116,9 @@ func TestMemoryHybridRecallHardFiltersAndDegrades(t *testing.T) {
 	if err := db.Exec(`INSERT INTO ai_memory_projections(id,tenant_id,user_id,item_id,kind,status,item_revision,content_hash,model_alias,deployment_id,dimensions,vector_json,created_at,updated_at) VALUES ('p1','tenant-a','user-a','active','vector','ready',1,'hash','default','dep-memory',2,?,?,?)`, vector, now, now).Error; err != nil {
 		t.Fatal(err)
 	}
-	ctx := auth.WithContext(context.Background(), &auth.Context{TenantID: "tenant-a", UserID: "user-a", Realm: auth.RealmTenant, Authenticated: true})
+	ctx := auth.WithContext(context.Background(), &auth.Context{TenantID: "tenant-a", PrincipalID: "user-a", Realm: auth.RealmTenant, Authenticated: true})
 	snap, _ := runtimecontext.NewTimeSnapshot(now, "Asia/Shanghai", "user_preference")
-	ctx = runtimecontext.WithTrusted(ctx, &runtimecontext.TrustedRuntimeContext{TenantID: "tenant-a", UserID: "user-a", AgentID: "agent-a", RunID: "run-a", Time: snap})
+	ctx = runtimecontext.WithTrusted(ctx, &runtimecontext.TrustedRuntimeContext{TenantID: "tenant-a", PrincipalID: "user-a", AgentID: "agent-a", RunID: "run-a", Time: snap})
 	from := time.Date(2026, 7, 17, 16, 0, 0, 0, time.UTC)
 	to := time.Date(2026, 7, 18, 16, 0, 0, 0, time.UTC)
 	retriever := ai.NewMemoryRetrievalService(db, recallEmbedding{})
@@ -167,7 +167,7 @@ func TestMemoryHybridRecallHardFiltersAndDegrades(t *testing.T) {
 	}
 	staleMutations := []struct{ actionID, itemID string }{{ai.ActionMemoryConfirm, "pending-confirm"}, {ai.ActionMemoryReject, "pending-reject"}, {ai.ActionMemoryDelete, "active-delete"}}
 	for _, mutation := range staleMutations {
-		staleCtx := auth.WithContext(context.Background(), &auth.Context{TenantID: "tenant-a", UserID: "user-a", Realm: auth.RealmTenant, Authenticated: true, IdempotencyKey: "stale-" + mutation.actionID})
+		staleCtx := auth.WithContext(context.Background(), &auth.Context{TenantID: "tenant-a", PrincipalID: "user-a", Realm: auth.RealmTenant, Authenticated: true, IdempotencyKey: "stale-" + mutation.actionID})
 		input := json.RawMessage(fmt.Sprintf(`{"id":%q,"revision":1}`, mutation.itemID))
 		if _, err = application.Actions.Invoke(staleCtx, mutation.actionID, input); errorCode(err) != errs.CodeConflict {
 			t.Fatalf("stale revision for %s did not fail closed: %v", mutation.actionID, err)
@@ -184,11 +184,11 @@ func TestMemoryHybridRecallHardFiltersAndDegrades(t *testing.T) {
 	if _, err = management.Get(ctx, ai.MemoryGetRequest{ID: "other"}); err == nil {
 		t.Fatal("cross-user detail read was allowed")
 	}
-	foreignMutationCtx := auth.WithContext(context.Background(), &auth.Context{TenantID: "tenant-a", UserID: "user-a", Realm: auth.RealmTenant, Authenticated: true, IdempotencyKey: "foreign-delete"})
+	foreignMutationCtx := auth.WithContext(context.Background(), &auth.Context{TenantID: "tenant-a", PrincipalID: "user-a", Realm: auth.RealmTenant, Authenticated: true, IdempotencyKey: "foreign-delete"})
 	if _, err = management.Decision(foreignMutationCtx, ai.MemoryMutationRequest{ID: "other", Revision: 1}, "revoke"); err == nil {
 		t.Fatal("cross-user mutation was allowed")
 	}
-	correctCtx := auth.WithContext(context.Background(), &auth.Context{TenantID: "tenant-a", UserID: "user-a", Realm: auth.RealmTenant, Authenticated: true, IdempotencyKey: "correct-1"})
+	correctCtx := auth.WithContext(context.Background(), &auth.Context{TenantID: "tenant-a", PrincipalID: "user-a", Realm: auth.RealmTenant, Authenticated: true, IdempotencyKey: "correct-1"})
 	created, err := management.Correct(correctCtx, ai.MemoryCorrectRequest{ID: "active", Revision: 1, Summary: "上海会议已改期", Content: "上海会议已改期", LocalDate: "2026-07-18", DatePrecision: aimemory.DateExactDay})
 	if err != nil {
 		t.Fatal(err)
@@ -196,7 +196,7 @@ func TestMemoryHybridRecallHardFiltersAndDegrades(t *testing.T) {
 	if created.(ai.MemoryItem).SupersedesItemID == nil {
 		t.Fatal("correction did not preserve history")
 	}
-	clearCtx := auth.WithContext(context.Background(), &auth.Context{TenantID: "tenant-a", UserID: "user-a", Realm: auth.RealmTenant, Authenticated: true, IdempotencyKey: "clear-1"})
+	clearCtx := auth.WithContext(context.Background(), &auth.Context{TenantID: "tenant-a", PrincipalID: "user-a", Realm: auth.RealmTenant, Authenticated: true, IdempotencyKey: "clear-1"})
 	if _, err = management.Clear(clearCtx, ai.MemoryClearRequest{Scope: "all", RevisionToken: listResult.RevisionToken}); err == nil {
 		t.Fatal("stale clear revision token was accepted")
 	}
@@ -207,7 +207,7 @@ func TestMemoryHybridRecallHardFiltersAndDegrades(t *testing.T) {
 	if _, err = management.Clear(clearCtx, ai.MemoryClearRequest{Scope: "all", RevisionToken: refreshed.(ai.MemoryListResult).RevisionToken}); err != nil {
 		t.Fatal(err)
 	}
-	ctx = runtimecontext.WithTrusted(ctx, &runtimecontext.TrustedRuntimeContext{TenantID: "tenant-a", UserID: "user-a", AgentID: "agent-a", RunID: "run-a", Time: snap})
+	ctx = runtimecontext.WithTrusted(ctx, &runtimecontext.TrustedRuntimeContext{TenantID: "tenant-a", PrincipalID: "user-a", AgentID: "agent-a", RunID: "run-a", Time: snap})
 	afterClear, err := retriever.Retrieve(ctx, ai.MemoryRecallRequest{Query: "上海会议", AgentID: "agent-a", Limit: 10, MaxTokens: 1000, NormalOnly: true})
 	if err != nil {
 		t.Fatal(err)

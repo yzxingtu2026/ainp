@@ -220,7 +220,7 @@ func (s *ContextCompactionService) Compact(ctx context.Context, r aiconversation
 		result.OutputTokens = payload.OutputTokenEstimate
 		return result, nil
 	}
-	payload.ProtectedFacts = map[string]any{"tenant_id": ac.TenantID, "actor_id": ac.UserID, "auth_version": ac.AuthVersion, "agent_version_id": visible.AgentVersionID, "conversation_revision": assembly.ConversationRevision, "pending_confirmations": []string{}, "side_effect_facts": []string{}}
+	payload.ProtectedFacts = map[string]any{"tenant_id": ac.TenantID, "actor_id": ac.PrincipalID, "auth_version": ac.AuthVersion, "agent_version_id": visible.AgentVersionID, "conversation_revision": assembly.ConversationRevision, "pending_confirmations": []string{}, "side_effect_facts": []string{}}
 	finalTokens, countErr := s.tokenizer.Count(ctx, payload)
 	if countErr != nil {
 		return nil, countErr

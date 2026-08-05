@@ -9,22 +9,28 @@ import (
 )
 
 const (
-	UserProfileAttachmentResourceType = "system.user_profile"
-	UserProfileAvatarField            = "avatar"
+	AccountProfileAttachmentResourceType = "system.account_profile"
+	AccountProfileAvatarField            = "avatar"
+	legacyUserProfileResourceType        = "system.user_profile"
 )
 
-type userProfileAttachmentPolicy struct{}
+type accountProfileAttachmentPolicy struct{ resourceType string }
 
-func NewUserProfileAttachmentPolicy() attachment.AccessPolicy { return userProfileAttachmentPolicy{} }
+func NewAccountProfileAttachmentPolicies() []attachment.AccessPolicy {
+	return []attachment.AccessPolicy{
+		accountProfileAttachmentPolicy{resourceType: AccountProfileAttachmentResourceType},
+		accountProfileAttachmentPolicy{resourceType: legacyUserProfileResourceType},
+	}
+}
 
-func (userProfileAttachmentPolicy) ResourceType() string { return UserProfileAttachmentResourceType }
+func (p accountProfileAttachmentPolicy) ResourceType() string { return p.resourceType }
 
-func (userProfileAttachmentPolicy) CanAccess(ctx context.Context, tenantID, userID, resourceID, field string) error {
+func (accountProfileAttachmentPolicy) CanAccess(ctx context.Context, tenantID, userID, resourceID, field string) error {
 	ac := auth.MustFromContext(ctx)
-	if !ac.Authenticated || ac.TenantID != tenantID || ac.UserID != userID || resourceID != userID || field != UserProfileAvatarField {
-		return errs.New(errs.CodeNotFound, "user avatar not found")
+	if !ac.Authenticated || ac.TenantID != tenantID || ac.PrincipalID != userID || resourceID != userID || field != AccountProfileAvatarField {
+		return errs.New(errs.CodeNotFound, "account avatar not found")
 	}
 	return nil
 }
 
-var _ attachment.AccessPolicy = userProfileAttachmentPolicy{}
+var _ attachment.AccessPolicy = accountProfileAttachmentPolicy{}

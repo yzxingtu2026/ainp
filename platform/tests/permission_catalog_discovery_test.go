@@ -63,8 +63,8 @@ func TestPermissionCatalogUsesCompactToolDiscoveryAndRichHTTPProjection(t *testi
 		t.Fatal(err)
 	}
 	service := system.NewRoleService(nil, nil, actions, capabilities)
-	httpCtx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, Realm: auth.RealmTenant, TenantID: "t1", UserID: "u1", Language: "zh-CN"})
-	toolCtx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, Realm: auth.RealmTenant, TenantID: "t1", UserID: "u1", Language: "zh-CN", ToolInvocationID: "inv-1"})
+	httpCtx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, Realm: auth.RealmTenant, TenantID: "t1", PrincipalID: "u1", Language: "zh-CN"})
+	toolCtx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, Realm: auth.RealmTenant, TenantID: "t1", PrincipalID: "u1", Language: "zh-CN", ToolInvocationID: "inv-1"})
 
 	richValue, err := service.PermissionCatalog(httpCtx, json.RawMessage(`{}`))
 	if err != nil {
@@ -217,7 +217,7 @@ func TestRegisteredPermissionGroupsStayWithinCompactDiscoveryLimit(t *testing.T)
 	if strings.Contains(inputSchema, `"view"`) {
 		t.Fatalf("permission catalog input schema exposes view switch: %s", inputSchema)
 	}
-	toolCtx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, Realm: auth.RealmTenant, TenantID: "t1", UserID: "u1", Language: "zh-CN", ToolInvocationID: "inv-current"})
+	toolCtx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, Realm: auth.RealmTenant, TenantID: "t1", PrincipalID: "u1", Language: "zh-CN", ToolInvocationID: "inv-current"})
 	currentValue, err := catalogAction.Handler(toolCtx, json.RawMessage(`{}`))
 	if err != nil {
 		t.Fatal(err)

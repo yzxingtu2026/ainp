@@ -104,12 +104,12 @@ func TestNotificationDeliveryAdminFiltersRetryAndTenantIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	userNotificationRepo, _ := tenant.NewSystemRepository[system.UserNotification](systemDB)
-	if err := userNotificationRepo.Create(&system.UserNotification{ID: "un-a", TenantID: "tenant-a", UserID: "user-a", RequestID: "req-a", DeliveryID: "a-dead-inapp", Title: "Title", Summary: "Summary", Body: "Body", ActionJSON: []byte("{}")}); err != nil {
+	if err := userNotificationRepo.Create(&system.UserNotification{ID: "un-a", TenantID: "tenant-a", AccountID: "user-a", RequestID: "req-a", DeliveryID: "a-dead-inapp", Title: "Title", Summary: "Summary", Body: "Body", ActionJSON: []byte("{}")}); err != nil {
 		t.Fatal(err)
 	}
 
 	ctx := auth.WithContext(context.Background(), &auth.Context{
-		TenantID: "tenant-a", UserID: "admin-a", Realm: auth.RealmTenant, Authenticated: true,
+		TenantID: "tenant-a", PrincipalID: "admin-a", Realm: auth.RealmTenant, Authenticated: true,
 	})
 	enqueuer := &recordingJobEnqueuer{}
 	service := system.NewNotificationDeliveryService(repo, enqueuer)
@@ -121,7 +121,7 @@ func TestNotificationDeliveryAdminFiltersRetryAndTenantIsolation(t *testing.T) {
 	if err != nil || detail == nil || detail.RecipientName != "Alice" || detail.DefinitionKey != "demo.notice" || detail.Title != "Title" {
 		t.Fatalf("delivery detail=%#v err=%v", detail, err)
 	}
-	ctxB := auth.WithContext(context.Background(), &auth.Context{TenantID: "tenant-b", UserID: "admin-b", Realm: auth.RealmTenant, Authenticated: true})
+	ctxB := auth.WithContext(context.Background(), &auth.Context{TenantID: "tenant-b", PrincipalID: "admin-b", Realm: auth.RealmTenant, Authenticated: true})
 	if other, err := repo.GetDeliveryDetail(ctxB, "a-dead-inapp"); err != nil || other != nil {
 		t.Fatalf("cross-tenant detail=%#v err=%v", other, err)
 	}

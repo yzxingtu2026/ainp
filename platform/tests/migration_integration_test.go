@@ -92,7 +92,7 @@ func TestTenantAccountSchemaAndAuthorization(t *testing.T) {
 	}
 	svc := system.NewAuthService(testDB)
 	snapshot, err := svc.LoadAuthorization(context.Background(), auth.AuthorizationRequest{
-		TenantID: "t-bump", UserID: "u-bump", Realm: auth.RealmTenant, AuthVersion: 1,
+		TenantID: "t-bump", PrincipalID: "u-bump", Realm: auth.RealmTenant, AuthVersion: 1,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -101,17 +101,17 @@ func TestTenantAccountSchemaAndAuthorization(t *testing.T) {
 		t.Fatalf("unexpected authorization snapshot: %#v", snapshot)
 	}
 	if _, err := svc.LoadAuthorization(context.Background(), auth.AuthorizationRequest{
-		TenantID: "legacy-tenant", UserID: "u-bump", Realm: auth.RealmTenant, AuthVersion: 1,
+		TenantID: "legacy-tenant", PrincipalID: "u-bump", Realm: auth.RealmTenant, AuthVersion: 1,
 	}); !errors.Is(err, auth.ErrAuthorizationInvalid) {
 		t.Fatalf("cross-tenant authorization error = %v", err)
 	}
 	if _, err := svc.LoadAuthorization(context.Background(), auth.AuthorizationRequest{
-		TenantID: "t-bump", UserID: "u-bump", Realm: auth.RealmPlatform, AuthVersion: 1,
+		TenantID: "t-bump", PrincipalID: "u-bump", Realm: auth.RealmPlatform, AuthVersion: 1,
 	}); !errors.Is(err, auth.ErrAuthorizationInvalid) {
 		t.Fatalf("wrong realm authorization error = %v", err)
 	}
 	authCtx := auth.WithContext(context.Background(), &auth.Context{
-		Authenticated: true, Realm: auth.RealmTenant, TenantID: "t-bump", UserID: "u-bump",
+		Authenticated: true, Realm: auth.RealmTenant, TenantID: "t-bump", PrincipalID: "u-bump",
 	})
 	tenantDB, err := tenant.TenantDB(authCtx, testDB)
 	if err != nil {
@@ -127,7 +127,7 @@ func TestTenantAccountSchemaAndAuthorization(t *testing.T) {
 		t.Fatalf("auth_version after bump = %d, want 2", bumpUser.AuthVersion)
 	}
 	if _, err := svc.LoadAuthorization(context.Background(), auth.AuthorizationRequest{
-		TenantID: "t-bump", UserID: "u-bump", Realm: auth.RealmTenant, AuthVersion: 1,
+		TenantID: "t-bump", PrincipalID: "u-bump", Realm: auth.RealmTenant, AuthVersion: 1,
 	}); !errors.Is(err, auth.ErrAuthorizationStale) {
 		t.Fatalf("stale authorization error = %v", err)
 	}
@@ -144,7 +144,7 @@ func TestTenantAccountSchemaAndAuthorization(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := svc.LoadAuthorization(context.Background(), auth.AuthorizationRequest{
-		TenantID: "t-bump", UserID: "u-bump", Realm: auth.RealmTenant, AuthVersion: 3,
+		TenantID: "t-bump", PrincipalID: "u-bump", Realm: auth.RealmTenant, AuthVersion: 3,
 	}); !errors.Is(err, auth.ErrAuthorizationInvalid) {
 		t.Fatalf("disabled user authorization error = %v", err)
 	}
@@ -155,7 +155,7 @@ func TestTenantAccountSchemaAndAuthorization(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := svc.LoadAuthorization(context.Background(), auth.AuthorizationRequest{
-		TenantID: "t-bump", UserID: "u-bump", Realm: auth.RealmTenant, AuthVersion: 3,
+		TenantID: "t-bump", PrincipalID: "u-bump", Realm: auth.RealmTenant, AuthVersion: 3,
 	}); !errors.Is(err, auth.ErrAuthorizationInvalid) {
 		t.Fatalf("disabled tenant authorization error = %v", err)
 	}

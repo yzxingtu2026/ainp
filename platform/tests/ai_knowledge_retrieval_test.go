@@ -92,7 +92,7 @@ func TestKnowledgeRetrievalReauthorizesAndCitationBecomesStale(t *testing.T) {
 	if err != nil || len(hidden) != 0 {
 		t.Fatalf("revoked document leaked: %#v %v", hidden, err)
 	}
-	crossTenant := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "tenant-b", UserID: "owner-a", Realm: auth.RealmTenant})
+	crossTenant := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "tenant-b", PrincipalID: "owner-a", Realm: auth.RealmTenant})
 	cross, err := retriever.Retrieve(crossTenant, request)
 	if err != nil || len(cross) != 0 {
 		t.Fatalf("cross-tenant retrieval leaked: %#v %v", cross, err)

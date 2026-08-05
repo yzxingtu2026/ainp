@@ -181,7 +181,7 @@ const (
 type RuntimeScope struct {
 	ID          string
 	TenantID    string
-	UserID      string
+	PrincipalID string
 	Realm       string
 	SessionID   string
 	AuthVersion uint64

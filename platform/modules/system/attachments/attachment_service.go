@@ -164,7 +164,7 @@ func (s *AttachmentService) UploadPrepare(ctx context.Context, input json.RawMes
 		ExpectedSize: req.Size, ExpiresAt: &exp,
 	}
 	token, jti, tokenExp, err := s.tokens.Issue(attachment.IssueTransferInput{
-		TenantID: tenantID, UserID: userID, AttachmentID: id,
+		TenantID: tenantID, PrincipalID: userID, AttachmentID: id,
 		Op: attachment.OpUpload, Size: req.Size, TTL: pol.TransferTTL,
 	})
 	if err != nil {
@@ -229,7 +229,7 @@ func (s *AttachmentService) DownloadPrepare(ctx context.Context, input json.RawM
 		return nil, mapAttachmentError(err)
 	}
 	token, _, tokenExp, err := s.tokens.Issue(attachment.IssueTransferInput{
-		TenantID: tenantID, UserID: userID, AttachmentID: row.ID,
+		TenantID: tenantID, PrincipalID: userID, AttachmentID: row.ID,
 		Op: attachment.OpDownload, Variant: variant, Size: size, TTL: pol.TransferTTL,
 	})
 	if err != nil {
@@ -552,7 +552,7 @@ func (s *AttachmentService) CompleteUpload(ctx context.Context, claims *attachme
 	if row.Status != status.AttachmentPending {
 		return nil, errs.ValidationKey("attachment.not_pending", "attachment is not pending upload")
 	}
-	if row.UploaderID != claims.UserID {
+	if row.UploaderID != claims.PrincipalID {
 		return nil, errs.NewKey(errs.CodeForbidden, "common.forbidden", "forbidden")
 	}
 	if row.UploadJTI == "" || row.UploadJTI != claims.JTI {
@@ -696,7 +696,7 @@ func (s *AttachmentService) openDownloadVariant(ctx context.Context, claims *att
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := s.authorizeDownload(ctx, claims.TenantID, claims.UserID, row); err != nil {
+	if err := s.authorizeDownload(ctx, claims.TenantID, claims.PrincipalID, row); err != nil {
 		return nil, nil, err
 	}
 	variant := strings.TrimSpace(strings.ToLower(claims.Variant))

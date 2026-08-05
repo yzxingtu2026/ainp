@@ -48,7 +48,7 @@ func Register(a *app.App) error {
 			return map[string]any{
 				"message":   greeting + " " + req.Name,
 				"tenant_id": ac.TenantID,
-				"user_id":   ac.UserID,
+				"user_id":   ac.PrincipalID,
 			}, nil
 		},
 		Meta: action.Metadata{

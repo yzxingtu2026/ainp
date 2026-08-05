@@ -32,7 +32,7 @@ func TestAgentActionAuditPreservesUserAndCorrelation(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := auth.WithContext(context.Background(), &auth.Context{
-		Authenticated: true, TenantID: "t1", Realm: auth.RealmTenant, UserID: "u1",
+		Authenticated: true, TenantID: "t1", Realm: auth.RealmTenant, PrincipalID: "u1",
 		RequestID: "req-origin", TraceID: "trace-origin", Client: "agent",
 		AgentRunID: "run-1", ToolInvocationID: "inv-1",
 	})
@@ -43,7 +43,7 @@ func TestAgentActionAuditPreservesUserAndCorrelation(t *testing.T) {
 	if err := db.Where("action_id = ?", "demo.agent_read").First(&row).Error; err != nil {
 		t.Fatal(err)
 	}
-	if row.UserID != "u1" || row.ActorType != "agent" || row.Client != "agent" {
+	if row.ActorID != "u1" || row.ActorType != "agent" || row.Client != "agent" {
 		t.Fatalf("unexpected agent actor facts: %#v", row)
 	}
 	if row.RequestID != "req-origin" || row.TraceID == nil || *row.TraceID != "trace-origin" || row.AgentRunID == nil || *row.AgentRunID != "run-1" || row.ToolInvocationID == nil || *row.ToolInvocationID != "inv-1" {
@@ -61,9 +61,9 @@ func TestAuditLogActionsFilterAndEnforceTenantScope(t *testing.T) {
 	}
 	now := time.Now().UTC()
 	for _, row := range []audit.Record{
-		{ID: "a1", TenantID: "t1", Realm: "tenant", UserID: "u1", ActorType: "user", ActionID: "demo.doc_create", Result: "success", ResourceType: "doc", ResourceID: "d1", RequestID: "req-1", Client: "web", Summary: "created", OccurredAt: now.Add(-time.Hour)},
-		{ID: "a2", TenantID: "t1", Realm: "tenant", UserID: "deleted-user", ActorType: "user", ActionID: "demo.doc_update", Result: "failure", ResourceType: "doc", ResourceID: "d2", RequestID: "req-2", Client: "api", OccurredAt: now.Add(-2 * time.Hour)},
-		{ID: "a3", TenantID: "t2", Realm: "tenant", UserID: "u2", ActorType: "user", ActionID: "demo.doc_create", Result: "success", ResourceType: "doc", ResourceID: "d3", RequestID: "req-3", Client: "web", OccurredAt: now.Add(-time.Hour)},
+		{ID: "a1", TenantID: "t1", Realm: "tenant", ActorID: "u1", ActorType: "account", ActionID: "demo.doc_create", Result: "success", ResourceType: "doc", ResourceID: "d1", RequestID: "req-1", Client: "web", Summary: "created", OccurredAt: now.Add(-time.Hour)},
+		{ID: "a2", TenantID: "t1", Realm: "tenant", ActorID: "deleted-account", ActorType: "account", ActionID: "demo.doc_update", Result: "failure", ResourceType: "doc", ResourceID: "d2", RequestID: "req-2", Client: "api", OccurredAt: now.Add(-2 * time.Hour)},
+		{ID: "a3", TenantID: "t2", Realm: "tenant", ActorID: "u2", ActorType: "account", ActionID: "demo.doc_create", Result: "success", ResourceType: "doc", ResourceID: "d3", RequestID: "req-3", Client: "web", OccurredAt: now.Add(-time.Hour)},
 	} {
 		if err := db.Create(&row).Error; err != nil {
 			t.Fatal(err)
@@ -75,12 +75,12 @@ func TestAuditLogActionsFilterAndEnforceTenantScope(t *testing.T) {
 	if err := operations.Register(application, nil); err != nil {
 		t.Fatal(err)
 	}
-	ctx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t1", Realm: auth.RealmTenant, UserID: "viewer", Permissions: []string{operations.ActionAuditLogList, operations.ActionAuditLogGet}, RequestID: "query-1", Client: "web"})
+	ctx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t1", Realm: auth.RealmTenant, PrincipalID: "viewer", Permissions: []string{operations.ActionAuditLogList, operations.ActionAuditLogGet}, RequestID: "query-1", Client: "web"})
 	denied := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t1", Realm: auth.RealmTenant})
 	if _, err := application.Actions.Invoke(denied, operations.ActionAuditLogList, json.RawMessage(`{}`)); errorCode(err) != errs.CodeForbidden {
 		t.Fatalf("audit list without permission must be forbidden: %v", err)
 	}
-	result, err := application.Actions.Invoke(ctx, operations.ActionAuditLogList, json.RawMessage(`{"user_keyword":"HISTOR","action_id":"demo.doc_create","result":"success","resource_type":"doc","resource_id":"d1","request_id":"req-1","client":"web","page":1,"page_size":20}`))
+	result, err := application.Actions.Invoke(ctx, operations.ActionAuditLogList, json.RawMessage(`{"actor_keyword":"HISTOR","action_id":"demo.doc_create","result":"success","resource_type":"doc","resource_id":"d1","request_id":"req-1","client":"web","page":1,"page_size":20}`))
 	if err != nil {
 		t.Fatal(err)
 	}

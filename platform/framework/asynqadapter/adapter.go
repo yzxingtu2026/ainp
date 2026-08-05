@@ -189,7 +189,7 @@ func process(ctx context.Context, db *gorm.DB, registry *job.Registry, store job
 	jobCtx := auth.WithContext(ctx, &auth.Context{
 		TenantID:      run.TenantID,
 		Realm:         auth.Realm(run.Realm),
-		UserID:        run.CreatedBy,
+		PrincipalID:   run.CreatedBy,
 		RequestID:     uuid.NewString(),
 		TraceID:       run.CorrelationID,
 		Client:        "job",

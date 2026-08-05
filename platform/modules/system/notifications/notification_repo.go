@@ -242,7 +242,7 @@ func (r *NotificationRepository) ListDeliveries(ctx context.Context, page, pageS
 	return deliveries, total, err
 }
 
-// BatchLookupUserNames returns a userID → displayName map for the given IDs.
+// BatchLookupUserNames returns a accountID → displayName map for the given IDs.
 // Falls back to Username when DisplayName is empty.
 func (r *NotificationRepository) BatchLookupUserNames(ctx context.Context, tenantID string, userIDs []string) (map[string]string, error) {
 	if len(userIDs) == 0 {
@@ -433,12 +433,12 @@ func (r *NotificationRepository) CreateUserNotification(ctx context.Context, n *
 }
 
 // ListUserNotifications returns paginated notifications for a user.
-func (r *NotificationRepository) ListUserNotifications(ctx context.Context, userID string, unreadOnly, excludeArchived bool, page, pageSize int) ([]UserNotification, int64, error) {
+func (r *NotificationRepository) ListUserNotifications(ctx context.Context, accountID string, unreadOnly, excludeArchived bool, page, pageSize int) ([]UserNotification, int64, error) {
 	repo, err := r.userNotificationRepository(ctx)
 	if err != nil {
 		return nil, 0, err
 	}
-	q := repo.Where("user_id = ?", userID)
+	q := repo.Where("account_id = ?", accountID)
 	if unreadOnly {
 		q = q.Where("read_at IS NULL")
 	}
@@ -460,22 +460,22 @@ func (r *NotificationRepository) ListUserNotifications(ctx context.Context, user
 }
 
 // CountUnread returns the unread notification count for a user.
-func (r *NotificationRepository) CountUnread(ctx context.Context, userID string) (int64, error) {
+func (r *NotificationRepository) CountUnread(ctx context.Context, accountID string) (int64, error) {
 	repo, err := r.userNotificationRepository(ctx)
 	if err != nil {
 		return 0, err
 	}
-	count, err := repo.Where("user_id = ? AND read_at IS NULL AND archived_at IS NULL", userID).Count()
+	count, err := repo.Where("account_id = ? AND read_at IS NULL AND archived_at IS NULL", accountID).Count()
 	return count, err
 }
 
 // MarkRead marks a single notification as read (only if currently unread).
-func (r *NotificationRepository) MarkRead(ctx context.Context, userID, notificationID string) error {
+func (r *NotificationRepository) MarkRead(ctx context.Context, accountID, notificationID string) error {
 	repo, err := r.userNotificationRepository(ctx)
 	if err != nil {
 		return err
 	}
-	result := repo.Where("id = ? AND user_id = ? AND read_at IS NULL", notificationID, userID).Updates(map[string]any{"read_at": time.Now().UTC()})
+	result := repo.Where("id = ? AND account_id = ? AND read_at IS NULL", notificationID, accountID).Updates(map[string]any{"read_at": time.Now().UTC()})
 	if result.Error != nil {
 		return result.Error
 	}
@@ -483,31 +483,31 @@ func (r *NotificationRepository) MarkRead(ctx context.Context, userID, notificat
 }
 
 // MarkAllRead marks all unread notifications as read for a user.
-func (r *NotificationRepository) MarkAllRead(ctx context.Context, userID string) (int64, error) {
+func (r *NotificationRepository) MarkAllRead(ctx context.Context, accountID string) (int64, error) {
 	repo, err := r.userNotificationRepository(ctx)
 	if err != nil {
 		return 0, err
 	}
-	result := repo.Where("user_id = ? AND read_at IS NULL", userID).Updates(map[string]any{"read_at": time.Now().UTC()})
+	result := repo.Where("account_id = ? AND read_at IS NULL", accountID).Updates(map[string]any{"read_at": time.Now().UTC()})
 	return result.RowsAffected, result.Error
 }
 
 // Archive marks a notification as archived.
-func (r *NotificationRepository) Archive(ctx context.Context, userID, notificationID string) error {
+func (r *NotificationRepository) Archive(ctx context.Context, accountID, notificationID string) error {
 	repo, err := r.userNotificationRepository(ctx)
 	if err != nil {
 		return err
 	}
-	return repo.Where("id = ? AND user_id = ? AND archived_at IS NULL", notificationID, userID).Updates(map[string]any{"archived_at": time.Now().UTC()}).Error
+	return repo.Where("id = ? AND account_id = ? AND archived_at IS NULL", notificationID, accountID).Updates(map[string]any{"archived_at": time.Now().UTC()}).Error
 }
 
 // Unarchive removes the archive mark from a notification.
-func (r *NotificationRepository) Unarchive(ctx context.Context, userID, notificationID string) error {
+func (r *NotificationRepository) Unarchive(ctx context.Context, accountID, notificationID string) error {
 	repo, err := r.userNotificationRepository(ctx)
 	if err != nil {
 		return err
 	}
-	return repo.Where("id = ? AND user_id = ? AND archived_at IS NOT NULL", notificationID, userID).Updates(map[string]any{"archived_at": sql.NullTime{}}).Error
+	return repo.Where("id = ? AND account_id = ? AND archived_at IS NOT NULL", notificationID, accountID).Updates(map[string]any{"archived_at": sql.NullTime{}}).Error
 }
 
 // RetryDelivery resets a failed/dead delivery back to pending for retry.

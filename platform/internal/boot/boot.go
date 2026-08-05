@@ -88,6 +88,9 @@ func OpenInstalled(ctx context.Context, cfg *config.Config) (*Platform, error) {
 
 	auditor := audit.NewGormRecorder(db)
 	if cfg.Database.IsAutoMigrateEnabled() {
+		if err := ensureIdentityContractSchema(db); err != nil {
+			return nil, fmt.Errorf("schema preflight: %w", err)
+		}
 		if err := auditor.AutoMigrate(); err != nil {
 			return nil, fmt.Errorf("audit migrate: %w", err)
 		}
@@ -210,7 +213,7 @@ func reconcileNavigationCatalogs(ctx context.Context, db *gorm.DB, application *
 	if application.NavigationInitializer == nil {
 		return nil
 	}
-	systemCtx := auth.WithContext(ctx, &auth.Context{Authenticated: true, Realm: auth.RealmPlatform, IsSystemOperator: true, UserID: "system:navigation-catalog", Client: "bootstrap"})
+	systemCtx := auth.WithContext(ctx, &auth.Context{Authenticated: true, Realm: auth.RealmPlatform, IsSystemOperator: true, PrincipalID: "system:navigation-catalog", Client: "bootstrap"})
 	sdb, err := tenantdata.SystemDB(systemCtx, db)
 	if err != nil {
 		return err
@@ -231,7 +234,7 @@ func reconcileToolCatalogs(ctx context.Context, db *gorm.DB, application *app.Ap
 	if application.ToolCatalogInitializer == nil {
 		return nil
 	}
-	systemCtx := auth.WithContext(ctx, &auth.Context{Authenticated: true, Realm: auth.RealmPlatform, IsSystemOperator: true, UserID: "system:tool-catalog", Client: "bootstrap"})
+	systemCtx := auth.WithContext(ctx, &auth.Context{Authenticated: true, Realm: auth.RealmPlatform, IsSystemOperator: true, PrincipalID: "system:tool-catalog", Client: "bootstrap"})
 	sdb, err := tenantdata.SystemDB(systemCtx, db)
 	if err != nil {
 		return err

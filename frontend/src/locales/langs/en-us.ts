@@ -267,7 +267,7 @@ const local: App.I18n.Schema = {
     system_profile: 'Profile',
     profile_memory: 'Memory Management',
     profile: 'Profile',
-    system_users: 'Users',
+    system_accounts: 'Accounts',
     system_roles: 'Roles',
     system_settings: 'Settings',
     system_attachments: 'Attachments',
@@ -543,7 +543,8 @@ const local: App.I18n.Schema = {
       tenantPlaceholder: 'Agent persona and reply-logic prompt',
       builtinBaseTitle: 'Builtin base instructions',
       systemManaged: 'System managed',
-      builtinBaseHint: 'Loaded automatically at runtime, always before supplemental instructions, and cannot be edited.',
+      builtinBaseHint:
+        'Loaded automatically at runtime, always before supplemental instructions, and cannot be edited.',
       supplementTitle: 'Supplemental persona & reply logic',
       supplementHint: 'Adds tenant business guidance, tone, and reply constraints after the builtin base instructions.',
       supplementPlaceholder: 'Add supplemental content after the builtin base instructions',
@@ -551,7 +552,8 @@ const local: App.I18n.Schema = {
       customInstructionsHint: 'Define this custom agent persona, tone, and reply constraints.',
       restoreBuiltin: 'Restore builtin default',
       restoreBuiltinTitle: 'Restore builtin default?',
-      restoreBuiltinContent: 'Only the supplemental persona and reply logic in this draft will be cleared. Other settings remain unchanged, and production changes only after saving and publishing a new version.',
+      restoreBuiltinContent:
+        'Only the supplemental persona and reply logic in this draft will be cleared. Other settings remain unchanged, and production changes only after saving and publishing a new version.',
       restoreBuiltinConfirm: 'Clear supplement',
       instructionTooLong: 'Instructions exceed the 12000 character limit',
       name: 'Name',
@@ -769,10 +771,10 @@ const local: App.I18n.Schema = {
         empty: 'Empty file'
       }
     },
-    user: {
-      title: 'User Management',
-      createTitle: 'Create User',
-      editTitle: 'Edit User',
+    account: {
+      title: 'Account Management',
+      createTitle: 'Create Account',
+      editTitle: 'Edit Account',
       rolesTitle: 'Assign roles for {name}',
       passwordTitle: 'Reset password for {name}',
       username: 'Username',
@@ -789,8 +791,8 @@ const local: App.I18n.Schema = {
       resetPassword: 'Reset Password',
       enable: 'Enable',
       disable: 'Disable',
-      confirmEnable: 'Enable this user?',
-      confirmDisable: 'Disable this user? Existing tokens will become invalid immediately.',
+      confirmEnable: 'Enable this account?',
+      confirmDisable: 'Disable this account? Existing tokens will become invalid immediately.',
       enabled: 'Enabled',
       disabled: 'Disabled',
       builtin: 'Built-in'
@@ -803,7 +805,8 @@ const local: App.I18n.Schema = {
       permissionSearch: 'Search permissions, actions or descriptions',
       selectedCount: '{count} permissions selected',
       superAdmin: 'Super administrator',
-      superAdminDescription: 'The system grants this built-in role every assignable tenant permission. No manual maintenance is required.',
+      superAdminDescription:
+        'The system grants this built-in role every assignable tenant permission. No manual maintenance is required.',
       allPermissions: 'All permissions',
       code: 'Role Code',
       name: 'Role Name',

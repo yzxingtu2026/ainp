@@ -266,7 +266,7 @@ func TestKnowledgeSQLMigrationExecutesWithTenantConstraints(t *testing.T) {
 
 func knowledgeContext(tenantID, userID string, permissions ...string) context.Context {
 	return auth.WithContext(context.Background(), &auth.Context{
-		Authenticated: true, TenantID: tenantID, UserID: userID, Realm: auth.RealmTenant,
+		Authenticated: true, TenantID: tenantID, PrincipalID: userID, Realm: auth.RealmTenant,
 		Permissions: permissions,
 	})
 }
@@ -362,7 +362,7 @@ func TestKnowledgeTenantAttachmentRevisionAndBindingBoundaries(t *testing.T) {
 		t.Fatalf("mutation permission must not expose another owner's private knowledge base: %v", err)
 	}
 	platformCtx := auth.WithContext(context.Background(), &auth.Context{
-		Authenticated: true, TenantID: "tenant-a", UserID: "owner", Realm: auth.RealmPlatform,
+		Authenticated: true, TenantID: "tenant-a", PrincipalID: "owner", Realm: auth.RealmPlatform,
 	})
 	if _, err := service.GetKnowledgeBase(platformCtx, ai.KnowledgeBaseIDRequest{ID: privateKB.ID}); !isCode(err, errs.CodeUnauthorized) {
 		t.Fatalf("platform realm must fail closed on tenant knowledge path: %v", err)

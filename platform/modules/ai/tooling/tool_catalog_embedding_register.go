@@ -38,7 +38,7 @@ func RegisterToolCatalogEmbedding(a *app.App, tools *ToolService) error {
 		if err = json.Unmarshal(run.PayloadJSON, &payload); err != nil || payload.ToolID == "" || payload.CatalogRevision == 0 || payload.ModelAlias == "" {
 			return job.Permanent(errors.New("trusted JobRun payload invalid"))
 		}
-		ctx = auth.WithContext(ctx, &auth.Context{Authenticated: true, TenantID: run.TenantID, UserID: run.CreatedBy, Realm: auth.Realm(run.Realm), RequestID: run.CorrelationID, Client: "job"})
+		ctx = auth.WithContext(ctx, &auth.Context{Authenticated: true, TenantID: run.TenantID, PrincipalID: run.CreatedBy, Realm: auth.Realm(run.Realm), RequestID: run.CorrelationID, Client: "job"})
 		_ = reporter.Progress(ctx, 10, "tool_catalog.embedding")
 		if err = tools.IndexCatalogDocument(ctx, payload.ToolID, payload.CatalogRevision, payload.ModelAlias); err != nil {
 			if errors.Is(err, ErrToolEmbeddingSuperseded) {
@@ -62,7 +62,7 @@ func RegisterToolCatalogEmbedding(a *app.App, tools *ToolService) error {
 		if err := json.Unmarshal(env.Payload, &changed); err != nil {
 			return err
 		}
-		ctx = auth.WithContext(ctx, &auth.Context{Authenticated: true, TenantID: env.TenantID, UserID: env.ActorID, Realm: auth.Realm(env.Realm), RequestID: env.CorrelationID, Client: "outbox"})
+		ctx = auth.WithContext(ctx, &auth.Context{Authenticated: true, TenantID: env.TenantID, PrincipalID: env.ActorID, Realm: auth.Realm(env.Realm), RequestID: env.CorrelationID, Client: "outbox"})
 		if changed.Status != "enabled" {
 			return nil
 		}

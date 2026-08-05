@@ -31,7 +31,7 @@ func (r *KnowledgeSourceResolver) OpenSource(ctx context.Context, req aiknowledg
 		return aiknowledge.DocumentSource{}, aiknowledge.ErrUnsupportedFormat
 	}
 	authCtx, ok := auth.FromContext(ctx)
-	if !ok || !authCtx.Authenticated || authCtx.TenantID == "" || authCtx.UserID == "" {
+	if !ok || !authCtx.Authenticated || authCtx.TenantID == "" || authCtx.PrincipalID == "" {
 		return aiknowledge.DocumentSource{}, fmt.Errorf("knowledge source not found")
 	}
 	if err := r.knowledge.CanReadDocument(ctx, req.Document.ID); err != nil {

@@ -72,7 +72,7 @@ func TestSessionRefreshRotationReplayAndTenantScope(t *testing.T) {
 	if _, err := sessions.Refresh(context.Background(), rotated.RefreshToken); err == nil {
 		t.Fatal("replay must revoke the session family")
 	}
-	if _, err := authService.LoadAuthorization(context.Background(), auth.AuthorizationRequest{TenantID: "tenant-b", UserID: user.ID, SessionID: created.SessionID, Realm: auth.RealmTenant, AuthVersion: 1}); err == nil {
+	if _, err := authService.LoadAuthorization(context.Background(), auth.AuthorizationRequest{TenantID: "tenant-b", PrincipalID: user.ID, SessionID: created.SessionID, Realm: auth.RealmTenant, AuthVersion: 1}); err == nil {
 		t.Fatal("cross-tenant session must fail")
 	}
 	userB := model.TenantAccount{ID: "user-b", TenantID: "tenant-b", Username: "admin-b", PasswordHash: "x", Status: status.ActivationEnabled, AuthVersion: 1}
@@ -99,7 +99,7 @@ func TestSessionRefreshRotationReplayAndTenantScope(t *testing.T) {
 	}
 	unified := system.NewUnifiedAuthService(testDB, nil, nil, nil, nil)
 	ctxA := auth.WithContext(context.Background(), &auth.Context{
-		Authenticated: true, Realm: auth.RealmTenant, TenantID: "tenant-a", UserID: "user-a", SessionID: sessionA1.SessionID,
+		Authenticated: true, Realm: auth.RealmTenant, TenantID: "tenant-a", PrincipalID: "user-a", SessionID: sessionA1.SessionID,
 	})
 	listed, err := unified.ListSessions(ctxA)
 	if err != nil {

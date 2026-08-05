@@ -16,9 +16,9 @@ import (
 )
 
 func TestMCPToolNameIsStableAndLegal(t *testing.T) {
-	first := mcpserver.MCPToolName("system.user_list")
-	second := mcpserver.MCPToolName("system.user_list")
-	if first != second || !strings.HasPrefix(first, "ainp_system_user_list_") {
+	first := mcpserver.MCPToolName("system.account_list")
+	second := mcpserver.MCPToolName("system.account_list")
+	if first != second || !strings.HasPrefix(first, "ainp_system_account_list_") {
 		t.Fatalf("unstable tool name: %q %q", first, second)
 	}
 	if first == mcpserver.MCPToolName("system-user.list") {
@@ -70,7 +70,7 @@ func TestMCPActionProjectionUsesRegistryMetadata(t *testing.T) {
 
 	server := mcpserver.NewActionServer(registry, mcpserver.NewService(nil, nil, "test-secret", "ainp-test", "https://api.ainp.example"))
 	client := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "1"}, nil)
-	ctx := auth.WithContext(context.Background(), &auth.Context{TenantID: "tenant-a", UserID: "user-a", Realm: auth.RealmTenant, Authenticated: true, Permissions: []string{"demo.read", "demo.write", "demo.sensitive"}, Client: "mcp"})
+	ctx := auth.WithContext(context.Background(), &auth.Context{TenantID: "tenant-a", PrincipalID: "user-a", Realm: auth.RealmTenant, Authenticated: true, Permissions: []string{"demo.read", "demo.write", "demo.sensitive"}, Client: "mcp"})
 	scopes := map[string]bool{mcpserver.ScopeRead: true, mcpserver.ScopeWrite: true, mcpserver.ScopeSensitive: true}
 	ctx = mcpserver.ContextWithPrincipalForTest(ctx, scopes)
 	serverTransport, clientTransport := mcp.NewInMemoryTransports()
@@ -116,7 +116,7 @@ func TestMCPActionCallRechecksPermissionAndPropagatesIdempotency(t *testing.T) {
 	})
 	server := mcpserver.NewActionServer(registry, nil)
 	client := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "1"}, nil)
-	authContext := &auth.Context{TenantID: "tenant-a", UserID: "user-a", Realm: auth.RealmTenant, Authenticated: true, Permissions: []string{"demo.write"}, Client: "mcp", MCPClientID: "client-a", MCPGrantID: "grant-a"}
+	authContext := &auth.Context{TenantID: "tenant-a", PrincipalID: "user-a", Realm: auth.RealmTenant, Authenticated: true, Permissions: []string{"demo.write"}, Client: "mcp", MCPClientID: "client-a", MCPGrantID: "grant-a"}
 	ctx := auth.WithContext(context.Background(), authContext)
 	ctx = mcpserver.ContextWithPrincipalForTest(ctx, map[string]bool{mcpserver.ScopeWrite: true})
 	serverTransport, clientTransport := mcp.NewInMemoryTransports()

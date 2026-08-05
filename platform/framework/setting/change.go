@@ -15,7 +15,7 @@ const (
 
 type Change struct {
 	TenantID  string
-	UserID    string
+	ActorID   string
 	Key       string
 	Operation ChangeOperation
 }
