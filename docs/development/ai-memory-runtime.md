@@ -29,7 +29,7 @@ Memory Policy 包含开关、extraction/consolidation Alias、低敏自动保存
 
 每个 Run 对应唯一 `ai_memory_evaluations` 水位事实；并发、重试和 compaction flush 都复用 `MemoryExtractionService.EvaluateRun`。输入只包含本轮用户文本、助手最终文本、允许引用的 Message ID、可信时间以及冻结版本号和预算。Structured Output 禁止 tenant/user/run/actor 字段，未知字段、越界来源、非法时间和超预算候选 fail-closed。合法空数组表示已评估且没有长期价值。
 
-模型输出只落 `candidate`，并保存 Evaluation、Agent Version、冻结 Policy、Invocation、prompt/schema version 与 arguments hash。候选不会自动变为 active。日志只记录 Run ID、安全计数、类型/敏感度分布、耗时和 Usage，禁止原文与候选正文。
+模型输出只落 `candidate`，并保存 Evaluation、Agent Version、冻结 Policy、Invocation、prompt/schema version 与 arguments hash。候选不会自动变为 active。`occurred_at` 非空时，候选 `occurred_timezone` 只接受 IANA timezone；空值使用 Run Time Snapshot 冻结的可信 IANA timezone，非空非法值 fail-closed，且 `local_date` 与最终落库时区必须来自同一次解析。`occurred_at` 为空时保持 unknown 时间语义，不校验或持久化候选时区。日志只记录 Run ID、安全计数、类型/敏感度分布、耗时和 Usage，禁止原文与候选正文。
 
 失败 Evaluation 可由具备 `ai.memory_extraction_recover` 权限的操作员受控恢复。单批最多 100 条，只重新入队当前租户的 `failed` 水位，幂等键绑定 Evaluation ID 与 attempts；Job 继续复用原 Evaluation，因此不得重复生成已完成候选。恢复结果和日志只记录选择数、入队数与稳定失败分类，不记录记忆正文。
 
