@@ -29,9 +29,9 @@ type knowledgeToolCacheEntry struct {
 }
 
 type toolScopeProjection struct {
-	ID, TenantID, UserID string
-	AgentRunID           *string
-	AuthVersion          uint64
+	ID, TenantID, PrincipalID string
+	AgentRunID                *string
+	AuthVersion               uint64
 }
 type runAgentProjection struct{ AgentVersionID string }
 type versionAgentProjection struct{ AgentID string }
@@ -56,7 +56,7 @@ func (t *KnowledgeTool) Project(ctx context.Context, runtimeScope aitool.Runtime
 	if err != nil {
 		return definition, false, err
 	}
-	rows, err := tenantdata.TenantRaw[toolScopeProjection](tdb, `SELECT id,tenant_id,user_id,agent_run_id,auth_version FROM ai_tool_scopes WHERE tenant_id=? AND id=? AND user_id=? LIMIT 1`, runtimeScope.ID, runtimeScope.UserID)
+	rows, err := tenantdata.TenantRaw[toolScopeProjection](tdb, `SELECT id,tenant_id,principal_id,agent_run_id,auth_version FROM ai_tool_scopes WHERE tenant_id=? AND id=? AND principal_id=? LIMIT 1`, runtimeScope.ID, runtimeScope.PrincipalID)
 	if err != nil || len(rows) != 1 {
 		return definition, false, err
 	}
@@ -87,7 +87,7 @@ func (t *KnowledgeTool) Execute(ctx context.Context, _ aitool.LoadedTool, argume
 	if queryErr != nil {
 		return nil, queryErr
 	}
-	rows, queryErr := tenantdata.TenantRaw[toolScopeProjection](tdb, `SELECT id,tenant_id,user_id,agent_run_id,auth_version FROM ai_tool_scopes WHERE tenant_id=? AND id=? LIMIT 1`, scopeID)
+	rows, queryErr := tenantdata.TenantRaw[toolScopeProjection](tdb, `SELECT id,tenant_id,principal_id,agent_run_id,auth_version FROM ai_tool_scopes WHERE tenant_id=? AND id=? LIMIT 1`, scopeID)
 	if queryErr != nil || len(rows) != 1 || rows[0].AgentRunID == nil {
 		return nil, fmt.Errorf("knowledge search requires an agent run scope")
 	}
@@ -178,7 +178,7 @@ func (t *KnowledgeTool) candidates(ctx context.Context, scope *toolScopeProjecti
 	if err != nil {
 		return nil, err
 	}
-	runs, err := tenantdata.TenantRaw[runAgentProjection](tdb, `SELECT agent_version_id FROM ai_agent_runs WHERE tenant_id=? AND user_id=? AND id=? LIMIT 1`, scope.UserID, *scope.AgentRunID)
+	runs, err := tenantdata.TenantRaw[runAgentProjection](tdb, `SELECT agent_version_id FROM ai_agent_runs WHERE tenant_id=? AND user_id=? AND id=? LIMIT 1`, scope.PrincipalID, *scope.AgentRunID)
 	if err != nil || len(runs) != 1 {
 		if err != nil {
 			return nil, err
@@ -221,7 +221,7 @@ func (t *KnowledgeTool) cacheKey(scope *toolScopeProjection, candidates []knowle
 			versions = append(versions, candidate.ID+":"+candidate.IndexVersionID)
 		}
 	}
-	payload, _ := json.Marshal([]any{scope.TenantID, scope.UserID, scope.AuthVersion, versions, request.Query, request.DocumentIDs, request.Config})
+	payload, _ := json.Marshal([]any{scope.TenantID, scope.PrincipalID, scope.AuthVersion, versions, request.Query, request.DocumentIDs, request.Config})
 	sum := sha256.Sum256(payload)
 	return hex.EncodeToString(sum[:])
 }

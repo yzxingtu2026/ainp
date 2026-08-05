@@ -263,7 +263,7 @@ const local: App.I18n.Schema = {
     system_profile: '个人中心',
     profile_memory: '记忆管理',
     profile: '个人功能',
-    system_users: '用户管理',
+    system_accounts: '账号管理',
     system_roles: '角色管理',
     system_settings: '系统设置',
     system_attachments: '附件中心',
@@ -546,7 +546,8 @@ const local: App.I18n.Schema = {
       customInstructionsHint: '定义此自定义智能体的人设、表达风格和回复约束。',
       restoreBuiltin: '恢复内置默认',
       restoreBuiltinTitle: '恢复内置默认？',
-      restoreBuiltinContent: '仅清空当前草稿中的补充人设与回复逻辑。其他配置不会改变，保存并发布新版本后才会影响正式运行。',
+      restoreBuiltinContent:
+        '仅清空当前草稿中的补充人设与回复逻辑。其他配置不会改变，保存并发布新版本后才会影响正式运行。',
       restoreBuiltinConfirm: '清空补充指令',
       instructionTooLong: '指令超过 12000 字符限制',
       name: '名称',
@@ -673,7 +674,7 @@ const local: App.I18n.Schema = {
       resetSuccess: '已重置为默认值',
       navigationIndex: {
         title: '导航索引',
-        summary: '共 {total}，就绪 {ready}，处理中 {pending}，失败 {failed}',
+        summary: '有效 {total}，就绪 {ready}，处理中 {pending}，失败 {failed}，退役 {stale}',
         rebuild: '立即重建',
         rebuildQueued: '导航索引重建已触发',
         states: {
@@ -687,7 +688,7 @@ const local: App.I18n.Schema = {
       },
       toolIndex: {
         title: '工具索引',
-        summary: '共 {total}，就绪 {ready}，处理中 {pending}，失败 {failed}',
+        summary: '有效 {total}，就绪 {ready}，处理中 {pending}，失败 {failed}，退役 {stale}',
         rebuild: '立即重建',
         rebuildQueued: '工具索引重建已触发',
         states: {
@@ -763,10 +764,10 @@ const local: App.I18n.Schema = {
         empty: '空文件'
       }
     },
-    user: {
-      title: '用户管理',
-      createTitle: '新建用户',
-      editTitle: '编辑用户',
+    account: {
+      title: '账号管理',
+      createTitle: '新建账号',
+      editTitle: '编辑账号',
       rolesTitle: '为 {name} 分配角色',
       passwordTitle: '重置 {name} 的密码',
       username: '用户名',
@@ -783,8 +784,8 @@ const local: App.I18n.Schema = {
       resetPassword: '重置密码',
       enable: '启用',
       disable: '停用',
-      confirmEnable: '确认启用该用户？',
-      confirmDisable: '确认停用该用户？停用后其 Token 将立即失效。',
+      confirmEnable: '确认启用该账号？',
+      confirmDisable: '确认停用该账号？停用后其 Token 将立即失效。',
       enabled: '已启用',
       disabled: '已停用',
       builtin: '内置'

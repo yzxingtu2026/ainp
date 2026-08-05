@@ -29,30 +29,30 @@ func TestUserManagementActionsAndMenuAreRegistered(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, actionID := range []string{
-		system.ActionUserList, system.ActionUserGet, system.ActionUserCreate, system.ActionUserUpdate,
-		system.ActionUserStatusUpdate, system.ActionUserRolesUpdate, system.ActionUserPasswordReset,
+		system.ActionAccountList, system.ActionAccountGet, system.ActionAccountCreate, system.ActionAccountUpdate,
+		system.ActionAccountStatusUpdate, system.ActionAccountRolesUpdate, system.ActionAccountPasswordReset,
 	} {
 		registered, ok := application.Actions.Get(actionID)
 		if !ok {
 			t.Fatalf("action not registered: %s", actionID)
 		}
-		if registered.Meta.PermissionGroup != "system.user_management" {
+		if registered.Meta.PermissionGroup != "system.account_management" {
 			t.Fatalf("user action permission group = %q", registered.Meta.PermissionGroup)
 		}
-		shouldExpose := actionID != system.ActionUserCreate && actionID != system.ActionUserPasswordReset
+		shouldExpose := actionID != system.ActionAccountCreate && actionID != system.ActionAccountPasswordReset
 		if shouldExpose && (registered.Meta.AI == nil || !registered.Meta.AI.ExposeTool) {
 			t.Fatalf("user action %s must expose a complete AI contract", actionID)
 		}
 		if !shouldExpose && registered.Meta.AI != nil && registered.Meta.AI.ExposeTool {
 			t.Fatalf("user action %s must remain unavailable to AI", actionID)
 		}
-		if shouldExpose && actionID != system.ActionUserList && actionID != system.ActionUserGet && !registered.Meta.AI.RequiresConfirmation {
+		if shouldExpose && actionID != system.ActionAccountList && actionID != system.ActionAccountGet && !registered.Meta.AI.RequiresConfirmation {
 			t.Fatalf("user mutation %s must require confirmation", actionID)
 		}
 	}
 	foundMenu := false
 	for _, registered := range application.Menus.List() {
-		if registered.ID == system.MenuUserManagement && registered.Permission == system.ActionUserList {
+		if registered.ID == system.MenuAccountManagement && registered.Permission == system.ActionAccountList {
 			foundMenu = true
 		}
 	}
@@ -60,8 +60,8 @@ func TestUserManagementActionsAndMenuAreRegistered(t *testing.T) {
 		t.Fatal("user management menu was not registered")
 	}
 	for _, permission := range []string{
-		system.ActionUserList, system.ActionUserGet, system.ActionUserCreate, system.ActionUserUpdate,
-		system.ActionUserStatusUpdate, system.ActionUserRolesUpdate, system.ActionUserPasswordReset,
+		system.ActionAccountList, system.ActionAccountGet, system.ActionAccountCreate, system.ActionAccountUpdate,
+		system.ActionAccountStatusUpdate, system.ActionAccountRolesUpdate, system.ActionAccountPasswordReset,
 	} {
 		found := false
 		for _, minimum := range system.AdminMinimumPermissions() {
@@ -150,8 +150,8 @@ func TestUserManagementTenantIsolationAndProtection(t *testing.T) {
 
 	authService := system.NewAuthService(testDB)
 	service := system.NewAccountService(testDB, authService)
-	ctxA := auth.WithContext(context.Background(), &auth.Context{TenantID: "tenant-a", UserID: "user-a", Realm: auth.RealmTenant, Authenticated: true})
-	ctxB := auth.WithContext(context.Background(), &auth.Context{TenantID: "tenant-b", UserID: "user-b", Realm: auth.RealmTenant, Authenticated: true})
+	ctxA := auth.WithContext(context.Background(), &auth.Context{TenantID: "tenant-a", PrincipalID: "user-a", Realm: auth.RealmTenant, Authenticated: true})
+	ctxB := auth.WithContext(context.Background(), &auth.Context{TenantID: "tenant-b", PrincipalID: "user-b", Realm: auth.RealmTenant, Authenticated: true})
 
 	createdA, err := service.Create(ctxA, json.RawMessage(`{"username":"alice","display_name":"Alice","password":"Alice@123","status":"enabled","role_ids":["operator-a"],"org_id":"org-a","dept_id":"dept-a"}`))
 	if err != nil {
@@ -180,9 +180,9 @@ func TestUserManagementTenantIsolationAndProtection(t *testing.T) {
 	if err := system.Register(application); err != nil {
 		t.Fatal(err)
 	}
-	actionCtx := auth.WithContext(context.Background(), &auth.Context{TenantID: "tenant-a", UserID: "user-a", SessionID: "session-a", Realm: auth.RealmTenant, Authenticated: true, Permissions: []string{system.ActionUserUpdate}})
+	actionCtx := auth.WithContext(context.Background(), &auth.Context{TenantID: "tenant-a", PrincipalID: "user-a", SessionID: "session-a", Realm: auth.RealmTenant, Authenticated: true, Permissions: []string{system.ActionAccountUpdate}})
 	minimalHTTPPayload := json.RawMessage(`{"id":"` + userA.ID + `","display_name":"HTTP Updated"}`)
-	if _, err := application.Actions.Invoke(actionCtx, system.ActionUserUpdate, minimalHTTPPayload); err != nil {
+	if _, err := application.Actions.Invoke(actionCtx, system.ActionAccountUpdate, minimalHTTPPayload); err != nil {
 		t.Fatalf("minimal HTTP Action payload failed: %v", err)
 	}
 	provider := &aitool.ActionProvider{Actions: application.Actions}
@@ -192,13 +192,13 @@ func TestUserManagementTenantIsolationAndProtection(t *testing.T) {
 	}
 	var userUpdateTool aitool.Definition
 	for _, definition := range definitions {
-		if definition.RuntimeRef == system.ActionUserUpdate {
+		if definition.RuntimeRef == system.ActionAccountUpdate {
 			userUpdateTool = definition
 			break
 		}
 	}
 	if userUpdateTool.ID == "" {
-		t.Fatal("system.user_update Action Tool was not projected")
+		t.Fatal("system.account_update Action Tool was not projected")
 	}
 	minimalToolPayload := json.RawMessage(`{"id":"` + userA.ID + `","display_name":"Tool Updated"}`)
 	if _, err := (&aitool.ActionExecutor{Actions: application.Actions}).Execute(actionCtx, aitool.LoadedTool{Definition: userUpdateTool}, minimalToolPayload); err != nil {
@@ -267,7 +267,7 @@ func TestUserManagementTenantIsolationAndProtection(t *testing.T) {
 		t.Fatalf("disabled user state = %#v", disabled)
 	}
 	if _, err := authService.LoadAuthorization(ctxA, auth.AuthorizationRequest{
-		TenantID: "tenant-a", UserID: userA.ID, Realm: auth.RealmTenant, AuthVersion: 1,
+		TenantID: "tenant-a", PrincipalID: userA.ID, Realm: auth.RealmTenant, AuthVersion: 1,
 	}); err != auth.ErrAuthorizationInvalid && err != auth.ErrAuthorizationStale {
 		t.Fatalf("disabled user auth must fail, got %v", err)
 	}

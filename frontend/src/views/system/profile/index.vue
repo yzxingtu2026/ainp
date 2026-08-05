@@ -32,11 +32,11 @@ const tab = ref<Tab>((route.query.tab as Tab) || 'basic');
 const loading = ref(false);
 const saving = ref(false);
 const passwordSaving = ref(false);
-const profile = ref<Api.User.SelfProfile | null>(null);
+const profile = ref<Api.Profile.SelfProfile | null>(null);
 const definition = ref<Api.Setting.Definition | null>(null);
 const sessions = ref<Api.Auth.Session[]>([]);
-const mcpConnection = ref<Api.User.MCPConnectionInfo | null>(null);
-const mcpGrants = ref<Api.User.MCPGrant[]>([]);
+const mcpConnection = ref<Api.Profile.MCPConnectionInfo | null>(null);
+const mcpGrants = ref<Api.Profile.MCPGrant[]>([]);
 const displayName = ref('');
 const passwordFormRef = ref<FormInst | null>(null);
 const passwordForm = reactive({ current_password: '', new_password: '', confirm_password: '' });
@@ -118,7 +118,7 @@ async function saveBasic() {
     if (nextAvatarId && nextAvatarId !== previousAvatarId) {
       const link = await bindAttachment({
         attachment_id: nextAvatarId,
-        resource_type: ATTACHMENT_RESOURCE_TYPES.userProfile,
+        resource_type: ATTACHMENT_RESOURCE_TYPES.accountProfile,
         resource_id: profile.value.id,
         field: 'avatar'
       });
@@ -135,7 +135,7 @@ async function saveBasic() {
       if (nextAvatarId && nextAvatarId !== previousAvatarId) {
         await unbindAttachment({
           attachment_id: nextAvatarId,
-          resource_type: ATTACHMENT_RESOURCE_TYPES.userProfile,
+          resource_type: ATTACHMENT_RESOURCE_TYPES.accountProfile,
           resource_id: profile.value.id,
           field: 'avatar'
         });
@@ -145,7 +145,7 @@ async function saveBasic() {
     if (previousAvatarId && previousAvatarId !== nextAvatarId) {
       await unbindAttachment({
         attachment_id: previousAvatarId,
-        resource_type: ATTACHMENT_RESOURCE_TYPES.userProfile,
+        resource_type: ATTACHMENT_RESOURCE_TYPES.accountProfile,
         resource_id: profile.value.id,
         field: 'avatar'
       });
@@ -216,7 +216,7 @@ async function copyMCPJSON() {
   window.$message?.success('MCP JSON 配置已复制');
 }
 
-async function revokeMCPGrant(grant: Api.User.MCPGrant) {
+async function revokeMCPGrant(grant: Api.Profile.MCPGrant) {
   const { error } = await revokeMCPGrants({ grant_id: grant.id });
   if (!error) {
     grant.status = 'revoked';
@@ -224,7 +224,7 @@ async function revokeMCPGrant(grant: Api.User.MCPGrant) {
   }
 }
 
-async function revokeMCPClient(grant: Api.User.MCPGrant) {
+async function revokeMCPClient(grant: Api.Profile.MCPGrant) {
   const { error } = await revokeMCPGrants({ client_id: grant.client_id });
   if (!error) {
     mcpGrants.value.forEach(item => {

@@ -83,7 +83,7 @@ func NewMemoryRetrievalService(db *gorm.DB, e aimodelruntime.EmbeddingRuntime) *
 func (s *MemoryRetrievalService) Retrieve(ctx context.Context, req MemoryRecallRequest) (MemoryRecallResponse, error) {
 	var out MemoryRecallResponse
 	trusted, ok := runtimecontext.FromContext(ctx)
-	if !ok || trusted.TenantID == "" || trusted.UserID == "" {
+	if !ok || trusted.TenantID == "" || trusted.PrincipalID == "" {
 		return out, errors.New("memory recall requires trusted runtime context")
 	}
 	now := trusted.Time.EvaluatedAtUTC
@@ -120,7 +120,7 @@ func (s *MemoryRetrievalService) Retrieve(ctx context.Context, req MemoryRecallR
 		localTo = req.DateTo.In(loc).Format("2006-01-02")
 	}
 	sql := `WITH trusted_tenant AS (SELECT ?::text tenant_id) SELECT i.*,COALESCE(ep.search_text,i.summary||' '||i.content) exact_text,CASE WHEN ?='' THEN 0 ELSE ts_rank_cd(to_tsvector('simple',COALESCE(fp.search_text,i.summary||' '||i.content)),plainto_tsquery('simple',?)) END fts_score,0::float8 vector_score FROM ai_memory_items i CROSS JOIN trusted_tenant tt LEFT JOIN ai_memory_projections ep ON ep.tenant_id=i.tenant_id AND ep.item_id=i.id AND ep.kind='exact' AND ep.status='ready' AND ep.item_revision=i.revision LEFT JOIN ai_memory_projections fp ON fp.tenant_id=i.tenant_id AND fp.item_id=i.id AND fp.kind='fts' AND fp.status='ready' AND fp.item_revision=i.revision WHERE i.tenant_id=tt.tenant_id AND i.user_id=? AND i.status='active' AND (i.agent_id IS NULL OR i.agent_id=?) AND (i.expires_at IS NULL OR i.expires_at>?) AND (i.valid_from IS NULL OR i.valid_from<=?) AND (i.valid_to IS NULL OR i.valid_to>?) AND (?::date IS NULL OR (i.local_date IS NOT NULL AND i.local_date>=?::date) OR (i.local_date IS NULL AND COALESCE(i.occurred_end_at,i.occurred_at,i.observed_at)>=?)) AND (?::date IS NULL OR (i.local_date IS NOT NULL AND i.local_date<?::date) OR (i.local_date IS NULL AND COALESCE(i.occurred_at,i.observed_at)<?)) ORDER BY i.importance DESC,i.confidence DESC,i.recorded_at DESC LIMIT 500`
-	rows, err := tenantdata.TenantRaw[memoryRecallCandidate](tdb, sql, query, query, trusted.UserID, req.AgentID, now, now, now, localFrom, localFrom, req.DateFrom, localTo, localTo, req.DateTo)
+	rows, err := tenantdata.TenantRaw[memoryRecallCandidate](tdb, sql, query, query, trusted.PrincipalID, req.AgentID, now, now, now, localFrom, localFrom, req.DateFrom, localTo, localTo, req.DateTo)
 	if err != nil {
 		return out, err
 	}

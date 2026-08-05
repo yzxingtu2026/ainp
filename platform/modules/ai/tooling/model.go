@@ -57,7 +57,7 @@ func (ToolSearchDocument) TableName() string { return "ai_tool_search_documents"
 type ToolScope struct {
 	ID                      string          `gorm:"primaryKey;size:64" json:"id"`
 	TenantID                string          `gorm:"size:64;not null;index" json:"-"`
-	UserID                  string          `gorm:"size:64;not null;index" json:"-"`
+	PrincipalID             string          `gorm:"size:64;not null;index" json:"-"`
 	Realm                   string          `gorm:"size:16;not null" json:"realm"`
 	SessionID               string          `gorm:"size:64;not null" json:"-"`
 	AuthVersion             uint64          `gorm:"not null" json:"-"`
@@ -108,7 +108,7 @@ const (
 type ToolConfirmation struct {
 	ID                   string                           `gorm:"primaryKey;size:64" json:"id"`
 	TenantID             string                           `gorm:"size:64;not null;index" json:"-"`
-	UserID               string                           `gorm:"size:64;not null;index" json:"-"`
+	PrincipalID          string                           `gorm:"size:64;not null;index" json:"-"`
 	ScopeID              string                           `gorm:"size:64;not null;index" json:"scope_id"`
 	InvocationID         string                           `gorm:"size:64;not null;index" json:"invocation_id"`
 	ToolCallID           string                           `gorm:"size:128;not null" json:"tool_call_id"`
@@ -147,7 +147,7 @@ func (c *ToolConfirmation) AfterFind(*gorm.DB) error {
 type ToolInvocation struct {
 	ID             string          `gorm:"primaryKey;size:64" json:"id"`
 	TenantID       string          `gorm:"size:64;not null;index" json:"-"`
-	UserID         string          `gorm:"size:64;not null;index" json:"-"`
+	PrincipalID    string          `gorm:"size:64;not null;index" json:"-"`
 	ScopeID        string          `gorm:"size:64;not null;index" json:"scope_id"`
 	AgentRunID     *string         `gorm:"size:64" json:"agent_run_id,omitempty"`
 	ToolCallID     string          `gorm:"size:128;not null" json:"tool_call_id"`

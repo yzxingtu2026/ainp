@@ -6,7 +6,7 @@
 
 `ToolRegistry` 是完整工具定义的服务端事实源，不等于模型 Prompt。模型只获得 Agent 的 Contract 必选项与用户可选绑定；没有有效绑定的翻译、摘要等 Agent 不注入任何工具。绑定 `tool.search`、`tool.load` 后才启用渐进发现；`tool.search` 返回最多 10 个不含完整 Schema 的安全候选，`tool.load` 受单次数量、Scope 总量和 32 KiB Schema 预算限制。`knowledge.search` / `memory.search` 等条件工具只有已绑定且实时资源条件满足时才投影。
 
-同一 Agent Run 的 `loaded_tools` 是单调递增集合，每轮模型调用都投影 `allowed_tools + loaded_tools`；不同 Run 不继承 Scope。Progressive 工具未进入当前投影时不得通过普通执行路径隐式 load，必须先调用 `tool.load`。重复 load 已在 Scope 内的工具只返回紧凑 `already_loaded_tool_ids`，不得再次把完整 Definition 写入模型消息；首次 load 才返回完整 Schema。Search/Load 使用稳定 Registry ID（如 `action:system.user_update`），执行必须使用投影后的模型工具名（如 `action__system_user_update`）；模型混用两者时返回可恢复错误并允许同批后续 Search/Load 继续，禁止直接终止 Run。
+同一 Agent Run 的 `loaded_tools` 是单调递增集合，每轮模型调用都投影 `allowed_tools + loaded_tools`；不同 Run 不继承 Scope。Progressive 工具未进入当前投影时不得通过普通执行路径隐式 load，必须先调用 `tool.load`。重复 load 已在 Scope 内的工具只返回紧凑 `already_loaded_tool_ids`，不得再次把完整 Definition 写入模型消息；首次 load 才返回完整 Schema。Search/Load 使用稳定 Registry ID（如 `action:system.account_update`），执行必须使用投影后的模型工具名（如 `action__system_account_update`）；模型混用两者时返回可恢复错误并允许同批后续 Search/Load 继续，禁止直接终止 Run。
 
 调用方使用 `enable_tools=true` 创建新 Scope，后续携带返回的 `tool_scope_id`。禁止直接提交 `tools` 绕过 Registry。结构化输出的 response-only function 是 Model Adapter 私有输出约束，不进入 Registry、Scope、Handle、Confirmation、Step 或执行事实，也不得由业务调用方通过 `Tools/ToolChoice` 构造。`tool.execute` 是服务端内部协议，不是常驻模型工具。
 

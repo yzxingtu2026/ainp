@@ -53,7 +53,7 @@ func TestDynamicReferenceRegistrationAndSafeValidation(t *testing.T) {
 	if err := r.ValidateDynamicReferences(); err != nil {
 		t.Fatal(err)
 	}
-	ctx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, Realm: auth.RealmTenant, TenantID: "t1", UserID: "u1"})
+	ctx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, Realm: auth.RealmTenant, TenantID: "t1", PrincipalID: "u1"})
 	_, err := r.Invoke(ctx, "demo.write", json.RawMessage(`{"values":["secret-z","secret-z","a"]}`))
 	appErr, ok := errs.AsAppError(err)
 	if !ok || appErr.Details == nil || appErr.Details.Reason != action.InvalidReference || appErr.Details.InvalidCount != 1 || len(appErr.Details.InvalidValues) != 1 || called {
@@ -184,14 +184,14 @@ func TestDynamicReferenceToolEvidenceAndStaleConfirmation(t *testing.T) {
 	}
 	signer, _ := aitool.NewHandleSigner(strings.Repeat("d", 32))
 	service := ai.NewToolService(db, registry, signer, nil)
-	ctx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t1", UserID: "u1", SessionID: "s1", AuthVersion: 1, Realm: auth.RealmTenant})
+	ctx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t1", PrincipalID: "u1", SessionID: "s1", AuthVersion: 1, Realm: auth.RealmTenant})
 	tdb, err := tenantdata.TenantDB(ctx, db)
 	if err != nil {
 		t.Fatal(err)
 	}
 	expires := time.Now().Add(time.Hour)
 	if err = tenantdata.TenantExec(tdb, `INSERT INTO ai_tool_scopes
-(tenant_id,id,user_id,realm,session_id,auth_version,allowed_sources_json,allowed_capabilities_json,allowed_tools_json,loaded_tools_json,schema_bytes,expires_at)
+(tenant_id,id,principal_id,realm,session_id,auth_version,allowed_sources_json,allowed_capabilities_json,allowed_tools_json,loaded_tools_json,schema_bytes,expires_at)
 VALUES (?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, 0, ?)`, "scope-ref", "u1", "tenant", "s1", 1, json.RawMessage(`["action"]`), json.RawMessage(`["demo"]`), json.RawMessage(`[]`), json.RawMessage(`[]`), expires); err != nil {
 		t.Fatal(err)
 	}

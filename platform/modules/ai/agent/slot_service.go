@@ -90,7 +90,7 @@ type AgentSlotResolution struct {
 
 func slotActor(ctx context.Context) (*auth.Context, error) {
 	ac := auth.MustFromContext(ctx)
-	if !ac.Authenticated || ac.TenantID == "" || ac.UserID == "" {
+	if !ac.Authenticated || ac.TenantID == "" || ac.PrincipalID == "" {
 		return nil, errs.New(errs.CodeUnauthorized, "unauthorized")
 	}
 	return ac, nil
@@ -121,7 +121,7 @@ func (s *AgentSlotService) resolveAgent(ctx context.Context, slot agentslot.Slot
 	if err != nil {
 		return nil, err
 	}
-	agent, err := repos.agents.First("id=? AND (owner_user_id=? OR visibility='tenant')", agentID, ac.UserID)
+	agent, err := repos.agents.First("id=? AND (owner_user_id=? OR visibility='tenant')", agentID, ac.PrincipalID)
 	if err != nil {
 		return slotUnavailable("agent.unavailable", "configured agent is unavailable", slot, source), nil
 	}
@@ -155,7 +155,7 @@ func (s *AgentSlotService) Resolve(ctx context.Context, r AgentSlotGetRequest) (
 	prefs, _ := tenantdata.NewTenantRepository[AgentSlotPreference](tdb)
 	bindings, _ := tenantdata.NewTenantRepository[AgentSlotBinding](tdb)
 	if slot.UserOverride {
-		pref, found, lookupErr := optionalSlotRecord(prefs, "user_id=? AND slot_key=?", ac.UserID, slot.Key)
+		pref, found, lookupErr := optionalSlotRecord(prefs, "user_id=? AND slot_key=?", ac.PrincipalID, slot.Key)
 		if lookupErr != nil {
 			return nil, lookupErr
 		}
@@ -269,7 +269,7 @@ func (s *AgentSlotService) Update(ctx context.Context, r AgentSlotMutationReques
 		if r.Revision != 0 {
 			return nil, errs.New(errs.CodeConflict, "agent slot binding revision conflict")
 		}
-		row = AgentSlotBinding{ID: uuid.NewString(), SlotKey: slot.Key, SlotVersion: slot.Version, AgentID: r.AgentID, Revision: 1, CreatedBy: ac.UserID, UpdatedBy: ac.UserID}
+		row = AgentSlotBinding{ID: uuid.NewString(), SlotKey: slot.Key, SlotVersion: slot.Version, AgentID: r.AgentID, Revision: 1, CreatedBy: ac.PrincipalID, UpdatedBy: ac.PrincipalID}
 		if err = repo.Create(&row); err != nil {
 			return nil, err
 		}
@@ -281,7 +281,7 @@ func (s *AgentSlotService) Update(ctx context.Context, r AgentSlotMutationReques
 	if row.Revision != r.Revision {
 		return nil, errs.New(errs.CodeConflict, "agent slot binding revision conflict")
 	}
-	res := repo.Where("id=? AND revision=?", row.ID, r.Revision).Updates(map[string]any{"slot_version": slot.Version, "agent_id": r.AgentID, "updated_by": ac.UserID, "revision": r.Revision + 1})
+	res := repo.Where("id=? AND revision=?", row.ID, r.Revision).Updates(map[string]any{"slot_version": slot.Version, "agent_id": r.AgentID, "updated_by": ac.PrincipalID, "revision": r.Revision + 1})
 	if res.Error != nil {
 		return nil, res.Error
 	}
@@ -328,7 +328,7 @@ func (s *AgentSlotService) ResetPreference(ctx context.Context, r AgentSlotReset
 	}
 	repo, _ := tenantdata.NewTenantRepository[AgentSlotPreference](tdb)
 	ac := auth.MustFromContext(ctx)
-	res := repo.DeleteWhere("user_id=? AND slot_key=? AND revision=?", ac.UserID, r.SlotKey, r.Revision)
+	res := repo.DeleteWhere("user_id=? AND slot_key=? AND revision=?", ac.PrincipalID, r.SlotKey, r.Revision)
 	if res.Error != nil {
 		return nil, res.Error
 	}
@@ -360,7 +360,7 @@ func (s *AgentSlotService) mutatePreference(ctx context.Context, r AgentSlotMuta
 		return nil, err
 	}
 	repo, _ := tenantdata.NewTenantRepository[AgentSlotPreference](tdb)
-	row, found, qerr := optionalSlotRecord(repo, "user_id=? AND slot_key=?", ac.UserID, slot.Key)
+	row, found, qerr := optionalSlotRecord(repo, "user_id=? AND slot_key=?", ac.PrincipalID, slot.Key)
 	if qerr != nil {
 		return nil, qerr
 	}
@@ -368,7 +368,7 @@ func (s *AgentSlotService) mutatePreference(ctx context.Context, r AgentSlotMuta
 		if r.Revision != 0 {
 			return nil, errs.New(errs.CodeConflict, "agent slot preference revision conflict")
 		}
-		row = AgentSlotPreference{ID: uuid.NewString(), UserID: ac.UserID, SlotKey: slot.Key, SlotVersion: slot.Version, AgentID: r.AgentID, Revision: 1, UpdatedBy: ac.UserID}
+		row = AgentSlotPreference{ID: uuid.NewString(), UserID: ac.PrincipalID, SlotKey: slot.Key, SlotVersion: slot.Version, AgentID: r.AgentID, Revision: 1, UpdatedBy: ac.PrincipalID}
 		if err = repo.Create(&row); err != nil {
 			return nil, err
 		}
@@ -380,7 +380,7 @@ func (s *AgentSlotService) mutatePreference(ctx context.Context, r AgentSlotMuta
 	if row.Revision != r.Revision {
 		return nil, errs.New(errs.CodeConflict, "agent slot preference revision conflict")
 	}
-	res := repo.Where("id=? AND revision=?", row.ID, r.Revision).Updates(map[string]any{"slot_version": slot.Version, "agent_id": r.AgentID, "updated_by": ac.UserID, "revision": r.Revision + 1})
+	res := repo.Where("id=? AND revision=?", row.ID, r.Revision).Updates(map[string]any{"slot_version": slot.Version, "agent_id": r.AgentID, "updated_by": ac.PrincipalID, "revision": r.Revision + 1})
 	if res.Error != nil {
 		return nil, res.Error
 	}

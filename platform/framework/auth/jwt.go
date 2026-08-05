@@ -8,11 +8,13 @@ import (
 )
 
 type TokenClaims struct {
-	TenantID    string `json:"tid"`
-	UserID      string `json:"uid"`
-	SessionID   string `json:"sid"`
-	Realm       Realm  `json:"realm"`
-	AuthVersion uint64 `json:"auth_version"`
+	TenantID     string `json:"tid"`
+	PrincipalID  string `json:"-"`
+	LegacyUserID string `json:"uid,omitempty"`
+	UsedLegacyID bool   `json:"-"`
+	SessionID    string `json:"sid"`
+	Realm        Realm  `json:"realm"`
+	AuthVersion  uint64 `json:"auth_version"`
 	jwt.RegisteredClaims
 }
 
@@ -43,21 +45,22 @@ func NewTokenService(secret, issuer string, ttl time.Duration) (*TokenService, e
 
 func (s *TokenService) TTL() time.Duration { return s.ttl }
 
-func (s *TokenService) Issue(tenantID, userID, sessionID string, authVersion uint64) (string, time.Time, error) {
-	if tenantID == "" || userID == "" || sessionID == "" || authVersion == 0 {
-		return "", time.Time{}, fmt.Errorf("tenant, user, session and auth version are required")
+func (s *TokenService) Issue(tenantID, principalID, sessionID string, authVersion uint64) (string, time.Time, error) {
+	if tenantID == "" || principalID == "" || sessionID == "" || authVersion == 0 {
+		return "", time.Time{}, fmt.Errorf("tenant, principal, session and auth version are required")
 	}
 	now := time.Now().UTC()
 	exp := now.Add(s.ttl)
 	claims := TokenClaims{
-		TenantID:    tenantID,
-		UserID:      userID,
-		SessionID:   sessionID,
-		AuthVersion: authVersion,
-		Realm:       RealmTenant,
+		TenantID:     tenantID,
+		PrincipalID:  principalID,
+		LegacyUserID: principalID,
+		SessionID:    sessionID,
+		AuthVersion:  authVersion,
+		Realm:        RealmTenant,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    s.issuer,
-			Subject:   userID,
+			Subject:   principalID,
 			IssuedAt:  jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(exp),
 			Audience:  jwt.ClaimStrings{TenantAudience},
@@ -85,8 +88,16 @@ func (s *TokenService) Parse(tokenString string) (*TokenClaims, error) {
 	if !ok || !token.Valid {
 		return nil, fmt.Errorf("invalid token")
 	}
-	if claims.TenantID == "" || claims.UserID == "" || claims.SessionID == "" || claims.Realm != RealmTenant || claims.AuthVersion == 0 {
-		return nil, fmt.Errorf("token missing tenant, user or session")
+	if claims.Subject != "" && claims.LegacyUserID != "" && claims.Subject != claims.LegacyUserID {
+		return nil, fmt.Errorf("token principal claims conflict")
+	}
+	claims.PrincipalID = claims.Subject
+	if claims.PrincipalID == "" {
+		claims.PrincipalID = claims.LegacyUserID
+		claims.UsedLegacyID = claims.PrincipalID != ""
+	}
+	if claims.TenantID == "" || claims.PrincipalID == "" || claims.SessionID == "" || claims.Realm != RealmTenant || claims.AuthVersion == 0 {
+		return nil, fmt.Errorf("token missing tenant, principal or session")
 	}
 	return claims, nil
 }

@@ -20,13 +20,13 @@ func TestChangeRegistryRoutesBySettingKey(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := registry.Notify(context.Background(), Change{TenantID: "tenant-1", UserID: "user-1", Key: "other", Operation: ChangeUpdated}); err != nil {
+	if err := registry.Notify(context.Background(), Change{TenantID: "tenant-1", ActorID: "user-1", Key: "other", Operation: ChangeUpdated}); err != nil {
 		t.Fatal(err)
 	}
 	if called != 0 {
 		t.Fatal("unrelated setting invoked handler")
 	}
-	if err := registry.Notify(context.Background(), Change{TenantID: "tenant-1", UserID: "user-1", Key: "ai.navigation_search", Operation: ChangeUpdated}); err != nil {
+	if err := registry.Notify(context.Background(), Change{TenantID: "tenant-1", ActorID: "user-1", Key: "ai.navigation_search", Operation: ChangeUpdated}); err != nil {
 		t.Fatal(err)
 	}
 	if called != 1 {

@@ -79,7 +79,7 @@ func RegisterAgentRuntime(a *app.App, runtime *AgentRuntimeService) error {
 			ctx = auth.WithContext(ctx, &auth.Context{
 				TenantID:      env.TenantID,
 				Realm:         auth.NormalizeRealm(auth.Realm(env.Realm)),
-				UserID:        env.ActorID,
+				PrincipalID:   env.ActorID,
 				RequestID:     env.CorrelationID,
 				Authenticated: true,
 				Client:        "outbox",

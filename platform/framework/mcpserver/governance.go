@@ -84,7 +84,7 @@ func definitionHash(definition aitool.Definition) string {
 }
 
 func confirmationAAD(row *Confirmation) []byte {
-	return []byte(strings.Join([]string{"mcp-confirmation-v1", row.ID, row.TenantID, row.UserID, row.GrantID, row.ClientID, row.ActionID}, "\x00"))
+	return []byte(strings.Join([]string{"mcp-confirmation-v1", row.ID, row.TenantID, row.AccountID, row.GrantID, row.ClientID, row.ActionID}, "\x00"))
 }
 
 func (s *Service) confirmationAEAD() (cipher.AEAD, error) {
@@ -142,7 +142,7 @@ func (s *Service) CreateConfirmation(ctx context.Context, principal *Principal, 
 	}
 	now := time.Now().UTC()
 	row := Confirmation{
-		ID: uuid.NewString(), TenantID: principal.Auth.TenantID, UserID: principal.Auth.UserID,
+		ID: uuid.NewString(), TenantID: principal.Auth.TenantID, AccountID: principal.Auth.PrincipalID,
 		GrantID: principal.Auth.MCPGrantID, ClientID: principal.Auth.MCPClientID,
 		ActionID: definition.RuntimeRef, ToolName: toolName, SchemaHash: definitionHash(definition), ArgumentsHash: argumentsHash,
 		RecoveryHash: hash(recovery), Title: definition.TitleForHuman, Description: definition.DescriptionForHuman,
@@ -175,7 +175,7 @@ func (s *Service) ConfirmationForResume(ctx context.Context, principal *Principa
 		return nil, err
 	}
 	var row Confirmation
-	if err := db.Where("id = ? AND tenant_id = ? AND user_id = ? AND grant_id = ? AND client_id = ?", confirmationID, principal.Auth.TenantID, principal.Auth.UserID, principal.Auth.MCPGrantID, principal.Auth.MCPClientID).First(&row).Error; err != nil {
+	if err := db.Where("id = ? AND tenant_id = ? AND account_id = ? AND grant_id = ? AND client_id = ?", confirmationID, principal.Auth.TenantID, principal.Auth.PrincipalID, principal.Auth.MCPGrantID, principal.Auth.MCPClientID).First(&row).Error; err != nil {
 		return nil, errs.New(errs.CodeForbidden, "confirmation is unavailable")
 	}
 	if row.Status != "approved" || time.Now().UTC().After(row.ExpiresAt) {
@@ -198,7 +198,7 @@ func (s *Service) ConsumeStoredConfirmation(ctx context.Context, principal *Prin
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", confirmationID).First(&row).Error; err != nil {
 			return errs.New(errs.CodeForbidden, "confirmation is unavailable")
 		}
-		if row.Status != "approved" || time.Now().UTC().After(row.ExpiresAt) || row.TenantID != principal.Auth.TenantID || row.UserID != principal.Auth.UserID || row.GrantID != principal.Auth.MCPGrantID || row.ClientID != principal.Auth.MCPClientID || row.ActionID != definition.RuntimeRef || row.ToolName != toolName || row.SchemaHash != definitionHash(definition) {
+		if row.Status != "approved" || time.Now().UTC().After(row.ExpiresAt) || row.TenantID != principal.Auth.TenantID || row.AccountID != principal.Auth.PrincipalID || row.GrantID != principal.Auth.MCPGrantID || row.ClientID != principal.Auth.MCPClientID || row.ActionID != definition.RuntimeRef || row.ToolName != toolName || row.SchemaHash != definitionHash(definition) {
 			return errs.New(errs.CodeForbidden, "confirmation is unavailable")
 		}
 		decoded, err := s.decryptConfirmationArguments(&row)
@@ -236,7 +236,7 @@ func (s *Service) ConsumeConfirmation(ctx context.Context, principal *Principal,
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("recovery_hash = ?", hash(recovery)).First(&row).Error; err != nil {
 			return errs.New(errs.CodeForbidden, "confirmation is unavailable")
 		}
-		if row.Status != "approved" || time.Now().UTC().After(row.ExpiresAt) || row.TenantID != principal.Auth.TenantID || row.UserID != principal.Auth.UserID || row.GrantID != principal.Auth.MCPGrantID || row.ClientID != principal.Auth.MCPClientID || row.ActionID != definition.RuntimeRef || row.ToolName != toolName || row.SchemaHash != definitionHash(definition) || row.ArgumentsHash != argumentsHash {
+		if row.Status != "approved" || time.Now().UTC().After(row.ExpiresAt) || row.TenantID != principal.Auth.TenantID || row.AccountID != principal.Auth.PrincipalID || row.GrantID != principal.Auth.MCPGrantID || row.ClientID != principal.Auth.MCPClientID || row.ActionID != definition.RuntimeRef || row.ToolName != toolName || row.SchemaHash != definitionHash(definition) || row.ArgumentsHash != argumentsHash {
 			return errs.New(errs.CodeForbidden, "confirmation is unavailable")
 		}
 		now := time.Now().UTC()
@@ -277,7 +277,7 @@ func (s *Service) DecideConfirmation(ctx context.Context, ac *auth.Context, reco
 	if status == "rejected" {
 		updates["arguments_ciphertext"] = ""
 	}
-	result := db.Model(&Confirmation{}).Where("id = ? AND tenant_id = ? AND user_id = ? AND status = 'pending'", row.ID, ac.TenantID, ac.UserID).Updates(updates)
+	result := db.Model(&Confirmation{}).Where("id = ? AND tenant_id = ? AND account_id = ? AND status = 'pending'", row.ID, ac.TenantID, ac.PrincipalID).Updates(updates)
 	if result.Error != nil {
 		return nil, result.Error
 	}
@@ -298,7 +298,7 @@ func (s *Service) ownedConfirmation(ctx context.Context, ac *auth.Context, recov
 		return nil, "", err
 	}
 	var row Confirmation
-	if err := db.Where("recovery_hash = ? AND tenant_id = ? AND user_id = ?", hash(recovery), ac.TenantID, ac.UserID).First(&row).Error; err != nil {
+	if err := db.Where("recovery_hash = ? AND tenant_id = ? AND account_id = ?", hash(recovery), ac.TenantID, ac.PrincipalID).First(&row).Error; err != nil {
 		return nil, "", errs.New(errs.CodeForbidden, "confirmation is unavailable")
 	}
 	if row.Status == "pending" && time.Now().UTC().After(row.ExpiresAt) {
@@ -327,7 +327,7 @@ func (s *Service) ListGrants(ctx context.Context, ac *auth.Context) ([]GrantView
 		ClientName string `gorm:"column:client_name"`
 	}
 	var rows []row
-	if err := db.Table("mcp_oauth_grants AS g").Select("g.*, c.name AS client_name").Joins("JOIN mcp_oauth_clients AS c ON c.id = g.client_id").Where("g.tenant_id = ? AND g.user_id = ?", ac.TenantID, ac.UserID).Order("g.created_at DESC").Limit(100).Scan(&rows).Error; err != nil {
+	if err := db.Table("mcp_oauth_grants AS g").Select("g.*, c.name AS client_name").Joins("JOIN mcp_oauth_clients AS c ON c.id = g.client_id").Where("g.tenant_id = ? AND g.account_id = ?", ac.TenantID, ac.PrincipalID).Order("g.created_at DESC").Limit(100).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	result := make([]GrantView, 0, len(rows))
@@ -354,7 +354,7 @@ func (s *Service) RevokeOwnedGrants(ctx context.Context, ac *auth.Context, reque
 	}
 	changed := false
 	err = db.Transaction(func(tx *gorm.DB) error {
-		query := tx.Model(&Grant{}).Where("tenant_id = ? AND user_id = ? AND status = 'active'", ac.TenantID, ac.UserID)
+		query := tx.Model(&Grant{}).Where("tenant_id = ? AND account_id = ? AND status = 'active'", ac.TenantID, ac.PrincipalID)
 		if !request.All {
 			if request.GrantID != "" {
 				query = query.Where("id = ?", request.GrantID)
@@ -390,7 +390,7 @@ func (s *Service) writeGovernanceAudit(ctx context.Context, ac *auth.Context, co
 	if s.auditor == nil || ac == nil {
 		return
 	}
-	record := audit.Record{OccurredAt: time.Now().UTC(), TenantID: ac.TenantID, Realm: string(auth.RealmTenant), UserID: ac.UserID, ActorType: "user", ActionID: actionID, Result: result, RequestID: ac.RequestID, Client: ac.Client, Replay: replay, Summary: "MCP authorization governance updated"}
+	record := audit.Record{OccurredAt: time.Now().UTC(), TenantID: ac.TenantID, Realm: string(auth.RealmTenant), ActorID: ac.PrincipalID, ActorType: "principal", ActionID: actionID, Result: result, RequestID: ac.RequestID, Client: ac.Client, Replay: replay, Summary: "MCP authorization governance updated"}
 	if confirmation != nil {
 		record.MCPClientID, record.MCPGrantID = confirmation.ClientID, confirmation.GrantID
 	}

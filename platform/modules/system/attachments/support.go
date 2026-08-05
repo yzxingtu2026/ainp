@@ -44,8 +44,8 @@ func typedAction[T any](handler func(context.Context, json.RawMessage) (any, err
 
 func tenantIdentity(ctx context.Context) (string, string, error) {
 	ac := auth.MustFromContext(ctx)
-	if !ac.Authenticated || ac.Realm != auth.RealmTenant || ac.TenantID == "" || ac.UserID == "" {
+	if !ac.Authenticated || ac.Realm != auth.RealmTenant || ac.TenantID == "" || ac.PrincipalID == "" {
 		return "", "", errs.NewKey(errs.CodeUnauthorized, "common.unauthorized", "unauthorized")
 	}
-	return ac.TenantID, ac.UserID, nil
+	return ac.TenantID, ac.PrincipalID, nil
 }

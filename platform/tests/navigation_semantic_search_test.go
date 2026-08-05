@@ -3,16 +3,68 @@ package tests
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/yzxingtu2026/ainp/platform/framework/aimodelruntime"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
+	"github.com/yzxingtu2026/ainp/platform/framework/database"
 	"github.com/yzxingtu2026/ainp/platform/framework/menu"
 	"github.com/yzxingtu2026/ainp/platform/framework/setting"
 	"github.com/yzxingtu2026/ainp/platform/modules/ai"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
+
+func TestNavigationIndexStatusIgnoresRetiredDocuments(t *testing.T) {
+	dsn := os.Getenv("AINP_TEST_DATABASE_DSN")
+	if dsn == "" {
+		t.Skip("AINP_TEST_DATABASE_DSN is not set")
+	}
+	admin, err := database.Open(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	schema := "ainp_navigation_status_" + uuid.NewString()[:8]
+	if err = admin.Exec(fmt.Sprintf(`CREATE SCHEMA %q`, schema)).Error; err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = admin.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE`, schema)).Error })
+	db, err := database.Open(dsn + " search_path=" + schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = db.Exec(`CREATE TABLE navigation_search_documents (
+		id text PRIMARY KEY,
+		tenant_id text NOT NULL,
+		index_status text NOT NULL,
+		updated_at timestamptz
+	)`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err = db.Exec(`INSERT INTO navigation_search_documents (id, tenant_id, index_status) VALUES
+		('active', 'tenant-1', 'ready'),
+		('retired', 'tenant-1', 'stale')`).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	settings := setting.NewRegistry()
+	if err = settings.RegisterCategory(setting.Category{Key: "ai", Title: "AI", Icon: "mdi:brain", Surface: auth.RealmTenant}); err != nil {
+		t.Fatal(err)
+	}
+	if err = settings.RegisterDefinition(setting.Definition{Key: menu.SettingKeySemanticSearch, CategoryKey: "ai", Title: "Navigation search", Scope: setting.ScopeTenant, Surface: auth.RealmTenant, SchemaVersion: 1, Fields: []setting.Field{{Key: menu.SettingFieldModelAlias, Type: setting.FieldText, Label: "Embedding Model Alias", Default: ""}}}); err != nil {
+		t.Fatal(err)
+	}
+	provider := setting.NewProvider(settings, navigationSettingStore{alias: "embedding-alias"})
+	service := ai.NewNavigationSearchService(db, menu.NewRegistry(), menu.NewHelpRegistry(), provider, navigationEmbeddingRuntime{}, nil)
+	ctx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, Realm: auth.RealmTenant, TenantID: "tenant-1"})
+	status, err := service.IndexStatus(ctx, "tenant-1")
+	if err != nil || status.State != "ready" || status.Total != 1 || status.Ready != 1 || status.Stale != 1 {
+		t.Fatalf("retired navigation document degraded active index status: %#v %v", status, err)
+	}
+}
 
 type navigationSettingStore struct{ alias string }
 
@@ -71,14 +123,14 @@ func TestNavigationSemanticSearchBindsEveryVectorQueryArgument(t *testing.T) {
 	}
 	service := ai.NewNavigationSearchService(db, menu.NewRegistry(), menu.NewHelpRegistry(), provider, navigationEmbeddingRuntime{}, nil)
 	ctx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, Realm: auth.RealmTenant, TenantID: "tenant-1"})
-	service.SearchNavigation(ctx, menu.SemanticSearchRequest{TenantID: "tenant-1", Language: "zh-CN", Query: "附件页面地址", AllowedMenuIDs: []string{"system.attachments", "system.users"}})
+	service.SearchNavigation(ctx, menu.SemanticSearchRequest{TenantID: "tenant-1", Language: "zh-CN", Query: "附件页面地址", AllowedMenuIDs: []string{"system.attachments", "system.accounts"}})
 	if query == "" {
 		t.Fatal("navigation vector query was not executed")
 	}
 	if got, want := len(args), 10; got != want {
 		t.Fatalf("bound arguments = %d, want %d", got, want)
 	}
-	if len(args) < 2 || args[len(args)-2] != "system.attachments" || args[len(args)-1] != "system.users" {
+	if len(args) < 2 || args[len(args)-2] != "system.attachments" || args[len(args)-1] != "system.accounts" {
 		t.Fatalf("unexpected allowed menu arguments: %#v", args)
 	}
 }

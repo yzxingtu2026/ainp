@@ -108,7 +108,7 @@ func TestTransferTokenVariant(t *testing.T) {
 		t.Fatal(err)
 	}
 	token, _, _, err := svc.Issue(attachment.IssueTransferInput{
-		TenantID: "t1", UserID: "u1", AttachmentID: "a1",
+		TenantID: "t1", PrincipalID: "u1", AttachmentID: "a1",
 		Op: attachment.OpDownload, Variant: "thumb", Size: 12, TTL: time.Minute,
 	})
 	if err != nil {
@@ -122,7 +122,7 @@ func TestTransferTokenVariant(t *testing.T) {
 		t.Fatalf("variant = %q", claims.Variant)
 	}
 	if _, _, _, err := svc.Issue(attachment.IssueTransferInput{
-		TenantID: "t1", UserID: "u1", AttachmentID: "a1",
+		TenantID: "t1", PrincipalID: "u1", AttachmentID: "a1",
 		Op: attachment.OpDownload, Variant: "nope", TTL: time.Minute,
 	}); err == nil {
 		t.Fatal("expected invalid variant")

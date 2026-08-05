@@ -114,7 +114,7 @@ func (s *UnifiedAuthService) Authenticate(ctx context.Context, req AuthenticateR
 		return nil, errs.Wrap(errs.CodeInternal, "create session failed", err)
 	}
 	if ac := auth.MustFromContext(ctx); ac != nil {
-		ac.TenantID, ac.UserID, ac.SessionID, ac.Realm = account.TenantID, account.ID, tokens.SessionID, auth.RealmTenant
+		ac.TenantID, ac.PrincipalID, ac.SessionID, ac.Realm = account.TenantID, account.ID, tokens.SessionID, auth.RealmTenant
 		ac.Roles, ac.Permissions = append([]string(nil), profile.Roles...), append([]string(nil), profile.Permissions...)
 	}
 	return map[string]any{
@@ -189,7 +189,7 @@ func (s *UnifiedAuthService) ListSessions(ctx context.Context) (any, error) {
 	}
 	rows, err := tenant.TenantRaw[model.AuthSession](tdb, `SELECT * FROM auth_sessions
 WHERE tenant_id = ? AND account_id = ? AND revoked_at IS NULL AND expires_at > ?
-ORDER BY last_seen_at DESC`, ac.UserID, time.Now().UTC())
+ORDER BY last_seen_at DESC`, ac.PrincipalID, time.Now().UTC())
 	if err != nil {
 		return nil, err
 	}
@@ -211,7 +211,7 @@ func (s *UnifiedAuthService) RevokeSession(ctx context.Context, sessionID string
   SELECT id FROM auth_sessions WHERE tenant_id = ? AND id = ? AND account_id = ? AND revoked_at IS NULL FOR UPDATE
 )
 UPDATE auth_sessions AS s SET revoked_at = ?, updated_at = ?
-FROM scoped WHERE s.id = scoped.id RETURNING s.id`, sessionID, ac.UserID, now, now)
+FROM scoped WHERE s.id = scoped.id RETURNING s.id`, sessionID, ac.PrincipalID, now, now)
 	if err != nil {
 		return nil, err
 	}
@@ -240,7 +240,7 @@ func (s *UnifiedAuthService) RevokeAll(ctx context.Context) (any, error) {
   SELECT id FROM auth_sessions WHERE tenant_id = ? AND account_id = ? AND revoked_at IS NULL FOR UPDATE
 )
 UPDATE auth_sessions AS s SET revoked_at = ?, updated_at = ?
-FROM scoped WHERE s.id = scoped.id RETURNING s.id`, ac.UserID, now, now)
+FROM scoped WHERE s.id = scoped.id RETURNING s.id`, ac.PrincipalID, now, now)
 	if err != nil {
 		return nil, err
 	}

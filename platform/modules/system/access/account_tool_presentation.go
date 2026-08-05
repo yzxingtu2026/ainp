@@ -17,8 +17,8 @@ type AccountRolesConfirmationPresenter struct {
 
 func (p AccountRolesConfirmationPresenter) PresentConfirmation(ctx context.Context, request aitool.ConfirmationPresentationRequest) (aitool.ConfirmationPresentation, error) {
 	actor, ok := auth.FromContext(ctx)
-	if !ok || actor == nil || !actor.HasPermission(ActionUserRolesUpdate) {
-		return aitool.ConfirmationPresentation{}, fmt.Errorf("user roles presentation is not authorized")
+	if !ok || actor == nil || !actor.HasPermission(ActionAccountRolesUpdate) {
+		return aitool.ConfirmationPresentation{}, fmt.Errorf("account roles presentation is not authorized")
 	}
 	var arguments accountRolesRequest
 	if err := json.Unmarshal(request.Arguments, &arguments); err != nil {
@@ -43,9 +43,9 @@ func (p AccountRolesConfirmationPresenter) PresentConfirmation(ctx context.Conte
 	}
 	return aitool.ConfirmationPresentation{
 		Tool:    aitool.PresentationFor(request.Definition),
-		Summary: fmt.Sprintf("将用户「%s」的角色调整为「%s」", accountName, rolesText),
+		Summary: fmt.Sprintf("将账号「%s」的角色调整为「%s」", accountName, rolesText),
 		Details: []aitool.ConfirmationPresentationDetail{
-			{Label: "目标用户", Value: accountName},
+			{Label: "目标账号", Value: accountName},
 			{Label: "调整后的角色", Value: rolesText},
 		},
 	}, nil

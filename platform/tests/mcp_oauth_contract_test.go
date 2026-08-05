@@ -55,7 +55,7 @@ func TestMCPSensitiveConfirmationIsBoundAndSingleUse(t *testing.T) {
 	if err := mcpserver.AutoMigrate(db); err != nil {
 		t.Fatal(err)
 	}
-	platformCtx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, Realm: auth.RealmPlatform, IsSystemOperator: true, UserID: "test"})
+	platformCtx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, Realm: auth.RealmPlatform, IsSystemOperator: true, PrincipalID: "test"})
 	sdb, err := tenant.SystemDB(platformCtx, db)
 	if err != nil {
 		t.Fatal(err)
@@ -64,10 +64,10 @@ func TestMCPSensitiveConfirmationIsBoundAndSingleUse(t *testing.T) {
 	if err = sdb.WithContext(platformCtx).Create(&mcpserver.Client{ID: "client-a", Name: "Codex", RedirectURIs: json.RawMessage(`[]`)}).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err = sdb.WithContext(platformCtx).Create(&mcpserver.Grant{ID: "grant-a", TenantID: "tenant-a", UserID: "user-a", ClientID: "client-a", Scopes: "actions:read actions:sensitive", AuthVersion: 1, Status: "active", ExpiresAt: now.Add(time.Hour)}).Error; err != nil {
+	if err = sdb.WithContext(platformCtx).Create(&mcpserver.Grant{ID: "grant-a", TenantID: "tenant-a", AccountID: "user-a", ClientID: "client-a", Scopes: "actions:read actions:sensitive", AuthVersion: 1, Status: "active", ExpiresAt: now.Add(time.Hour)}).Error; err != nil {
 		t.Fatal(err)
 	}
-	principal := &mcpserver.Principal{Auth: &auth.Context{Authenticated: true, Realm: auth.RealmTenant, TenantID: "tenant-a", UserID: "user-a", Client: "mcp", MCPClientID: "client-a", MCPGrantID: "grant-a"}, Scopes: map[string]bool{mcpserver.ScopeSensitive: true}}
+	principal := &mcpserver.Principal{Auth: &auth.Context{Authenticated: true, Realm: auth.RealmTenant, TenantID: "tenant-a", PrincipalID: "user-a", Client: "mcp", MCPClientID: "client-a", MCPGrantID: "grant-a"}, Scopes: map[string]bool{mcpserver.ScopeSensitive: true}}
 	definition := aitool.Definition{RuntimeRef: "demo.destroy", TitleForHuman: "删除演示记录", DescriptionForHuman: "删除指定演示记录", Risk: aitool.RiskHigh, SideEffect: aitool.SideEffectDestructive, InputSchema: json.RawMessage(`{"type":"object"}`)}
 	pending, err := service.CreateConfirmation(context.Background(), principal, definition, "ainp_demo_destroy", json.RawMessage(`{"id":"one"}`))
 	if err != nil || !strings.HasPrefix(pending.ConfirmationURL, "https://ainp.example/mcp/confirm?token=") {
@@ -76,7 +76,7 @@ func TestMCPSensitiveConfirmationIsBoundAndSingleUse(t *testing.T) {
 	if err = service.ConsumeConfirmation(context.Background(), principal, pending.RecoveryToken, definition, "ainp_demo_destroy", json.RawMessage(`{"id":"one"}`)); err == nil {
 		t.Fatal("pending confirmation was consumed")
 	}
-	web := &auth.Context{Authenticated: true, Realm: auth.RealmTenant, TenantID: "tenant-a", UserID: "user-a"}
+	web := &auth.Context{Authenticated: true, Realm: auth.RealmTenant, TenantID: "tenant-a", PrincipalID: "user-a"}
 	if _, err = service.DecideConfirmation(context.Background(), web, pending.RecoveryToken, "approve"); err != nil {
 		t.Fatal(err)
 	}
@@ -182,7 +182,7 @@ func TestMCPSensitiveConfirmationIsBoundAndSingleUse(t *testing.T) {
 func TestWebTokenRejectsMCPAudience(t *testing.T) {
 	web, _ := auth.NewTokenService("test-secret", "ainp-test", time.Minute)
 	now := time.Now().UTC()
-	claims := auth.TokenClaims{TenantID: "tenant-a", UserID: "user-a", SessionID: "grant-a", Realm: auth.RealmTenant, AuthVersion: 1, RegisteredClaims: jwt.RegisteredClaims{Issuer: "ainp-test", Subject: "user-a", Audience: jwt.ClaimStrings{mcpserver.Audience}, IssuedAt: jwt.NewNumericDate(now), ExpiresAt: jwt.NewNumericDate(now.Add(time.Minute))}}
+	claims := auth.TokenClaims{TenantID: "tenant-a", LegacyUserID: "user-a", SessionID: "grant-a", Realm: auth.RealmTenant, AuthVersion: 1, RegisteredClaims: jwt.RegisteredClaims{Issuer: "ainp-test", Subject: "user-a", Audience: jwt.ClaimStrings{mcpserver.Audience}, IssuedAt: jwt.NewNumericDate(now), ExpiresAt: jwt.NewNumericDate(now.Add(time.Minute))}}
 	raw, _ := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte("test-secret"))
 	if _, err := web.Parse(raw); err == nil {
 		t.Fatal("tenant-console parser accepted MCP audience")

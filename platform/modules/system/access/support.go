@@ -18,16 +18,26 @@ const (
 	ActionRoleDelete            = "system.role_delete"
 	ActionRolePermissionsUpdate = "system.role_permissions_update"
 	ActionPermissionCatalog     = "system.permission_catalog"
-	ActionUserList              = "system.user_list"
-	ActionUserGet               = "system.user_get"
-	ActionUserCreate            = "system.user_create"
-	ActionUserUpdate            = "system.user_update"
-	ActionUserStatusUpdate      = "system.user_status_update"
-	ActionUserRolesUpdate       = "system.user_roles_update"
-	ActionUserPasswordReset     = "system.user_password_reset"
+	ActionAccountList           = "system.account_list"
+	ActionAccountGet            = "system.account_get"
+	ActionAccountCreate         = "system.account_create"
+	ActionAccountUpdate         = "system.account_update"
+	ActionAccountStatusUpdate   = "system.account_status_update"
+	ActionAccountRolesUpdate    = "system.account_roles_update"
+	ActionAccountPasswordReset  = "system.account_password_reset"
 	MenuRoleManagement          = "system.roles"
-	MenuUserManagement          = "system.users"
+	MenuAccountManagement       = "system.accounts"
 	BuiltinAdminCode            = "admin"
+)
+
+const (
+	legacyActionUserList          = "system.user_list"
+	legacyActionUserGet           = "system.user_get"
+	legacyActionUserCreate        = "system.user_create"
+	legacyActionUserUpdate        = "system.user_update"
+	legacyActionUserStatusUpdate  = "system.user_status_update"
+	legacyActionUserRolesUpdate   = "system.user_roles_update"
+	legacyActionUserPasswordReset = "system.user_password_reset"
 )
 
 func readAIMeta(summary, toolTitle, humanDescription, resultSummary string, inputSchema, outputSchema json.RawMessage, tags ...string) *action.AIMeta {

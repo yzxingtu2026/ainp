@@ -19,7 +19,8 @@ const (
 // TransferClaims are short-lived transfer tokens. They must not be logged in full.
 type TransferClaims struct {
 	TenantID     string `json:"tid"`
-	UserID       string `json:"uid"`
+	PrincipalID  string `json:"principal_id,omitempty"`
+	LegacyUserID string `json:"uid,omitempty"`
 	AttachmentID string `json:"aid"`
 	Op           string `json:"op"`
 	Variant      string `json:"var,omitempty"` // original | thumb | preview；空 = original
@@ -46,7 +47,7 @@ func NewTransferTokenService(secret, issuer string) (*TransferTokenService, erro
 
 type IssueTransferInput struct {
 	TenantID     string
-	UserID       string
+	PrincipalID  string
 	AttachmentID string
 	Op           string
 	Variant      string // original | thumb | preview；空 = original
@@ -55,7 +56,7 @@ type IssueTransferInput struct {
 }
 
 func (s *TransferTokenService) Issue(in IssueTransferInput) (token string, jti string, exp time.Time, err error) {
-	if in.TenantID == "" || in.UserID == "" || in.AttachmentID == "" {
+	if in.TenantID == "" || in.PrincipalID == "" || in.AttachmentID == "" {
 		return "", "", time.Time{}, fmt.Errorf("transfer token identity required")
 	}
 	if in.Op != OpUpload && in.Op != OpDownload {
@@ -77,11 +78,11 @@ func (s *TransferTokenService) Issue(in IssueTransferInput) (token string, jti s
 	exp = now.Add(in.TTL)
 	jti = uuid.NewString()
 	claims := TransferClaims{
-		TenantID: in.TenantID, UserID: in.UserID, AttachmentID: in.AttachmentID,
+		TenantID: in.TenantID, PrincipalID: in.PrincipalID, LegacyUserID: in.PrincipalID, AttachmentID: in.AttachmentID,
 		Op: in.Op, Variant: variant, Size: in.Size, JTI: jti,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    s.issuer,
-			Subject:   in.UserID,
+			Subject:   in.PrincipalID,
 			ID:        jti,
 			IssuedAt:  jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(exp),
@@ -110,7 +111,19 @@ func (s *TransferTokenService) Parse(tokenString string) (*TransferClaims, error
 	if !ok || !token.Valid {
 		return nil, fmt.Errorf("invalid transfer token")
 	}
-	if claims.TenantID == "" || claims.UserID == "" || claims.AttachmentID == "" || claims.JTI == "" {
+	if claims.Subject != "" && claims.PrincipalID != "" && claims.Subject != claims.PrincipalID {
+		return nil, fmt.Errorf("conflicting transfer token subject")
+	}
+	if claims.PrincipalID != "" && claims.LegacyUserID != "" && claims.PrincipalID != claims.LegacyUserID {
+		return nil, fmt.Errorf("conflicting transfer token principal")
+	}
+	if claims.PrincipalID == "" {
+		claims.PrincipalID = claims.Subject
+	}
+	if claims.PrincipalID == "" {
+		claims.PrincipalID = claims.LegacyUserID
+	}
+	if claims.TenantID == "" || claims.PrincipalID == "" || claims.AttachmentID == "" || claims.JTI == "" {
 		return nil, fmt.Errorf("incomplete transfer claims")
 	}
 	if claims.Variant == "" {

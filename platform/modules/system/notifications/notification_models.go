@@ -70,10 +70,10 @@ func (NotificationTemplateOverride) TableName() string { return "notification_te
 // UserNotification represents a user's in-app notification row.
 type UserNotification struct {
 	ID         string `gorm:"primaryKey;size:64"`
-	TenantID   string `gorm:"size:64;not null;index:idx_user_notif_user"`
-	UserID     string `gorm:"size:64;not null;index:idx_user_notif_user"`
+	TenantID   string `gorm:"size:64;not null;index:idx_user_notif_account"`
+	AccountID  string `gorm:"size:64;not null;index:idx_user_notif_account"`
 	RequestID  string `gorm:"size:64;not null"`
-	DeliveryID string `gorm:"size:64;not null;uniqueIndex:uq_user_notif_delivery_user"`
+	DeliveryID string `gorm:"size:64;not null;uniqueIndex:uq_user_notif_delivery_account"`
 	Title      string `gorm:"type:text;not null;default:''"`
 	Summary    string `gorm:"type:text;not null;default:''"`
 	Body       string `gorm:"type:text;not null;default:''"`

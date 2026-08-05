@@ -98,7 +98,7 @@ func (c RetrievalConfig) Validate() error {
 type KnowledgeBaseRef struct {
 	ID             string `json:"id"`
 	TenantID       string `json:"-"`
-	OwnerUserID    string `json:"owner_user_id"`
+	AccountID      string `json:"account_id"`
 	Visibility     string `json:"visibility"`
 	Status         string `json:"status"`
 	EmbeddingAlias string `json:"embedding_alias,omitempty"`

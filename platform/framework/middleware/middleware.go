@@ -168,11 +168,14 @@ func Auth(opts AuthOptions) gin.HandlerFunc {
 				c.Next()
 				return
 			}
+			if claims.UsedLegacyID {
+				logging.Warn(c.Request.Context(), "identity compatibility token used", "compatibility_kind", "jwt_uid", "tenant_id", claims.TenantID)
+			}
 			snapshot, err := opts.Authorization.LoadAuthorization(c.Request.Context(), auth.AuthorizationRequest{
-				TenantID: claims.TenantID, UserID: claims.UserID, SessionID: claims.SessionID, Realm: claims.Realm, AuthVersion: claims.AuthVersion,
+				TenantID: claims.TenantID, PrincipalID: claims.PrincipalID, SessionID: claims.SessionID, Realm: claims.Realm, AuthVersion: claims.AuthVersion,
 			})
 			if err != nil || snapshot == nil ||
-				snapshot.TenantID != claims.TenantID || snapshot.UserID != claims.UserID || snapshot.SessionID != claims.SessionID || snapshot.AuthVersion != claims.AuthVersion {
+				snapshot.TenantID != claims.TenantID || snapshot.PrincipalID != claims.PrincipalID || snapshot.SessionID != claims.SessionID || snapshot.AuthVersion != claims.AuthVersion {
 				// 会话 JWT 已验签但授权版本失效/不匹配：直接 401，避免匿名继续打到受保护 Action。
 				response.Fail(c, errs.NewKey(errs.CodeUnauthorized, "common.unauthorized", "unauthorized"))
 				c.Abort()
@@ -180,7 +183,7 @@ func Auth(opts AuthOptions) gin.HandlerFunc {
 			}
 			ac.TenantID = snapshot.TenantID
 			ac.Realm = claims.Realm
-			ac.UserID = snapshot.UserID
+			ac.PrincipalID = snapshot.PrincipalID
 			ac.SessionID = snapshot.SessionID
 			ac.AuthVersion = snapshot.AuthVersion
 			ac.OrgID = snapshot.OrgID
@@ -195,7 +198,7 @@ func Auth(opts AuthOptions) gin.HandlerFunc {
 			return
 		}
 
-		// 开发桩：Bearer dev:<tenant_id>:<user_id>:<perm1,perm2>
+		// 开发桩：Bearer dev:<tenant_id>:<principal_id>:<perm1,perm2>
 		if !opts.DevTokenEnabled {
 			c.Next()
 			return
@@ -213,7 +216,7 @@ func Auth(opts AuthOptions) gin.HandlerFunc {
 		}
 		ac.TenantID = tenantID
 		ac.Realm = auth.RealmTenant
-		ac.UserID = userID
+		ac.PrincipalID = userID
 		ac.Permissions = perms
 		ac.Authenticated = true
 		ac.Client = "web"

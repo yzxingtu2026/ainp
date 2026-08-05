@@ -2,7 +2,7 @@
 export const ATTACHMENT_RESOURCE_TYPES = {
   demoTask: 'demo.task',
   agentAvatar: 'ai.agent',
-  userProfile: 'system.user_profile'
+  accountProfile: 'system.account_profile'
 } as const;
 
 export type RegisteredAttachmentResourceType =

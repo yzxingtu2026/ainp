@@ -42,7 +42,7 @@ func (*HelpSlot) Metadata() aitool.RuntimeMetadata {
 }
 func (*HelpSlot) Project(ctx context.Context, scope aitool.RuntimeScope, definition aitool.Definition) (aitool.Definition, bool, error) {
 	ac := auth.MustFromContext(ctx)
-	visible := ac.Authenticated && ac.TenantID != "" && ac.UserID != "" && ac.TenantID == scope.TenantID && ac.UserID == scope.UserID && string(ac.Realm) == scope.Realm && ac.AuthVersion == scope.AuthVersion
+	visible := ac.Authenticated && ac.TenantID != "" && ac.PrincipalID != "" && ac.TenantID == scope.TenantID && ac.PrincipalID == scope.PrincipalID && string(ac.Realm) == scope.Realm && ac.AuthVersion == scope.AuthVersion
 	return definition, visible, nil
 }
 func (s *HelpSlot) Execute(ctx context.Context, _ aitool.LoadedTool, arguments json.RawMessage) (*aitool.Result, error) {
@@ -51,7 +51,7 @@ func (s *HelpSlot) Execute(ctx context.Context, _ aitool.LoadedTool, arguments j
 		return &aitool.Result{Status: "failed", Summary: "invalid navigation help request", ErrorCategory: "invalid_request"}, nil
 	}
 	ac := auth.MustFromContext(ctx)
-	if !ac.Authenticated || ac.TenantID == "" || ac.UserID == "" {
+	if !ac.Authenticated || ac.TenantID == "" || ac.PrincipalID == "" {
 		return &aitool.Result{Status: "failed", Summary: "authorization changed", ErrorCategory: "authorization_changed"}, nil
 	}
 	visible := false

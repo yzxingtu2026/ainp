@@ -45,15 +45,15 @@ func TestStoredSnapshotValidationRejectsDerivedFieldDrift(t *testing.T) {
 }
 
 func TestTrustedContextAccessorReturnsReadOnlyCopy(t *testing.T) {
-	original := &TrustedRuntimeContext{TenantID: "tenant-a", UserID: "user-a"}
+	original := &TrustedRuntimeContext{TenantID: "tenant-a", PrincipalID: "user-a"}
 	ctx := WithTrusted(context.Background(), original)
 	first, ok := FromContext(ctx)
 	if !ok {
 		t.Fatal("trusted context missing")
 	}
-	first.UserID = "changed"
+	first.PrincipalID = "changed"
 	second, _ := FromContext(ctx)
-	if second.UserID != "user-a" {
+	if second.PrincipalID != "user-a" {
 		t.Fatal("consumer mutated shared trusted context")
 	}
 }

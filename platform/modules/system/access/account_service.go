@@ -149,7 +149,7 @@ FROM attachments a
 JOIN attachment_links l ON l.tenant_id = a.tenant_id AND l.attachment_id = a.id
 WHERE a.tenant_id = ? AND a.id = ? AND a.uploader_id = ? AND a.status = 'ready'
   AND a.content_type LIKE 'image/%'
-  AND l.resource_type = 'system.user_profile' AND l.resource_id = ? AND l.field = 'avatar'
+  AND l.resource_type = 'system.account_profile' AND l.resource_id = ? AND l.field = 'avatar'
 LIMIT 1`, *req.AvatarAttachmentID, accountID, accountID)
 		if queryErr != nil || len(rows) != 1 {
 			return nil, errs.ValidationKey("common.validation_failed", "avatar attachment must be a bound ready image uploaded by the current user")
@@ -711,8 +711,8 @@ WHERE ur.tenant_id = ? AND ur.account_id IN ? ORDER BY r.is_builtin DESC, r.code
 	return result, nil
 }
 
-// protectLastAdmin 在事务内保证租户至少保留一名 enabled 的内置 admin 用户。
-// remainsAdmin 表示变更后目标用户是否仍是 enabled 内置管理员。
+// protectLastAdmin 在事务内保证租户至少保留一名 enabled 的内置 admin 账号。
+// remainsAdmin 表示变更后目标账号是否仍是 enabled 内置管理员。
 func (s *AccountService) protectLastAdmin(db tenant.TenantDatabase, accountID string, remainsAdmin bool) error {
 	isAdmin, err := s.isEnabledBuiltinAdmin(db, accountID)
 	if err != nil {
@@ -877,7 +877,7 @@ func (s *AccountService) notifyRoleChanged(ctx context.Context, tx *gorm.DB, acc
 		AggregateID:   accountID,
 		Payload:       payload,
 	}); err != nil {
-		logging.Warn(ctx, "notify role_changed outbox append failed", "user_id", accountID, "error", err)
+		logging.Warn(ctx, "notify role_changed outbox append failed", "account_id", accountID, "error", err)
 		return fmt.Errorf("append role changed notification: %w", err)
 	}
 	return nil
@@ -907,7 +907,7 @@ func (s *AccountService) notifyPasswordReset(ctx context.Context, tx *gorm.DB, a
 		AggregateID:   accountID,
 		Payload:       payload,
 	}); err != nil {
-		logging.Warn(ctx, "notify password_reset outbox append failed", "user_id", accountID, "error", err)
+		logging.Warn(ctx, "notify password_reset outbox append failed", "account_id", accountID, "error", err)
 		return fmt.Errorf("append password reset notification: %w", err)
 	}
 	return nil

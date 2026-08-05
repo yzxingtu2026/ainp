@@ -244,7 +244,7 @@ func ResolveTenantContext(ctx context.Context) (tenantID string, realm auth.Real
 	if realm == auth.RealmTenant && tenantID == "" {
 		return "", "", "", "", fmt.Errorf("job: tenant_id missing from AuthContext")
 	}
-	return tenantID, realm, strings.TrimSpace(ac.UserID), firstNonEmpty(ac.RequestID, ac.TraceID), nil
+	return tenantID, realm, strings.TrimSpace(ac.PrincipalID), firstNonEmpty(ac.RequestID, ac.TraceID), nil
 }
 
 func firstNonEmpty(values ...string) string {

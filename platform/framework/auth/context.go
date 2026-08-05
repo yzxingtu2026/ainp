@@ -25,7 +25,7 @@ type Context struct {
 	TraceID           string
 	TenantID          string
 	Realm             Realm
-	UserID            string
+	PrincipalID       string
 	OrgID             string
 	DeptID            string
 	Roles             []string

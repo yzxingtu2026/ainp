@@ -85,7 +85,7 @@ func Register(a *app.App) error {
 			}
 			ctx = auth.WithContext(ctx, &auth.Context{
 				TenantID: env.TenantID, Realm: auth.NormalizeRealm(auth.Realm(env.Realm)),
-				UserID: env.ActorID, RequestID: env.CorrelationID,
+				PrincipalID: env.ActorID, RequestID: env.CorrelationID,
 				Authenticated: true, Client: "outbox",
 			})
 			_, err := a.Jobs.Enqueuer.Enqueue(ctx, job.EnqueueInput{
@@ -115,7 +115,7 @@ func makeGenerateThumbHandler(a *app.App) func(ctx context.Context, env job.Enve
 
 		ctx = auth.WithContext(ctx, &auth.Context{
 			TenantID: env.TenantID, Realm: auth.NormalizeRealm(env.Realm),
-			UserID: env.ActorID, RequestID: env.CorrelationID,
+			PrincipalID: env.ActorID, RequestID: env.CorrelationID,
 			Authenticated: true, Client: "job",
 		})
 		tdb, err := tenant.TenantDB(ctx, a.DB)

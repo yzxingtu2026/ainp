@@ -47,7 +47,7 @@
 
 `AttachmentPicker` 必须显式区分选择语义：默认 `replace` 返回最终选择集合；绑定型业务使用 `append` + `lockedSelectedIds`，已关联项显示锁定状态且确认事件只返回本次新增项。解除关联由业务列表独立操作，禁止把锁定项作为新增请求重复提交。
 
-个人资料头像复用 Picker 的单选 replace 模式和共享附件头像加载器。替换顺序为绑定新 `system.user_profile/avatar` → 更新个人资料中的 attachment ID → 解绑旧头像；更新失败须回滚新绑定。认证 store 只保存 attachment ID，全局 AI 用户消息按 ID 走 prepare/download 获取头像，缺失或加载失败时使用账户图标降级。
+个人资料头像复用 Picker 的单选 replace 模式和共享附件头像加载器。替换顺序为绑定新 `system.account_profile/avatar` → 更新个人资料中的 attachment ID → 解绑旧头像；更新失败须回滚新绑定。认证 store 只保存 attachment ID，全局 AI 用户消息按 ID 走 prepare/download 获取头像，缺失或加载失败时使用账户图标降级。
 
 AI Builder 的预览消息复用 `AttachmentPicker` 与上传队列，但不伪造业务 `resource_type`：只允许当前上传者有权访问、状态 ready 且符合 #73 图片限制的附件，并将 attachment ID + revision + detail 作为 `input_image` Content Part 提交。当前不支持通用文件、音视频或 PDF 作为模型输入。
 

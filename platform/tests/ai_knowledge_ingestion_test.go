@@ -51,7 +51,7 @@ func (f ingestionEmbedding) Embed(_ context.Context, request aimodelruntime.Embe
 }
 
 func ingestionContext() context.Context {
-	return auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "tenant-a", UserID: "owner-a", Realm: auth.RealmTenant})
+	return auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "tenant-a", PrincipalID: "owner-a", Realm: auth.RealmTenant})
 }
 
 func seedIngestion(t *testing.T, db *gorm.DB) (ai.KnowledgeBase, ai.KnowledgeDocument) {
@@ -60,7 +60,7 @@ func seedIngestion(t *testing.T, db *gorm.DB) (ai.KnowledgeBase, ai.KnowledgeDoc
 	if err := db.Create(&attachment).Error; err != nil {
 		t.Fatal(err)
 	}
-	base := ai.KnowledgeBase{ID: "kb-a", TenantID: "tenant-a", OwnerUserID: "owner-a", Code: "kb", Name: "Knowledge", Visibility: aiknowledge.VisibilityPrivate, Status: aiknowledge.KnowledgeBaseEnabled, EmbeddingAlias: "embed", ChunkingConfig: aiknowledge.ChunkingConfig{Strategy: aiknowledge.ChunkingFixedTokens, ChunkSize: 100, ChunkOverlap: 10}, RetrievalConfig: aiknowledge.RetrievalConfig{TopK: 5, MaxContextTokens: 4000}, Revision: 1}
+	base := ai.KnowledgeBase{ID: "kb-a", TenantID: "tenant-a", AccountID: "owner-a", Code: "kb", Name: "Knowledge", Visibility: aiknowledge.VisibilityPrivate, Status: aiknowledge.KnowledgeBaseEnabled, EmbeddingAlias: "embed", ChunkingConfig: aiknowledge.ChunkingConfig{Strategy: aiknowledge.ChunkingFixedTokens, ChunkSize: 100, ChunkOverlap: 10}, RetrievalConfig: aiknowledge.RetrievalConfig{TopK: 5, MaxContextTokens: 4000}, Revision: 1}
 	if err := db.Create(&base).Error; err != nil {
 		t.Fatal(err)
 	}

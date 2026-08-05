@@ -62,7 +62,7 @@ func TestPersonalizationDisabledFallbackUsesPublicServiceContract(t *testing.T) 
 		t.Fatal(err)
 	}
 	service := ai.NewPersonalizationService(nil, setting.NewProvider(registry, emptySettingStore{}), nil, nil)
-	ctx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "tenant-a", UserID: "user-a", Realm: auth.RealmTenant, Language: "en-US"})
+	ctx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "tenant-a", PrincipalID: "user-a", Realm: auth.RealmTenant, Language: "en-US"})
 
 	result, err := service.Read(ctx, struct{}{})
 	if err != nil {

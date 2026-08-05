@@ -64,7 +64,7 @@ type Entry struct {
 	RequestID  string         `json:"request_id,omitempty"`
 	TraceID    string         `json:"trace_id,omitempty"`
 	TenantID   string         `json:"tenant_id,omitempty"`
-	UserID     string         `json:"user_id,omitempty"`
+	ActorID    string         `json:"actor_id,omitempty"`
 	ActionID   string         `json:"action_id,omitempty"`
 	JobType    string         `json:"job_type,omitempty"`
 	JobRunID   string         `json:"job_run_id,omitempty"`

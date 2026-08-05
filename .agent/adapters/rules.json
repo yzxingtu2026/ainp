@@ -244,6 +244,23 @@
       }
     },
     {
+      "id": "identity-contract",
+      "source": ".agent/rules/identity-contract.md",
+      "qoder": {
+        "path": ".qoder/rules/identity-contract.md",
+        "frontmatter": {
+          "trigger": "always_on"
+        }
+      },
+      "cursor": {
+        "path": ".cursor/rules/identity-contract.mdc",
+        "frontmatter": {
+          "description": "后台账号、认证主体与操作发起者的身份字段分类及兼容边界",
+          "alwaysApply": true
+        }
+      }
+    },
+    {
       "id": "tenant-data-access",
       "source": ".agent/rules/tenant-data-access.md",
       "qoder": {

@@ -194,7 +194,7 @@ func TestIdempotencyCleanupExpired(t *testing.T) {
 
 func idempotencyTenantContext(tenantID, userID string) context.Context {
 	return auth.WithContext(context.Background(), &auth.Context{
-		TenantID: tenantID, UserID: userID, Realm: auth.RealmTenant, Authenticated: true,
+		TenantID: tenantID, PrincipalID: userID, Realm: auth.RealmTenant, Authenticated: true,
 	})
 }
 
@@ -203,7 +203,7 @@ func TestIdempotencyExecutorReplay(t *testing.T) {
 	exec := idempotency.NewExecutor(repo)
 	ctx := auth.WithContext(context.Background(), &auth.Context{
 		TenantID:       "t1",
-		UserID:         "u1",
+		PrincipalID:    "u1",
 		Realm:          auth.RealmTenant,
 		Authenticated:  true,
 		IdempotencyKey: "exec-key-1",
@@ -250,7 +250,7 @@ func TestIdempotencyExecutorConflict(t *testing.T) {
 	exec := idempotency.NewExecutor(repo)
 	ctx := auth.WithContext(context.Background(), &auth.Context{
 		TenantID:       "t1",
-		UserID:         "u1",
+		PrincipalID:    "u1",
 		Realm:          auth.RealmTenant,
 		Authenticated:  true,
 		IdempotencyKey: "exec-key-2",
@@ -310,7 +310,7 @@ func TestIdempotencyExecutorConcurrentProcessing(t *testing.T) {
 			defer wg.Done()
 			ctx := auth.WithContext(context.Background(), &auth.Context{
 				TenantID:       "t1",
-				UserID:         "u1",
+				PrincipalID:    "u1",
 				Realm:          auth.RealmTenant,
 				Authenticated:  true,
 				IdempotencyKey: "concurrent-key",
@@ -341,7 +341,7 @@ func TestIdempotencyExecutorRequiredNoKey(t *testing.T) {
 	exec := idempotency.NewExecutor(repo)
 	ctx := auth.WithContext(context.Background(), &auth.Context{
 		TenantID:      "t1",
-		UserID:        "u1",
+		PrincipalID:   "u1",
 		Realm:         auth.RealmTenant,
 		Authenticated: true,
 		// No IdempotencyKey set

@@ -222,7 +222,7 @@ func (s *SettingService) Update(ctx context.Context, input json.RawMessage) (any
 		return nil, mapSettingError(err)
 	}
 	s.provider.Invalidate(tenantID, req.Key)
-	s.notifyChange(ctx, setting.Change{TenantID: tenantID, UserID: userID, Key: req.Key, Operation: setting.ChangeUpdated})
+	s.notifyChange(ctx, setting.Change{TenantID: tenantID, ActorID: userID, Key: req.Key, Operation: setting.ChangeUpdated})
 	eff := &setting.Effective{
 		Definition: def, Values: stored.Values, Revision: stored.Revision,
 		SchemaVersion: stored.SchemaVersion, Source: "tenant",
@@ -255,7 +255,7 @@ func (s *SettingService) Reset(ctx context.Context, input json.RawMessage) (any,
 		return nil, mapSettingError(err)
 	}
 	s.provider.Invalidate(tenantID, req.Key)
-	s.notifyChange(ctx, setting.Change{TenantID: tenantID, UserID: userID, Key: req.Key, Operation: setting.ChangeReset})
+	s.notifyChange(ctx, setting.Change{TenantID: tenantID, ActorID: userID, Key: req.Key, Operation: setting.ChangeReset})
 	eff, err := s.provider.Get(ctx, tenantID, req.Key)
 	if err != nil {
 		return nil, mapSettingError(err)

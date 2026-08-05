@@ -12,7 +12,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// ErrDuplicateKey indicates the same key already exists for this tenant/user/action.
+// ErrDuplicateKey indicates the same key already exists for this tenant/principal/action.
 var ErrDuplicateKey = errors.New("idempotency: duplicate key")
 
 // Repository provides CRUD operations on idempotency records.
@@ -52,11 +52,11 @@ func (r *Repository) currentTenantRepository(ctx context.Context) (*tenant.Repos
 }
 
 // Create inserts a new idempotency record in processing state.
-func (r *Repository) Create(ctx context.Context, tenantID, userID, actionID, key, requestHash string, ttl time.Duration) (*Record, error) {
+func (r *Repository) Create(ctx context.Context, tenantID, principalID, actionID, key, requestHash string, ttl time.Duration) (*Record, error) {
 	now := time.Now().UTC()
 	rec := &Record{
 		ID:             uuid.NewString(),
-		UserID:         userID,
+		PrincipalID:    principalID,
 		ActionID:       actionID,
 		IdempotencyKey: key,
 		RequestHash:    requestHash,
@@ -75,12 +75,12 @@ func (r *Repository) Create(ctx context.Context, tenantID, userID, actionID, key
 }
 
 // GetByKey looks up an idempotency record by its composite key.
-func (r *Repository) GetByKey(ctx context.Context, tenantID, userID, actionID, key string) (*Record, error) {
+func (r *Repository) GetByKey(ctx context.Context, tenantID, principalID, actionID, key string) (*Record, error) {
 	repo, err := r.tenantRepository(ctx, tenantID)
 	if err != nil {
 		return nil, err
 	}
-	rec, err := repo.First("user_id = ? AND action_id = ? AND idempotency_key = ?", userID, actionID, key)
+	rec, err := repo.First("principal_id = ? AND action_id = ? AND idempotency_key = ?", principalID, actionID, key)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}

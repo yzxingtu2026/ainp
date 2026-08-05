@@ -84,7 +84,7 @@ func (s *InAppNotificationService) list(ctx context.Context, req inAppNotificati
 	if err != nil {
 		return nil, err
 	}
-	items, total, err := s.repo.ListUserNotifications(ctx, ac.UserID, req.UnreadOnly, req.ExcludeArchived, req.Page, req.PageSize)
+	items, total, err := s.repo.ListUserNotifications(ctx, ac.PrincipalID, req.UnreadOnly, req.ExcludeArchived, req.Page, req.PageSize)
 	if err != nil {
 		return nil, err
 	}
@@ -121,7 +121,7 @@ func (s *InAppNotificationService) UnreadCount(ctx context.Context, _ json.RawMe
 	if err != nil {
 		return nil, err
 	}
-	count, err := s.repo.CountUnread(ctx, ac.UserID)
+	count, err := s.repo.CountUnread(ctx, ac.PrincipalID)
 	if err != nil {
 		return nil, err
 	}
@@ -137,7 +137,7 @@ func (s *InAppNotificationService) MarkRead(ctx context.Context, input json.RawM
 	if err := json.Unmarshal(input, &req); err != nil || strings.TrimSpace(req.ID) == "" {
 		return nil, errs.ValidationKey("common.validation_failed", "id required")
 	}
-	if err := s.repo.MarkRead(ctx, ac.UserID, req.ID); err != nil {
+	if err := s.repo.MarkRead(ctx, ac.PrincipalID, req.ID); err != nil {
 		return nil, err
 	}
 	return map[string]any{"id": req.ID, "read_at": time.Now().UTC()}, nil
@@ -148,7 +148,7 @@ func (s *InAppNotificationService) MarkAllRead(ctx context.Context, _ json.RawMe
 	if err != nil {
 		return nil, err
 	}
-	affected, err := s.repo.MarkAllRead(ctx, ac.UserID)
+	affected, err := s.repo.MarkAllRead(ctx, ac.PrincipalID)
 	if err != nil {
 		return nil, err
 	}
@@ -164,7 +164,7 @@ func (s *InAppNotificationService) Archive(ctx context.Context, input json.RawMe
 	if err := json.Unmarshal(input, &req); err != nil || strings.TrimSpace(req.ID) == "" {
 		return nil, errs.ValidationKey("common.validation_failed", "id required")
 	}
-	if err := s.repo.Archive(ctx, ac.UserID, req.ID); err != nil {
+	if err := s.repo.Archive(ctx, ac.PrincipalID, req.ID); err != nil {
 		return nil, err
 	}
 	return map[string]any{"id": req.ID, "archived": true}, nil
@@ -179,7 +179,7 @@ func (s *InAppNotificationService) Unarchive(ctx context.Context, input json.Raw
 	if err := json.Unmarshal(input, &req); err != nil || strings.TrimSpace(req.ID) == "" {
 		return nil, errs.ValidationKey("common.validation_failed", "id required")
 	}
-	if err := s.repo.Unarchive(ctx, ac.UserID, req.ID); err != nil {
+	if err := s.repo.Unarchive(ctx, ac.PrincipalID, req.ID); err != nil {
 		return nil, err
 	}
 	return map[string]any{"id": req.ID, "archived": false}, nil
@@ -335,7 +335,7 @@ func (s *NotificationTemplateService) Update(ctx context.Context, input json.Raw
 		Subject:       req.Subject,
 		Body:          req.Body,
 		Enabled:       enabled,
-		UpdatedBy:     ac.UserID,
+		UpdatedBy:     ac.PrincipalID,
 	}
 	if err := s.repo.UpsertTemplateOverride(ctx, override); err != nil {
 		return nil, err

@@ -79,7 +79,7 @@ func TestContentPartAcceptsToolPresentationSnapshot(t *testing.T) {
 	}
 }
 
-func TestSystemUserRolesConfirmationPresenterResolvesTenantNames(t *testing.T) {
+func TestSystemAccountRolesConfirmationPresenterResolvesTenantNames(t *testing.T) {
 	db := openOutboxTestDB(t)
 	if err := db.AutoMigrate(&tenant.Tenant{}); err != nil {
 		t.Fatal(err)
@@ -119,22 +119,22 @@ func TestSystemUserRolesConfirmationPresenterResolvesTenantNames(t *testing.T) {
 	}
 	var definition aitool.Definition
 	for _, candidate := range definitions {
-		if candidate.RuntimeRef == system.ActionUserRolesUpdate {
+		if candidate.RuntimeRef == system.ActionAccountRolesUpdate {
 			definition = candidate
 			break
 		}
 	}
 	if definition.ID == "" {
-		t.Fatal("user roles Action Tool definition missing")
+		t.Fatal("account roles Action Tool definition missing")
 	}
-	ctx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t1", UserID: "operator", Realm: auth.RealmTenant, Permissions: []string{system.ActionUserRolesUpdate}})
+	ctx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t1", PrincipalID: "operator", Realm: auth.RealmTenant, Permissions: []string{system.ActionAccountRolesUpdate}})
 	presentation := application.ToolRegistry.PresentConfirmation(ctx, definition, json.RawMessage(`{"id":"user-t1","role_ids":["role-admin","role-audit"]}`))
-	if presentation.Summary != "将用户「测试小王」的角色调整为「审计员、管理员」" || len(presentation.Details) != 2 {
+	if presentation.Summary != "将账号「测试小王」的角色调整为「审计员、管理员」" || len(presentation.Details) != 2 {
 		t.Fatalf("domain presentation did not resolve names: %#v", presentation)
 	}
 	crossTenant := application.ToolRegistry.PresentConfirmation(ctx, definition, json.RawMessage(`{"id":"user-t2","role_ids":["role-admin"]}`))
 	encoded, _ := json.Marshal(crossTenant)
-	if crossTenant.Summary != "请求执行「更新系统用户角色」" || strings.Contains(string(encoded), "其他租户用户") {
+	if crossTenant.Summary != "请求执行「更新后台账号角色」" || strings.Contains(string(encoded), "其他租户用户") {
 		t.Fatalf("cross-tenant lookup did not fail safely: %s", encoded)
 	}
 }

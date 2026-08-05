@@ -96,13 +96,13 @@ func TestAttachmentUploadBindDownloadRangeAndIsolation(t *testing.T) {
 		system.ActionAttachmentListByResource, system.ActionAttachmentDelete,
 	}
 	ctxA := auth.WithContext(context.Background(), &auth.Context{
-		TenantID: "tenant-a", UserID: "user-a", Realm: auth.RealmTenant, Authenticated: true, Permissions: perms,
+		TenantID: "tenant-a", PrincipalID: "user-a", Realm: auth.RealmTenant, Authenticated: true, Permissions: perms,
 	})
 	ctxA2 := auth.WithContext(context.Background(), &auth.Context{
-		TenantID: "tenant-a", UserID: "user-a2", Realm: auth.RealmTenant, Authenticated: true, Permissions: perms,
+		TenantID: "tenant-a", PrincipalID: "user-a2", Realm: auth.RealmTenant, Authenticated: true, Permissions: perms,
 	})
 	ctxB := auth.WithContext(context.Background(), &auth.Context{
-		TenantID: "tenant-b", UserID: "user-b", Realm: auth.RealmTenant, Authenticated: true, Permissions: perms,
+		TenantID: "tenant-b", PrincipalID: "user-b", Realm: auth.RealmTenant, Authenticated: true, Permissions: perms,
 	})
 
 	payload := []byte("hello-attachment-range-0123456789")
@@ -271,7 +271,7 @@ func TestAttachmentExpiredPendingCleanup(t *testing.T) {
 	}
 	svc := system.NewAttachmentService(testDB, application.Storage, application.TransferTokens, application.AttachmentPolicies, nil)
 	ctx := auth.WithContext(context.Background(), &auth.Context{
-		TenantID: "tenant-a", UserID: "user-a", Realm: auth.RealmTenant, Authenticated: true,
+		TenantID: "tenant-a", PrincipalID: "user-a", Realm: auth.RealmTenant, Authenticated: true,
 		Permissions: []string{system.ActionAttachmentUploadPrepare},
 	})
 	prepared, err := svc.UploadPrepare(ctx, json.RawMessage(`{"original_name":"old.txt","content_type":"text/plain","size":5}`))

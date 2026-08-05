@@ -28,15 +28,17 @@ type auditLogListRequest struct {
 	pagination.Request
 	StartAt      string `json:"start_at" validate:"omitempty"`
 	EndAt        string `json:"end_at" validate:"omitempty"`
-	UserKeyword  string `json:"user_keyword" validate:"omitempty"`
-	ActorType    string `json:"actor_type" validate:"omitempty"`
-	ActionID     string `json:"action_id" validate:"omitempty"`
-	Result       string `json:"result" validate:"omitempty,oneof=success failure"`
-	ResourceType string `json:"resource_type" validate:"omitempty"`
-	ResourceID   string `json:"resource_id" validate:"omitempty"`
-	RequestID    string `json:"request_id" validate:"omitempty"`
-	Client       string `json:"client" validate:"omitempty"`
-	Sort         string `json:"sort" validate:"omitempty,oneof=asc desc"`
+	ActorKeyword string `json:"actor_keyword" validate:"omitempty"`
+	// LegacyUserKeyword is accepted during the user-to-actor compatibility window.
+	LegacyUserKeyword string `json:"user_keyword" validate:"omitempty"`
+	ActorType         string `json:"actor_type" validate:"omitempty"`
+	ActionID          string `json:"action_id" validate:"omitempty"`
+	Result            string `json:"result" validate:"omitempty,oneof=success failure"`
+	ResourceType      string `json:"resource_type" validate:"omitempty"`
+	ResourceID        string `json:"resource_id" validate:"omitempty"`
+	RequestID         string `json:"request_id" validate:"omitempty"`
+	Client            string `json:"client" validate:"omitempty"`
+	Sort              string `json:"sort" validate:"omitempty,oneof=asc desc"`
 }
 
 type auditLogGetRequest struct {
@@ -77,10 +79,14 @@ func (s *AuditLogService) list(ctx context.Context, req auditLogListRequest) (an
 	if err != nil {
 		return nil, err
 	}
-	fromSQL := " FROM audit_logs AS a LEFT JOIN tenant_accounts AS u ON u.id = a.user_id AND u.tenant_id = a.tenant_id" +
+	fromSQL := " FROM audit_logs AS a LEFT JOIN tenant_accounts AS u ON u.id = a.actor_id AND u.tenant_id = a.tenant_id" +
 		" WHERE a.tenant_id = ? AND a.occurred_at >= ? AND a.occurred_at <= ?"
 	args := []any{start, end}
-	if keyword := strings.TrimSpace(req.UserKeyword); keyword != "" {
+	keyword := strings.TrimSpace(req.ActorKeyword)
+	if keyword == "" {
+		keyword = strings.TrimSpace(req.LegacyUserKeyword)
+	}
+	if keyword != "" {
 		like := "%" + strings.ToLower(keyword) + "%"
 		fromSQL += " AND (LOWER(u.username) LIKE ? OR LOWER(u.display_name) LIKE ?)"
 		args = append(args, like, like)
@@ -128,7 +134,7 @@ func (s *AuditLogService) get(ctx context.Context, req auditLogGetRequest) (any,
 	}
 	rows, err := tenant.TenantRaw[AuditLogItem](tdb,
 		"SELECT a.*, COALESCE(u.display_name, u.username, '') AS actor_name FROM audit_logs AS a"+
-			" LEFT JOIN tenant_accounts AS u ON u.id = a.user_id AND u.tenant_id = a.tenant_id"+
+			" LEFT JOIN tenant_accounts AS u ON u.id = a.actor_id AND u.tenant_id = a.tenant_id"+
 			" WHERE a.tenant_id = ? AND a.id = ? LIMIT 1", req.ID)
 	if len(rows) == 0 && err == nil {
 		return nil, errs.NewKey(errs.CodeNotFound, "audit.not_found", "audit log not found")

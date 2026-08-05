@@ -18,7 +18,7 @@ Agent 只读要点：`.agent/rules/audit.md`。本文档定义审计与运行日
 
 禁止用 `Info` 日志冒充审计。
 
-MCP OAuth 注册、授权、换 Token、Refresh、撤销、逐次确认和后续 Action 调用必须写安全事件/审计事实；Action 调用记录 `actor_type/client=mcp`、`mcp_client_id`、`mcp_grant_id`、tenant/user、request/trace、Action、permission、结果与 replay。待确认 Action 使用 `result=failure` 和安全摘要表达未执行，批准/拒绝与 Grant 撤销记录独立治理事件。Code、Token、确认恢复凭证、PKCE verifier、Cookie、完整参数及原始结果不得进入日志或审计摘要。
+MCP OAuth 注册、授权、换 Token、Refresh、撤销、逐次确认和后续 Action 调用必须写安全事件/审计事实；Action 调用记录 `actor_type/client=mcp`、`mcp_client_id`、`mcp_grant_id`、tenant/actor、request/trace、Action、permission、结果与 replay。待确认 Action 使用 `result=failure` 和安全摘要表达未执行，批准/拒绝与 Grant 撤销记录独立治理事件。Code、Token、确认恢复凭证、PKCE verifier、Cookie、完整参数及原始结果不得进入日志或审计摘要。
 
 ## 何时写入
 
@@ -34,13 +34,13 @@ MCP OAuth 注册、授权、换 Token、Refresh、撤销、逐次确认和后续
 | `id` | string | 审计记录唯一 ID |
 | `occurred_at` | time | 发生时间，存 UTC |
 | `tenant_id` | string | 租户；System 操作可空或平台约定值，须可区分 |
-| `user_id` | string | 操作者；系统任务可空 |
-| `actor_type` | string | `user` / `system` / `agent` / `job` |
+| `actor_id` | string | 操作发起者；系统任务可空 |
+| `actor_type` | string | `account` / `system` / `agent` / `job` / `mcp` |
 | `action_id` | string | 如 `purchase.order_create` |
 | `result` | string | `success` / `failure` |
 | `request_id` | string | 与 API 信封、运行日志关联 |
 
-Agent 代表用户执行 Action 时，`user_id` 保留责任与授权归属用户，`actor_type=agent`、`client=agent`。审计同时保存服务端生成的 `trace_id`、`agent_run_id` 与 `tool_invocation_id`，用于从审计详情定位 Run、工具调用和运行日志；这些关联字段不得来自模型参数或 Tool Arguments。
+Agent 代表认证主体执行 Action 时，`actor_id` 保留责任与授权归属账号，`actor_type=agent`、`client=agent`。审计同时保存服务端生成的 `trace_id`、`agent_run_id` 与 `tool_invocation_id`，用于从审计详情定位 Run、工具调用和运行日志；这些关联字段不得来自模型参数或 Tool Arguments。
 
 ## 强烈建议（Phase 1 建议具备）
 
@@ -74,7 +74,7 @@ Agent 代表用户执行 Action 时，`user_id` 保留责任与授权归属用�
 - 租户侧只读查询统一经 `system.audit_log_list/get`，保持 `permission` 模式；查询行为本身 `audit=true`。
 - Repository/Service 必须从 AuthContext 构造 TenantDB，并通过 TenantRaw 固定查询注入可信 tenant；禁止请求参数切换租户或手写 ORM tenant 条件，跨租户详情统一返回不存在。
 - 列表默认最近 24 小时，最大跨度 31 天，默认倒序，分页上限 100；须支持用户名/用户昵称模糊查询，以及 `action_id`、`actor_type`、`result`、资源、`request_id`、`client` 筛选；不以用户 ID 作为筛选条件。
-- 查询响应只包含审计稳定字段与操作人辅助名称；用户不存在时保留并展示原始 `user_id`。
+- 查询响应只包含审计稳定字段与操作人辅助名称；账号不存在时保留并展示原始 `actor_id`。
 - 审计数据只读，不提供修改、删除、补录或重放 Action。高频普通 list/get、轮询、未读数默认 `audit=false`。
 - 当前不开放运行日志中心 Action、权限和菜单；未来恢复时，来源列表、查询和详情均属安全敏感读取，必须 `audit=true`，运行日志仍由外部 Provider 查询，不进入 `audit_logs`。
 - 保留周期与归档策略后续在运维/合规文档中定；实现上预留按租户清理的能力。

@@ -26,7 +26,7 @@ func (s *fakeRuntimeSlot) DiscoveryMode() aitool.DiscoveryMode {
 	return aitool.DiscoveryProgressive
 }
 func (s *fakeRuntimeSlot) Project(_ context.Context, scope aitool.RuntimeScope, d aitool.Definition) (aitool.Definition, bool, error) {
-	d.DescriptionForLLM += ":" + scope.UserID
+	d.DescriptionForLLM += ":" + scope.PrincipalID
 	return d, s.visible, nil
 }
 func (s *fakeRuntimeSlot) Metadata() aitool.RuntimeMetadata {
@@ -59,7 +59,7 @@ func TestRuntimeToolSlotsAreStableComposableAndExecutable(t *testing.T) {
 	if !r.IsBindable(a.id) || !r.IsBindable(b.id) {
 		t.Fatal("runtime slots explicitly marked optional must be bindable")
 	}
-	projected, visible, err := r.Project(context.Background(), aitool.RuntimeScope{UserID: "u1"}, items[0])
+	projected, visible, err := r.Project(context.Background(), aitool.RuntimeScope{PrincipalID: "u1"}, items[0])
 	if err != nil || !visible || !strings.HasSuffix(projected.DescriptionForLLM, ":u1") {
 		t.Fatalf("dynamic projection failed: %#v %v %v", projected, visible, err)
 	}

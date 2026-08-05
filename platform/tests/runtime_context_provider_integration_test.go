@@ -62,11 +62,11 @@ func TestRuntimeContextProviderPrecedenceAndRunSnapshotReuse(t *testing.T) {
 	tenantSettings := system.NewSettingService(testDB, application.Settings)
 	clockNow := time.Date(2026, 7, 19, 15, 59, 0, 0, time.UTC)
 	provider := system.NewRuntimeContextProvider(testDB, prefs, tenantSettings.Provider(), runtimecontext.ClockFunc(func() time.Time { return clockNow }))
-	ctx := auth.WithContext(context.Background(), &auth.Context{TenantID: "tenant-a", UserID: "user-a", Realm: auth.RealmTenant, Authenticated: true, Permissions: []string{system.ActionSettingList, system.ActionSettingUpdate}})
+	ctx := auth.WithContext(context.Background(), &auth.Context{TenantID: "tenant-a", PrincipalID: "user-a", Realm: auth.RealmTenant, Authenticated: true, Permissions: []string{system.ActionSettingList, system.ActionSettingUpdate}})
 	if _, err := tenantSettings.Update(ctx, json.RawMessage(`{"key":"general.runtime_defaults","revision":0,"values":{"timezone":"Asia/Shanghai","locale":"zh-CN"}}`)); err != nil {
 		t.Fatal(err)
 	}
-	req := runtimecontext.BuildRequest{TenantID: "tenant-a", UserID: "user-a", ConversationID: "c1", ConversationCreatedAt: clockNow, AgentID: "a1", AgentVersionID: "v1", RunID: "r1"}
+	req := runtimecontext.BuildRequest{TenantID: "tenant-a", PrincipalID: "user-a", ConversationID: "c1", ConversationCreatedAt: clockNow, AgentID: "a1", AgentVersionID: "v1", RunID: "r1"}
 	first, err := provider.Build(ctx, req)
 	if err != nil {
 		t.Fatal(err)

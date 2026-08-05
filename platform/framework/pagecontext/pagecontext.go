@@ -136,9 +136,12 @@ var ErrUnknownPageType = errors.New("unknown page context type")
 type Registry struct {
 	mu        sync.RWMutex
 	resolvers map[string]Resolver
+	aliases   map[string]string
 }
 
-func NewRegistry() *Registry { return &Registry{resolvers: map[string]Resolver{}} }
+func NewRegistry() *Registry {
+	return &Registry{resolvers: map[string]Resolver{}, aliases: map[string]string{}}
+}
 
 func (r *Registry) Register(pageType string, resolver Resolver) error {
 	if !stableCode.MatchString(pageType) || resolver == nil {
@@ -149,7 +152,31 @@ func (r *Registry) Register(pageType string, resolver Resolver) error {
 	if _, exists := r.resolvers[pageType]; exists {
 		return fmt.Errorf("page context resolver already registered: %s", pageType)
 	}
+	if _, exists := r.aliases[pageType]; exists {
+		return fmt.Errorf("page context resolver conflicts with alias: %s", pageType)
+	}
 	r.resolvers[pageType] = resolver
+	return nil
+}
+
+// RegisterAlias keeps a legacy page type resolvable without publishing it in
+// PageTypes, which is the discovery manifest consumed by frontend contracts.
+func (r *Registry) RegisterAlias(alias, target string) error {
+	if !stableCode.MatchString(alias) || !stableCode.MatchString(target) || alias == target {
+		return fmt.Errorf("invalid page context alias")
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, exists := r.resolvers[alias]; exists {
+		return fmt.Errorf("page context alias conflicts with resolver: %s", alias)
+	}
+	if _, exists := r.aliases[alias]; exists {
+		return fmt.Errorf("page context alias already registered: %s", alias)
+	}
+	if _, exists := r.resolvers[target]; !exists {
+		return fmt.Errorf("page context alias target not registered: %s", target)
+	}
+	r.aliases[alias] = target
 	return nil
 }
 
@@ -158,7 +185,11 @@ func (r *Registry) Resolve(ctx context.Context, envelope Envelope) (Snapshot, er
 		return Snapshot{}, err
 	}
 	r.mu.RLock()
-	resolver := r.resolvers[envelope.PageType]
+	pageType := envelope.PageType
+	if target, ok := r.aliases[pageType]; ok {
+		pageType = target
+	}
+	resolver := r.resolvers[pageType]
 	r.mu.RUnlock()
 	if resolver == nil {
 		return Snapshot{}, ErrUnknownPageType
@@ -168,7 +199,7 @@ func (r *Registry) Resolve(ctx context.Context, envelope Envelope) (Snapshot, er
 		return Snapshot{}, err
 	}
 	snapshot.SchemaVersion = SchemaVersion
-	snapshot.PageType = envelope.PageType
+	snapshot.PageType = pageType
 	snapshot.RouteName = envelope.RouteName
 	snapshot.Mode = envelope.Mode
 	if err := validateSnapshot(snapshot); err != nil {

@@ -70,10 +70,10 @@ func TestAttachmentThumbSkippedAndVariantGate(t *testing.T) {
 
 	perms := []string{system.ActionAttachmentUploadPrepare, system.ActionAttachmentDownloadPrepare, system.ActionAttachmentDelete}
 	ctxA := auth.WithContext(context.Background(), &auth.Context{
-		TenantID: "tenant-a", UserID: "user-a", Realm: auth.RealmTenant, Authenticated: true, Permissions: perms,
+		TenantID: "tenant-a", PrincipalID: "user-a", Realm: auth.RealmTenant, Authenticated: true, Permissions: perms,
 	})
 	ctxB := auth.WithContext(context.Background(), &auth.Context{
-		TenantID: "tenant-b", UserID: "user-b", Realm: auth.RealmTenant, Authenticated: true, Permissions: perms,
+		TenantID: "tenant-b", PrincipalID: "user-b", Realm: auth.RealmTenant, Authenticated: true, Permissions: perms,
 	})
 
 	payload := []byte("plain-text-no-thumb")

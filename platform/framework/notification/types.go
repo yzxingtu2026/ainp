@@ -77,7 +77,7 @@ func (r RecipientType) Valid() bool {
 // RecipientSpec identifies a notification recipient.
 type RecipientSpec struct {
 	Type RecipientType `json:"type"`
-	ID   string        `json:"id"` // user_id or role_code
+	ID   string        `json:"id"` // account_id or role_code
 }
 
 func (r RecipientSpec) Validate() error {

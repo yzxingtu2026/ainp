@@ -88,7 +88,7 @@ func resolveEventContext(ctx context.Context) (resolvedContext, error) {
 	return resolvedContext{
 		TenantID:      strings.TrimSpace(ac.TenantID),
 		Realm:         realm,
-		ActorID:       strings.TrimSpace(ac.UserID),
+		ActorID:       strings.TrimSpace(ac.PrincipalID),
 		CorrelationID: firstNonEmpty(ac.RequestID, ac.TraceID),
 	}, nil
 }

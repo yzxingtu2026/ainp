@@ -12,7 +12,7 @@ import (
 type KnowledgeBase struct {
 	ID                    string                      `gorm:"primaryKey;size:64;uniqueIndex:ux_ai_knowledge_bases_tenant_id,priority:2" json:"id"`
 	TenantID              string                      `gorm:"size:64;not null;uniqueIndex:ux_ai_knowledge_bases_tenant_id,priority:1;uniqueIndex:ux_ai_knowledge_bases_tenant_code,where:deleted_at IS NULL,priority:1" json:"-"`
-	OwnerUserID           string                      `gorm:"size:64;not null;index" json:"owner_user_id"`
+	AccountID             string                      `gorm:"size:64;not null;index" json:"account_id"`
 	Code                  string                      `gorm:"size:64;not null;uniqueIndex:ux_ai_knowledge_bases_tenant_code,where:deleted_at IS NULL,priority:2" json:"code"`
 	Name                  string                      `gorm:"size:128;not null" json:"name"`
 	Description           string                      `gorm:"size:1024;not null;default:''" json:"description"`
@@ -225,7 +225,7 @@ func AutoMigrateKnowledge(db *gorm.DB) error {
 		for _, item := range []struct {
 			table, name, definition string
 		}{
-			{"ai_knowledge_bases", "fk_ai_knowledge_base_owner_tenant", "FOREIGN KEY (tenant_id, owner_user_id) REFERENCES tenant_accounts(tenant_id, id) ON DELETE RESTRICT"},
+			{"ai_knowledge_bases", "fk_ai_knowledge_base_owner_tenant", "FOREIGN KEY (tenant_id, account_id) REFERENCES tenant_accounts(tenant_id, id) ON DELETE RESTRICT"},
 			{"ai_agent_knowledge_bindings", "fk_ai_agent_knowledge_creator_tenant", "FOREIGN KEY (tenant_id, created_by) REFERENCES tenant_accounts(tenant_id, id) ON DELETE RESTRICT"},
 		} {
 			if err := addKnowledgeConstraint(db, item.table, item.name, item.definition); err != nil {

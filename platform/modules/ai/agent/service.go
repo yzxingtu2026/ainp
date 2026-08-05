@@ -56,7 +56,7 @@ func (s *AgentService) ReconcileBuiltinForTenant(ctx context.Context, db *gorm.D
 	if !ok {
 		return errs.New(errs.CodeInternal, "builtin contract missing")
 	}
-	ctx = auth.WithContext(ctx, &auth.Context{Authenticated: true, Realm: auth.RealmTenant, TenantID: tenantID, UserID: userID})
+	ctx = auth.WithContext(ctx, &auth.Context{Authenticated: true, Realm: auth.RealmTenant, TenantID: tenantID, PrincipalID: userID})
 	repos, err := newAgentRepositories(ctx, db)
 	if err != nil {
 		return err
@@ -160,7 +160,7 @@ type AgentEmptyRequest struct{}
 
 func agentActor(ctx context.Context) (*auth.Context, error) {
 	ac := auth.MustFromContext(ctx)
-	if !ac.Authenticated || ac.TenantID == "" || ac.UserID == "" {
+	if !ac.Authenticated || ac.TenantID == "" || ac.PrincipalID == "" {
 		return nil, errs.New(errs.CodeUnauthorized, "unauthorized")
 	}
 	return ac, nil
@@ -185,7 +185,7 @@ func (s *AgentService) validateAvatar(ctx context.Context, ac *auth.Context, id 
 	if s.avatars == nil {
 		return errs.New(errs.CodeInternal, "avatar validator unavailable")
 	}
-	return s.avatars.ValidateAvatar(ctx, *id, ac.UserID, canManageTenant(ac))
+	return s.avatars.ValidateAvatar(ctx, *id, ac.PrincipalID, canManageTenant(ac))
 }
 
 type agentAvatarAttachmentPolicy struct {
@@ -200,7 +200,7 @@ func (p agentAvatarAttachmentPolicy) ResourceType() string { return AgentAvatarR
 
 func (p agentAvatarAttachmentPolicy) CanAccess(ctx context.Context, tenantID, userID, resourceID, field string) error {
 	ac, err := agentActor(ctx)
-	if err != nil || ac.TenantID != tenantID || ac.UserID != userID || field != AgentAvatarField {
+	if err != nil || ac.TenantID != tenantID || ac.PrincipalID != userID || field != AgentAvatarField {
 		return errs.New(errs.CodeNotFound, "agent avatar not found")
 	}
 	edit := attachment.ResourceLinkOperationFromContext(ctx) != ""
@@ -219,7 +219,7 @@ func (s *AgentService) visibleQuery(ctx context.Context) (*tenantdata.Repository
 	}
 	q := repos.agents
 	if !canManageTenant(ac) {
-		q = q.Where("visibility = ? OR owner_user_id = ?", "tenant", ac.UserID)
+		q = q.Where("visibility = ? OR owner_user_id = ?", "tenant", ac.PrincipalID)
 	}
 	return q, ac, nil
 }
@@ -268,7 +268,7 @@ func (s *AgentService) get(ctx context.Context, id string, edit bool) (*Agent, *
 	if err != nil {
 		return nil, nil, errs.New(errs.CodeNotFound, "agent not found")
 	}
-	if edit && !canManageTenant(ac) && (row.OwnerUserID == nil || *row.OwnerUserID != ac.UserID || row.Source != "personal") {
+	if edit && !canManageTenant(ac) && (row.OwnerUserID == nil || *row.OwnerUserID != ac.PrincipalID || row.Source != "personal") {
 		return nil, nil, errs.New(errs.CodeNotFound, "agent not found")
 	}
 	return &row, ac, nil
@@ -346,7 +346,7 @@ func (s *AgentService) Create(ctx context.Context, r AgentCreateRequest) (any, e
 		return nil, err
 	}
 	memoryJSON := marshal(memoryPolicy)
-	owner := ac.UserID
+	owner := ac.PrincipalID
 	row := Agent{ID: uuid.NewString(), OwnerUserID: &owner, Code: r.Code, Name: r.Name, Description: r.Description, AvatarAttachmentID: r.AvatarAttachmentID, Source: r.Source, Visibility: r.Visibility, Status: "draft", Revision: 1}
 	repos, err := newAgentRepositories(ctx, s.db)
 	if err != nil {
@@ -361,7 +361,7 @@ func (s *AgentService) Create(ctx context.Context, r AgentCreateRequest) (any, e
 		v := AgentVersion{
 			ID: uuid.NewString(), AgentID: row.ID, Version: 1,
 			Kind: AgentVersionKindRelease, ContentHash: hash, ModelAlias: r.ModelAlias,
-			TenantInstructions: r.TenantInstructions, GenerationConfig: genCfg, ToolPolicy: toolPolicy, MemoryPolicy: memoryJSON, MemoryPolicySource: memorySource, CreatedBy: ac.UserID,
+			TenantInstructions: r.TenantInstructions, GenerationConfig: genCfg, ToolPolicy: toolPolicy, MemoryPolicy: memoryJSON, MemoryPolicySource: memorySource, CreatedBy: ac.PrincipalID,
 		}
 		if e := tx.versions.Create(&v); e != nil {
 			return e
@@ -528,7 +528,7 @@ func (s *AgentService) CreateVersion(ctx context.Context, r AgentVersionCreateRe
 		version = AgentVersion{
 			ID: uuid.NewString(), AgentID: row.ID, Version: next,
 			Kind: AgentVersionKindRelease, ContentHash: hash, ModelAlias: r.ModelAlias,
-			TenantInstructions: r.TenantInstructions, GenerationConfig: genCfg, ToolPolicy: toolPolicy, MemoryPolicy: memoryJSON, MemoryPolicySource: memorySource, CreatedBy: ac.UserID,
+			TenantInstructions: r.TenantInstructions, GenerationConfig: genCfg, ToolPolicy: toolPolicy, MemoryPolicy: memoryJSON, MemoryPolicySource: memorySource, CreatedBy: ac.PrincipalID,
 		}
 		if e := tx.versions.Create(&version); e != nil {
 			return e
@@ -589,7 +589,7 @@ func (s *AgentService) MaterializePreview(ctx context.Context, r AgentPreviewMat
 		version = AgentVersion{
 			ID: uuid.NewString(), AgentID: row.ID, Version: next,
 			Kind: AgentVersionKindPreview, ContentHash: hash, ModelAlias: r.ModelAlias,
-			TenantInstructions: r.TenantInstructions, GenerationConfig: genCfg, ToolPolicy: toolPolicy, MemoryPolicy: memoryJSON, MemoryPolicySource: memorySource, CreatedBy: ac.UserID,
+			TenantInstructions: r.TenantInstructions, GenerationConfig: genCfg, ToolPolicy: toolPolicy, MemoryPolicy: memoryJSON, MemoryPolicySource: memorySource, CreatedBy: ac.PrincipalID,
 		}
 		return tx.versions.Create(&version)
 	})
@@ -805,7 +805,7 @@ func (s *AgentService) BindTool(ctx context.Context, r AgentBindRequest) (any, e
 				}
 				continue
 			}
-			created := AgentToolBinding{ID: uuid.NewString(), AgentID: row.ID, ToolID: member.ID, Source: string(member.Source), Status: "enabled", CreatedBy: ac.UserID}
+			created := AgentToolBinding{ID: uuid.NewString(), AgentID: row.ID, ToolID: member.ID, Source: string(member.Source), Status: "enabled", CreatedBy: ac.PrincipalID}
 			if err = tx.tools.Create(&created); err != nil {
 				return err
 			}
@@ -1053,7 +1053,7 @@ func (s *AgentService) ReconcileBuiltin(ctx context.Context, _ AgentEmptyRequest
 	if e != gorm.ErrRecordNotFound {
 		return nil, e
 	}
-	owner := ac.UserID
+	owner := ac.PrincipalID
 	row = Agent{ID: uuid.NewString(), OwnerUserID: &owner, ContractKey: c.Key, ContractVersion: c.Version, Code: "system-operations", Name: c.Name, Description: c.Description, Source: "builtin", Visibility: "tenant", Status: "draft", Revision: 1}
 	e = repos.agents.Create(&row)
 	return map[string]any{"created": e == nil, "agent": row}, e

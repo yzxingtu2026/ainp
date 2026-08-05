@@ -134,7 +134,7 @@ func (s *ToolService) ReconcileCatalog(ctx context.Context, force ...bool) (Tool
 }
 
 func (s *ToolService) ReconcileCatalogForTenant(ctx context.Context, tenantID, actorID string) (ToolCatalogReconcileResult, error) {
-	ctx = auth.WithContext(ctx, &auth.Context{Authenticated: true, Realm: auth.RealmTenant, TenantID: tenantID, UserID: actorID, Client: "tool-catalog-reconciler"})
+	ctx = auth.WithContext(ctx, &auth.Context{Authenticated: true, Realm: auth.RealmTenant, TenantID: tenantID, PrincipalID: actorID, Client: "tool-catalog-reconciler"})
 	return s.ReconcileCatalog(ctx)
 }
 
@@ -149,7 +149,6 @@ func (s *ToolService) IndexStatus(ctx context.Context) (ToolIndexStatus, error) 
 	if err = s.db.WithContext(ctx).Order("updated_at DESC").Find(&documents).Error; err != nil {
 		return status, err
 	}
-	status.Total = len(documents)
 	for i, document := range documents {
 		if i == 0 {
 			updated := document.UpdatedAt
@@ -164,7 +163,9 @@ func (s *ToolService) IndexStatus(ctx context.Context) (ToolIndexStatus, error) 
 			status.Failed++
 		case "stale":
 			status.Stale++
+			continue
 		}
+		status.Total++
 	}
 	switch {
 	case alias == "":
@@ -175,7 +176,7 @@ func (s *ToolService) IndexStatus(ctx context.Context) (ToolIndexStatus, error) 
 		status.State = "pending"
 	case status.Failed > 0 && status.Ready == 0:
 		status.State = "failed"
-	case status.Failed > 0 || status.Stale > 0:
+	case status.Failed > 0:
 		status.State = "degraded"
 	default:
 		status.State = "ready"

@@ -5,7 +5,7 @@ import "time"
 type AssistantPersonalizationSnapshot struct {
 	ID                 string `gorm:"primaryKey;size:64"`
 	TenantID           string `gorm:"size:64;not null;uniqueIndex:ux_ai_assistant_personalization,priority:1"`
-	UserID             string `gorm:"size:64;not null;uniqueIndex:ux_ai_assistant_personalization,priority:2"`
+	AccountID          string `gorm:"size:64;not null;uniqueIndex:ux_ai_assistant_personalization,priority:2"`
 	SlotKey            string `gorm:"size:128;not null;uniqueIndex:ux_ai_assistant_personalization,priority:3"`
 	AgentVersionID     string `gorm:"size:64;not null;default:''"`
 	Locale             string `gorm:"size:16;not null"`

@@ -38,7 +38,7 @@ func (Client) TableName() string { return "mcp_oauth_clients" }
 type Grant struct {
 	ID          string    `gorm:"primaryKey;size:64"`
 	TenantID    string    `gorm:"size:64;not null;index"`
-	UserID      string    `gorm:"size:64;not null;index"`
+	AccountID   string    `gorm:"size:64;not null;index"`
 	ClientID    string    `gorm:"size:64;not null;index"`
 	Scopes      string    `gorm:"size:128;not null"`
 	AuthVersion uint64    `gorm:"not null"`
@@ -82,7 +82,7 @@ func (TokenFamily) TableName() string { return "mcp_oauth_token_families" }
 type Confirmation struct {
 	ID                  string    `gorm:"primaryKey;size:64"`
 	TenantID            string    `gorm:"size:64;not null;index"`
-	UserID              string    `gorm:"size:64;not null;index"`
+	AccountID           string    `gorm:"size:64;not null;index"`
 	GrantID             string    `gorm:"size:64;not null;index"`
 	ClientID            string    `gorm:"size:64;not null;index"`
 	ActionID            string    `gorm:"size:128;not null"`

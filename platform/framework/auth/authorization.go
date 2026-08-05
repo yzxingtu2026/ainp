@@ -13,7 +13,7 @@ var (
 // AuthorizationRequest contains only identity data verified from a signed token.
 type AuthorizationRequest struct {
 	TenantID    string
-	UserID      string
+	PrincipalID string
 	SessionID   string
 	Realm       Realm
 	AuthVersion uint64
@@ -22,7 +22,7 @@ type AuthorizationRequest struct {
 // AuthorizationSnapshot is the current server-side authorization state.
 type AuthorizationSnapshot struct {
 	TenantID    string
-	UserID      string
+	PrincipalID string
 	SessionID   string
 	OrgID       string
 	DeptID      string
@@ -32,7 +32,7 @@ type AuthorizationSnapshot struct {
 }
 
 // AuthorizationProvider validates identity state and loads current authorization.
-// Implementations must fail closed and scope every lookup by tenant and user.
+// Implementations must fail closed and scope every lookup by tenant and principal.
 type AuthorizationProvider interface {
 	LoadAuthorization(context.Context, AuthorizationRequest) (*AuthorizationSnapshot, error)
 }

@@ -170,7 +170,7 @@ func TestJobEnqueueIdempotentAndPendingRecovery(t *testing.T) {
 	// rebuild enqueuer with same transport after register — use NewEnqueuer directly
 	eq := job.NewEnqueuer(db, rt.Registry, store, tr, true, 1024)
 	ctx := auth.WithContext(context.Background(), &auth.Context{
-		TenantID: "t1", Realm: auth.RealmTenant, UserID: "u1", Authenticated: true, RequestID: "r1",
+		TenantID: "t1", Realm: auth.RealmTenant, PrincipalID: "u1", Authenticated: true, RequestID: "r1",
 	})
 	run1, err := eq.Enqueue(ctx, job.EnqueueInput{
 		Type: "demo.ping", IdempotencyKey: "evt-1:demo.ping", Payload: map[string]any{"message": "hi", "steps": 1},

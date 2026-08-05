@@ -74,11 +74,11 @@ func TestSettingServiceTenantIsolationAndRevision(t *testing.T) {
 	}
 	svc.SetChangeRegistry(changes)
 	ctxA := auth.WithContext(context.Background(), &auth.Context{
-		TenantID: "tenant-a", UserID: "user-a", Realm: auth.RealmTenant, Authenticated: true,
+		TenantID: "tenant-a", PrincipalID: "user-a", Realm: auth.RealmTenant, Authenticated: true,
 		Permissions: []string{system.ActionSettingList, system.ActionSettingUpdate, system.ActionSettingReset, system.ActionSettingGet},
 	})
 	ctxB := auth.WithContext(context.Background(), &auth.Context{
-		TenantID: "tenant-b", UserID: "user-b", Realm: auth.RealmTenant, Authenticated: true,
+		TenantID: "tenant-b", PrincipalID: "user-b", Realm: auth.RealmTenant, Authenticated: true,
 		Permissions: []string{system.ActionSettingList, system.ActionSettingUpdate, system.ActionSettingReset, system.ActionSettingGet},
 	})
 
@@ -122,7 +122,7 @@ func TestSettingServiceTenantIsolationAndRevision(t *testing.T) {
 	if viewA.Revision != 1 || viewA.Source != "tenant" || viewA.Values["display_name"] != "Tenant A" {
 		t.Fatalf("updated view = %#v", viewA)
 	}
-	if received.TenantID != "tenant-a" || received.UserID != "user-a" || received.Key != "general.preferences" || received.Operation != setting.ChangeUpdated {
+	if received.TenantID != "tenant-a" || received.ActorID != "user-a" || received.Key != "general.preferences" || received.Operation != setting.ChangeUpdated {
 		t.Fatalf("unexpected post-commit setting change: %#v", received)
 	}
 	if _, err := svc.Update(ctxA, json.RawMessage(`{"key":"general.preferences","revision":0,"values":{"display_name":"stale","page_size":30,"dark_mode":true,"language":"en-US","tags":["biz"],"brand_color":"#112233","notes":""}}`)); appErrorCode(err) != errs.CodeConflict {
@@ -185,7 +185,7 @@ func TestSettingServiceTenantIsolationAndRevision(t *testing.T) {
 		t.Fatalf("override row should be deleted, count=%d", count)
 	}
 
-	noTenant := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, Realm: auth.RealmTenant, UserID: "x"})
+	noTenant := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, Realm: auth.RealmTenant, PrincipalID: "x"})
 	if _, err := svc.List(noTenant, json.RawMessage(`{}`)); appErrorCode(err) != errs.CodeUnauthorized {
 		t.Fatalf("missing tenant must fail closed: %v", err)
 	}

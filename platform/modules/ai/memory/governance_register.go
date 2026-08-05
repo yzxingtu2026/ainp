@@ -28,7 +28,7 @@ func RegisterMemoryGovernance(a *app.App, projection *MemoryProjectionService, c
 			if a.Jobs == nil || !a.Jobs.Enabled {
 				return nil
 			}
-			ctx = auth.WithContext(ctx, &auth.Context{TenantID: env.TenantID, Realm: auth.NormalizeRealm(auth.Realm(env.Realm)), UserID: env.ActorID, RequestID: env.CorrelationID, Authenticated: true, Client: "outbox"})
+			ctx = auth.WithContext(ctx, &auth.Context{TenantID: env.TenantID, Realm: auth.NormalizeRealm(auth.Realm(env.Realm)), PrincipalID: env.ActorID, RequestID: env.CorrelationID, Authenticated: true, Client: "outbox"})
 			if _, err := a.Jobs.Enqueuer.Enqueue(ctx, job.EnqueueInput{Type: MemoryProjectionJobType, IdempotencyKey: env.ID + ":" + MemoryProjectionJobType, CausationID: env.ID, Payload: p}); err != nil {
 				return err
 			}

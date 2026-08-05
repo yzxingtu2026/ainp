@@ -238,7 +238,7 @@ func TestSystemOperationsContractRejectsPromptVersionDrift(t *testing.T) {
 
 func TestAgentToolSearchOnlyReturnsBindableTools(t *testing.T) {
 	registry := aitool.NewRegistry()
-	actionTool := toolFixture("action:system.user_list", "用户列表", "查询系统用户列表")
+	actionTool := toolFixture("action:system.account_list", "账号列表", "查询后台账号列表")
 	metaTool := actionTool
 	metaTool.ID = "meta:tool.search"
 	metaTool.Source = aitool.SourceMeta
@@ -272,7 +272,7 @@ func TestAgentToolSearchOnlyReturnsBindableTools(t *testing.T) {
 		t.Fatal(err)
 	}
 	service := ai.NewAgentService(nil, aiagent.NewRegistry(), nil, registry)
-	ctx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "tenant-a", UserID: "user-a", Realm: auth.RealmTenant})
+	ctx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "tenant-a", PrincipalID: "user-a", Realm: auth.RealmTenant})
 	value, err := service.SearchTools(ctx, ai.AgentToolSearchRequest{Limit: 100})
 	if err != nil {
 		t.Fatal(err)
@@ -332,7 +332,7 @@ func TestAgentEnableRequiresFirstPublishedVersion(t *testing.T) {
 	}
 	service := ai.NewAgentService(db, aiagent.NewRegistry(), nil, aitool.NewRegistry())
 	ctx := auth.WithContext(context.Background(), &auth.Context{
-		Authenticated: true, TenantID: "tenant-a", UserID: "user-a", Realm: auth.RealmTenant,
+		Authenticated: true, TenantID: "tenant-a", PrincipalID: "user-a", Realm: auth.RealmTenant,
 	})
 
 	_, err = service.Status(ctx, ai.AgentStatusRequest{ID: row.ID, Status: "enabled", Revision: row.Revision})
@@ -370,7 +370,7 @@ func TestAgentServiceTenantRepositoryIsolation(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	ctxA := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "tenant-a", UserID: "user-a", Realm: auth.RealmTenant})
+	ctxA := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "tenant-a", PrincipalID: "user-a", Realm: auth.RealmTenant})
 	if _, err = service.Get(ctxA, ai.IDRequest{ID: "agent-b"}); err == nil {
 		t.Fatal("tenant A read tenant B agent")
 	}
@@ -405,7 +405,7 @@ func TestBuilderPreviewConversationUsesAgentTenantRepository(t *testing.T) {
 		t.Fatal(err)
 	}
 	service := ai.NewConversationService(db, nil)
-	ctxA := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "tenant-a", UserID: owner, Realm: auth.RealmTenant})
+	ctxA := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "tenant-a", PrincipalID: owner, Realm: auth.RealmTenant})
 	value, err := service.Create(ctxA, ai.ConversationCreateRequest{AgentID: agent.ID, AgentVersionID: version.ID, Purpose: ai.ConversationPurposeBuilderPreview, Visibility: "private"})
 	if err != nil {
 		t.Fatal(err)
@@ -413,7 +413,7 @@ func TestBuilderPreviewConversationUsesAgentTenantRepository(t *testing.T) {
 	if value.(ai.Conversation).Purpose != ai.ConversationPurposeBuilderPreview {
 		t.Fatalf("unexpected conversation: %#v", value)
 	}
-	ctxB := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "tenant-b", UserID: "user-b", Realm: auth.RealmTenant})
+	ctxB := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "tenant-b", PrincipalID: "user-b", Realm: auth.RealmTenant})
 	if _, err = service.Create(ctxB, ai.ConversationCreateRequest{AgentID: agent.ID, AgentVersionID: version.ID, Purpose: ai.ConversationPurposeBuilderPreview}); err == nil {
 		t.Fatal("tenant B created preview for tenant A agent")
 	}

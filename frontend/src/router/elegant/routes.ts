@@ -362,6 +362,16 @@ export const generatedRoutes: GeneratedRoute[] = [
     },
     children: [
       {
+        name: 'system_accounts',
+        path: '/system/accounts',
+        component: 'view.system_accounts',
+        meta: {
+          title: 'system_accounts',
+          i18nKey: 'route.system_accounts',
+          hideInMenu: true
+        }
+      },
+      {
         name: 'system_attachments',
         path: '/system/attachments',
         component: 'view.system_attachments',
@@ -407,16 +417,6 @@ export const generatedRoutes: GeneratedRoute[] = [
         meta: {
           title: 'system_settings',
           i18nKey: 'route.system_settings',
-          hideInMenu: true
-        }
-      },
-      {
-        name: 'system_users',
-        path: '/system/users',
-        component: 'view.system_users',
-        meta: {
-          title: 'system_users',
-          i18nKey: 'route.system_users',
           hideInMenu: true
         }
       }

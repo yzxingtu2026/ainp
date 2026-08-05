@@ -54,14 +54,15 @@ func (s *AuthService) LoadRolesAndPermissions(ctx context.Context, accountID, te
 	return roles, perms, err
 }
 
-// LoadAuthorization validates the current tenant/user state and returns a fresh
+// LoadAuthorization validates the current tenant/principal state and returns a fresh
 // authorization snapshot. Token claims are identity inputs, never permission inputs.
 func (s *AuthService) LoadAuthorization(ctx context.Context, req auth.AuthorizationRequest) (*auth.AuthorizationSnapshot, error) {
-	if req.TenantID == "" || req.UserID == "" || req.Realm != auth.RealmTenant || req.AuthVersion == 0 {
+	principalID := req.PrincipalID
+	if req.TenantID == "" || principalID == "" || req.Realm != auth.RealmTenant || req.AuthVersion == 0 {
 		return nil, auth.ErrAuthorizationInvalid
 	}
 
-	u, roles, permissions, err := s.preAuth.loadAuthorization(ctx, req.TenantID, req.UserID, req.SessionID, req.AuthVersion)
+	u, roles, permissions, err := s.preAuth.loadAuthorization(ctx, req.TenantID, principalID, req.SessionID, req.AuthVersion)
 	if err != nil || u == nil {
 		return nil, auth.ErrAuthorizationInvalid
 	}
@@ -69,7 +70,7 @@ func (s *AuthService) LoadAuthorization(ctx context.Context, req auth.Authorizat
 		return nil, auth.ErrAuthorizationStale
 	}
 	return &auth.AuthorizationSnapshot{
-		TenantID: u.TenantID, UserID: u.ID, SessionID: req.SessionID, OrgID: u.OrgID, DeptID: u.DeptID,
+		TenantID: u.TenantID, PrincipalID: u.ID, SessionID: req.SessionID, OrgID: u.OrgID, DeptID: u.DeptID,
 		Roles: roles, Permissions: permissions, AuthVersion: u.AuthVersion,
 	}, nil
 }
@@ -96,7 +97,7 @@ WHERE u.tenant_id = ? AND u.id IN (
 
 func (s *AuthService) BuildProfile(ctx context.Context, u *model.TenantAccount) (*AccountProfile, error) {
 	snapshot, err := s.LoadAuthorization(ctx, auth.AuthorizationRequest{
-		TenantID: u.TenantID, UserID: u.ID, Realm: auth.RealmTenant, AuthVersion: u.AuthVersion,
+		TenantID: u.TenantID, PrincipalID: u.ID, Realm: auth.RealmTenant, AuthVersion: u.AuthVersion,
 	})
 	if err != nil {
 		return nil, err

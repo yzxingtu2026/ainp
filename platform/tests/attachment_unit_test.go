@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/yzxingtu2026/ainp/platform/framework/attachment"
 	"github.com/yzxingtu2026/ainp/platform/modules/system"
 )
@@ -16,7 +17,7 @@ func TestAttachmentTransferTokenIssueAndParse(t *testing.T) {
 		t.Fatal(err)
 	}
 	token, jti, exp, err := svc.Issue(attachment.IssueTransferInput{
-		TenantID: "t1", UserID: "u1", AttachmentID: "a1",
+		TenantID: "t1", PrincipalID: "u1", AttachmentID: "a1",
 		Op: attachment.OpUpload, Size: 12, TTL: time.Minute,
 	})
 	if err != nil || token == "" || jti == "" || exp.Before(time.Now()) {
@@ -26,11 +27,39 @@ func TestAttachmentTransferTokenIssueAndParse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if claims.TenantID != "t1" || claims.UserID != "u1" || claims.AttachmentID != "a1" || claims.Op != attachment.OpUpload || claims.JTI != jti {
+	if claims.TenantID != "t1" || claims.PrincipalID != "u1" || claims.AttachmentID != "a1" || claims.Op != attachment.OpUpload || claims.JTI != jti {
 		t.Fatalf("claims = %#v", claims)
 	}
 	if _, err := svc.Parse(token + "x"); err == nil {
 		t.Fatal("expected parse failure")
+	}
+}
+
+func TestAttachmentTransferTokenLegacyUIDFallbackAndConflict(t *testing.T) {
+	svc, err := attachment.NewTransferTokenService("unit-secret", "ainp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	base := attachment.TransferClaims{
+		TenantID: "t1", LegacyUserID: "legacy-account", AttachmentID: "a1", Op: attachment.OpDownload, Variant: "original", JTI: "jti-1",
+		RegisteredClaims: jwt.RegisteredClaims{Issuer: "ainp", Audience: jwt.ClaimStrings{attachment.TransferAudience}, IssuedAt: jwt.NewNumericDate(now), ExpiresAt: jwt.NewNumericDate(now.Add(time.Minute))},
+	}
+	legacyToken, err := jwt.NewWithClaims(jwt.SigningMethodHS256, base).SignedString([]byte("unit-secret"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	claims, err := svc.Parse(legacyToken)
+	if err != nil || claims.PrincipalID != "legacy-account" {
+		t.Fatalf("legacy uid fallback claims=%#v err=%v", claims, err)
+	}
+	base.PrincipalID = "canonical-account"
+	conflictToken, err := jwt.NewWithClaims(jwt.SigningMethodHS256, base).SignedString([]byte("unit-secret"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = svc.Parse(conflictToken); err == nil {
+		t.Fatal("conflicting attachment principal claims must be rejected")
 	}
 }
 

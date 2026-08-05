@@ -88,6 +88,6 @@ func registerReferenceResolvers(a *app.App) error { return access.RegisterRefere
 func registerRoleActions(a *app.App, service *RoleService) error {
 	return access.RegisterRoleActions(a, service)
 }
-func registerUserActions(a *app.App, service *AccountService) error {
+func registerAccountActions(a *app.App, service *AccountService) error {
 	return access.RegisterAccountActions(a, service)
 }

@@ -116,7 +116,7 @@ func TestOutboxSameTransactionRollback(t *testing.T) {
 	_ = defs.Register(outbox.Definition{EventType: "demo.x.v1", SchemaVersion: 1})
 	w := outbox.NewWriter(defs)
 	ctx := auth.WithContext(context.Background(), &auth.Context{
-		TenantID: "t1", Realm: auth.RealmTenant, UserID: "u1", Authenticated: true, RequestID: "r1",
+		TenantID: "t1", Realm: auth.RealmTenant, PrincipalID: "u1", Authenticated: true, RequestID: "r1",
 	})
 	type row struct {
 		ID string `gorm:"primaryKey"`
@@ -168,7 +168,7 @@ func TestOutboxDispatchIdempotentHandlersAndFakeTransport(t *testing.T) {
 	transport := outbox.NewInProcessTransport(handlers, deliveries)
 	w := outbox.NewWriter(defs)
 	ctx := auth.WithContext(context.Background(), &auth.Context{
-		TenantID: "t1", Realm: auth.RealmTenant, UserID: "u1", Authenticated: true, RequestID: "r1",
+		TenantID: "t1", Realm: auth.RealmTenant, PrincipalID: "u1", Authenticated: true, RequestID: "r1",
 	})
 	var env outbox.Envelope
 	if err := outbox.WithinTx(ctx, db, w, func(tx *gorm.DB, writer outbox.Writer) error {
@@ -223,7 +223,7 @@ func TestOutboxDispatchIdempotentHandlersAndFakeTransport(t *testing.T) {
 	fake := &outbox.RecordingTransport{}
 	disp2 := outbox.NewDispatcher(db, fake, outbox.DispatcherConfig{BatchSize: 10, MaxAttempts: 3})
 	ctx2 := auth.WithContext(context.Background(), &auth.Context{
-		TenantID: "t1", Realm: auth.RealmTenant, UserID: "u1", Authenticated: true,
+		TenantID: "t1", Realm: auth.RealmTenant, PrincipalID: "u1", Authenticated: true,
 	})
 	var env2 outbox.Envelope
 	_ = outbox.WithinTx(ctx2, db, w, func(tx *gorm.DB, writer outbox.Writer) error {
@@ -247,7 +247,7 @@ func TestOutboxConcurrentClaim(t *testing.T) {
 	_ = defs.Register(outbox.Definition{EventType: "demo.x.v1", SchemaVersion: 1})
 	w := outbox.NewWriter(defs)
 	ctx := auth.WithContext(context.Background(), &auth.Context{
-		TenantID: "t1", Realm: auth.RealmTenant, UserID: "u1", Authenticated: true,
+		TenantID: "t1", Realm: auth.RealmTenant, PrincipalID: "u1", Authenticated: true,
 	})
 	const n = 20
 	for i := 0; i < n; i++ {
@@ -292,7 +292,7 @@ func TestOutboxLockRecoveryAndDead(t *testing.T) {
 	_ = defs.Register(outbox.Definition{EventType: "demo.x.v1", SchemaVersion: 1})
 	w := outbox.NewWriter(defs)
 	ctx := auth.WithContext(context.Background(), &auth.Context{
-		TenantID: "t1", Realm: auth.RealmTenant, UserID: "u1", Authenticated: true,
+		TenantID: "t1", Realm: auth.RealmTenant, PrincipalID: "u1", Authenticated: true,
 	})
 	var env outbox.Envelope
 	_ = outbox.WithinTx(ctx, db, w, func(tx *gorm.DB, writer outbox.Writer) error {
@@ -356,7 +356,7 @@ func TestOutboxCommitNotificationWakesDispatcher(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	rt.Start(ctx)
 	t.Cleanup(func() { cancel(); rt.Stop() })
-	eventCtx := auth.WithContext(context.Background(), &auth.Context{TenantID: "t1", Realm: auth.RealmTenant, UserID: "u1", Authenticated: true})
+	eventCtx := auth.WithContext(context.Background(), &auth.Context{TenantID: "t1", Realm: auth.RealmTenant, PrincipalID: "u1", Authenticated: true})
 	var committed outbox.Envelope
 	if err = outbox.WithinTx(eventCtx, db, rt.Writer, func(tx *gorm.DB, writer outbox.Writer) error {
 		committed, err = writer.Append(eventCtx, tx, outbox.AppendInput{EventType: "demo.wakeup.v1", AggregateType: "demo", AggregateID: "committed", Payload: map[string]any{"ok": true}})
@@ -405,7 +405,7 @@ func TestOutboxListenerReconnectsAndStopsGracefully(t *testing.T) {
 	dispatcher.SetNotificationListener(listener)
 	ctx, cancel := context.WithCancel(context.Background())
 	dispatcher.Start(ctx)
-	eventCtx := auth.WithContext(context.Background(), &auth.Context{TenantID: "t1", Realm: auth.RealmTenant, UserID: "u1", Authenticated: true})
+	eventCtx := auth.WithContext(context.Background(), &auth.Context{TenantID: "t1", Realm: auth.RealmTenant, PrincipalID: "u1", Authenticated: true})
 	var env outbox.Envelope
 	if err := outbox.WithinTx(eventCtx, db, writer, func(tx *gorm.DB, w outbox.Writer) error {
 		var appendErr error
@@ -444,7 +444,7 @@ func TestOutboxPollingRemainsReliableFallback(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	dispatcher.Start(ctx)
 	t.Cleanup(func() { cancel(); dispatcher.Stop() })
-	eventCtx := auth.WithContext(context.Background(), &auth.Context{TenantID: "t1", Realm: auth.RealmTenant, UserID: "u1", Authenticated: true})
+	eventCtx := auth.WithContext(context.Background(), &auth.Context{TenantID: "t1", Realm: auth.RealmTenant, PrincipalID: "u1", Authenticated: true})
 	var env outbox.Envelope
 	if err := outbox.WithinTx(eventCtx, db, writer, func(tx *gorm.DB, w outbox.Writer) error {
 		var appendErr error
@@ -470,7 +470,7 @@ func TestOutboxCoalescedWakeDrainsMultipleBatches(t *testing.T) {
 	t.Cleanup(func() { cancel(); dispatcher.Stop() })
 	// Let the initial startup scan finish before inserting without notifications.
 	time.Sleep(50 * time.Millisecond)
-	eventCtx := auth.WithContext(context.Background(), &auth.Context{TenantID: "t1", Realm: auth.RealmTenant, UserID: "u1", Authenticated: true})
+	eventCtx := auth.WithContext(context.Background(), &auth.Context{TenantID: "t1", Realm: auth.RealmTenant, PrincipalID: "u1", Authenticated: true})
 	for i := 0; i < 5; i++ {
 		if err := outbox.WithinTx(eventCtx, db, writer, func(tx *gorm.DB, w outbox.Writer) error {
 			_, appendErr := w.Append(eventCtx, tx, outbox.AppendInput{EventType: "demo.coalesced.v1", AggregateType: "demo", AggregateID: fmt.Sprintf("coalesced-%d", i), Payload: map[string]any{}})
