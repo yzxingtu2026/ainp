@@ -44,7 +44,7 @@ func TestRuntimeContextProviderPrecedenceAndRunSnapshotReuse(t *testing.T) {
 	if err := testDB.Create(&tenant.Tenant{ID: "tenant-a", Name: "A", Status: status.ActivationEnabled}).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := testDB.Create(&model.User{ID: "user-a", TenantID: "tenant-a", Username: "alice", DisplayName: "Alice", PasswordHash: "x", Status: status.ActivationEnabled}).Error; err != nil {
+	if err := testDB.Create(&model.TenantAccount{ID: "user-a", TenantID: "tenant-a", Username: "alice", DisplayName: "Alice", PasswordHash: "x", Status: status.ActivationEnabled}).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := testDB.Exec(`CREATE TABLE ai_memory_current_profiles (tenant_id text NOT NULL,user_id text NOT NULL,agent_id text,status text,source_revision bigint,profile_json jsonb NOT NULL)`).Error; err != nil {

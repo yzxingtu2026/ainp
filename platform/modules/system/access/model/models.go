@@ -6,11 +6,11 @@ import (
 	"time"
 )
 
-// User 一用户一租户；OrgID/DeptID 仅预留。
-type User struct {
+// TenantAccount represents one tenant-console login account. OrgID/DeptID are reserved.
+type TenantAccount struct {
 	ID                 string                  `gorm:"primaryKey;size:64"`
-	TenantID           string                  `gorm:"size:64;uniqueIndex:ux_users_tenant_username;not null"`
-	Username           string                  `gorm:"size:64;uniqueIndex:ux_users_tenant_username;not null"`
+	TenantID           string                  `gorm:"size:64;uniqueIndex:ux_tenant_accounts_tenant_username;not null"`
+	Username           string                  `gorm:"size:64;uniqueIndex:ux_tenant_accounts_tenant_username;not null"`
 	PasswordHash       string                  `gorm:"size:255;not null"`
 	DisplayName        string                  `gorm:"size:128"`
 	AvatarAttachmentID *string                 `gorm:"size:64"`
@@ -22,12 +22,12 @@ type User struct {
 	UpdatedAt          time.Time               `gorm:"autoUpdateTime"`
 }
 
-func (User) TableName() string { return "users" }
+func (TenantAccount) TableName() string { return "tenant_accounts" }
 
 type AuthIdentity struct {
 	ID                   string                  `gorm:"primaryKey;size:64"`
-	TenantID             string                  `gorm:"size:64;uniqueIndex:ux_auth_identity_subject;not null;index"`
-	UserID               string                  `gorm:"size:64;not null;index"`
+	TenantID             string                  `gorm:"size:64;uniqueIndex:ux_auth_identity_subject;not null;index:idx_auth_identities_account"`
+	AccountID            string                  `gorm:"size:64;not null;index:idx_auth_identities_account"`
 	Provider             string                  `gorm:"size:64;uniqueIndex:ux_auth_identity_subject;not null"`
 	Subject              string                  `gorm:"size:255;uniqueIndex:ux_auth_identity_subject;not null"`
 	NormalizedIdentifier string                  `gorm:"size:255;index"`
@@ -42,8 +42,8 @@ func (AuthIdentity) TableName() string { return "auth_identities" }
 
 type AuthSession struct {
 	ID                       string     `gorm:"primaryKey;size:64"`
-	TenantID                 string     `gorm:"size:64;not null;index:idx_auth_sessions_owner"`
-	UserID                   string     `gorm:"size:64;not null;index:idx_auth_sessions_owner"`
+	TenantID                 string     `gorm:"size:64;not null;index:idx_auth_sessions_account"`
+	AccountID                string     `gorm:"size:64;not null;index:idx_auth_sessions_account"`
 	Realm                    string     `gorm:"size:32;not null"`
 	Client                   string     `gorm:"size:64;not null"`
 	DeviceSummary            string     `gorm:"size:255"`
@@ -95,11 +95,11 @@ type RolePermission struct {
 
 func (RolePermission) TableName() string { return "role_permissions" }
 
-type UserRole struct {
-	ID       string `gorm:"primaryKey;size:64"`
-	TenantID string `gorm:"size:64;index;not null"`
-	UserID   string `gorm:"size:64;uniqueIndex:ux_user_role;not null"`
-	RoleID   string `gorm:"size:64;uniqueIndex:ux_user_role;not null"`
+type AccountRole struct {
+	ID        string `gorm:"primaryKey;size:64"`
+	TenantID  string `gorm:"size:64;index;not null"`
+	AccountID string `gorm:"size:64;uniqueIndex:ux_tenant_account_role;not null"`
+	RoleID    string `gorm:"size:64;uniqueIndex:ux_tenant_account_role;not null"`
 }
 
-func (UserRole) TableName() string { return "user_roles" }
+func (AccountRole) TableName() string { return "tenant_account_roles" }

@@ -6,13 +6,13 @@ Agent 只读要点：`.agent/rules/authentication-and-session.md`。
 
 ```text
 Client → Authentication API → Authenticator Registry → Identity Resolver
-       → Tenant User / Account Policy → Session Service → Token Service
+       → TenantAccount / Account Policy → Session Service → Token Service
        → AuthorizationProvider → AuthContext / RBAC
 ```
 
 - Authenticator 只验证凭据并返回 `VerifiedIdentity`，禁止签发 Token、加载权限或写 AuthContext。
-- Identity 由 `tenant_id + provider + subject` 唯一标识并映射到一个 tenant user；Body/Query `tenant_id` 不是可信来源。
-- User 是角色、权限和审计主体。当前保持一用户一租户。
+- Identity 由 `tenant_id + provider + subject` 唯一标识并通过 `account_id` 映射到一个 `TenantAccount`；Body/Query `tenant_id` 不是可信来源。
+- `TenantAccount` 是租户后台的凭据、角色、权限和审计主体。当前保持一账号一租户；普通业务 `User/users` 不属于本认证域。
 - Session 管理刷新与撤销；AuthorizationProvider 仍实时加载用户、角色和权限。
 
 ## 扩展认证器
@@ -39,11 +39,11 @@ Provider secret 使用启动安全配置或 Secret 管理，不进入普通租�
 - access token 是短期 JWT，包含 `tenant_id + user_id + realm + auth_version + session_id`，不包含 roles/permissions。
 - refresh token 是高熵 opaque token，数据库只保存 SHA-256 摘要。
 - refresh 在事务与行锁内轮换；旧 token 重放撤销该 session token family。
-- 会话操作只能作用于 AuthContext 当前 tenant/user。
+- 会话表使用 `account_id` 关联 `TenantAccount`；会话操作只能作用于 AuthContext 当前 tenant/user。`AuthContext.UserID` 和 JWT `user_id` 是兼容协议字段，值为当前 `TenantAccount.ID`。
 - AuthorizationProvider 校验 session 未撤销、未过期且 auth_version 一致；用户/租户停用或授权版本变化后不得刷新。
 - Web access token 延续现有 local storage；refresh token 仅放 tab 级 session storage。高安全部署可替换为 HttpOnly Secure SameSite Cookie/BFF。
 
-新增 `sid` 后旧 JWT 不兼容，升级需要重新登录。迁移见 `platform/migrations/0012_authentication_sessions.sql`。
+新增 `sid` 后旧 JWT 不兼容，升级需要重新登录。会话基础迁移见 `platform/migrations/0012_authentication_sessions.sql`；账号领域原位重命名见 `0054_tenant_accounts.sql`，该迁移保留既有 identity、session、refresh family 和授权版本。
 
 MCP 使用独立的 OAuth Grant、Token family 和 `ainp:mcp` audience，不复用网页 Session Token。其 Refresh 重放检测沿用本节原则，但撤销 MCP Grant 不影响网页会话，详见 `mcp-oauth.md`。
 
@@ -79,7 +79,7 @@ Challenge 只保存摘要，必须具备短 TTL、单次消费、失败次数上
 - [ ] Identity 受可信 tenant 约束并 fail-closed
 - [ ] refresh 只存摘要、事务轮换、重放撤销
 - [ ] Token 权限仍由 AuthorizationProvider 实时加载
-- [ ] 会话操作强制当前 tenant/user scope
+- [ ] Identity / Session 仅以 `account_id` 关联 `tenant_accounts`，会话操作强制当前 tenant/user scope
 - [ ] methods 只暴露启用方法和非敏感元数据
 - [ ] challenge 有 TTL、单次消费和次数上限
 - [ ] 敏感凭据未进入日志、审计、响应或普通设置

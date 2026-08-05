@@ -140,7 +140,9 @@ system root Facade
 └── setup ──> access
 ```
 
-认证/会话、用户、角色、权限投影、pre-auth 和用户/角色 Page Context 归 `access`；设置、个人资料组合与 Runtime Context 投影归 `settings`；附件模型、策略、传输、引用解析与缩略图 Job 归 `attachments`；通知模型、Provider、编排与投递 Job 归 `notifications`；迁移、安装与 seed 归 `setup`。能力子包禁止反向 import `system` 根包，跨能力依赖必须维持上图方向并经架构评审。
+认证/会话、租户后台账号、角色、权限投影、pre-auth 和用户/角色 Page Context 归 `access`；设置、个人资料组合与 Runtime Context 投影归 `settings`；附件模型、策略、传输、引用解析与缩略图 Job 归 `attachments`；通知模型、Provider、编排与投递 Job 归 `notifications`；迁移、安装与 seed 归 `setup`。能力子包禁止反向 import `system` 根包，跨能力依赖必须维持上图方向并经架构评审。
+
+`system/access` 内部以 `TenantAccount`、`AccountRole` 和 `Account*` Service/DTO 为 canonical 术语；`system` 根 Facade 与 `system/model` 仅暂时保留带 `Deprecated` 注释的 `User*` Go aliases。Action ID、HTTP `/users` 路径、JSON `user_id` 和 `AuthContext.UserID` 属于外部兼容协议，不反向决定领域模型命名。
 
 根包继续提供稳定构造器、DTO aliases、Action/Menu ID 与装配入口。`system/model` 和 `system/jobs` 仅为已知下游保留临时 type/function aliases；仓库及已知下游完成 import 迁移并经过一个发布周期后删除。认证协议、Setting Definition key、附件 resource type、通知 Definition/Job type、Action ID 与帮助文档 key 均属于稳定协议，不在兼容出口删除范围。
 

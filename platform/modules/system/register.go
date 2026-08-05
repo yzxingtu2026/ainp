@@ -78,23 +78,23 @@ func Register(a *app.App) error {
 		return err
 	}
 
-	userSvc := NewUserService(a.DB, svc)
+	accountSvc := NewAccountService(a.DB, svc)
 	if a.Outbox != nil {
-		userSvc.SetOutboxWriter(a.Outbox.Writer)
+		accountSvc.SetOutboxWriter(a.Outbox.Writer)
 	}
-	if err := registerUserActions(a, userSvc); err != nil {
+	if err := registerUserActions(a, accountSvc); err != nil {
 		return err
 	}
 	if a.ToolRegistry == nil {
 		return fmt.Errorf("tool registry is required")
 	}
-	if err := a.ToolRegistry.RegisterConfirmationPresenter("action:"+ActionUserRolesUpdate, access.NewUserRolesConfirmationPresenter(userSvc)); err != nil {
+	if err := a.ToolRegistry.RegisterConfirmationPresenter("action:"+ActionUserRolesUpdate, access.NewAccountRolesConfirmationPresenter(accountSvc)); err != nil {
 		return err
 	}
 	if a.PageContexts == nil {
 		return fmt.Errorf("page context registry is required")
 	}
-	if err := a.PageContexts.Register(access.PageTypeSystemUsers, access.UserPageContextResolver{DB: a.DB}); err != nil {
+	if err := a.PageContexts.Register(access.PageTypeSystemUsers, access.AccountPageContextResolver{DB: a.DB}); err != nil {
 		return err
 	}
 	if err := a.PageContexts.Register(access.PageTypeSystemRoles, access.RolePageContextResolver{DB: a.DB}); err != nil {
@@ -117,7 +117,7 @@ func Register(a *app.App) error {
 	}
 	userSettingSvc := NewUserSettingService(a.DB, a.Settings)
 	a.RuntimeContextProvider = NewRuntimeContextProvider(a.DB, userSettingSvc, a.SettingValues, nil)
-	if err := registerProfileActions(a, userSvc, userSettingSvc); err != nil {
+	if err := registerProfileActions(a, accountSvc, userSettingSvc); err != nil {
 		return err
 	}
 

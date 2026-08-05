@@ -20,7 +20,7 @@ func (s *AuthService) Me(ctx context.Context) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	rows, err := tenant.TenantRaw[model.User](tdb, `SELECT * FROM users WHERE tenant_id = ? AND id = ?`, ac.UserID)
+	rows, err := tenant.TenantRaw[model.TenantAccount](tdb, `SELECT * FROM tenant_accounts WHERE tenant_id = ? AND id = ?`, ac.UserID)
 	if err != nil {
 		return nil, errs.Wrap(errs.CodeInternal, "lookup user failed", err)
 	}

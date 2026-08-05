@@ -17,6 +17,7 @@
 - `modules/A` 禁止 import `modules/B`，不再接受迁移基线或依赖白名单；跨模块协作必须通过 `framework` contract 和 composition root 注入。
 - 每个模块必须在根目录提供返回 `error` 的 `Register` 入口；禁止空目录、根目录实现文件、子包反向 import 模块根包及 `common`/`utils`/`misc` 等兜底包。
 - `system` 根包只保留 `Register`、Facade、contracts 与常量；能力归档为 `access`、`settings`、`attachments`、`notifications`、`setup`，子包禁止反向 import 根包。
+- `system/access` 内部 canonical 术语为 `TenantAccount`、`AccountRole` 和 `Account*` Service/DTO；仅 `system` 根 Facade 与 `system/model` 可暂留带弃用说明的 `User*` aliases，外部 Action/HTTP/JSON/AuthContext 兼容字段保持不变。
 - 依赖方向固定为 `system root Facade → access → access/model`、`root → settings`、`root → attachments → attachments/model|jobs`、`root → notifications → notifications/jobs`、`root → setup → access`。
 - `system/model` 与 `system/jobs` 仅保留临时兼容 alias；已知下游迁移并经过一个发布周期后删除，稳定协议 ID/key 不删除。
 - 迁移测试要合并重复覆盖并记录替代位置；禁止为测试新增生产导出 API、测试桥接或其他边界绕过。

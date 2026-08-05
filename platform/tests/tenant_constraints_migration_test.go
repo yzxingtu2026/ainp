@@ -73,17 +73,16 @@ func TestTenantCompositeConstraintMigrationPostgres(t *testing.T) {
 	if err = ai.AutoMigrate(db); err != nil {
 		t.Fatal(err)
 	}
-	body, err := os.ReadFile("../migrations/0028_tenant_composite_constraints.sql")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = db.Exec(string(body)).Error; err != nil {
-		t.Fatal(err)
-	}
+	// Historical migrations must run against the schema names that existed at
+	// their version, then 0054 advances the fixture to the current schema.
+	restorePre0054AccountSchema(t, db)
+	applyTestMigration(t, db, "0028_tenant_composite_constraints.sql")
+	applyTestMigration(t, db, "0054_tenant_accounts.sql")
 
 	var count int64
 	if err = db.Raw(`SELECT COUNT(*) FROM pg_constraint
-WHERE conname IN ('fk_ai_agent_versions_agent_tenant','fk_ai_conversations_version_tenant','fk_ai_runs_trigger_tenant','fk_user_roles_user_tenant')`).Scan(&count).Error; err != nil {
+WHERE connamespace = current_schema()::regnamespace
+  AND conname IN ('fk_ai_agent_versions_agent_tenant','fk_ai_conversations_version_tenant','fk_ai_runs_trigger_tenant','fk_tenant_account_roles_account_tenant')`).Scan(&count).Error; err != nil {
 		t.Fatal(err)
 	}
 	if count != 4 {
@@ -93,7 +92,7 @@ WHERE conname IN ('fk_ai_agent_versions_agent_tenant','fk_ai_conversations_versi
 	if err = db.Exec(`INSERT INTO tenants (id,name,status) VALUES ('tenant-a','A','enabled'),('tenant-b','B','enabled')`).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err = db.Exec(`INSERT INTO users (id,tenant_id,username,password_hash,status,auth_version) VALUES ('user-a','tenant-a','a','x','enabled',1)`).Error; err != nil {
+	if err = db.Exec(`INSERT INTO tenant_accounts (id,tenant_id,username,password_hash,status,auth_version) VALUES ('user-a','tenant-a','a','x','enabled',1)`).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err = db.Exec(`INSERT INTO ai_agents (id,tenant_id,code,name,description,source,visibility,status,current_version,revision) VALUES ('agent-b','tenant-b','b','B','','tenant','tenant','draft',0,1)`).Error; err != nil {

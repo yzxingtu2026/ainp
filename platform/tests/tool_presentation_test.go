@@ -92,7 +92,7 @@ func TestSystemUserRolesConfirmationPresenterResolvesTenantNames(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for _, user := range []model.User{
+	for _, user := range []model.TenantAccount{
 		{ID: "user-t1", TenantID: "t1", Username: "xiaowang", DisplayName: "测试小王", PasswordHash: "x", Status: status.ActivationEnabled},
 		{ID: "user-t2", TenantID: "t2", Username: "other", DisplayName: "其他租户用户", PasswordHash: "x", Status: status.ActivationEnabled},
 	} {

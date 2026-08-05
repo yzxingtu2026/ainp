@@ -23,7 +23,7 @@ func NewAuthService(db *gorm.DB, registries ...*action.Registry) *AuthService {
 	return &AuthService{db: db, preAuth: newPreAuthStore(db, actions)}
 }
 
-type UserProfile struct {
+type AccountProfile struct {
 	ID                 string     `json:"id"`
 	Username           string     `json:"username"`
 	DisplayName        string     `json:"display_name"`
@@ -37,8 +37,8 @@ type UserProfile struct {
 	Realm              auth.Realm `json:"realm"`
 }
 
-func (s *AuthService) FindUserByUsername(ctx context.Context, tenantID, username string) (*model.User, error) {
-	return s.preAuth.findUserByUsername(ctx, tenantID, username)
+func (s *AuthService) FindAccountByUsername(ctx context.Context, tenantID, username string) (*model.TenantAccount, error) {
+	return s.preAuth.findAccountByUsername(ctx, tenantID, username)
 }
 
 func (s *AuthService) FindDefaultTenant(ctx context.Context) (*tenant.Tenant, error) {
@@ -49,8 +49,8 @@ func (s *AuthService) FindTenant(ctx context.Context, tenantID string) (*tenant.
 	return s.preAuth.findTenant(ctx, tenantID)
 }
 
-func (s *AuthService) LoadRolesAndPermissions(ctx context.Context, userID, tenantID string) (roles []string, perms []string, err error) {
-	_, roles, perms, err = s.preAuth.loadAuthorization(ctx, tenantID, userID, "", 0)
+func (s *AuthService) LoadRolesAndPermissions(ctx context.Context, accountID, tenantID string) (roles []string, perms []string, err error) {
+	_, roles, perms, err = s.preAuth.loadAuthorization(ctx, tenantID, accountID, "", 0)
 	return roles, perms, err
 }
 
@@ -74,34 +74,34 @@ func (s *AuthService) LoadAuthorization(ctx context.Context, req auth.Authorizat
 	}, nil
 }
 
-func (s *AuthService) BumpAuthVersionScoped(db tenant.TenantDatabase, userID string) error {
-	if userID == "" {
+func (s *AuthService) BumpAuthVersionScoped(db tenant.TenantDatabase, accountID string) error {
+	if accountID == "" {
 		return auth.ErrAuthorizationInvalid
 	}
-	return tenant.TenantExec(db, `UPDATE users SET auth_version = auth_version + 1
-WHERE tenant_id = ? AND id = ?`, userID)
+	return tenant.TenantExec(db, `UPDATE tenant_accounts SET auth_version = auth_version + 1
+WHERE tenant_id = ? AND id = ?`, accountID)
 }
 
-// BumpAuthVersionForRoleScoped invalidates users through a trusted tenant transaction.
+// BumpAuthVersionForRoleScoped invalidates accounts through a trusted tenant transaction.
 func (s *AuthService) BumpAuthVersionForRoleScoped(db tenant.TenantDatabase, roleID string) error {
 	if roleID == "" {
 		return auth.ErrAuthorizationInvalid
 	}
-	return tenant.TenantExec(db, `UPDATE users AS u SET auth_version = auth_version + 1
+	return tenant.TenantExec(db, `UPDATE tenant_accounts AS u SET auth_version = auth_version + 1
 WHERE u.tenant_id = ? AND u.id IN (
-  SELECT ur.user_id FROM user_roles ur JOIN roles r ON r.id = ur.role_id AND r.tenant_id = ur.tenant_id
+  SELECT ur.account_id FROM tenant_account_roles ur JOIN roles r ON r.id = ur.role_id AND r.tenant_id = ur.tenant_id
   WHERE ur.tenant_id = u.tenant_id AND r.id = ?
 )`, roleID)
 }
 
-func (s *AuthService) BuildProfile(ctx context.Context, u *model.User) (*UserProfile, error) {
+func (s *AuthService) BuildProfile(ctx context.Context, u *model.TenantAccount) (*AccountProfile, error) {
 	snapshot, err := s.LoadAuthorization(ctx, auth.AuthorizationRequest{
 		TenantID: u.TenantID, UserID: u.ID, Realm: auth.RealmTenant, AuthVersion: u.AuthVersion,
 	})
 	if err != nil {
 		return nil, err
 	}
-	profile := &UserProfile{
+	profile := &AccountProfile{
 		ID:                 u.ID,
 		Username:           u.Username,
 		DisplayName:        u.DisplayName,

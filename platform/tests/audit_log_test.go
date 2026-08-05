@@ -53,10 +53,10 @@ func TestAgentActionAuditPreservesUserAndCorrelation(t *testing.T) {
 
 func TestAuditLogActionsFilterAndEnforceTenantScope(t *testing.T) {
 	db := openOutboxTestDB(t)
-	if err := db.AutoMigrate(&audit.Record{}, &model.User{}); err != nil {
+	if err := db.AutoMigrate(&audit.Record{}, &model.TenantAccount{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Create(&model.User{ID: "u1", TenantID: "t1", Username: "old-user", DisplayName: "Historical User", PasswordHash: "x"}).Error; err != nil {
+	if err := db.Create(&model.TenantAccount{ID: "u1", TenantID: "t1", Username: "old-user", DisplayName: "Historical User", PasswordHash: "x"}).Error; err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
@@ -110,7 +110,7 @@ func TestAuditLogActionsFilterAndEnforceTenantScope(t *testing.T) {
 
 func TestAuditLogQueryRejectsInvalidRangesAndPageSize(t *testing.T) {
 	db := openOutboxTestDB(t)
-	if err := db.AutoMigrate(&audit.Record{}, &model.User{}); err != nil {
+	if err := db.AutoMigrate(&audit.Record{}, &model.TenantAccount{}); err != nil {
 		t.Fatal(err)
 	}
 	application := app.New(&config.Config{}, db, audit.NewGormRecorder(db), nil)

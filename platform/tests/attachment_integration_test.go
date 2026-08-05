@@ -57,7 +57,7 @@ func TestAttachmentUploadBindDownloadRangeAndIsolation(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for _, row := range []model.User{
+	for _, row := range []model.TenantAccount{
 		{ID: "user-a", TenantID: "tenant-a", Username: "admin-a", PasswordHash: "x", Status: status.ActivationEnabled},
 		{ID: "user-a2", TenantID: "tenant-a", Username: "peer-a", PasswordHash: "x", Status: status.ActivationEnabled},
 		{ID: "user-b", TenantID: "tenant-b", Username: "admin-b", PasswordHash: "x", Status: status.ActivationEnabled},
@@ -260,7 +260,7 @@ func TestAttachmentExpiredPendingCleanup(t *testing.T) {
 	if err := testDB.Create(&tenant.Tenant{ID: "tenant-a", Name: "A", Status: status.ActivationEnabled}).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := testDB.Create(&model.User{ID: "user-a", TenantID: "tenant-a", Username: "admin", PasswordHash: "x", Status: status.ActivationEnabled}).Error; err != nil {
+	if err := testDB.Create(&model.TenantAccount{ID: "user-a", TenantID: "tenant-a", Username: "admin", PasswordHash: "x", Status: status.ActivationEnabled}).Error; err != nil {
 		t.Fatal(err)
 	}
 

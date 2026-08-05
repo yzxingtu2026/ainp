@@ -17,7 +17,7 @@
 - 角色资料、状态、权限替换和删除都在 Service 事务中完成，Handler 不散落 SQL。
 - 权限替换先完整校验目录，再删除旧值并写入新值；成功后在同一事务按角色递增关联用户 `auth_version`。
 - 角色启停同样在事务中触发关联用户授权失效。
-- 有 UserRole 关联的角色拒绝删除，必须先由用户管理解除分配。
+- 有 `AccountRole` 关联的角色拒绝删除，必须先由用户管理解除分配。关联事实只存于 `tenant_account_roles(account_id, role_id)`；业务 `User` 不参与后台 RBAC。
 
 ## 内置管理员保护
 

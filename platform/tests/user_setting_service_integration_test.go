@@ -52,7 +52,7 @@ func TestUserSettingsAreSelfOnlyAndRevisioned(t *testing.T) {
 	if err := fixtureDB().Create(&tenant.Tenant{ID: "tenant-a", Name: "A", Status: status.ActivationEnabled}).Error; err != nil {
 		t.Fatal(err)
 	}
-	for _, u := range []model.User{{ID: "user-a", TenantID: "tenant-a", Username: "alice", PasswordHash: "x", DisplayName: "Alice", Status: status.ActivationEnabled}, {ID: "user-b", TenantID: "tenant-a", Username: "bob", PasswordHash: "x", DisplayName: "Bob", Status: status.ActivationEnabled}} {
+	for _, u := range []model.TenantAccount{{ID: "user-a", TenantID: "tenant-a", Username: "alice", PasswordHash: "x", DisplayName: "Alice", Status: status.ActivationEnabled}, {ID: "user-b", TenantID: "tenant-a", Username: "bob", PasswordHash: "x", DisplayName: "Bob", Status: status.ActivationEnabled}} {
 		if err := fixtureDB().Create(&u).Error; err != nil {
 			t.Fatal(err)
 		}
@@ -115,22 +115,22 @@ func TestUserSettingsAreSelfOnlyAndRevisioned(t *testing.T) {
 		t.Fatalf("typed prefs=%#v", prefs)
 	}
 
-	userService := system.NewUserService(testDB, system.NewAuthService(testDB))
+	userService := system.NewAccountService(testDB, system.NewAuthService(testDB))
 	updatedProfile, err := userService.UpdateSelfProfile(ctx("user-a"), json.RawMessage(`{"display_name":"Alice Updated"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if updatedProfile.(system.SelfProfileView).DisplayName != "Alice Updated" {
+	if updatedProfile.(system.AccountSelfProfileView).DisplayName != "Alice Updated" {
 		t.Fatalf("updated self profile=%#v", updatedProfile)
 	}
-	if updatedProfile.(system.SelfProfileView).AvatarAttachmentID != nil {
+	if updatedProfile.(system.AccountSelfProfileView).AvatarAttachmentID != nil {
 		t.Fatalf("legacy profile update unexpectedly changed avatar: %#v", updatedProfile)
 	}
 	updatedProfile, err = userService.UpdateSelfProfile(ctx("user-a"), json.RawMessage(`{"display_name":"Alice Updated","avatar_attachment_id":"avatar-a"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	avatarID := updatedProfile.(system.SelfProfileView).AvatarAttachmentID
+	avatarID := updatedProfile.(system.AccountSelfProfileView).AvatarAttachmentID
 	if avatarID == nil || *avatarID != "avatar-a" {
 		t.Fatalf("avatar was not saved: %#v", updatedProfile)
 	}
@@ -143,11 +143,11 @@ func TestUserSettingsAreSelfOnlyAndRevisioned(t *testing.T) {
 	if err := application.AttachmentPolicies.Allow(ctx("user-a"), system.UserProfileAttachmentResourceType, "tenant-a", "user-a", "user-b", system.UserProfileAvatarField); err == nil {
 		t.Fatal("self avatar policy allowed another user's resource")
 	}
-	var alice, bob model.User
-	if err := fixtureDB().Raw("SELECT * FROM users WHERE tenant_id = ? AND id = ?", "tenant-a", "user-a").Scan(&alice).Error; err != nil {
+	var alice, bob model.TenantAccount
+	if err := fixtureDB().Raw("SELECT * FROM tenant_accounts WHERE tenant_id = ? AND id = ?", "tenant-a", "user-a").Scan(&alice).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := fixtureDB().Raw("SELECT * FROM users WHERE tenant_id = ? AND id = ?", "tenant-a", "user-b").Scan(&bob).Error; err != nil {
+	if err := fixtureDB().Raw("SELECT * FROM tenant_accounts WHERE tenant_id = ? AND id = ?", "tenant-a", "user-b").Scan(&bob).Error; err != nil {
 		t.Fatal(err)
 	}
 	if alice.DisplayName != "Alice Updated" || bob.DisplayName != "Bob" {
@@ -157,7 +157,7 @@ func TestUserSettingsAreSelfOnlyAndRevisioned(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := fixtureDB().Exec("UPDATE users SET password_hash = ? WHERE tenant_id = ? AND id = ?", string(currentHash), "tenant-a", "user-a").Error; err != nil {
+	if err := fixtureDB().Exec("UPDATE tenant_accounts SET password_hash = ? WHERE tenant_id = ? AND id = ?", string(currentHash), "tenant-a", "user-a").Error; err != nil {
 		t.Fatal(err)
 	}
 	if _, err := userService.UpdateSelfPassword(ctx("user-a"), json.RawMessage(`{"current_password":"wrong","new_password":"Next@1234"}`)); appErrorCode(err) != errs.CodeInvalidCredentials {
@@ -173,7 +173,7 @@ func TestUserSettingsAreSelfOnlyAndRevisioned(t *testing.T) {
 	if result.(map[string]any)["reauthentication_required"] != true {
 		t.Fatalf("password update result=%#v", result)
 	}
-	if err := fixtureDB().Raw("SELECT * FROM users WHERE tenant_id = ? AND id = ?", "tenant-a", "user-a").Scan(&alice).Error; err != nil {
+	if err := fixtureDB().Raw("SELECT * FROM tenant_accounts WHERE tenant_id = ? AND id = ?", "tenant-a", "user-a").Scan(&alice).Error; err != nil {
 		t.Fatal(err)
 	}
 	if bcrypt.CompareHashAndPassword([]byte(alice.PasswordHash), []byte("Next@1234")) != nil {

@@ -91,7 +91,7 @@ func TestSystemUserPageContextRevalidatesPermissionTenantAndRevision(t *testing.
 		t.Fatal(err)
 	}
 	now := time.Now().UTC().Truncate(time.Microsecond)
-	for _, user := range []model.User{
+	for _, user := range []model.TenantAccount{
 		{ID: "u1", TenantID: "t1", Username: "alpha", DisplayName: "Alpha", PasswordHash: "x", Status: "enabled", UpdatedAt: now},
 		{ID: "u2", TenantID: "t2", Username: "beta", DisplayName: "Beta", PasswordHash: "x", Status: "enabled", UpdatedAt: now},
 	} {

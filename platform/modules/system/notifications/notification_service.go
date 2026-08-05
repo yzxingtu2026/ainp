@@ -299,7 +299,7 @@ func UserExistsFn(db *gorm.DB) func(ctx context.Context, tenantID, userID string
 			ID     string
 			Status string
 		}
-		rows, err := tenant.TenantRaw[userRow](tdb, "SELECT id, status FROM users WHERE tenant_id = ? AND id = ? LIMIT 1", userID)
+		rows, err := tenant.TenantRaw[userRow](tdb, "SELECT id, status FROM tenant_accounts WHERE tenant_id = ? AND id = ? LIMIT 1", userID)
 		if err != nil {
 			return false, err
 		}

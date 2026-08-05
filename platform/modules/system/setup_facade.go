@@ -13,8 +13,10 @@ import (
 type SetupService = setupcap.SetupService
 
 const (
-	SeedTenantID = setupcap.SeedTenantID
-	SeedUserID   = setupcap.SeedUserID
+	SeedTenantID  = setupcap.SeedTenantID
+	SeedAccountID = setupcap.SeedAccountID
+	// Deprecated: use SeedAccountID.
+	SeedUserID   = SeedAccountID
 	SeedRoleID   = setupcap.SeedRoleID
 	SeedUsername = setupcap.SeedUsername
 	SeedPassword = setupcap.SeedPassword

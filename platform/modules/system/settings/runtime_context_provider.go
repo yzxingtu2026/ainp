@@ -38,7 +38,7 @@ func (p *RuntimeContextProvider) Build(ctx context.Context, req runtimecontext.B
 	if err != nil {
 		return nil, err
 	}
-	users, err := tenant.TenantRaw[model.User](tdb, `SELECT * FROM users WHERE tenant_id=? AND id=? AND status=? LIMIT 1`, req.UserID, status.ActivationEnabled)
+	users, err := tenant.TenantRaw[model.TenantAccount](tdb, `SELECT * FROM tenant_accounts WHERE tenant_id=? AND id=? AND status=? LIMIT 1`, req.UserID, status.ActivationEnabled)
 	if err != nil {
 		return nil, err
 	}

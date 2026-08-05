@@ -77,7 +77,7 @@ func (s *AuditLogService) list(ctx context.Context, req auditLogListRequest) (an
 	if err != nil {
 		return nil, err
 	}
-	fromSQL := " FROM audit_logs AS a LEFT JOIN users AS u ON u.id = a.user_id AND u.tenant_id = a.tenant_id" +
+	fromSQL := " FROM audit_logs AS a LEFT JOIN tenant_accounts AS u ON u.id = a.user_id AND u.tenant_id = a.tenant_id" +
 		" WHERE a.tenant_id = ? AND a.occurred_at >= ? AND a.occurred_at <= ?"
 	args := []any{start, end}
 	if keyword := strings.TrimSpace(req.UserKeyword); keyword != "" {
@@ -128,7 +128,7 @@ func (s *AuditLogService) get(ctx context.Context, req auditLogGetRequest) (any,
 	}
 	rows, err := tenant.TenantRaw[AuditLogItem](tdb,
 		"SELECT a.*, COALESCE(u.display_name, u.username, '') AS actor_name FROM audit_logs AS a"+
-			" LEFT JOIN users AS u ON u.id = a.user_id AND u.tenant_id = a.tenant_id"+
+			" LEFT JOIN tenant_accounts AS u ON u.id = a.user_id AND u.tenant_id = a.tenant_id"+
 			" WHERE a.tenant_id = ? AND a.id = ? LIMIT 1", req.ID)
 	if len(rows) == 0 && err == nil {
 		return nil, errs.NewKey(errs.CodeNotFound, "audit.not_found", "audit log not found")

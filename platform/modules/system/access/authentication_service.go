@@ -54,13 +54,13 @@ func (p *PasswordAuthenticator) Complete(ctx context.Context, req authentication
 		return nil, errs.NewKey(errs.CodeInvalidCredentials, "auth.invalid_credentials", "invalid username or password")
 	}
 	username := strings.TrimSpace(credentials.Username)
-	user, err := p.service.FindUserByUsername(ctx, tenantRow.ID, username)
-	if err != nil || bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(credentials.Password)) != nil {
+	account, err := p.service.FindAccountByUsername(ctx, tenantRow.ID, username)
+	if err != nil || bcrypt.CompareHashAndPassword([]byte(account.PasswordHash), []byte(credentials.Password)) != nil {
 		return nil, errs.NewKey(errs.CodeInvalidCredentials, "auth.invalid_credentials", "invalid username or password")
 	}
 	return &authentication.VerifiedIdentity{
-		Provider: passwordMethod, Subject: user.Username,
-		NormalizedIdentifier: strings.ToLower(user.Username), TenantID: user.TenantID,
+		Provider: passwordMethod, Subject: account.Username,
+		NormalizedIdentifier: strings.ToLower(account.Username), TenantID: account.TenantID,
 	}, nil
 }
 
@@ -110,7 +110,7 @@ func refreshSessionID(token string) string {
 	return id
 }
 
-func (s *SessionService) Create(ctx context.Context, user *model.User, client, device string) (*SessionTokens, error) {
+func (s *SessionService) Create(ctx context.Context, account *model.TenantAccount, client, device string) (*SessionTokens, error) {
 	now := time.Now().UTC()
 	sessionID := uuid.NewString()
 	refresh, refreshHash, err := newRefreshToken(sessionID)
@@ -118,14 +118,14 @@ func (s *SessionService) Create(ctx context.Context, user *model.User, client, d
 		return nil, err
 	}
 	row := model.AuthSession{
-		ID: sessionID, TenantID: user.TenantID, UserID: user.ID, Realm: string(auth.RealmTenant),
+		ID: sessionID, TenantID: account.TenantID, AccountID: account.ID, Realm: string(auth.RealmTenant),
 		Client: normalizeClient(client), DeviceSummary: strings.TrimSpace(device), RefreshTokenHash: refreshHash,
-		AuthVersion: user.AuthVersion, ExpiresAt: now.Add(s.refreshTTL), LastSeenAt: now,
+		AuthVersion: account.AuthVersion, ExpiresAt: now.Add(s.refreshTTL), LastSeenAt: now,
 	}
 	if err := s.preAuth.createSession(ctx, &row); err != nil {
 		return nil, err
 	}
-	access, exp, err := s.tokens.Issue(user.TenantID, user.ID, sessionID, user.AuthVersion)
+	access, exp, err := s.tokens.Issue(account.TenantID, account.ID, sessionID, account.AuthVersion)
 	if err != nil {
 		return nil, err
 	}
@@ -167,15 +167,15 @@ func (s *SessionService) Refresh(ctx context.Context, token string) (*SessionTok
 		if session.RefreshTokenHash != providedHash {
 			return auth.ErrAuthorizationInvalid
 		}
-		user, err := s.loadActiveUser(ctx, tx, session.TenantID, session.UserID)
-		if err != nil || user.AuthVersion != session.AuthVersion {
+		account, err := s.loadActiveAccount(ctx, tx, session.TenantID, session.AccountID)
+		if err != nil || account.AuthVersion != session.AuthVersion {
 			return auth.ErrAuthorizationInvalid
 		}
 		refresh, refreshHash, err := newRefreshToken(session.ID)
 		if err != nil {
 			return err
 		}
-		access, exp, err := s.tokens.Issue(user.TenantID, user.ID, session.ID, user.AuthVersion)
+		access, exp, err := s.tokens.Issue(account.TenantID, account.ID, session.ID, account.AuthVersion)
 		if err != nil {
 			return err
 		}
@@ -203,9 +203,9 @@ func (s *SessionService) Refresh(ctx context.Context, token string) (*SessionTok
 	return output, nil
 }
 
-func (s *SessionService) loadActiveUser(ctx context.Context, db *gorm.DB, tenantID, userID string) (*model.User, error) {
-	user, err := s.preAuth.findUserByID(ctx, db, tenantID, userID)
-	if err != nil || user.Status != status.ActivationEnabled {
+func (s *SessionService) loadActiveAccount(ctx context.Context, db *gorm.DB, tenantID, accountID string) (*model.TenantAccount, error) {
+	account, err := s.preAuth.findAccountByID(ctx, db, tenantID, accountID)
+	if err != nil || account.Status != status.ActivationEnabled {
 		if err == nil {
 			err = auth.ErrAuthorizationInvalid
 		}
@@ -218,5 +218,5 @@ func (s *SessionService) loadActiveUser(ctx context.Context, db *gorm.DB, tenant
 		}
 		return nil, err
 	}
-	return user, nil
+	return account, nil
 }

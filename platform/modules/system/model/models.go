@@ -6,15 +6,19 @@ import (
 	accessmodel "github.com/yzxingtu2026/ainp/platform/modules/system/access/model"
 )
 
-// Identity aliases preserve the former system/model import during migration.
 type (
-	User           = accessmodel.User
+	TenantAccount  = accessmodel.TenantAccount
 	AuthIdentity   = accessmodel.AuthIdentity
 	AuthSession    = accessmodel.AuthSession
 	AuthChallenge  = accessmodel.AuthChallenge
 	Role           = accessmodel.Role
 	RolePermission = accessmodel.RolePermission
-	UserRole       = accessmodel.UserRole
+	AccountRole    = accessmodel.AccountRole
+
+	// Deprecated: use TenantAccount.
+	User = TenantAccount
+	// Deprecated: use AccountRole.
+	UserRole = AccountRole
 )
 
 // TenantSettingValue stores tenant overrides for one setting definition.

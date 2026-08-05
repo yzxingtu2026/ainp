@@ -18,31 +18,38 @@ import (
 )
 
 const (
-	SeedTenantID = "tenant_demo"
-	SeedUserID   = "user_admin"
-	SeedRoleID   = "role_admin"
-	SeedUsername = "admin"
-	SeedPassword = "Admin@123"
+	SeedTenantID  = "tenant_demo"
+	SeedAccountID = "user_admin"
+	SeedRoleID    = "role_admin"
+	SeedUsername  = "admin"
+	SeedPassword  = "Admin@123"
 )
 
 // AutoMigrate 系统域表（开发期 AutoMigrate；正式环境建议版本化迁移）。
 func AutoMigrate(db *gorm.DB) error {
-	// GORM does not remove the former global users.username unique index.
-	if db.Migrator().HasIndex(&model.User{}, "idx_users_username") {
-		if err := db.Migrator().DropIndex(&model.User{}, "idx_users_username"); err != nil {
-			return err
-		}
+	legacySchema := !db.Migrator().HasTable("tenant_accounts") &&
+		db.Migrator().HasTable("users") && db.Migrator().HasColumn("users", "password_hash") && db.Migrator().HasColumn("users", "auth_version") &&
+		db.Migrator().HasTable("user_roles") && db.Migrator().HasColumn("user_roles", "user_id") &&
+		db.Migrator().HasTable("auth_identities") && db.Migrator().HasColumn("auth_identities", "user_id") &&
+		db.Migrator().HasTable("auth_sessions") && db.Migrator().HasColumn("auth_sessions", "user_id")
+	legacyPartial := db.Migrator().HasTable("tenant_accounts") && !db.Migrator().HasTable("tenant_account_roles") &&
+		db.Migrator().HasTable("user_roles") && db.Migrator().HasColumn("auth_sessions", "user_id")
+	if legacySchema || legacyPartial {
+		return fmt.Errorf("legacy tenant account schema detected; run versioned migrations before AutoMigrate")
 	}
 	if err := db.AutoMigrate(
 		&tenant.Tenant{},
-		&model.User{},
+		&model.TenantAccount{},
 		&model.AuthIdentity{},
 		&model.AuthSession{},
 		&model.AuthChallenge{},
 		&model.Role{},
 		&model.RolePermission{},
-		&model.UserRole{},
+		&model.AccountRole{},
 	); err != nil {
+		return err
+	}
+	if err := ensureAccountConstraints(db); err != nil {
 		return err
 	}
 	// Registered tenant-owned models require an explicit schema-installation exit.
@@ -76,6 +83,33 @@ func AutoMigrate(db *gorm.DB) error {
 	}
 	if err := ensureAttachmentThumbStatusConstraint(migrationDB); err != nil {
 		return err
+	}
+	return nil
+}
+
+func ensureAccountConstraints(db *gorm.DB) error {
+	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS ux_tenant_accounts_tenant_id ON tenant_accounts (tenant_id, id);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_roles_tenant_id ON roles (tenant_id, id)`).Error; err != nil {
+		return err
+	}
+	for _, spec := range []struct {
+		table, name, definition string
+	}{
+		{"tenant_account_roles", "fk_tenant_account_roles_account_tenant", "FOREIGN KEY (tenant_id, account_id) REFERENCES tenant_accounts (tenant_id, id) ON DELETE RESTRICT"},
+		{"tenant_account_roles", "fk_tenant_account_roles_role_tenant", "FOREIGN KEY (tenant_id, role_id) REFERENCES roles (tenant_id, id) ON DELETE RESTRICT"},
+		{"auth_identities", "fk_auth_identities_account_tenant", "FOREIGN KEY (tenant_id, account_id) REFERENCES tenant_accounts (tenant_id, id) ON DELETE RESTRICT"},
+		{"auth_sessions", "fk_auth_sessions_account_tenant", "FOREIGN KEY (tenant_id, account_id) REFERENCES tenant_accounts (tenant_id, id) ON DELETE RESTRICT"},
+	} {
+		statement := fmt.Sprintf(`DO $$ BEGIN
+IF NOT EXISTS (
+  SELECT 1 FROM pg_constraint WHERE conrelid = '%s'::regclass AND conname = '%s'
+) THEN
+  ALTER TABLE %s ADD CONSTRAINT %s %s;
+END IF;
+END $$`, spec.table, spec.name, spec.table, spec.name, spec.definition)
+		if err := db.Exec(statement).Error; err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -114,19 +148,19 @@ ALTER TABLE attachments ADD CONSTRAINT ck_attachments_thumb_status CHECK (thumb_
 
 func ensureAuthVersionConstraint(db *gorm.DB) error {
 	var invalid int64
-	if err := db.Model(&model.User{}).Where("auth_version < 1").Count(&invalid).Error; err != nil {
+	if err := db.Model(&model.TenantAccount{}).Where("auth_version < 1").Count(&invalid).Error; err != nil {
 		return err
 	}
 	if invalid > 0 {
-		return fmt.Errorf("users contains %d invalid auth_version values", invalid)
+		return fmt.Errorf("tenant_accounts contains %d invalid auth_version values", invalid)
 	}
-	return db.Exec("ALTER TABLE users DROP CONSTRAINT IF EXISTS ck_users_auth_version; ALTER TABLE users ADD CONSTRAINT ck_users_auth_version CHECK (auth_version > 0)").Error
+	return db.Exec("ALTER TABLE tenant_accounts DROP CONSTRAINT IF EXISTS ck_tenant_accounts_auth_version; ALTER TABLE tenant_accounts ADD CONSTRAINT ck_tenant_accounts_auth_version CHECK (auth_version > 0)").Error
 }
 
 func ensureActivationStatusConstraints(db *gorm.DB) error {
 	for _, spec := range []struct{ table, name string }{
 		{"tenants", "ck_tenants_activation_status"},
-		{"users", "ck_users_activation_status"},
+		{"tenant_accounts", "ck_tenant_accounts_activation_status"},
 		{"roles", "ck_roles_activation_status"},
 	} {
 		var invalid int64
@@ -170,8 +204,8 @@ func SeedDemo(ctx context.Context, db *gorm.DB) error {
 			return err
 		}
 
-		if err := tx.Create(&model.User{
-			ID:           SeedUserID,
+		if err := tx.Create(&model.TenantAccount{
+			ID:           SeedAccountID,
 			TenantID:     SeedTenantID,
 			Username:     SeedUsername,
 			PasswordHash: string(hash),
@@ -192,11 +226,11 @@ func SeedDemo(ctx context.Context, db *gorm.DB) error {
 			return err
 		}
 
-		if err := tx.Create(&model.UserRole{
-			ID:       uuid.NewString(),
-			TenantID: SeedTenantID,
-			UserID:   SeedUserID,
-			RoleID:   SeedRoleID,
+		if err := tx.Create(&model.AccountRole{
+			ID:        uuid.NewString(),
+			TenantID:  SeedTenantID,
+			AccountID: SeedAccountID,
+			RoleID:    SeedRoleID,
 		}).Error; err != nil {
 			return err
 		}

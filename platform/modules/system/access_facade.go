@@ -14,7 +14,7 @@ import (
 
 type (
 	AuthService            = access.AuthService
-	UserProfile            = access.UserProfile
+	AccountProfile         = access.AccountProfile
 	PasswordAuthenticator  = access.PasswordAuthenticator
 	SessionService         = access.SessionService
 	SessionTokens          = access.SessionTokens
@@ -28,10 +28,21 @@ type (
 	RoleView               = access.RoleView
 	PermissionCatalogItem  = access.PermissionCatalogItem
 	PermissionCatalogGroup = access.PermissionCatalogGroup
-	UserService            = access.UserService
-	SelfProfileView        = access.SelfProfileView
-	UserRoleBrief          = access.UserRoleBrief
-	UserView               = access.UserView
+	AccountService         = access.AccountService
+	AccountSelfProfileView = access.AccountSelfProfileView
+	AccountRoleBrief       = access.AccountRoleBrief
+	AccountView            = access.AccountView
+
+	// Deprecated: use AccountProfile.
+	UserProfile = AccountProfile
+	// Deprecated: use AccountService.
+	UserService = AccountService
+	// Deprecated: use AccountRoleBrief.
+	UserRoleBrief = AccountRoleBrief
+	// Deprecated: use AccountView.
+	UserView = AccountView
+	// Deprecated: use AccountSelfProfileView.
+	SelfProfileView = AccountSelfProfileView
 )
 
 func NewAuthService(db *gorm.DB, registries ...*action.Registry) *AuthService {
@@ -54,8 +65,14 @@ func NewRoleService(db *gorm.DB, authService *AuthService, actions *action.Regis
 	return access.NewRoleService(db, authService, actions, capabilities)
 }
 
+func NewAccountService(db *gorm.DB, authService *AuthService) *AccountService {
+	return access.NewAccountService(db, authService)
+}
+
+// NewUserService is kept for source compatibility.
+// Deprecated: use NewAccountService.
 func NewUserService(db *gorm.DB, authService *AuthService) *UserService {
-	return access.NewUserService(db, authService)
+	return NewAccountService(db, authService)
 }
 
 func ValidatePassword(password string) error { return access.ValidatePassword(password) }
@@ -71,6 +88,6 @@ func registerReferenceResolvers(a *app.App) error { return access.RegisterRefere
 func registerRoleActions(a *app.App, service *RoleService) error {
 	return access.RegisterRoleActions(a, service)
 }
-func registerUserActions(a *app.App, service *UserService) error {
-	return access.RegisterUserActions(a, service)
+func registerUserActions(a *app.App, service *AccountService) error {
+	return access.RegisterAccountActions(a, service)
 }

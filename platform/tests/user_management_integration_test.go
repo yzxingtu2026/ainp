@@ -132,7 +132,7 @@ func TestUserManagementTenantIsolationAndProtection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	seedUsers := []model.User{
+	seedUsers := []model.TenantAccount{
 		{ID: "user-a", TenantID: "tenant-a", Username: "admin", PasswordHash: string(hash), DisplayName: "Admin A", Status: status.ActivationEnabled, AuthVersion: 1},
 		{ID: "user-b", TenantID: "tenant-b", Username: "admin", PasswordHash: string(hash), DisplayName: "Admin B", Status: status.ActivationEnabled, AuthVersion: 1},
 	}
@@ -141,15 +141,15 @@ func TestUserManagementTenantIsolationAndProtection(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := testDB.Create(&model.UserRole{ID: "ur-a", TenantID: "tenant-a", UserID: "user-a", RoleID: "admin-a"}).Error; err != nil {
+	if err := testDB.Create(&model.AccountRole{ID: "ur-a", TenantID: "tenant-a", AccountID: "user-a", RoleID: "admin-a"}).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := testDB.Create(&model.UserRole{ID: "ur-b", TenantID: "tenant-b", UserID: "user-b", RoleID: "admin-b"}).Error; err != nil {
+	if err := testDB.Create(&model.AccountRole{ID: "ur-b", TenantID: "tenant-b", AccountID: "user-b", RoleID: "admin-b"}).Error; err != nil {
 		t.Fatal(err)
 	}
 
 	authService := system.NewAuthService(testDB)
-	service := system.NewUserService(testDB, authService)
+	service := system.NewAccountService(testDB, authService)
 	ctxA := auth.WithContext(context.Background(), &auth.Context{TenantID: "tenant-a", UserID: "user-a", Realm: auth.RealmTenant, Authenticated: true})
 	ctxB := auth.WithContext(context.Background(), &auth.Context{TenantID: "tenant-b", UserID: "user-b", Realm: auth.RealmTenant, Authenticated: true})
 
@@ -157,22 +157,22 @@ func TestUserManagementTenantIsolationAndProtection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	userA := createdA.(system.UserView)
+	userA := createdA.(system.AccountView)
 	updatedA, err := service.Update(ctxA, json.RawMessage(`{"id":"`+userA.ID+`","display_name":"Alice Updated"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if view := updatedA.(system.UserView); view.DisplayName != "Alice Updated" || view.OrgID != "org-a" || view.DeptID != "dept-a" {
+	if view := updatedA.(system.AccountView); view.DisplayName != "Alice Updated" || view.OrgID != "org-a" || view.DeptID != "dept-a" {
 		t.Fatalf("partial user update overwrote omitted fields: %#v", view)
 	}
 	clearedA, err := service.Update(ctxA, json.RawMessage(`{"id":"`+userA.ID+`","display_name":"Alice Updated","org_id":"","dept_id":""}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if view := clearedA.(system.UserView); view.OrgID != "" || view.DeptID != "" {
+	if view := clearedA.(system.AccountView); view.OrgID != "" || view.DeptID != "" {
 		t.Fatalf("explicit user field clear was ignored: %#v", view)
 	}
-	if err := testDB.Model(&model.User{}).Where("tenant_id=? AND id=?", "tenant-a", userA.ID).Updates(map[string]any{"org_id": "org-a", "dept_id": "dept-a"}).Error; err != nil {
+	if err := testDB.Model(&model.TenantAccount{}).Where("tenant_id=? AND id=?", "tenant-a", userA.ID).Updates(map[string]any{"org_id": "org-a", "dept_id": "dept-a"}).Error; err != nil {
 		t.Fatal(err)
 	}
 	application := app.New(&config.Config{}, testDB, nil, nil)
@@ -204,7 +204,7 @@ func TestUserManagementTenantIsolationAndProtection(t *testing.T) {
 	if _, err := (&aitool.ActionExecutor{Actions: application.Actions}).Execute(actionCtx, aitool.LoadedTool{Definition: userUpdateTool}, minimalToolPayload); err != nil {
 		t.Fatalf("minimal Tool payload failed: %v", err)
 	}
-	var persisted model.User
+	var persisted model.TenantAccount
 	if err := testDB.Where("tenant_id=? AND id=?", "tenant-a", userA.ID).First(&persisted).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -215,7 +215,7 @@ func TestUserManagementTenantIsolationAndProtection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	userB := createdB.(system.UserView)
+	userB := createdB.(system.AccountView)
 	if userA.ID == userB.ID {
 		t.Fatal("users in different tenants must have different ids")
 	}
@@ -236,14 +236,14 @@ func TestUserManagementTenantIsolationAndProtection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if listed.(pagination.Result[system.UserView]).Total != 1 {
+	if listed.(pagination.Result[system.AccountView]).Total != 1 {
 		t.Fatalf("tenant user list leaked data: %#v", listed)
 	}
 	filtered, err := service.List(ctxA, json.RawMessage(`{"page":1,"page_size":20,"role_id":"operator-a"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if filtered.(pagination.Result[system.UserView]).Total != 1 {
+	if filtered.(pagination.Result[system.AccountView]).Total != 1 {
 		t.Fatalf("role filter failed: %#v", filtered)
 	}
 	if _, err := service.Get(ctxA, json.RawMessage(fmt.Sprintf(`{"id":%q}`, userB.ID))); appErrorCode(err) != errs.CodeNotFound {
@@ -259,7 +259,7 @@ func TestUserManagementTenantIsolationAndProtection(t *testing.T) {
 	if _, err := service.UpdateStatus(ctxA, json.RawMessage(fmt.Sprintf(`{"id":%q,"status":"disabled"}`, userA.ID))); err != nil {
 		t.Fatal(err)
 	}
-	var disabled model.User
+	var disabled model.TenantAccount
 	if err := testDB.First(&disabled, "id = ?", userA.ID).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -276,7 +276,7 @@ func TestUserManagementTenantIsolationAndProtection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	second := secondAdmin.(system.UserView)
+	second := secondAdmin.(system.AccountView)
 	if _, err := service.UpdateRoles(ctxA, json.RawMessage(`{"id":"user-a","role_ids":["operator-a"]}`)); err != nil {
 		t.Fatal(err)
 	}
@@ -287,7 +287,7 @@ func TestUserManagementTenantIsolationAndProtection(t *testing.T) {
 	if _, err := service.ResetPassword(ctxA, json.RawMessage(fmt.Sprintf(`{"id":%q,"password":"Reset@123"}`, second.ID))); err != nil {
 		t.Fatal(err)
 	}
-	var resetUser model.User
+	var resetUser model.TenantAccount
 	if err := testDB.First(&resetUser, "id = ?", second.ID).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -307,7 +307,7 @@ func TestUserManagementTenantIsolationAndProtection(t *testing.T) {
 	if _, err := service.ResetPassword(ctxA, json.RawMessage(fmt.Sprintf(`{"id":%q,"password":"Rollback@123"}`, second.ID))); err == nil {
 		t.Fatal("password reset should fail when the outbox append fails")
 	}
-	var rolledBack model.User
+	var rolledBack model.TenantAccount
 	if err := testDB.First(&rolledBack, "id = ?", second.ID).Error; err != nil {
 		t.Fatal(err)
 	}

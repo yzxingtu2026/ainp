@@ -201,7 +201,7 @@ func (s *AttachmentService) resolveUploaderNames(ctx context.Context, tenantID s
 		ID          string
 		DisplayName string
 		Username    string
-	}](tdb, "SELECT id, display_name, username FROM users WHERE tenant_id = ? AND id IN ?", uniq)
+	}](tdb, "SELECT id, display_name, username FROM tenant_accounts WHERE tenant_id = ? AND id IN ?", uniq)
 	if err != nil {
 		return out
 	}
