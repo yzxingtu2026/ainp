@@ -616,17 +616,32 @@ func TestToolRuntimePostgresLifecycleAndIsolation(t *testing.T) {
 	if err = guarded.WithContext(ctx).Where("tool_id=?", actionTool.ID).First(&actionDocument).Error; err != nil || actionDocument.IndexStatus != "stale" || actionDocument.CatalogRevision != 3 {
 		t.Fatalf("removed search document is not stale: %#v %v", actionDocument, err)
 	}
+	service.SetSettingProvider(toolSettingProvider(t, "tool-embed"))
+	for _, toolID := range []string{"meta:tool.search", "meta:tool.load"} {
+		if err = service.IndexCatalogDocument(ctx, toolID, 1, "tool-embed"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	indexStatus, err = service.IndexStatus(ctx)
+	if err != nil || indexStatus.State != "ready" || indexStatus.Total != 2 || indexStatus.Ready != 2 || indexStatus.Stale != 1 {
+		t.Fatalf("retired tool degraded active index status: %#v %v", indexStatus, err)
+	}
+	if err = guarded.WithContext(ctx).Model(&ai.ToolSearchDocument{}).Where("tool_id IN ?", []string{"meta:tool.search", "meta:tool.load"}).Updates(map[string]any{
+		"index_status": "pending", "embedding_alias": "", "embedding_model": "", "embedding_deployment_id": "", "embedding_dimensions": 0,
+		"embedding_preprocessing": "", "embedding_schema_version": 0, "embedding_vector": nil, "vector_updated_at": nil,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
 	provider.tools = []aitool.Definition{actionTool}
 	reconciled, err = service.ReconcileCatalog(ctx)
 	if err != nil || reconciled.Updated != 1 {
 		t.Fatalf("restored tool was not reactivated: %#v %v", reconciled, err)
 	}
-	service.SetSettingProvider(toolSettingProvider(t, "tool-embed"))
 	if err = service.IndexCatalogDocument(ctx, actionTool.ID, 4, "tool-embed"); err != nil {
 		t.Fatal(err)
 	}
 	indexStatus, err = service.IndexStatus(ctx)
-	if err != nil || indexStatus.State != "pending" || indexStatus.ModelAlias != "tool-embed" || indexStatus.Ready != 1 || indexStatus.Pending != 2 {
+	if err != nil || indexStatus.State != "pending" || indexStatus.ModelAlias != "tool-embed" || indexStatus.Total != 3 || indexStatus.Ready != 1 || indexStatus.Pending != 2 || indexStatus.Stale != 0 {
 		t.Fatalf("unexpected active tool index status: %#v %v", indexStatus, err)
 	}
 	if err = guarded.WithContext(ctx).Where("tool_id=?", actionTool.ID).First(&actionDocument).Error; err != nil || actionDocument.IndexStatus != "ready" || actionDocument.EmbeddingAlias != "tool-embed" || actionDocument.EmbeddingDeploymentID != "embed-deployment" || actionDocument.EmbeddingDimensions != 2 || actionDocument.EmbeddingVector == nil || len(*actionDocument.EmbeddingVector) != 2 {

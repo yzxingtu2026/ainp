@@ -681,7 +681,7 @@ const local: App.I18n.Schema = {
       resetSuccess: 'Settings reset to defaults',
       navigationIndex: {
         title: 'Navigation index',
-        summary: '{total} total, {ready} ready, {pending} pending, {failed} failed',
+        summary: '{total} active, {ready} ready, {pending} pending, {failed} failed, {stale} retired',
         rebuild: 'Rebuild now',
         rebuildQueued: 'Navigation index rebuild triggered',
         states: {
@@ -695,7 +695,7 @@ const local: App.I18n.Schema = {
       },
       toolIndex: {
         title: 'Tool index',
-        summary: '{total} total, {ready} ready, {pending} pending, {failed} failed',
+        summary: '{total} active, {ready} ready, {pending} pending, {failed} failed, {stale} retired',
         rebuild: 'Rebuild now',
         rebuildQueued: 'Tool index rebuild triggered',
         states: {

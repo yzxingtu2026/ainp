@@ -674,7 +674,7 @@ const local: App.I18n.Schema = {
       resetSuccess: '已重置为默认值',
       navigationIndex: {
         title: '导航索引',
-        summary: '共 {total}，就绪 {ready}，处理中 {pending}，失败 {failed}',
+        summary: '有效 {total}，就绪 {ready}，处理中 {pending}，失败 {failed}，退役 {stale}',
         rebuild: '立即重建',
         rebuildQueued: '导航索引重建已触发',
         states: {
@@ -688,7 +688,7 @@ const local: App.I18n.Schema = {
       },
       toolIndex: {
         title: '工具索引',
-        summary: '共 {total}，就绪 {ready}，处理中 {pending}，失败 {failed}',
+        summary: '有效 {total}，就绪 {ready}，处理中 {pending}，失败 {failed}，退役 {stale}',
         rebuild: '立即重建',
         rebuildQueued: '工具索引重建已触发',
         states: {
