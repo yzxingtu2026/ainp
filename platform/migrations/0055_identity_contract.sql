@@ -40,6 +40,8 @@ DECLARE
   target record;
   old_exists boolean;
   new_exists boolean;
+  old_not_null boolean;
+  conflicting_rows bigint;
 BEGIN
   FOR target IN
     SELECT * FROM (VALUES
@@ -70,8 +72,30 @@ BEGIN
     ) INTO new_exists;
 
     IF old_exists AND new_exists THEN
-      RAISE EXCEPTION 'both %.% and %.% exist; refusing ambiguous identity migration',
-        target.table_name, target.old_column, target.table_name, target.new_column;
+      EXECUTE format(
+        'SELECT count(*) FROM %I WHERE NULLIF(%I, '''') IS NOT NULL AND NULLIF(%I, '''') IS NOT NULL AND %I IS DISTINCT FROM %I',
+        target.table_name, target.old_column, target.new_column, target.old_column, target.new_column
+      ) INTO conflicting_rows;
+      IF conflicting_rows > 0 THEN
+        RAISE EXCEPTION 'conflicting identity values in %.% and %.% (% rows)',
+          target.table_name, target.old_column, target.table_name, target.new_column, conflicting_rows;
+      END IF;
+
+      SELECT is_nullable = 'NO'
+      FROM information_schema.columns
+      WHERE table_schema = current_schema()
+        AND table_name = target.table_name
+        AND column_name = target.old_column
+      INTO old_not_null;
+
+      EXECUTE format(
+        'UPDATE %I SET %I = %I WHERE NULLIF(%I, '''') IS NULL AND NULLIF(%I, '''') IS NOT NULL',
+        target.table_name, target.new_column, target.old_column, target.new_column, target.old_column
+      );
+      IF old_not_null THEN
+        EXECUTE format('ALTER TABLE %I ALTER COLUMN %I SET NOT NULL', target.table_name, target.new_column);
+      END IF;
+      EXECUTE format('ALTER TABLE %I DROP COLUMN %I', target.table_name, target.old_column);
     ELSIF old_exists THEN
       EXECUTE format('ALTER TABLE %I RENAME COLUMN %I TO %I', target.table_name, target.old_column, target.new_column);
     ELSIF NOT new_exists THEN

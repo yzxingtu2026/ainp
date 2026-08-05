@@ -31,8 +31,9 @@ func TestIdentityContractMigrationCanonicalizesHistoryAndIsIdempotent(t *testing
 
 	for _, statement := range []string{
 		`CREATE TABLE role_permissions (id text PRIMARY KEY, role_id text NOT NULL, permission text NOT NULL)`,
-		`CREATE TABLE audit_logs (id text PRIMARY KEY, user_id text NOT NULL)`,
+		`CREATE TABLE audit_logs (id text PRIMARY KEY, user_id text NOT NULL, actor_id text)`,
 		`CREATE INDEX idx_audit_logs_user_id ON audit_logs(user_id)`,
+		`CREATE INDEX idx_audit_logs_actor_id ON audit_logs(actor_id)`,
 		`CREATE TABLE idempotency_records (id text PRIMARY KEY, user_id text NOT NULL)`,
 		`CREATE TABLE ai_tool_scopes (id text PRIMARY KEY, user_id text NOT NULL)`,
 		`CREATE INDEX idx_ai_tool_scopes_actor ON ai_tool_scopes(user_id)`,
@@ -48,7 +49,7 @@ func TestIdentityContractMigrationCanonicalizesHistoryAndIsIdempotent(t *testing
 		`CREATE TABLE user_notifications (id text PRIMARY KEY, user_id text NOT NULL)`,
 		`CREATE TABLE attachment_links (tenant_id text NOT NULL, attachment_id text NOT NULL, resource_type text NOT NULL, resource_id text NOT NULL, field text NOT NULL)`,
 		`INSERT INTO role_permissions VALUES ('old-only','role-a','system.user_list'), ('old-conflict','role-b','system.user_list'), ('canonical','role-b','system.account_list')`,
-		`INSERT INTO audit_logs VALUES ('audit-a','account-a')`,
+		`INSERT INTO audit_logs (id, user_id) VALUES ('audit-a','account-a')`,
 		`INSERT INTO idempotency_records VALUES ('idem-a','account-a')`,
 		`INSERT INTO ai_tool_scopes VALUES ('scope-a','account-a')`,
 		`INSERT INTO ai_tool_confirmations VALUES ('tool-confirm-a','account-a')`,
@@ -90,6 +91,13 @@ func TestIdentityContractMigrationCanonicalizesHistoryAndIsIdempotent(t *testing
 	assertIdentityValue(t, testDB, "idempotency_records", "principal_id", "idem-a")
 	assertIdentityValue(t, testDB, "mcp_oauth_grants", "account_id", "grant-a")
 	assertIdentityValue(t, testDB, "ai_knowledge_bases", "account_id", "kb-a")
+	var auditActorNullable string
+	if err = testDB.Raw(`SELECT is_nullable FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'audit_logs' AND column_name = 'actor_id'`).Scan(&auditActorNullable).Error; err != nil {
+		t.Fatal(err)
+	}
+	if auditActorNullable != "NO" {
+		t.Fatalf("audit_logs.actor_id nullable = %q, want NO", auditActorNullable)
+	}
 
 	var permissions []string
 	if err = testDB.Raw(`SELECT permission FROM role_permissions ORDER BY role_id, permission`).Scan(&permissions).Error; err != nil {
