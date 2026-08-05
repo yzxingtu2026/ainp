@@ -20,6 +20,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/config"
 	"github.com/yzxingtu2026/ainp/platform/framework/database"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
+	"github.com/yzxingtu2026/ainp/platform/framework/idempotency"
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
 	"github.com/yzxingtu2026/ainp/platform/framework/pagination"
 	"github.com/yzxingtu2026/ainp/platform/framework/permission"
@@ -253,6 +254,151 @@ func TestActionToolProviderUsesTypedSchemaAndRegistryInvoke(t *testing.T) {
 	if err != nil || result.Status != "completed" {
 		t.Fatalf("invoke failed: %#v %v", result, err)
 	}
+}
+
+func TestToolConfirmationRestoresStableActionIdempotencyPostgres(t *testing.T) {
+	dsn := os.Getenv("AINP_TEST_DATABASE_DSN")
+	if dsn == "" {
+		t.Skip("AINP_TEST_DATABASE_DSN not set")
+	}
+	admin, err := database.Open(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	schema := "ainp_tool_idem_" + strings.ReplaceAll(time.Now().UTC().Format("150405.000000"), ".", "")
+	if err = admin.Exec(fmt.Sprintf(`CREATE SCHEMA %q`, schema)).Error; err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = admin.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE`, schema)).Error })
+	db, err := database.Open(dsn + " search_path=" + schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = db.Exec(`CREATE TABLE tenants(id varchar(64) PRIMARY KEY)`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err = db.Exec(`INSERT INTO tenants(id) VALUES ('t1')`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err = ai.AutoMigrate(db); err != nil {
+		t.Fatal(err)
+	}
+	if err = idempotency.AutoMigrate(db); err != nil {
+		t.Fatal(err)
+	}
+
+	actions := action.NewRegistry(permission.NewChecker(), nil)
+	actions.SetIdempotencyExecutor(idempotency.NewActionAdapter(idempotency.NewExecutor(idempotency.NewRepository(db))))
+	var mu sync.Mutex
+	confirmedKeys := []string{}
+	confirmedInvocationIDs := []string{}
+	directKeys := []string{}
+	register := func(id string, confirmation bool, handler action.Handler) {
+		t.Helper()
+		aiMeta := &action.AIMeta{ExposeTool: true, ToolTitle: "创建测试资源", Risk: "low", SideEffect: "read", RequiresConfirmation: confirmation, Summary: "创建测试资源", HumanDescription: "创建用于幂等测试的资源", ResultSummary: "已创建测试资源", Tags: []string{"测试"}, InputSchema: action.InputSchemaFor[exposedRequest]()}
+		if confirmation {
+			aiMeta.Risk = "high"
+			aiMeta.SideEffect = "write"
+		}
+		if registerErr := actions.Register(action.Action{ID: id, Handler: handler, Meta: action.Metadata{Capability: "demo", Access: action.AccessAuthenticated, Name: id, AI: aiMeta, Idempotency: &action.IdempotencyMeta{Mode: "required"}}}); registerErr != nil {
+			t.Fatal(registerErr)
+		}
+	}
+	register("demo.confirmed_create", true, func(ctx context.Context, _ json.RawMessage) (any, error) {
+		ac := auth.MustFromContext(ctx)
+		mu.Lock()
+		confirmedKeys = append(confirmedKeys, ac.IdempotencyKey)
+		confirmedInvocationIDs = append(confirmedInvocationIDs, ac.ToolInvocationID)
+		mu.Unlock()
+		return map[string]any{"created": true}, nil
+	})
+	register("demo.direct_create", false, func(ctx context.Context, _ json.RawMessage) (any, error) {
+		mu.Lock()
+		directKeys = append(directKeys, auth.MustFromContext(ctx).IdempotencyKey)
+		mu.Unlock()
+		return map[string]any{"created": true}, nil
+	})
+
+	registry := aitool.NewRegistry()
+	if err = registry.RegisterProvider(&aitool.ActionProvider{Actions: actions}, &aitool.ActionExecutor{Actions: actions}); err != nil {
+		t.Fatal(err)
+	}
+	if err = registry.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	signer, err := aitool.NewHandleSigner(strings.Repeat("i", 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := ai.NewToolService(db, registry, signer, nil)
+	ctx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t1", UserID: "u1", SessionID: "s1", AuthVersion: 1, Realm: auth.RealmTenant})
+	scope := ai.ToolScope{ID: "scope-idempotency", TenantID: "t1", UserID: "u1", Realm: string(auth.RealmTenant), SessionID: "s1", AuthVersion: 1, AllowedSourcesJSON: json.RawMessage(`["action"]`), AllowedCapabilitiesJSON: json.RawMessage(`["demo"]`), AllowedToolsJSON: json.RawMessage(`[]`), LoadedToolsJSON: json.RawMessage(`[]`), ExpiresAt: time.Now().Add(time.Hour)}
+	if err = tenantdata.GuardedDB(db).WithContext(ctx).Create(&scope).Error; err != nil {
+		t.Fatal(err)
+	}
+	loadedValue, err := service.Load(ctx, ai.ToolLoadRequest{ScopeID: scope.ID, ToolIDs: []string{"action:demo.confirmed_create", "action:demo.direct_create"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	handles := map[string]string{}
+	for _, tool := range loadedValue.(ai.ToolLoadResponse).Tools {
+		handles[tool.Definition.ID] = tool.Handle
+	}
+
+	approve := func(callID, requestKey, approvalKey string) ai.ToolConfirmation {
+		t.Helper()
+		pendingValue, executeErr := service.Execute(ctx, ai.ToolExecuteRequest{Handle: handles["action:demo.confirmed_create"], ToolCallID: callID, Arguments: json.RawMessage(`{"resource_id":"r1"}`), IdempotencyKey: requestKey})
+		if executeErr != nil {
+			t.Fatal(executeErr)
+		}
+		pending := pendingValue.(*aitool.Result)
+		confirmation := pending.Data.(ai.ToolConfirmation)
+		encoded, _ := json.Marshal(pending)
+		if strings.Contains(string(encoded), requestKey) || strings.Contains(string(encoded), "tool-invocation:") {
+			t.Fatalf("confirmation result leaked idempotency material: %s", encoded)
+		}
+		approvalContext := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "t1", UserID: "u1", SessionID: "s1", AuthVersion: 1, Realm: auth.RealmTenant, IdempotencyKey: approvalKey})
+		approved, approveErr := service.Approve(approvalContext, ai.ToolConfirmationRequest{ID: confirmation.ID})
+		if approveErr != nil || approved.(*aitool.Result).Status != "completed" {
+			t.Fatalf("approve failed: %#v %v", approved, approveErr)
+		}
+		encoded, _ = json.Marshal(approved)
+		if strings.Contains(string(encoded), approvalKey) || strings.Contains(string(encoded), "tool-invocation:") {
+			t.Fatalf("approved result leaked idempotency material: %s", encoded)
+		}
+		return confirmation
+	}
+
+	first := approve("call-confirmed-1", "runtime-request-1", "approval-request-1")
+	second := approve("call-confirmed-2", "runtime-request-2", "approval-request-2")
+	mu.Lock()
+	if len(confirmedKeys) != 2 || confirmedKeys[0] != "tool-invocation:"+first.InvocationID || confirmedKeys[1] != "tool-invocation:"+second.InvocationID || confirmedKeys[0] == confirmedKeys[1] {
+		t.Fatalf("confirmed idempotency keys are not stable and isolated: %#v", confirmedKeys)
+	}
+	if !slices.Equal(confirmedInvocationIDs, []string{first.InvocationID, second.InvocationID}) {
+		t.Fatalf("tool invocation audit context mismatch: %#v", confirmedInvocationIDs)
+	}
+	mu.Unlock()
+	if _, err = service.Approve(ctx, ai.ToolConfirmationRequest{ID: first.ID}); !isAppErrorCode(err, errs.CodeConflict) {
+		t.Fatalf("repeat approval error = %v, want conflict", err)
+	}
+	mu.Lock()
+	if len(confirmedKeys) != 2 {
+		t.Fatalf("repeat approval re-executed handler: %#v", confirmedKeys)
+	}
+	mu.Unlock()
+
+	for i := 0; i < 2; i++ {
+		result, executeErr := service.Execute(ctx, ai.ToolExecuteRequest{Handle: handles["action:demo.direct_create"], ToolCallID: fmt.Sprintf("call-direct-%d", i), Arguments: json.RawMessage(`{"resource_id":"r2"}`), IdempotencyKey: "runtime-direct-key"})
+		if executeErr != nil || result.(*aitool.Result).Status != "completed" {
+			t.Fatalf("direct execution failed: %#v %v", result, executeErr)
+		}
+	}
+	mu.Lock()
+	if !slices.Equal(directKeys, []string{"runtime-direct-key"}) {
+		t.Fatalf("direct execution did not preserve or replay the runtime key: %#v", directKeys)
+	}
+	mu.Unlock()
 }
 
 func TestExposedActionFailsClosedWithoutRiskAndSchema(t *testing.T) {

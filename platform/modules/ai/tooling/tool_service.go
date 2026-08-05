@@ -675,6 +675,9 @@ func (s *ToolService) execute(ctx context.Context, ac *auth.Context, scope *Tool
 	if current, ok := auth.FromContext(ctx); ok && current != nil {
 		invocationContext := *current
 		invocationContext.ToolInvocationID = inv.ID
+		if approved != nil {
+			invocationContext.IdempotencyKey = "tool-invocation:" + inv.ID
+		}
 		executionCtx = auth.WithContext(ctx, &invocationContext)
 	}
 	result, execErr := executor.Execute(aitool.WithScopeID(executionCtx, scope.ID), loaded, args)
