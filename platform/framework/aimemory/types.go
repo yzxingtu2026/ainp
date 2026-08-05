@@ -32,7 +32,7 @@ type Policy struct {
 }
 
 func SystemDefaultPolicy() Policy {
-	return Policy{Enabled: false, ExtractionModelAlias: "default", AutoSaveLowSensitive: false, WriteApprovalMode: ApprovalAlways, MaxCandidatesPerTurn: 8, MaxConsolidationItems: 50, MaxRecallItems: 10, MaxRecallTokens: 2000, PolicyVersion: "1", PromptVersion: "1", SchemaVersion: "1"}
+	return Policy{Enabled: false, ExtractionModelAlias: "default", AutoSaveLowSensitive: false, WriteApprovalMode: ApprovalAlways, MaxCandidatesPerTurn: 8, MaxConsolidationItems: 50, MaxRecallItems: 10, MaxRecallTokens: 2000, PolicyVersion: "1", PromptVersion: "2", SchemaVersion: "2"}
 }
 func (p Policy) Validate() error {
 	if p.WriteApprovalMode != ApprovalAlways && p.WriteApprovalMode != ApprovalSensitiveOnly && p.WriteApprovalMode != ApprovalNever {

@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"sort"
@@ -16,6 +17,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/aiconversation"
 	"github.com/yzxingtu2026/ainp/platform/framework/aimemory"
 	"github.com/yzxingtu2026/ainp/platform/framework/aimodelruntime"
+	"github.com/yzxingtu2026/ainp/platform/framework/diagnostic"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 	"github.com/yzxingtu2026/ainp/platform/framework/logging"
 	"github.com/yzxingtu2026/ainp/platform/framework/prompt"
@@ -33,9 +35,18 @@ type agentVersionProjection struct {
 
 const (
 	MemoryExtractionJobType       = "ai.memory.evaluate_run"
-	MemoryExtractionPromptVersion = "1"
-	MemoryExtractionSchemaVersion = "1"
+	MemoryExtractionPromptVersion = "2"
+	MemoryExtractionSchemaVersion = "2"
+
+	memoryExtractionInvalidCandidateTimezone = "invalid_candidate_timezone"
+	memoryExtractionInvalidRuntimeTimezone   = "invalid_runtime_timezone"
 )
+
+type memoryExtractionValidationError struct {
+	category string
+}
+
+func (e memoryExtractionValidationError) Error() string { return e.category }
 
 type MemoryCandidateExtractor interface {
 	Generate(context.Context, aimodelruntime.GenerateRequest) (any, error)
@@ -199,7 +210,12 @@ func (s *MemoryExtractionService) EvaluateRun(ctx context.Context, runID string)
 		return jobPermanent(fmt.Errorf("invalid candidate schema"))
 	}
 	if err = s.persistCandidates(ctx, run, version, policy, evaluation, response.InvocationID, hash, allowed, output.Candidates); err != nil {
-		_ = s.markFailed(ctx, evaluation.ID, "persistence_error")
+		category := "persistence_error"
+		var validationErr memoryExtractionValidationError
+		if errors.As(err, &validationErr) {
+			category = validationErr.category
+		}
+		_ = s.markFailed(ctx, evaluation.ID, category)
 		return err
 	}
 	types, sensitivities := map[string]int{}, map[string]int{}
@@ -330,7 +346,7 @@ func (s *MemoryExtractionService) persistCandidates(ctx context.Context, run Age
 			if occurred != nil && end != nil && end.Before(*occurred) {
 				return jobPermanent(fmt.Errorf("invalid occurred range"))
 			}
-			localDate, err := candidateLocalDate(occurred, c.OccurredTimezone)
+			localDate, occurredTimezone, err := candidateLocalDate(occurred, c.OccurredTimezone, run.Timezone)
 			if err != nil {
 				return jobPermanent(err)
 			}
@@ -342,7 +358,7 @@ func (s *MemoryExtractionService) persistCandidates(ctx context.Context, run Age
 			evalID := evaluation.ID
 			verID := version.ID
 			contentHash := sha256Hex([]byte(c.Summary + "\x00" + c.Content))
-			item := MemoryItem{ID: id, UserID: run.UserID, AgentID: &agentID, Type: c.Kind, Status: aimemory.StatusCandidate, Summary: c.Summary, Content: c.Content, Confidence: c.Confidence, Sensitivity: c.Sensitivity, Importance: c.Importance, Revision: 1, OccurredAt: occurred, OccurredEndAt: end, OccurredTimezone: c.OccurredTimezone, LocalDate: localDate, DatePrecision: c.DatePrecision, ObservedAt: now, RecordedAt: now, ValidFrom: validFrom, ValidTo: validTo, EvaluationID: &evalID, AgentVersionID: &verID, PolicyJSON: policyJSON, PromptVersion: policy.PromptVersion, SchemaVersion: policy.SchemaVersion, ArgumentsHash: argsHash, ExplicitUserIntent: c.ExplicitUserIntent, AttributeKey: strings.TrimSpace(c.AttributeKey), AttributeValue: strings.TrimSpace(c.AttributeValue)}
+			item := MemoryItem{ID: id, UserID: run.UserID, AgentID: &agentID, Type: c.Kind, Status: aimemory.StatusCandidate, Summary: c.Summary, Content: c.Content, Confidence: c.Confidence, Sensitivity: c.Sensitivity, Importance: c.Importance, Revision: 1, OccurredAt: occurred, OccurredEndAt: end, OccurredTimezone: occurredTimezone, LocalDate: localDate, DatePrecision: c.DatePrecision, ObservedAt: now, RecordedAt: now, ValidFrom: validFrom, ValidTo: validTo, EvaluationID: &evalID, AgentVersionID: &verID, PolicyJSON: policyJSON, PromptVersion: policy.PromptVersion, SchemaVersion: policy.SchemaVersion, ArgumentsHash: argsHash, ExplicitUserIntent: c.ExplicitUserIntent, AttributeKey: strings.TrimSpace(c.AttributeKey), AttributeValue: strings.TrimSpace(c.AttributeValue)}
 			if err = tx.Create(&item).Error; err != nil {
 				return err
 			}
@@ -439,24 +455,29 @@ func parseOptionalTime(v *string) (*time.Time, error) {
 	}
 	return &t, nil
 }
-func candidateLocalDate(occurred *time.Time, timezone string) (*time.Time, error) {
+func candidateLocalDate(occurred *time.Time, candidateTimezone, runtimeTimezone string) (*time.Time, string, error) {
 	if occurred == nil {
-		return nil, nil
+		return nil, "", nil
 	}
-	location := time.UTC
-	if strings.TrimSpace(timezone) != "" {
-		var err error
-		location, err = time.LoadLocation(timezone)
-		if err != nil {
-			return nil, fmt.Errorf("invalid occurred timezone")
-		}
+	timezone := strings.TrimSpace(candidateTimezone)
+	category := memoryExtractionInvalidCandidateTimezone
+	diagnosticCategory := diagnostic.UpstreamInvalidResponse
+	if timezone == "" {
+		timezone = strings.TrimSpace(runtimeTimezone)
+		category = memoryExtractionInvalidRuntimeTimezone
+		diagnosticCategory = diagnostic.Validation
+	}
+	location, err := time.LoadLocation(timezone)
+	if err != nil {
+		validationErr := memoryExtractionValidationError{category: category}
+		return nil, "", diagnostic.New(diagnosticCategory, "ai.memory_extraction.candidate_validation", "memory extraction timezone validation failed", validationErr, nil)
 	}
 	local := occurred.In(location)
 	date := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, time.UTC)
-	return &date, nil
+	return &date, timezone, nil
 }
 func memoryCandidateSchema() json.RawMessage {
-	return json.RawMessage(`{"type":"object","additionalProperties":false,"required":["candidates"],"properties":{"candidates":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["kind","summary","content","occurred_at","occurred_end_at","occurred_timezone","date_precision","valid_from","valid_to","confidence","sensitivity","importance","explicit_user_intent","source_message_ids","reason","attribute_key","attribute_value"],"properties":{"kind":{"type":"string","enum":["preference","fact","context","event"]},"summary":{"type":"string"},"content":{"type":"string"},"occurred_at":{"type":["string","null"]},"occurred_end_at":{"type":["string","null"]},"occurred_timezone":{"type":"string"},"date_precision":{"type":"string","enum":["exact_time","exact_day","range","approximate","unknown"]},"valid_from":{"type":["string","null"]},"valid_to":{"type":["string","null"]},"confidence":{"type":"number","minimum":0,"maximum":1},"sensitivity":{"type":"string","enum":["normal","sensitive","restricted"]},"importance":{"type":"integer","minimum":0,"maximum":100},"explicit_user_intent":{"type":"boolean"},"source_message_ids":{"type":"array","items":{"type":"string"}},"reason":{"type":"string","enum":["preference","stable_fact","context","event"]},"attribute_key":{"type":"string"},"attribute_value":{"type":"string"}}}}}}`)
+	return json.RawMessage(`{"type":"object","additionalProperties":false,"required":["candidates"],"properties":{"candidates":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["kind","summary","content","occurred_at","occurred_end_at","occurred_timezone","date_precision","valid_from","valid_to","confidence","sensitivity","importance","explicit_user_intent","source_message_ids","reason","attribute_key","attribute_value"],"properties":{"kind":{"type":"string","enum":["preference","fact","context","event"]},"summary":{"type":"string"},"content":{"type":"string"},"occurred_at":{"type":["string","null"]},"occurred_end_at":{"type":["string","null"]},"occurred_timezone":{"type":"string","description":"IANA timezone name such as Asia/Shanghai for occurred_at; use an empty string when the timezone cannot be determined. Do not emit abbreviations, UTC offsets, or localized names."},"date_precision":{"type":"string","enum":["exact_time","exact_day","range","approximate","unknown"]},"valid_from":{"type":["string","null"]},"valid_to":{"type":["string","null"]},"confidence":{"type":"number","minimum":0,"maximum":1},"sensitivity":{"type":"string","enum":["normal","sensitive","restricted"]},"importance":{"type":"integer","minimum":0,"maximum":100},"explicit_user_intent":{"type":"boolean"},"source_message_ids":{"type":"array","items":{"type":"string"}},"reason":{"type":"string","enum":["preference","stable_fact","context","event"]},"attribute_key":{"type":"string"},"attribute_value":{"type":"string"}}}}}}`)
 }
 
 func (s *MemoryExtractionService) FlushBeforeCompaction(ctx context.Context, conversationID string, from, to uint64) error {
