@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { AINP_LOGO_PATH } from '@/constants/brand';
+import { AINP_LOGO_PATH, APP_BRAND_NAME } from '@/constants/brand';
 
 defineOptions({
   name: 'SystemLogo'
@@ -7,7 +7,7 @@ defineOptions({
 </script>
 
 <template>
-  <img :src="AINP_LOGO_PATH" alt="AINP" class="app-logo" />
+  <img :src="AINP_LOGO_PATH" :alt="APP_BRAND_NAME" class="app-logo" />
 </template>
 
 <style scoped>

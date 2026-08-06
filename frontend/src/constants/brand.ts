@@ -1,2 +1,5 @@
-/** Public brand assets shared by the application shell and bootstrap loading screen. */
-export const AINP_LOGO_PATH = '/brand/ainp-logo.svg';
+import { adminApplication } from '@admin-application';
+
+/** Public brand asset selected by the compile-time application definition. */
+export const AINP_LOGO_PATH = adminApplication.brand.logo;
+export const APP_BRAND_NAME = adminApplication.brand.name;

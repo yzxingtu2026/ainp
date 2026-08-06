@@ -1,8 +1,13 @@
 import type { ElegantConstRoute } from '@elegant-router/types';
+import { assertRegisteredPage, getAdminApplication } from '@/composition';
 
 /** 将后端 component 路径转为 elegant view key，如 view.notification_list → notification_list，demo/hello → demo_hello */
 export function toViewKey(component?: string, id?: string): string {
-  const raw = (component || id || 'unknown')
+  const source = (component || id || '').trim();
+  if (!source || source.includes('://') || source.includes('..') || source.startsWith('//')) {
+    throw new Error(`[admin-composition] invalid backend component "${source}"`);
+  }
+  const raw = source
     .replace(/^\//, '')
     .replace(/^view\./, '')
     .replace(/\//g, '_')
@@ -88,6 +93,7 @@ export function transformAinPMenusToRoutes(items: Api.Route.AinPMenu[]): Elegant
 
       // menu leaf
       const viewKey = toViewKey(item.component, item.id);
+      assertRegisteredPage(getAdminApplication(), viewKey, `backend menu "${item.id}"`);
       const path = item.path || `/${viewKey.replace(/_/g, '/')}`;
       const firstLevel = parentFirstLevel || toFirstLevelName(item.id, path);
       const name = viewKey.includes('_') ? viewKey : `${firstLevel}_${viewKey}`;

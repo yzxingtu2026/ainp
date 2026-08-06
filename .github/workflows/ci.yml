@@ -110,7 +110,9 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
       - name: Unit tests
-        run: pnpm test:attachment-picker && pnpm test:composer && pnpm test:menu && pnpm test:select
+        run: pnpm test:attachment-picker && pnpm test:composer && pnpm test:composition && pnpm test:menu && pnpm test:select
+      - name: Verify frontend baseline
+        run: pnpm baseline:verify
       - name: AppSelect architecture check
         run: pnpm test:app-select-architecture
       - name: Lint
@@ -121,6 +123,12 @@ jobs:
           VITE_BUILD_COMMIT: ${{ github.sha }}
           VITE_BUILD_TIME: "1970-01-01T00:00:00Z"
         run: pnpm build
+      - name: Downstream example production build
+        env:
+          VITE_BUILD_VERSION: v0.0.0-ci
+          VITE_BUILD_COMMIT: ${{ github.sha }}
+          VITE_BUILD_TIME: "1970-01-01T00:00:00Z"
+        run: pnpm test:downstream-build
 
   containers:
     needs: [repository-gates, backend, frontend]

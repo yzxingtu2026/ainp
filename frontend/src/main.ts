@@ -7,8 +7,11 @@ import { setupRouter } from './router';
 import { getLocale, setupI18n } from './locales';
 import App from './App.vue';
 import { logBuildInfo } from './utils/build-info';
+import { adminApplication } from '@admin-application';
+import { installAdminApplication } from './composition';
 
 async function setupApp() {
+  installAdminApplication(adminApplication);
   logBuildInfo();
   setupLoading();
 
@@ -25,6 +28,10 @@ async function setupApp() {
   await setupRouter(app);
 
   setupI18n(app);
+
+  for (const initializer of adminApplication.initializers || []) {
+    await initializer.setup({ app, services: adminApplication.servicesMap });
+  }
 
   setupAppVersionNotification();
 

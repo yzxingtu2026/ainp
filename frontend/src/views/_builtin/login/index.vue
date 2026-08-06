@@ -6,6 +6,7 @@ import { useAppStore } from '@/store/modules/app';
 import { useThemeStore } from '@/store/modules/theme';
 import { $t } from '@/locales';
 import { buildInfo } from '@/utils/build-info';
+import { adminApplication } from '@admin-application';
 import PwdLogin from './modules/pwd-login.vue';
 import CodeLogin from './modules/code-login.vue';
 import Register from './modules/register.vue';
@@ -43,11 +44,11 @@ const activeModule = computed(() => moduleMap[props.module || 'pwd-login']);
     <aside class="login-visual" aria-labelledby="login-visual-title">
       <img
         class="visual-image"
-        :src="themeStore.darkMode ? '/brand/ainp-login-visual-dark.png' : '/brand/ainp-login-visual.png'"
+        :src="themeStore.darkMode ? adminApplication.brand.loginVisualDark : adminApplication.brand.loginVisual"
         alt=""
       />
       <div class="visual-copy">
-        <h2 id="login-visual-title">AINP</h2>
+        <h2 id="login-visual-title">{{ adminApplication.brand.name }}</h2>
         <p>{{ $t('page.login.visual.tagline') }}</p>
         <ul class="visual-features">
           <li>{{ $t('page.login.visual.intelligentCollaboration') }}</li>
@@ -79,7 +80,7 @@ const activeModule = computed(() => moduleMap[props.module || 'pwd-login']);
       <div class="login-content">
         <header class="brand-header">
           <SystemLogo class="brand-logo" />
-          <span class="brand-name">{{ $t('system.title') }}</span>
+          <span class="brand-name">{{ adminApplication.brand.name }}</span>
         </header>
 
         <main class="login-main">
@@ -93,7 +94,9 @@ const activeModule = computed(() => moduleMap[props.module || 'pwd-login']);
           </Transition>
         </main>
 
-        <footer class="login-footer">AINP · v{{ buildInfo.version.replace(/^v/, '') }}</footer>
+        <footer class="login-footer">
+          {{ adminApplication.brand.name }} · v{{ buildInfo.version.replace(/^v/, '') }}
+        </footer>
       </div>
     </section>
   </div>

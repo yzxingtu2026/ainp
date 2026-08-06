@@ -1,6 +1,6 @@
 import type { CustomRoute, ElegantConstRoute, ElegantRoute } from '@elegant-router/types';
 import { generatedRoutes } from '../elegant/routes';
-import { layouts, views } from '../elegant/imports';
+import { assertRegisteredRouteComponents, getAdminApplication, platformLayouts } from '@/composition';
 import { transformElegantRoutesToVueRoutes } from '../elegant/transform';
 
 /**
@@ -36,5 +36,7 @@ export function createStaticRoutes() {
  * @param routes Elegant routes
  */
 export function getAuthVueRoutes(routes: ElegantConstRoute[]) {
-  return transformElegantRoutesToVueRoutes(routes, layouts, views);
+  const pages = getAdminApplication().pageMap;
+  assertRegisteredRouteComponents(routes, pages, platformLayouts);
+  return transformElegantRoutesToVueRoutes(routes, platformLayouts, pages);
 }

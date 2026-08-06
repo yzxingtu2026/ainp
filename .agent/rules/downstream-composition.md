@@ -1,5 +1,7 @@
 # 下游装配
 
+- Vue 管理后台的编译期装配另见 `frontend-downstream-composition`；本文件其余条目描述 Go Host。
+
 - 下游只能通过公开 `platform/host` 组合 API、Worker 和 migration runner，禁止导入或复制 `platform/internal/*`。
 - API 与 Worker 复用同一稳定模块声明；模块 ID、阶段顺序、重复注册与迁移 checksum 全部 fail-closed。
 - 公开 Host 默认不装配 Demo；仅官方演示或本地 showcase 可在 composition root 显式传 `host.WithDemo()`，API 与 Worker 必须复用同一选择，禁止环境变量隐式启用或路由黑名单。

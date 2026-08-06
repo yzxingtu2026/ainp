@@ -2,6 +2,8 @@
 
 本文档是 AINP 管理端与 AI Workspace 的前端选型详规。Agent 只读要点：`.agent/rules/frontend-stack.md`。
 
+管理后台下游装配、页面注册、模块裁剪与升级见 [frontend-downstream-composition.md](frontend-downstream-composition.md)。该契约只适用于 Vue 管理后台，不适用于 Taro、React Native 或其他客户端。
+
 ## 选型结论
 
 | 项 | 选择 | 原因 |

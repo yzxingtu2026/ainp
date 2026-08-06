@@ -18,6 +18,8 @@ declare namespace Env {
     readonly VITE_APP_DESC: string;
     /** immutable release tag injected by the trusted build */
     readonly VITE_BUILD_VERSION?: string;
+    /** immutable AINP frontend baseline tag */
+    readonly VITE_AINP_BASELINE_VERSION?: string;
     /** git commit injected by the trusted build */
     readonly VITE_BUILD_COMMIT?: string;
     /** UTC RFC3339 build time injected by the trusted build */

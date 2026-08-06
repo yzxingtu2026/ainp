@@ -2,6 +2,8 @@
 
 ## AINP 产品品牌
 
+官方产品品牌为 AINP；下游管理后台只能通过 Composition Brand 契约覆盖产品名、构建内 Logo/Favicon、登录视觉和基础主题色，不得覆盖内部组件或依赖运行时 CDN。
+
 - 标准图形源资产固定为 `frontend/public/brand/ainp-logo.svg`。
 - 应用壳、登录页、启动 Loading 与 favicon 必须引用该源资产，禁止复制 SVG path 或维护独立变体。
 - Logo 外部背景透明，品牌底色为 `#646CFF`，内部标识为白色；该组合同时适用于浅色和深色界面。
