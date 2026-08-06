@@ -1,10 +1,12 @@
+import { adminApplication } from '@admin-application';
+
 /** Default theme settings */
 export const themeSettings: App.Theme.ThemeSetting = {
   themeScheme: 'light',
   grayscale: false,
   colourWeakness: false,
   recommendColor: false,
-  themeColor: '#646cff',
+  themeColor: adminApplication.brand.themeColor || '#646cff',
   themeRadius: 6,
   otherColor: {
     info: '#2080f0',
@@ -59,7 +61,7 @@ export const themeSettings: App.Theme.ThemeSetting = {
   },
   watermark: {
     visible: false,
-    text: 'AINP',
+    text: adminApplication.brand.name,
     enableUserName: false,
     enableTime: false,
     timeFormat: 'YYYY-MM-DD HH:mm'

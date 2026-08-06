@@ -125,6 +125,23 @@
       }
     },
     {
+      "id": "frontend-downstream-composition",
+      "source": ".agent/rules/frontend-downstream-composition.md",
+      "qoder": {
+        "path": ".qoder/rules/frontend-downstream-composition.md",
+        "frontmatter": {
+          "trigger": "always_on"
+        }
+      },
+      "cursor": {
+        "path": ".cursor/rules/frontend-downstream-composition.mdc",
+        "frontmatter": {
+          "description": "Vue 管理后台下游编译期装配、注册表、模块与版本基线边界",
+          "alwaysApply": true
+        }
+      }
+    },
+    {
       "id": "icon-library",
       "source": ".agent/rules/icon-library.md",
       "qoder": {

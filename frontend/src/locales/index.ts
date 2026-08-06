@@ -2,6 +2,7 @@ import type { App } from 'vue';
 import { createI18n } from 'vue-i18n';
 import { localStg } from '@/utils/storage';
 import messages from './locale';
+import { adminApplication } from '@admin-application';
 
 const i18n = createI18n({
   locale: localStg.get('lang') || 'zh-CN',
@@ -9,6 +10,16 @@ const i18n = createI18n({
   messages,
   legacy: false
 });
+
+for (const registration of adminApplication.i18n || []) {
+  for (const [locale, namespaceMessages] of Object.entries(registration.messages)) {
+    const namespaced = registration.id
+      .split('.')
+      .reverse()
+      .reduce<Record<string, unknown>>((child, segment) => ({ [segment]: child }), namespaceMessages as Record<string, unknown>);
+    i18n.global.mergeLocaleMessage(locale, namespaced);
+  }
+}
 
 /**
  * Setup plugin i18n

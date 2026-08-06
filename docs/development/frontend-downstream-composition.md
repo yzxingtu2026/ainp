@@ -1,0 +1,34 @@
+# 管理后台下游装配
+
+## 稳定边界
+
+AINP Vue 管理后台使用编译期静态装配。`frontend/src/composition/contract.ts`、`define-app.ts` 和 `index.ts` 是首期稳定契约；`application.ts` 是产品 Composition Root。Elegant Router 生成文件、平台 Store 和 `frontend/src` 其他实现仍属于 AINP 基线内部，不是公共 npm API。
+
+下游从固定 SemVer Tag/Commit 初始化基线，只替换自有 `application.ts` 并在自有目录注册页面、i18n、Store 初始化器和 service。平台页面从稳定入口显式选择 `corePages`、`systemPages`、`operationsPages`、`aiPages`、`demoPages`；未引用的模块不进入依赖图。禁止深层导入 AINP 内部实现，禁止修改 `router/elegant/imports.ts`、`routes.ts`、`transform.ts`，也禁止 URL、文件路径拼接或后端字符串触发动态 import。
+
+三类所有权边界：`frontend/packages/@sa/*` 是 Soybean 通用基础包，当前 workspace 包不承诺公共 npm 契约；`frontend/src/composition/*` 是稳定装配契约；其余 `frontend/src/*` 是 AINP 内部实现。AppSelect、请求、CodeSet、附件和时间展示仍按对应规范使用，不得复制分叉。
+
+## 生命周期与安全边界
+
+`defineAdminApp` 按 ID 排序并校验所有注册。应用、页面、路由、i18n namespace、初始化器与 service 均携带 owner；重复键、未知页面、非法 path、远程品牌资源和非法模块组合立即失败。模块依赖为 `core` 必选、`system -> core`、`operations -> system`、`ai -> core`、`demo -> core`。
+
+后端 Metadata 决定用户可见与可访问菜单，前端 page registry 只决定产物中存在的代码。动态菜单 component key 必须命中 registry；本地注册页面不产生权限。生产下游使用动态路由模式。Demo 仅在 Composition Root 显式加入 `demo` 模块及页面后进入产物。
+
+应用启动顺序固定为：定义校验、品牌安装、平台插件、Pinia、Router、i18n、按 ID 排序的下游 initializer、挂载。initializer 只通过 context 获取 Vue app 与已注册 service，禁止依赖 import 副作用。
+
+## 初始化、版本与升级
+
+发布时执行 `pnpm baseline:generate`，清单记录前端版本、Commit、Node/pnpm、生成协议版本、模块和基线文件 SHA-256。Vite 会将该清单以 `admin-composition.json` 放入构建产物。根 Tag、`platform/v*` 和前端清单必须指向同一 Commit。
+
+```bash
+cd frontend
+pnpm baseline:verify
+node scripts/admin-baseline.mjs init ../my-admin
+node scripts/admin-baseline.mjs preflight
+```
+
+`init` 遇到已有目标会停止，不静默覆盖。升级前固定新 Tag，在旧基线执行 `verify`；比较新旧清单，分开合并上游文件和下游目录。冲突时停止并逐文件记录临时补丁、上游 Issue 和删除条件。升级后验证 typecheck、lint、单测、生产构建、Metadata 页面映射、API/权限契约以及前后端 Commit。
+
+通用改进优先回提 AINP。上游包含修复后删除临时补丁。失败回滚恢复旧 Tag、旧清单和旧锁文件，不修改已发布清单。
+
+`frontend/examples/downstream-admin` 展示自定义品牌、页面/路由、i18n namespace、Store initializer、AINP 信封 service 和可选 AI 模块，默认不包含 Demo。
