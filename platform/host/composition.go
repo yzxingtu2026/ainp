@@ -39,7 +39,10 @@ type AutoMigrator interface {
 
 type Option func(*options) error
 
-type options struct{ modules []Module }
+type options struct {
+	modules     []Module
+	demoEnabled bool
+}
 
 // WithModules adds one immutable module declaration to both API and Worker.
 func WithModules(modules ...Module) Option {
@@ -49,10 +52,20 @@ func WithModules(modules ...Module) Option {
 	}
 }
 
+// WithDemo explicitly includes AINP's development and showcase module.
+// Production downstream hosts omit this option and therefore exclude Demo.
+func WithDemo() Option {
+	return func(opts *options) error {
+		opts.demoEnabled = true
+		return nil
+	}
+}
+
 // Composition validates and owns a deterministic downstream module list.
 type Composition struct {
-	modules    []Module
-	migrations migrations.Set
+	modules     []Module
+	migrations  migrations.Set
+	demoEnabled bool
 }
 
 func New(optionFns ...Option) (*Composition, error) {
@@ -100,10 +113,13 @@ func New(optionFns ...Option) (*Composition, error) {
 	if err != nil {
 		return nil, fmt.Errorf("host: migrations: %w", err)
 	}
-	return &Composition{modules: modules, migrations: set}, nil
+	return &Composition{modules: modules, migrations: set, demoEnabled: opts.demoEnabled}, nil
 }
 
 func (c *Composition) Migrations() migrations.Set { return c.migrations }
+
+// DemoEnabled reports the immutable Demo selection used by API and Worker.
+func (c *Composition) DemoEnabled() bool { return c.demoEnabled }
 
 func (c *Composition) prepare(application *app.App) error {
 	for _, module := range c.modules {

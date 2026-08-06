@@ -177,9 +177,12 @@ Action/Handler → Service → Tenant Repository / Domain Query → GORM
 
 ```text
 main → config → logging → database → app.New
-    → demo.Register / system.Register
+    → system.Register / operations.Register / ai.Register
+    → [显式 WithDemo] demo.Register
     → MountHTTP（按 Meta.HTTP + /healthz）→ Run
 ```
+
+公开 `platform/host` 对 Demo 采用安全默认值：下游 composition root 未传 `host.WithDemo()` 时不得注册 Demo Capability、Action、路由、菜单、Page Help、附件策略、Job、Outbox Handler 或演示种子。AINP 官方 API 与 Worker 为保持演示行为，必须在各自 composition root 显式传入同一选项。禁止用环境变量隐式启用或用路由黑名单伪装未装配；详见[下游业务模块装配与版本消费](./downstream-composition.md)。
 
 ```text
 HTTP → request_id → AuthContext → permission(action.id)

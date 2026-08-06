@@ -206,8 +206,10 @@ func (c *Composition) OpenInstalled(ctx context.Context, cfg *config.Config) (*P
 			return nil, err
 		}
 	}
-	if err := system.SeedDemo(ctx, db); err != nil {
-		return nil, fmt.Errorf("system seed: %w", err)
+	if c.demoEnabled {
+		if err := system.SeedDemo(ctx, db); err != nil {
+			return nil, fmt.Errorf("system demo seed: %w", err)
+		}
 	}
 
 	tokens, err := auth.NewTokenService(cfg.Auth.JWT.Secret, cfg.Auth.JWT.Issuer, cfg.Auth.JWT.Duration())
@@ -289,8 +291,10 @@ func (c *Composition) OpenInstalled(ctx context.Context, cfg *config.Config) (*P
 		return nil, fmt.Errorf("register ai: %w", err)
 	}
 	setupSvc.SetInitialDataHook(application.AgentTenantInitializer)
-	if err := demo.Register(application); err != nil {
-		return nil, fmt.Errorf("register demo: %w", err)
+	if c.demoEnabled {
+		if err := demo.Register(application); err != nil {
+			return nil, fmt.Errorf("register demo: %w", err)
+		}
 	}
 	if err := c.register(application); err != nil {
 		return nil, err

@@ -31,7 +31,7 @@ func main() {
 	info := buildinfo.Current()
 	logging.Info(ctx, "starting ainp", "addr", cfg.Server.Addr,
 		"version", info.Version, "commit", info.Commit, "build_time", info.BuildTime)
-	p, err := host.OpenAPI(ctx, cfg)
+	p, err := host.OpenAPI(ctx, cfg, host.WithDemo())
 	if err != nil {
 		logging.Error(ctx, "bootstrap failed", err)
 		os.Exit(1)
