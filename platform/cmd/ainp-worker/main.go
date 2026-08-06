@@ -43,7 +43,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	worker, err := host.OpenWorker(ctx, cfg, profile)
+	worker, err := host.OpenWorker(ctx, cfg, profile, host.WithDemo())
 	if err != nil {
 		logging.Error(ctx, "bootstrap failed", err)
 		os.Exit(1)

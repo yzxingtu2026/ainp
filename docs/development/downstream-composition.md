@@ -24,7 +24,7 @@ Git 中对应 Tag 为 `platform/v0.2.0`。同一次发布的根 Tag `v0.2.0` 与
 - `AutoMigrate(*gorm.DB) error`：仅用于新安装创建当前下游 Schema。
 - `MigrationSource() migrations.Source`：为安装 baseline、`status` 和后续 `up` 提供 forward-only SQL。
 
-确定顺序为：校验并按模块 ID 排序、创建 framework runtime、`Prepare`、内置 setup/system/operations/ai/demo 注册、`Register`、全局注册表与帮助/AI 覆盖校验。非法或重复模块 ID、重复 Provider/Action/Job/Setting 等由相应注册表拒绝并终止启动。API 与 Worker 必须由同一个 `[]host.Module` 声明创建。
+确定顺序为：校验并按模块 ID 排序、创建 framework runtime、`Prepare`、内置 setup/system/operations/ai 注册、按显式选项注册 Demo、`Register`、全局注册表与帮助/AI 覆盖校验。非法或重复模块 ID、重复 Provider/Action/Job/Setting 等由相应注册表拒绝并终止启动。API 与 Worker 必须由同一个 `[]host.Module` 和同一组装配选项声明创建。
 
 ```go
 modules := []host.Module{orders.Module{}, membership.Module{}}
@@ -33,6 +33,23 @@ worker, err := host.OpenWorker(ctx, cfg, profile, host.WithModules(modules...))
 composition, err := host.New(host.WithModules(modules...))
 status, err := composition.Migrations().Up(db)
 ```
+
+## Demo 安全默认值
+
+公开 Host 默认不装配 `platform/modules/demo`。生产下游调用 `host.New()`、`host.OpenAPI()`、`host.OpenInstalled()` 或 `host.OpenWorker()` 时无需传入禁用配置；默认结果不包含 Demo Capability、Action、HTTP 路由、菜单、Page Help、附件策略、Job、Outbox Handler、权限目录或演示租户种子数据。
+
+AINP 官方演示应用或下游本地 showcase 必须在 composition root 显式传入 `host.WithDemo()`：
+
+```go
+options := []host.Option{
+    host.WithModules(modules...),
+    host.WithDemo(),
+}
+api, err := host.OpenAPI(ctx, cfg, options...)
+worker, err := host.OpenWorker(ctx, cfg, profile, options...)
+```
+
+`WithDemo()` 是代码级 opt-in，不得由环境变量或路由黑名单替代。API、embedded worker 与独立 Worker 必须消费同一份不可变选择，避免 Demo Action、Job 与 Outbox Handler 漂移。`Composition.DemoEnabled()` 仅公开最终装配事实，Registry 仍是验证具体 Capability、Action、Menu 与 Job 是否存在的稳定事实源。
 
 调用方负责配置和日志初始化、OS 信号以及最终调用 `Close`；Host 负责 App、Outbox、Job、Worker runner 与关闭顺序。最小独立模块见 `platform/examples/downstream`。
 
