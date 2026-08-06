@@ -8,13 +8,11 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/yzxingtu2026/ainp/platform/framework/asynqadapter"
 	"github.com/yzxingtu2026/ainp/platform/framework/buildinfo"
 	"github.com/yzxingtu2026/ainp/platform/framework/config"
 	"github.com/yzxingtu2026/ainp/platform/framework/job"
 	"github.com/yzxingtu2026/ainp/platform/framework/logging"
-	"github.com/yzxingtu2026/ainp/platform/framework/state"
-	"github.com/yzxingtu2026/ainp/platform/internal/boot"
+	"github.com/yzxingtu2026/ainp/platform/host"
 )
 
 func main() {
@@ -36,20 +34,6 @@ func main() {
 	logCloser := logging.InitConfig(logging.Config{Level: cfg.Logging.Level, Format: cfg.Logging.Format, Outputs: cfg.Logging.Outputs, Service: cfg.Logging.Service, InstanceID: cfg.Logging.InstanceID, File: logging.FileConfig{Path: cfg.Logging.File.Path, MaxSizeMB: cfg.Logging.File.MaxSizeMB, MaxBackups: cfg.Logging.File.MaxBackups, MaxAgeDays: cfg.Logging.File.MaxAgeDays, Compress: cfg.Logging.File.Compress}})
 	defer logCloser.Close()
 
-	st, err := state.Load(cfg.StateFile)
-	if err != nil {
-		logging.Error(ctx, "load state failed", err)
-		os.Exit(1)
-	}
-	if !st.Installed {
-		logging.Error(ctx, "worker requires installed platform", fmt.Errorf("not installed"))
-		os.Exit(1)
-	}
-	st.ApplyConfig(cfg)
-	if !cfg.Jobs.IsEnabled() {
-		logging.Error(ctx, "jobs disabled", fmt.Errorf("set jobs.enabled=true"))
-		os.Exit(1)
-	}
 	profile, err := job.ResolveWorkerProfile(
 		job.WorkerProfile{Queues: cfg.Jobs.Queues, Concurrency: cfg.Jobs.Concurrency},
 		job.WorkerProfileOverrides{Queues: optionalEnv(job.WorkerQueuesEnv), Concurrency: optionalEnv(job.WorkerConcurrencyEnv)},
@@ -59,41 +43,19 @@ func main() {
 		os.Exit(1)
 	}
 
-	p, err := boot.OpenInstalled(ctx, cfg)
+	worker, err := host.OpenWorker(ctx, cfg, profile)
 	if err != nil {
 		logging.Error(ctx, "bootstrap failed", err)
 		os.Exit(1)
 	}
-	defer func() {
-		if p.App.Jobs != nil {
-			_ = p.App.Jobs.Close()
-		}
-		if p.App.Outbox != nil {
-			p.App.Outbox.Stop()
-		}
-	}()
+	defer worker.Close()
 
 	runCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	if p.App.Outbox != nil {
-		p.App.Outbox.Start(runCtx)
-	}
-	if p.App.Jobs != nil {
-		p.App.Jobs.StartRecovery(runCtx, cfg.Jobs.RecoveryIntervalDuration())
-	}
-
-	runner := asynqadapter.NewRunner(
-		asynqadapter.RedisOptFromConfig(cfg.Redis),
-		asynqadapter.WorkerConfigFromProfile(profile),
-		p.DB,
-		p.App.Jobs.Registry,
-		p.App.Jobs.Store,
-	)
-
 	info := buildinfo.Current()
 	logging.Info(runCtx, "ainp-worker starting",
-		"jobs", len(p.App.Jobs.Registry.List()),
+		"jobs", len(worker.Platform.App.Jobs.Registry.List()),
 		"queues", job.FormatWorkerQueues(profile.Queues),
 		"concurrency", profile.Concurrency,
 		"service", cfg.Logging.Service,
@@ -102,10 +64,7 @@ func main() {
 		"commit", info.Commit,
 		"build_time", info.BuildTime,
 	)
-	runner.Start(runCtx)
-
-	<-runCtx.Done()
-	if err := runner.Shutdown(cfg.Jobs.ShutdownTimeoutDuration()); err != nil {
+	if err := worker.Run(runCtx); err != nil {
 		logging.Error(ctx, "worker stopped", err)
 		os.Exit(1)
 	}

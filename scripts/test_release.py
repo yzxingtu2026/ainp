@@ -13,6 +13,7 @@ SPEC.loader.exec_module(release)
 class ReleaseValidationTest(unittest.TestCase):
     def test_version_is_strict_stable_semver(self):
         self.assertEqual(release.validate_version("v1.2.3"), "v1.2.3")
+        self.assertEqual(release.platform_tag("v1.2.3"), "platform/v1.2.3")
         for invalid in ("1.2.3", "v1.2", "v1.2.3-rc.1", "v01.2.3"):
             with self.assertRaises(release.ReleaseError):
                 release.validate_version(invalid)
@@ -46,6 +47,8 @@ class ReleaseValidationTest(unittest.TestCase):
             ("git", "rev-parse", "origin/main"): "abc",
             ("git", "tag", "--list", "v1.2.3"): "",
             ("git", "ls-remote", "--tags", "origin", "refs/tags/v1.2.3"): "",
+            ("git", "tag", "--list", "platform/v1.2.3"): "",
+            ("git", "ls-remote", "--tags", "origin", "refs/tags/platform/v1.2.3"): "",
             ("gh", "api", "repos/yzxingtu2026/ainp/commits/abc/check-runs?per_page=100"): json.dumps(successes),
             ("gh", "variable", "get", "DEMO_URL", "--env", "demo"): "https://demo.example.com",
         }

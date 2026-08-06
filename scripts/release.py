@@ -38,6 +38,11 @@ def validate_version(value: str) -> str:
     return value
 
 
+def platform_tag(version: str) -> str:
+    validate_version(version)
+    return f"platform/{version}"
+
+
 def validate_remote(value: str) -> None:
     if value not in EXPECTED_REMOTES:
         raise ReleaseError(f"origin does not point to https://github.com/{REPOSITORY}: {value}")
@@ -53,6 +58,7 @@ def successful_checks(payload: dict) -> set[str]:
 
 def preflight(version: str) -> tuple[str, str]:
     validate_version(version)
+    module_version = platform_tag(version)
     root = run("git", "rev-parse", "--show-toplevel")
     if Path.cwd().resolve() != Path(root).resolve():
         raise ReleaseError("run the release command from the repository root")
@@ -67,10 +73,11 @@ def preflight(version: str) -> tuple[str, str]:
     head = run("git", "rev-parse", "HEAD")
     if head != run("git", "rev-parse", "origin/main"):
         raise ReleaseError("HEAD must exactly match origin/main")
-    if run("git", "tag", "--list", version):
-        raise ReleaseError(f"local tag already exists: {version}")
-    if run("git", "ls-remote", "--tags", "origin", f"refs/tags/{version}"):
-        raise ReleaseError(f"remote tag already exists: {version}")
+    for tag in (version, module_version):
+        if run("git", "tag", "--list", tag):
+            raise ReleaseError(f"local tag already exists: {tag}")
+        if run("git", "ls-remote", "--tags", "origin", f"refs/tags/{tag}"):
+            raise ReleaseError(f"remote tag already exists: {tag}")
     payload = json.loads(run("gh", "api", f"repos/{REPOSITORY}/commits/{head}/check-runs?per_page=100"))
     missing = REQUIRED_CHECKS - successful_checks(payload)
     if missing:
@@ -90,7 +97,9 @@ def main() -> int:
         if not args.yes and input("Push immutable annotated tag? [y/N] ").strip().lower() not in {"y", "yes"}:
             raise ReleaseError("release cancelled")
         run("git", "tag", "--annotate", args.version, "--message", f"Release {args.version}")
-        run("git", "push", "origin", f"refs/tags/{args.version}")
+        module_version = platform_tag(args.version)
+        run("git", "tag", "--annotate", module_version, "--message", f"Platform module {args.version}")
+        run("git", "push", "origin", f"refs/tags/{args.version}", f"refs/tags/{module_version}")
         print(f"Actions: https://github.com/{REPOSITORY}/actions/workflows/release-images.yml")
         print(f"Release: https://github.com/{REPOSITORY}/releases/tag/{args.version}")
         print(f"Demo: {demo_url}")

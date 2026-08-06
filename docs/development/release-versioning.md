@@ -2,6 +2,8 @@
 
 AINP 正式版本以不可变 Git SemVer Tag 为唯一事实源。`package.json`、Go 源码常量和页面文案都不得作为正式版本源，也不得为发布直接修改 `main`。
 
+`platform` 是独立 Go 子模块。每次根版本 `vX.Y.Z` 必须同时发布 `platform/vX.Y.Z`，且两个 annotated Tag 指向同一 Commit。`scripts/release.py` 在干净、与 `origin/main` 一致且 CI 全绿时一次推送两个 Tag；任一 Tag 已存在或 Tag workflow 检测到 Commit 漂移都必须中止。下游只在 `go.mod` 固定正式模块版本，不长期消费 `main` 或伪版本。
+
 ## BuildInfo 协议
 
 backend、worker 与 web 必须由同一 Tag、Commit 和 UTC RFC3339 构建时间生成，并暴露以下字段：

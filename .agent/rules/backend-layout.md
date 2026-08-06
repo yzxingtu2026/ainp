@@ -15,6 +15,7 @@
 - 后端 `_test.go` 统一放在 `platform/tests/`，使用外部测试包通过公开 API 测试；禁止散落到 `framework/*`、`modules/*`，由架构门禁扫描防回流。
 - `modules/<module>` 根包只保留 `register.go`、命名明确的稳定 Facade、contracts 与必要常量；实现进入按能力域或技术角色组织的按需子包，禁止空目录和 `common`/`utils`/`misc` 等兜底包。
 - `modules/A` 禁止 import `modules/B`，不再接受迁移基线或依赖白名单；跨模块协作必须通过 `framework` contract 和 composition root 注入。
+- AINP 与下游的 composition root 是公开 `platform/host`；官方 cmd 与下游均不得导入 `platform/internal/boot`。
 - 每个模块必须在根目录提供返回 `error` 的 `Register` 入口；禁止空目录、根目录实现文件、子包反向 import 模块根包及 `common`/`utils`/`misc` 等兜底包。
 - `system` 根包只保留 `Register`、Facade、contracts 与常量；能力归档为 `access`、`settings`、`attachments`、`notifications`、`setup`，子包禁止反向 import 根包。
 - `system/access` 内部 canonical 术语为 `TenantAccount`、`AccountRole` 和 `Account*` Service/DTO；仅 `system` 根 Facade 与 `system/model` 可暂留带弃用说明的 `User*` aliases，外部 Action/HTTP/JSON/AuthContext 兼容字段保持不变。

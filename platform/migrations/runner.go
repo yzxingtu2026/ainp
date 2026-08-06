@@ -166,6 +166,29 @@ func Up(db *gorm.DB) (Status, error) {
 }
 
 func Baseline(db *gorm.DB) (Status, error) {
+	known, err := Load()
+	if err != nil {
+		return Status{}, err
+	}
+	return baseline(db, known)
+}
+
+// BaselineThrough records an existing schema only through one explicit known
+// version, leaving later migrations pending for Up. It is intended for legacy
+// installations that predate the migration ledger.
+func BaselineThrough(db *gorm.DB, maxVersion int) (Status, error) {
+	known, err := Load()
+	if err != nil {
+		return Status{}, err
+	}
+	index := sort.Search(len(known), func(i int) bool { return known[i].Version >= maxVersion })
+	if index == len(known) || known[index].Version != maxVersion {
+		return Status{}, fmt.Errorf("migration baseline version %04d is not known", maxVersion)
+	}
+	return baseline(db, known[:index+1])
+}
+
+func baseline(db *gorm.DB, target []Migration) (Status, error) {
 	status, err := Inspect(db)
 	if err != nil || !status.Initialized {
 		return status, err
@@ -190,7 +213,7 @@ func Baseline(db *gorm.DB) (Status, error) {
 		if len(lockedStatus.Applied) != 0 {
 			return fmt.Errorf("migration baseline requires empty history")
 		}
-		for _, migration := range lockedStatus.Pending {
+		for _, migration := range target {
 			row := Applied{Version: migration.Version, Name: migration.Name, Checksum: migration.Checksum, AppliedAt: time.Now().UTC()}
 			if createErr := tx.Create(&row).Error; createErr != nil {
 				return fmt.Errorf("baseline %s: %w", migration.Name, createErr)

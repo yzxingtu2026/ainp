@@ -51,7 +51,7 @@ func TestTenantAccountCanonicalArchitecture(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, root := range []string{"../framework", "../internal", "../modules", "../cmd"} {
+	for _, root := range []string{"../framework", "../host", "../modules", "../cmd"} {
 		err = filepath.Walk(root, func(path string, info os.FileInfo, walkErr error) error {
 			if walkErr != nil {
 				return walkErr

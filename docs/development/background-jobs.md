@@ -16,7 +16,7 @@ Agent 只读要点：`.agent/rules/background-jobs.md`。本文档为 Job 基础
 
 - `framework/job`：Contract（Definition/Registry/Enqueuer/Handler/Reporter/RunStore/Transport）
 - `framework/asynqadapter`：Asynq Adapter（业务与 framework/job **不得** import Asynq 类型）
-- `cmd/ainp-worker`：独立 Worker；与 HTTP 共用 `internal/boot`
+- `cmd/ainp-worker`：独立 Worker；与 HTTP 共用公开 `host` Composition
 - 业务：`modules/<m>/jobs/<type>.go`（一个 Job Type 一个文件）+ `Register`
 
 ## JobRun（PostgreSQL）
