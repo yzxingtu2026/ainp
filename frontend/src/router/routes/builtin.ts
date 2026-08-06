@@ -1,6 +1,7 @@
 import type { CustomRoute } from '@elegant-router/types';
+import { adminApplication } from '@admin-application';
 import { getRoutePath, transformElegantRoutesToVueRoutes } from '../elegant/transform';
-import { getAdminApplication, platformLayouts } from '@/composition';
+import { platformLayouts } from '@/composition';
 
 export const ROOT_ROUTE: CustomRoute = {
   name: 'root',
@@ -27,5 +28,5 @@ const builtinRoutes: CustomRoute[] = [ROOT_ROUTE, NOT_FOUND_ROUTE];
 
 /** create builtin vue routes */
 export function createBuiltinVueRoutes() {
-  return transformElegantRoutesToVueRoutes(builtinRoutes, platformLayouts, getAdminApplication().pageMap);
+  return transformElegantRoutesToVueRoutes(builtinRoutes, platformLayouts, adminApplication.pageMap);
 }

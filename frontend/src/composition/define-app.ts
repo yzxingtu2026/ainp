@@ -16,10 +16,10 @@ function assertId(kind: string, value: string) {
   if (!ID_PATTERN.test(value)) throw new Error(`[admin-composition] invalid ${kind} "${value}"`);
 }
 
-function assertUnique(kind: string, registrations: readonly OwnedRegistration[]) {
+function assertUnique(kind: string, registrations: readonly OwnedRegistration[], idPattern = ID_PATTERN) {
   const owners = new Map<string, string>();
   for (const item of registrations) {
-    assertId(`${kind} id`, item.id);
+    if (!idPattern.test(item.id)) throw new Error(`[admin-composition] invalid ${kind} id "${item.id}"`);
     assertId(`${kind} owner`, item.owner);
     const previous = owners.get(item.id);
     if (previous) {
@@ -53,16 +53,13 @@ export function defineAdminApp(definition: AdminAppDefinition): ResolvedAdminApp
   const initializers = [...(definition.initializers || [])].sort((a, b) => a.id.localeCompare(b.id));
   const services = [...(definition.services || [])].sort((a, b) => a.id.localeCompare(b.id));
 
-  assertUnique('page', pages);
+  assertUnique('page', pages, PAGE_KEY_PATTERN);
   assertUnique('route', routes);
   assertUnique('i18n namespace', i18n);
   assertUnique('initializer', initializers);
   assertUnique('service', services);
 
   const pageMap = Object.fromEntries(pages.map(page => [page.id, page.component]));
-  for (const page of pages) {
-    if (!PAGE_KEY_PATTERN.test(page.id)) throw new Error(`[admin-composition] invalid page key "${page.id}"`);
-  }
   for (const route of routes) {
     if (!SAFE_PATH_PATTERN.test(route.path) || route.path.includes('..')) {
       throw new Error(`[admin-composition] invalid route path "${route.path}" from owner "${route.owner}"`);

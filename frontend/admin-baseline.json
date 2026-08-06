@@ -15,7 +15,7 @@
   "files": {
     "src/composition/application.ts": "3dcbf186bbfd4448b115155245046c147bbc9fe7b60ef42ec3ec3fa9f8869afd",
     "src/composition/contract.ts": "543e49e4e09bed89cf8136f5c0c12716a634f10ad9e268aa0dcb6b1056ab3276",
-    "src/composition/define-app.ts": "7cc9506874d77dc67ac97de64a21cc9556c63bd17c9a1c5249726723328bd938",
+    "src/composition/define-app.ts": "c701be46278039565b6ce607bdad8d21e49cb90fc11189cd4d1ad81b46c89e8f",
     "src/composition/index.ts": "078bb9f423ae2f9b2caf0abe617fa2f34c9afff2ae3f26f888488bbb0479d83a",
     "src/composition/page.ts": "98cd700e6e19cda19d91da9087eebb3f92fc25f92b1f63b04864fd3121061132",
     "src/composition/core-pages.ts": "8a6195ad02ce6d64cd3ab41371708392122fecb265fabc1624b7b7d87dab7aa6",

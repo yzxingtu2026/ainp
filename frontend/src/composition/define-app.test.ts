@@ -18,15 +18,29 @@ function validDefinition() {
 }
 
 test('resolves a deterministic application registry', () => {
-  const app = defineAdminApp(validDefinition());
+  const definition = validDefinition();
+  definition.pages.push({ id: '403', owner: 'ainp', component });
+  const app = defineAdminApp(definition);
   assert.deepEqual(app.modules, ['core', 'system']);
   assert.equal(app.pageMap.example_orders, component);
+  assert.equal(app.pageMap['403'], component);
 });
 
 test('rejects duplicate registrations with both owners', () => {
   const definition = validDefinition();
   definition.pages.push({ id: 'example_orders', owner: 'other', component });
   assert.throws(() => defineAdminApp(definition), /owners "example" and "other"/);
+});
+
+test('rejects malformed page keys while allowing numeric builtin keys', () => {
+  const definition = validDefinition();
+  assert.doesNotThrow(() =>
+    defineAdminApp({ ...definition, pages: [...definition.pages, { id: '404', owner: 'ainp', component }] })
+  );
+  assert.throws(
+    () => defineAdminApp({ ...definition, pages: [...definition.pages, { id: 'view.404', owner: 'ainp', component }] }),
+    /invalid page id/
+  );
 });
 
 test('rejects unknown pages, unsafe paths and illegal module combinations', () => {
