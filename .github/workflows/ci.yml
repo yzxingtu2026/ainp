@@ -68,6 +68,21 @@ jobs:
         run: go vet ./...
       - name: Test
         run: go test ./...
+      - name: Verify external downstream module
+        working-directory: platform/examples/downstream
+        run: |
+          go vet ./...
+          go test ./...
+          if grep -R "platform/internal/" --include='*.go' .; then
+            echo "external module must not import platform/internal packages" >&2
+            exit 1
+          fi
+      - name: Verify official commands use public Host
+        run: |
+          if grep -R "platform/internal/boot" --include='*.go' cmd; then
+            echo "official commands must use platform/host" >&2
+            exit 1
+          fi
       - name: Verify release linker flags
         run: |
           flags="-X github.com/yzxingtu2026/ainp/platform/framework/buildinfo.version=v0.0.0-ci -X github.com/yzxingtu2026/ainp/platform/framework/buildinfo.commit=${GITHUB_SHA} -X github.com/yzxingtu2026/ainp/platform/framework/buildinfo.buildTime=1970-01-01T00:00:00Z"

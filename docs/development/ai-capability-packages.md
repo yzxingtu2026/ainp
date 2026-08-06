@@ -47,7 +47,7 @@ all capabilities ──> ai/internal/actionmeta (private leaf, when needed)
 
 ## 公开符号与启动装配盘点
 
-当前根公开 import surface 的使用者为 `cmd/ainp`、`internal/boot`、数据库 migration runner 和集中测试。公开符号按稳定性分为：
+当前根公开 import surface 的使用者为公开 `host` composition root、数据库 migration runner 和集中测试。官方 cmd 与下游均经 `host` 装配。公开符号按稳定性分为：
 
 | 分组 | 当前代表符号 | 迁移策略 |
 | --- | --- | --- |

@@ -641,6 +641,12 @@
       "source": ".agent/rules/release-versioning.md",
       "qoder": {"path": ".qoder/rules/release-versioning.md", "frontmatter": {"trigger": "always_on"}},
       "cursor": {"path": ".cursor/rules/release-versioning.mdc", "frontmatter": {"description": "Git Tag 唯一版本源、统一 BuildInfo、CI 与部署版本校验", "alwaysApply": true}}
+    },
+    {
+      "id": "downstream-composition",
+      "source": ".agent/rules/downstream-composition.md",
+      "qoder": {"path": ".qoder/rules/downstream-composition.md", "frontmatter": {"trigger": "always_on"}},
+      "cursor": {"path": ".cursor/rules/downstream-composition.mdc", "frontmatter": {"description": "公开 Host、下游模块阶段、命名空间迁移与 Go 子模块版本边界", "alwaysApply": true}}
     }
   ]
 }

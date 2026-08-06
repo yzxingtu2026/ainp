@@ -1,8 +1,10 @@
-package boot
+package host
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
 	"github.com/yzxingtu2026/ainp/platform/framework/asynqadapter"
@@ -31,6 +33,35 @@ type Platform struct {
 	Config *config.Config
 	DB     *gorm.DB
 	App    *app.App
+	close  sync.Once
+	err    error
+}
+
+// Close releases all resources owned by the assembled platform. It is safe to
+// call more than once during partial startup cleanup.
+func (p *Platform) Close() error {
+	if p == nil {
+		return nil
+	}
+	p.close.Do(func() {
+		var closeErrors []error
+		if p.App != nil && p.App.Outbox != nil {
+			p.App.Outbox.Stop()
+		}
+		if p.App != nil && p.App.Jobs != nil {
+			closeErrors = append(closeErrors, p.App.Jobs.Close())
+		}
+		if p.DB != nil {
+			sqlDB, err := p.DB.DB()
+			if err != nil {
+				closeErrors = append(closeErrors, err)
+			} else {
+				closeErrors = append(closeErrors, sqlDB.Close())
+			}
+		}
+		p.err = errors.Join(closeErrors...)
+	})
+	return p.err
 }
 
 // LoadPrompts loads and validates all runtime model prompts.
@@ -69,7 +100,78 @@ func LoadI18n(cfg *config.Config) {
 }
 
 // OpenInstalled opens DB, migrates, seeds, and registers modules for an installed instance.
-func OpenInstalled(ctx context.Context, cfg *config.Config) (*Platform, error) {
+func OpenInstalled(ctx context.Context, cfg *config.Config, options ...Option) (*Platform, error) {
+	composition, err := New(options...)
+	if err != nil {
+		return nil, err
+	}
+	return composition.OpenInstalled(ctx, cfg)
+}
+
+// OpenAPI loads installation state and assembles either the setup API or the
+// installed API through one public lifecycle entrypoint.
+func OpenAPI(ctx context.Context, cfg *config.Config, options ...Option) (*Platform, error) {
+	composition, err := New(options...)
+	if err != nil {
+		return nil, err
+	}
+	return composition.OpenAPI(ctx, cfg)
+}
+
+func (c *Composition) OpenAPI(ctx context.Context, cfg *config.Config) (*Platform, error) {
+	st, err := state.Load(cfg.StateFile)
+	if err != nil {
+		return nil, fmt.Errorf("load state: %w", err)
+	}
+	if st.Installed {
+		st.ApplyConfig(cfg)
+		return c.OpenInstalled(ctx, cfg)
+	}
+	return c.openSetup(ctx, cfg, st)
+}
+
+func (c *Composition) openSetup(ctx context.Context, cfg *config.Config, st *state.State) (*Platform, error) {
+	if err := LoadPrompts(); err != nil {
+		return nil, err
+	}
+	LoadI18n(cfg)
+	tokens, err := auth.NewTokenService(cfg.Auth.JWT.Secret, cfg.Auth.JWT.Issuer, cfg.Auth.JWT.Duration())
+	if err != nil {
+		return nil, fmt.Errorf("token service: %w", err)
+	}
+	application := app.New(cfg, nil, nil, tokens)
+	application.Installed = false
+	setupSvc := system.NewSetupService(cfg, cfg.StateFile, st, func() { application.Installed = true })
+	contracts, err := ai.NewBuiltinAgentContractRegistry()
+	if err != nil {
+		return nil, fmt.Errorf("register builtin agent contracts: %w", err)
+	}
+	agents := ai.NewAgentService(nil, contracts, nil, nil)
+	setupSvc.SetInitialDataHook(func(ctx context.Context, db *gorm.DB, tenantID, principalID string) error {
+		if err := audit.NewGormRecorder(db).AutoMigrate(); err != nil {
+			return err
+		}
+		if err := ai.AutoMigrate(db); err != nil {
+			return err
+		}
+		if err := c.autoMigrate(db); err != nil {
+			return err
+		}
+		if err := agents.ReconcileBuiltinForTenant(ctx, db, tenantID, principalID); err != nil {
+			return err
+		}
+		_, err := c.migrations.Baseline(db)
+		return err
+	})
+	if err := system.RegisterSetupActions(application, setupSvc); err != nil {
+		return nil, fmt.Errorf("register setup: %w", err)
+	}
+	return &Platform{Config: cfg, App: application}, nil
+}
+
+// OpenInstalled assembles an installed API/Worker runtime from one immutable
+// module declaration.
+func (c *Composition) OpenInstalled(ctx context.Context, cfg *config.Config) (*Platform, error) {
 	if err := cfg.Validate(true); err != nil {
 		return nil, err
 	}
@@ -99,6 +201,9 @@ func OpenInstalled(ctx context.Context, cfg *config.Config) (*Platform, error) {
 		}
 		if err := ai.AutoMigrate(db); err != nil {
 			return nil, fmt.Errorf("ai migrate: %w", err)
+		}
+		if err := c.autoMigrate(db); err != nil {
+			return nil, err
 		}
 	}
 	if err := system.SeedDemo(ctx, db); err != nil {
@@ -161,6 +266,10 @@ func OpenInstalled(ctx context.Context, cfg *config.Config) (*Platform, error) {
 		return nil, fmt.Errorf("jobs: %w", err)
 	}
 	application.Jobs = jobRT
+	if err := c.prepare(application); err != nil {
+		_ = jobRT.Close()
+		return nil, err
+	}
 
 	st, _ := state.Load(cfg.StateFile)
 	if st == nil {
@@ -182,6 +291,9 @@ func OpenInstalled(ctx context.Context, cfg *config.Config) (*Platform, error) {
 	setupSvc.SetInitialDataHook(application.AgentTenantInitializer)
 	if err := demo.Register(application); err != nil {
 		return nil, fmt.Errorf("register demo: %w", err)
+	}
+	if err := c.register(application); err != nil {
+		return nil, err
 	}
 	if err := validateAgentToolCapabilityCoverage(application); err != nil {
 		return nil, err

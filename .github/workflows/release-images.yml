@@ -31,6 +31,8 @@ jobs:
         run: |
           git tag --points-at HEAD | grep -Fx "${GITHUB_REF_NAME}"
           echo "${GITHUB_REF_NAME}" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'
+          module_tag="platform/${GITHUB_REF_NAME}"
+          test "$(git rev-list -n 1 "$module_tag")" = "${GITHUB_SHA}"
           conclusion="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/check-runs" --jq '[.check_runs[] | select((.name == "backend" or .name == "containers" or .name == "frontend" or .name == "repository-gates") and .conclusion == "success") | .name] | unique | sort | if . == ["backend", "containers", "frontend", "repository-gates"] then "success" else "failure" end')"
           test "$conclusion" = success
       - id: release-state

@@ -88,7 +88,8 @@ platform/
 ## 依赖方向
 
 ```text
-cmd/ainp     → framework + modules
+cmd/*        → host + framework
+host         → framework + modules（公开 composition root）
 modules/*    → framework
 framework    ❌ modules
 modules/A    ❌ modules/B（默认；共享进 framework）
@@ -107,7 +108,7 @@ tests        → framework + modules（仅测试依赖）
 
 ### 跨模块依赖
 
-`modules/A` 禁止 import `modules/B`（包括 B 的子包），不再接受迁移基线或依赖白名单。共享机制应下沉 `framework`，业务协作应通过由所有者定义的最小 contract 注入，并由 `internal/boot` 或模块根 composition root 装配。
+`modules/A` 禁止 import `modules/B`（包括 B 的子包），不再接受迁移基线或依赖白名单。共享机制应下沉 `framework`，业务协作应通过由所有者定义的最小 contract 注入，并由公开 `host` 或模块根 composition root 装配。下游装配详见[下游业务模块装配与版本消费](./downstream-composition.md)。
 
 ### 严格门禁
 

@@ -38,3 +38,14 @@ func TestValidateAppliedRejectsMutationAndOutOfOrder(t *testing.T) {
 		t.Fatalf("expected ordering failure, got %v", err)
 	}
 }
+
+func TestValidateNamespacedAppliedRejectsNonPrefixHistory(t *testing.T) {
+	known := []NamespacedMigration{
+		{Owner: "orders", Version: 1, Name: "0001_init.sql", Checksum: "a"},
+		{Owner: "orders", Version: 2, Name: "0002_next.sql", Checksum: "b"},
+	}
+	_, err := validateNamespacedApplied(known, []NamespacedApplied{{Owner: "orders", Version: 2, Name: "0002_next.sql", Checksum: "b"}})
+	if err == nil || !strings.Contains(err.Error(), "out of order") || !strings.Contains(err.Error(), "orders:0002") {
+		t.Fatalf("expected owner-qualified ordering failure, got %v", err)
+	}
+}

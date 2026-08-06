@@ -1,4 +1,4 @@
-package boot
+package host
 
 import (
 	"context"
@@ -13,7 +13,7 @@ import (
 )
 
 func TestAgentToolCapabilityCoverageDoesNotExcludeUnexposedDemo(t *testing.T) {
-	if err := prompt.LoadDir("../../prompts"); err != nil {
+	if err := prompt.LoadDir("../prompts"); err != nil {
 		t.Fatal(err)
 	}
 	contracts, err := ai.NewBuiltinAgentContractRegistry()

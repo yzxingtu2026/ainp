@@ -58,6 +58,7 @@
 - 模型提示词管理见 `prompt-management`（Markdown 外置、启动校验、模板安全与原子热重载）。
 - MCP OAuth 与远程传输见 `mcp-oauth`（官方 SDK、独立 audience、PKCE、Grant 与实时授权边界）。
 - 发布版本与构建身份见 `release-versioning`（Tag 唯一事实源、统一 BuildInfo、CI 与部署校验）。
+- 下游业务装配见 `downstream-composition`（公开 Host、同一模块声明、命名空间迁移与子模块 Tag）。
 - 前端栈、图标协议见关联规则。
 - 前端产品品牌与 Logo 单一源资产见 `frontend-branding`。
 - Copilot PR 语义审查见 `copilot-code-review`；它只负责中文语义反馈，不替代合并门禁与人工审批。
@@ -95,6 +96,7 @@
 - `prompt-management` → `docs/development/prompt-management.md`
 - `mcp-oauth` → `docs/development/mcp-oauth.md`
 - `release-versioning` → `docs/development/release-versioning.md`
+- `downstream-composition` → `docs/development/downstream-composition.md`
 - `icon-library` → `docs/development/icon-library.md`
 - `logging` → `docs/development/logging.md`
 - `api-response` → `docs/development/api-response.md`
