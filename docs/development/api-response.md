@@ -43,10 +43,10 @@ Agent 只读要点：`.agent/rules/api-response.md`。本文档定义 HTTP 信�
 
 ### 翻译文件
 
-- 翻译文件为独立 YAML，存放在 `platform/i18n/` 目录（可通过 `config.i18n.dir` 配置）。
+- AINP 基础翻译为独立 YAML，存放在 `platform/i18n/` 并通过 `embed.FS` 随 Go Module 版本发布。
 - 文件名即语言标识：`zh-CN.yaml` → `zh-CN`，`en.yaml` → `en`。
 - 扁平 key 结构：`domain.reason` 小写点分，便于 Agent 逐行增删。
-- 启动时 `i18n.LoadDir()` 扫描目录加载所有 `.yaml` 文件。
+- 正式 Host 启动时通过 owner-aware `i18n.LoadSources()` 加载内嵌基线与下游 Module `fs.FS`；下游 key 必须使用 `{module-id}.` 前缀，重复 owner、跨 owner 冲突、空值或非法 YAML 均 fail-closed。
 
 ### 语言协商
 
@@ -71,7 +71,7 @@ Agent 只读要点：`.agent/rules/api-response.md`。本文档定义 HTTP 信�
 
 ### Reload API
 
-AI Agent 新增语言文件后，调用重载端点即可生效，无需重新编译或重启：
+正式内嵌资源不可变，调用重载端点会拒绝操作。仅受信运维人员以 `-dev-runtime-assets` 显式启动 API/Worker 时，`config.i18n.dir` 才作为开发目录生效，调用重载端点可原子读取该目录；普通租户无法注册资源源或选择目录：
 
 ```
 POST /api/v1/system/i18n/reload

@@ -1,6 +1,7 @@
 # 发布版本协议
 
 - 正式版本唯一事实源是不可变 Git SemVer Tag；禁止发布时修改多个版本文件或移动已有 Tag。
+- `platform` Tag 同时锁定内嵌 Prompt/i18n；API、Worker 与下游构建应记录不含正文的 Runtime Assets 摘要。
 - backend、worker、web 必须注入相同 version、commit、UTC RFC3339 build_time；本地默认 `dev/unknown`。
 - 正式产物固定为 backend/web 两个镜像；API 与独立 Worker 必须来自同一 backend 镜像，Compose 中共享 state 与附件持久卷。
 - Web 镜像必须同源代理 API、MCP/OAuth metadata、附件与 AI SSE；正式 Compose 只能引用完整 SemVer Tag 或 digest，禁止 `latest`。

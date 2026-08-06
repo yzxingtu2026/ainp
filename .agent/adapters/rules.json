@@ -637,6 +637,12 @@
       "cursor": {"path": ".cursor/rules/mcp-oauth.mdc", "frontmatter": {"description": "MCP Streamable HTTP、独立 OAuth audience、PKCE、Grant 与实时授权边界", "alwaysApply": true}}
     },
     {
+      "id": "runtime-assets",
+      "source": ".agent/rules/runtime-assets.md",
+      "qoder": {"path": ".qoder/rules/runtime-assets.md", "frontmatter": {"trigger": "always_on"}},
+      "cursor": {"path": ".cursor/rules/runtime-assets.mdc", "frontmatter": {"description": "Prompt/i18n 内嵌、owner 命名空间、冲突门禁与显式开发 reload", "alwaysApply": true}}
+    },
+    {
       "id": "release-versioning",
       "source": ".agent/rules/release-versioning.md",
       "qoder": {"path": ".qoder/rules/release-versioning.md", "frontmatter": {"trigger": "always_on"}},

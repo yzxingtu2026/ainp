@@ -11,10 +11,11 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/authentication"
 	"github.com/yzxingtu2026/ainp/platform/framework/capability"
 	"github.com/yzxingtu2026/ainp/platform/framework/job"
+	"github.com/yzxingtu2026/ainp/platform/host"
 	"github.com/yzxingtu2026/ainp/platform/migrations"
 )
 
-//go:embed migrations/*.sql
+//go:embed migrations/*.sql prompts/**/*.md i18n/*.yaml
 var migrationFiles embed.FS
 
 type Module struct{}
@@ -57,6 +58,18 @@ func (Module) MigrationSource() migrations.Source {
 		panic(err)
 	}
 	return migrations.Source{Owner: "example.orders", FS: source}
+}
+
+func (Module) RuntimeAssets() host.RuntimeAssets {
+	prompts, err := fsSub(migrationFiles, "prompts")
+	if err != nil {
+		panic(err)
+	}
+	translations, err := fsSub(migrationFiles, "i18n")
+	if err != nil {
+		panic(err)
+	}
+	return host.RuntimeAssets{Prompts: prompts, I18n: translations}
 }
 
 type exampleAuthenticator struct{}

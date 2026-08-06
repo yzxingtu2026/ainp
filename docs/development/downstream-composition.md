@@ -53,6 +53,16 @@ worker, err := host.OpenWorker(ctx, cfg, profile, options...)
 
 调用方负责配置和日志初始化、OS 信号以及最终调用 `Close`；Host 负责 App、Outbox、Job、Worker runner 与关闭顺序。最小独立模块见 `platform/examples/downstream`。
 
+## Runtime Assets
+
+AINP 正式 Prompt 与后端 i18n 通过 `embed.FS` 随 `platform/vX.Y.Z` 发布，默认 Host 不读取 cwd，也不要求下游或容器复制 `prompts/`、`i18n/`。API、安装模式、embedded worker 与独立 Worker 均由同一 `Composition` 加载完全相同的资源源。
+
+下游 Module 可实现 `host.RuntimeAssetProvider`，以 `host.RuntimeAssets{Prompts: fs.FS, I18n: fs.FS}` 注册不可变资源。owner 固定为 Module ID；Prompt key 必须位于 `{module-id}/...`，翻译 key 必须以 `{module-id}.` 开头。资源源按 Module ID 排序，重复 owner、非法 key、空内容、解析失败或任何跨 owner 冲突均在启动期 fail-closed，默认不允许覆盖 AINP 安全基线。
+
+`Platform.RuntimeAssets` 提供 owner、key、类型、locale/version 与 SHA-256 摘要，供 API/Worker 和构建清单核对；不包含 Prompt 或翻译正文。下游发布清单应同时记录 AINP Module 版本与该清单的确定性摘要。
+
+外置开发目录不是生产配置。只有显式传 `host.WithDevelopmentRuntimeAssets(promptDir, i18nDir)`（官方命令对应 `-dev-runtime-assets`）时才替换 `ainp` 内嵌源并允许 reload；目录缺失或内容非法会阻止启动，reload 失败保留上一份有效快照。
+
 ## 下游迁移
 
 每个来源的 `Owner` 必须等于模块 ID，文件采用 `NNNN_name.sql`。同一 owner 内版本连续递增；全局执行顺序为 AINP 内置迁移优先，之后按 owner 字典序、再按 version 升序。状态身份是 `owner + version + name + SHA-256`。

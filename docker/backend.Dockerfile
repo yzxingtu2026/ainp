@@ -28,8 +28,6 @@ RUN apk add --no-cache ca-certificates curl tzdata && \
 
 WORKDIR /app
 COPY --from=builder --chown=ainp:ainp /out/ainp /out/ainp-worker /out/ainp-migrate /usr/local/bin/
-COPY --chown=ainp:ainp platform/i18n ./i18n
-COPY --chown=ainp:ainp platform/prompts ./prompts
 
 USER ainp
 EXPOSE 8080

@@ -2,6 +2,8 @@
 
 AINP 正式版本只使用 Git Tag 对应的两个 GHCR 镜像：`ainp-backend` 同时提供 API 与 Worker 二进制，`ainp-web` 提供静态页面和同源反向代理。部署不得引用 `latest`。
 
+backend 二进制已内嵌与 `platform` 版本一致的 Prompt 和基础 i18n，运行镜像不复制也不挂载 AINP `prompts/`、`i18n/` 目录。正式容器禁止传 `-dev-runtime-assets`；下游业务资源必须由其 Go Module 以 owner-scoped `fs.FS` 编译装配。
+
 ## 本地验证镜像
 
 在仓库根目录执行：

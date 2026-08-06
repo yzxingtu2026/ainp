@@ -55,7 +55,8 @@
 - 全局 AI 助手见 `global-ai-assistant`（应用壳入口、单例 controller、共享 Surface 与身份清理）。
 - 功能导航检索见 `navigation-search`（Menu Registry 唯一事实源、实时授权投影、稳定路径与词法搜索）。
 - AI 长期记忆见 `ai-memory-runtime`（追加式时态事实、来源证据、投影与当前召回边界）。
-- 模型提示词管理见 `prompt-management`（Markdown 外置、启动校验、模板安全与原子热重载）。
+- 模型提示词管理见 `prompt-management`（Markdown 源文件、编译内嵌、启动校验、模板安全与受信开发热重载）。
+- 运行时资源装配见 `runtime-assets`（Prompt/i18n 内嵌、owner 命名空间、冲突门禁、安全摘要与显式开发 reload）。
 - MCP OAuth 与远程传输见 `mcp-oauth`（官方 SDK、独立 audience、PKCE、Grant 与实时授权边界）。
 - 发布版本与构建身份见 `release-versioning`（Tag 唯一事实源、统一 BuildInfo、CI 与部署校验）。
 - 下游业务装配见 `downstream-composition`（公开 Host、同一模块声明、命名空间迁移与子模块 Tag）。
@@ -94,6 +95,7 @@
 - `navigation-search` → `docs/development/navigation-search.md`
 - `ai-memory-runtime` → `docs/development/ai-memory-runtime.md`
 - `prompt-management` → `docs/development/prompt-management.md`
+- `runtime-assets` → `docs/development/downstream-composition.md`
 - `mcp-oauth` → `docs/development/mcp-oauth.md`
 - `release-versioning` → `docs/development/release-versioning.md`
 - `downstream-composition` → `docs/development/downstream-composition.md`

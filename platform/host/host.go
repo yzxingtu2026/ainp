@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
@@ -21,20 +22,33 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/state"
 	"github.com/yzxingtu2026/ainp/platform/framework/storage"
 	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
+	builtini18n "github.com/yzxingtu2026/ainp/platform/i18n"
 	"github.com/yzxingtu2026/ainp/platform/modules/ai"
 	"github.com/yzxingtu2026/ainp/platform/modules/demo"
 	"github.com/yzxingtu2026/ainp/platform/modules/operations"
 	"github.com/yzxingtu2026/ainp/platform/modules/system"
+	builtinprompts "github.com/yzxingtu2026/ainp/platform/prompts"
 	"gorm.io/gorm"
 )
 
 // Platform is the shared assembled runtime for HTTP server and Worker.
 type Platform struct {
-	Config *config.Config
-	DB     *gorm.DB
-	App    *app.App
-	close  sync.Once
-	err    error
+	Config        *config.Config
+	DB            *gorm.DB
+	App           *app.App
+	RuntimeAssets []RuntimeAssetDescriptor
+	close         sync.Once
+	err           error
+}
+
+// RuntimeAssetDescriptor is safe diagnostic metadata without resource content.
+type RuntimeAssetDescriptor struct {
+	Owner   string
+	Key     string
+	Type    string
+	Digest  string
+	Version string
+	Locale  string
 }
 
 // Close releases all resources owned by the assembled platform. It is safe to
@@ -66,18 +80,10 @@ func (p *Platform) Close() error {
 
 // LoadPrompts loads and validates all runtime model prompts.
 func LoadPrompts() error {
-	if err := prompt.LoadDir("prompts"); err != nil {
+	if err := prompt.LoadSources(prompt.Source{Owner: "ainp", FS: builtinprompts.FS()}); err != nil {
 		return fmt.Errorf("prompt load: %w", err)
 	}
-	for _, key := range []string{
-		"ai/memory-extraction",
-		"ai/memory-consolidation",
-		"ai/context-compaction",
-		"ai/trusted-runtime-context",
-		"ai/page-context",
-		"ai/untrusted-user-memory",
-		"agent/system-operations",
-	} {
+	for _, key := range requiredPromptKeys() {
 		if prompt.Get(key) == "" {
 			return fmt.Errorf("prompt load: required prompt %q is missing", key)
 		}
@@ -85,17 +91,61 @@ func LoadPrompts() error {
 	return nil
 }
 
-// LoadI18n loads translation files from config.
+// LoadI18n loads AINP's embedded baseline and applies the configured language.
 func LoadI18n(cfg *config.Config) {
-	dir := cfg.I18n.Dir
-	if dir == "" {
-		dir = "i18n"
-	}
-	if err := i18n.LoadDir(dir); err != nil {
+	if err := i18n.LoadSources(i18n.Source{Owner: "ainp", FS: builtini18n.FS()}); err != nil {
 		logging.Error(context.Background(), "i18n load failed", err)
 	}
 	if cfg.I18n.DefaultLanguage != "" {
 		i18n.SetDefaultLang(cfg.I18n.DefaultLanguage)
+	}
+}
+
+func (c *Composition) loadRuntimeAssets(cfg *config.Config) ([]RuntimeAssetDescriptor, error) {
+	loadPrompts := prompt.LoadSources
+	loadI18n := i18n.LoadSources
+	if c.reloadableAssets {
+		loadPrompts = prompt.LoadReloadableSources
+		loadI18n = i18n.LoadReloadableSources
+	}
+	if err := loadPrompts(c.promptSources...); err != nil {
+		return nil, fmt.Errorf("runtime assets: %w", err)
+	}
+	for _, key := range requiredPromptKeys() {
+		if prompt.Get(key) == "" {
+			return nil, fmt.Errorf("runtime assets: required Prompt %q owned by %q is missing", key, "ainp")
+		}
+	}
+	if err := loadI18n(c.i18nSources...); err != nil {
+		return nil, fmt.Errorf("runtime assets: %w", err)
+	}
+	languages := i18n.AvailableLangs()
+	if !slices.Contains(languages, i18n.LangZhCN) || !slices.Contains(languages, i18n.LangEn) || i18n.KeyCount() == 0 {
+		return nil, fmt.Errorf("runtime assets: built-in i18n owned by %q is empty", "ainp")
+	}
+	if cfg.I18n.DefaultLanguage != "" {
+		i18n.SetDefaultLang(cfg.I18n.DefaultLanguage)
+	}
+	manifest := make([]RuntimeAssetDescriptor, 0, len(prompt.Manifest())+len(i18n.Manifest()))
+	for _, asset := range prompt.Manifest() {
+		manifest = append(manifest, RuntimeAssetDescriptor{Owner: asset.Owner, Key: asset.Key, Type: asset.Type, Digest: asset.Digest, Version: asset.Version})
+	}
+	for _, asset := range i18n.Manifest() {
+		manifest = append(manifest, RuntimeAssetDescriptor{Owner: asset.Owner, Key: asset.Key, Type: asset.Type, Digest: asset.Digest, Locale: asset.Locale})
+	}
+	return manifest, nil
+}
+
+func requiredPromptKeys() []string {
+	return []string{
+		"ai/memory-extraction",
+		"ai/memory-consolidation",
+		"ai/context-compaction",
+		"ai/trusted-runtime-context",
+		"ai/page-context",
+		"ai/untrusted-user-memory",
+		"ai/assistant-personalization",
+		"agent/system-operations",
 	}
 }
 
@@ -131,10 +181,10 @@ func (c *Composition) OpenAPI(ctx context.Context, cfg *config.Config) (*Platfor
 }
 
 func (c *Composition) openSetup(ctx context.Context, cfg *config.Config, st *state.State) (*Platform, error) {
-	if err := LoadPrompts(); err != nil {
+	manifest, err := c.loadRuntimeAssets(cfg)
+	if err != nil {
 		return nil, err
 	}
-	LoadI18n(cfg)
 	tokens, err := auth.NewTokenService(cfg.Auth.JWT.Secret, cfg.Auth.JWT.Issuer, cfg.Auth.JWT.Duration())
 	if err != nil {
 		return nil, fmt.Errorf("token service: %w", err)
@@ -166,7 +216,7 @@ func (c *Composition) openSetup(ctx context.Context, cfg *config.Config, st *sta
 	if err := system.RegisterSetupActions(application, setupSvc); err != nil {
 		return nil, fmt.Errorf("register setup: %w", err)
 	}
-	return &Platform{Config: cfg, App: application}, nil
+	return &Platform{Config: cfg, App: application, RuntimeAssets: manifest}, nil
 }
 
 // OpenInstalled assembles an installed API/Worker runtime from one immutable
@@ -175,10 +225,10 @@ func (c *Composition) OpenInstalled(ctx context.Context, cfg *config.Config) (*P
 	if err := cfg.Validate(true); err != nil {
 		return nil, err
 	}
-	if err := LoadPrompts(); err != nil {
+	manifest, err := c.loadRuntimeAssets(cfg)
+	if err != nil {
 		return nil, err
 	}
-	LoadI18n(cfg)
 
 	db, err := database.Open(cfg.Database.DSN)
 	if err != nil {
@@ -315,7 +365,7 @@ func (c *Composition) OpenInstalled(ctx context.Context, cfg *config.Config) (*P
 		return nil, fmt.Errorf("reconcile navigation catalogs: %w", err)
 	}
 
-	return &Platform{Config: cfg, DB: db, App: application}, nil
+	return &Platform{Config: cfg, DB: db, App: application, RuntimeAssets: manifest}, nil
 }
 
 func validateAgentToolCapabilityCoverage(application *app.App) error {
