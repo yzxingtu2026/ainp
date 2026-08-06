@@ -7,12 +7,14 @@ import (
 
 	"github.com/yzxingtu2026/ainp/platform/framework/config"
 	"github.com/yzxingtu2026/ainp/platform/framework/database"
+	"github.com/yzxingtu2026/ainp/platform/framework/state"
 	"github.com/yzxingtu2026/ainp/platform/host"
 	"github.com/yzxingtu2026/ainp/platform/migrations"
 )
 
 func main() {
 	configPath := flag.String("config", "configs/config.yaml", "path to yaml config")
+	baselineThrough := flag.Int("through", 0, "baseline existing built-in schema through this version")
 	flag.Parse()
 	if flag.NArg() != 1 || (flag.Arg(0) != "status" && flag.Arg(0) != "up" && flag.Arg(0) != "baseline") {
 		fmt.Fprintln(os.Stderr, "usage: ainp-migrate [-config path] status|up|baseline")
@@ -21,6 +23,13 @@ func main() {
 	cfg, err := config.Load(*configPath)
 	if err != nil {
 		fail(err)
+	}
+	st, err := state.Load(cfg.StateFile)
+	if err != nil {
+		fail(fmt.Errorf("load state: %w", err))
+	}
+	if st.Installed {
+		st.ApplyConfig(cfg)
 	}
 	db, err := database.Open(cfg.Database.DSN)
 	if err != nil {
@@ -35,7 +44,11 @@ func main() {
 	if flag.Arg(0) == "up" {
 		status, err = runner.Up(db)
 	} else if flag.Arg(0) == "baseline" {
-		status, err = runner.Baseline(db)
+		if *baselineThrough > 0 {
+			status, err = runner.BaselineThrough(db, *baselineThrough)
+		} else {
+			status, err = runner.Baseline(db)
+		}
 	} else {
 		status, err = runner.Inspect(db)
 	}

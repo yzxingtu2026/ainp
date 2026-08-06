@@ -206,6 +206,16 @@ func (s Set) Baseline(db *gorm.DB) (SetStatus, error) {
 	return s.Inspect(db)
 }
 
+// BaselineThrough records only the built-in history through maxVersion. It
+// deliberately leaves all downstream migrations pending because their schema
+// state cannot be inferred from the AINP version.
+func (s Set) BaselineThrough(db *gorm.DB, maxVersion int) (SetStatus, error) {
+	if _, err := BaselineThrough(db, maxVersion); err != nil {
+		return SetStatus{}, err
+	}
+	return s.Inspect(db)
+}
+
 func (s Set) applyDownstream(db *gorm.DB, pending []NamespacedMigration, execute bool) error {
 	return db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Exec("SELECT pg_advisory_xact_lock(?)", advisoryLockID).Error; err != nil {

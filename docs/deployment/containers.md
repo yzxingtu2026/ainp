@@ -39,6 +39,15 @@ docker compose --env-file deploy/demo/.env -f deploy/demo/compose.yaml run --rm 
   --entrypoint /usr/local/bin/ainp-migrate api -config /app/config/config.yaml baseline
 ```
 
+若旧环境未建立迁移账本、且当前代码已经包含晚于该环境 Schema 的迁移，禁止使用无范围的 baseline。先从该环境原部署版本确认最后已具备的 migration，再显式登记，例如旧 Schema 对应 0053：
+
+```bash
+ainp-migrate -config /app/config/config.yaml -through 53 baseline
+ainp-migrate -config /app/config/config.yaml up
+```
+
+`-through` 只登记 AINP 内置历史到指定已知版本，并保留后续迁移为 pending；它不推断或 baseline 下游模块迁移。执行前必须备份数据库并核对目标版本，填错版本可能造成不可恢复的 Schema/账本不一致。
+
 服务器将 `deploy/demo` 固定到低权限 deploy 用户目录，填写 `.env` 后执行 `./deploy-demo.sh <tag>`。脚本使用 `flock` 串行部署，拉取指定 Tag、记录镜像 digest、在迁移前创建 `pg_dump`、执行 forward-only migration、原子更新 Tag，并同时校验 `/healthz` 的状态和版本。启动或健康校验失败时恢复旧应用镜像；数据库不执行 down migration，依赖升级前备份和向后兼容 Schema。
 
 部署日志与备份位于 `runtime/logs`、`runtime/backups`。备份按 `BACKUP_RETENTION_DAYS` 清理；失败日志和当次备份不会因为应用回滚而丢失。

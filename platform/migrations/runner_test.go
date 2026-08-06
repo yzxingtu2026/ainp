@@ -49,3 +49,9 @@ func TestValidateNamespacedAppliedRejectsNonPrefixHistory(t *testing.T) {
 		t.Fatalf("expected owner-qualified ordering failure, got %v", err)
 	}
 }
+
+func TestBaselineThroughRejectsUnknownVersion(t *testing.T) {
+	if _, err := BaselineThrough(nil, 1); err == nil || !strings.Contains(err.Error(), "is not known") {
+		t.Fatalf("expected unknown baseline version failure, got %v", err)
+	}
+}
