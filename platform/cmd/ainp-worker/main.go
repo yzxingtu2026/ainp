@@ -17,6 +17,7 @@ import (
 
 func main() {
 	cfgPath := flag.String("config", "configs/config.yaml", "path to yaml config")
+	devRuntimeAssets := flag.Bool("dev-runtime-assets", false, "load trusted Prompt/i18n directories and enable reload")
 	flag.Parse()
 
 	ctx := context.Background()
@@ -43,7 +44,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	worker, err := host.OpenWorker(ctx, cfg, profile, host.WithDemo())
+	options := []host.Option{host.WithDemo()}
+	if *devRuntimeAssets {
+		i18nDir := cfg.I18n.Dir
+		if i18nDir == "" {
+			i18nDir = "i18n"
+		}
+		options = append(options, host.WithDevelopmentRuntimeAssets("prompts", i18nDir))
+	}
+	worker, err := host.OpenWorker(ctx, cfg, profile, options...)
 	if err != nil {
 		logging.Error(ctx, "bootstrap failed", err)
 		os.Exit(1)

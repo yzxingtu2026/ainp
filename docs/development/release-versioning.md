@@ -4,6 +4,8 @@ AINP 正式版本以不可变 Git SemVer Tag 为唯一事实源。`package.json`
 
 `platform` 是独立 Go 子模块。每次根版本 `vX.Y.Z` 必须同时发布 `platform/vX.Y.Z`，且两个 annotated Tag 指向同一 Commit。`scripts/release.py` 在干净、与 `origin/main` 一致且 CI 全绿时一次推送两个 Tag；任一 Tag 已存在或 Tag workflow 检测到 Commit 漂移都必须中止。下游只在 `go.mod` 固定正式模块版本，不长期消费 `main` 或伪版本。
 
+AINP 内置 Prompt 与后端 i18n 属于 `platform` 版本内容，通过 `embed.FS` 编译进 API/Worker；发布镜像和下游二进制不得依赖复制工作目录资源。构建清单除 Module 版本外应记录 Runtime Assets owner/key/type 摘要，用于核对 API/Worker 一致性，禁止记录资源正文。
+
 ## BuildInfo 协议
 
 backend、worker 与 web 必须由同一 Tag、Commit 和 UTC RFC3339 构建时间生成，并暴露以下字段：

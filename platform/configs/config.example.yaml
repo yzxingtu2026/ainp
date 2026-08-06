@@ -43,7 +43,7 @@ mcp:
 i18n:
   # 未传 Accept-Language 时的默认语言；支持 zh-CN、en
   default_language: zh-CN
-  # 翻译文件目录（相对于运行目录）；Agent 新增语言文件放此目录即可
+  # 仅 `-dev-runtime-assets` 显式开发模式读取；生产默认使用编译期内嵌资源
   dir: i18n
 
 ai:

@@ -193,13 +193,6 @@ func (a *App) RegisterNotification(def notification.Definition) error {
 }
 
 func (a *App) Run() error {
-	dir := a.Config.I18n.Dir
-	if dir == "" {
-		dir = "i18n"
-	}
-	if err := i18n.LoadDir(dir); err != nil {
-		return fmt.Errorf("i18n load: %w", err)
-	}
 	if a.Config.I18n.DefaultLanguage != "" {
 		i18n.SetDefaultLang(a.Config.I18n.DefaultLanguage)
 	}

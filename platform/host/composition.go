@@ -2,12 +2,19 @@ package host
 
 import (
 	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
 
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
+	"github.com/yzxingtu2026/ainp/platform/framework/i18n"
+	"github.com/yzxingtu2026/ainp/platform/framework/prompt"
+	builtini18n "github.com/yzxingtu2026/ainp/platform/i18n"
 	"github.com/yzxingtu2026/ainp/platform/migrations"
+	builtinprompts "github.com/yzxingtu2026/ainp/platform/prompts"
 	"gorm.io/gorm"
 )
 
@@ -37,11 +44,29 @@ type AutoMigrator interface {
 	AutoMigrate(*gorm.DB) error
 }
 
+// RuntimeAssets declares immutable, owner-scoped Prompt and i18n resources.
+// The owner is always the providing Module's ID.
+type RuntimeAssets struct {
+	Prompts fs.FS
+	I18n    fs.FS
+}
+
+// RuntimeAssetProvider optionally contributes namespaced runtime resources.
+type RuntimeAssetProvider interface {
+	RuntimeAssets() RuntimeAssets
+}
+
 type Option func(*options) error
 
 type options struct {
-	modules     []Module
-	demoEnabled bool
+	modules           []Module
+	demoEnabled       bool
+	developmentAssets *developmentAssets
+}
+
+type developmentAssets struct {
+	promptDir string
+	i18nDir   string
 }
 
 // WithModules adds one immutable module declaration to both API and Worker.
@@ -61,11 +86,26 @@ func WithDemo() Option {
 	}
 }
 
+// WithDevelopmentRuntimeAssets explicitly replaces AINP's embedded baseline
+// with trusted reloadable directories. It must not be used in production.
+func WithDevelopmentRuntimeAssets(promptDir, i18nDir string) Option {
+	return func(opts *options) error {
+		if strings.TrimSpace(promptDir) == "" || strings.TrimSpace(i18nDir) == "" {
+			return fmt.Errorf("host: development Prompt and i18n directories are required")
+		}
+		opts.developmentAssets = &developmentAssets{promptDir: promptDir, i18nDir: i18nDir}
+		return nil
+	}
+}
+
 // Composition validates and owns a deterministic downstream module list.
 type Composition struct {
-	modules     []Module
-	migrations  migrations.Set
-	demoEnabled bool
+	modules          []Module
+	migrations       migrations.Set
+	demoEnabled      bool
+	promptSources    []prompt.Source
+	i18nSources      []i18n.Source
+	reloadableAssets bool
 }
 
 func New(optionFns ...Option) (*Composition, error) {
@@ -113,7 +153,41 @@ func New(optionFns ...Option) (*Composition, error) {
 	if err != nil {
 		return nil, fmt.Errorf("host: migrations: %w", err)
 	}
-	return &Composition{modules: modules, migrations: set, demoEnabled: opts.demoEnabled}, nil
+	promptSources := make([]prompt.Source, 0, len(modules)+1)
+	i18nSources := make([]i18n.Source, 0, len(modules)+1)
+	if opts.developmentAssets != nil {
+		promptDir, err := filepath.Abs(opts.developmentAssets.promptDir)
+		if err != nil {
+			return nil, fmt.Errorf("host: resolve development Prompt directory: %w", err)
+		}
+		i18nDir, err := filepath.Abs(opts.developmentAssets.i18nDir)
+		if err != nil {
+			return nil, fmt.Errorf("host: resolve development i18n directory: %w", err)
+		}
+		promptSources = append(promptSources, prompt.Source{Owner: "ainp", FS: os.DirFS(promptDir)})
+		i18nSources = append(i18nSources, i18n.Source{Owner: "ainp", FS: os.DirFS(i18nDir)})
+	} else {
+		promptSources = append(promptSources, prompt.Source{Owner: "ainp", FS: builtinprompts.FS()})
+		i18nSources = append(i18nSources, i18n.Source{Owner: "ainp", FS: builtini18n.FS()})
+	}
+	for _, module := range modules {
+		provider, ok := module.(RuntimeAssetProvider)
+		if !ok {
+			continue
+		}
+		assets := provider.RuntimeAssets()
+		if assets.Prompts != nil {
+			promptSources = append(promptSources, prompt.Source{Owner: module.ID(), FS: assets.Prompts})
+		}
+		if assets.I18n != nil {
+			i18nSources = append(i18nSources, i18n.Source{Owner: module.ID(), FS: assets.I18n})
+		}
+	}
+	return &Composition{
+		modules: modules, migrations: set, demoEnabled: opts.demoEnabled,
+		promptSources: promptSources, i18nSources: i18nSources,
+		reloadableAssets: opts.developmentAssets != nil,
+	}, nil
 }
 
 func (c *Composition) Migrations() migrations.Set { return c.migrations }

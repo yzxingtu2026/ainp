@@ -1,14 +1,17 @@
 // Package i18n 提供全后端多语言翻译支持。
 //
-// 翻译文件为独立 YAML，运行时从磁盘加载，AI Agent 新增语言后触发 reload 即可生效。
+// 翻译文件为 owner-scoped YAML 资源；正式运行时使用不可变 fs.FS，显式开发源可 reload。
 // 键命名规范：`domain.reason`，小写点分（如 auth.invalid_credentials）。
 package i18n
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -23,12 +26,31 @@ const (
 
 type contextKey struct{}
 
+// Source is one immutable, owner-scoped translation filesystem.
+type Source struct {
+	Owner string
+	FS    fs.FS
+}
+
+// Asset is safe runtime diagnostic metadata and never includes translations.
+type Asset struct {
+	Owner  string
+	Key    string
+	Type   string
+	Digest string
+	Locale string
+}
+
+var ownerPattern = regexp.MustCompile(`^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$`)
+
 var (
 	defaultLang = LangZhCN
 	dir         string // 翻译文件目录，LoadDir 时记录，Reload 复用
+	sources     []Source
 
 	mu           sync.RWMutex
 	translations = map[string]map[string]string{}
+	assets       []Asset
 )
 
 // ── 配置 ──
@@ -52,16 +74,62 @@ func DefaultLang() string {
 // LoadDir 从指定目录加载所有 *.yaml 翻译文件。
 // 文件名（去掉扩展名）即为语言标识，如 zh-CN.yaml → "zh-CN"。
 func LoadDir(d string) error {
+	if strings.TrimSpace(d) == "" {
+		return fmt.Errorf("i18n: directory is required")
+	}
+	loaded, manifest, err := loadSources(Source{Owner: "development", FS: os.DirFS(d)})
+	if err != nil {
+		return err
+	}
 	mu.Lock()
 	dir = d
+	sources = []Source{{Owner: "development", FS: os.DirFS(d)}}
+	translations = loaded
+	assets = manifest
 	mu.Unlock()
+	return nil
+}
+
+// Reload re-reads explicitly trusted development sources and atomically swaps them.
+func Reload() error {
 	return reload()
 }
 
-// Reload 重新从磁盘读取翻译文件，原子替换内存翻译表。
-// AI Agent 新增或修改语言文件后调用此方法即可生效。
-func Reload() error {
-	return reload()
+// LoadSources atomically replaces translations from immutable owner sources.
+func LoadSources(input ...Source) error {
+	loaded, manifest, err := loadSources(input...)
+	if err != nil {
+		return err
+	}
+	mu.Lock()
+	dir = ""
+	sources = nil
+	translations = loaded
+	assets = manifest
+	mu.Unlock()
+	return nil
+}
+
+// LoadReloadableSources loads trusted development sources and enables Reload.
+func LoadReloadableSources(input ...Source) error {
+	loaded, manifest, err := loadSources(input...)
+	if err != nil {
+		return err
+	}
+	mu.Lock()
+	dir = ""
+	sources = append([]Source(nil), input...)
+	translations = loaded
+	assets = manifest
+	mu.Unlock()
+	return nil
+}
+
+// Manifest returns safe, deterministic metadata for the loaded translations.
+func Manifest() []Asset {
+	mu.RLock()
+	defer mu.RUnlock()
+	return append([]Asset(nil), assets...)
 }
 
 // AvailableLangs 返回已加载的语言列表。
@@ -91,41 +159,109 @@ func KeyCount() int {
 
 func reload() error {
 	mu.RLock()
-	d := dir
+	loadedSources := append([]Source(nil), sources...)
 	mu.RUnlock()
-
-	if d == "" {
-		return fmt.Errorf("i18n: directory not set, call LoadDir first")
+	if len(loadedSources) == 0 {
+		return fmt.Errorf("i18n: loaded resources are immutable; configure an explicit development source to reload")
 	}
 
-	entries, err := os.ReadDir(d)
+	newTrans, manifest, err := loadSources(loadedSources...)
 	if err != nil {
-		return fmt.Errorf("i18n: read dir %s: %w", d, err)
-	}
-
-	newTrans := map[string]map[string]string{}
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yaml") {
-			continue
-		}
-		lang := strings.TrimSuffix(entry.Name(), ".yaml")
-		path := filepath.Join(d, entry.Name())
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return fmt.Errorf("i18n: read %s: %w", path, err)
-		}
-		var msgs map[string]string
-		if err := yaml.Unmarshal(data, &msgs); err != nil {
-			return fmt.Errorf("i18n: parse %s: %w", path, err)
-		}
-		newTrans[lang] = msgs
+		return err
 	}
 
 	// 原子替换
 	mu.Lock()
 	translations = newTrans
+	assets = manifest
 	mu.Unlock()
 	return nil
+}
+
+func loadSources(sources ...Source) (map[string]map[string]string, []Asset, error) {
+	loaded := map[string]map[string]string{}
+	manifest := make([]Asset, 0)
+	owners := map[string]struct{}{}
+	keyOwners := map[string]string{}
+	for _, source := range sources {
+		owner := strings.TrimSpace(source.Owner)
+		if !ownerPattern.MatchString(owner) {
+			return nil, nil, fmt.Errorf("i18n: invalid owner %q", owner)
+		}
+		if source.FS == nil {
+			return nil, nil, fmt.Errorf("i18n: owner %q filesystem is required", owner)
+		}
+		if _, exists := owners[owner]; exists {
+			return nil, nil, fmt.Errorf("i18n: duplicate owner %q", owner)
+		}
+		owners[owner] = struct{}{}
+		assetCount := len(manifest)
+		err := fs.WalkDir(source.FS, ".", func(path string, entry fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if entry.IsDir() || !strings.EqualFold(filepath.Ext(entry.Name()), ".yaml") {
+				return nil
+			}
+			locale := strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name()))
+			data, err := fs.ReadFile(source.FS, path)
+			if err != nil {
+				return fmt.Errorf("read %s: %w", path, err)
+			}
+			var messages map[string]string
+			if err := yaml.Unmarshal(data, &messages); err != nil {
+				return fmt.Errorf("parse %s: %w", path, err)
+			}
+			if loaded[locale] == nil {
+				loaded[locale] = map[string]string{}
+			}
+			for key, value := range messages {
+				if strings.TrimSpace(key) == "" || strings.TrimSpace(value) == "" {
+					return fmt.Errorf("owner %q locale %q has empty key or value", owner, locale)
+				}
+				if owner != "ainp" && owner != "development" && !strings.HasPrefix(key, owner+".") {
+					return fmt.Errorf("owner %q key %q must use prefix %q", owner, key, owner+".")
+				}
+				if _, exists := loaded[locale][key]; exists {
+					return fmt.Errorf("owner %q conflicts on locale %q key %q", owner, locale, key)
+				}
+				if existingOwner, exists := keyOwners[key]; exists && existingOwner != owner {
+					return fmt.Errorf("owner %q conflicts with owner %q on key %q", owner, existingOwner, key)
+				}
+				loaded[locale][key] = value
+				keyOwners[key] = owner
+				digest := fmt.Sprintf("sha256:%x", sha256.Sum256([]byte(value)))
+				manifest = append(manifest, Asset{Owner: owner, Key: key, Type: "i18n", Digest: digest, Locale: locale})
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, nil, fmt.Errorf("i18n: load owner %q: %w", owner, err)
+		}
+		if len(manifest) == assetCount {
+			return nil, nil, fmt.Errorf("i18n: owner %q has no YAML translations", owner)
+		}
+	}
+	if len(loaded) == 0 {
+		return nil, nil, fmt.Errorf("i18n: no YAML resources found")
+	}
+	for key, owner := range keyOwners {
+		for locale, messages := range loaded {
+			if _, exists := messages[key]; !exists {
+				return nil, nil, fmt.Errorf("i18n: owner %q key %q is missing locale %q", owner, key, locale)
+			}
+		}
+	}
+	sort.Slice(manifest, func(i, j int) bool {
+		if manifest[i].Owner != manifest[j].Owner {
+			return manifest[i].Owner < manifest[j].Owner
+		}
+		if manifest[i].Locale != manifest[j].Locale {
+			return manifest[i].Locale < manifest[j].Locale
+		}
+		return manifest[i].Key < manifest[j].Key
+	})
+	return loaded, manifest, nil
 }
 
 // ── 注册（保留兼容旧调用） ──

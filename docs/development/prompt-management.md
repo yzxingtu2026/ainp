@@ -2,7 +2,7 @@
 
 ## 适用范围
 
-发送给模型的长指令、基础系统指令和运行时上下文模板统一存放在 `platform/prompts/`，业务 Go 代码只通过 `framework/prompt` 按 key 引用。
+发送给模型的长指令、基础系统指令和运行时上下文模板统一存放在 `platform/prompts/`，由该目录内的 `embed.FS` 随 `platform/vX.Y.Z` 编译发布；业务 Go 代码只通过 `framework/prompt` 按 key 引用。
 
 ## 文件与 key
 
@@ -12,8 +12,9 @@
 
 ## 加载与失败边界
 
-- 启动阶段调用 `prompt.LoadDir("prompts")`，必需 key 缺失、正文为空或模板语法错误时必须阻止启动。
-- `prompt.Reload()` 会完整读取并校验目录，成功后才原子替换内存快照；失败时继续使用上一份有效快照。
+- 正式 Host 启动阶段通过 `prompt.LoadSources` 加载 owner 为 `ainp` 的内嵌基线及下游 Module 资源，和当前工作目录无关；必需 key 缺失、正文为空、模板语法错误、重复 owner 或 key 冲突必须阻止启动。
+- 下游 Prompt key 必须使用 `{module-id}/...` 前缀，默认不得覆盖 AINP 或其他 Module 的 Prompt。
+- 正式内嵌源不可 reload。仅 API/Worker 显式传入 `-dev-runtime-assets` 时，才以受信目录替换 `ainp` 源并允许 `prompt.Reload()`；完整校验成功后原子替换，失败继续使用上一份有效快照。
 - 固定提示词使用 `prompt.MustGet`，模板使用 `prompt.Render`。仅在“提示词确实可选”时使用 `prompt.Get`。
 - 修改 Markdown 后需重启进程或由受控管理入口调用 `prompt.Reload()`；业务模块不得自行维护缓存。
 
@@ -21,7 +22,8 @@
 
 - 用户输入、工具输出和长期记忆等不可信内容必须保持明确边界，并只通过模板数据注入。
 - 提取提示词不得削弱原有鉴权、租户隔离、工具确认、来源标识或结构化输出约束。
-- 新增必需提示词时，同步加入 `boot.LoadPrompts` 的启动校验清单并添加测试。
+- 新增必需提示词时，同步加入 `host` 的启动校验清单并添加测试。
+- `prompt.Manifest()` 和 Host Runtime Assets 清单只暴露 owner、key、类型、版本和 SHA-256，不得输出正文。
 
 ## Agent Contract 版本治理
 
