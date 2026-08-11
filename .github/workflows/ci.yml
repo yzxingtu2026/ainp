@@ -68,6 +68,8 @@ jobs:
         run: go vet ./...
       - name: Test
         run: go test ./...
+      - name: Attachment transfer race tests
+        run: go test -race ./modules/system/attachments ./tests -run 'Test(Attachment.*|Multipart.*)' -count=1
       - name: Verify external downstream module
         working-directory: platform/examples/downstream
         run: |

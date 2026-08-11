@@ -2,6 +2,8 @@
 
 AINP 下游业务仓库通过 `github.com/yzxingtu2026/ainp/platform/host` 公开契约组合 API、Worker 与迁移入口。下游业务保留在自己的 Go Module 中，不复制或导入 `platform/internal/*`，也不修改 AINP 内置模块。
 
+Host 注册内置 system 模块时会统一挂载附件 Transfer Adapter：raw PUT、multipart POST 与 GET/HEAD 下载均自动可用。下游小程序只需在 upload prepare 选择 `transport=multipart` 并按响应调用 `wx.uploadFile` / `Taro.uploadFile`，不得复制 Gin Handler、另建附件表或绕过 Transfer Token/ObjectStore/ready 管线。代理请求体与超时上限须覆盖有效租户上传策略加协议开销；应用层限制仍必须保留。
+
 ## 版本固定
 
 正式消费只使用子模块 Tag：

@@ -65,6 +65,7 @@ type attachmentPrepareRequest struct {
 	OriginalName string `json:"original_name" validate:"required,max=255"`
 	ContentType  string `json:"content_type,omitempty" validate:"omitempty"`
 	Size         int64  `json:"size" validate:"required,min=1"`
+	Transport    string `json:"transport,omitempty" validate:"omitempty,oneof=raw multipart"`
 }
 
 type attachmentIDRequest struct {
@@ -110,6 +111,8 @@ type TransferPrepareView struct {
 	Token       string         `json:"token"`
 	ExpiresAt   string         `json:"expires_at"`
 	Method      string         `json:"method"`
+	Transport   string         `json:"transport,omitempty"`
+	FieldName   string         `json:"field_name,omitempty"`
 }
 
 func (s *AttachmentService) UploadPrepare(ctx context.Context, input json.RawMessage) (any, error) {
@@ -123,6 +126,7 @@ func (s *AttachmentService) UploadPrepare(ctx context.Context, input json.RawMes
 	}
 	req.OriginalName = strings.TrimSpace(req.OriginalName)
 	req.ContentType = strings.TrimSpace(req.ContentType)
+	req.Transport = strings.TrimSpace(strings.ToLower(req.Transport))
 	if req.OriginalName == "" || req.Size <= 0 {
 		return nil, errs.ValidationKey("attachment.invalid_meta", "original_name and size required")
 	}
@@ -146,6 +150,12 @@ func (s *AttachmentService) UploadPrepare(ctx context.Context, input json.RawMes
 	if req.ContentType == "" {
 		req.ContentType = "application/octet-stream"
 	}
+	if req.Transport == "" {
+		req.Transport = attachment.TransferTransportRaw
+	}
+	if req.Transport != attachment.TransferTransportRaw && req.Transport != attachment.TransferTransportMultipart {
+		return nil, errs.ValidationKey("attachment.transport_invalid", "invalid upload transport")
+	}
 
 	objectKey, err := storage.BuildKey(storage.KeyParts{
 		TenantID: tenantID, Namespace: "attachments",
@@ -165,7 +175,7 @@ func (s *AttachmentService) UploadPrepare(ctx context.Context, input json.RawMes
 	}
 	token, jti, tokenExp, err := s.tokens.Issue(attachment.IssueTransferInput{
 		TenantID: tenantID, PrincipalID: userID, AttachmentID: id,
-		Op: attachment.OpUpload, Size: req.Size, TTL: pol.TransferTTL,
+		Op: attachment.OpUpload, Transport: req.Transport, Size: req.Size, TTL: pol.TransferTTL,
 	})
 	if err != nil {
 		return nil, mapAttachmentError(err)
@@ -180,13 +190,19 @@ func (s *AttachmentService) UploadPrepare(ctx context.Context, input json.RawMes
 		return nil, mapAttachmentError(err)
 	}
 	setAttachmentAudit(ctx, id, "attachment upload prepare")
-	return TransferPrepareView{
+	view := TransferPrepareView{
 		Attachment: toAttachmentView(row),
 		UploadURL:  "/api/v1/attachments/transfer/" + id,
 		Token:      token,
 		ExpiresAt:  tokenExp.Format(time.RFC3339),
 		Method:     http.MethodPut,
-	}, nil
+		Transport:  req.Transport,
+	}
+	if req.Transport == attachment.TransferTransportMultipart {
+		view.Method = http.MethodPost
+		view.FieldName = multipartFileFieldName
+	}
+	return view, nil
 }
 
 func (s *AttachmentService) DownloadPrepare(ctx context.Context, input json.RawMessage) (any, error) {
@@ -545,6 +561,9 @@ func (s *AttachmentService) CompleteUpload(ctx context.Context, claims *attachme
 	if claims.Op != attachment.OpUpload {
 		return nil, errs.NewKey(errs.CodeForbidden, "attachment.token_invalid", "invalid transfer token")
 	}
+	if body == nil {
+		return nil, errs.ValidationKey("attachment.size_mismatch", "missing upload body")
+	}
 	row, err := s.getOwned(ctx, claims.TenantID, claims.AttachmentID)
 	if err != nil {
 		return nil, err
@@ -566,6 +585,16 @@ func (s *AttachmentService) CompleteUpload(ctx context.Context, claims *attachme
 	if err != nil {
 		return nil, mapAttachmentError(err)
 	}
+	claimedJTI, err := s.claimUpload(ctx, row, claims)
+	if err != nil {
+		return nil, err
+	}
+	fail := func(category string, cause error) (*model.Attachment, error) {
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		_ = s.markFailed(cleanupCtx, row, claimedJTI, category)
+		return nil, mapAttachmentError(cause)
+	}
 
 	hasher := sha256.New()
 	sniff := &sniffReader{r: io.TeeReader(io.LimitReader(body, row.ExpectedSize), hasher), limit: 512}
@@ -573,27 +602,34 @@ func (s *AttachmentService) CompleteUpload(ctx context.Context, claims *attachme
 		Key: row.ObjectKey, Body: sniff, Size: row.ExpectedSize, ContentType: row.ContentType,
 	})
 	if err != nil {
-		_ = s.markFailed(ctx, row, err.Error())
-		return nil, mapAttachmentError(err)
+		if readErr := uploadReaderError(body); readErr != nil {
+			return fail("invalid_stream", readErr)
+		}
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return fail("cancelled", errs.ValidationKey("attachment.upload_cancelled", "attachment upload cancelled"))
+		}
+		return fail("storage_failed", err)
 	}
 	// Reject truncated or oversized streams: LimitReader stops at ExpectedSize; ensure no leftover byte.
 	extra := make([]byte, 1)
-	if n, _ := body.Read(extra); n > 0 {
-		_ = s.store.Delete(ctx, row.ObjectKey)
-		_ = s.markFailed(ctx, row, "size exceeded")
-		return nil, errs.ValidationKey("attachment.size_mismatch", "size mismatch")
+	if n, readErr := body.Read(extra); n > 0 {
+		return fail("size_exceeded", errs.ValidationKey("attachment.size_mismatch", "size mismatch"))
+	} else if readErr != nil && !errors.Is(readErr, io.EOF) {
+		if adapterErr := uploadReaderError(body); adapterErr != nil {
+			return fail("invalid_stream", adapterErr)
+		}
+		return fail("read_failed", readErr)
 	}
 	if info.Size != row.ExpectedSize {
-		_ = s.store.Delete(ctx, row.ObjectKey)
-		_ = s.markFailed(ctx, row, "size mismatch")
-		return nil, errs.ValidationKey("attachment.size_mismatch", "size mismatch")
+		return fail("size_mismatch", errs.ValidationKey("attachment.size_mismatch", "size mismatch"))
+	}
+	if ctx.Err() != nil {
+		return fail("cancelled", errs.ValidationKey("attachment.upload_cancelled", "attachment upload cancelled"))
 	}
 
 	detected := http.DetectContentType(sniff.head)
 	if !mimeAllowed(pol.AllowedMIME, detected) && !mimeAllowed(pol.AllowedMIME, row.ContentType) {
-		_ = s.store.Delete(ctx, row.ObjectKey)
-		_ = s.markFailed(ctx, row, "mime forbidden")
-		return nil, errs.ValidationKey("attachment.mime_forbidden", "detected content type not allowed")
+		return fail("mime_forbidden", errs.ValidationKey("attachment.mime_forbidden", "detected content type not allowed"))
 	}
 
 	sum := hex.EncodeToString(hasher.Sum(nil))
@@ -617,7 +653,7 @@ func (s *AttachmentService) CompleteUpload(ctx context.Context, claims *attachme
 		if repoErr != nil {
 			return repoErr
 		}
-		res := repos.attachments.Where("id = ? AND status = ?", row.ID, status.AttachmentPending).Updates(updates)
+		res := repos.attachments.Where("id = ? AND status = ? AND upload_jti = ?", row.ID, status.AttachmentPending, claimedJTI).Updates(updates)
 		if res.Error != nil {
 			return res.Error
 		}
@@ -644,11 +680,11 @@ func (s *AttachmentService) CompleteUpload(ctx context.Context, claims *attachme
 			return err
 		})
 		if err != nil {
-			return nil, mapAttachmentError(err)
+			return fail("ready_commit_failed", err)
 		}
 	} else {
 		if err := applyReady(s.db); err != nil {
-			return nil, mapAttachmentError(err)
+			return fail("ready_commit_failed", err)
 		}
 	}
 	row.Status = status.AttachmentReady
@@ -659,6 +695,40 @@ func (s *AttachmentService) CompleteUpload(ctx context.Context, claims *attachme
 	row.SetThumbStatus(thumbStatus)
 	row.ThumbUpdatedAt = &now
 	return row, nil
+}
+
+func claimedUploadJTI(jti string) string { return "claimed:" + jti }
+
+func (s *AttachmentService) claimUpload(ctx context.Context, row *model.Attachment, claims *attachment.TransferClaims) (string, error) {
+	claimedJTI := claimedUploadJTI(claims.JTI)
+	repos, err := newAttachmentRepositories(ctx, s.db)
+	if err != nil {
+		return "", err
+	}
+	res := repos.attachments.Where(
+		"id = ? AND status = ? AND upload_jti = ? AND uploader_id = ? AND expected_size = ?",
+		row.ID, status.AttachmentPending, claims.JTI, claims.PrincipalID, row.ExpectedSize,
+	).Updates(map[string]any{"upload_jti": claimedJTI, "updated_at": time.Now().UTC()})
+	if res.Error != nil {
+		return "", mapAttachmentError(res.Error)
+	}
+	if res.RowsAffected != 1 {
+		return "", errs.NewKey(errs.CodeForbidden, "attachment.token_replay", "upload token already used or mismatched")
+	}
+	row.UploadJTI = claimedJTI
+	return claimedJTI, nil
+}
+
+type uploadErrorSource interface {
+	UploadError() error
+}
+
+func uploadReaderError(body io.Reader) error {
+	source, ok := body.(uploadErrorSource)
+	if !ok {
+		return nil
+	}
+	return source.UploadError()
 }
 
 type sniffReader struct {
@@ -808,16 +878,22 @@ func (s *AttachmentService) getOwned(ctx context.Context, tenantID, id string) (
 	return &row, nil
 }
 
-func (s *AttachmentService) markFailed(ctx context.Context, row *model.Attachment, reason string) error {
-	logging.Info(ctx, "attachment marked failed", "attachment_id", row.ID, "reason", reason)
-	_ = s.store.Delete(ctx, row.ObjectKey)
+func (s *AttachmentService) markFailed(ctx context.Context, row *model.Attachment, claimedJTI, category string) error {
+	logging.Info(ctx, "attachment upload failed", "attachment_id", row.ID, "result_category", category, "expected_size", row.ExpectedSize)
 	repos, err := newAttachmentRepositories(ctx, s.db)
 	if err != nil {
 		return err
 	}
-	return repos.attachments.Where("id = ?", row.ID).Updates(map[string]any{
+	res := repos.attachments.Where("id = ? AND status = ? AND upload_jti = ?", row.ID, status.AttachmentPending, claimedJTI).Updates(map[string]any{
 		"status": status.AttachmentFailed, "upload_jti": "", "updated_at": time.Now().UTC(),
-	}).Error
+	})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 1 {
+		_ = s.store.Delete(ctx, row.ObjectKey)
+	}
+	return nil
 }
 
 func toAttachmentView(row model.Attachment) AttachmentView {
