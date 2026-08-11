@@ -26,6 +26,8 @@ docker compose --env-file deploy/demo/.env -f deploy/demo/compose.yaml up -d
 
 `PUBLIC_BASE_URL` 必须是用户实际访问的 HTTPS 同源地址且不带尾部斜杠。公网入口应由宿主机 TLS 反向代理转发到 `WEB_BIND_ADDR:WEB_PORT`；PostgreSQL 和 Redis 不发布宿主端口。
 
+内置 Web 镜像将 `client_max_body_size` 设为 `256m`，覆盖当前租户附件策略允许的 `200 MB` 上限及 multipart 协议开销，`/api/` 读取超时为 300 秒。宿主机 TLS 代理或 Kubernetes Ingress 必须配置不低于租户有效 `attachment.upload_policy.max_size_mb` 加 64 KiB 的请求体上限，并为最慢合法上传保留足够的读取/发送超时；否则请求会在到达 AINP 前失败。提高代理上限不会扩大应用权限，AINP 仍按 prepare expected size、Transfer Token transport、租户策略和 MIME 探测 fail-closed。代理错误与 AINP JSON 信封不同，部署监控应分别诊断 413/408/499/504 和应用 `message_key`。
+
 持久化卷包括 PostgreSQL、Redis AOF、安装状态和附件对象目录。API 与独立 Worker 共享状态和附件卷，并固定 `jobs.enabled=true`、`jobs.embedded_worker=false`。Demo 同时启动通用 `worker` 与 `ai-worker`：前者只消费 `critical/default/file/notification`，后者只消费 `ai`；两者复用同一镜像和二进制，通过进程环境覆盖队列与并发，不修改共享配置。
 
 通用 Worker 并发由 `WORKER_CONCURRENCY` 控制，AI Worker 并发由 `AI_WORKER_CONCURRENCY` 控制；可分别执行 `docker compose ... up -d --scale worker=N --scale ai-worker=M` 扩容。日志分别写入 `worker.jsonl`、`ai-worker.jsonl`，启动行必须核对最终 queues、weights、concurrency、service 和 instance_id，确保消费者集合没有重叠。

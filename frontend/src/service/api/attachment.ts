@@ -12,7 +12,12 @@ const ATTACHMENT_API = {
   policy: '/api/v1/system/attachments/policy'
 } as const;
 
-export function prepareAttachmentUpload(payload: { original_name: string; content_type: string; size: number }) {
+export function prepareAttachmentUpload(payload: {
+  original_name: string;
+  content_type: string;
+  size: number;
+  transport?: Api.Attachment.UploadTransport;
+}) {
   return request<Api.Attachment.TransferPrepare>({
     url: ATTACHMENT_API.uploadPrepare,
     method: 'post',

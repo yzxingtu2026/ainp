@@ -16,6 +16,11 @@ const (
 	OpDownload = "download"
 )
 
+const (
+	TransferTransportRaw       = "raw"
+	TransferTransportMultipart = "multipart"
+)
+
 // TransferClaims are short-lived transfer tokens. They must not be logged in full.
 type TransferClaims struct {
 	TenantID     string `json:"tid"`
@@ -24,6 +29,7 @@ type TransferClaims struct {
 	AttachmentID string `json:"aid"`
 	Op           string `json:"op"`
 	Variant      string `json:"var,omitempty"` // original | thumb | preview；空 = original
+	Transport    string `json:"transport,omitempty"`
 	Size         int64  `json:"size,omitempty"`
 	JTI          string `json:"jti"`
 	jwt.RegisteredClaims
@@ -51,6 +57,7 @@ type IssueTransferInput struct {
 	AttachmentID string
 	Op           string
 	Variant      string // original | thumb | preview；空 = original
+	Transport    string // raw | multipart；仅 upload 使用
 	Size         int64
 	TTL          time.Duration
 }
@@ -61,6 +68,19 @@ func (s *TransferTokenService) Issue(in IssueTransferInput) (token string, jti s
 	}
 	if in.Op != OpUpload && in.Op != OpDownload {
 		return "", "", time.Time{}, fmt.Errorf("invalid transfer op")
+	}
+	transport := strings.TrimSpace(strings.ToLower(in.Transport))
+	if in.Op == OpUpload {
+		if transport == "" {
+			transport = TransferTransportRaw
+		}
+		switch transport {
+		case TransferTransportRaw, TransferTransportMultipart:
+		default:
+			return "", "", time.Time{}, fmt.Errorf("invalid transfer transport")
+		}
+	} else if transport != "" {
+		return "", "", time.Time{}, fmt.Errorf("download transfer transport is not supported")
 	}
 	variant := strings.TrimSpace(strings.ToLower(in.Variant))
 	if variant == "" {
@@ -79,7 +99,7 @@ func (s *TransferTokenService) Issue(in IssueTransferInput) (token string, jti s
 	jti = uuid.NewString()
 	claims := TransferClaims{
 		TenantID: in.TenantID, PrincipalID: in.PrincipalID, LegacyUserID: in.PrincipalID, AttachmentID: in.AttachmentID,
-		Op: in.Op, Variant: variant, Size: in.Size, JTI: jti,
+		Op: in.Op, Variant: variant, Transport: transport, Size: in.Size, JTI: jti,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    s.issuer,
 			Subject:   in.PrincipalID,
@@ -126,8 +146,29 @@ func (s *TransferTokenService) Parse(tokenString string) (*TransferClaims, error
 	if claims.TenantID == "" || claims.PrincipalID == "" || claims.AttachmentID == "" || claims.JTI == "" {
 		return nil, fmt.Errorf("incomplete transfer claims")
 	}
+	if claims.Op != OpUpload && claims.Op != OpDownload {
+		return nil, fmt.Errorf("invalid transfer op")
+	}
+	claims.Transport = strings.TrimSpace(strings.ToLower(claims.Transport))
+	if claims.Op == OpUpload {
+		switch claims.Transport {
+		case "", TransferTransportRaw, TransferTransportMultipart:
+		default:
+			return nil, fmt.Errorf("invalid transfer transport")
+		}
+	} else if claims.Transport != "" {
+		return nil, fmt.Errorf("invalid download transfer transport")
+	}
 	if claims.Variant == "" {
 		claims.Variant = "original"
 	}
 	return claims, nil
+}
+
+// EffectiveUploadTransport keeps legacy upload tokens without a transport claim raw-only.
+func (c *TransferClaims) EffectiveUploadTransport() string {
+	if c == nil || c.Transport == "" {
+		return TransferTransportRaw
+	}
+	return c.Transport
 }

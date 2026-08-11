@@ -14,7 +14,7 @@
 
 ## 数据模型
 
-- `attachments`：`tenant_id` 强制非空；`provider` / `object_key` / `original_name` / `content_type` / `size` / `sha256` / `status` / `uploader_id`；`upload_jti` 仅存一次性上传令牌 ID（非 token 明文）；`expires_at` 用于 pending 临时保留。
+- `attachments`：`tenant_id` 强制非空；`provider` / `object_key` / `original_name` / `content_type` / `size` / `sha256` / `status` / `uploader_id`；`upload_jti` 仅存一次性上传令牌 ID 或服务端 claimed 标记（非 token 明文）；`expires_at` 用于 pending/claimed 临时保留。
 - **派生（thumb）列**（#36，Phase 1 单变体）：`thumb_status` / `thumb_object_key` / `thumb_content_type` / `thumb_size` / `thumb_error` / `thumb_error_category` / nullable `thumb_retryable` / `thumb_updated_at`。`thumb_retryable=NULL` 表示未分类的历史状态，不自动补偿重放。未选独立 `attachment_derivatives` 表（多变体时可再拆）。
 - `attachment_links`：`(tenant_id, attachment_id, resource_type, resource_id, field)` 唯一；查询写入经 TenantDB Repository 与 GORM tenant Callback fail-closed。
 - 原图状态机：`pending` / `ready` / `deleting` / `deleted` / `failed`（CodeSet `system.attachment_status`）。
@@ -25,12 +25,32 @@
 
 ## 上传协议
 
-1. Action `system.attachment_upload_prepare`：校验权限与上传策略，创建 `pending` 记录，签发短时 **upload** transfer JWT。
-2. 客户端 `PUT /api/v1/attachments/transfer/:id`，携带 token（`Authorization: Bearer` / `X-Attachment-Token` / `?token=`），流式写入 body；**文件内容不进 JSON Action**。
-3. 服务端校验 size / SHA-256 / MIME 探测与扩展名策略，成功则 `ready` 并清空 `upload_jti`（令牌一次性）。
-4. **ready 后派生**：同事务写入 `thumb_status`（图/视 → `pending`；其他 → `skipped`）并 Append Outbox 事件 `attachment.ready.v1`；Handler 入队 Job `attachment.generate_thumb`（`file` 队列）。
+1. Action `system.attachment_upload_prepare`：校验权限与上传策略，创建 `pending` 记录，签发短时 **upload** transfer JWT。请求可显式传 `transport=raw|multipart`，缺省为 `raw`，禁止按 User-Agent、Origin 或平台猜测。
+2. prepare 返回服务端决定的 `upload_url`、`method`、`transport`、`token`、`expires_at`；multipart 额外返回固定 `field_name=file`，客户端不得硬猜字段名。
+3. Transfer JWT 的 `transport` claim 绑定传输入口；新 raw Token 只能 PUT，新 multipart Token 只能 POST。兼容窗口内缺少 claim 的旧 Token 仅解释为 raw，不能获得 multipart 权限。
+4. Raw 与 multipart 都在读取完整文件前通过数据库条件更新将同一 `attachment_id + upload_jti` 原子 claim；多实例下最多一个请求进入 ObjectStore Put。失败即清空 JTI 并进入 `failed`，Token 不可重放；进程异常留下的 claimed pending 仍由 `expires_at` + `CleanupExpired` 确定性清理。
+5. 两种入口都把 `io.Reader` 交给同一 `AttachmentService.CompleteUpload`，统一校验 size / SHA-256 / MIME 探测与策略。成功则 `ready` 并清空 `upload_jti`；ready 更新和 `attachment.ready.v1` Outbox 保持原事务/幂等语义。
+6. **ready 后派生**：同事务写入 `thumb_status`（图/视 → `pending`；其他 → `skipped`）并 Append Outbox 事件 `attachment.ready.v1`；Handler 入队 Job `attachment.generate_thumb`（`file` 队列）。
+
+| transport | HTTP | Body | 适用客户端 |
+|-----------|------|------|------------|
+| `raw`（默认） | `PUT /api/v1/attachments/transfer/:id` | 原始文件字节 | Web `fetch` / `axios`；现有 Vue 管理端 |
+| `multipart` | `POST /api/v1/attachments/transfer/:id` | `multipart/form-data`，唯一 `file` Part | `wx.uploadFile` / `Taro.uploadFile` |
+
+Token 优先放 `Authorization: Bearer` 或 `X-Attachment-Token` Header；兼容 raw 下载/上传仍支持 query token，但小程序上传禁止把 Token 放入文件名或表单字段。失败重试必须重新 prepare，禁止复用一次性 Token。
+
+### Multipart Adapter 安全边界
+
+- 使用 `multipart.Reader` 流式解析，不调用 `ParseMultipartForm`、无界 `io.ReadAll`，也不把完整文件落到 `/tmp` 后再交给 ObjectStore。
+- 只接受一个名为 `file` 且带 filename 参数的文件 Part；缺失、重复、未知文件字段、普通字段、嵌套 multipart 与 `Content-Transfer-Encoding` 全部拒绝，Part 字节不做 Header 驱动的透明解码。
+- 主 `Content-Type` 必须是带合法 1-70 字节 boundary 的 `multipart/form-data`。整个 Body 上限为 Token expected size + 64 KiB 协议开销；multipart 元数据最多 32 KiB；单 Part Header 最多 16 KiB / 32 个 Header value。
+- expected size 是文件 Part 的精确上限；截断、超长、读取错误、Context 取消或 ObjectStore 失败都会使 claimed 上传进入 `failed`，且对象不可访问。
+- Part filename、Part `Content-Type` 和表单值均不可信，不覆盖 prepare 保存的展示名、MIME 提示、tenant、uploader、expected size 或 object key；最终 MIME 仍由服务端内容探测和策略决定。
+- 日志只记录 attachment ID、transport/结果类别、预期大小、request ID 和耗时等安全字段；禁止记录 Token、Header 全文、客户端文件名、表单值、内容、object key 或底层错误全文。
 
 Local Provider 返回本服务流式 URL；未来 S3/OSS 可换预签名 URL，上层 prepare 协议不变。
+
+反向代理/Ingress 的请求体上限和上传超时必须不低于 AINP 当前有效上传策略加 multipart 协议开销，否则请求会在进入应用前失败；代理配置不能替代应用层 expected size、Token、MIME 和租户策略校验。本协议不支持分片、断点续传、S3/OSS multipart upload 或客户端直传；未来能力仍必须通过 prepare 返回独立受控 contract。
 
 ## 下载协议
 
@@ -107,12 +127,13 @@ Local Provider 返回本服务流式 URL；未来 S3/OSS 可换预签名 URL，�
 | `system.attachment_policy_get` | 有效上传策略 | false |
 | `system.attachment_delete` | 删除（级联派生对象） | true |
 
-传输端点是专用 HTTP adapter，不接受业务参数；权限决策只在 Action / 领域服务完成。审计记录 attachment/resource/size/type/result，**禁止**记录文件内容与 transfer token 明文。
+传输端点是专用 HTTP adapter，不接受业务参数；公开 `platform/host` 和官方应用都由 system 模块的同一 `OnHTTP` 注册自动获得 raw PUT、multipart POST 与下载路由，下游禁止复制 Gin Handler。权限决策只在 Action / 领域服务完成。审计记录 attachment/resource/size/type/result，**禁止**记录文件内容与 transfer token 明文。
 
 ## 检查清单
 
 - [ ] 新业务注册 AccessPolicy，不硬编码「同租户即可」
-- [ ] 上传/下载走 prepare + transfer，不把字节塞进 JSON；宫格只用 `variant=thumb`
+- [ ] 上传/下载走 prepare + transfer，不把字节塞进 JSON；multipart 只接受服务端返回的 `field_name`；宫格只用 `variant=thumb`
+- [ ] 上传失败/取消重新 prepare；禁止跨 raw/multipart 使用或重放 Token
 - [ ] Picker / 对话只调用 `attachment_mine_list`；租户附件中心继续走权限型 `attachment_list`
 - [ ] 租户隔离与跨租户 ID 测试通过
 - [ ] token 过期/重放、未注册 resource_type、Range/HEAD、variant 未就绪覆盖

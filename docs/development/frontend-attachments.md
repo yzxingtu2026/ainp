@@ -17,7 +17,39 @@
 - 类型：`src/typings/api/attachment.d.ts`（含 `thumb_status`、`DownloadVariant`）
 - 资源常量：`src/constants/attachment.ts` 的 `ATTACHMENT_RESOURCE_TYPES`（禁止任意字符串）
 
-流程：`upload_prepare` → `putAttachmentTransfer`；`download_prepare({ variant })` → `getAttachmentTransferBlob`。重试必须重新 prepare，禁止重放一次性 upload token。
+流程：`upload_prepare` → raw `putAttachmentTransfer` 或小程序 multipart Adapter；`download_prepare({ variant })` → `getAttachmentTransferBlob`。Web/Vue 缺省 `transport=raw`，保持现有 PUT 行为；小程序必须显式请求 `transport=multipart`，并使用响应中的 `method=POST` 与 `field_name=file`。重试必须重新 prepare，禁止重放一次性 upload token。
+
+### 微信小程序 / Taro
+
+文件路径直接交给平台原生上传任务，不用 `FileSystemManager` 把完整影像读成 ArrayBuffer。Token 只放 Header，`name` 使用 prepare 返回值：
+
+```ts
+const prepared = await prepareAttachmentUpload({
+  original_name: displayName,
+  content_type: mimeHint,
+  size,
+  transport: 'multipart'
+});
+if (prepared.method !== 'POST' || !prepared.upload_url || !prepared.field_name) {
+  throw new Error('unsupported attachment transfer contract');
+}
+
+const task = Taro.uploadFile({
+  url: apiBase + prepared.upload_url,
+  name: prepared.field_name,
+  filePath,
+  header: { Authorization: `Bearer ${prepared.token}` },
+  success(result) {
+    const envelope = JSON.parse(result.data) as ApiEnvelope<{ attachment: Api.Attachment.Item }>;
+    if (envelope.code !== 0) throw new Error(envelope.message);
+  }
+});
+
+task.progress(update => onProgress(update.progress));
+onCancel(() => task.abort());
+```
+
+`wx.uploadFile` 使用同样的 `url/name/filePath/header` 契约及 `UploadTask.onProgressUpdate/abort`。示例中的 `apiBase`、文件内容和身份信息均由下游安全配置提供；禁止写入 AppSecret、OpenID/UnionID、患者图片、生产 Token 或生产域名。任何网络失败、取消或非零信封都重新调用 prepare，不能复用旧 Token。当前不支持分片、断点续传或离线重放。
 
 变体约定：
 
@@ -60,6 +92,7 @@ Demo：`/demo/attachments`（选择器主路径）。
 ## 安全
 
 - transfer / download token 仅内存使用，不进 localStorage / sessionStorage / console
+- multipart 上传只传平台 `filePath`，不在 JS 内存全量读取；filename、Part MIME 和表单字段不能作为正式元数据
 - 不发送 `tenant_id`、完整 object key 或未注册 `resource_type`
 - **禁止**拼 ObjectStore / OSS URL 或厂商图片处理参数
 - 预览 Object URL 关闭/卸载时 `revokeObjectURL`

@@ -1,6 +1,8 @@
 # 前端统一附件组件
 
 - 业务页通过 `AttachmentField` / `AttachmentPicker` 对接附件协议；上传放在选择器内，禁止拼 object_key 或长期缓存 transfer token。
+- Web/Vue 缺省使用 raw PUT；微信小程序显式 prepare `transport=multipart`，按响应的 URL/method/field_name 调用 `wx.uploadFile` / `Taro.uploadFile`，Token 只放 Header，filePath 直接交给平台且失败重新 prepare。
+- 小程序禁止将文件全量读为 ArrayBuffer、信任 multipart filename/Part MIME、增加任意表单字段或复用一次性 Token；当前不支持分片/断点续传。
 - `AttachmentPicker` 默认 `replace`；绑定型业务必须使用 `append` + `lockedSelectedIds`，锁定已关联项且确认时只返回新增项。
 - 上传策略经 `attachment.upload_policy` 设置 + `PolicyProvider`；前端预校验拉 `/attachments/policy`。
 - `resourceType` 必须用 `ATTACHMENT_RESOURCE_TYPES` 常量；附件中心仅管理页，不是跨业务文件库。

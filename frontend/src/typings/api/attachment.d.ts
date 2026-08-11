@@ -20,6 +20,8 @@ declare namespace Api {
 
     type DownloadVariant = 'original' | 'thumb' | 'preview';
 
+    type UploadTransport = 'raw' | 'multipart';
+
     interface TransferPrepare {
       attachment: Item;
       upload_url?: string;
@@ -27,6 +29,8 @@ declare namespace Api {
       token: string;
       expires_at: string;
       method: string;
+      transport?: UploadTransport;
+      field_name?: string;
     }
 
     interface BindResult {

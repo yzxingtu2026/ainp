@@ -6,10 +6,30 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/yzxingtu2026/ainp/platform/framework/attachment"
 	"github.com/yzxingtu2026/ainp/platform/modules/system"
 )
+
+func TestAttachmentTransferRoutesIncludeMultipartPost(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	system.RegisterAttachmentTransferRoutes(router, &system.AttachmentService{})
+	want := map[string]bool{"PUT": false, "POST": false, "GET": false, "HEAD": false}
+	for _, route := range router.Routes() {
+		if route.Path == "/api/v1/attachments/transfer/:id" {
+			if _, ok := want[route.Method]; ok {
+				want[route.Method] = true
+			}
+		}
+	}
+	for method, found := range want {
+		if !found {
+			t.Fatalf("missing %s attachment transfer route", method)
+		}
+	}
+}
 
 func TestAttachmentTransferTokenIssueAndParse(t *testing.T) {
 	svc, err := attachment.NewTransferTokenService("unit-secret", "ainp")
@@ -29,6 +49,26 @@ func TestAttachmentTransferTokenIssueAndParse(t *testing.T) {
 	}
 	if claims.TenantID != "t1" || claims.PrincipalID != "u1" || claims.AttachmentID != "a1" || claims.Op != attachment.OpUpload || claims.JTI != jti {
 		t.Fatalf("claims = %#v", claims)
+	}
+	if claims.Transport != attachment.TransferTransportRaw || claims.EffectiveUploadTransport() != attachment.TransferTransportRaw {
+		t.Fatalf("default upload transport = %#v", claims)
+	}
+	multipartToken, _, _, err := svc.Issue(attachment.IssueTransferInput{
+		TenantID: "t1", PrincipalID: "u1", AttachmentID: "a2",
+		Op: attachment.OpUpload, Transport: attachment.TransferTransportMultipart, Size: 12, TTL: time.Minute,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	multipartClaims, err := svc.Parse(multipartToken)
+	if err != nil || multipartClaims.EffectiveUploadTransport() != attachment.TransferTransportMultipart {
+		t.Fatalf("multipart claims=%#v err=%v", multipartClaims, err)
+	}
+	if _, _, _, err := svc.Issue(attachment.IssueTransferInput{
+		TenantID: "t1", PrincipalID: "u1", AttachmentID: "a3",
+		Op: attachment.OpUpload, Transport: "unknown", Size: 12, TTL: time.Minute,
+	}); err == nil {
+		t.Fatal("invalid upload transport must be rejected")
 	}
 	if _, err := svc.Parse(token + "x"); err == nil {
 		t.Fatal("expected parse failure")
