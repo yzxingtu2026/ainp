@@ -141,6 +141,7 @@ func requiredPromptKeys() []string {
 		"ai/memory-extraction",
 		"ai/memory-consolidation",
 		"ai/context-compaction",
+		"ai/budget-completion",
 		"ai/trusted-runtime-context",
 		"ai/page-context",
 		"ai/untrusted-user-memory",

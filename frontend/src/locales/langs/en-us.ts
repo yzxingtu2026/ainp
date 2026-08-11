@@ -514,7 +514,8 @@ const local: App.I18n.Schema = {
       diagnosticContextWindow:
         'The current model has no context window configured. Enter the provider value in AI Center > Model Catalog.',
       runFailure: 'Run failed: {category} ({reason})',
-      runFailureSimple: 'Run failed: {category}'
+      runFailureSimple: 'Run failed: {category}',
+      runBudgetFailure: 'The run budget was insufficient to produce a reliable final response'
     },
     agentBuilder: {
       back: 'Back to list',
@@ -660,6 +661,10 @@ const local: App.I18n.Schema = {
     },
     aiRun: {
       progress: 'Step {step} · Models {model} · Tools {tool}',
+      budgetCompleting: 'This run is nearing its budget and is preparing the current result',
+      budgetLimited: 'This run reached its budget; the following is the current deliverable result',
+      completionNotice: 'This run completed under a controlled limit',
+      budgetFailed: 'The run budget was insufficient to produce a reliable final response',
       cancel: 'Cancel',
       resume: 'Resume',
       retry: 'Retry',

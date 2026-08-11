@@ -57,6 +57,8 @@ type AgentRuntimeService struct {
 	budgetProvider  *modelruntime.RuntimeBudgetProvider
 	contextBudget   interface {
 		ContextTokenLimit(context.Context, string) (int, error)
+		ModelTurnBudget(context.Context, string) (ModelContextBudget, error)
+		EstimateRequestTokens(context.Context, aimodelruntime.GenerateRequest) (int, error)
 	}
 	leaseDuration time.Duration
 	now           func() time.Time
@@ -81,6 +83,8 @@ func NewAgentRuntimeService(db *gorm.DB, c *ConversationService, i *modelruntime
 	service := &AgentRuntimeService{db: tenantdata.GuardedDB(db), conversations: c, invocations: i, tools: t, compactor: compactor, writer: w, authorization: authorization, runtimeContext: provider, pageContexts: pageContexts, leaseDuration: 30 * time.Second, now: func() time.Time { return time.Now().UTC() }}
 	service.contextBudget, _ = compactor.(interface {
 		ContextTokenLimit(context.Context, string) (int, error)
+		ModelTurnBudget(context.Context, string) (ModelContextBudget, error)
+		EstimateRequestTokens(context.Context, aimodelruntime.GenerateRequest) (int, error)
 	})
 	return service
 }
@@ -192,7 +196,7 @@ WHERE tenant_id=? AND conversation_id=? AND id=? AND role=? AND status=? LIMIT 1
 	if traceID == "" {
 		traceID = ac.RequestID
 	}
-	run := AgentRun{ID: uuid.NewString(), TenantID: ac.TenantID, UserID: ac.PrincipalID, ConversationID: conversation.ID, ConversationRevision: conversation.Revision, TriggerMessageID: trigger.ID, AgentVersionID: conversation.AgentVersionID, SessionID: ac.SessionID, AuthVersion: ac.AuthVersion, OriginRequestID: ac.RequestID, TraceID: traceID, PageContextJSON: pageContextJSON, PageContextType: pageContextType, PageContextStatus: pageContextStatus, PageContextBytes: pageContextBytes, Status: string(aiagentruntime.RunQueued), BudgetJSON: budgetJSON, IdempotencyKey: key, Revision: 1}
+	run := AgentRun{ID: uuid.NewString(), TenantID: ac.TenantID, UserID: ac.PrincipalID, ConversationID: conversation.ID, ConversationRevision: conversation.Revision, TriggerMessageID: trigger.ID, AgentVersionID: conversation.AgentVersionID, SessionID: ac.SessionID, AuthVersion: ac.AuthVersion, OriginRequestID: ac.RequestID, TraceID: traceID, PageContextJSON: pageContextJSON, PageContextType: pageContextType, PageContextStatus: pageContextStatus, PageContextBytes: pageContextBytes, Status: string(aiagentruntime.RunQueued), ExecutionMode: string(aiagentruntime.ExecutionModeNormal), BudgetJSON: budgetJSON, IdempotencyKey: key, Revision: 1}
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if e := tx.Where("user_id=? AND idempotency_key=?", ac.PrincipalID, key).First(&run).Error; e == nil {
 			return nil
@@ -590,6 +594,21 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 	if json.Unmarshal(run.BudgetJSON, &budget) != nil || budget.Validate() != nil {
 		return s.fail(ctx, run, "invalid_budget")
 	}
+	if run.ExecutionMode == "" {
+		run.ExecutionMode = string(aiagentruntime.ExecutionModeNormal)
+	}
+	if err := s.syncModelUsage(ctx, run); err != nil {
+		return err
+	}
+	if recovered, err := s.recoverFinalAnswer(ctx, run); err != nil {
+		return err
+	} else if recovered {
+		completionReason := ""
+		if run.ExecutionMode == string(aiagentruntime.ExecutionModeCompletionOnly) {
+			completionReason = "budget_limit"
+		}
+		return s.completeWithReason(ctx, run, completionReason)
+	}
 	startedAt := s.now()
 	if run.StartedAt != nil {
 		startedAt = *run.StartedAt
@@ -598,6 +617,13 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 	version, err := agentpkg.GetVersion(ctx, s.db.WithContext(ctx), run.AgentVersionID)
 	if err != nil {
 		return s.fail(ctx, run, "agent_version_unavailable")
+	}
+	if s.contextBudget == nil {
+		return s.fail(ctx, run, "model_context_budget_unavailable")
+	}
+	modelBudget, err := s.contextBudget.ModelTurnBudget(ctx, version.ModelAlias)
+	if err != nil {
+		return s.fail(ctx, run, "model_context_budget_unavailable")
 	}
 	tdb, scopeErr := s.db.Tenant(ctx)
 	if scopeErr != nil {
@@ -639,20 +665,27 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 	stepLimit := stepLimitAfterConfirmation(budget.MaxSteps, run.CurrentStep, resumedConfirmation)
 	toolResultsPending := false
 	for {
-		allowed, completionOnly := reactTurnMode(run.CurrentStep, stepLimit, toolResultsPending)
+		allowed, stepCompletionOnly := reactTurnMode(run.CurrentStep, stepLimit, toolResultsPending)
 		if !allowed || !s.now().Before(deadline) {
 			break
 		}
 		toolResultsPending = false
 		if run.ModelCalls >= budget.MaxModelCalls {
+			if run.ExecutionMode == string(aiagentruntime.ExecutionModeCompletionOnly) {
+				return s.fail(ctx, run, "budget_completion_unavailable")
+			}
 			return s.fail(ctx, run, "model_budget_exhausted")
 		}
-		if run.InputTokens+run.OutputTokens >= budget.RunTokenBudget {
-			return s.fail(ctx, run, "token_budget_exhausted")
+		reserve := s.completionReserve(run, budget.RunTokenBudget, int64(modelBudget.ReservedOutputTokens), 1)
+		preCompletionOnly := stepCompletionOnly || run.ExecutionMode == string(aiagentruntime.ExecutionModeCompletionOnly) || run.ModelCalls+1 >= budget.MaxModelCalls
+		remaining := budget.RunTokenBudget - run.InputTokens - run.OutputTokens
+		compactionTarget := completionInputTarget(remaining, int64(modelBudget.AvailableTokens), reserve, preCompletionOnly)
+		if compactionTarget <= 0 {
+			return s.fail(ctx, run, "budget_completion_unavailable")
 		}
-		messages, snapshotID, err := s.runtimeMessages(ctx, run, version.ModelAlias, budget.MaxCompactions, trustedContext)
+		messages, snapshotID, err := s.runtimeMessages(ctx, run, version.ModelAlias, budget.MaxCompactions, trustedContext, int(compactionTarget), reserve, preCompletionOnly)
 		if err != nil {
-			return s.fail(ctx, run, "context_failed")
+			return s.fail(ctx, run, "budget_completion_unavailable")
 		}
 		run.ContextSnapshotID = snapshotID
 		if snapshotID != nil {
@@ -667,18 +700,76 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 		if err != nil {
 			return s.fail(ctx, run, "agent_contract_unavailable")
 		}
-		step, err := s.newStep(ctx, run, aiagentruntime.StepModel, map[string]any{"message_count": len(messages), "context_snapshot_id": snapshotID})
-		if err != nil {
-			return err
-		}
 		metadata := map[string]string{"agent_id": agentRow.ID, "agent_run_id": run.ID, "has_tenant_supplement": fmt.Sprint(effective.HasTenantSupplement)}
 		if effective.ContractKey != "" {
 			metadata["contract_key"], metadata["contract_version"] = effective.ContractKey, effective.ContractVersion
 		}
 		request := aimodelruntime.GenerateRequest{ModelAlias: version.ModelAlias, ToolScopeID: scopeID, EnableTools: true, Instructions: effective.Text, Messages: messages, Metadata: metadata}
+		forceCompletion := preCompletionOnly
+		if forceCompletion {
+			request = completionOnlyRequest(request)
+		}
+		estimatedInput, estimateErr := s.estimateRuntimeRequest(ctx, request)
+		if estimateErr != nil {
+			return s.fail(ctx, run, "budget_estimate_failed")
+		}
+		if run.CompletionReservedInputTokens == 0 {
+			reserve = aiagentruntime.DefaultCompletionReserve(budget.RunTokenBudget, int64(modelBudget.ReservedOutputTokens), int64(estimatedInput))
+		}
+		plannerMode := aiagentruntime.ExecutionMode(run.ExecutionMode)
+		if forceCompletion {
+			plannerMode = aiagentruntime.ExecutionModeCompletionOnly
+		}
+		plan, planErr := aiagentruntime.PlanTurn(aiagentruntime.TurnBudgetInput{
+			HardLimit: budget.RunTokenBudget, ConsumedInput: run.InputTokens, ConsumedOutput: run.OutputTokens,
+			EstimatedInput: int64(estimatedInput), DeploymentMaxOutput: int64(modelBudget.ReservedOutputTokens),
+			Reserve: reserve, CurrentMode: plannerMode, CompletionAttempted: run.CompletionAttempted,
+		})
+		if planErr != nil {
+			return s.fail(ctx, run, "budget_estimate_failed")
+		}
+		budgetCompletion := !stepCompletionOnly && (run.ExecutionMode == string(aiagentruntime.ExecutionModeCompletionOnly) || plan.Mode == aiagentruntime.ExecutionModeCompletionOnly)
+		completionOnly := stepCompletionOnly || plan.Mode == aiagentruntime.ExecutionModeCompletionOnly
+		if completionOnly && request.EnableTools {
+			request = completionOnlyRequest(request)
+			estimatedInput, estimateErr = s.estimateRuntimeRequest(ctx, request)
+			if estimateErr != nil {
+				return s.fail(ctx, run, "budget_estimate_failed")
+			}
+			reserve.InputTokens = int64(estimatedInput)
+			plan, planErr = aiagentruntime.PlanTurn(aiagentruntime.TurnBudgetInput{
+				HardLimit: budget.RunTokenBudget, ConsumedInput: run.InputTokens, ConsumedOutput: run.OutputTokens,
+				EstimatedInput: int64(estimatedInput), DeploymentMaxOutput: int64(modelBudget.ReservedOutputTokens),
+				Reserve: reserve, CurrentMode: aiagentruntime.ExecutionModeCompletionOnly, CompletionAttempted: run.CompletionAttempted,
+			})
+			if planErr != nil {
+				return s.fail(ctx, run, "budget_estimate_failed")
+			}
+		}
+		if !plan.Allowed {
+			logging.Info(ctx, "agent turn budget rejected", "run_token_budget", budget.RunTokenBudget, "input_tokens", run.InputTokens, "output_tokens", run.OutputTokens, "estimated_input_tokens", estimatedInput, "remaining_tokens", plan.RemainingTokens, "reason", plan.Reason)
+			return s.fail(ctx, run, "budget_completion_unavailable")
+		}
+		if budgetCompletion && run.ExecutionMode != string(aiagentruntime.ExecutionModeCompletionOnly) {
+			if err := s.enterCompletionOnly(ctx, run, reserve, plan.Reason); err != nil {
+				return err
+			}
+		}
+		if completionOnly && budgetCompletion {
+			if err := s.markCompletionAttempted(ctx, run); err != nil {
+				return err
+			}
+		}
+		maxOutput := plan.MaxOutputTokens
+		request.MaxOutputTokens = &maxOutput
+		logging.Info(ctx, "agent turn budget planned", "mode", plan.Mode, "reason", plan.Reason, "run_token_budget", budget.RunTokenBudget, "input_tokens", run.InputTokens, "output_tokens", run.OutputTokens, "estimated_input_tokens", estimatedInput, "max_output_tokens", plan.MaxOutputTokens, "reserved_input_tokens", reserve.InputTokens, "reserved_output_tokens", reserve.OutputTokens, "safety_margin_tokens", reserve.SafetyTokens)
+		step, err := s.newStep(ctx, run, aiagentruntime.StepModel, map[string]any{"message_count": len(messages), "context_snapshot_id": snapshotID, "execution_mode": plan.Mode, "estimated_input_tokens": estimatedInput, "max_output_tokens": plan.MaxOutputTokens})
+		if err != nil {
+			return err
+		}
 		response, callErr := s.streamModel(ctx, run, request)
 		run.ModelCalls++
-		if e := s.persistCounters(ctx, run); e != nil {
+		if e := s.syncModelUsage(ctx, run); e != nil {
 			return e
 		}
 		if callErr != nil {
@@ -691,24 +782,10 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 			return s.fail(ctx, run, "model_failed")
 		}
 		var invocation modelruntime.ModelInvocation
-		if s.db.WithContext(ctx).Where("agent_run_id=?", run.ID).Order("created_at DESC").First(&invocation).Error == nil {
+		if s.db.WithContext(ctx).Where("agent_run_id=? AND mode=?", run.ID, "stream").Order("created_at DESC").First(&invocation).Error == nil {
 			step.ModelInvocationID = &invocation.ID
 			_ = s.db.WithContext(ctx).Model(&AgentStep{}).Where("id=?", step.ID).Update("model_invocation_id", invocation.ID).Error
 		}
-		if response.Usage.InputTokens != nil {
-			run.InputTokens += *response.Usage.InputTokens
-		}
-		if response.Usage.OutputTokens != nil {
-			run.OutputTokens += *response.Usage.OutputTokens
-		}
-		if e := s.persistCounters(ctx, run); e != nil {
-			return e
-		}
-		if run.InputTokens+run.OutputTokens > budget.RunTokenBudget {
-			_ = s.finishStep(ctx, run, step, "failed", map[string]any{}, "token_budget_exhausted")
-			return s.fail(ctx, run, "token_budget_exhausted")
-		}
-		_ = s.finishStep(ctx, run, step, "completed", map[string]any{"finish_reason": response.FinishReason, "output_items": len(response.Output)}, "")
 		toolCalls := []aimodelruntime.OutputItem{}
 		text := ""
 		for _, item := range response.Output {
@@ -719,28 +796,27 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 				toolCalls = append(toolCalls, item)
 			}
 		}
-		if len(toolCalls) == 0 {
-			finalStep, stepErr := s.newStep(ctx, run, aiagentruntime.StepFinalize, map[string]any{"text_bytes": len(text)})
-			if stepErr != nil {
-				return stepErr
-			}
-			streamID, e := s.conversations.Begin(ctx, run.ConversationID, "run-final:"+run.ID, run.ID)
-			if e != nil {
-				return s.fail(ctx, run, "finalize_failed")
-			}
-			if e = s.conversations.Append(ctx, streamID, aiconversation.StreamDelta{Cursor: 1, Type: "output_text.delta", Data: []byte(text)}); e != nil {
-				return s.fail(ctx, run, "finalize_failed")
-			}
-			logging.Info(ctx, "agent first delta persisted", "agent_first_delta_latency_ms", s.now().Sub(startedAt).Milliseconds())
-			_, e = s.conversations.Commit(ctx, streamID, []aimodelruntime.ContentPart{{Type: aimodelruntime.PartOutputText, Text: text}})
-			if e != nil {
-				return s.fail(ctx, run, "finalize_failed")
-			}
-			_ = s.finishStep(ctx, run, finalStep, "completed", map[string]any{"message_committed": true}, "")
-			return s.complete(ctx, run)
+		hardExceeded := run.InputTokens+run.OutputTokens > budget.RunTokenBudget
+		usableText := strings.TrimSpace(text) != ""
+		resultPlan := aiagentruntime.PlanTurnResult(aiagentruntime.TurnResultInput{HasUsableText: usableText, ToolCallCount: len(toolCalls), CompletionOnly: completionOnly, BudgetCompletion: budgetCompletion, HardExceeded: hardExceeded})
+		if resultPlan.ErrorCategory != "" {
+			_ = s.finishStep(ctx, run, step, "failed", map[string]any{"finish_reason": response.FinishReason, "output_items": len(response.Output), "tool_calls_ignored": resultPlan.IgnoreToolCalls}, resultPlan.ErrorCategory)
+			return s.fail(ctx, run, resultPlan.ErrorCategory)
 		}
-		if completionOnly {
-			return s.fail(ctx, run, "step_budget_exhausted")
+		if resultPlan.CommitFinal {
+			_ = s.finishStep(ctx, run, step, "completed", map[string]any{"finish_reason": response.FinishReason, "output_items": len(response.Output), "hard_budget_exceeded": hardExceeded, "tool_calls_ignored": resultPlan.IgnoreToolCalls}, "")
+			return s.commitFinalAnswer(ctx, run, text, startedAt, resultPlan.CompletionReason)
+		}
+		_ = s.finishStep(ctx, run, step, "completed", map[string]any{"finish_reason": response.FinishReason, "output_items": len(response.Output)}, "")
+		nextPlan, nextErr := aiagentruntime.PlanTurn(aiagentruntime.TurnBudgetInput{
+			HardLimit: budget.RunTokenBudget, ConsumedInput: run.InputTokens, ConsumedOutput: run.OutputTokens,
+			EstimatedInput: int64(estimatedInput), DeploymentMaxOutput: int64(modelBudget.ReservedOutputTokens), Reserve: reserve,
+			CurrentMode: aiagentruntime.ExecutionModeNormal,
+		})
+		if nextErr == nil && nextPlan.Mode == aiagentruntime.ExecutionModeCompletionOnly {
+			if err := s.enterCompletionOnly(ctx, run, reserve, nextPlan.Reason); err != nil {
+				return err
+			}
 		}
 		// Provider 要求 tool_result 前必须有配对的 assistant tool_call；先落库再执行工具。
 		if e := s.appendAssistantToolCalls(ctx, run, step, text, toolCalls); e != nil {
@@ -782,6 +858,165 @@ func reactTurnMode(currentStep, stepLimit int, toolResultsPending bool) (allowed
 	return toolResultsPending, toolResultsPending
 }
 
+func completionInputTarget(remaining, contextLimit int64, reserve aiagentruntime.CompletionReserve, completionOnly bool) int64 {
+	available := remaining - reserve.OutputTokens - reserve.SafetyTokens
+	if !completionOnly {
+		available /= 2
+	}
+	if available > contextLimit {
+		available = contextLimit
+	}
+	return available
+}
+
+func completionOnlyRequest(request aimodelruntime.GenerateRequest) aimodelruntime.GenerateRequest {
+	request.EnableTools = false
+	request.ToolScopeID = ""
+	request.Tools = nil
+	request.ToolChoice = &aimodelruntime.ToolChoice{Mode: "none"}
+	request.Instructions = strings.TrimSpace(request.Instructions) + "\n\n" + prompt.MustGet("ai/budget-completion")
+	return request
+}
+
+func (s *AgentRuntimeService) completionReserve(run *AgentRun, hardLimit, deploymentMaxOutput, estimatedInput int64) aiagentruntime.CompletionReserve {
+	if run.CompletionReservedInputTokens > 0 || run.CompletionReservedOutputTokens > 0 || run.CompletionSafetyMarginTokens > 0 {
+		return aiagentruntime.CompletionReserve{InputTokens: run.CompletionReservedInputTokens, OutputTokens: run.CompletionReservedOutputTokens, SafetyTokens: run.CompletionSafetyMarginTokens}
+	}
+	return aiagentruntime.DefaultCompletionReserve(hardLimit, deploymentMaxOutput, estimatedInput)
+}
+
+func (s *AgentRuntimeService) estimateRuntimeRequest(ctx context.Context, request aimodelruntime.GenerateRequest) (int, error) {
+	estimate := request
+	if estimate.EnableTools && s.tools != nil {
+		_, definitions, err := s.tools.ProjectModelTools(ctx, estimate.ToolScopeID)
+		if err != nil {
+			return 0, err
+		}
+		estimate.Tools = definitions
+	}
+	return s.contextBudget.EstimateRequestTokens(ctx, estimate)
+}
+
+func (s *AgentRuntimeService) enterCompletionOnly(ctx context.Context, run *AgentRun, reserve aiagentruntime.CompletionReserve, reason string) error {
+	if run.ExecutionMode == string(aiagentruntime.ExecutionModeCompletionOnly) {
+		return nil
+	}
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		updates := map[string]any{
+			"execution_mode":                    string(aiagentruntime.ExecutionModeCompletionOnly),
+			"completion_reserved_input_tokens":  reserve.InputTokens,
+			"completion_reserved_output_tokens": reserve.OutputTokens,
+			"completion_safety_margin_tokens":   reserve.SafetyTokens,
+			"revision":                          gorm.Expr("revision+1"),
+		}
+		res := tx.Model(&AgentRun{}).Where("id=? AND status=? AND lease_owner=? AND execution_mode=?", run.ID, "running", run.LeaseOwner, string(aiagentruntime.ExecutionModeNormal)).Updates(updates)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected != 1 {
+			return errs.New(errs.CodeConflict, "agent run execution mode changed")
+		}
+		run.ExecutionMode = string(aiagentruntime.ExecutionModeCompletionOnly)
+		run.CompletionReservedInputTokens = reserve.InputTokens
+		run.CompletionReservedOutputTokens = reserve.OutputTokens
+		run.CompletionSafetyMarginTokens = reserve.SafetyTokens
+		return s.appendEvent(ctx, tx, run, "run.mode_changed", nil, map[string]any{"execution_mode": run.ExecutionMode, "reason": reason, "reserved_input_tokens": reserve.InputTokens, "reserved_output_tokens": reserve.OutputTokens, "safety_margin_tokens": reserve.SafetyTokens})
+	})
+}
+
+func (s *AgentRuntimeService) markCompletionAttempted(ctx context.Context, run *AgentRun) error {
+	if run.CompletionAttempted {
+		return errs.New(errs.CodeConflict, "agent run completion already attempted")
+	}
+	res := s.db.WithContext(ctx).Model(&AgentRun{}).
+		Where("id=? AND status=? AND lease_owner=? AND execution_mode=? AND completion_attempted=?", run.ID, "running", run.LeaseOwner, string(aiagentruntime.ExecutionModeCompletionOnly), false).
+		Updates(map[string]any{"completion_attempted": true, "revision": gorm.Expr("revision+1")})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected != 1 {
+		return errs.New(errs.CodeConflict, "agent run completion attempt changed")
+	}
+	run.CompletionAttempted = true
+	return nil
+}
+
+func (s *AgentRuntimeService) syncModelUsage(ctx context.Context, run *AgentRun) error {
+	var usage struct {
+		InputTokens  int64 `gorm:"column:input_tokens"`
+		OutputTokens int64 `gorm:"column:output_tokens"`
+	}
+	if err := s.db.WithContext(ctx).Model(&modelruntime.ModelInvocation{}).
+		Where("agent_run_id=?", run.ID).
+		Select("COALESCE(SUM(input_tokens),0) AS input_tokens, COALESCE(SUM(output_tokens),0) AS output_tokens").
+		Scan(&usage).Error; err != nil {
+		return err
+	}
+	if usage.InputTokens > run.InputTokens {
+		run.InputTokens = usage.InputTokens
+	}
+	if usage.OutputTokens > run.OutputTokens {
+		run.OutputTokens = usage.OutputTokens
+	}
+	return s.persistCounters(ctx, run)
+}
+
+func (s *AgentRuntimeService) commitFinalAnswer(ctx context.Context, run *AgentRun, text string, startedAt time.Time, completionReason string) error {
+	finalStep, stepErr := s.newStep(ctx, run, aiagentruntime.StepFinalize, map[string]any{"text_bytes": len(text), "completion_reason": completionReason})
+	if stepErr != nil {
+		return stepErr
+	}
+	streamID, err := s.conversations.Begin(ctx, run.ConversationID, "run-final:"+run.ID, run.ID)
+	if err != nil {
+		return s.fail(ctx, run, "finalize_failed")
+	}
+	if err = s.conversations.Append(ctx, streamID, aiconversation.StreamDelta{Cursor: 1, Type: "output_text.delta", Data: []byte(text)}); err != nil {
+		return s.fail(ctx, run, "finalize_failed")
+	}
+	logging.Info(ctx, "agent first delta persisted", "agent_first_delta_latency_ms", s.now().Sub(startedAt).Milliseconds())
+	if _, err = s.conversations.Commit(ctx, streamID, []aimodelruntime.ContentPart{{Type: aimodelruntime.PartOutputText, Text: text}}); err != nil {
+		return s.fail(ctx, run, "finalize_failed")
+	}
+	_ = s.finishStep(ctx, run, finalStep, "completed", map[string]any{"message_committed": true, "completion_reason": completionReason}, "")
+	return s.completeWithReason(ctx, run, completionReason)
+}
+
+func (s *AgentRuntimeService) recoverFinalAnswer(ctx context.Context, run *AgentRun) (bool, error) {
+	var stream AssistantStream
+	err := s.db.WithContext(ctx).Where("conversation_id=? AND run_id=? AND idempotency_key=?", run.ConversationID, run.ID, "run-final:"+run.ID).First(&stream).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if stream.Status == "committed" {
+		return true, nil
+	}
+	if stream.Status != "streaming" {
+		return false, nil
+	}
+	var deltas []AssistantStreamDelta
+	if err := s.db.WithContext(ctx).Where("stream_id=? AND type=?", stream.ID, "output_text.delta").Order("cursor ASC").Find(&deltas).Error; err != nil {
+		return false, err
+	}
+	var text strings.Builder
+	for _, delta := range deltas {
+		text.Write(delta.Data)
+	}
+	if strings.TrimSpace(text.String()) == "" {
+		return false, nil
+	}
+	if _, err := s.conversations.Commit(ctx, stream.ID, []aimodelruntime.ContentPart{{Type: aimodelruntime.PartOutputText, Text: text.String()}}); err != nil {
+		return false, err
+	}
+	var step AgentStep
+	if err := s.db.WithContext(ctx).Where("run_id=? AND type=? AND status=?", run.ID, string(aiagentruntime.StepFinalize), string(aiagentruntime.StepRunning)).Order("step_index DESC").First(&step).Error; err == nil {
+		_ = s.finishStep(ctx, run, &step, "completed", map[string]any{"message_committed": true, "recovered": true}, "")
+	}
+	return true, nil
+}
+
 func (s *AgentRuntimeService) persistCounters(ctx context.Context, run *AgentRun) error {
 	res := s.db.WithContext(ctx).Model(&AgentRun{}).
 		Where("id=? AND status=? AND lease_owner=?", run.ID, "running", run.LeaseOwner).
@@ -817,7 +1052,7 @@ func (s *AgentRuntimeService) heartbeatLease(ctx context.Context, cancel context
 	}
 }
 
-func (s *AgentRuntimeService) runtimeMessages(ctx context.Context, run *AgentRun, modelAlias string, maxCompactions int, trusted *runtimecontext.TrustedRuntimeContext) ([]aimodelruntime.Message, *string, error) {
+func (s *AgentRuntimeService) runtimeMessages(ctx context.Context, run *AgentRun, modelAlias string, maxCompactions int, trusted *runtimecontext.TrustedRuntimeContext, targetInputTokens int, reserve aiagentruntime.CompletionReserve, disableTools bool) ([]aimodelruntime.Message, *string, error) {
 	pageSnapshot, err := pageContextSnapshot(run.PageContextJSON)
 	if err != nil {
 		return nil, nil, err
@@ -846,7 +1081,19 @@ func (s *AgentRuntimeService) runtimeMessages(ctx context.Context, run *AgentRun
 		if stepErr != nil {
 			return nil, nil, stepErr
 		}
-		result, err := s.compactor.Compact(ctx, aiconversation.CompactionRequest{ConversationID: run.ConversationID, ModelAlias: modelAlias, IdempotencyKey: fmt.Sprintf("run:%s:compact:%d", run.ID, run.Compactions), ParentSnapshotID: run.ContextSnapshotID})
+		reason := ""
+		if targetInputTokens > 0 && targetInputTokens < contextTokenLimit {
+			reason = "run_budget_pressure"
+		}
+		result, err := s.compactor.Compact(ctx, aiconversation.CompactionRequest{
+			ConversationID: run.ConversationID, ModelAlias: modelAlias,
+			ReservedOutputTokens: int(reserve.OutputTokens), SafetyMarginTokens: int(reserve.SafetyTokens),
+			TargetInputTokens: targetInputTokens, Reason: reason, AgentRunID: run.ID, DisableTools: disableTools,
+			IdempotencyKey: fmt.Sprintf("run:%s:compact:%d:%d", run.ID, run.Compactions, targetInputTokens), ParentSnapshotID: run.ContextSnapshotID,
+		})
+		if syncErr := s.syncModelUsage(ctx, run); syncErr != nil {
+			return nil, nil, syncErr
+		}
 		if err != nil || result == nil || result.Status == "failed" || result.Status == "cannot_fit" {
 			detail := map[string]any{"status": resultStatus(result)}
 			if result != nil && result.Reason != "" {
@@ -858,13 +1105,17 @@ func (s *AgentRuntimeService) runtimeMessages(ctx context.Context, run *AgentRun
 			_ = s.finishStep(ctx, run, compactStep, "failed", detail, "context_compaction_failed")
 			return nil, nil, fmt.Errorf("context compaction failed")
 		}
-		_ = s.finishStep(ctx, run, compactStep, "completed", map[string]any{"status": result.Status, "snapshot_id": result.SnapshotID, "input_tokens": result.InputTokens, "output_tokens": result.OutputTokens}, "")
+		_ = s.finishStep(ctx, run, compactStep, "completed", map[string]any{"status": result.Status, "reason": reason, "snapshot_id": result.SnapshotID, "input_tokens": result.InputTokens, "output_tokens": result.OutputTokens, "usage_input_tokens": result.UsageInputTokens, "usage_output_tokens": result.UsageOutputTokens}, "")
 		if result.Status == "compacted" {
 			if run.Compactions >= maxCompactions {
 				return nil, nil, fmt.Errorf("compaction budget exhausted")
 			}
 			run.Compactions++
 			id := result.SnapshotID
+			run.ContextSnapshotID = &id
+			if err := s.persistCounters(ctx, run); err != nil {
+				return nil, nil, err
+			}
 			tdb, scopeErr := s.db.Tenant(ctx)
 			if scopeErr != nil {
 				return nil, nil, scopeErr
@@ -1707,7 +1958,7 @@ func (s *AgentRuntimeService) currentConversationRevision(ctx context.Context, r
 	return rows[0].Revision
 }
 func (s *AgentRuntimeService) pause(ctx context.Context, run *AgentRun, reason string) error {
-	return s.terminalLike(ctx, run, "paused", reason, false)
+	return s.terminalLike(ctx, run, "paused", reason, "", false)
 }
 func (s *AgentRuntimeService) waitForConfirmation(ctx context.Context, run *AgentRun, confirmationID string) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -1722,17 +1973,20 @@ func (s *AgentRuntimeService) waitForConfirmation(ctx context.Context, run *Agen
 	})
 }
 func (s *AgentRuntimeService) fail(ctx context.Context, run *AgentRun, category string) error {
-	return s.terminalLike(ctx, run, "failed", category, true)
+	return s.terminalLike(ctx, run, "failed", category, "", true)
 }
 func (s *AgentRuntimeService) complete(ctx context.Context, run *AgentRun) error {
-	return s.terminalLike(ctx, run, "completed", "", true)
+	return s.completeWithReason(ctx, run, "")
 }
-func (s *AgentRuntimeService) terminalLike(ctx context.Context, run *AgentRun, status, category string, finished bool) error {
+func (s *AgentRuntimeService) completeWithReason(ctx context.Context, run *AgentRun, completionReason string) error {
+	return s.terminalLike(ctx, run, "completed", "", completionReason, true)
+}
+func (s *AgentRuntimeService) terminalLike(ctx context.Context, run *AgentRun, status, category, completionReason string, finished bool) error {
 	if err := aiagentruntime.ValidateRunTransition(aiagentruntime.RunStatus(run.Status), aiagentruntime.RunStatus(status)); err != nil {
 		return errs.New(errs.CodeConflict, err.Error())
 	}
 	now := s.now()
-	updates := map[string]any{"status": status, "error_category": category, "lease_owner": "", "lease_expires_at": nil, "revision": gorm.Expr("revision+1")}
+	updates := map[string]any{"status": status, "error_category": category, "completion_reason": completionReason, "lease_owner": "", "lease_expires_at": nil, "revision": gorm.Expr("revision+1")}
 	if finished {
 		updates["finished_at"] = now
 	}
@@ -1745,11 +1999,11 @@ func (s *AgentRuntimeService) terminalLike(ctx context.Context, run *AgentRun, s
 			return errs.New(errs.CodeConflict, "agent run lease changed")
 		}
 		event := "run." + status
-		if e := s.appendEvent(ctx, tx, run, event, nil, map[string]any{"error_category": category}); e != nil {
+		if e := s.appendEvent(ctx, tx, run, event, nil, map[string]any{"error_category": category, "completion_reason": completionReason}); e != nil {
 			return e
 		}
 		if finished && s.writer != nil {
-			_, e := s.writer.Append(ctx, tx, outbox.AppendInput{EventType: agentRunTerminalEvent, AggregateType: "ai_agent_run", AggregateID: run.ID, AggregateVersion: int64(run.Revision + 1), Payload: map[string]any{"run_id": run.ID, "status": status, "error_category": category}})
+			_, e := s.writer.Append(ctx, tx, outbox.AppendInput{EventType: agentRunTerminalEvent, AggregateType: "ai_agent_run", AggregateID: run.ID, AggregateVersion: int64(run.Revision + 1), Payload: map[string]any{"run_id": run.ID, "status": status, "error_category": category, "completion_reason": completionReason}})
 			return e
 		}
 		return nil

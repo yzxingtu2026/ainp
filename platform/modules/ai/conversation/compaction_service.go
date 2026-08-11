@@ -66,33 +66,65 @@ func ResolveModelContextBudget(limits aimodel.Limits) (ModelContextBudget, error
 }
 
 func (s *ContextCompactionService) ContextTokenLimit(ctx context.Context, modelAlias string) (int, error) {
-	resolved, err := s.models.Resolve(ctx, modelAlias, aimodel.CapabilityRequirements{
-		ModelType:        aimodel.ModelTypeChat,
-		InputModalities:  []aimodel.Modality{aimodel.ModalityText},
-		OutputModalities: []aimodel.Modality{aimodel.ModalityText},
-	})
-	if err != nil {
-		return 0, err
-	}
-	budget, err := ResolveModelContextBudget(resolved.Limits)
+	budget, err := s.ModelTurnBudget(ctx, modelAlias)
 	if err != nil {
 		return 0, err
 	}
 	return budget.AvailableTokens, nil
 }
 
+func (s *ContextCompactionService) ModelTurnBudget(ctx context.Context, modelAlias string) (ModelContextBudget, error) {
+	resolved, err := s.models.Resolve(ctx, modelAlias, aimodel.CapabilityRequirements{
+		ModelType:        aimodel.ModelTypeChat,
+		InputModalities:  []aimodel.Modality{aimodel.ModalityText},
+		OutputModalities: []aimodel.Modality{aimodel.ModalityText},
+	})
+	if err != nil {
+		return ModelContextBudget{}, err
+	}
+	budget, err := ResolveModelContextBudget(resolved.Limits)
+	if err != nil {
+		return ModelContextBudget{}, err
+	}
+	return budget, nil
+}
+
+func (s *ContextCompactionService) EstimateRequestTokens(ctx context.Context, request aimodelruntime.GenerateRequest) (int, error) {
+	request.ToolScopeID = ""
+	request.EnableTools = len(request.Tools) > 0
+	tokens, err := s.tokenizer.Count(ctx, request)
+	if err != nil {
+		return 0, err
+	}
+	for _, message := range request.Messages {
+		for _, part := range message.Content {
+			if part.ImageAttachmentID != "" {
+				tokens += 1024
+			}
+		}
+	}
+	return tokens, nil
+}
+
 type runtimeCompactionProvider struct {
 	invocations *modelruntime.InvocationService
 	modelAlias  string
+	agentRunID  string
+	usageInput  int64
+	usageOutput int64
 }
 
-func (p runtimeCompactionProvider) Summarize(ctx context.Context, r aiconversation.SummaryRequest) (*aiconversation.CompactionSummary, error) {
+func (p *runtimeCompactionProvider) Summarize(ctx context.Context, r aiconversation.SummaryRequest) (*aiconversation.CompactionSummary, error) {
 	body, err := json.Marshal(map[string]any{"schema_version": r.SchemaVersion, "messages": r.Messages})
 	if err != nil {
 		return nil, err
 	}
 	max := int64(r.MaxTokens)
-	req := aimodelruntime.GenerateRequest{ModelAlias: p.modelAlias, Instructions: prompt.MustGet("ai/context-compaction"), Messages: []aimodelruntime.Message{{Role: aimodelruntime.RoleUser, Content: []aimodelruntime.ContentPart{{Type: aimodelruntime.PartInputText, Text: string(body)}}}}, StructuredOutput: &aimodelruntime.StructuredOutput{Name: "context_compaction", Strict: true, Schema: compactionSummarySchema()}, MaxOutputTokens: &max, Metadata: map[string]string{"purpose": "context_compaction"}}
+	metadata := map[string]string{"purpose": "context_compaction"}
+	if p.agentRunID != "" {
+		metadata["agent_run_id"] = p.agentRunID
+	}
+	req := aimodelruntime.GenerateRequest{ModelAlias: p.modelAlias, Instructions: prompt.MustGet("ai/context-compaction"), Messages: []aimodelruntime.Message{{Role: aimodelruntime.RoleUser, Content: []aimodelruntime.ContentPart{{Type: aimodelruntime.PartInputText, Text: string(body)}}}}, StructuredOutput: &aimodelruntime.StructuredOutput{Name: "context_compaction", Strict: true, Schema: compactionSummarySchema()}, MaxOutputTokens: &max, Metadata: metadata}
 	value, err := p.invocations.Generate(ctx, req)
 	if err != nil {
 		return nil, err
@@ -100,6 +132,12 @@ func (p runtimeCompactionProvider) Summarize(ctx context.Context, r aiconversati
 	response, ok := asGenerateResponse(value)
 	if !ok {
 		return nil, fmt.Errorf("invalid compaction response: %T", value)
+	}
+	if response.Usage.InputTokens != nil {
+		p.usageInput += *response.Usage.InputTokens
+	}
+	if response.Usage.OutputTokens != nil {
+		p.usageOutput += *response.Usage.OutputTokens
 	}
 	var text string
 	for _, item := range response.Output {
@@ -130,6 +168,18 @@ func (s *ContextCompactionService) Compact(ctx context.Context, r aiconversation
 	if err != nil {
 		return nil, err
 	}
+	tdb, scopeErr := tenantdata.TenantDB(ctx, s.db)
+	if scopeErr != nil {
+		return nil, scopeErr
+	}
+	existing, err := tenantdata.TenantRaw[ContextSnapshot](tdb, `SELECT * FROM ai_context_snapshots WHERE tenant_id=? AND conversation_id=? AND idempotency_key=? LIMIT 1`, r.ConversationID, r.IdempotencyKey)
+	if err != nil {
+		return nil, err
+	}
+	if len(existing) == 1 {
+		snapshot := existing[0]
+		return &aiconversation.CompactionResult{Status: "compacted", SnapshotID: snapshot.ID, OutputTokens: snapshot.TokenEstimate, RetainedFrom: snapshot.SourceSequenceFrom, RetainedTo: snapshot.SourceSequenceTo, CompactionDepth: snapshot.CompactionDepth}, nil
+	}
 	// 预算判断只需 chat + 上下文窗口；structured_output 仅在真正摘要时由摘要调用再校验。
 	resolved, err := s.models.Resolve(ctx, r.ModelAlias, aimodel.CapabilityRequirements{
 		ModelType:        aimodel.ModelTypeChat,
@@ -149,15 +199,17 @@ func (s *ContextCompactionService) Compact(ctx context.Context, r aiconversation
 	}
 	fixedTokens, _ := s.tokenizer.Count(ctx, version.TenantInstructions)
 	toolSchemaBytes := r.ToolSchemaBytes
-	bindings, err := agent.ListEnabledToolBindings(ctx, s.db, visible.AgentID)
-	if err != nil {
-		return nil, err
-	}
-	if s.tools != nil {
-		for _, binding := range bindings {
-			if definition, ok := s.tools.Get(binding.ToolID); ok {
-				encoded, _ := json.Marshal(definition.InputSchema)
-				toolSchemaBytes += len(encoded)
+	if !r.DisableTools {
+		bindings, err := agent.ListEnabledToolBindings(ctx, s.db, visible.AgentID)
+		if err != nil {
+			return nil, err
+		}
+		if s.tools != nil {
+			for _, binding := range bindings {
+				if definition, ok := s.tools.Get(binding.ToolID); ok {
+					encoded, _ := json.Marshal(definition.InputSchema)
+					toolSchemaBytes += len(encoded)
+				}
 			}
 		}
 	}
@@ -170,6 +222,9 @@ func (s *ContextCompactionService) Compact(ctx context.Context, r aiconversation
 		margin = contextBudget.SafetyMarginTokens
 	}
 	available := int(resolved.Limits.ContextWindow) - reserved - margin - fixedTokens - (toolSchemaBytes+3)/4 - r.AttachmentTokens
+	if r.TargetInputTokens > 0 && r.TargetInputTokens < available {
+		available = r.TargetInputTokens
+	}
 	if available <= 0 {
 		return &aiconversation.CompactionResult{Status: "cannot_fit", Reason: "fixed_context_exceeds_model_window"}, nil
 	}
@@ -204,12 +259,13 @@ func (s *ContextCompactionService) Compact(ctx context.Context, r aiconversation
 		}
 		depth = parents[0].CompactionDepth + 1
 	}
-	engine := aiconversation.Engine{Tokenizer: s.tokenizer, Provider: runtimeCompactionProvider{invocations: s.invocations, modelAlias: r.ModelAlias}, Memory: s.memory, Config: aiconversation.EngineConfig{PolicyVersion: "hybrid-v1", PromptVersion: "summary-v1", MaxDepth: 3, RecentMessages: 6}}
+	provider := &runtimeCompactionProvider{invocations: s.invocations, modelAlias: r.ModelAlias, agentRunID: r.AgentRunID}
+	engine := aiconversation.Engine{Tokenizer: s.tokenizer, Provider: provider, Memory: s.memory, Config: aiconversation.EngineConfig{PolicyVersion: "hybrid-v1", PromptVersion: "summary-v1", MaxDepth: 3, RecentMessages: 6}}
 	payload, status, err := engine.Compact(ctx, r.ConversationID, *assembly, available, depth)
 	if err != nil {
 		return &aiconversation.CompactionResult{Status: "failed", Reason: "compaction_failed", CompactionDepth: depth}, err
 	}
-	result := &aiconversation.CompactionResult{Status: status, InputTokens: assembly.Budget.EstimatedTokens, CompactionDepth: depth}
+	result := &aiconversation.CompactionResult{Status: status, InputTokens: assembly.Budget.EstimatedTokens, CompactionDepth: depth, UsageInputTokens: provider.usageInput, UsageOutputTokens: provider.usageOutput}
 	if payload == nil {
 		if status == "cannot_fit" {
 			result.Reason = "compaction_cannot_reduce_context"
@@ -219,6 +275,9 @@ func (s *ContextCompactionService) Compact(ctx context.Context, r aiconversation
 	if status == "within_budget" {
 		result.OutputTokens = payload.OutputTokenEstimate
 		return result, nil
+	}
+	if r.Reason != "" {
+		payload.Reason = r.Reason
 	}
 	payload.ProtectedFacts = map[string]any{"tenant_id": ac.TenantID, "actor_id": ac.PrincipalID, "auth_version": ac.AuthVersion, "agent_version_id": visible.AgentVersionID, "conversation_revision": assembly.ConversationRevision, "pending_confirmations": []string{}, "side_effect_facts": []string{}}
 	finalTokens, countErr := s.tokenizer.Count(ctx, payload)

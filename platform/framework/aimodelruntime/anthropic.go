@@ -87,7 +87,7 @@ func (a *AnthropicAdapter) payload(in AdapterRequest, stream bool) (map[string]a
 		}
 		p["tools"] = tools
 	}
-	if r.ToolChoice != nil {
+	if r.ToolChoice != nil && r.ToolChoice.Mode != "none" {
 		choice := map[string]any{"type": r.ToolChoice.Mode}
 		if r.ToolChoice.Name != "" {
 			choice = map[string]any{"type": "tool", "name": r.ToolChoice.Name}

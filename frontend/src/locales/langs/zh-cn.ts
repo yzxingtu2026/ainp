@@ -509,7 +509,8 @@ const local: App.I18n.Schema = {
       reconnectFallback: '连接中断，正在恢复',
       diagnosticContextWindow: '当前模型未配置上下文窗口，请先在 AI 中心的模型目录中填写供应商提供的实际值。',
       runFailure: '运行失败：{category}（{reason}）',
-      runFailureSimple: '运行失败：{category}'
+      runFailureSimple: '运行失败：{category}',
+      runBudgetFailure: '本次运行预算不足，无法生成可靠的最终答复'
     },
     agentBuilder: {
       back: '返回列表',
@@ -653,6 +654,10 @@ const local: App.I18n.Schema = {
     },
     aiRun: {
       progress: '步骤 {step} · 模型 {model} · 工具 {tool}',
+      budgetCompleting: '本次运行即将达到预算，正在整理当前结果',
+      budgetLimited: '已达到本次运行预算，以下为当前可交付结果',
+      completionNotice: '本次运行已受控完成',
+      budgetFailed: '本次运行预算不足，无法生成可靠的最终答复',
       cancel: '取消',
       resume: '恢复',
       retry: '重试',

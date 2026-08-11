@@ -175,14 +175,15 @@ declare namespace Api.AI {
     has_more: boolean;
   }
   type AgentRunStatus = 'queued' | 'running' | 'waiting_confirmation' | 'paused' | 'completed' | 'failed' | 'cancelled';
+  type AgentRunExecutionMode = 'normal' | 'completion_only';
   interface AgentRunBudget {
-		schema_version: number;
+    schema_version: number;
     max_steps: number;
     max_model_calls: number;
     max_tool_calls: number;
     max_compactions: number;
     max_duration_seconds: number;
-		run_token_budget: number;
+    run_token_budget: number;
   }
   interface PageContextResourceRef {
     resource_type: string;
@@ -209,6 +210,12 @@ declare namespace Api.AI {
     agent_version_id: string;
     context_snapshot_id?: string;
     status: AgentRunStatus;
+    execution_mode?: AgentRunExecutionMode;
+    completion_reason?: string;
+    completion_attempted?: boolean;
+    completion_reserved_input_tokens?: number;
+    completion_reserved_output_tokens?: number;
+    completion_safety_margin_tokens?: number;
     budget: AgentRunBudget;
     current_step: number;
     model_calls: number;

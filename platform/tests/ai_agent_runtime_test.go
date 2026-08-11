@@ -134,6 +134,79 @@ func TestAgentStepStateMachineAndBudget(t *testing.T) {
 	}
 }
 
+func TestAgentTurnBudgetPlanner(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     aiagentruntime.TurnBudgetInput
+		mode      aiagentruntime.ExecutionMode
+		allowed   bool
+		maxOutput int64
+		reason    string
+	}{
+		{
+			name:  "normal turn keeps completion reserve",
+			input: aiagentruntime.TurnBudgetInput{HardLimit: 100000, ConsumedInput: 20000, ConsumedOutput: 1000, EstimatedInput: 10000, DeploymentMaxOutput: 4096, Reserve: aiagentruntime.CompletionReserve{InputTokens: 10000, OutputTokens: 2048, SafetyTokens: 512}},
+			mode:  aiagentruntime.ExecutionModeNormal, allowed: true, maxOutput: 4096, reason: "within_soft_budget",
+		},
+		{
+			name:  "soft pressure switches to completion",
+			input: aiagentruntime.TurnBudgetInput{HardLimit: 100000, ConsumedInput: 79000, ConsumedOutput: 1000, EstimatedInput: 9000, DeploymentMaxOutput: 4096, Reserve: aiagentruntime.CompletionReserve{InputTokens: 9000, OutputTokens: 2048, SafetyTokens: 512}},
+			mode:  aiagentruntime.ExecutionModeCompletionOnly, allowed: true, maxOutput: 4096, reason: "run_budget_pressure",
+		},
+		{
+			name:  "completion mode is sticky",
+			input: aiagentruntime.TurnBudgetInput{HardLimit: 100000, ConsumedInput: 1000, EstimatedInput: 1000, DeploymentMaxOutput: 2048, Reserve: aiagentruntime.CompletionReserve{InputTokens: 1000, OutputTokens: 2048, SafetyTokens: 128}, CurrentMode: aiagentruntime.ExecutionModeCompletionOnly},
+			mode:  aiagentruntime.ExecutionModeCompletionOnly, allowed: true, maxOutput: 2048,
+		},
+		{
+			name:  "completion is attempted at most once",
+			input: aiagentruntime.TurnBudgetInput{HardLimit: 100000, ConsumedInput: 1000, EstimatedInput: 1000, DeploymentMaxOutput: 2048, Reserve: aiagentruntime.CompletionReserve{SafetyTokens: 128}, CurrentMode: aiagentruntime.ExecutionModeCompletionOnly, CompletionAttempted: true},
+			mode:  aiagentruntime.ExecutionModeCompletionOnly, allowed: false, reason: "completion_already_attempted",
+		},
+		{
+			name:  "minimum completion cannot fit",
+			input: aiagentruntime.TurnBudgetInput{HardLimit: 1000, ConsumedInput: 800, EstimatedInput: 100, DeploymentMaxOutput: 2048, Reserve: aiagentruntime.CompletionReserve{SafetyTokens: 80}},
+			mode:  aiagentruntime.ExecutionModeCompletionOnly, allowed: false, reason: "completion_cannot_fit",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := aiagentruntime.PlanTurn(tt.input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.Mode != tt.mode || got.Allowed != tt.allowed || got.MaxOutputTokens != tt.maxOutput || got.Reason != tt.reason {
+				t.Fatalf("plan=%+v", got)
+			}
+		})
+	}
+	reserve := aiagentruntime.DefaultCompletionReserve(100000, 1024, 9000)
+	if reserve.InputTokens != 9000 || reserve.OutputTokens != 1024 || reserve.SafetyTokens != 512 {
+		t.Fatalf("reserve=%+v", reserve)
+	}
+}
+
+func TestAgentTurnResultPlannerPreservesDeliverableOutput(t *testing.T) {
+	tests := []struct {
+		name string
+		in   aiagentruntime.TurnResultInput
+		want aiagentruntime.TurnResultPlan
+	}{
+		{name: "usable final text survives actual usage overrun", in: aiagentruntime.TurnResultInput{HasUsableText: true, HardExceeded: true}, want: aiagentruntime.TurnResultPlan{CommitFinal: true, CompletionReason: "budget_limit"}},
+		{name: "completion text ignores provider tool violation", in: aiagentruntime.TurnResultInput{HasUsableText: true, ToolCallCount: 1, CompletionOnly: true, BudgetCompletion: true}, want: aiagentruntime.TurnResultPlan{CommitFinal: true, IgnoreToolCalls: true, CompletionReason: "budget_limit"}},
+		{name: "completion tool without text fails closed", in: aiagentruntime.TurnResultInput{ToolCallCount: 1, CompletionOnly: true, BudgetCompletion: true}, want: aiagentruntime.TurnResultPlan{IgnoreToolCalls: true, ErrorCategory: "budget_completion_invalid_output"}},
+		{name: "normal tool turn continues", in: aiagentruntime.TurnResultInput{ToolCallCount: 1}, want: aiagentruntime.TurnResultPlan{ExecuteTools: true}},
+		{name: "hard overrun never executes tools", in: aiagentruntime.TurnResultInput{ToolCallCount: 1, HardExceeded: true}, want: aiagentruntime.TurnResultPlan{IgnoreToolCalls: true, ErrorCategory: "budget_hard_limit_exceeded"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := aiagentruntime.PlanTurnResult(tt.in); got != tt.want {
+				t.Fatalf("result plan=%+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestAgentRuntimeMigrationHasRecoveryConstraints(t *testing.T) {
 	body, err := os.ReadFile("../migrations/0021_ai_agent_runtime.sql")
 	if err != nil {
@@ -144,6 +217,76 @@ func TestAgentRuntimeMigrationHasRecoveryConstraints(t *testing.T) {
 		if !strings.Contains(sql, expected) {
 			t.Fatalf("migration missing %s", expected)
 		}
+	}
+}
+
+func TestAgentRunBudgetCompletionMigrationAndRuntimeContract(t *testing.T) {
+	body, err := os.ReadFile("../migrations/0056_agent_run_budget_completion.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := string(body)
+	for _, expected := range []string{"execution_mode", "completion_reason", "completion_attempted", "completion_reserved_input_tokens", "completion_reserved_output_tokens", "completion_safety_margin_tokens", "completion_only"} {
+		if !strings.Contains(sql, expected) {
+			t.Fatalf("budget completion migration missing %q", expected)
+		}
+	}
+	runtimeBody, err := os.ReadFile("../modules/ai/conversation/runtime_service.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(runtimeBody)
+	for _, expected := range []string{"completionOnlyRequest", `ToolChoice{Mode: "none"}`, "syncModelUsage", "budget_limit", "run_budget_pressure", "commitFinalAnswer"} {
+		if !strings.Contains(source, expected) {
+			t.Fatalf("budget completion runtime contract missing %q", expected)
+		}
+	}
+	anthropicBody, err := os.ReadFile("../framework/aimodelruntime/anthropic.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(anthropicBody), `r.ToolChoice.Mode != "none"`) {
+		t.Fatal("anthropic completion-only request must omit unsupported none tool choice")
+	}
+}
+
+func TestAgentRunBudgetCompletionMigrationPostgres(t *testing.T) {
+	dsn := os.Getenv("AINP_TEST_DATABASE_DSN")
+	if dsn == "" {
+		t.Skip("AINP_TEST_DATABASE_DSN is not set")
+	}
+	admin, err := database.Open(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	schema := "ainp_budget_completion_" + uuid.NewString()[:8]
+	if err = admin.Exec(fmt.Sprintf(`CREATE SCHEMA %q`, schema)).Error; err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = admin.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE`, schema)).Error })
+	db, err := database.Open(dsn + " search_path=" + schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = db.Exec(`CREATE TABLE ai_agent_runs (id varchar(64) PRIMARY KEY)`).Error; err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile("../migrations/0056_agent_run_budget_completion.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = db.Exec(string(body)).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err = db.Exec(string(body)).Error; err != nil {
+		t.Fatalf("budget completion migration must be idempotent: %v", err)
+	}
+	var count int64
+	if err = db.Raw(`SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='ai_agent_runs' AND column_name IN ('execution_mode','completion_reason','completion_attempted','completion_reserved_input_tokens','completion_reserved_output_tokens','completion_safety_margin_tokens')`).Scan(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 6 {
+		t.Fatalf("budget completion columns=%d, want 6", count)
 	}
 }
 

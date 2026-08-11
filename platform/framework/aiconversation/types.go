@@ -50,20 +50,26 @@ type CompactionRequest struct {
 	ReservedOutputTokens int     `json:"reserved_output_tokens"`
 	SafetyMarginTokens   int     `json:"safety_margin_tokens"`
 	ToolSchemaBytes      int     `json:"tool_schema_bytes"`
+	DisableTools         bool    `json:"disable_tools,omitempty"`
 	AttachmentTokens     int     `json:"attachment_tokens"`
+	TargetInputTokens    int     `json:"target_input_tokens,omitempty"`
+	Reason               string  `json:"reason,omitempty"`
+	AgentRunID           string  `json:"agent_run_id,omitempty"`
 	IdempotencyKey       string  `json:"idempotency_key"`
 	ParentSnapshotID     *string `json:"parent_snapshot_id,omitempty"`
 }
 
 type CompactionResult struct {
-	Status          string `json:"status"`
-	SnapshotID      string `json:"snapshot_id,omitempty"`
-	Reason          string `json:"reason,omitempty"`
-	InputTokens     int    `json:"input_tokens"`
-	OutputTokens    int    `json:"output_tokens"`
-	RetainedFrom    uint64 `json:"retained_from,omitempty"`
-	RetainedTo      uint64 `json:"retained_to,omitempty"`
-	CompactionDepth int    `json:"compaction_depth"`
+	Status            string `json:"status"`
+	SnapshotID        string `json:"snapshot_id,omitempty"`
+	Reason            string `json:"reason,omitempty"`
+	InputTokens       int    `json:"input_tokens"`
+	OutputTokens      int    `json:"output_tokens"`
+	RetainedFrom      uint64 `json:"retained_from,omitempty"`
+	RetainedTo        uint64 `json:"retained_to,omitempty"`
+	CompactionDepth   int    `json:"compaction_depth"`
+	UsageInputTokens  int64  `json:"usage_input_tokens,omitempty"`
+	UsageOutputTokens int64  `json:"usage_output_tokens,omitempty"`
 }
 
 type StreamDelta struct {

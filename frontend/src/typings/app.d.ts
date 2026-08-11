@@ -660,6 +660,7 @@ declare namespace App {
           diagnosticContextWindow: string;
           runFailure: string;
           runFailureSimple: string;
+          runBudgetFailure: string;
         };
         agentBuilder: {
           back: string;
@@ -802,6 +803,10 @@ declare namespace App {
         };
         aiRun: {
           progress: string;
+          budgetCompleting: string;
+          budgetLimited: string;
+          completionNotice: string;
+          budgetFailed: string;
           cancel: string;
           resume: string;
           retry: string;
