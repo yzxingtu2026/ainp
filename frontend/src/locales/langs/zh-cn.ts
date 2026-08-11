@@ -54,6 +54,7 @@ const local: App.I18n.Schema = {
     }
   },
   request: {
+    failed: '请求失败，请稍后重试',
     logout: '请求失败后登出用户',
     logoutMsg: '用户状态失效，请重新登录',
     logoutWithModal: '请求失败后弹出模态框再登出用户',

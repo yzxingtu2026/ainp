@@ -37,6 +37,33 @@ Soybean Admin（壳）
 
 `frontend/src` 的业务页面、公共业务组件和应用壳设置禁止直接导入或渲染 Naive UI `NSelect`；只有 `components/common/app-select.vue` 及其白盒测试可以访问底层组件。`pnpm test:app-select-architecture` 会扫描源码并阻止旁路，新增 Select 场景必须通过 `AppSelect`、`CodeSelect` 或 `RemoteSelect` 接入。
 
+## 请求错误展示边界
+
+统一 Axios 客户端默认是 HTTP/业务信封失败的唯一全局展示方。后端信封的已本地化 `message` 优先；信封没有安全文案时使用前端 `request.failed`，禁止把 `Request failed with status code ...` 等 Axios `error.message` 展示给用户。401 等身份失效仍执行会话清理，错误展示模式不能绕过安全处理。
+
+每个请求通过 `errorMode` 明确展示所有权：
+
+| 模式 | 展示方 | 调用方约束 |
+|------|--------|------------|
+| `global` | 请求层全局 toast（默认） | 收到 `{ data, error }` 后只终止流程或回滚状态，不再提示错误 |
+| `silent` | 无 | 仅用于明确允许静默降级的后台刷新、探测等场景 |
+| `inline` | 页面内联区域 | 请求必须显式声明；使用 `getRequestErrorMessage(error, fallback)` 获取安全文案 |
+| `custom` | 页面或公共组件 | 请求必须显式声明；本地 toast/dialog 与请求层不能同时展示 |
+
+```ts
+const { data, error } = await request<Item[]>({ url: '/api/v1/items' });
+if (error) return;
+
+const result = await request<Item[]>({ url: '/api/v1/items', errorMode: 'inline' });
+if (result.error) {
+  inlineError.value = getRequestErrorMessage(result.error, $t('request.failed'));
+}
+```
+
+原生 `fetch`、附件 Transfer、SSE 等非统一请求链路可以本地展示，但必须通过 `getStandaloneErrorMessage(error, fallback)` 过滤 Axios 技术文案。统一请求失败不得经 `throw error` 后在外层 catch 再次显示；必须区分 Axios 请求错误与本地异常，确保只有一个展示方。
+
+`pnpm test:request-error-boundary` 同时执行错误模式单测、静态扫描正反例和全仓扫描。门禁会追踪 `await` 返回的解构 `error`、别名以及 `result.error`，阻止其 `.message` 流入 toast 或内联状态；无需展示文案的默认失败分支直接返回即可。
+
 ## 起壳与裁剪建议
 
 1. 以 Soybean Admin 的 Naive UI 版为起点初始化 `frontend/`。
@@ -64,6 +91,7 @@ Soybean Admin（壳）
 - [ ] 菜单图标为 Iconify `collection:name`（默认 `mdi`），见 [图标库规范](./icon-library.md)
 - [ ] 未在业务页复制 Layout / 请求 / 权限逻辑
 - [ ] 原生 `fetch` 使用 `buildServiceURL()`，未直接拼接 Service Base URL
+- [ ] 统一请求失败只有一个展示方，接管时已显式声明 `errorMode`，未展示 Axios 原始文案
 - [ ] 复杂表格优先 TanStack Table
 - [ ] 用户可见时间使用 `formatDateTime` / `DateTimeText`，见 [时间展示规范](./datetime-display.md)
 - [ ] 新增公共 UI 约定已写入本文档或 `.agent/rules/frontend-stack.md`

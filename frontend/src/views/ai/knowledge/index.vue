@@ -8,6 +8,7 @@ import { AI_ACTIONS } from '@/constants/ai';
 import { CODESET_KEYS } from '@/constants/codeset';
 import { pageAfterDelete } from '@/hooks/common/table';
 import { $t } from '@/locales';
+import { getRequestErrorMessage } from '@/service/request';
 import {
   createKnowledgeBase,
   createKnowledgeDocument,
@@ -182,14 +183,17 @@ async function loadBases() {
   loadingBases.value = true;
   baseError.value = '';
   try {
-    const { data, error } = await fetchKnowledgeBases({
-      page: baseQuery.page,
-      page_size: baseQuery.page_size,
-      keyword: baseQuery.keyword.trim() || undefined,
-      status: baseQuery.status || undefined
-    });
+    const { data, error } = await fetchKnowledgeBases(
+      {
+        page: baseQuery.page,
+        page_size: baseQuery.page_size,
+        keyword: baseQuery.keyword.trim() || undefined,
+        status: baseQuery.status || undefined
+      },
+      { errorMode: 'inline' }
+    );
     if (error) {
-      baseError.value = error.message || $t('page.knowledge.loadFailed');
+      baseError.value = getRequestErrorMessage(error, $t('page.knowledge.loadFailed'));
       bases.value = [];
       baseTotal.value = 0;
       return;

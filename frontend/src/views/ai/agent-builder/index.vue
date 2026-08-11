@@ -318,7 +318,6 @@ async function loadAgent(id: string) {
       fetchAIAgentDiagnostics(id)
     ]);
     if (agentResult.error || !agentResult.data) {
-      message.error($t('page.agentBuilder.loadFailed'));
       return;
     }
     agent.value = agentResult.data;
@@ -471,7 +470,6 @@ async function pickAvatar(items: Api.Attachment.Item[]) {
       field: 'avatar'
     });
     if (link.error) {
-      message.error(link.error.message || $t('page.agentBuilder.avatarUpdateFailed'));
       return;
     }
     const { data, error } = await updateAIAgent({
@@ -488,7 +486,6 @@ async function pickAvatar(items: Api.Attachment.Item[]) {
         resource_id: current.id,
         field: 'avatar'
       });
-      message.error($t('page.agentBuilder.avatarUpdateFailed'));
       return;
     }
     if (previousId) {
@@ -519,9 +516,6 @@ async function persistAgentMeta(): Promise<boolean> {
     revision: draft.revision
   });
   if (error || !data) {
-    if (String(error).includes('revision') || String(error).includes('conflict')) {
-      message.error($t('page.agentBuilder.revisionConflict'));
-    }
     return false;
   }
   agent.value = { ...agent.value, ...data };
@@ -553,9 +547,6 @@ async function saveMetadata() {
       revision: draft.revision
     });
     if (error || !data) {
-      if (String(error).includes('revision') || String(error).includes('conflict')) {
-        message.error($t('page.agentBuilder.revisionConflict'));
-      }
       return;
     }
     dirty.value = false;
@@ -589,13 +580,12 @@ async function publishVersion() {
       });
       if (error || !data) return;
       if (avatarAttachmentId.value) {
-        const link = await bindAttachment({
+        await bindAttachment({
           attachment_id: avatarAttachmentId.value,
           resource_type: ATTACHMENT_RESOURCE_TYPES.agentAvatar,
           resource_id: data.id,
           field: 'avatar'
         });
-        if (link.error) message.error(link.error.message || $t('page.agentBuilder.avatarUpdateFailed'));
       }
       dirty.value = false;
       message.success($t('page.agentBuilder.createSuccess'));
@@ -617,7 +607,6 @@ async function publishVersion() {
       revision: draft.revision
     });
     if (error || !data) {
-      message.error($t('page.agentBuilder.publishFailed'));
       return;
     }
     dirty.value = false;

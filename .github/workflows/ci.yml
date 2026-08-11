@@ -117,6 +117,8 @@ jobs:
         run: pnpm baseline:verify
       - name: AppSelect architecture check
         run: pnpm test:app-select-architecture
+      - name: Request error boundary check
+        run: pnpm test:request-error-boundary
       - name: Lint
         run: pnpm exec oxlint . && pnpm exec eslint .
       - name: Production build

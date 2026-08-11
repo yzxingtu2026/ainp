@@ -1,6 +1,7 @@
 import { request } from '../request';
-const post = <T>(path: string, data: Record<string, unknown> = {}) =>
-  request<T>({ url: `/api/v1/ai/${path}`, method: 'post', data });
+import type { RequestErrorOptions } from '../request';
+const post = <T>(path: string, data: Record<string, unknown> = {}, options?: RequestErrorOptions) =>
+  request<T>({ url: `/api/v1/ai/${path}`, method: 'post', data, errorMode: options?.errorMode });
 export const fetchProviderTypes = () =>
   post<Array<{ protocol: string; name: string; model_discovery: boolean }>>('provider-types/list');
 export const fetchAIProviders = (params: Record<string, unknown>) =>
@@ -121,8 +122,8 @@ export const retryAIAgentRun = (id: string, revision: number) =>
   post<Api.AI.AgentRunDetail>('agent-runs/retry', { id, revision });
 export const fetchAIAgentRunEvents = (id: string, afterSequence = 0, limit = 200) =>
   post<Api.AI.AgentRunEventPage>('agent-runs/events', { id, after_sequence: afterSequence, limit });
-export const fetchKnowledgeBases = (params: Record<string, unknown>) =>
-  post<Api.AI.Page<Api.AI.KnowledgeBase>>('knowledge-bases/list', params);
+export const fetchKnowledgeBases = (params: Record<string, unknown>, options?: RequestErrorOptions) =>
+  post<Api.AI.Page<Api.AI.KnowledgeBase>>('knowledge-bases/list', params, options);
 export const fetchKnowledgeBase = (id: string) => post<Api.AI.KnowledgeBase>('knowledge-bases/get', { id });
 export const createKnowledgeBase = (data: Api.AI.KnowledgeBaseCreate) =>
   post<Api.AI.KnowledgeBase>('knowledge-bases/create', data as unknown as Record<string, unknown>);

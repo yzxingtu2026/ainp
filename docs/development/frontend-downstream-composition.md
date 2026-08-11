@@ -8,6 +8,8 @@ AINP Vue 管理后台使用编译期静态装配。`frontend/src/composition/con
 
 三类所有权边界：`frontend/packages/@sa/*` 是 Soybean 通用基础包，当前 workspace 包不承诺公共 npm 契约；`frontend/src/composition/*` 是稳定装配契约；其余 `frontend/src/*` 是 AINP 内部实现。AppSelect、请求、CodeSet、附件和时间展示仍按对应规范使用，不得复制分叉。
 
+下游 service 必须复用基线的统一请求客户端及其错误展示契约，不得另建 Axios 拦截器或在业务页面补第二个全局 toast。默认 `errorMode=global` 时，页面只处理成功数据或在 `error` 时终止流程；静默降级、表单内联和页面自定义提示分别显式使用 `silent`、`inline`、`custom`，并由调用方独占展示。接管展示时只通过 `getRequestErrorMessage(error, fallback)` 读取后端信封安全文案；原生 `fetch`、下载、SSE 等独立链路使用 `getStandaloneErrorMessage`，任何 UI 都不得直接消费 Axios `error.message`。升级基线时必须运行 `pnpm test:request-error-boundary`。
+
 ## 生命周期与安全边界
 
 `defineAdminApp` 按 ID 排序并校验所有注册。应用、页面、路由、i18n namespace、初始化器与 service 均携带 owner；重复键、未知页面、非法 path、远程品牌资源和非法模块组合立即失败。模块依赖为 `core` 必选、`system -> core`、`operations -> system`、`ai -> core`、`demo -> core`。

@@ -77,6 +77,9 @@ interface ResponseMap {
 }
 export type ResponseType = keyof ResponseMap | 'json';
 
+/** Controls which layer owns presentation of a request failure. */
+export type RequestErrorMode = 'global' | 'silent' | 'inline' | 'custom';
+
 export type MappedType<R extends ResponseType, JsonType = any> = R extends keyof ResponseMap
   ? ResponseMap[R]
   : JsonType;
@@ -84,6 +87,8 @@ export type MappedType<R extends ResponseType, JsonType = any> = R extends keyof
 export type CustomAxiosRequestConfig<R extends ResponseType = 'json'> = Omit<AxiosRequestConfig, 'responseType'> & {
   /** Stable key used by the action middleware for mutation replay protection. */
   idempotencyKey?: string;
+  /** Global toast is the default; other modes explicitly transfer presentation ownership to the caller. */
+  errorMode?: RequestErrorMode;
   responseType?: R;
 };
 

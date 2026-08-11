@@ -5,23 +5,11 @@ import { localStg } from '@/utils/storage';
 import { getServiceBaseURL } from '@/utils/service';
 import { $t } from '@/locales';
 import { getAuthorization, handleExpiredRequest, showErrorMsg } from './shared';
-import type { RequestInstanceState } from './type';
+import { backendMessage, getRequestErrorMessage, shouldShowGlobalRequestError } from './error';
+import type { AinPEnvelope, RequestInstanceState } from './type';
 
 const isHttpProxy = import.meta.env.DEV && import.meta.env.VITE_HTTP_PROXY === 'Y';
 const { baseURL, otherBaseURL } = getServiceBaseURL(import.meta.env, isHttpProxy);
-
-type AinPEnvelope<T = unknown> = {
-  code: number | string;
-  message?: string;
-  msg?: string;
-  message_key?: string;
-  data: T;
-  request_id?: string;
-};
-
-function backendMessage(payload?: AinPEnvelope | null): string {
-  return payload?.message || payload?.msg || '';
-}
 
 /** 读取当前前端语言，返回后端可识别的 Accept-Language 值 */
 function getAcceptLanguage(): string {
@@ -119,26 +107,26 @@ export const request = createFlatRequest(
       const authStore = useAuthStore();
       const axiosError = error as AxiosError<AinPEnvelope>;
       const payload = axiosError.response?.data;
+      const showGlobalError = shouldShowGlobalRequestError(axiosError);
 
       if (axiosError.response?.status === 401) {
         // 权限变更会递增 auth_version，旧 Token 在此失效；必须等登出完成再提示
         void authStore.resetStore().then(() => {
-          showErrorMsg(request.state, backendMessage(payload) || $t('request.logoutMsg'));
+          if (showGlobalError) showErrorMsg(request.state, backendMessage(payload) || $t('request.logoutMsg'));
         });
         return;
       }
 
       if (axiosError.response?.status === 403) {
-        showErrorMsg(request.state, backendMessage(payload) || 'forbidden');
+        if (showGlobalError) showErrorMsg(request.state, backendMessage(payload) || $t('request.failed'));
         return;
       }
 
-      // HTTP 409/其它业务失败走 Axios error 通道时，优先展示信封 message
-      let message = backendMessage(payload) || error.message;
+      // HTTP 409/其它业务失败走 Axios error 通道时，只展示信封 message，不泄露 Axios 技术文案。
+      const message = getRequestErrorMessage(axiosError, $t('request.failed'));
       let backendErrorCode = '';
 
       if (error.code === BACKEND_ERROR_CODE) {
-        message = backendMessage(payload) || message;
         backendErrorCode = String(payload?.code || '');
       } else if (payload && payload.code !== undefined && payload.code !== null) {
         backendErrorCode = String(payload.code);
@@ -147,7 +135,7 @@ export const request = createFlatRequest(
       // Handle idempotency / concurrency specific errors with user-friendly messages
       const concurrencyCodes = ['40001', '40002', '40003', '40004', '40005'];
       if (concurrencyCodes.includes(backendErrorCode) && payload?.message) {
-        showErrorMsg(request.state, payload.message);
+        if (showGlobalError) showErrorMsg(request.state, payload.message);
         return;
       }
 
@@ -161,7 +149,7 @@ export const request = createFlatRequest(
         return;
       }
 
-      showErrorMsg(request.state, message);
+      if (showGlobalError) showErrorMsg(request.state, message);
     }
   }
 );
@@ -186,11 +174,11 @@ export const demoRequest = createRequest(
     },
     async onBackendFail(_response) {},
     onError(error) {
-      let message = error.message;
-      if (error.code === BACKEND_ERROR_CODE) {
-        message = error.response?.data?.message || message;
-      }
-      window.$message?.error(message);
+      if (!shouldShowGlobalRequestError(error)) return;
+      window.$message?.error(getRequestErrorMessage(error, $t('request.failed')));
     }
   }
 );
+
+export { getRequestErrorMessage, getStandaloneErrorMessage, isRequestError } from './error';
+export type { RequestErrorOptions } from './type';

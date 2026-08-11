@@ -8,6 +8,7 @@ import {
   useAttachmentPreview
 } from '@/hooks/business/attachment';
 import { $t } from '@/locales';
+import { getStandaloneErrorMessage } from '@/service/request';
 
 defineOptions({ name: 'AttachmentList' });
 
@@ -50,7 +51,7 @@ async function handleDownload(item: Api.Attachment.Item) {
     const result = await downloadAttachmentById(item.id);
     triggerBrowserDownload(result.blob, result.name);
   } catch (err) {
-    window.$message?.error(err instanceof Error ? err.message : $t('page.attachment.downloadFailed'));
+    window.$message?.error(getStandaloneErrorMessage(err, $t('page.attachment.downloadFailed')));
   } finally {
     actionLoading.value = null;
   }

@@ -16,6 +16,7 @@ import {
   useAttachmentPreview
 } from '@/hooks/business/attachment';
 import { deleteAttachment, fetchAttachment, fetchAttachmentList } from '@/service/api';
+import { getStandaloneErrorMessage } from '@/service/request';
 import { useAuthStore } from '@/store/modules/auth';
 import { pageAfterDelete } from '@/hooks/common/table';
 
@@ -138,7 +139,6 @@ async function loadData() {
       scope: 'all'
     });
     if (error) {
-      window.$message?.error(error.message || $t('page.attachment.loadFailed'));
       records.value = [];
       total.value = 0;
       return;
@@ -154,7 +154,6 @@ async function openDetail(id: string) {
   closePreview();
   const { data, error } = await fetchAttachment(id);
   if (error || !data) {
-    window.$message?.error(error?.message || $t('page.attachment.loadFailed'));
     return;
   }
   detail.value = data;
@@ -172,7 +171,7 @@ async function handleDownload(row: Api.Attachment.Item) {
     const result = await downloadAttachmentById(row.id);
     triggerBrowserDownload(result.blob, result.name);
   } catch (err) {
-    window.$message?.error(err instanceof Error ? err.message : $t('page.attachment.downloadFailed'));
+    window.$message?.error(getStandaloneErrorMessage(err, $t('page.attachment.downloadFailed')));
   }
 }
 
@@ -185,7 +184,6 @@ function handleDelete(row: Api.Attachment.Item) {
     onPositiveClick: async () => {
       const { error } = await deleteAttachment(row.id);
       if (error) {
-        window.$message?.error(error.message || $t('page.attachment.deleteFailed'));
         return;
       }
       query.page = pageAfterDelete(query.page, records.value.length);

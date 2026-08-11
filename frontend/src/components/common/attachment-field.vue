@@ -4,6 +4,7 @@ import type { RegisteredAttachmentResourceType } from '@/constants/attachment';
 import { ATTACHMENT_ACTIONS } from '@/constants/attachment';
 import { useAuth } from '@/hooks/business/auth';
 import { bindAttachment, deleteAttachment, listAttachmentsByResource, unbindAttachment } from '@/service/api';
+import { getRequestErrorMessage } from '@/service/request';
 import { $t } from '@/locales';
 
 defineOptions({ name: 'AttachmentField' });
@@ -53,7 +54,6 @@ async function refresh() {
       field: props.field
     });
     if (error) {
-      window.$message?.error(error.message || $t('page.attachment.loadFailed'));
       return;
     }
     items.value = data?.items || [];
@@ -83,7 +83,6 @@ async function handlePicked(selected: Api.Attachment.Item[]) {
       field: props.field
     });
     if (error) {
-      window.$message?.error(error.message || $t('page.attachment.bindFailed'));
       return;
     }
   }
@@ -106,7 +105,6 @@ async function handleUnbind(item: Api.Attachment.Item) {
     field: props.field
   });
   if (error) {
-    window.$message?.error(error.message || $t('page.attachment.unbindFailed'));
     return;
   }
   await refresh();
@@ -121,7 +119,6 @@ async function handleDelete(item: Api.Attachment.Item) {
       field: props.field
     });
     if (unbindErr) {
-      window.$message?.error(unbindErr.message || $t('page.attachment.unbindFailed'));
       return;
     }
   } else {
@@ -129,7 +126,6 @@ async function handleDelete(item: Api.Attachment.Item) {
   }
   const { error } = await deleteAttachment(item.id);
   if (error) {
-    window.$message?.error(error.message || $t('page.attachment.deleteFailed'));
     await refresh();
     return;
   }
@@ -138,14 +134,17 @@ async function handleDelete(item: Api.Attachment.Item) {
 
 async function bindPending(resourceId: string) {
   for (const item of pending.value) {
-    const { error } = await bindAttachment({
-      attachment_id: item.id,
-      resource_type: props.resourceType,
-      resource_id: resourceId,
-      field: props.field
-    });
+    const { error } = await bindAttachment(
+      {
+        attachment_id: item.id,
+        resource_type: props.resourceType,
+        resource_id: resourceId,
+        field: props.field
+      },
+      { errorMode: 'custom' }
+    );
     if (error) {
-      throw new Error(error.message || 'bind_pending_failed');
+      throw new Error(getRequestErrorMessage(error, $t('page.attachment.bindFailed')));
     }
   }
   pending.value = [];

@@ -123,7 +123,6 @@ async function saveBasic() {
         field: 'avatar'
       });
       if (link.error) {
-        window.$message?.error(link.error.message || '头像关联失败');
         return;
       }
     }

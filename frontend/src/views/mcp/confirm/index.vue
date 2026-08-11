@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { decideMCPConfirmation, fetchMCPConfirmation } from '@/service/api';
 import { localStg } from '@/utils/storage';
 import { formatDateTime } from '@/utils/datetime';
+import { getStandaloneErrorMessage } from '@/service/request';
 
 defineOptions({ name: 'MCPConfirm' });
 
@@ -21,7 +22,11 @@ async function load() {
   }
   if (!token.value) throw new Error('确认链接无效');
   const { data, error } = await fetchMCPConfirmation(token.value);
-  if (error || !data) throw new Error('确认请求不存在或已失效');
+  if (error) {
+    loading.value = false;
+    return;
+  }
+  if (!data) throw new Error('确认请求不存在或已失效');
   confirmation.value = data;
   loading.value = false;
 }
@@ -43,7 +48,7 @@ onMounted(
   () =>
     void load().catch(error => {
       loading.value = false;
-      window.$message?.error(error instanceof Error ? error.message : '无法读取确认请求');
+      window.$message?.error(getStandaloneErrorMessage(error, '无法读取确认请求'));
     })
 );
 </script>

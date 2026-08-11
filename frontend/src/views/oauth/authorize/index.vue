@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { localStg } from '@/utils/storage';
 import { buildServiceURL, getServiceBaseURL } from '@/utils/service';
+import { getStandaloneErrorMessage } from '@/service/request';
 
 defineOptions({ name: 'OAuthAuthorize' });
 
@@ -102,7 +103,7 @@ onMounted(
   () =>
     void loadAuthorization().catch(error => {
       loading.value = false;
-      window.$message?.error(error instanceof Error ? error.message : '无法读取授权请求');
+      window.$message?.error(getStandaloneErrorMessage(error, '无法读取授权请求'));
     })
 );
 </script>

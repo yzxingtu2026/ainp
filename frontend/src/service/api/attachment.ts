@@ -1,4 +1,5 @@
 import { request } from '../request';
+import type { RequestErrorOptions } from '../request';
 
 const ATTACHMENT_API = {
   uploadPrepare: '/api/v1/system/attachments/upload/prepare',
@@ -12,36 +13,47 @@ const ATTACHMENT_API = {
   policy: '/api/v1/system/attachments/policy'
 } as const;
 
-export function prepareAttachmentUpload(payload: {
-  original_name: string;
-  content_type: string;
-  size: number;
-  transport?: Api.Attachment.UploadTransport;
-}) {
+export function prepareAttachmentUpload(
+  payload: {
+    original_name: string;
+    content_type: string;
+    size: number;
+    transport?: Api.Attachment.UploadTransport;
+  },
+  options?: RequestErrorOptions
+) {
   return request<Api.Attachment.TransferPrepare>({
     url: ATTACHMENT_API.uploadPrepare,
     method: 'post',
-    data: payload
+    data: payload,
+    errorMode: options?.errorMode
   });
 }
 
-export function prepareAttachmentDownload(id: string, options?: { variant?: Api.Attachment.DownloadVariant }) {
+export function prepareAttachmentDownload(
+  id: string,
+  options?: { variant?: Api.Attachment.DownloadVariant } & RequestErrorOptions
+) {
   return request<Api.Attachment.TransferPrepare>({
     url: ATTACHMENT_API.downloadPrepare,
     method: 'post',
     data: {
       id,
       variant: options?.variant || 'original'
-    }
+    },
+    errorMode: options?.errorMode
   });
 }
 
-export function bindAttachment(payload: {
-  attachment_id: string;
-  resource_type: string;
-  resource_id: string;
-  field?: string;
-}) {
+export function bindAttachment(
+  payload: {
+    attachment_id: string;
+    resource_type: string;
+    resource_id: string;
+    field?: string;
+  },
+  options?: RequestErrorOptions
+) {
   return request<Api.Attachment.BindResult>({
     url: ATTACHMENT_API.bind,
     method: 'post',
@@ -50,7 +62,8 @@ export function bindAttachment(payload: {
       resource_type: payload.resource_type,
       resource_id: payload.resource_id,
       field: payload.field || ''
-    }
+    },
+    errorMode: options?.errorMode
   });
 }
 
@@ -116,10 +129,11 @@ export function fetchAttachment(id: string) {
   });
 }
 
-export function fetchAttachmentPolicy() {
+export function fetchAttachmentPolicy(options?: RequestErrorOptions) {
   return request<Api.Attachment.UploadPolicy>({
     url: ATTACHMENT_API.policy,
     method: 'post',
-    data: {}
+    data: {},
+    errorMode: options?.errorMode
   });
 }
