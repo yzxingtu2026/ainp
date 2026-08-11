@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
-import { request } from '@/service/request';
+import { getRequestErrorMessage, request } from '@/service/request';
 import { useAuth } from '@/hooks/business/auth';
 import { localStg } from '@/utils/storage';
 
@@ -19,10 +19,11 @@ async function callHello() {
     const { data, error: err } = await request<{ message: string; tenant_id: string; user_id: string }>({
       url: '/api/v1/demo/hello',
       method: 'post',
-      data: { name: 'AINP' }
+      data: { name: 'AINP' },
+      errorMode: 'inline'
     });
     if (err) {
-      error.value = err.message || 'request failed';
+      error.value = getRequestErrorMessage(err, 'request failed');
     } else if (data) {
       message.value = `${data.message} (tenant=${data.tenant_id}, user=${data.user_id})`;
     }

@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue';
 import { $t } from '@/locales';
 import { fetchSetupCheckEnv } from '@/service/api';
+import { getRequestErrorMessage } from '@/service/request';
 
 interface Props {
   bgThemeColor: string;
@@ -24,13 +25,13 @@ async function checkEnv() {
   try {
     const res = await fetchSetupCheckEnv();
     if (res.error || !res.data) {
-      error.value = res.error?.message || 'Failed to check environment';
+      error.value = getRequestErrorMessage(res.error, $t('request.failed'));
       return;
     }
     envData.value = res.data;
     emit('checked', res.data);
-  } catch (e: any) {
-    error.value = e.message;
+  } catch {
+    error.value = $t('request.failed');
   } finally {
     loading.value = false;
   }

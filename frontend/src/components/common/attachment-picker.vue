@@ -98,7 +98,7 @@ async function loadPolicy() {
   policyLoading.value = true;
   policyLoadFailed.value = false;
   try {
-    const { data, error } = await fetchAttachmentPolicy();
+    const { data, error } = await fetchAttachmentPolicy({ errorMode: 'inline' });
     if (error || !data) {
       policy.value = null;
       policyLoadFailed.value = true;
@@ -142,7 +142,6 @@ async function loadMine(options?: { reset?: boolean }) {
       status: 'ready'
     });
     if (error) {
-      window.$message?.error(error.message || $t('page.attachment.loadFailed'));
       return;
     }
     const next = data?.items || [];

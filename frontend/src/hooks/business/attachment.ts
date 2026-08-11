@@ -1,6 +1,8 @@
 import { computed, onBeforeUnmount, reactive, ref, watch, type Ref } from 'vue';
 import { prepareAttachmentDownload } from '@/service/api';
 import { getAttachmentTransferBlob } from '@/service/attachment/transfer';
+import { $t } from '@/locales';
+import { getRequestErrorMessage, getStandaloneErrorMessage } from '@/service/request';
 
 export type AttachmentDownloadVariant = Api.Attachment.DownloadVariant;
 
@@ -10,9 +12,9 @@ export async function downloadAttachmentById(
   options?: { variant?: AttachmentDownloadVariant; signal?: AbortSignal }
 ): Promise<{ blob: Blob; name: string; contentType: string; variant: AttachmentDownloadVariant }> {
   const variant = options?.variant || 'original';
-  const { data, error } = await prepareAttachmentDownload(id, { variant });
+  const { data, error } = await prepareAttachmentDownload(id, { variant, errorMode: 'custom' });
   if (error || !data) {
-    throw new Error(error?.message || 'download_prepare_failed');
+    throw new Error(getRequestErrorMessage(error, $t('page.attachment.downloadFailed')));
   }
   const transferToken = data.token;
   const downloadUrl = data.download_url || `/api/v1/attachments/transfer/${data.attachment.id}`;
@@ -82,7 +84,7 @@ export function useAttachmentPreview() {
       previewName.value = result.name;
       previewType.value = result.contentType;
     } catch (err) {
-      error.value = err instanceof Error ? err.message : 'preview_failed';
+      error.value = getStandaloneErrorMessage(err, $t('page.attachment.downloadFailed'));
     } finally {
       loading.value = false;
       abort = null;

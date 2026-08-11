@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue';
 import { $t } from '@/locales';
 import { fetchSetupTestRedis } from '@/service/api';
+import { getRequestErrorMessage } from '@/service/request';
 
 const props = defineProps<{ defaultAddr: string }>();
 const emit = defineEmits<{
@@ -22,7 +23,10 @@ async function testRedis() {
   testing.value = true;
   testResult.value = null;
   const res = await fetchSetupTestRedis(addr.value, db.value);
-  testResult.value = res.data || { ok: false, error: res.error?.message || $t('page.setup.redisConnectFail') };
+  testResult.value = res.data || {
+    ok: false,
+    error: getRequestErrorMessage(res.error, $t('page.setup.redisConnectFail'))
+  };
   testing.value = false;
 }
 

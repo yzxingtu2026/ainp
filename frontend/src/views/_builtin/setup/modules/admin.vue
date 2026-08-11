@@ -2,6 +2,7 @@
 import { ref } from 'vue';
 import { $t } from '@/locales';
 import { fetchSetupInitialize } from '@/service/api';
+import { getRequestErrorMessage } from '@/service/request';
 import { resetSetupCache } from '@/router/guard/route';
 
 interface Props {
@@ -50,14 +51,14 @@ async function handleSubmit() {
       embedded_worker: props.redisOptions.embedded_worker
     });
     if (res.error || !res.data) {
-      error.value = res.error?.message || 'Initialization failed';
+      error.value = getRequestErrorMessage(res.error, $t('request.failed'));
       return;
     }
     emit('initialized', res.data);
     resetSetupCache();
     emit('next');
-  } catch (e: any) {
-    error.value = e.message;
+  } catch {
+    error.value = $t('request.failed');
   } finally {
     submitting.value = false;
   }

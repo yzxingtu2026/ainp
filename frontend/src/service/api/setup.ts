@@ -10,7 +10,8 @@ export function fetchSetupStatus() {
 /** 环境检查 */
 export function fetchSetupCheckEnv() {
   return request<Api.Setup.CheckEnv>({
-    url: '/api/v1/setup/check-env'
+    url: '/api/v1/setup/check-env',
+    errorMode: 'inline'
   });
 }
 
@@ -19,7 +20,8 @@ export function fetchSetupTestDB(dsn?: string) {
   return request<Api.Setup.TestDBResult>({
     url: '/api/v1/setup/test-db',
     method: 'post',
-    data: { dsn: dsn || '' }
+    data: { dsn: dsn || '' },
+    errorMode: 'inline'
   });
 }
 
@@ -28,7 +30,8 @@ export function fetchSetupTestRedis(addr: string, db: number) {
   return request<Api.Setup.TestDBResult>({
     url: '/api/v1/setup/test-redis',
     method: 'post',
-    data: { addr, db }
+    data: { addr, db },
+    errorMode: 'inline'
   });
 }
 
@@ -37,6 +40,7 @@ export function fetchSetupInitialize(params: Api.Setup.InitParams) {
   return request<Api.Setup.InitResult>({
     url: '/api/v1/setup/initialize',
     method: 'post',
-    data: params
+    data: params,
+    errorMode: 'inline'
   });
 }

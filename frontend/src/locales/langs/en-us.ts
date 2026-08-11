@@ -54,6 +54,7 @@ const local: App.I18n.Schema = {
     }
   },
   request: {
+    failed: 'Request failed. Please try again later.',
     logout: 'Logout user after request failed',
     logoutMsg: 'User status is invalid, please log in again',
     logoutWithModal: 'Pop up modal after request failed and then log out user',

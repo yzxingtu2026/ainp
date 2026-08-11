@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue';
 import { $t } from '@/locales';
 import { fetchSetupTestDB } from '@/service/api';
+import { getRequestErrorMessage } from '@/service/request';
 
 interface Props {
   envData: Api.Setup.CheckEnv | null;
@@ -47,15 +48,15 @@ async function testDB() {
     const dsn = dsnFromEnv.value ? undefined : buildDSN();
     const res = await fetchSetupTestDB(dsn);
     if (res.error || !res.data) {
-      testResult.value = { ok: false, error: res.error?.message || 'Request failed' };
+      testResult.value = { ok: false, error: getRequestErrorMessage(res.error, $t('request.failed')) };
       return;
     }
     testResult.value = res.data;
     if (res.data.ok) {
       emit('dsn-ready', dsn || '');
     }
-  } catch (e: any) {
-    testResult.value = { ok: false, error: e.message };
+  } catch {
+    testResult.value = { ok: false, error: $t('request.failed') };
   } finally {
     testing.value = false;
   }

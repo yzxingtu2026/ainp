@@ -3,6 +3,8 @@ import type { MaybeRefOrGetter } from 'vue';
 import { DEFAULT_ATTACHMENT_UPLOAD_POLICY, type AttachmentUploadItemStatus } from '@/constants/attachment';
 import { prepareAttachmentUpload } from '@/service/api';
 import { putAttachmentTransfer } from '@/service/attachment/transfer';
+import { $t } from '@/locales';
+import { getRequestErrorMessage, getStandaloneErrorMessage } from '@/service/request';
 
 export interface AttachmentQueueItem {
   localId: string;
@@ -94,18 +96,21 @@ export function useAttachmentUploadQueue(options: UseAttachmentUploadQueueOption
     const controller = new AbortController();
     item.abortController = controller;
     try {
-      const { data, error } = await prepareAttachmentUpload({
-        original_name: item.file.name,
-        content_type: item.file.type || 'application/octet-stream',
-        size: item.file.size
-      });
+      const { data, error } = await prepareAttachmentUpload(
+        {
+          original_name: item.file.name,
+          content_type: item.file.type || 'application/octet-stream',
+          size: item.file.size
+        },
+        { errorMode: 'inline' }
+      );
       if (controller.signal.aborted) {
         item.status = 'cancelled';
         return;
       }
       if (error || !data) {
         item.status = 'failed';
-        item.error = error?.message || 'prepare_failed';
+        item.error = getRequestErrorMessage(error, $t('request.failed'));
         return;
       }
       // 一次性 token：仅内存持有，不落盘、不打印
@@ -141,7 +146,7 @@ export function useAttachmentUploadQueue(options: UseAttachmentUploadQueueOption
         return;
       }
       item.status = 'failed';
-      item.error = err instanceof Error ? err.message : 'upload_failed';
+      item.error = getStandaloneErrorMessage(err, $t('request.failed'));
     } finally {
       item.abortController = null;
     }

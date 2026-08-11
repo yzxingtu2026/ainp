@@ -366,6 +366,7 @@ declare namespace App {
         };
       };
       request: {
+        failed: string;
         logout: string;
         logoutMsg: string;
         logoutWithModal: string;

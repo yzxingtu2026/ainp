@@ -12,6 +12,7 @@ import {
   startAIAgentRun
 } from '@/service/api';
 import { agentRunEventDelta, subscribeAgentRun } from '@/service/ai-run-stream';
+import { getStandaloneErrorMessage, isRequestError } from '@/service/request';
 
 export type BuilderPreviewStatus =
   | 'idle'
@@ -383,7 +384,9 @@ export function useBuilderPreview(options: {
       }
     } catch (cause) {
       status.value = 'failed';
-      error.value = cause instanceof Error ? cause.message : $t('page.agentBuilder.previewFailed');
+      if (!isRequestError(cause)) {
+        error.value = getStandaloneErrorMessage(cause, $t('page.agentBuilder.previewFailed'));
+      }
       clearStreaming();
     } finally {
       busy.value = false;
@@ -399,7 +402,7 @@ export function useBuilderPreview(options: {
       await watchRun(run.value.id);
     } catch (cause) {
       status.value = 'failed';
-      error.value = cause instanceof Error ? cause.message : $t('page.agentBuilder.previewFailed');
+      error.value = getStandaloneErrorMessage(cause, $t('page.agentBuilder.previewFailed'));
     } finally {
       busy.value = false;
     }

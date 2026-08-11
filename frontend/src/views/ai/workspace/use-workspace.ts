@@ -17,6 +17,7 @@ import {
 import { agentRunEventDelta, subscribeAgentRun } from '@/service/ai-run-stream';
 import { $t } from '@/locales';
 import { capturePageContext } from '@/composables/page-context';
+import { getStandaloneErrorMessage, isRequestError } from '@/service/request';
 import { createLatestRequestGate, loadAllCursorPages } from './modules/message-sync';
 
 export type WorkspaceStatus =
@@ -259,7 +260,7 @@ function createAiConversationController() {
     } catch (cause) {
       if (cause instanceof DOMException && cause.name === 'AbortError') return;
       status.value = 'reconnecting';
-      error.value = cause instanceof Error ? cause.message : $t('page.aiWorkspace.reconnectFallback');
+      error.value = getStandaloneErrorMessage(cause, $t('page.aiWorkspace.reconnectFallback'));
     } finally {
       stopPolling();
     }
@@ -375,7 +376,9 @@ function createAiConversationController() {
       await watchRun(started.id);
     } catch (cause) {
       status.value = 'failed';
-      error.value = cause instanceof Error ? cause.message : $t('page.aiWorkspace.unavailableGeneric');
+      if (!isRequestError(cause)) {
+        error.value = getStandaloneErrorMessage(cause, $t('page.aiWorkspace.unavailableGeneric'));
+      }
     } finally {
       busy.value = false;
     }
