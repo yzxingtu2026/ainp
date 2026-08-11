@@ -73,10 +73,16 @@ func TestAttachmentUploadBindDownloadRangeAndIsolation(t *testing.T) {
 
 	application := app.New(&config.Config{}, testDB, nil, nil)
 	attachStorage(t, application)
+	const resourceReadPermission = "demo.task.attachment_read"
 	denied := 0
+	policyChecks := 0
 	if err := application.AttachmentPolicies.Register(attachment.FuncPolicy{
 		Type: "demo.task",
-		Fn: func(_ context.Context, _, userID, resourceID, _ string) error {
+		Fn: func(ctx context.Context, _, userID, resourceID, _ string) error {
+			policyChecks++
+			if !auth.MustFromContext(ctx).HasPermission(resourceReadPermission) {
+				return fmt.Errorf("missing resource permission")
+			}
 			if resourceID == "task-deny" {
 				denied++
 				return fmt.Errorf("denied")
@@ -97,7 +103,7 @@ func TestAttachmentUploadBindDownloadRangeAndIsolation(t *testing.T) {
 	perms := []string{
 		system.ActionAttachmentUploadPrepare, system.ActionAttachmentDownloadPrepare,
 		system.ActionAttachmentBind, system.ActionAttachmentUnbind,
-		system.ActionAttachmentListByResource, system.ActionAttachmentDelete,
+		system.ActionAttachmentListByResource, system.ActionAttachmentDelete, resourceReadPermission,
 	}
 	ctxA := auth.WithContext(context.Background(), &auth.Context{
 		TenantID: "tenant-a", PrincipalID: "user-a", Realm: auth.RealmTenant, Authenticated: true, Permissions: perms,
@@ -107,6 +113,10 @@ func TestAttachmentUploadBindDownloadRangeAndIsolation(t *testing.T) {
 	})
 	ctxB := auth.WithContext(context.Background(), &auth.Context{
 		TenantID: "tenant-b", PrincipalID: "user-b", Realm: auth.RealmTenant, Authenticated: true, Permissions: perms,
+	})
+	ctxA2WithoutResourcePermission := auth.WithContext(context.Background(), &auth.Context{
+		TenantID: "tenant-a", PrincipalID: "user-a2", Realm: auth.RealmTenant, Authenticated: true,
+		Permissions: []string{system.ActionAttachmentDownloadPrepare},
 	})
 
 	payload := []byte("hello-attachment-range-0123456789")
@@ -120,6 +130,9 @@ func TestAttachmentUploadBindDownloadRangeAndIsolation(t *testing.T) {
 	if prep.Attachment.Status != string(status.AttachmentPending) || prep.Token == "" || prep.UploadURL == "" || prep.Method != http.MethodPut || prep.Transport != attachment.TransferTransportRaw || prep.FieldName != "" {
 		t.Fatalf("prepare = %#v", prep)
 	}
+	if _, err := svc.DownloadPrepare(ctxA, json.RawMessage(fmt.Sprintf(`{"id":%q}`, prep.Attachment.ID))); appErrorCode(err) != errs.CodeNotFound {
+		t.Fatalf("pending attachment download prepare err=%v", err)
+	}
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
@@ -132,6 +145,9 @@ func TestAttachmentUploadBindDownloadRangeAndIsolation(t *testing.T) {
 	router.ServeHTTP(uploadResp, uploadReq)
 	if code := envelopeCode(uploadResp.Body.Bytes()); code != 0 {
 		t.Fatalf("upload status=%d code=%d body=%s", uploadResp.Code, code, uploadResp.Body.String())
+	}
+	if _, err := svc.DownloadPrepare(ctxA, json.RawMessage(fmt.Sprintf(`{"id":%q}`, prep.Attachment.ID))); err != nil {
+		t.Fatalf("unbound uploader download prepare err=%v", err)
 	}
 
 	// upload token one-shot / not pending after success
@@ -182,12 +198,76 @@ func TestAttachmentUploadBindDownloadRangeAndIsolation(t *testing.T) {
 	if _, err := svc.DownloadPrepare(ctxB, json.RawMessage(fmt.Sprintf(`{"id":%q}`, prep.Attachment.ID))); appErrorCode(err) != errs.CodeNotFound {
 		t.Fatalf("cross-tenant download prepare err=%v", err)
 	}
+	if _, err := svc.DownloadPrepare(ctxA2WithoutResourcePermission, json.RawMessage(fmt.Sprintf(`{"id":%q}`, prep.Attachment.ID))); appErrorCode(err) != errs.CodeForbidden {
+		t.Fatalf("permission policy must reject download prepare, err=%v", err)
+	}
 
+	checksBeforePrepare := policyChecks
 	downPrepRaw, err := svc.DownloadPrepare(ctxA2, json.RawMessage(fmt.Sprintf(`{"id":%q}`, prep.Attachment.ID)))
 	if err != nil {
 		t.Fatal(err)
 	}
 	downPrep := downPrepRaw.(system.TransferPrepareView)
+	if policyChecks != checksBeforePrepare+1 {
+		t.Fatalf("download prepare policy checks=%d want=%d", policyChecks, checksBeforePrepare+1)
+	}
+	checksAfterPrepare := policyChecks
+
+	for _, invalid := range []struct {
+		name       string
+		path       string
+		input      attachment.IssueTransferInput
+		wantStatus int
+		wantCode   int
+	}{
+		{
+			name: "cross tenant", path: downPrep.DownloadURL,
+			input:      attachment.IssueTransferInput{TenantID: "tenant-b", PrincipalID: "user-b", AttachmentID: prep.Attachment.ID, Op: attachment.OpDownload, Variant: "original", Size: int64(len(payload)), TTL: time.Minute},
+			wantStatus: http.StatusOK, wantCode: errs.CodeNotFound,
+		},
+		{
+			name: "operation mismatch", path: downPrep.DownloadURL,
+			input:      attachment.IssueTransferInput{TenantID: "tenant-a", PrincipalID: "user-a2", AttachmentID: prep.Attachment.ID, Op: attachment.OpUpload, Size: int64(len(payload)), TTL: time.Minute},
+			wantStatus: http.StatusForbidden, wantCode: errs.CodeForbidden,
+		},
+		{
+			name: "size mismatch", path: downPrep.DownloadURL,
+			input:      attachment.IssueTransferInput{TenantID: "tenant-a", PrincipalID: "user-a2", AttachmentID: prep.Attachment.ID, Op: attachment.OpDownload, Variant: "original", Size: int64(len(payload) + 1), TTL: time.Minute},
+			wantStatus: http.StatusForbidden, wantCode: errs.CodeForbidden,
+		},
+		{
+			name: "attachment id mismatch", path: "/api/v1/attachments/transfer/other-attachment",
+			input:      attachment.IssueTransferInput{TenantID: "tenant-a", PrincipalID: "user-a2", AttachmentID: prep.Attachment.ID, Op: attachment.OpDownload, Variant: "original", Size: int64(len(payload)), TTL: time.Minute},
+			wantStatus: http.StatusForbidden, wantCode: errs.CodeForbidden,
+		},
+	} {
+		t.Run("download token "+invalid.name, func(t *testing.T) {
+			token, _, _, issueErr := application.TransferTokens.Issue(invalid.input)
+			if issueErr != nil {
+				t.Fatal(issueErr)
+			}
+			req := httptest.NewRequest(http.MethodGet, invalid.path, nil)
+			req.Header.Set("Authorization", "Bearer "+token)
+			resp := httptest.NewRecorder()
+			router.ServeHTTP(resp, req)
+			if resp.Code != invalid.wantStatus {
+				t.Fatalf("status=%d want=%d body=%s", resp.Code, invalid.wantStatus, resp.Body.String())
+			}
+			if code := envelopeCode(resp.Body.Bytes()); code != invalid.wantCode {
+				t.Fatalf("code=%d want=%d body=%s", code, invalid.wantCode, resp.Body.String())
+			}
+		})
+	}
+	tamperedReq := httptest.NewRequest(http.MethodGet, downPrep.DownloadURL, nil)
+	tamperedReq.Header.Set("Authorization", "Bearer "+downPrep.Token+"x")
+	tamperedResp := httptest.NewRecorder()
+	router.ServeHTTP(tamperedResp, tamperedReq)
+	if tamperedResp.Code != http.StatusUnauthorized {
+		t.Fatalf("tampered token status=%d body=%s", tamperedResp.Code, tamperedResp.Body.String())
+	}
+	if policyChecks != checksAfterPrepare {
+		t.Fatalf("invalid transfer repeated resource access policy: checks=%d want=%d", policyChecks, checksAfterPrepare)
+	}
 
 	headReq := httptest.NewRequest(http.MethodHead, downPrep.DownloadURL+"?token="+downPrep.Token, nil)
 	headResp := httptest.NewRecorder()
@@ -223,6 +303,9 @@ func TestAttachmentUploadBindDownloadRangeAndIsolation(t *testing.T) {
 	if fullResp.Code != http.StatusOK || !bytes.Equal(body, payload) {
 		t.Fatalf("full download status=%d body=%q", fullResp.Code, body)
 	}
+	if policyChecks != checksAfterPrepare {
+		t.Fatalf("transfer repeated resource access policy: checks=%d want=%d", policyChecks, checksAfterPrepare)
+	}
 
 	if _, err := svc.Delete(ctxA, json.RawMessage(fmt.Sprintf(`{"id":%q}`, prep.Attachment.ID))); err == nil {
 		t.Fatal("expected delete blocked while linked")
@@ -232,8 +315,41 @@ func TestAttachmentUploadBindDownloadRangeAndIsolation(t *testing.T) {
 	))); err != nil {
 		t.Fatal(err)
 	}
+	checksAfterUnbind := policyChecks
+	unboundReq := httptest.NewRequest(http.MethodGet, downPrep.DownloadURL, nil)
+	unboundReq.Header.Set("Authorization", "Bearer "+downPrep.Token)
+	unboundResp := httptest.NewRecorder()
+	router.ServeHTTP(unboundResp, unboundReq)
+	if unboundResp.Code != http.StatusOK || !bytes.Equal(unboundResp.Body.Bytes(), payload) {
+		t.Fatalf("prepared token must remain valid after unbind: status=%d body=%q", unboundResp.Code, unboundResp.Body.Bytes())
+	}
+	if policyChecks != checksAfterUnbind {
+		t.Fatalf("unbound transfer repeated resource access policy: checks=%d want=%d", policyChecks, checksAfterUnbind)
+	}
+
+	guardedDB := tenant.GuardedDB(testDB).WithContext(ctxA)
+	if err := guardedDB.Model(&model.Attachment{}).Where("id = ?", prep.Attachment.ID).Update("status", status.AttachmentDeleting).Error; err != nil {
+		t.Fatal(err)
+	}
+	deletingReq := httptest.NewRequest(http.MethodGet, downPrep.DownloadURL, nil)
+	deletingReq.Header.Set("Authorization", "Bearer "+downPrep.Token)
+	deletingResp := httptest.NewRecorder()
+	router.ServeHTTP(deletingResp, deletingReq)
+	if code := envelopeCode(deletingResp.Body.Bytes()); code != errs.CodeNotFound {
+		t.Fatalf("deleting attachment was transferred: status=%d body=%s", deletingResp.Code, deletingResp.Body.String())
+	}
+	if err := guardedDB.Model(&model.Attachment{}).Where("id = ?", prep.Attachment.ID).Update("status", status.AttachmentReady).Error; err != nil {
+		t.Fatal(err)
+	}
 	if _, err := svc.Delete(ctxA, json.RawMessage(fmt.Sprintf(`{"id":%q}`, prep.Attachment.ID))); err != nil {
 		t.Fatal(err)
+	}
+	deletedReq := httptest.NewRequest(http.MethodGet, downPrep.DownloadURL, nil)
+	deletedReq.Header.Set("Authorization", "Bearer "+downPrep.Token)
+	deletedResp := httptest.NewRecorder()
+	router.ServeHTTP(deletedResp, deletedReq)
+	if code := envelopeCode(deletedResp.Body.Bytes()); code != errs.CodeNotFound {
+		t.Fatalf("deleted attachment was transferred: status=%d body=%s", deletedResp.Code, deletedResp.Body.String())
 	}
 	if _, err := svc.DownloadPrepare(ctxA, json.RawMessage(fmt.Sprintf(`{"id":%q}`, prep.Attachment.ID))); appErrorCode(err) != errs.CodeNotFound {
 		t.Fatalf("deleted download prepare err=%v", err)

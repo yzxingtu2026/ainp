@@ -331,15 +331,12 @@ func handleAttachmentDownload(c *gin.Context, svc *AttachmentService) {
 }
 
 func writeAttachmentRange(c *gin.Context, svc *AttachmentService, ctx context.Context, claims *attachment.TransferClaims, rangeHeader string) {
-	rcFull, att, err := svc.OpenDownload(ctx, claims)
-	if err != nil {
-		response.Fail(c, err)
-		return
-	}
-	_ = rcFull.Close()
-	offset, length, ok := parseBytesRange(rangeHeader, att.Size)
+	// DownloadPrepare signs the selected variant size. Parse the range from that
+	// immutable claim so the transfer opens the object only once; the service
+	// still compares it with current metadata before returning any bytes.
+	offset, length, ok := parseBytesRange(rangeHeader, claims.Size)
 	if !ok {
-		c.Header("Content-Range", "bytes */"+strconv.FormatInt(att.Size, 10))
+		c.Header("Content-Range", "bytes */"+strconv.FormatInt(claims.Size, 10))
 		c.Status(http.StatusRequestedRangeNotSatisfiable)
 		return
 	}

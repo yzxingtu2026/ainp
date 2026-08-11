@@ -5,6 +5,7 @@
 - multipart Adapter 只接受唯一 `file` Part，使用流式 `multipart.Reader` 并限制 Body/元数据/Header；禁止 `ParseMultipartForm`、全量内存/临时文件、普通字段、嵌套 multipart、Content-Transfer-Encoding，以及信任 filename/Part MIME。
 - 上传失败/取消后 Token 不可重放，附件进入 failed 或按 expires_at 清理；小程序失败必须重新 prepare。日志禁止 Token、Header/表单值、文件名、内容、object key 和底层错误全文。
 - `resource_type` 必须注册 AccessPolicy；未注册默认拒绝。
+- 下载资源 AccessPolicy 只在 `attachment_download_prepare` 使用真实 AuthContext 执行；签发后的短时 download token 在 TTL 内授权 transfer，禁止复制 Permissions 或在 transfer 重跑资源策略。transfer 仍须校验 token claims、附件当前 `ready` 状态和对应 variant 对象。
 - 账号头像使用 `system.account_profile` / `avatar`，只允许当前 AuthContext 主体绑定、读取和解绑自己的 ready 图片；账号表只保存 attachment ID。
 - 上传策略经设置 `attachment.upload_policy` + PolicyProvider；业务入口用选择器，附件中心为管理页。
 - Picker / 对话只调用 authenticated `system.attachment_mine_list` 查询本人附件；租户附件中心继续使用权限型 `system.attachment_list`，禁止为自助选择器开放管理列表。
