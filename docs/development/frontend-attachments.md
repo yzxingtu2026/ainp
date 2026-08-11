@@ -95,11 +95,13 @@ AI Builder 的预览消息复用 `AttachmentPicker` 与上传队列，但不伪�
 | MIME / 状态 | 预览方式 | 说明 |
 |-------------|----------|------|
 | ready `image/*` | 原生 `img` | Blob Object URL，保持比例自适应 |
-| ready `application/pdf` | 沙箱化原生 PDF iframe | 不解析、不批注、不保证所有浏览器内置 PDF 能力一致 |
+| ready `application/pdf` | 原生 PDF iframe | 不解析、不批注；Chrome 兼容要求见下文 |
 | ready `video/*` | 原生 `video` | Blob 全量下载后播放，不支持 Range、自适应码率或转码 |
 | 非 ready / 其他 MIME | 不预览 | fail-closed，不调用 download prepare/transfer；仍可按权限显式下载 |
 
 预览通过 `useAttachmentPreview()` 串联详情、download prepare 和 transfer，取消信号贯穿三段。打开新附件前、关闭和卸载时都必须中止当前请求并 `revokeObjectURL`；请求版本隔离保证旧请求完成后不能覆盖新附件。新窗口只打开当前 Blob URL，并使用 `noopener,noreferrer`。
+
+Chrome 原生 PDF Viewer 无法在 sandbox iframe 中运行，会显示“此页面已被 Chrome 屏蔽”；`allow-same-origin` 也不能解除该限制。因此统一组件的 PDF iframe **禁止设置 `sandbox`**，并必须保留 `referrerpolicy="no-referrer"`。这不是放宽附件来源：iframe 的 `src` 只能是组件在附件状态为 ready、MIME 精确等于 `application/pdf`、大小未超限后，经鉴权 prepare/transfer 创建的内存 Blob URL；业务 URL、Provider URL、object key 与长期 token 仍不能进入组件。若后续安全策略要求 iframe 必须 sandbox，则不得继续依赖浏览器原生 Viewer，应另行引入 PDF.js 等受控渲染方案。
 
 Blob 预览需要先完整下载到浏览器内存，统一上限为 **50 MiB**。超过上限时不调用 preview prepare/transfer，界面明确显示文件大小和上限，仅保留显式下载，不宣称流式播放。视频 Range 与短时流式 URL 由 #256 另行建设；在该能力交付前，大视频统一降级为下载。
 

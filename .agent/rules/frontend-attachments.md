@@ -11,6 +11,7 @@
 - Picker 与 AI Composer 必须复用 `useAttachmentThumbStatusPolling`：仅在调用方可见且存在 pending 图/视缩略图时短间隔批量轮询当前用户已加载范围并按 ID 合并；全部完成、隐藏或卸载必须停止，不得重置选择、草稿和滚动位置。
 - 图片、PDF、视频预览必须复用 `AttachmentPreview`，业务页禁止自建 MIME/`img`/`iframe`/`video` 分支或直接预览 Provider URL；组件只接收 attachment ID/标准 Item。
 - 预览仅允许 `ready` 的 `image/*`、精确 `application/pdf`、`video/*`；其他状态/类型 fail-closed。Blob 全量预览上限 50 MiB，超限只提示下载；切换、关闭、卸载必须取消请求并回收 Object URL。
+- Chrome 原生 PDF Viewer 不兼容 sandbox iframe；PDF iframe 禁止 `sandbox`，必须保留 `referrerpolicy="no-referrer"`，且 `src` 只能是组件内部校验后创建的 Blob URL。若必须 sandbox，应另用 PDF.js 等受控渲染器。
 - 变更同步 `docs/development/frontend-attachments.md` 并 `agent-rules sync`。
 
 详规：`docs/development/frontend-attachments.md`

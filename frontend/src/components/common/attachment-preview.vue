@@ -128,7 +128,6 @@ async function download() {
         :src="preview.objectUrl.value || ''"
         :title="preview.previewName.value"
         class="h-[75vh] min-h-480px w-full border-0"
-        sandbox=""
         referrerpolicy="no-referrer"
       />
       <video
