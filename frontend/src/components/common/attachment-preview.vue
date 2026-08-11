@@ -105,12 +105,6 @@ async function download() {
           :disabled="!attachmentId"
           @click="download"
         />
-        <ButtonIcon
-          icon="mdi:close"
-          :tooltip-content="$t('common.close')"
-          :aria-label="$t('common.close')"
-          @click="close"
-        />
       </div>
     </template>
 

@@ -20,6 +20,7 @@ export function findAttachmentPreviewViolations(root = DEFAULT_ROOT) {
   }
   if (!component.includes('useAttachmentPreview')) violations.push('AttachmentPreview 必须复用 useAttachmentPreview');
   if (!component.includes('noopener,noreferrer')) violations.push('新窗口预览必须使用 noopener,noreferrer');
+  if (component.includes('icon="mdi:close"')) violations.push('AttachmentPreview 禁止重复添加 Modal 已内置的关闭按钮');
   const pdfIframe = component.match(/<iframe[\s\S]*?\/>/)?.[0] || '';
   if (/\bsandbox(?:\s|=|>)/.test(pdfIframe)) violations.push('PDF iframe 禁止 sandbox，以兼容 Chrome 原生 PDF Viewer');
   if (!pdfIframe.includes('referrerpolicy="no-referrer"')) violations.push('PDF iframe 必须使用 no-referrer');
