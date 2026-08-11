@@ -3,6 +3,10 @@
 - Run 必须固定 actor/session/auth version、Conversation/trigger Message、不可变 Agent Version、预算与 ContextSnapshot。
 - Run 预算只由类型化租户设置 Provider 解析并在创建时固化；客户端不得提交或放大预算。新快照使用版本化 snake_case，历史 PascalCase 仅兼容读取。
 - `run_token_budget` 只限制 Run 累计 input + output Token；单次上下文容量必须按 Deployment context window、输出预留和安全余量统一计算，禁止混用两种 Token 语义。
+- 每次模型调用必须在最终请求装配后经统一 Turn Budget Planner；正常 ReAct 只能消费扣除最终输入/输出和安全余量后的软预算，预计侵占预留时必须持久化进入 `completion_only`。
+- `completion_only` 在 confirmation/lease/retry 后不可回退，收尾模型调用最多一次；临时收尾指令不得写 canonical Message，协议层必须清空工具并设置 `tool_choice=none`。
+- 预算收尾成功必须提交 canonical assistant Message，Run 保持 completed 并写稳定 `completion_reason=budget_limit`；已有可用无工具文本不得因调用后 Usage 超估而丢弃。
+- completion-only 返回的新 Tool Call 不得执行或伪造 Tool Result；只有最小收尾不可容纳、压缩不能降、Provider/输出不可用等极端情况才预算失败。
 - HTTP 只写 Run/控制事实；执行必须经版本化 Outbox → Job，禁止请求内无界循环。
 - `ai.agent_run.execute` 固定使用稳定 `ai` 队列；部署可隔离 AI/通用 Worker，本地未覆盖仍保持单 Worker 全队列兼容。记录 Outbox、Job queue、first-delta 分段时延时禁止高基数指标 label。
 - Run/Step 状态迁移 fail-closed；重复 Job/事件/Step/工具副作用/最终消息必须幂等。

@@ -18,6 +18,7 @@ import { agentRunEventDelta, subscribeAgentRun } from '@/service/ai-run-stream';
 import { $t } from '@/locales';
 import { capturePageContext } from '@/composables/page-context';
 import { getStandaloneErrorMessage, isRequestError } from '@/service/request';
+import { isBudgetFailureCategory } from '@/components/ai/run-budget-message';
 import { createLatestRequestGate, loadAllCursorPages } from './modules/message-sync';
 
 export type WorkspaceStatus =
@@ -56,6 +57,7 @@ function diagnosticMessage(issue: Api.AI.AgentDiagnosticIssue) {
 
 function runFailureMessage(detail: Api.AI.AgentRunDetail) {
   const category = detail.run.error_category || 'unknown';
+  if (isBudgetFailureCategory(category)) return $t('page.aiWorkspace.runBudgetFailure');
   if (category !== 'tool_failed') {
     return $t('page.aiWorkspace.runFailureSimple', { category });
   }
@@ -181,7 +183,8 @@ function createAiConversationController() {
     } catch {
       return false;
     }
-    if (!messageRefreshGate.isCurrent(requestVersion) || conversation.value?.id !== currentConversation.id) return false;
+    if (!messageRefreshGate.isCurrent(requestVersion) || conversation.value?.id !== currentConversation.id)
+      return false;
     messages.value = nextMessages;
     await scrollToBottom();
     return true;

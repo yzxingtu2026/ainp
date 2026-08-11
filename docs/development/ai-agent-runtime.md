@@ -16,6 +16,16 @@ Run 固化的版本化预算使用 `schema_version=1` 与 snake_case 字段：`m
 
 `run_token_budget` 是整个 Run 的累计 input + output Token 上限，不是单次模型上下文容量。单次上下文容量统一按目标 Deployment 的 `context_window - reserved_output_tokens - safety_margin_tokens` 计算，默认输出预留为 Deployment `max_output_tokens`（缺失时 2048），安全余量为上下文窗口的 10%；ContextAssembler 与 ContextCompactor 必须复用同一算法，后者再扣除 instructions、工具 Schema 和附件预算。
 
+每次模型调用必须在最终请求装配完成后经过统一 Turn Budget Planner。估算范围包含 instructions、消息、动态 Tool Schema、附件、Page Context 与 Memory Recall。Planner 将累计硬预算拆为两层：
+
+- 正常 ReAct 只能使用扣除最终输入、最终输出与估算安全余量后的软预算；`max_output_tokens` 同时受 Deployment 上限和软预算约束。
+- 下一次正常调用将侵占收尾预留、或只剩最后一次模型调用额度时，Run 持久化切换为 `execution_mode=completion_only`。该状态在 confirmation 暂停、恢复、lease 接管和 retry 中不得回退为 normal。
+- completion-only 最多调用一次。调用前先持久化 `completion_attempted`，临时追加 `ai/budget-completion` runtime 指令，并在协议层清空 Tool Scope/Tools、设置 `tool_choice=none`；指令不得写入 canonical Message。
+- 收尾成功仍提交 canonical assistant Message，Run 为 `completed` 且 `completion_reason=budget_limit`。前端显示本地化预算提示，不向普通用户暴露预算错误机器码。
+- 剩余预算无法容纳最小收尾、压缩不能降低上下文、Provider 失败或仅返回不可用输出时才 fail-closed。若调用已经返回无新工具依赖的可用文本，即使真实 Usage 超出估算安全余量，也先幂等提交该文本，不得直接丢弃。
+
+收尾预留策略必须是集中、确定性且可测试的实现，客户端、Prompt 和租户设置均不能绕过 `run_token_budget` 硬上限。预算日志只记录上限、累计/估算 Token、输出额度、预留、模式、原因和压缩次数，不记录请求正文、工具参数/结果或 Secret。
+
 平台默认值与硬范围：
 
 | 字段 | 默认值 | 范围 |
@@ -43,6 +53,7 @@ Builder 预览约束：
 - 授权恢复后必须沿用 Run 固定的 origin request/trace，并设置 `client=agent`、可信 `agent_run_id`；Job/Outbox 的关联 ID 与 client 只用于投递，不得覆盖最终 Action 执行主体。
 - 模型调用只经统一 Model Runtime；Agent 执行使用 `Stream`，Provider 的 `output_text.delta` 到达后立即追加为 `run.delta`，禁止等待完整 `Generate` 响应后再人为切片伪造流式输出。调用前由 ContextCompactor 按目标模型判断预算并固定 Snapshot。
 - Provider context overflow 只允许受预算限制的压缩重试；step/model/tool/compaction/Token/时长均有硬上限。
+- 普通轮已返回并落库的 Tool Call 可在既有 tool/time/confirmation 预算内完成；若随后进入 completion-only，恢复后只能消费已预留的单次收尾调用，不接受或执行新的 Tool Call，也不为违规 Tool Call 伪造 Tool Result。
 - ToolScope 只允许 Agent bindings 与 meta search/load。Handle 只在服务端内存使用，不写 Message/Event。
 - ToolInvocation 创建后，Tool Runtime 将可信 invocation ID 注入执行上下文；Action Audit 与 ToolInvocation 必须共享 Run 固定的 request/trace，并分别记录 `agent_run_id`、`tool_invocation_id`。
 - Knowledge binding 只限定候选 Knowledge Base；每次模型调用前由统一 `KnowledgeRetriever` 使用 Run 当前 actor 重鉴权并执行预算受控检索。结果只能作为 `user` 级不可信参考消息注入，禁止写入 Contract、system/developer instructions、Snapshot 或事件摘要。
