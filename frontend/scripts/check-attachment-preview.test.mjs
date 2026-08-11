@@ -27,6 +27,7 @@ test('detects consumer bypass and preview support regressions', t => {
 
   assert.ok(violations.some(item => item.includes('PDF iframe 禁止 sandbox')));
   assert.ok(violations.some(item => item.includes('禁止重复添加 Modal 已内置的关闭按钮')));
+  assert.ok(violations.some(item => item.includes('图片预览必须保留鼠标滚轮缩放')));
   assert.ok(violations.some(item => item.includes('video 渲染分支')));
   assert.ok(violations.some(item => item.includes('Blob 预览必须声明大小上限')));
   assert.ok(violations.some(item => item.includes('attachment-list.vue 未复用')));
@@ -50,10 +51,11 @@ test('detects consumer bypass and preview support regressions', t => {
   writeFixture(
     root,
     'src/components/common/attachment-preview.vue',
-    'useAttachmentPreview noopener,noreferrer <img /> <iframe referrerpolicy="no-referrer" /> <video />'
+    'useAttachmentPreview noopener,noreferrer @wheel.prevent="zoomImage" <img /> <iframe referrerpolicy="no-referrer" /> <video />'
   );
   const fixedViolations = findAttachmentPreviewViolations(root);
   assert.ok(fixedViolations.every(item => !item.includes('PDF iframe 禁止 sandbox')));
   assert.ok(fixedViolations.every(item => !item.includes('PDF iframe 必须使用 no-referrer')));
   assert.ok(fixedViolations.every(item => !item.includes('关闭按钮')));
+  assert.ok(fixedViolations.every(item => !item.includes('鼠标滚轮缩放')));
 });

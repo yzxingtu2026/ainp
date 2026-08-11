@@ -6,6 +6,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fetchAttachment, prepareAttachmentDownload } from '@/service/api';
 import { getAttachmentTransferBlob } from '@/service/attachment/transfer';
 import {
+  ATTACHMENT_PREVIEW_IMAGE_ZOOM_MAX,
+  ATTACHMENT_PREVIEW_IMAGE_ZOOM_MIN,
+  clampAttachmentPreviewImageOffset,
+  nextAttachmentPreviewImageZoom
+} from '@/components/common/attachment-preview-image';
+import {
   ATTACHMENT_PREVIEW_MAX_BLOB_SIZE_BYTES,
   attachmentPreviewKind,
   canPreviewAttachment,
@@ -99,6 +105,23 @@ afterEach(() => {
 });
 
 describe('attachment preview support matrix', () => {
+  it('clamps image wheel zoom and pan offsets', () => {
+    let zoom = 1;
+    for (let index = 0; index < 100; index += 1) zoom = nextAttachmentPreviewImageZoom(zoom, -1);
+    expect(zoom).toBe(ATTACHMENT_PREVIEW_IMAGE_ZOOM_MAX);
+    for (let index = 0; index < 200; index += 1) zoom = nextAttachmentPreviewImageZoom(zoom, 1);
+    expect(zoom).toBe(ATTACHMENT_PREVIEW_IMAGE_ZOOM_MIN);
+    expect(nextAttachmentPreviewImageZoom(1, 0)).toBe(1);
+    expect(
+      clampAttachmentPreviewImageOffset(
+        { x: 600, y: -400 },
+        { width: 800, height: 600 },
+        { width: 1000, height: 700 },
+        2
+      )
+    ).toEqual({ x: 300, y: -250 });
+  });
+
   it('supports ready images, exact PDF MIME, and videos only', () => {
     expect(attachmentPreviewKind('image/webp')).toBe('image');
     expect(attachmentPreviewKind('application/pdf')).toBe('pdf');

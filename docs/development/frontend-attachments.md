@@ -101,6 +101,8 @@ AI Builder 的预览消息复用 `AttachmentPicker` 与上传队列，但不伪�
 
 预览通过 `useAttachmentPreview()` 串联详情、download prepare 和 transfer，取消信号贯穿三段。打开新附件前、关闭和卸载时都必须中止当前请求并 `revokeObjectURL`；请求版本隔离保证旧请求完成后不能覆盖新附件。新窗口只打开当前 Blob URL，并使用 `noopener,noreferrer`。
 
+图片预览统一支持以鼠标位置为中心的滚轮缩放，缩放范围限制为 25%–500%；放大后可按住拖动查看局部，双击恢复 100%。切换附件、关闭预览或组件卸载时必须同时复位缩放、位移与 pointer capture。该交互属于 `AttachmentPreview` 公共能力，业务页面不得另行包装图片查看器。
+
 Chrome 原生 PDF Viewer 无法在 sandbox iframe 中运行，会显示“此页面已被 Chrome 屏蔽”；`allow-same-origin` 也不能解除该限制。因此统一组件的 PDF iframe **禁止设置 `sandbox`**，并必须保留 `referrerpolicy="no-referrer"`。这不是放宽附件来源：iframe 的 `src` 只能是组件在附件状态为 ready、MIME 精确等于 `application/pdf`、大小未超限后，经鉴权 prepare/transfer 创建的内存 Blob URL；业务 URL、Provider URL、object key 与长期 token 仍不能进入组件。若后续安全策略要求 iframe 必须 sandbox，则不得继续依赖浏览器原生 Viewer，应另行引入 PDF.js 等受控渲染方案。
 
 Blob 预览需要先完整下载到浏览器内存，统一上限为 **50 MiB**。超过上限时不调用 preview prepare/transfer，界面明确显示文件大小和上限，仅保留显式下载，不宣称流式播放。视频 Range 与短时流式 URL 由 #256 另行建设；在该能力交付前，大视频统一降级为下载。

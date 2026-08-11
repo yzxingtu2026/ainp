@@ -1,5 +1,10 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue';
+import { useResizeObserver } from '@vueuse/core';
+import {
+  clampAttachmentPreviewImageOffset,
+  nextAttachmentPreviewImageZoom
+} from '@/components/common/attachment-preview-image';
 import {
   ATTACHMENT_PREVIEW_MAX_BLOB_SIZE_BYTES,
   downloadAttachmentById,
@@ -28,6 +33,14 @@ const emit = defineEmits<{
 
 const preview = useAttachmentPreview();
 const downloadLoading = ref(false);
+const imageStageRef = ref<HTMLElement | null>(null);
+const imageRef = ref<HTMLImageElement | null>(null);
+const imageZoom = ref(1);
+const imageOffset = reactive({ x: 0, y: 0 });
+const imageDragging = ref(false);
+let dragPointerId: number | null = null;
+let dragLastX = 0;
+let dragLastY = 0;
 const attachmentKey = computed(() => {
   if (!props.attachment) return '';
   if (typeof props.attachment === 'string') return props.attachment;
@@ -41,6 +54,7 @@ const attachmentId = computed(() =>
 watch(
   [() => props.show, attachmentKey],
   ([show]) => {
+    resetImageTransform();
     if (show && props.attachment) {
       void preview.open(props.attachment);
       return;
@@ -50,7 +64,78 @@ watch(
   { immediate: true }
 );
 
+useResizeObserver(imageStageRef, clampImageOffset);
+onBeforeUnmount(resetImageTransform);
+
+function resetImageTransform() {
+  if (dragPointerId !== null && imageRef.value?.hasPointerCapture(dragPointerId)) {
+    imageRef.value.releasePointerCapture(dragPointerId);
+  }
+  imageZoom.value = 1;
+  imageOffset.x = 0;
+  imageOffset.y = 0;
+  imageDragging.value = false;
+  dragPointerId = null;
+}
+
+function clampImageOffset() {
+  const stage = imageStageRef.value;
+  const image = imageRef.value;
+  if (!stage || !image) return;
+  const next = clampAttachmentPreviewImageOffset(
+    imageOffset,
+    { width: image.clientWidth, height: image.clientHeight },
+    { width: stage.clientWidth, height: stage.clientHeight },
+    imageZoom.value
+  );
+  imageOffset.x = next.x;
+  imageOffset.y = next.y;
+}
+
+function zoomImage(event: WheelEvent) {
+  const stage = imageStageRef.value;
+  if (!stage) return;
+  const previousZoom = imageZoom.value;
+  const nextZoom = nextAttachmentPreviewImageZoom(previousZoom, event.deltaY);
+  if (nextZoom === previousZoom) return;
+
+  const rect = stage.getBoundingClientRect();
+  const cursorX = event.clientX - rect.left - rect.width / 2;
+  const cursorY = event.clientY - rect.top - rect.height / 2;
+  const ratio = nextZoom / previousZoom;
+  imageOffset.x = cursorX - (cursorX - imageOffset.x) * ratio;
+  imageOffset.y = cursorY - (cursorY - imageOffset.y) * ratio;
+  imageZoom.value = nextZoom;
+  void nextTick(clampImageOffset);
+}
+
+function startImagePan(event: PointerEvent) {
+  if (imageZoom.value <= 1) return;
+  dragPointerId = event.pointerId;
+  dragLastX = event.clientX;
+  dragLastY = event.clientY;
+  imageDragging.value = true;
+  imageRef.value?.setPointerCapture(event.pointerId);
+}
+
+function panImage(event: PointerEvent) {
+  if (!imageDragging.value || dragPointerId !== event.pointerId) return;
+  imageOffset.x += event.clientX - dragLastX;
+  imageOffset.y += event.clientY - dragLastY;
+  dragLastX = event.clientX;
+  dragLastY = event.clientY;
+  clampImageOffset();
+}
+
+function stopImagePan(event: PointerEvent) {
+  if (dragPointerId !== event.pointerId) return;
+  if (imageRef.value?.hasPointerCapture(event.pointerId)) imageRef.value.releasePointerCapture(event.pointerId);
+  imageDragging.value = false;
+  dragPointerId = null;
+}
+
 function close() {
+  resetImageTransform();
   preview.close();
   emit('update:show', false);
 }
@@ -108,14 +193,31 @@ async function download() {
       </div>
     </template>
 
-    <div class="min-h-320px flex-col-center bg-gray-50 p-12px dark:bg-gray-900 sm:min-h-480px">
+    <div
+      ref="imageStageRef"
+      class="min-h-320px flex-col-center overflow-hidden bg-gray-50 p-12px dark:bg-gray-900 sm:min-h-480px"
+    >
       <NSpin v-if="preview.state.value === 'loading'" size="large" />
 
       <img
         v-else-if="preview.state.value === 'ready' && preview.previewKind.value === 'image'"
+        ref="imageRef"
         :src="preview.objectUrl.value || ''"
         :alt="preview.previewName.value"
-        class="max-h-[75vh] max-w-full object-contain"
+        class="max-h-[75vh] max-w-full touch-none select-none object-contain"
+        :class="imageZoom > 1 ? (imageDragging ? 'cursor-grabbing' : 'cursor-grab') : 'cursor-zoom-in'"
+        :style="{
+          transform: `translate(${imageOffset.x}px, ${imageOffset.y}px) scale(${imageZoom})`,
+          transformOrigin: 'center center'
+        }"
+        draggable="false"
+        @load="clampImageOffset"
+        @wheel.prevent="zoomImage"
+        @pointerdown="startImagePan"
+        @pointermove="panImage"
+        @pointerup="stopImagePan"
+        @pointercancel="stopImagePan"
+        @dblclick="resetImageTransform"
       />
       <iframe
         v-else-if="preview.state.value === 'ready' && preview.previewKind.value === 'pdf'"
