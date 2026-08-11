@@ -82,7 +82,7 @@ func TestAttachmentTransferTokenLegacyUIDFallbackAndConflict(t *testing.T) {
 	}
 	now := time.Now().UTC()
 	base := attachment.TransferClaims{
-		TenantID: "t1", LegacyUserID: "legacy-account", AttachmentID: "a1", Op: attachment.OpDownload, Variant: "original", JTI: "jti-1",
+		TenantID: "t1", LegacyUserID: "legacy-account", AttachmentID: "a1", Op: attachment.OpDownload, Variant: "original", Size: 1, JTI: "jti-1",
 		RegisteredClaims: jwt.RegisteredClaims{Issuer: "ainp", Audience: jwt.ClaimStrings{attachment.TransferAudience}, IssuedAt: jwt.NewNumericDate(now), ExpiresAt: jwt.NewNumericDate(now.Add(time.Minute))},
 	}
 	legacyToken, err := jwt.NewWithClaims(jwt.SigningMethodHS256, base).SignedString([]byte("unit-secret"))
@@ -100,6 +100,24 @@ func TestAttachmentTransferTokenLegacyUIDFallbackAndConflict(t *testing.T) {
 	}
 	if _, err = svc.Parse(conflictToken); err == nil {
 		t.Fatal("conflicting attachment principal claims must be rejected")
+	}
+	base.PrincipalID = ""
+	base.RegisteredClaims.ExpiresAt = jwt.NewNumericDate(now.Add(-time.Minute))
+	expiredToken, err := jwt.NewWithClaims(jwt.SigningMethodHS256, base).SignedString([]byte("unit-secret"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = svc.Parse(expiredToken); err == nil {
+		t.Fatal("expired attachment transfer token must be rejected")
+	}
+	base.RegisteredClaims.ExpiresAt = jwt.NewNumericDate(now.Add(time.Minute))
+	base.Variant = "unknown"
+	invalidVariantToken, err := jwt.NewWithClaims(jwt.SigningMethodHS256, base).SignedString([]byte("unit-secret"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = svc.Parse(invalidVariantToken); err == nil {
+		t.Fatal("invalid attachment transfer variant must be rejected")
 	}
 }
 

@@ -127,4 +127,10 @@ func TestTransferTokenVariant(t *testing.T) {
 	}); err == nil {
 		t.Fatal("expected invalid variant")
 	}
+	if _, _, _, err := svc.Issue(attachment.IssueTransferInput{
+		TenantID: "t1", PrincipalID: "u1", AttachmentID: "a1",
+		Op: attachment.OpDownload, Variant: "original", TTL: time.Minute,
+	}); err == nil {
+		t.Fatal("expected invalid download size")
+	}
 }

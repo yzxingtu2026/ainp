@@ -56,8 +56,10 @@ Local Provider 返回本服务流式 URL；未来 S3/OSS 可换预签名 URL，�
 
 1. Action `system.attachment_download_prepare`：校验租户、状态、上传者/业务访问策略后签发 **download** token。请求体可带 `variant`：`original`（默认）/ `thumb` / `preview`（本阶段 `preview` 仍 `attachment.variant_unavailable`）。
 2. `thumb` 仅当 `thumb_status=ready` 且存在 `thumb_object_key` 时签发；否则返回业务码 `attachment.variant_unavailable`（**禁止** silent 回落原图）。
-3. Transfer JWT 携带 `var`（variant）；`GET` / `HEAD` `/api/v1/attachments/transfer/:id` 按 variant 打开对应 object_key。支持 Range、Content-Length、Content-Type、ETag、安全 `Content-Disposition`。
-4. **禁止**前端拼 Provider URL / OSS 图片处理参数；**禁止**长期公开缩略图链接。OSS 处理参数仅允许作为 Adapter 内部优化（非产品协议）。
+3. 资源 AccessPolicy 只在 prepare 使用真实 AuthContext 执行。prepare 成功后，短时 download token 在 TTL 内即为该主体对指定 `tenant + attachment_id + variant` 的 transfer 授权；token 不携带、复制或信任 Permissions 快照，transfer 也不重跑资源策略。资源随后解绑不会撤销已签发 token；需要即时撤销时必须让附件进入不可传输状态，或等待 token 到期。
+4. Transfer JWT 携带签名的 issuer/audience、过期时间、op、tenant、principal、attachment ID、`var`（variant）和签发时 size；`GET` / `HEAD` `/api/v1/attachments/transfer/:id` 必须逐项 fail-closed 校验，并重新读取附件确认当前仍为 `ready`、variant 对象仍存在且 size 一致。`deleting` / `deleted` / pending / failed、跨租户、对象或 variant 不匹配均不得返回字节。
+5. 普通 GET、HEAD 与 Range 使用同一 token 授权语义。Range 只打开一次目标范围，不得为了读取元数据先完整打开对象或重复执行资源权限决策。响应支持 Content-Length、Content-Type、ETag、安全 `Content-Disposition`。
+6. **禁止**前端拼 Provider URL / OSS 图片处理参数；**禁止**长期公开缩略图链接。OSS 处理参数仅允许作为 Adapter 内部优化（非产品协议）。
 
 ## 派生生成管线（#36）
 
@@ -97,7 +99,7 @@ Local Provider 返回本服务流式 URL；未来 S3/OSS 可换预签名 URL，�
 - 业务创建/更新/删除资源时必须把当前 GORM 事务传给 `ResourceLinker`，使资源事实与 `attachment_links` 原子提交；禁止业务直写链接表。
 - `ResourceLinker` 会重新校验 AuthContext、附件 tenant/ready 状态与 AccessPolicy；策略可通过受控事务上下文读取尚未提交的资源行。
 - `resource_type` 必须代码注册 `attachment.AccessPolicy`；**未注册默认拒绝**，禁止仅凭同租户访问任意附件。
-- pending/failed：仅上传者且在 `expires_at` 内可访问；ready：无链接时仅上传者，有链接时任一链接策略通过即可。变体下载与原图共用同一套访问判定。
+- 下载 prepare 仅允许 `ready`：无链接时仅上传者，有链接时任一链接策略通过即可。pending/failed 只保留上传与清理流程所需的上传者访问语义，不得签发 download token。变体下载与原图在 prepare 共用同一套访问判定。
 - Demo 注册 `demo.task` 策略（同租户已认证即可），便于联调；真实业务须注册自己的策略。
 - 当前账号头像注册 `system.account_profile` / `avatar` 策略：`resource_id` 必须等于 AuthContext 当前主体 ID，绑定附件必须由当前主体上传且为 ready 图片。`tenant_accounts.avatar_attachment_id` 只保存附件 ID；头像读取仍逐次执行 prepare/download 鉴权，不保存对象地址或短时 token。
 

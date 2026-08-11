@@ -91,6 +91,9 @@ func (s *TransferTokenService) Issue(in IssueTransferInput) (token string, jti s
 	default:
 		return "", "", time.Time{}, fmt.Errorf("invalid transfer variant")
 	}
+	if in.Op == OpDownload && in.Size <= 0 {
+		return "", "", time.Time{}, fmt.Errorf("invalid download transfer size")
+	}
 	if in.TTL <= 0 {
 		in.TTL = 15 * time.Minute
 	}
@@ -161,6 +164,14 @@ func (s *TransferTokenService) Parse(tokenString string) (*TransferClaims, error
 	}
 	if claims.Variant == "" {
 		claims.Variant = "original"
+	}
+	switch claims.Variant {
+	case "original", "thumb", "preview":
+	default:
+		return nil, fmt.Errorf("invalid transfer variant")
+	}
+	if claims.Op == OpDownload && claims.Size <= 0 {
+		return nil, fmt.Errorf("invalid download transfer size")
 	}
 	return claims, nil
 }

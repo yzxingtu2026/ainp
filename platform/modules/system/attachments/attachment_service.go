@@ -230,6 +230,9 @@ func (s *AttachmentService) DownloadPrepare(ctx context.Context, input json.RawM
 	if err != nil {
 		return nil, err
 	}
+	if row.Status != status.AttachmentReady {
+		return nil, errs.NewKey(errs.CodeNotFound, "attachment.not_found", "attachment not found")
+	}
 	if err := s.authorizeDownload(ctx, tenantID, userID, row); err != nil {
 		return nil, err
 	}
@@ -749,7 +752,9 @@ func (s *sniffReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
-// OpenDownload returns a reader for a validated download transfer token.
+// OpenDownload returns a reader authorized by a validated download transfer token.
+// Resource access was decided by DownloadPrepare; transfer only revalidates the
+// signed token claims and the attachment's current transferable state.
 func (s *AttachmentService) OpenDownload(ctx context.Context, claims *attachment.TransferClaims) (io.ReadCloser, *model.Attachment, error) {
 	return s.openDownloadVariant(ctx, claims, false, 0, 0)
 }
@@ -759,15 +764,15 @@ func (s *AttachmentService) OpenDownloadRange(ctx context.Context, claims *attac
 }
 
 func (s *AttachmentService) openDownloadVariant(ctx context.Context, claims *attachment.TransferClaims, ranged bool, offset, length int64) (io.ReadCloser, *model.Attachment, error) {
-	if claims.Op != attachment.OpDownload {
+	if claims == nil || claims.Op != attachment.OpDownload {
 		return nil, nil, errs.NewKey(errs.CodeForbidden, "attachment.token_invalid", "invalid transfer token")
 	}
 	row, err := s.getOwned(ctx, claims.TenantID, claims.AttachmentID)
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := s.authorizeDownload(ctx, claims.TenantID, claims.PrincipalID, row); err != nil {
-		return nil, nil, err
+	if row.Status != status.AttachmentReady {
+		return nil, nil, errs.NewKey(errs.CodeNotFound, "attachment.not_found", "attachment not found")
 	}
 	variant := strings.TrimSpace(strings.ToLower(claims.Variant))
 	if variant == "" {
@@ -793,6 +798,9 @@ func (s *AttachmentService) openDownloadVariant(ctx context.Context, claims *att
 		out.OriginalName = thumbDownloadName(row.OriginalName)
 	default:
 		return nil, nil, errs.NewKey(errs.CodeNotFound, "attachment.variant_unavailable", "attachment variant not available")
+	}
+	if claims.Size > 0 && claims.Size != out.Size {
+		return nil, nil, errs.NewKey(errs.CodeForbidden, "attachment.token_invalid", "attachment size does not match token")
 	}
 	var rc io.ReadCloser
 	if ranged {
