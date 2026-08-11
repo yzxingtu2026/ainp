@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { ref } from 'vue';
+import AttachmentPreview from '@/components/common/attachment-preview.vue';
 import {
+  attachmentTypeIcon,
+  canPreviewAttachment,
   downloadAttachmentById,
   formatFileSize,
-  isImageContentType,
-  triggerBrowserDownload,
-  useAttachmentPreview
+  triggerBrowserDownload
 } from '@/hooks/business/attachment';
 import { $t } from '@/locales';
 import { getStandaloneErrorMessage } from '@/service/request';
@@ -34,16 +35,9 @@ const emit = defineEmits<{
   refresh: [];
 }>();
 
-const preview = useAttachmentPreview();
 const actionLoading = ref<string | null>(null);
-const {
-  objectUrl: previewUrl,
-  previewName,
-  error: previewError,
-  visible: previewVisible,
-  open: openPreview,
-  close: closePreview
-} = preview;
+const previewVisible = ref(false);
+const previewItem = ref<Api.Attachment.Item | null>(null);
 
 async function handleDownload(item: Api.Attachment.Item) {
   actionLoading.value = `dl-${item.id}`;
@@ -57,15 +51,9 @@ async function handleDownload(item: Api.Attachment.Item) {
   }
 }
 
-async function handlePreview(item: Api.Attachment.Item) {
-  if (!isImageContentType(item.content_type)) {
-    await handleDownload(item);
-    return;
-  }
-  await openPreview(item.id);
-  if (previewError.value) {
-    window.$message?.error(previewError.value);
-  }
+function handlePreview(item: Api.Attachment.Item) {
+  previewItem.value = item;
+  previewVisible.value = true;
 }
 
 function confirmUnbind(item: Api.Attachment.Item) {
@@ -99,10 +87,7 @@ function confirmDelete(item: Api.Attachment.Item) {
           :key="item.id"
           class="flex items-center gap-12px rounded-8px border border-gray-200 px-12px py-10px dark:border-gray-700"
         >
-          <SvgIcon
-            :icon="isImageContentType(item.content_type) ? 'mdi:file-image-outline' : 'mdi:file-outline'"
-            class="text-22px shrink-0"
-          />
+          <SvgIcon :icon="attachmentTypeIcon(item.content_type)" class="text-22px shrink-0" />
           <div class="min-w-0 flex-1">
             <div class="truncate text-13px font-medium">{{ item.original_name }}</div>
             <div class="text-12px text-gray-500">
@@ -111,7 +96,7 @@ function confirmDelete(item: Api.Attachment.Item) {
           </div>
           <div class="flex shrink-0 gap-4px">
             <ButtonIcon
-              v-if="isImageContentType(item.content_type)"
+              v-if="canPreviewAttachment(item)"
               icon="mdi:eye-outline"
               :tooltip-content="$t('page.attachment.preview')"
               :aria-label="$t('page.attachment.preview')"
@@ -143,19 +128,6 @@ function confirmDelete(item: Api.Attachment.Item) {
       </div>
     </NSpin>
 
-    <NModal
-      :show="previewVisible"
-      preset="card"
-      :title="previewName"
-      class="w-640px"
-      @update:show="(v: boolean) => !v && closePreview()"
-    >
-      <img
-        v-if="previewUrl"
-        :src="previewUrl"
-        :alt="previewName"
-        class="max-h-70vh mx-auto block"
-      />
-    </NModal>
+    <AttachmentPreview v-model:show="previewVisible" :attachment="previewItem" />
   </div>
 </template>

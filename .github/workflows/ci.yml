@@ -112,7 +112,7 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
       - name: Unit tests
-        run: pnpm test:attachment-picker && pnpm test:composer && pnpm test:composition && pnpm test:menu && pnpm test:select
+        run: pnpm test:attachment-picker && pnpm test:attachment-preview && pnpm test:composer && pnpm test:composition && pnpm test:menu && pnpm test:select
       - name: Verify frontend baseline
         run: pnpm baseline:verify
       - name: AppSelect architecture check

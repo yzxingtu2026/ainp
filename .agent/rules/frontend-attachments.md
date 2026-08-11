@@ -9,6 +9,8 @@
 - 个人头像单选替换必须按“绑定新头像 → 更新资料 attachment ID → 解绑旧头像”执行，失败回滚新绑定；认证 store 只保存 ID。
 - 宫格仅在 `thumb_status=ready` 时请求 `variant=thumb`；禁止未就绪时 silent 降级拉原图；禁止拼 OSS/ObjectStore URL。
 - Picker 与 AI Composer 必须复用 `useAttachmentThumbStatusPolling`：仅在调用方可见且存在 pending 图/视缩略图时短间隔批量轮询当前用户已加载范围并按 ID 合并；全部完成、隐藏或卸载必须停止，不得重置选择、草稿和滚动位置。
+- 图片、PDF、视频预览必须复用 `AttachmentPreview`，业务页禁止自建 MIME/`img`/`iframe`/`video` 分支或直接预览 Provider URL；组件只接收 attachment ID/标准 Item。
+- 预览仅允许 `ready` 的 `image/*`、精确 `application/pdf`、`video/*`；其他状态/类型 fail-closed。Blob 全量预览上限 50 MiB，超限只提示下载；切换、关闭、卸载必须取消请求并回收 Object URL。
 - 变更同步 `docs/development/frontend-attachments.md` 并 `agent-rules sync`。
 
 详规：`docs/development/frontend-attachments.md`

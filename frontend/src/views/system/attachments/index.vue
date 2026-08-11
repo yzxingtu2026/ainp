@@ -2,18 +2,17 @@
 import { computed, h, onMounted, reactive, ref, watch } from 'vue';
 import type { DataTableColumns } from 'naive-ui';
 import { NButton, NSpace } from 'naive-ui';
+import AttachmentPreview from '@/components/common/attachment-preview.vue';
 import CodeTag from '@/components/common/code-tag.vue';
 import { CODESET_KEYS } from '@/constants/codeset';
 import { SYSTEM_ACTIONS } from '@/constants/system';
 import { $t } from '@/locales';
 import { formatDateTime } from '@/utils/datetime';
 import {
+  canPreviewAttachment,
   downloadAttachmentById,
   formatFileSize,
-  isImageContentType,
-  isVideoContentType,
-  triggerBrowserDownload,
-  useAttachmentPreview
+  triggerBrowserDownload
 } from '@/hooks/business/attachment';
 import { deleteAttachment, fetchAttachment, fetchAttachmentList } from '@/service/api';
 import { getStandaloneErrorMessage } from '@/service/request';
@@ -41,24 +40,13 @@ const query = reactive<{
 });
 const detailVisible = ref(false);
 const detail = ref<Api.Attachment.Detail | null>(null);
-
-const {
-  objectUrl: previewUrl,
-  previewType,
-  loading: previewLoading,
-  error: previewError,
-  open: openPreview,
-  close: closePreview
-} = useAttachmentPreview();
-
-const canPreviewMedia = computed(() => {
-  if (!detail.value || detail.value.status !== 'ready') return false;
-  return isImageContentType(detail.value.content_type) || isVideoContentType(detail.value.content_type);
-});
+const previewVisible = ref(false);
+const previewItem = ref<Api.Attachment.Item | null>(null);
 
 watch(detailVisible, visible => {
   if (!visible) {
-    closePreview();
+    previewVisible.value = false;
+    previewItem.value = null;
     detail.value = null;
   }
 });
@@ -102,13 +90,20 @@ const columns = computed<DataTableColumns<Api.Attachment.Item>>(() => [
   {
     title: $t('common.action'),
     key: 'actions',
-    width: 220,
+    width: 300,
     fixed: 'right',
     render: row =>
       h(NSpace, null, {
         default: () =>
           [
             h(NButton, { size: 'small', onClick: () => openDetail(row.id) }, { default: () => $t('common.detail') }),
+            canPreviewAttachment(row)
+              ? h(
+                  NButton,
+                  { size: 'small', onClick: () => handlePreview(row) },
+                  { default: () => $t('page.attachment.preview') }
+                )
+              : null,
             row.status === 'ready'
               ? h(
                   NButton,
@@ -151,19 +146,17 @@ async function loadData() {
 }
 
 async function openDetail(id: string) {
-  closePreview();
   const { data, error } = await fetchAttachment(id);
   if (error || !data) {
     return;
   }
   detail.value = data;
   detailVisible.value = true;
-  if (
-    data.status === 'ready' &&
-    (isImageContentType(data.content_type) || isVideoContentType(data.content_type))
-  ) {
-    await openPreview(data.id);
-  }
+}
+
+function handlePreview(item: Api.Attachment.Item) {
+  previewItem.value = item;
+  previewVisible.value = true;
 }
 
 async function handleDownload(row: Api.Attachment.Item) {
@@ -242,40 +235,16 @@ onMounted(loadData);
     <NDrawer v-model:show="detailVisible" :width="520">
       <NDrawerContent :title="$t('page.attachment.detailTitle')" closable>
         <template v-if="detail">
-          <div v-if="canPreviewMedia" class="mb-16px">
-            <div class="mb-8px text-14px font-medium">{{ $t('page.attachment.preview') }}</div>
-            <div
-              class="min-h-180px flex-col-center overflow-hidden rounded-8px border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800"
-            >
-              <NSpin :show="previewLoading" class="w-full">
-                <div class="w-full flex-col-center px-12px py-16px">
-                  <img
-                    v-if="previewUrl && isImageContentType(previewType || detail.content_type)"
-                    :src="previewUrl"
-                    :alt="detail.original_name"
-                    class="max-h-360px max-w-full object-contain"
-                  />
-                  <video
-                    v-else-if="previewUrl && isVideoContentType(previewType || detail.content_type)"
-                    :src="previewUrl"
-                    class="max-h-360px max-w-full"
-                    controls
-                    preload="metadata"
-                  />
-                  <NEmpty
-                    v-else-if="previewError"
-                    class="py-24px"
-                    :description="$t('page.attachment.previewFailed')"
-                  />
-                  <NEmpty
-                    v-else-if="!previewLoading"
-                    class="py-24px"
-                    :description="$t('page.attachment.previewUnavailable')"
-                  />
-                </div>
-              </NSpin>
-            </div>
-          </div>
+          <NButton
+            v-if="canPreviewAttachment(detail)"
+            secondary
+            type="primary"
+            class="mb-16px"
+            @click="handlePreview(detail)"
+          >
+            <template #icon><SvgIcon icon="mdi:eye-outline" /></template>
+            {{ $t('page.attachment.preview') }}
+          </NButton>
 
           <NDescriptions label-placement="left" :column="1" bordered size="small">
             <NDescriptionsItem :label="$t('page.attachment.fileName')">{{ detail.original_name }}</NDescriptionsItem>
@@ -298,5 +267,7 @@ onMounted(loadData);
         </template>
       </NDrawerContent>
     </NDrawer>
+
+    <AttachmentPreview v-model:show="previewVisible" :attachment="previewItem" />
   </div>
 </template>

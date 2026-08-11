@@ -1,10 +1,27 @@
 import { computed, onBeforeUnmount, reactive, ref, watch, type Ref } from 'vue';
-import { prepareAttachmentDownload } from '@/service/api';
+import { fetchAttachment, prepareAttachmentDownload } from '@/service/api';
 import { getAttachmentTransferBlob } from '@/service/attachment/transfer';
 import { $t } from '@/locales';
 import { getRequestErrorMessage, getStandaloneErrorMessage } from '@/service/request';
 
 export type AttachmentDownloadVariant = Api.Attachment.DownloadVariant;
+export type AttachmentPreviewKind = 'image' | 'pdf' | 'video' | 'unsupported';
+export type AttachmentPreviewState = 'idle' | 'loading' | 'ready' | 'error' | 'not-ready' | 'too-large' | 'unsupported';
+
+/** Blob 预览会完整占用浏览器内存；更大的附件只允许显式下载。 */
+export const ATTACHMENT_PREVIEW_MAX_BLOB_SIZE_BYTES = 50 * 1024 * 1024;
+
+export function attachmentPreviewKind(contentType: string): AttachmentPreviewKind {
+  const normalized = contentType.trim().toLowerCase();
+  if (normalized.startsWith('image/')) return 'image';
+  if (normalized === 'application/pdf') return 'pdf';
+  if (normalized.startsWith('video/')) return 'video';
+  return 'unsupported';
+}
+
+export function canPreviewAttachment(item: Pick<Api.Attachment.Item, 'content_type' | 'status'>): boolean {
+  return item.status === 'ready' && attachmentPreviewKind(item.content_type) !== 'unsupported';
+}
 
 /** 下载准备 → 短时 URL 拉流；不缓存 token。 */
 export async function downloadAttachmentById(
@@ -12,7 +29,11 @@ export async function downloadAttachmentById(
   options?: { variant?: AttachmentDownloadVariant; signal?: AbortSignal }
 ): Promise<{ blob: Blob; name: string; contentType: string; variant: AttachmentDownloadVariant }> {
   const variant = options?.variant || 'original';
-  const { data, error } = await prepareAttachmentDownload(id, { variant, errorMode: 'custom' });
+  const { data, error } = await prepareAttachmentDownload(id, {
+    variant,
+    errorMode: 'custom',
+    signal: options?.signal
+  });
   if (error || !data) {
     throw new Error(getRequestErrorMessage(error, $t('page.attachment.downloadFailed')));
   }
@@ -59,53 +80,125 @@ export function triggerBrowserDownload(blob: Blob, filename: string) {
   URL.revokeObjectURL(url);
 }
 
-export function useAttachmentPreview() {
+export function useAttachmentPreview(options?: { maxBlobSizeBytes?: number }) {
   const objectUrl = ref<string | null>(null);
+  const previewBlob = ref<Blob | null>(null);
   const previewName = ref('');
   const previewType = ref('');
+  const previewSize = ref(0);
+  const previewKind = ref<AttachmentPreviewKind>('unsupported');
+  const state = ref<AttachmentPreviewState>('idle');
   const loading = ref(false);
   const error = ref('');
   let abort: AbortController | null = null;
+  let requestVersion = 0;
 
   const visible = computed(() => Boolean(objectUrl.value));
 
-  async function open(attachmentId: string) {
-    close();
-    loading.value = true;
-    error.value = '';
-    abort = new AbortController();
-    try {
-      // 详情预览用原图；宫格另走 useAttachmentGridThumbs
-      const result = await downloadAttachmentById(attachmentId, {
-        variant: 'original',
-        signal: abort.signal
-      });
-      objectUrl.value = URL.createObjectURL(result.blob);
-      previewName.value = result.name;
-      previewType.value = result.contentType;
-    } catch (err) {
-      error.value = getStandaloneErrorMessage(err, $t('page.attachment.downloadFailed'));
-    } finally {
-      loading.value = false;
-      abort = null;
-    }
-  }
-
-  function close() {
-    abort?.abort();
-    abort = null;
+  function clearObjectUrl() {
     if (objectUrl.value) {
       URL.revokeObjectURL(objectUrl.value);
       objectUrl.value = null;
     }
+    previewBlob.value = null;
+  }
+
+  async function open(input: string | Api.Attachment.Item) {
+    close();
+    const version = requestVersion;
+    loading.value = true;
+    state.value = 'loading';
+    error.value = '';
+    const controller = new AbortController();
+    abort = controller;
+    try {
+      let item: Api.Attachment.Item;
+      if (typeof input === 'string') {
+        const { data, error: requestError } = await fetchAttachment(input, {
+          errorMode: 'custom',
+          signal: controller.signal
+        });
+        if (requestError || !data) {
+          throw new Error(getRequestErrorMessage(requestError, $t('page.attachment.previewFailed')));
+        }
+        item = data;
+      } else {
+        item = input;
+      }
+      if (version !== requestVersion || controller.signal.aborted) return;
+
+      previewName.value = item.original_name;
+      previewType.value = item.content_type;
+      previewSize.value = item.size;
+      previewKind.value = attachmentPreviewKind(item.content_type);
+
+      if (item.status !== 'ready') {
+        state.value = 'not-ready';
+        return;
+      }
+      if (previewKind.value === 'unsupported') {
+        state.value = 'unsupported';
+        return;
+      }
+      if (item.size > (options?.maxBlobSizeBytes ?? ATTACHMENT_PREVIEW_MAX_BLOB_SIZE_BYTES)) {
+        state.value = 'too-large';
+        return;
+      }
+
+      // 详情预览用原文件；宫格另走 useAttachmentGridThumbs。
+      const result = await downloadAttachmentById(item.id, {
+        variant: 'original',
+        signal: controller.signal
+      });
+      if (version !== requestVersion || controller.signal.aborted) return;
+      previewBlob.value = result.blob;
+      objectUrl.value = URL.createObjectURL(result.blob);
+      previewName.value = result.name;
+      previewType.value = result.contentType;
+      previewKind.value = attachmentPreviewKind(result.contentType || item.content_type);
+      state.value = 'ready';
+    } catch (err) {
+      if (version !== requestVersion || controller.signal.aborted) return;
+      error.value = getStandaloneErrorMessage(err, $t('page.attachment.downloadFailed'));
+      state.value = 'error';
+    } finally {
+      if (version === requestVersion) {
+        loading.value = false;
+        if (abort === controller) abort = null;
+      }
+    }
+  }
+
+  function close() {
+    requestVersion += 1;
+    abort?.abort();
+    abort = null;
+    clearObjectUrl();
     previewName.value = '';
     previewType.value = '';
+    previewSize.value = 0;
+    previewKind.value = 'unsupported';
+    state.value = 'idle';
+    loading.value = false;
     error.value = '';
   }
 
   onBeforeUnmount(close);
 
-  return { objectUrl, previewName, previewType, loading, error, visible, open, close };
+  return {
+    objectUrl,
+    previewBlob,
+    previewName,
+    previewType,
+    previewSize,
+    previewKind,
+    state,
+    loading,
+    error,
+    visible,
+    open,
+    close
+  };
 }
 
 /** 宫格缩略图缓存：并发限制 + Object URL 回收。 */
@@ -210,11 +303,7 @@ export function useAttachmentGridThumbs(
     enqueueVisible();
   }
 
-  watch(
-    [items, () => options?.enabled?.value],
-    () => enqueueVisible(),
-    { immediate: true, deep: true }
-  );
+  watch([items, () => options?.enabled?.value], () => enqueueVisible(), { immediate: true, deep: true });
 
   onBeforeUnmount(() => {
     disposed = true;

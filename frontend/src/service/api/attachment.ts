@@ -1,6 +1,8 @@
 import { request } from '../request';
 import type { RequestErrorOptions } from '../request';
 
+type AttachmentRequestOptions = RequestErrorOptions & { signal?: AbortSignal };
+
 const ATTACHMENT_API = {
   uploadPrepare: '/api/v1/system/attachments/upload/prepare',
   downloadPrepare: '/api/v1/system/attachments/download/prepare',
@@ -32,7 +34,7 @@ export function prepareAttachmentUpload(
 
 export function prepareAttachmentDownload(
   id: string,
-  options?: { variant?: Api.Attachment.DownloadVariant } & RequestErrorOptions
+  options?: { variant?: Api.Attachment.DownloadVariant } & AttachmentRequestOptions
 ) {
   return request<Api.Attachment.TransferPrepare>({
     url: ATTACHMENT_API.downloadPrepare,
@@ -41,7 +43,8 @@ export function prepareAttachmentDownload(
       id,
       variant: options?.variant || 'original'
     },
-    errorMode: options?.errorMode
+    errorMode: options?.errorMode,
+    signal: options?.signal
   });
 }
 
@@ -121,11 +124,13 @@ export function fetchMyAttachmentList(params: Omit<Api.Attachment.ListParams, 's
   });
 }
 
-export function fetchAttachment(id: string) {
+export function fetchAttachment(id: string, options?: AttachmentRequestOptions) {
   return request<Api.Attachment.Detail>({
     url: ATTACHMENT_API.get,
     method: 'post',
-    data: { id }
+    data: { id },
+    errorMode: options?.errorMode,
+    signal: options?.signal
   });
 }
 
