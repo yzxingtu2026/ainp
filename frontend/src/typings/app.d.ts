@@ -841,6 +841,10 @@ declare namespace App {
           preview: string;
           previewFailed: string;
           previewUnavailable: string;
+          previewUnsupported: string;
+          previewNotReady: string;
+          previewTooLarge: string;
+          openInNewWindow: string;
           download: string;
           unbind: string;
           confirmUnbind: string;
