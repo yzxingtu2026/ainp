@@ -71,6 +71,7 @@ class ReleaseValidationTest(unittest.TestCase):
             ({("git", "rev-parse", "origin/main"): "def"}, "exactly match"),
             ({("git", "tag", "--list", "v1.2.3"): "v1.2.3"}, "already exists"),
             ({("gh", "api", "repos/yzxingtu2026/ainp/commits/abc/check-runs?per_page=100"): '{"check_runs":[]}'}, "CI is not successful"),
+            ({("gh", "variable", "get", "DEMO_URL", "--env", "demo"): ""}, "DEMO_URL is not configured"),
         ]
         for overrides, message in cases:
             with self.subTest(message=message), mock.patch.object(release, "run", side_effect=self.successful_preflight_run(overrides)):
