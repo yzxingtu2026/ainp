@@ -25,7 +25,7 @@ class ReleaseError(RuntimeError):
 
 
 def run(*args: str, check: bool = True) -> str:
-    result = subprocess.run(args, check=False, text=True, capture_output=True)
+    result = subprocess.run(args, check=False, text=True, encoding="utf-8", errors="replace", capture_output=True)
     if check and result.returncode != 0:
         detail = result.stderr.strip() or result.stdout.strip() or f"exit {result.returncode}"
         raise ReleaseError(f"{' '.join(args)}: {detail}")
@@ -82,7 +82,9 @@ def preflight(version: str) -> tuple[str, str]:
     missing = REQUIRED_CHECKS - successful_checks(payload)
     if missing:
         raise ReleaseError(f"main CI is not successful for {head}: missing {', '.join(sorted(missing))}")
-    demo_url = run("gh", "variable", "get", "DEMO_URL", "--env", "demo", check=False) or "not configured"
+    demo_url = run("gh", "variable", "get", "DEMO_URL", "--env", "demo", check=False)
+    if not demo_url:
+        raise ReleaseError("demo environment variable DEMO_URL is not configured")
     return head, demo_url
 
 
