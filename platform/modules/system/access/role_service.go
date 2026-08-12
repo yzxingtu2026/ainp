@@ -51,7 +51,7 @@ type roleCreateRequest struct {
 	Name        string                  `json:"name" validate:"required,max=128"`
 	Description string                  `json:"description,omitempty" validate:"omitempty"`
 	Status      status.ActivationStatus `json:"status" validate:"omitempty,oneof=enabled disabled"`
-	Permissions []string                `json:"permissions" validate:"required,max=200,dive,required"`
+	Permissions []string                `json:"permissions" validate:"required,dive,required"`
 }
 
 type roleUpdateRequest struct {
@@ -63,7 +63,7 @@ type roleUpdateRequest struct {
 
 type rolePermissionsRequest struct {
 	ID          string   `json:"id" validate:"required"`
-	Permissions []string `json:"permissions" validate:"required,max=200,dive,required"`
+	Permissions []string `json:"permissions" validate:"required,dive,required"`
 }
 
 type permissionCatalogRequest struct {
