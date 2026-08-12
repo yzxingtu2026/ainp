@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"reflect"
 	"testing"
 
 	"github.com/google/uuid"
@@ -45,6 +46,17 @@ func TestRoleManagementActionsAndMenuAreRegistered(t *testing.T) {
 		}
 		if actionID != system.ActionRoleList && actionID != system.ActionRoleGet && actionID != system.ActionPermissionCatalog && !registered.Meta.AI.RequiresConfirmation {
 			t.Fatalf("role mutation %s must require confirmation", actionID)
+		}
+		if actionID == system.ActionRoleCreate || actionID == system.ActionRolePermissionsUpdate {
+			var schema struct {
+				Properties map[string]map[string]any `json:"properties"`
+			}
+			if err := json.Unmarshal(registered.Meta.AI.InputSchema, &schema); err != nil {
+				t.Fatalf("decode %s input schema: %v", actionID, err)
+			}
+			if _, limited := schema.Properties["permissions"]["maxItems"]; limited {
+				t.Fatalf("role action %s must not impose a static permission count limit", actionID)
+			}
 		}
 	}
 	for _, actionID := range []string{
@@ -264,11 +276,53 @@ func TestRoleManagementTenantIsolationAndProtection(t *testing.T) {
 			t.Fatalf("shared permission was not deduplicated: %#v", item)
 		}
 	}
+	for i := 0; i < 201; i++ {
+		actionID := fmt.Sprintf("system.generated_permission_%03d", i)
+		if err := actions.Register(action.Action{ID: actionID, Handler: dummy, Meta: action.Metadata{
+			Capability: "system", Name: actionID, AI: action.ExcludeFromAI(action.AIExcludePendingSafetyReview),
+			HTTP: &action.HTTPMeta{Method: "POST", Path: "/" + actionID},
+		}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	fullPermissions := system.AssignablePermissions(actions)
+	if len(fullPermissions) <= 200 {
+		t.Fatalf("regression fixture has %d assignable permissions, want more than 200", len(fullPermissions))
+	}
+	createFullInput, err := json.Marshal(map[string]any{
+		"code": "full_access", "name": "Full Access", "status": "enabled", "permissions": fullPermissions,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	createdFull, err := service.Create(ctxA, createFullInput)
+	if err != nil {
+		t.Fatalf("create role with complete assignable permissions: %v", err)
+	}
+	fullRole := createdFull.(system.RoleView)
+	if !reflect.DeepEqual(fullRole.Permissions, fullPermissions) {
+		t.Fatalf("created full permissions differ: got %d, want %d", len(fullRole.Permissions), len(fullPermissions))
+	}
 	if err := actions.Register(action.Action{ID: "system.new_permission", Handler: dummy, Meta: action.Metadata{
 		Capability: "system", Name: "New permission", AI: action.ExcludeFromAI(action.AIExcludePendingSafetyReview),
 		HTTP: &action.HTTPMeta{Method: "POST", Path: "/system.new_permission"},
 	}}); err != nil {
 		t.Fatal(err)
+	}
+	fullPermissions = system.AssignablePermissions(actions)
+	updateFullInput, err := json.Marshal(map[string]any{"id": fullRole.ID, "permissions": fullPermissions})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.UpdatePermissions(ctxA, updateFullInput); err != nil {
+		t.Fatalf("update role with complete assignable permissions: %v", err)
+	}
+	loadedFull, err := service.Get(ctxA, json.RawMessage(fmt.Sprintf(`{"id":%q}`, fullRole.ID)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := loadedFull.(system.RoleView).Permissions; !reflect.DeepEqual(got, fullPermissions) {
+		t.Fatalf("persisted full permissions differ: got %d, want %d", len(got), len(fullPermissions))
 	}
 	_, adminPermissions, err = authService.LoadRolesAndPermissions(context.Background(), "user-a", "tenant-a")
 	if err != nil || !containsString(adminPermissions, "system.new_permission") {
