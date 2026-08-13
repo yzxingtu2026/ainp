@@ -125,20 +125,24 @@ func conversationDocumentContext(idempotencyKey string) context.Context {
 
 func createConversationDocumentFixture(t *testing.T, db *gorm.DB, content []aimodelruntime.ContentPart) {
 	t.Helper()
-	fixtureDB, err := tenantdata.MigrationDB(db)
+	conversationDB, err := tenantdata.MigrationDB(db)
 	if err != nil {
 		t.Fatal(err)
 	}
 	conversation := ai.Conversation{ID: "conversation-document", TenantID: "tenant-a", OwnerUserID: "user-a", Title: "Documents", AgentID: "agent-a", AgentVersionID: "version-a", Purpose: ai.ConversationPurposeWorkspace, Visibility: "private", Status: "active", Revision: 1}
-	if err = fixtureDB.Create(&conversation).Error; err != nil {
+	if err = conversationDB.Create(&conversation).Error; err != nil {
 		t.Fatal(err)
 	}
 	payload, err := json.Marshal(content)
 	if err != nil {
 		t.Fatal(err)
 	}
+	messageDB, err := tenantdata.MigrationDB(db)
+	if err != nil {
+		t.Fatal(err)
+	}
 	message := ai.ConversationMessage{ID: "message-document", TenantID: "tenant-a", ConversationID: conversation.ID, Role: "user", Status: "committed", Sequence: 1, Content: payload, IdempotencyKey: "fixture-message"}
-	if err = fixtureDB.Create(&message).Error; err != nil {
+	if err = messageDB.Create(&message).Error; err != nil {
 		t.Fatal(err)
 	}
 }
