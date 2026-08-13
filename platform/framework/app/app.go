@@ -76,6 +76,7 @@ type App struct {
 	NavigationInitializer    func(context.Context, string, string) error
 	ModelResolver            aimodel.Resolver
 	AIAssetResolver          aimodelruntime.AssetResolver
+	AIDocumentResolver       aimodelruntime.DocumentResolver
 	EmbeddingRuntime         aimodelruntime.EmbeddingRuntime
 	ToolRegistry             *aitool.Registry
 	Storage                  storage.ObjectStore

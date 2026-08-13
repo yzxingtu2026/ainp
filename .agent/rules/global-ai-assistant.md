@@ -4,7 +4,7 @@
 - authenticated 只适用于对话基础设施；Agent/Slot/模型/知识库管理仍需角色权限，业务工具必须按当前用户实时 Action 权限过滤和执行，禁止借 AI 越权。
 - Conversation/Message/SSE/Run/确认/附件/幂等/Page Context 只由应用级单例 controller 管理；Workspace 与 Sidebar 必须复用同一 Conversation Surface，不得复制协议或合并逻辑。
 - `deferred_for_confirmation` Tool Result 是“已延后/未执行”终态；等待事件、重连、刷新与历史回放不得显示为执行中或永久等待。
-- Composer 图片粘贴只接受受支持的图片 MIME，经统一上传队列加入当前草稿但不自动发送；上传中禁止发送，切换会话取消未完成上传，普通文本粘贴不得被拦截，Workspace 与 Sidebar 共用实现。
+- Composer 统一支持 JPG/PNG/GIF/WebP/PDF/XLSX/DOCX/TXT/MD，严格匹配 MIME+扩展名，单项 10 MiB、合计 4 个；选择/上传、发送与历史展示由 Workspace/Sidebar 共用实现。图片粘贴行为保持，Office 文件不做剪贴板特殊处理。
 - 用户消息优先展示认证态当前用户头像 attachment ID，经统一附件下载协议加载；无头像或失败时降级账户图标，禁止保存对象 URL 或在容器层重复实现。
 - 面板挂载于应用壳，关闭/跨路由不清 controller；展开 Workspace 保留 Conversation、草稿和 Run。刷新只持久化 Conversation ID 并从服务端恢复事实。
 - 登出、认证失效、身份/realm 变化或入口撤权必须 abort 流并清空草稿、附件、Conversation、Run 和恢复引用。

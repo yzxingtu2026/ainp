@@ -1,11 +1,16 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import { isImageContentType, useAttachmentGridThumbs } from '@/hooks/business/attachment';
+import { attachmentTypeIcon, isImageContentType, useAttachmentGridThumbs } from '@/hooks/business/attachment';
 import { useAttachmentUploadQueue } from '@/hooks/business/attachment-upload-queue';
 import { useAttachmentThumbStatusPolling } from '@/hooks/business/attachment-thumb-poll';
 import AttachmentPicker from '@/components/common/attachment-picker.vue';
 import { $t } from '@/locales';
-import { clipboardImageExts, clipboardImageMimes, normalizeClipboardImage } from './clipboard-image';
+import { normalizeClipboardImage } from './clipboard-image';
+import {
+  isWorkspaceAttachment,
+  workspaceAttachmentExts,
+  workspaceAttachmentMimes
+} from './document-attachment';
 
 defineOptions({ name: 'WorkspaceComposer' });
 
@@ -16,19 +21,23 @@ const props = defineProps<{
   draftKey?: string;
 }>();
 const text = defineModel<string>({ default: '' });
-const images = defineModel<Api.Attachment.Item[]>('images', { default: () => [] });
+const attachments = defineModel<Api.Attachment.Item[]>('attachments', { default: () => [] });
 const emit = defineEmits<{ send: []; stop: [] }>();
 
 const pickerVisible = ref(false);
-const thumbsEnabled = computed(() => images.value.length > 0);
-const thumbs = useAttachmentGridThumbs(images, { enabled: thumbsEnabled });
-useAttachmentThumbStatusPolling(images, { enabled: thumbsEnabled, maxItems: 4 });
+const imageAttachments = computed(() => attachments.value.filter(item => isImageContentType(item.content_type)));
+const thumbsEnabled = computed(() => imageAttachments.value.length > 0);
+const thumbs = useAttachmentGridThumbs(imageAttachments, { enabled: thumbsEnabled });
+useAttachmentThumbStatusPolling(attachments, { enabled: thumbsEnabled, maxItems: 4 });
 const uploadQueue = useAttachmentUploadQueue({
-  maxCount: () => Math.max(0, 4 - images.value.length),
-  allowedExt: clipboardImageExts,
-  allowedMime: clipboardImageMimes,
+  maxCount: () => Math.max(0, 4 - attachments.value.length),
+  maxSizeBytes: 10 * 1024 * 1024,
+  allowedExt: workspaceAttachmentExts,
+  allowedMime: workspaceAttachmentMimes,
+  accept: file =>
+    isWorkspaceAttachment({ original_name: file.name, content_type: file.type || 'application/octet-stream' }),
   onSuccess(item) {
-    if (item.attachment && images.value.length < 4) images.value = [...images.value, item.attachment];
+    if (item.attachment && attachments.value.length < 4) attachments.value = [...attachments.value, item.attachment];
     uploadQueue.remove(item.localId);
   }
 });
@@ -53,9 +62,9 @@ function onPaste(event: ClipboardEvent) {
   if (imageFiles.length === 0) return;
 
   event.preventDefault();
-  const remaining = Math.max(0, 4 - images.value.length - uploadQueue.items.value.length);
+  const remaining = Math.max(0, 4 - attachments.value.length - uploadQueue.items.value.length);
   if (remaining === 0) {
-    window.$message?.warning($t('page.aiWorkspace.imageLimit'));
+    window.$message?.warning($t('page.aiWorkspace.attachmentLimit'));
     return;
   }
   const timestamp = Date.now();
@@ -70,27 +79,33 @@ function onPaste(event: ClipboardEvent) {
   if (normalized.length < Math.min(imageFiles.length, remaining)) {
     window.$message?.warning($t('page.aiWorkspace.clipboardImageUnsupported'));
   }
-  if (imageFiles.length > remaining) window.$message?.warning($t('page.aiWorkspace.imageLimit'));
+  if (imageFiles.length > remaining) window.$message?.warning($t('page.aiWorkspace.attachmentLimit'));
   uploadQueue.enqueue(normalized);
 }
 
-function selectImages(items: Api.Attachment.Item[]) {
-  images.value = items
-    .filter(item => item.status === 'ready' && item.sha256 && isImageContentType(item.content_type))
+function selectAttachments(items: Api.Attachment.Item[]) {
+  const selected = items.filter(
+    item => item.status === 'ready' && item.sha256 && item.size <= 10 * 1024 * 1024 && isWorkspaceAttachment(item)
+  );
+  if (selected.length !== items.length) window.$message?.warning($t('page.aiWorkspace.attachmentUnsupported'));
+  attachments.value = selected
     .slice(0, 4);
 }
 </script>
 
 <template>
   <div class="workspace-composer">
-    <div v-if="images.length || uploadQueue.items.value.length" class="workspace-composer__attachments">
-      <div v-for="item in images" :key="item.id" class="workspace-composer__attachment">
+    <div v-if="attachments.length || uploadQueue.items.value.length" class="workspace-composer__attachments">
+      <div v-for="item in attachments" :key="item.id" class="workspace-composer__attachment">
         <img v-if="thumbs.urls[item.id]" :src="thumbs.urls[item.id]" :alt="item.original_name" />
-        <span v-else>{{ item.original_name }}</span>
+        <span v-else class="workspace-composer__file">
+          <SvgIcon :icon="attachmentTypeIcon(item.content_type)" class="text-20px" />
+          <span :title="item.original_name">{{ item.original_name }}</span>
+        </span>
         <button
           type="button"
-          :title="$t('page.aiWorkspace.removeImage')"
-          @click="images = images.filter(image => image.id !== item.id)"
+          :title="$t('page.aiWorkspace.removeAttachment')"
+          @click="attachments = attachments.filter(attachment => attachment.id !== item.id)"
         >
           <SvgIcon icon="mdi:close" />
         </button>
@@ -127,8 +142,8 @@ function selectImages(items: Api.Attachment.Item[]) {
       <button
         type="button"
         class="workspace-composer__icon"
-        :title="$t('page.aiWorkspace.addImage')"
-        :disabled="disabled || active || uploadQueue.busy.value || images.length >= 4"
+        :title="$t('page.aiWorkspace.addAttachment')"
+        :disabled="disabled || active || uploadQueue.busy.value || attachments.length >= 4"
         @click="pickerVisible = true"
       >
         <SvgIcon icon="mdi:plus" class="text-22px" />
@@ -152,7 +167,17 @@ function selectImages(items: Api.Attachment.Item[]) {
         <SvgIcon :icon="active ? 'mdi:stop' : 'mdi:arrow-up'" class="text-20px" />
       </button>
     </div>
-    <AttachmentPicker v-model:show="pickerVisible" selection-mode="multiple" :max="4" @confirm="selectImages" />
+    <AttachmentPicker
+      v-model:show="pickerVisible"
+      :multiple="true"
+      :max-count="4"
+      :selected-ids="attachments.map(item => item.id)"
+      :allowed-ext="workspaceAttachmentExts"
+      :allowed-mime="workspaceAttachmentMimes"
+      :max-size-bytes="10 * 1024 * 1024"
+      :accept="isWorkspaceAttachment"
+      @confirm="selectAttachments"
+    />
   </div>
 </template>
 
@@ -185,6 +210,25 @@ function selectImages(items: Api.Attachment.Item[]) {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.workspace-composer__file {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 4px;
+}
+
+.workspace-composer__file span {
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
 }
 
 .workspace-composer__attachment--upload {

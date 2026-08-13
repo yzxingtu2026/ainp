@@ -29,13 +29,19 @@ const props = withDefaults(
     mode?: 'replace' | 'append';
     selectedIds?: string[];
     lockedSelectedIds?: string[];
+    allowedExt?: readonly string[];
+    allowedMime?: readonly string[];
+    maxSizeBytes?: number;
+    accept?: (item: Api.Attachment.Item) => boolean;
   }>(),
   {
     multiple: true,
     maxCount: 10,
     mode: 'replace',
     selectedIds: () => [],
-    lockedSelectedIds: () => []
+    lockedSelectedIds: () => [],
+    allowedExt: () => [],
+    allowedMime: () => []
   }
 );
 
@@ -54,7 +60,8 @@ const policy = ref<Api.Attachment.UploadPolicy | null>(null);
 const policyLoading = ref(false);
 const policyLoadFailed = ref(false);
 const page = ref(1);
-const total = ref(0);
+const sourceHasMore = ref(false);
+const sourceReachedCap = ref(false);
 const scrollEl = ref<HTMLElement | null>(null);
 /** 本批上传成功的 id，整批 idle 后再切 tab 并刷新列表 */
 const pendingSelectIds = ref<string[]>([]);
@@ -63,8 +70,8 @@ const gridEnabled = computed(() => props.show && tab.value === 'mine');
 const limit = computed(() =>
   Math.min(props.maxCount, policy.value?.max_uploads_once ?? DEFAULT_ATTACHMENT_UPLOAD_POLICY.maxUploadsOnce)
 );
-const hasMore = computed(() => records.value.length < total.value && records.value.length < MAX_LOADED);
-const reachedCap = computed(() => records.value.length >= MAX_LOADED && total.value > MAX_LOADED);
+const hasMore = computed(() => sourceHasMore.value && records.value.length < MAX_LOADED);
+const reachedCap = computed(() => sourceReachedCap.value);
 const lockedIds = computed(() => (props.mode === 'append' ? new Set(props.lockedSelectedIds) : new Set<string>()));
 const lockedCount = computed(() => lockedIds.value.size);
 const selectedCount = computed(() => checked.value.length);
@@ -72,6 +79,28 @@ const totalSelectedCount = computed(() => lockedCount.value + selectedCount.valu
 const confirmLabel = computed(() =>
   $t(props.mode === 'append' ? 'page.attachment.pickerAssociate' : 'page.attachment.pickerConfirm')
 );
+const allowedExtSet = computed(() => new Set(props.allowedExt.map(value => value.toLowerCase())));
+const allowedMimeSet = computed(() => new Set(props.allowedMime.map(value => value.toLowerCase())));
+const uploadAllowedExt = computed(() =>
+  props.allowedExt.length
+    ? (policy.value?.allowed_ext || []).filter(value => allowedExtSet.value.has(value.toLowerCase()))
+    : policy.value?.allowed_ext || []
+);
+const uploadAllowedMime = computed(() =>
+  props.allowedMime.length
+    ? (policy.value?.allowed_mime || []).filter(value => allowedMimeSet.value.has(value.toLowerCase()))
+    : policy.value?.allowed_mime || []
+);
+
+function isAllowed(item: Api.Attachment.Item) {
+  if (props.accept && !props.accept(item)) return false;
+  if (props.maxSizeBytes && item.size > props.maxSizeBytes) return false;
+  const name = item.original_name.toLowerCase();
+  const extension = name.includes('.') ? name.slice(name.lastIndexOf('.')) : '';
+  if (allowedExtSet.value.size > 0 && !allowedExtSet.value.has(extension)) return false;
+  if (allowedMimeSet.value.size > 0 && !allowedMimeSet.value.has(item.content_type.toLowerCase())) return false;
+  return true;
+}
 
 const thumbs = useAttachmentGridThumbs(records, { concurrency: 3, enabled: gridEnabled });
 useAttachmentThumbStatusPolling(records, { enabled: gridEnabled, keyword, maxItems: MAX_LOADED });
@@ -115,9 +144,13 @@ async function loadPolicy() {
 
 async function resetAndLoadMine() {
   page.value = 1;
-  total.value = 0;
+  sourceHasMore.value = false;
+  sourceReachedCap.value = false;
   records.value = [];
   await loadMine({ reset: true });
+  while (records.value.length < PAGE_SIZE && hasMore.value) {
+    await loadMine({ reset: false });
+  }
   await nextTick();
   if (scrollEl.value) scrollEl.value.scrollTop = 0;
 }
@@ -144,8 +177,11 @@ async function loadMine(options?: { reset?: boolean }) {
     if (error) {
       return;
     }
-    const next = data?.items || [];
-    total.value = typeof data?.total === 'number' ? data.total : 0;
+    const next = (data?.items || []).filter(isAllowed);
+    const sourceTotal = typeof data?.total === 'number' ? data.total : 0;
+    const loadedSourceCount = requestPage * PAGE_SIZE;
+    sourceReachedCap.value = loadedSourceCount >= MAX_LOADED && loadedSourceCount < sourceTotal;
+    sourceHasMore.value = loadedSourceCount < sourceTotal && loadedSourceCount < MAX_LOADED;
     page.value = requestPage;
     if (reset) {
       records.value = next;
@@ -345,9 +381,9 @@ function confirm() {
             v-if="policy"
             :multiple="multiple"
             :max-count="limit"
-            :max-size-bytes="policy.max_size_bytes"
-            :allowed-ext="policy.allowed_ext"
-            :allowed-mime="policy.allowed_mime"
+            :max-size-bytes="Math.min(policy.max_size_bytes, maxSizeBytes || policy.max_size_bytes)"
+            :allowed-ext="uploadAllowedExt"
+            :allowed-mime="uploadAllowedMime"
             @success="onUploaded"
             @idle="onUploadIdle"
           />

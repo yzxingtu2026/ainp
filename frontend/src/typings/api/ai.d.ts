@@ -148,6 +148,7 @@ declare namespace Api.AI {
     type: string;
     text?: string;
     image_attachment_id?: string;
+    file_attachment_id?: string;
     attachment_revision?: string;
     detail?: string;
     tool_call_id?: string;

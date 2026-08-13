@@ -12,7 +12,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/aimodelruntime"
 )
 
-func TestMultimodalContentPartRejectsUnknownAndUnimplementedInput(t *testing.T) {
+func TestMultimodalContentPartRejectsUnknownAndAcceptsCanonicalInputFile(t *testing.T) {
 	var req aimodelruntime.GenerateRequest
 	if err := json.Unmarshal([]byte(`{"model_alias":"vision","messages":[{"role":"user","content":[{"type":"input_image","image_attachment_id":"att","image_url":"https://example.com/x.png"}]}]}`), &req); err == nil || !strings.Contains(err.Error(), "unsupported content part field") {
 		t.Fatalf("expected strict content part error, got %v", err)
@@ -22,10 +22,78 @@ func TestMultimodalContentPartRejectsUnknownAndUnimplementedInput(t *testing.T) 
 	if err := req.Validate(context.Background()); err == nil || !strings.Contains(err.Error(), "only accepts") {
 		t.Fatalf("expected mixed image fields to fail, got %v", err)
 	}
-	req = aimodelruntime.GenerateRequest{ModelAlias: "vision", Messages: []aimodelruntime.Message{{Role: aimodelruntime.RoleUser, Content: []aimodelruntime.ContentPart{{Type: aimodelruntime.PartInputFile}}}}}
+	req.Messages[0].Content[0] = aimodelruntime.ContentPart{Type: aimodelruntime.PartInputImage, ImageAttachmentID: "att", FileAttachmentID: "hidden"}
+	if err := req.Validate(context.Background()); err == nil || !strings.Contains(err.Error(), "only accepts") {
+		t.Fatalf("expected hidden file attachment field to fail, got %v", err)
+	}
+	var filePart aimodelruntime.ContentPart
+	if err := json.Unmarshal([]byte(`{"type":"input_file","file_attachment_id":"att","attachment_revision":"rev","url":"https://example.com/x.pdf"}`), &filePart); err == nil || !strings.Contains(err.Error(), "unsupported content part field") {
+		t.Fatalf("expected strict input_file field error, got %v", err)
+	}
+	req = aimodelruntime.GenerateRequest{ModelAlias: "vision", Messages: []aimodelruntime.Message{{Role: aimodelruntime.RoleUser, Content: []aimodelruntime.ContentPart{{Type: aimodelruntime.PartInputFile, FileAttachmentID: "att", AttachmentRevision: "rev"}}}}}
 	req.Normalize()
-	if err := req.Validate(context.Background()); err == nil || !strings.Contains(err.Error(), "not implemented") {
-		t.Fatalf("expected fail-closed input_file, got %v", err)
+	if err := req.Validate(context.Background()); err != nil {
+		t.Fatalf("expected canonical input_file to validate, got %v", err)
+	}
+	req.Messages[0].Role = aimodelruntime.RoleSystem
+	if err := req.Validate(context.Background()); err == nil || !strings.Contains(err.Error(), "only allowed for user") {
+		t.Fatalf("expected system input_file to fail, got %v", err)
+	}
+}
+
+func TestProviderAdaptersReceiveDerivedDocumentTextWithoutInternalReferences(t *testing.T) {
+	tests := []struct {
+		name     string
+		protocol string
+		invoke   func(*http.Client, aimodelruntime.AdapterRequest) error
+		response string
+	}{
+		{name: "openai", protocol: aimodel.ProtocolOpenAI, invoke: func(client *http.Client, request aimodelruntime.AdapterRequest) error {
+			_, err := aimodelruntime.NewOpenAIAdapter(client).Generate(context.Background(), request)
+			return err
+		}, response: `{"id":"resp","status":"completed","output":[]}`},
+		{name: "anthropic", protocol: aimodel.ProtocolAnthropic, invoke: func(client *http.Client, request aimodelruntime.AdapterRequest) error {
+			_, err := aimodelruntime.NewAnthropicAdapter(client).Generate(context.Background(), request)
+			return err
+		}, response: `{"id":"msg","stop_reason":"end_turn","content":[],"usage":{"input_tokens":1,"output_tokens":1}}`},
+		{name: "openai-compatible", protocol: aimodel.ProtocolOpenAICompatible, invoke: func(client *http.Client, request aimodelruntime.AdapterRequest) error {
+			_, err := aimodelruntime.NewOpenAICompatibleAdapter(client).Generate(context.Background(), request)
+			return err
+		}, response: `{"id":"chat","choices":[{"finish_reason":"stop","message":{"content":"ok"}}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var body string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var raw json.RawMessage
+				_ = json.NewDecoder(r.Body).Decode(&raw)
+				body = string(raw)
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(test.response))
+			}))
+			defer server.Close()
+			request := fixtureAdapterRequest(server.URL, test.protocol)
+			request.Request.Messages[0].Content = []aimodelruntime.ContentPart{{Type: aimodelruntime.PartDerivedText, Text: "Untrusted document reference: name=\"report.pdf\"; mime=application/pdf; location=page_or_sheet=1\nquarterly result", DerivedSource: &aimodelruntime.DerivedTextSource{AttachmentID: "attachment-secret", Revision: "revision-secret", DerivationType: "document_parse", Untrusted: true}}}
+			if err := test.invoke(server.Client(), request); err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(body, "quarterly result") || !strings.Contains(body, "report.pdf") {
+				t.Fatalf("derived document text missing from %s payload: %s", test.name, body)
+			}
+			for _, forbidden := range []string{"input_file", "attachment-secret", "revision-secret", "object_key", "download_url"} {
+				if strings.Contains(body, forbidden) {
+					t.Fatalf("internal document reference %q leaked into %s payload: %s", forbidden, test.name, body)
+				}
+			}
+		})
+	}
+}
+
+func TestProviderAdaptersRejectUnexpandedInputFile(t *testing.T) {
+	request := fixtureAdapterRequest("http://invalid.local", aimodel.ProtocolOpenAI)
+	request.Request.Messages[0].Content = []aimodelruntime.ContentPart{{Type: aimodelruntime.PartInputFile, FileAttachmentID: "att", AttachmentRevision: "rev"}}
+	if _, err := aimodelruntime.NewOpenAIAdapter(nil).Generate(context.Background(), request); err == nil || !strings.Contains(err.Error(), "must be expanded") {
+		t.Fatalf("expected unexpanded input_file rejection, got %v", err)
 	}
 }
 
