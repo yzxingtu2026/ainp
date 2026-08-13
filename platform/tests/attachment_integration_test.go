@@ -19,6 +19,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/yzxingtu2026/ainp/platform/framework/aimodelruntime"
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
 	"github.com/yzxingtu2026/ainp/platform/framework/attachment"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
@@ -208,8 +209,24 @@ func TestAttachmentUploadBindDownloadRangeAndIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	downPrep := downPrepRaw.(system.TransferPrepareView)
-	if policyChecks != checksBeforePrepare+1 {
-		t.Fatalf("download prepare policy checks=%d want=%d", policyChecks, checksBeforePrepare+1)
+	documentRequest := aimodelruntime.DocumentResolveRequest{AttachmentID: prep.Attachment.ID, Revision: downPrep.Attachment.SHA256, Purpose: "model_input"}
+	document, err := svc.ResolveDocument(ctxA2, documentRequest)
+	if err != nil || len(document.Sections) != 1 || !strings.Contains(document.Sections[0].Text, "hello-attachment-range") || document.ParserVersion == "" {
+		t.Fatalf("document resolve = %#v, %v", document, err)
+	}
+	if _, err = svc.ResolveDocument(ctxA2WithoutResourcePermission, documentRequest); documentErrorCategory(err) != aimodelruntime.DocumentUnavailable {
+		t.Fatalf("resource policy must reject document resolve, err=%v", err)
+	}
+	if _, err = svc.ResolveDocument(ctxB, documentRequest); documentErrorCategory(err) != aimodelruntime.DocumentUnavailable {
+		t.Fatalf("cross-tenant document resolve must fail closed, err=%v", err)
+	}
+	staleRequest := documentRequest
+	staleRequest.Revision = "stale-revision"
+	if _, err = svc.ResolveDocument(ctxA2, staleRequest); documentErrorCategory(err) != aimodelruntime.DocumentUnavailable {
+		t.Fatalf("stale document revision must fail closed, err=%v", err)
+	}
+	if policyChecks != checksBeforePrepare+3 {
+		t.Fatalf("download and document policy checks=%d want=%d", policyChecks, checksBeforePrepare+3)
 	}
 	checksAfterPrepare := policyChecks
 
@@ -900,6 +917,14 @@ func envelopeCode(body []byte) int {
 	}
 	_ = json.Unmarshal(body, &env)
 	return env.Code
+}
+
+func documentErrorCategory(err error) aimodelruntime.DocumentErrorCategory {
+	var documentErr *aimodelruntime.DocumentError
+	if errors.As(err, &documentErr) {
+		return documentErr.Category
+	}
+	return ""
 }
 
 func envelopeMessageKey(body []byte) string {

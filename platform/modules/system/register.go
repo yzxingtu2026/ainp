@@ -141,6 +141,7 @@ func Register(a *app.App) error {
 	policyProvider := NewSettingUploadPolicyProvider(settingSvc.Provider())
 	attachSvc := NewAttachmentService(a.DB, a.Storage, a.TransferTokens, a.AttachmentPolicies, policyProvider)
 	a.AIAssetResolver = attachSvc
+	a.AIDocumentResolver = attachSvc
 	a.AttachmentResourceLinker = attachSvc
 	a.AgentAvatarValidator = attachments.NewAvatarValidator(a.DB)
 	a.KnowledgeSourceFactory = func(knowledge aiknowledge.Service) aiknowledge.DocumentSourceResolver {

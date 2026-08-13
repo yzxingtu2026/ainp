@@ -6,7 +6,7 @@
 
 - `useAiConversationController()` 是应用生命周期单例，唯一负责 Conversation、Message、SSE、Run cursor、轮询、确认、附件、幂等和 Page Context 发送时捕获。
 - `AiConversationSurface` 统一渲染消息、流式/thinking、工具活动/确认、错误、空状态和 Composer，只提供 workspace/sidebar 密度变体。
-- 共享 Composer 支持从剪贴板粘贴 PNG/JPEG/GIF/WebP 图片：只在检测到图片时阻止默认粘贴，使用标准文件名走统一附件上传队列，成功后加入当前草稿但不得自动发送。上传中禁止发送，切换会话取消未完成队列，普通文本粘贴保持浏览器默认行为；Workspace 与 Sidebar 不得分别实现。
+- 共享 Composer 支持图片和 PDF/XLSX/DOCX/TXT/MD 文档：从“我的附件”选择或在 Picker 中直接上传，MIME 与扩展名必须严格匹配，单项最多 10 MiB，图片与文档合计最多 4 个。图片粘贴仍只在检测到 PNG/JPEG/GIF/WebP 时阻止默认粘贴并走统一上传队列；不增加 Office 剪贴板特殊逻辑。上传中禁止发送，切换会话取消未完成队列，普通文本粘贴保持浏览器默认行为；Workspace 与 Sidebar 不得分别实现。
 - 用户消息头像优先使用认证态中的当前用户头像 attachment ID，并通过统一附件 prepare/download 协议加载；未设置、无权访问或加载失败时降级为账户图标。Workspace 与全局侧边栏必须共享这一渲染逻辑。
 - `ai-assistant` Pinia Store 只管理面板 visible 与 conversation/history/run 二级视图，不复制协议状态。
 - Workspace、全局侧边栏只负责布局。禁止在任一容器新增第二套 send/watch/reconnect/message merge。
@@ -34,6 +34,8 @@ Header launcher 在所有 layout mode 中显示，并以动态路由中的 `shel
 关闭面板或切换路由只卸载视图，controller、草稿、Conversation 和 Run 保留。应用只在 sessionStorage 保存当前 Conversation ID；刷新后重新读取服务端 Message、最新 Run 和 cursor，不持久化草稿、消息、Prompt 或 Page Context。
 
 登出、认证失效或 AI launcher 权限撤销调用 `resetStore()`：abort SSE、停止轮询并清空 Conversation、草稿、附件、Run 和 session Conversation ID，禁止跨身份泄漏。
+
+草稿与历史消息中，图片显示受控缩略图，文档显示类型图标和当前授权读取的安全文件名。附件详情或 revision 校验失败时降级为通用不可用状态，不显示 attachment ID、路径、object key 或下载 URL。
 
 ## 个性化启动快照
 

@@ -261,7 +261,8 @@ func (s *InvocationService) prepare(ctx context.Context, req aimodelruntime.Gene
 	}
 	now := time.Now().UTC()
 	modalities, _ := json.Marshal(requirements.InputModalities)
-	row := &ModelInvocation{ID: uuid.NewString(), TenantID: ac.TenantID, UserID: ac.PrincipalID, SessionID: ac.SessionID, ModelAlias: req.ModelAlias, ProviderID: resolved.ProviderID, DeploymentID: resolved.DeploymentID, RemoteModelID: resolved.RemoteModelID, Mode: mode, StructuredOutputStrategy: string(strategy), Status: "running", StartedAt: now, RequestID: ac.RequestID, TraceID: ac.TraceID, InputModalitiesJSON: modalities, InputAttachmentCount: imageCount, InputAttachmentBytes: imageBytes}
+	documentCount, documentBytes := derivedDocumentStats(req.Messages)
+	row := &ModelInvocation{ID: uuid.NewString(), TenantID: ac.TenantID, UserID: ac.PrincipalID, SessionID: ac.SessionID, ModelAlias: req.ModelAlias, ProviderID: resolved.ProviderID, DeploymentID: resolved.DeploymentID, RemoteModelID: resolved.RemoteModelID, Mode: mode, StructuredOutputStrategy: string(strategy), Status: "running", StartedAt: now, RequestID: ac.RequestID, TraceID: ac.TraceID, InputModalitiesJSON: modalities, InputAttachmentCount: imageCount + documentCount, InputAttachmentBytes: imageBytes + documentBytes}
 	if v := strings.TrimSpace(req.Metadata["agent_id"]); v != "" {
 		row.AgentID = &v
 	}
@@ -273,6 +274,28 @@ func (s *InvocationService) prepare(ctx context.Context, req aimodelruntime.Gene
 	}
 	runCtx, cancel := context.WithTimeout(ctx, time.Duration(req.TimeoutMS)*time.Millisecond)
 	return &preparedInvocation{ctx: runCtx, cancel: cancel, adapter: adapter, request: aimodelruntime.AdapterRequest{Request: req, Model: resolved, StructuredOutputStrategy: strategy, DisableReasoning: strategy == aimodelruntime.StructuredOutputResponseFunction}, row: row, imageData: imageData}, nil
+}
+
+func derivedDocumentStats(messages []aimodelruntime.Message) (int, int64) {
+	seen := map[string]bool{}
+	count := 0
+	total := int64(0)
+	for _, message := range messages {
+		for _, part := range message.Content {
+			source := part.DerivedSource
+			if part.Type != aimodelruntime.PartDerivedText || source == nil || source.DerivationType != "document_parse" {
+				continue
+			}
+			key := source.AttachmentID + "\x00" + source.Revision
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			count++
+			total += source.SourceBytes
+		}
+	}
+	return count, total
 }
 
 func (s *InvocationService) resolveImages(ctx context.Context, req *aimodelruntime.GenerateRequest) (int, int64, [][]byte, error) {

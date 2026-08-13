@@ -20,6 +20,7 @@ import { capturePageContext } from '@/composables/page-context';
 import { getStandaloneErrorMessage, isRequestError } from '@/service/request';
 import { isBudgetFailureCategory } from '@/components/ai/run-budget-message';
 import { createLatestRequestGate, loadAllCursorPages } from './modules/message-sync';
+import { isWorkspaceDocument } from './modules/document-attachment';
 
 export type WorkspaceStatus =
   | 'idle'
@@ -58,6 +59,17 @@ function diagnosticMessage(issue: Api.AI.AgentDiagnosticIssue) {
 function runFailureMessage(detail: Api.AI.AgentRunDetail) {
   const category = detail.run.error_category || 'unknown';
   if (isBudgetFailureCategory(category)) return $t('page.aiWorkspace.runBudgetFailure');
+  const documentFailureKeys: Partial<Record<string, App.I18n.I18nKey>> = {
+    document_unavailable: 'page.aiWorkspace.documentUnavailable',
+    document_unsupported_format: 'page.aiWorkspace.documentUnsupported',
+    document_too_large: 'page.aiWorkspace.documentTooLarge',
+    document_unsafe_content: 'page.aiWorkspace.documentUnsafe',
+    document_corrupt: 'page.aiWorkspace.documentCorrupt',
+    document_empty: 'page.aiWorkspace.documentEmpty',
+    document_parse_failed: 'page.aiWorkspace.documentParseFailed'
+  };
+  const documentFailureKey = documentFailureKeys[category];
+  if (documentFailureKey) return $t(documentFailureKey);
   if (category !== 'tool_failed') {
     return $t('page.aiWorkspace.runFailureSimple', { category });
   }
@@ -81,7 +93,7 @@ function createAiConversationController() {
   const runDetail = ref<Api.AI.AgentRunDetail | null>(null);
   const streamingText = ref('');
   const input = ref('');
-  const images = ref<Api.Attachment.Item[]>([]);
+  const attachments = ref<Api.Attachment.Item[]>([]);
   const busy = ref(false);
   const messageListEl = ref<HTMLElement | null>(null);
 
@@ -93,7 +105,7 @@ function createAiConversationController() {
   const messageRefreshGate = createLatestRequestGate();
 
   const canSend = computed(() =>
-    Boolean(slot.value?.healthy && !busy.value && (input.value.trim() || images.value.length > 0))
+    Boolean(slot.value?.healthy && !busy.value && (input.value.trim() || attachments.value.length > 0))
   );
 
   const mascotState = computed<'idle' | 'thinking' | 'working' | 'error'>(() => {
@@ -318,7 +330,7 @@ function createAiConversationController() {
     runDetail.value = null;
     streamingText.value = '';
     input.value = '';
-    images.value = [];
+    attachments.value = [];
     error.value = '';
     status.value = 'idle';
   }
@@ -339,7 +351,7 @@ function createAiConversationController() {
   async function send() {
     if (!canSend.value) return;
     const text = input.value.trim();
-    const selectedImages = [...images.value];
+    const selectedAttachments = [...attachments.value];
     busy.value = true;
     error.value = '';
     streamingText.value = '';
@@ -348,13 +360,21 @@ function createAiConversationController() {
       const current = await ensureConversation(text);
       const content: Api.AI.ConversationContentPart[] = [];
       if (text) content.push({ type: 'input_text', text });
-      for (const image of selectedImages) {
-        content.push({
-          type: 'input_image',
-          image_attachment_id: image.id,
-          attachment_revision: image.sha256,
-          detail: 'auto'
-        });
+      for (const attachment of selectedAttachments) {
+        if (isWorkspaceDocument(attachment)) {
+          content.push({
+            type: 'input_file',
+            file_attachment_id: attachment.id,
+            attachment_revision: attachment.sha256
+          });
+        } else {
+          content.push({
+            type: 'input_image',
+            image_attachment_id: attachment.id,
+            attachment_revision: attachment.sha256,
+            detail: 'auto'
+          });
+        }
       }
       const { data: userMessage, error: messageError } = await createAIMessage(
         { conversation_id: current.id, role: 'user', content },
@@ -362,7 +382,7 @@ function createAiConversationController() {
       );
       if (messageError || !userMessage) throw messageError || new Error($t('page.aiWorkspace.sendFailed'));
       input.value = '';
-      images.value = [];
+      attachments.value = [];
       messages.value.push(userMessage);
       await scrollToBottom();
       status.value = 'running';
@@ -478,7 +498,7 @@ function createAiConversationController() {
     runDetail.value = null;
     streamingText.value = '';
     input.value = '';
-    images.value = [];
+    attachments.value = [];
     busy.value = false;
     messageListEl.value = null;
     storeConversationId();
@@ -498,7 +518,7 @@ function createAiConversationController() {
     activeRunId,
     thinkingHint,
     input,
-    images,
+    attachments,
     busy,
     canSend,
     mascotState,

@@ -22,6 +22,9 @@ func (a *AnthropicAdapter) StructuredOutputStrategies() []StructuredOutputStrate
 	return []StructuredOutputStrategy{StructuredOutputAnthropicOutputConfig, StructuredOutputResponseFunction}
 }
 func (a *AnthropicAdapter) payload(in AdapterRequest, stream bool) (map[string]any, error) {
+	if err := rejectUnexpandedFiles(in.Request.Messages); err != nil {
+		return nil, err
+	}
 	if err := validateAdapterImages(in, 5*1024*1024); err != nil {
 		return nil, err
 	}
@@ -43,7 +46,7 @@ func (a *AnthropicAdapter) payload(in AdapterRequest, stream bool) (map[string]a
 		content := []any{}
 		for _, p := range m.Content {
 			switch p.Type {
-			case PartInputText:
+			case PartInputText, PartDerivedText:
 				content = append(content, map[string]any{"type": "text", "text": p.Text})
 			case PartInputImage:
 				if p.ResolvedImage != nil {

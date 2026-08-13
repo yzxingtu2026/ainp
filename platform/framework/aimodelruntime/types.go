@@ -79,6 +79,7 @@ type ContentPart struct {
 	Type               PartType                 `json:"type"`
 	Text               string                   `json:"text,omitempty"`
 	ImageAttachmentID  string                   `json:"image_attachment_id,omitempty"`
+	FileAttachmentID   string                   `json:"file_attachment_id,omitempty"`
 	AttachmentRevision string                   `json:"attachment_revision,omitempty"`
 	ImageDetail        ImageDetail              `json:"detail,omitempty"`
 	ToolCallID         string                   `json:"tool_call_id,omitempty"`
@@ -96,7 +97,7 @@ func (p *ContentPart) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &fields); err != nil {
 		return err
 	}
-	allowed := map[string]bool{"type": true, "text": true, "image_attachment_id": true, "attachment_revision": true, "detail": true, "tool_call_id": true, "tool_name": true, "presentation": true, "arguments": true, "result": true, "derived_source": true}
+	allowed := map[string]bool{"type": true, "text": true, "image_attachment_id": true, "file_attachment_id": true, "attachment_revision": true, "detail": true, "tool_call_id": true, "tool_name": true, "presentation": true, "arguments": true, "result": true, "derived_source": true}
 	for key := range fields {
 		if !allowed[key] {
 			return fmt.Errorf("unsupported content part field: %s", key)
@@ -118,6 +119,11 @@ type DerivedTextSource struct {
 	VisionDeploymentID string    `json:"vision_deployment_id"`
 	PromptVersion      string    `json:"prompt_version"`
 	SchemaVersion      string    `json:"schema_version"`
+	ParserVersion      string    `json:"parser_version,omitempty"`
+	OriginalName       string    `json:"original_name,omitempty"`
+	MIME               string    `json:"mime,omitempty"`
+	Location           string    `json:"location,omitempty"`
+	SourceBytes        int64     `json:"source_bytes,omitempty"`
 	GeneratedAt        time.Time `json:"generated_at"`
 	Untrusted          bool      `json:"untrusted"`
 }
@@ -139,6 +145,52 @@ type AssetResolveRequest struct {
 }
 type AssetResolver interface {
 	Resolve(context.Context, AssetResolveRequest) (*ResolvedImage, error)
+}
+
+type DocumentResolveRequest struct {
+	AttachmentID string
+	Revision     string
+	Purpose      string
+	ValidateOnly bool
+}
+
+type DocumentErrorCategory string
+
+const (
+	DocumentUnavailable       DocumentErrorCategory = "document_unavailable"
+	DocumentUnsupportedFormat DocumentErrorCategory = "document_unsupported_format"
+	DocumentTooLarge          DocumentErrorCategory = "document_too_large"
+	DocumentUnsafeContent     DocumentErrorCategory = "document_unsafe_content"
+	DocumentCorrupt           DocumentErrorCategory = "document_corrupt"
+	DocumentEmpty             DocumentErrorCategory = "document_empty"
+)
+
+type DocumentError struct {
+	Category DocumentErrorCategory
+	Cause    error
+}
+
+func (e *DocumentError) Error() string { return string(e.Category) }
+func (e *DocumentError) Unwrap() error { return e.Cause }
+
+type ResolvedDocument struct {
+	AttachmentID  string
+	Revision      string
+	OriginalName  string
+	MIME          string
+	Size          int64
+	ParserVersion string
+	Sections      []DocumentSection
+}
+
+type DocumentSection struct {
+	Text     string
+	Location string
+}
+
+type DocumentResolver interface {
+	ParserVersion() string
+	ResolveDocument(context.Context, DocumentResolveRequest) (*ResolvedDocument, error)
 }
 
 type MediaPolicy string
@@ -286,6 +338,17 @@ func (r GenerateRequest) Validate(context.Context) error {
 	}
 	return nil
 }
+
+func rejectUnexpandedFiles(messages []Message) error {
+	for _, message := range messages {
+		for _, part := range message.Content {
+			if part.Type == PartInputFile {
+				return &RuntimeError{Category: ErrorInvalidRequest, Message: "input_file must be expanded before provider invocation"}
+			}
+		}
+	}
+	return nil
+}
 func validRole(v Role) bool {
 	return v == RoleSystem || v == RoleDeveloper || v == RoleUser || v == RoleAssistant || v == RoleTool
 }
@@ -308,6 +371,9 @@ func validatePart(role Role, p ContentPart) error {
 		if p.Text == "" {
 			return fmt.Errorf("input_text requires text")
 		}
+		if p.ImageAttachmentID != "" || p.FileAttachmentID != "" || p.AttachmentRevision != "" || p.ImageDetail != "" || p.ToolCallID != "" || p.ToolName != "" || p.Presentation != nil || len(p.Arguments) > 0 || len(p.Result) > 0 || p.DerivedSource != nil {
+			return fmt.Errorf("input_text only accepts text")
+		}
 		if role != RoleUser && role != RoleSystem && role != RoleDeveloper {
 			return fmt.Errorf("input_text is invalid for role %s", role)
 		}
@@ -315,7 +381,7 @@ func validatePart(role Role, p ContentPart) error {
 		if p.ImageAttachmentID == "" {
 			return fmt.Errorf("input_image requires attachment id")
 		}
-		if p.Text != "" || p.ToolCallID != "" || p.ToolName != "" || len(p.Arguments) > 0 || len(p.Result) > 0 || p.DerivedSource != nil {
+		if p.Text != "" || p.FileAttachmentID != "" || p.ToolCallID != "" || p.ToolName != "" || len(p.Arguments) > 0 || len(p.Result) > 0 || p.DerivedSource != nil {
 			return fmt.Errorf("input_image only accepts attachment reference and detail")
 		}
 		if role != RoleUser {
@@ -323,6 +389,16 @@ func validatePart(role Role, p ContentPart) error {
 		}
 		if p.ImageDetail != "" && p.ImageDetail != ImageDetailAuto && p.ImageDetail != ImageDetailLow && p.ImageDetail != ImageDetailHigh {
 			return fmt.Errorf("invalid image detail")
+		}
+	case PartInputFile:
+		if p.FileAttachmentID == "" || p.AttachmentRevision == "" {
+			return fmt.Errorf("input_file requires attachment id and revision")
+		}
+		if p.Text != "" || p.ImageAttachmentID != "" || p.ImageDetail != "" || p.ToolCallID != "" || p.ToolName != "" || len(p.Arguments) > 0 || len(p.Result) > 0 || p.DerivedSource != nil {
+			return fmt.Errorf("input_file only accepts attachment reference and revision")
+		}
+		if role != RoleUser {
+			return fmt.Errorf("input_file is only allowed for user messages")
 		}
 	case PartOutputText, PartRefusal:
 		if role != RoleAssistant || p.Text == "" {
@@ -343,7 +419,7 @@ func validatePart(role Role, p ContentPart) error {
 		if role != RoleUser || p.Text == "" || p.DerivedSource == nil || !p.DerivedSource.Untrusted || p.DerivedSource.AttachmentID == "" || p.DerivedSource.Revision == "" {
 			return fmt.Errorf("invalid derived_text")
 		}
-	case PartInputAudio, PartOutputAudio, PartInputFile:
+	case PartInputAudio, PartOutputAudio:
 		return fmt.Errorf("content part is not implemented: %s", p.Type)
 	default:
 		return fmt.Errorf("unsupported input part: %s", p.Type)

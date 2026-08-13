@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, toRef, watch } from 'vue';
+import { computed, onBeforeUnmount, reactive, ref, toRef, watch } from 'vue';
 import { $t } from '@/locales';
 import { useAttachmentAvatar } from '@/hooks/business/agent-avatar';
+import { attachmentTypeIcon } from '@/hooks/business/attachment';
+import { fetchAttachment } from '@/service/api';
 import type { ToolOperation } from './tool-activity';
 
 defineOptions({ name: 'ChatMessageList' });
@@ -59,6 +61,7 @@ interface RenderedUserItem {
   key: string;
   text: string;
   imageCount: number;
+  documents: Array<{ key: string; attachmentId: string; revision: string }>;
 }
 interface RenderedSystemItem {
   kind: 'system';
@@ -77,6 +80,38 @@ interface RenderedRunItem {
   live: boolean;
 }
 type RenderedItem = RenderedUserItem | RenderedSystemItem | RenderedRunItem;
+
+const documentMetadata = reactive<Record<string, { name: string; contentType: string; available: boolean }>>({});
+
+function documentKey(attachmentId: string, revision: string) {
+  return `${attachmentId}\u0000${revision}`;
+}
+
+async function loadDocumentMetadata(attachmentId: string, revision: string) {
+  const key = documentKey(attachmentId, revision);
+  if (documentMetadata[key]) return;
+  documentMetadata[key] = { name: '', contentType: '', available: false };
+  const { data, error } = await fetchAttachment(attachmentId, { errorMode: 'inline' });
+  if (!error && data?.status === 'ready' && data.sha256 === revision) {
+    documentMetadata[key] = { name: data.original_name, contentType: data.content_type, available: true };
+  }
+}
+
+watch(
+  () =>
+    props.messages.flatMap(message =>
+      (message.content || [])
+        .filter(part => part.type === 'input_file' && part.file_attachment_id && part.attachment_revision)
+        .map(part => `${part.file_attachment_id}\u0000${part.attachment_revision}`)
+    ),
+  keys => {
+    for (const key of new Set(keys)) {
+      const [attachmentId, revision] = key.split('\u0000');
+      void loadDocumentMetadata(attachmentId, revision);
+    }
+  },
+  { immediate: true }
+);
 
 function messageText(message: Api.AI.ConversationMessage): string {
   return (message.content || [])
@@ -116,7 +151,14 @@ const renderedItems = computed<RenderedItem[]>(() => {
         kind: 'user',
         key: message.id,
         text: messageText(message),
-        imageCount: (message.content || []).filter(part => part.type === 'input_image').length
+        imageCount: (message.content || []).filter(part => part.type === 'input_image').length,
+        documents: (message.content || [])
+          .filter(part => part.type === 'input_file' && part.file_attachment_id && part.attachment_revision)
+          .map(part => ({
+            key: documentKey(part.file_attachment_id || '', part.attachment_revision || ''),
+            attachmentId: part.file_attachment_id || '',
+            revision: part.attachment_revision || ''
+          }))
       });
       continue;
     }
@@ -239,6 +281,22 @@ function onConfirmationResolved(status: 'approved' | 'rejected', result?: Api.AI
           <NTag v-for="index in item.imageCount" :key="`image-${index}`" size="small" class="mt-6px">
             <template #icon><SvgIcon icon="mdi:image-outline" /></template>
             {{ $t('chat.imageAttachment') }}
+          </NTag>
+          <NTag v-for="document in item.documents" :key="document.key" size="small" class="mt-6px mr-6px">
+            <template #icon>
+              <SvgIcon
+                :icon="
+                  documentMetadata[document.key]?.available
+                    ? attachmentTypeIcon(documentMetadata[document.key].contentType)
+                    : 'mdi:file-alert-outline'
+                "
+              />
+            </template>
+            {{
+              documentMetadata[document.key]?.available
+                ? documentMetadata[document.key].name
+                : $t('page.aiWorkspace.documentUnavailable')
+            }}
           </NTag>
         </div>
         <span class="message__user-avatar" role="img" :aria-label="userName || '当前用户头像'">

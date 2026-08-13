@@ -22,6 +22,7 @@ export interface UseAttachmentUploadQueueOptions {
   maxSizeBytes?: MaybeRefOrGetter<number | undefined>;
   allowedExt?: MaybeRefOrGetter<readonly string[] | undefined>;
   allowedMime?: MaybeRefOrGetter<readonly string[] | undefined>;
+  accept?: (file: File) => boolean;
   onSuccess?: (item: AttachmentQueueItem) => void | Promise<void>;
 }
 
@@ -56,6 +57,7 @@ export function useAttachmentUploadQueue(options: UseAttachmentUploadQueueOption
       // browser MIME 可能为空；有值时做预校验
       return 'mime';
     }
+    if (options.accept && !options.accept(file)) return 'mime';
     return null;
   }
 

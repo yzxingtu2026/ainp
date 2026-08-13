@@ -15,7 +15,7 @@ Conversation 是租户内、供应商无关的会话事实边界。它固定一�
 - 默认 `private`，只有 owner 可见；`tenant` 会话可供同租户授权用户读取。
 - 跨租户、无权 private 会话、消息和 Snapshot 统一按不存在处理。
 - 客户端只能提交 `user` 消息，不能伪造 `assistant`、`system` 或 `tool`。
-- 附件只保存 `attachment_id + attachment_revision`。每次提交和后续读取都必须重新经过附件 AccessPolicy；当前实现接受附件 SHA-256 或受控更新时间 revision。
+- 图片只保存 `image_attachment_id + attachment_revision`，文档只保存 `file_attachment_id + attachment_revision`。客户端不得提交 `derived_text`；每次提交和 Run 装配都必须重新经过附件 AccessPolicy、ready、MIME、大小与 revision 校验。
 
 ## 并发与幂等
 
@@ -30,9 +30,13 @@ Message content 复用 `aimodelruntime.ContentPart`。数据库保存最终 cano
 
 消息正文、附件内容和 Snapshot payload 不进入普通日志、Outbox 或审计摘要。审计只记录会话管理 mutation 的资源与结果。
 
+即时文档正文只在 Run 内存中由 `DocumentResolver + SafeParser` 展开为 `derived_text`。canonical Message 和幂等重放始终保留 `input_file` 引用；刷新/恢复时前端按当前附件授权读取显示元数据，失败只显示安全不可用状态。
+
 ## ContextSnapshot
 
 Snapshot 固定 conversation revision、Agent Version、模型 Deployment、来源 sequence 范围、parent、kind、策略版本与 Token 估算。Runtime Context 不是 Message；Snapshot 只附加 run/context/policy version、timezone/source 与 evaluated_at refs，不保存完整动态 Prompt、称呼或记忆正文。Snapshot 创建使用租户内会话级幂等键，创建后不可覆盖 payload。
+
+Snapshot 的 retained messages 必须把文档 `derived_text` 还原为 canonical `input_file` 引用，禁止持久化解析正文；恢复调用前重新授权解析。
 
 ## 前端边界
 

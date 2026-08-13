@@ -128,3 +128,29 @@ func TestCompactionNeverSplitsToolCallAndResult(t *testing.T) {
 		t.Fatalf("tool interaction split: %#v", payload.RetainedMessages)
 	}
 }
+
+func TestConversationCompactionKeepsDocumentBodiesOutOfSnapshots(t *testing.T) {
+	body, err := os.ReadFile("../modules/ai/conversation/compaction_service.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(body)
+	for _, expected := range []string{
+		"retainsAllDocumentDerivations(assembly.Messages, payload.RetainedMessages)",
+		"Reason: \"attachments_exceed_model_window\"",
+		"payload.RetainedMessages = canonicalizeDocumentDerivations(payload.RetainedMessages)",
+	} {
+		if !strings.Contains(text, expected) {
+			t.Fatalf("document compaction safety gate missing %q", expected)
+		}
+	}
+	serviceBody, err := os.ReadFile("../modules/ai/conversation/service.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{"Type: aimodelruntime.PartInputFile", "FileAttachmentID: part.DerivedSource.AttachmentID", "AttachmentRevision: part.DerivedSource.Revision"} {
+		if !strings.Contains(string(serviceBody), expected) {
+			t.Fatalf("document snapshot canonicalization missing %q", expected)
+		}
+	}
+}

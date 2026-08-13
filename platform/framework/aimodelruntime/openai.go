@@ -24,6 +24,9 @@ func (a *OpenAIAdapter) headers(key string) map[string]string {
 	return map[string]string{"Authorization": "Bearer " + key}
 }
 func (a *OpenAIAdapter) payload(in AdapterRequest, stream bool) (map[string]any, error) {
+	if err := rejectUnexpandedFiles(in.Request.Messages); err != nil {
+		return nil, err
+	}
 	if err := validateAdapterImages(in, 20*1024*1024); err != nil {
 		return nil, err
 	}
@@ -85,7 +88,7 @@ func openAIInput(messages []Message) []any {
 		var functionOutputs []any
 		for _, part := range m.Content {
 			switch part.Type {
-			case PartInputText:
+			case PartInputText, PartDerivedText:
 				content = append(content, map[string]any{"type": "input_text", "text": part.Text})
 			case PartInputImage:
 				if part.ResolvedImage != nil {

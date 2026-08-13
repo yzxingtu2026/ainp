@@ -249,6 +249,7 @@ func Register(a *app.App) error {
 	knowledge.SetRetrievalServices(retriever, retriever)
 	a.KnowledgeRetriever = retriever
 	conversations := NewConversationService(a.DB, a.AIAssetResolver)
+	conversations.SetDocumentResolver(a.AIDocumentResolver)
 	compactions := NewContextCompactionService(a.DB, conversations, svc, invocations, toolRegistry)
 	memoryExtraction := NewMemoryExtractionService(a.DB, invocations)
 	memoryGovernance := NewMemoryGovernanceService(a.DB, writer)

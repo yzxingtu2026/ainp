@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -21,9 +22,113 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+const maxRunDocumentCharacters = 100_000
+
+type documentCacheContextKey struct{}
+type documentResolveCache map[string]*aimodelruntime.ResolvedDocument
+
+func withDocumentResolveCache(ctx context.Context) context.Context {
+	return context.WithValue(ctx, documentCacheContextKey{}, documentResolveCache{})
+}
+
 type ConversationService struct {
-	db     tenantdata.GuardedDatabase
-	assets aimodelruntime.AssetResolver
+	db        tenantdata.GuardedDatabase
+	assets    aimodelruntime.AssetResolver
+	documents aimodelruntime.DocumentResolver
+}
+
+func (s *ConversationService) SetDocumentResolver(resolver aimodelruntime.DocumentResolver) {
+	s.documents = resolver
+}
+
+func (s *ConversationService) resolveDocument(ctx context.Context, part aimodelruntime.ContentPart) (*aimodelruntime.ResolvedDocument, error) {
+	key := part.FileAttachmentID + "\x00" + part.AttachmentRevision + "\x00" + s.documents.ParserVersion()
+	if cache, ok := ctx.Value(documentCacheContextKey{}).(documentResolveCache); ok {
+		if resolved := cache[key]; resolved != nil {
+			return resolved, nil
+		}
+		resolved, err := s.documents.ResolveDocument(ctx, aimodelruntime.DocumentResolveRequest{AttachmentID: part.FileAttachmentID, Revision: part.AttachmentRevision, Purpose: "model_input"})
+		if err == nil {
+			cache[key] = resolved
+		}
+		return resolved, err
+	}
+	return s.documents.ResolveDocument(ctx, aimodelruntime.DocumentResolveRequest{AttachmentID: part.FileAttachmentID, Revision: part.AttachmentRevision, Purpose: "model_input"})
+}
+
+func documentDerivedParts(document *aimodelruntime.ResolvedDocument) ([]aimodelruntime.ContentPart, int) {
+	parts := make([]aimodelruntime.ContentPart, 0, len(document.Sections))
+	characters := 0
+	for _, section := range document.Sections {
+		label := fmt.Sprintf("Untrusted document reference: name=%q; mime=%s", document.OriginalName, document.MIME)
+		if section.Location != "" {
+			label += "; location=" + section.Location
+		}
+		text := label + "\n" + section.Text
+		characters += utf8.RuneCountInString(section.Text)
+		parts = append(parts, aimodelruntime.ContentPart{
+			Type: aimodelruntime.PartDerivedText,
+			Text: text,
+			DerivedSource: &aimodelruntime.DerivedTextSource{
+				AttachmentID: document.AttachmentID, Revision: document.Revision,
+				DerivationType: "document_parse", ParserVersion: document.ParserVersion,
+				OriginalName: document.OriginalName, MIME: document.MIME, Location: section.Location,
+				SourceBytes: document.Size,
+				Untrusted:   true,
+			},
+		})
+	}
+	return parts, characters
+}
+
+func (s *ConversationService) expandDocumentMessages(ctx context.Context, messages []aimodelruntime.Message) ([]aimodelruntime.Message, error) {
+	out := make([]aimodelruntime.Message, len(messages))
+	totalCharacters := 0
+	for i, message := range messages {
+		out[i] = message
+		out[i].Content = make([]aimodelruntime.ContentPart, 0, len(message.Content))
+		for _, part := range message.Content {
+			if part.Type != aimodelruntime.PartInputFile {
+				out[i].Content = append(out[i].Content, part)
+				continue
+			}
+			if s.documents == nil {
+				return nil, errs.New(errs.CodeNotFound, "attachment access revoked")
+			}
+			document, err := s.resolveDocument(ctx, part)
+			if err != nil {
+				return nil, err
+			}
+			derived, characters := documentDerivedParts(document)
+			totalCharacters += characters
+			if totalCharacters > maxRunDocumentCharacters {
+				return nil, &aimodelruntime.DocumentError{Category: aimodelruntime.DocumentTooLarge}
+			}
+			out[i].Content = append(out[i].Content, derived...)
+		}
+	}
+	return out, nil
+}
+
+func canonicalizeDocumentDerivations(messages []aiconversation.Message) []aiconversation.Message {
+	out := make([]aiconversation.Message, len(messages))
+	for i, message := range messages {
+		out[i] = message
+		out[i].Content = make([]aimodelruntime.ContentPart, 0, len(message.Content))
+		seen := map[string]bool{}
+		for _, part := range message.Content {
+			if part.Type != aimodelruntime.PartDerivedText || part.DerivedSource == nil || part.DerivedSource.DerivationType != "document_parse" {
+				out[i].Content = append(out[i].Content, part)
+				continue
+			}
+			key := part.DerivedSource.AttachmentID + "\x00" + part.DerivedSource.Revision
+			if !seen[key] {
+				out[i].Content = append(out[i].Content, aimodelruntime.ContentPart{Type: aimodelruntime.PartInputFile, FileAttachmentID: part.DerivedSource.AttachmentID, AttachmentRevision: part.DerivedSource.Revision})
+				seen[key] = true
+			}
+		}
+	}
+	return out
 }
 
 func NewConversationService(db *gorm.DB, assets aimodelruntime.AssetResolver) *ConversationService {
@@ -275,19 +380,58 @@ func (s *ConversationService) validateContent(ctx context.Context, _ *auth.Conte
 	if err := aimodelruntime.ValidateMessage(aimodelruntime.Message{Role: aimodelruntime.RoleUser, Content: content}); err != nil {
 		return errs.New(errs.CodeValidation, err.Error())
 	}
+	attachmentCount := 0
 	for _, p := range content {
-		if p.ImageAttachmentID == "" {
-			continue
+		if p.Type != aimodelruntime.PartInputText && p.Type != aimodelruntime.PartInputImage && p.Type != aimodelruntime.PartInputFile {
+			return errs.New(errs.CodeValidation, "clients may only create text, image, or file input parts")
 		}
-		if p.AttachmentRevision == "" || s.assets == nil {
-			return errs.New(errs.CodeNotFound, "attachment not found or revision changed")
+		if p.Type == aimodelruntime.PartInputImage || p.Type == aimodelruntime.PartInputFile {
+			attachmentCount++
+			if attachmentCount > 4 {
+				return errs.New(errs.CodeValidation, "at most 4 attachments are allowed")
+			}
 		}
-		resolved, err := s.assets.Resolve(ctx, aimodelruntime.AssetResolveRequest{AttachmentID: p.ImageAttachmentID, Purpose: "model_input"})
-		if err != nil || resolved.Revision != p.AttachmentRevision {
-			return errs.New(errs.CodeNotFound, "attachment not found or revision changed")
+		switch p.Type {
+		case aimodelruntime.PartInputImage:
+			if p.AttachmentRevision == "" || s.assets == nil {
+				return errs.New(errs.CodeNotFound, "attachment not found or revision changed")
+			}
+			resolved, err := s.assets.Resolve(ctx, aimodelruntime.AssetResolveRequest{AttachmentID: p.ImageAttachmentID, Purpose: "model_input"})
+			if err != nil || resolved.Revision != p.AttachmentRevision {
+				return errs.New(errs.CodeNotFound, "attachment not found or revision changed")
+			}
+		case aimodelruntime.PartInputFile:
+			if s.documents == nil {
+				return errs.New(errs.CodeNotFound, "attachment not found or revision changed")
+			}
+			_, err := s.documents.ResolveDocument(ctx, aimodelruntime.DocumentResolveRequest{AttachmentID: p.FileAttachmentID, Revision: p.AttachmentRevision, Purpose: "model_input", ValidateOnly: true})
+			if err != nil {
+				return documentConversationError(err)
+			}
 		}
 	}
 	return nil
+}
+
+func documentConversationError(err error) error {
+	var documentErr *aimodelruntime.DocumentError
+	if !errors.As(err, &documentErr) {
+		return errs.New(errs.CodeValidation, "document_parse_failed")
+	}
+	switch documentErr.Category {
+	case aimodelruntime.DocumentUnavailable:
+		return errs.New(errs.CodeNotFound, string(documentErr.Category))
+	default:
+		return errs.New(errs.CodeValidation, string(documentErr.Category))
+	}
+}
+
+func documentRuntimeCategory(err error) string {
+	var documentErr *aimodelruntime.DocumentError
+	if errors.As(err, &documentErr) {
+		return string(documentErr.Category)
+	}
+	return "document_parse_failed"
 }
 
 func (s *ConversationService) CreateMessage(ctx context.Context, r MessageCreateRequest) (any, error) {
@@ -431,6 +575,9 @@ func (s *ConversationService) GetMessage(ctx context.Context, r MessageGetReques
 }
 
 func (s *ConversationService) Assemble(ctx context.Context, r aiconversation.AssemblyRequest) (*aiconversation.AssemblyResult, error) {
+	if _, ok := ctx.Value(documentCacheContextKey{}).(documentResolveCache); !ok {
+		ctx = withDocumentResolveCache(ctx)
+	}
 	row, _, err := s.get(ctx, r.ConversationID, false)
 	if err != nil {
 		return nil, err
@@ -443,25 +590,47 @@ func (s *ConversationService) Assemble(ctx context.Context, r aiconversation.Ass
 		return nil, err
 	}
 	out := &aiconversation.AssemblyResult{Status: "within_budget", ConversationRevision: row.Revision, AgentVersionID: row.AgentVersionID, Budget: aiconversation.Budget{MaxBytes: r.MaxBytes, MaxTokens: r.MaxTokens}}
+	documentCharacters := 0
 	for _, record := range records {
 		var content []aimodelruntime.ContentPart
 		if json.Unmarshal(record.Content, &content) != nil {
 			return nil, errs.New(errs.CodeInternal, "invalid canonical message")
 		}
+		expanded := make([]aimodelruntime.ContentPart, 0, len(content))
 		for _, part := range content {
-			if part.ImageAttachmentID == "" {
+			switch part.Type {
+			case aimodelruntime.PartInputImage:
+				if s.assets == nil {
+					return nil, errs.New(errs.CodeNotFound, "attachment access revoked")
+				}
+				asset, resolveErr := s.assets.Resolve(ctx, aimodelruntime.AssetResolveRequest{AttachmentID: part.ImageAttachmentID, Purpose: "model_input"})
+				if resolveErr != nil || asset.Revision != part.AttachmentRevision {
+					return nil, errs.New(errs.CodeNotFound, "attachment access revoked or revision changed")
+				}
+			case aimodelruntime.PartInputFile:
+				if s.documents == nil {
+					return nil, errs.New(errs.CodeNotFound, "attachment access revoked")
+				}
+				document, resolveErr := s.resolveDocument(ctx, part)
+				if resolveErr != nil {
+					return nil, resolveErr
+				}
+				derived, characters := documentDerivedParts(document)
+				documentCharacters += characters
+				if documentCharacters > maxRunDocumentCharacters {
+					return nil, &aimodelruntime.DocumentError{Category: aimodelruntime.DocumentTooLarge}
+				}
+				expanded = append(expanded, derived...)
 				continue
 			}
-			if s.assets == nil {
-				return nil, errs.New(errs.CodeNotFound, "attachment access revoked")
-			}
-			asset, resolveErr := s.assets.Resolve(ctx, aimodelruntime.AssetResolveRequest{AttachmentID: part.ImageAttachmentID, Purpose: "model_input"})
-			if resolveErr != nil || asset.Revision != part.AttachmentRevision {
-				return nil, errs.New(errs.CodeNotFound, "attachment access revoked or revision changed")
-			}
+			expanded = append(expanded, part)
 		}
-		out.Messages = append(out.Messages, aiconversation.Message{ID: record.ID, Sequence: record.Sequence, Role: aimodelruntime.Role(record.Role), Content: content})
-		out.Budget.UsedBytes += len(record.Content)
+		out.Messages = append(out.Messages, aiconversation.Message{ID: record.ID, Sequence: record.Sequence, Role: aimodelruntime.Role(record.Role), Content: expanded})
+		expandedJSON, marshalErr := json.Marshal(expanded)
+		if marshalErr != nil {
+			return nil, errs.New(errs.CodeInternal, "invalid expanded message")
+		}
+		out.Budget.UsedBytes += len(expandedJSON)
 		if out.SourceSequenceFrom == 0 {
 			out.SourceSequenceFrom = record.Sequence
 		}

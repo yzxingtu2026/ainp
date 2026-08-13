@@ -108,7 +108,7 @@ onBeforeUnmount(() => {
       </div>
       <WorkspaceComposer
         v-model="controller.input.value"
-        v-model:images="controller.images.value"
+        v-model:attachments="controller.attachments.value"
         :disabled="!controller.slot.value?.healthy || !online"
         :can-send="controller.canSend.value"
         :active="runActive"
