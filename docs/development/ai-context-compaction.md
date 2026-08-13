@@ -4,7 +4,7 @@
 
 ## 预算
 
-可用输入预算从目标 Deployment 的 `context_window` 扣除输出预留、安全余量、固定 Agent 指令、Tool Schema 和附件展开预算。模型窗口未知或固定内容已经超窗时 fail-closed。`JSONTokenizer` 是确定性默认实现；供应商 Tokenizer 可通过接口替换。
+可用输入预算从目标 Deployment 的 `context_window` 扣除输出预留、安全余量、固定 Agent 指令、Tool Schema 和附件展开预算。图片按受控估算计入；即时文档按完整派生文本的 UTF-8 字节/Tokenizer 结果计入，不得只计算 canonical 引用。模型窗口未知或固定内容已经超窗时 fail-closed。`JSONTokenizer` 是确定性默认实现；供应商 Tokenizer 可通过接口替换。
 
 Agent Run 还可用 `run_budget_pressure` 提供更小的目标输入预算。该目标来自“剩余 Run 预算 - 最终输出预留 - 安全余量”，正常 ReAct 还需为下一次最终输入保留额度，因此即使当前请求尚未达到模型 context window，也允许提前压缩。`run_budget_pressure` 只改变压缩目标和 Snapshot reason，不改变 canonical Conversation，也不能放宽模型窗口或 Run 硬预算。
 
@@ -17,6 +17,8 @@ Agent Run 还可用 `run_budget_pressure` 提供更小的目标输入预算。�
 - `source_message_ids` 必须与被摘要区间完全一致；范围漂移、字段缺失、Token 不降或结果仍超窗均拒绝发布。
 - 最大连续压缩深度为 3；超过后返回 `cannot_fit`，禁止循环重试。
 - 相同 conversation + idempotency key 已生成 Snapshot 时直接复用，禁止重复摘要；恢复或重放不得重复增加压缩次数。
+- 文档派生正文不可静默截断。若压缩不能完整保留所有 `document_parse` 派生段，返回 `cannot_fit / attachments_exceed_model_window`，不得摘要替代或丢页/丢行。
+- Snapshot 落库前把 retained 文档派生段还原为 canonical `input_file` 引用；恢复后重新授权解析，正文不得进入 Snapshot payload。
 
 ## 安全事实
 

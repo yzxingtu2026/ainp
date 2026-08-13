@@ -80,9 +80,11 @@ onCancel(() => task.abort());
 
 `AttachmentPicker` 必须显式区分选择语义：默认 `replace` 返回最终选择集合；绑定型业务使用 `append` + `lockedSelectedIds`，已关联项显示锁定状态且确认事件只返回本次新增项。解除关联由业务列表独立操作，禁止把锁定项作为新增请求重复提交。
 
+调用方可通过 `allowedExt`、`allowedMime`、`maxSizeBytes` 与 `accept(item)` 约束 Picker 的列表和上传页；上传白名单必须取全局策略与调用方白名单的交集。`accept` 用于 MIME/扩展名一一配对等业务规则，默认不传时保持通用附件行为。过滤不得改变源分页游标或导致重复加载。
+
 个人资料头像复用 Picker 的单选 replace 模式和共享附件头像加载器。替换顺序为绑定新 `system.account_profile/avatar` → 更新个人资料中的 attachment ID → 解绑旧头像；更新失败须回滚新绑定。认证 store 只保存 attachment ID，全局 AI 用户消息按 ID 走 prepare/download 获取头像，缺失或加载失败时使用账户图标降级。
 
-AI Builder 的预览消息复用 `AttachmentPicker` 与上传队列，但不伪造业务 `resource_type`：只允许当前上传者有权访问、状态 ready 且符合 #73 图片限制的附件，并将 attachment ID + revision + detail 作为 `input_image` Content Part 提交。当前不支持通用文件、音视频或 PDF 作为模型输入。
+AI Builder 的预览消息仍只支持图片。全局助手/Workspace 的共享 Composer 复用 `AttachmentPicker` 与上传队列，允许 ready 且 revision 稳定的 JPG/PNG/GIF/WebP/PDF/XLSX/DOCX/TXT/MD，单项 10 MiB、合计 4 个；图片提交 `input_image`，文档提交 canonical `input_file`。不得伪造业务 `resource_type`，不得保存下载 URL 或解析正文。
 
 有效上传策略：`POST .../attachments/policy`（设置覆盖 + 代码默认）。附件中心：`/system/attachments`（状态用 `CodeSelect` / `CodeTag` + CodeSet `system.attachment_status`；上传者展示 `uploader_name`）。
 

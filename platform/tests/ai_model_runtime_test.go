@@ -364,14 +364,17 @@ func TestValidatedStreamRejectsEventAfterTerminal(t *testing.T) {
 }
 
 func TestInvocationJSONContainsNoContentOrCredential(t *testing.T) {
-	encoded, err := json.Marshal(ai.ModelInvocation{ID: "inv", ModelAlias: "chat", Status: "completed"})
+	encoded, err := json.Marshal(ai.ModelInvocation{ID: "inv", ModelAlias: "chat", Status: "completed", InputAttachmentCount: 2, InputAttachmentBytes: 4096})
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, forbidden := range []string{"prompt", "output", "credential", "arguments", "secret"} {
+	for _, forbidden := range []string{"prompt", "output", "credential", "arguments", "secret", "document body", "attachment-secret", "revision-secret"} {
 		if strings.Contains(string(encoded), forbidden) {
 			t.Fatalf("sensitive field leaked: %s", encoded)
 		}
+	}
+	if !strings.Contains(string(encoded), `"input_attachment_count":2`) || !strings.Contains(string(encoded), `"input_attachment_bytes":4096`) {
+		t.Fatalf("controlled attachment statistics missing: %s", encoded)
 	}
 }
 

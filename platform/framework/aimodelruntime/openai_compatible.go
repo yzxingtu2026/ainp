@@ -22,6 +22,9 @@ func (a *OpenAICompatibleAdapter) StructuredOutputStrategies() []StructuredOutpu
 }
 
 func (a *OpenAICompatibleAdapter) payload(in AdapterRequest, stream bool) (map[string]any, StructuredOutputStrategy, error) {
+	if err := rejectUnexpandedFiles(in.Request.Messages); err != nil {
+		return nil, "", err
+	}
 	r := in.Request
 	p := map[string]any{"model": in.Model.RemoteModelID, "messages": compatibleMessages(r), "stream": stream}
 	if in.DisableReasoning {
@@ -83,7 +86,7 @@ func compatibleMessages(r GenerateRequest) []any {
 		text := ""
 		toolCalls := []any{}
 		for _, part := range message.Content {
-			if part.Type == PartInputText || part.Type == PartOutputText {
+			if part.Type == PartInputText || part.Type == PartDerivedText || part.Type == PartOutputText {
 				text += part.Text
 			}
 			if part.Type == PartToolCall {

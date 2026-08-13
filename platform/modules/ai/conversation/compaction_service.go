@@ -115,7 +115,14 @@ type runtimeCompactionProvider struct {
 }
 
 func (p *runtimeCompactionProvider) Summarize(ctx context.Context, r aiconversation.SummaryRequest) (*aiconversation.CompactionSummary, error) {
-	body, err := json.Marshal(map[string]any{"schema_version": r.SchemaVersion, "messages": r.Messages})
+	messages := r.Messages
+	for i := range messages {
+		messages[i].Content = append([]aimodelruntime.ContentPart(nil), messages[i].Content...)
+		for j := range messages[i].Content {
+			messages[i].Content[j].DerivedSource = nil
+		}
+	}
+	body, err := json.Marshal(map[string]any{"schema_version": r.SchemaVersion, "messages": messages})
 	if err != nil {
 		return nil, err
 	}
@@ -276,6 +283,9 @@ func (s *ContextCompactionService) Compact(ctx context.Context, r aiconversation
 		result.OutputTokens = payload.OutputTokenEstimate
 		return result, nil
 	}
+	if !retainsAllDocumentDerivations(assembly.Messages, payload.RetainedMessages) {
+		return &aiconversation.CompactionResult{Status: "cannot_fit", Reason: "attachments_exceed_model_window", InputTokens: payload.InputTokenEstimate, OutputTokens: payload.OutputTokenEstimate, CompactionDepth: depth}, nil
+	}
 	if r.Reason != "" {
 		payload.Reason = r.Reason
 	}
@@ -289,6 +299,7 @@ func (s *ContextCompactionService) Compact(ctx context.Context, r aiconversation
 	}
 	payload.OutputTokenEstimate = finalTokens
 	result.OutputTokens = payload.OutputTokenEstimate
+	payload.RetainedMessages = canonicalizeDocumentDerivations(payload.RetainedMessages)
 	encoded, _ := json.Marshal(payload)
 	snap, err := s.conversations.CreateSnapshot(ctx, SnapshotCreateRequest{ConversationID: r.ConversationID, ModelDeploymentID: resolved.DeploymentID, Kind: "compacted", PolicyVersion: payload.PolicyVersion, SchemaVersion: payload.SchemaVersion, PromptVersion: payload.PromptVersion, SummarizerDeploymentID: resolved.DeploymentID, Reason: payload.Reason, QualityStatus: "valid", CompactionDepth: depth, IdempotencyKey: r.IdempotencyKey, ParentSnapshotID: r.ParentSnapshotID, Payload: encoded, TokenEstimate: payload.OutputTokenEstimate, SourceSequenceFrom: assembly.SourceSequenceFrom, SourceSequenceTo: assembly.SourceSequenceTo})
 	if err != nil {
@@ -298,6 +309,32 @@ func (s *ContextCompactionService) Compact(ctx context.Context, r aiconversation
 	result.RetainedFrom = payload.RetainedMessages[0].Sequence
 	result.RetainedTo = payload.RetainedMessages[len(payload.RetainedMessages)-1].Sequence
 	return result, nil
+}
+
+func retainsAllDocumentDerivations(source, retained []aiconversation.Message) bool {
+	want := documentDerivationKeys(source)
+	if len(want) == 0 {
+		return true
+	}
+	got := documentDerivationKeys(retained)
+	for key := range want {
+		if !got[key] {
+			return false
+		}
+	}
+	return true
+}
+
+func documentDerivationKeys(messages []aiconversation.Message) map[string]bool {
+	keys := map[string]bool{}
+	for _, message := range messages {
+		for _, part := range message.Content {
+			if part.Type == aimodelruntime.PartDerivedText && part.DerivedSource != nil && part.DerivedSource.DerivationType == "document_parse" {
+				keys[part.DerivedSource.AttachmentID+"\x00"+part.DerivedSource.Revision] = true
+			}
+		}
+	}
+	return keys
 }
 
 type CompactionDiagnosticsRequest struct {

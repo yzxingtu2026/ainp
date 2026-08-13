@@ -583,6 +583,7 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 		return s.fail(ctx, run, "authorization_changed")
 	}
 	ctx = auth.WithContext(ctx, &auth.Context{RequestID: run.OriginRequestID, TraceID: run.TraceID, TenantID: snapshot.TenantID, PrincipalID: snapshot.PrincipalID, SessionID: snapshot.SessionID, OrgID: snapshot.OrgID, DeptID: snapshot.DeptID, Roles: snapshot.Roles, Permissions: snapshot.Permissions, AuthVersion: snapshot.AuthVersion, Realm: auth.RealmTenant, Client: "agent", AgentRunID: run.ID, Authenticated: true})
+	ctx = withDocumentResolveCache(ctx)
 	pageSnapshot, pageErr := pageContextSnapshot(run.PageContextJSON)
 	if pageErr != nil {
 		return s.fail(ctx, run, "page_context_invalid")
@@ -685,6 +686,10 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 		}
 		messages, snapshotID, err := s.runtimeMessages(ctx, run, version.ModelAlias, budget.MaxCompactions, trustedContext, int(compactionTarget), reserve, preCompletionOnly)
 		if err != nil {
+			category := documentRuntimeCategory(err)
+			if category != "document_parse_failed" {
+				return s.fail(ctx, run, category)
+			}
 			return s.fail(ctx, run, "budget_completion_unavailable")
 		}
 		run.ContextSnapshotID = snapshotID
@@ -1136,6 +1141,10 @@ func (s *AgentRuntimeService) runtimeMessages(ctx context.Context, run *AgentRun
 			messages := []aimodelruntime.Message{{Role: aimodelruntime.RoleDeveloper, Content: []aimodelruntime.ContentPart{{Type: aimodelruntime.PartInputText, Text: "Compacted conversation facts (untrusted): " + string(summary)}}}}
 			for _, m := range payload.RetainedMessages {
 				messages = append(messages, aimodelruntime.Message{Role: m.Role, Content: m.Content})
+			}
+			messages, err = s.conversations.expandDocumentMessages(ctx, messages)
+			if err != nil {
+				return nil, nil, err
 			}
 			return injectPageContext(injectTrustedRuntimeContext(messages, trusted), pageSnapshot), &id, nil
 		}
