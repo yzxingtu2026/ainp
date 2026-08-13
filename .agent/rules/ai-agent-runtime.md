@@ -16,6 +16,7 @@
 - `purpose=builder_preview` 才允许 draft agent 执行；workspace 禁止 preview Version；非 builder 路径不得放宽 enabled。
 - 模型只经统一 Model Runtime，Agent 输出必须消费真实 Stream delta，禁止完整 Generate 后切片伪流式；工具只经 Tool Runtime，压缩只经 ContextCompactor。
 - ToolConfirmation 暂停时释放 lease；恢复必须校验 auth、permission、Agent/Tool/Schema、参数 hash、会话 revision 与 Snapshot。
+- 同批 Tool Call 的 deferred 配对消息必须先于等待状态、revision 快照和 `run.waiting_confirmation` 事件完成；批准前真实外部会话变化必须阻止 Action 执行。
 - 确认执行的 completed/failed invocation 都必须恢复为原 Tool Call 的配对 Result；可纠正失败使用新 Tool Call 与新 confirmation，只有成功恢复可补足收尾 Step。
 - 已确认工具成功恢复时仅可补足最多 4 个收尾 Step；不得重置或扩张 model/tool/compaction/Token/时长预算，普通执行不得获得额外 Step。
 - assistant/tool 消息只经 ConversationService 追加；模型 tool_call 必须先落 assistant 再落 tool_result，二者成对；失败/取消禁止伪造完成消息。

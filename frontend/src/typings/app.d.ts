@@ -1230,6 +1230,7 @@ declare namespace App {
         toolSuccess: string;
         toolFailed: string;
         toolRehydrated: string;
+        toolDeferred: string;
         toolWaiting: string;
         toolArguments: string;
         toolResult: string;

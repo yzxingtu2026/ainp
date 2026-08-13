@@ -1082,6 +1082,7 @@ const local: App.I18n.Schema = {
     toolSuccess: '已完成',
     toolFailed: '执行失败',
     toolRehydrated: '工具已恢复',
+    toolDeferred: '已延后 / 未执行',
     toolWaiting: '等待结果',
     toolArguments: '调用参数',
     toolResult: '执行结果',

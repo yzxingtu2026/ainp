@@ -21,7 +21,7 @@
 - project/search/load/execute 共用 Slot 动态可用性协议且只能收紧权限；Step/Invocation 分类、专用预算和事实摘要由 Slot 元数据生成，观测只持久化白名单字段。
 - Handle 绑定 actor/session/auth version/scope/tool/runtime/schema hash/TTL；任何变化立即失效。
 - 写/外部/付费/破坏性/high 必须单次确认，critical 默认禁止；批准后重新鉴权，不支持始终允许。
-- 同批 Tool Call 遇确认后停止执行剩余调用并逐个追加 deferred Tool Result；批准、拒绝、过期等确认终态必须保证所有 Tool Call/Result 配对，禁止永久等待。
+- 同批 Tool Call 遇确认后停止执行剩余调用并逐个追加 deferred Tool Result；全部 canonical Result 落库后才固定最终会话 revision、切换等待状态并发布事件。批准执行前必须校验 Run 仍等待且会话 active/revision 未被外部改变；批准、拒绝、过期等确认终态必须保证所有 Tool Call/Result 配对，禁止永久等待。
 - Invocation 终态与 Outbox 同事务，日志/Outbox/审计禁止完整参数、结果、Secret 和原始第三方响应。
 - Executor Result 必须统一规范化并递归脱敏 typed/untyped JSON 结构；`data + truncation` 共用单一编码字节预算，object/array 裁剪保持类型且数组只保留稳定前缀。通用 Runtime 只报告 returned/omitted 等受控诊断，禁止伪造业务 cursor。
 - Tool Call 创建时必须固化 Definition 的 `ToolPresentation`；确认创建事务必须固化版本化 `ConfirmationPresentation`。展示快照只用于解释，禁止作为执行输入；前端禁止解析模型工具名或按 Tool ID 维护业务名称映射。

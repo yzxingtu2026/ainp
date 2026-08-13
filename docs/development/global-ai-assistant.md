@@ -6,6 +6,7 @@
 
 - `useAiConversationController()` 是应用生命周期单例，唯一负责 Conversation、Message、SSE、Run cursor、轮询、确认、附件、幂等和 Page Context 发送时捕获。
 - `AiConversationSurface` 统一渲染消息、流式/thinking、工具活动/确认、错误、空状态和 Composer，只提供 workspace/sidebar 密度变体。
+- `deferred_for_confirmation` Tool Result 必须显示为“已延后/未执行”的确定终态，不得归类为执行中或等待结果；等待事件、SSE 重连、刷新和历史回放必须从 canonical Call/Result 配对得到一致状态。
 - 共享 Composer 支持从剪贴板粘贴 PNG/JPEG/GIF/WebP 图片：只在检测到图片时阻止默认粘贴，使用标准文件名走统一附件上传队列，成功后加入当前草稿但不得自动发送。上传中禁止发送，切换会话取消未完成队列，普通文本粘贴保持浏览器默认行为；Workspace 与 Sidebar 不得分别实现。
 - 用户消息头像优先使用认证态中的当前用户头像 attachment ID，并通过统一附件 prepare/download 协议加载；未设置、无权访问或加载失败时降级为账户图标。Workspace 与全局侧边栏必须共享这一渲染逻辑。
 - `ai-assistant` Pinia Store 只管理面板 visible 与 conversation/history/run 二级视图，不复制协议状态。

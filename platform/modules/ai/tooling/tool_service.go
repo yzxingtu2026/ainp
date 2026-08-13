@@ -62,6 +62,7 @@ type ToolService struct {
 	settings              *setting.Provider
 	catalogProjectionSync bool
 	onConfirmationPending func(context.Context, *gorm.DB, *ToolConfirmation) error
+	onConfirmationApprove func(context.Context, *ToolConfirmation) error
 	onConfirmationDecided func(context.Context, *ToolConfirmation) error
 }
 
@@ -82,6 +83,9 @@ func (s *ToolService) SetCatalogProjectionSynchronous(enabled bool) {
 }
 func (s *ToolService) SetConfirmationHooks(pending func(context.Context, *gorm.DB, *ToolConfirmation) error, decided func(context.Context, *ToolConfirmation) error) {
 	s.onConfirmationPending, s.onConfirmationDecided = pending, decided
+}
+func (s *ToolService) SetConfirmationApproveHook(approve func(context.Context, *ToolConfirmation) error) {
+	s.onConfirmationApprove = approve
 }
 
 func (s *ToolService) ProjectModelTools(ctx context.Context, scopeID string) (string, []aimodelruntime.ToolDefinition, error) {
@@ -493,6 +497,11 @@ func (s *ToolService) Approve(ctx context.Context, r ToolConfirmationRequest) (a
 	d, ok, err = s.project(ctx, scope, d)
 	if err != nil || !ok {
 		return nil, errs.New(errs.CodeConflict, "tool authorization changed")
+	}
+	if s.onConfirmationApprove != nil {
+		if err := s.onConfirmationApprove(ctx, &c); err != nil {
+			return nil, err
+		}
 	}
 	now := time.Now().UTC()
 	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
