@@ -433,6 +433,28 @@ func (s *AgentRuntimeService) OnConfirmationDecided(ctx context.Context, c *tool
 	_, err := s.setQueued(ctx, &run, run.Revision, agentRunResumeEvent)
 	return err
 }
+func (s *AgentRuntimeService) OnConfirmationApprove(ctx context.Context, c *tooling.ToolConfirmation) error {
+	var scope tooling.ToolScope
+	if err := s.db.WithContext(ctx).Where("id=?", c.ScopeID).First(&scope).Error; err != nil || scope.AgentRunID == nil {
+		return err
+	}
+	var run AgentRun
+	if err := s.db.WithContext(ctx).Where("id=? AND status=?", *scope.AgentRunID, "waiting_confirmation").First(&run).Error; err != nil {
+		return errs.New(errs.CodeConflict, "agent run is not waiting for confirmation")
+	}
+	tdb, err := s.db.Tenant(ctx)
+	if err != nil {
+		return err
+	}
+	rows, err := tenantdata.TenantRaw[struct {
+		Revision uint64
+		Status   string
+	}](tdb, `SELECT revision, status FROM ai_conversations WHERE tenant_id=? AND id=? LIMIT 1`, run.ConversationID)
+	if err != nil || len(rows) != 1 || rows[0].Status != "active" || rows[0].Revision != run.ConversationRevision {
+		return errs.New(errs.CodeRevisionConflict, "conversation changed while waiting for confirmation")
+	}
+	return nil
+}
 func (s *AgentRuntimeService) WakeExpiredConfirmation(ctx context.Context, runID string) (bool, error) {
 	var run AgentRun
 	if err := s.db.WithContext(ctx).Where("id=? AND status=?", runID, "waiting_confirmation").First(&run).Error; errors.Is(err, gorm.ErrRecordNotFound) {
@@ -844,6 +866,9 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 					if err := s.appendSyntheticToolFailure(ctx, run, deferredCall, "deferred_for_confirmation", "tool call was not executed because another call requires confirmation; retry after confirmation if still needed"); err != nil {
 						return s.fail(ctx, run, "tool_result_persist_failed")
 					}
+				}
+				if err := s.finalizeConfirmationWait(ctx, run); err != nil {
+					return s.fail(ctx, run, "confirmation_wait_persist_failed")
 				}
 				return nil
 			}
@@ -1644,15 +1669,47 @@ func (s *AgentRuntimeService) executeToolCall(ctx context.Context, run *AgentRun
 		confirmationStep.ConfirmationID = &confirmation.ID
 		confirmationStep.ToolInvocationID = &confirmation.InvocationID
 		_ = s.db.WithContext(ctx).Model(&AgentStep{}).Where("id=?", confirmationStep.ID).Updates(map[string]any{"status": "waiting", "parent_step_id": step.ID, "confirmation_id": confirmation.ID, "tool_invocation_id": confirmation.InvocationID}).Error
-		run.Status = "waiting_confirmation"
-		run.ConversationRevision = s.currentConversationRevision(ctx, run)
-		_ = s.db.WithContext(ctx).Model(&AgentRun{}).Where("id=? AND lease_owner=?", run.ID, run.LeaseOwner).Updates(map[string]any{"status": "waiting_confirmation", "conversation_revision": run.ConversationRevision, "lease_owner": "", "lease_expires_at": nil, "revision": gorm.Expr("revision+1")}).Error
-		_ = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			return s.appendEvent(ctx, tx, run, "run.waiting_confirmation", &confirmationStep.ID, map[string]any{"confirmation_id": confirmation.ID})
-		})
 		return true, nil
 	}
 	return s.appendToolResult(ctx, run, step, call, result, nil)
+}
+
+func (s *AgentRuntimeService) finalizeConfirmationWait(ctx context.Context, run *AgentRun) error {
+	var confirmationStep AgentStep
+	if err := s.db.WithContext(ctx).Where("run_id=? AND status=? AND type=? AND confirmation_id IS NOT NULL", run.ID, "waiting", string(aiagentruntime.StepConfirmation)).Order("step_index DESC").First(&confirmationStep).Error; err != nil {
+		return err
+	}
+	var conversationRevision uint64
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var conversation Conversation
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=?", run.ConversationID).First(&conversation).Error; err != nil {
+			return err
+		}
+		if conversation.Status != "active" {
+			return errs.New(errs.CodeConflict, "conversation is not active")
+		}
+		conversationRevision = conversation.Revision
+		res := tx.Model(&AgentRun{}).Where("id=? AND status=? AND lease_owner=?", run.ID, "running", run.LeaseOwner).Updates(map[string]any{
+			"status":                "waiting_confirmation",
+			"conversation_revision": conversationRevision,
+			"lease_owner":           "",
+			"lease_expires_at":      nil,
+			"revision":              gorm.Expr("revision+1"),
+		})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected != 1 {
+			return errs.New(errs.CodeConflict, "run lease changed")
+		}
+		return s.appendEvent(ctx, tx, run, "run.waiting_confirmation", &confirmationStep.ID, map[string]any{"confirmation_id": *confirmationStep.ConfirmationID})
+	})
+	if err != nil {
+		return err
+	}
+	run.Status = "waiting_confirmation"
+	run.ConversationRevision = conversationRevision
+	return nil
 }
 
 func (s *AgentRuntimeService) registryToolID(name string) string {

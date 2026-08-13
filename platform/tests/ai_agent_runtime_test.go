@@ -1,18 +1,87 @@
 package tests
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/database"
+	"github.com/yzxingtu2026/ainp/platform/framework/errs"
+	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"github.com/yzxingtu2026/ainp/platform/modules/ai"
+	"github.com/yzxingtu2026/ainp/platform/modules/ai/tooling"
 	"github.com/yzxingtu2026/ainp/platform/modules/system"
 
 	"github.com/yzxingtu2026/ainp/platform/framework/aiagentruntime"
 )
+
+func TestConfirmationApproveRejectsExternalConversationChangesPostgres(t *testing.T) {
+	dsn := os.Getenv("AINP_TEST_DATABASE_DSN")
+	if dsn == "" {
+		t.Skip("AINP_TEST_DATABASE_DSN is not set")
+	}
+	admin, err := database.Open(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	schema := "ainp_confirmation_revision_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	if err = admin.Exec(fmt.Sprintf(`CREATE SCHEMA %q`, schema)).Error; err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = admin.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE`, schema)).Error })
+	db, err := database.Open(dsn + " search_path=" + schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = ai.AutoMigrate(db); err != nil {
+		t.Fatal(err)
+	}
+	fixtureDB, err := tenantdata.MigrationDB(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conversation := ai.Conversation{ID: "conversation-confirmation", TenantID: "tenant-a", OwnerUserID: "user-a", Title: "Confirmation", AgentID: "agent-a", AgentVersionID: "version-a", Purpose: ai.ConversationPurposeWorkspace, Visibility: "private", Status: "active", Revision: 4}
+	if err = fixtureDB.Create(&conversation).Error; err != nil {
+		t.Fatal(err)
+	}
+	runID, conversationID := "run-confirmation", conversation.ID
+	run := ai.AgentRun{ID: runID, TenantID: "tenant-a", UserID: "user-a", ConversationID: conversation.ID, ConversationRevision: conversation.Revision, TriggerMessageID: "message-a", AgentVersionID: "version-a", SessionID: "session-a", AuthVersion: 1, Status: "waiting_confirmation", BudgetJSON: json.RawMessage(`{}`), IdempotencyKey: "run-confirmation", Revision: 1}
+	runDB, _ := tenantdata.MigrationDB(db)
+	if err = runDB.Create(&run).Error; err != nil {
+		t.Fatal(err)
+	}
+	scope := tooling.ToolScope{ID: "scope-confirmation", TenantID: "tenant-a", PrincipalID: "user-a", Realm: string(auth.RealmTenant), SessionID: "session-a", AuthVersion: 1, AgentRunID: &runID, ConversationID: &conversationID, ExpiresAt: time.Now().UTC().Add(time.Minute)}
+	scopeDB, _ := tenantdata.MigrationDB(db)
+	if err = scopeDB.Create(&scope).Error; err != nil {
+		t.Fatal(err)
+	}
+	ctx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "tenant-a", PrincipalID: "user-a", SessionID: "session-a", AuthVersion: 1, Realm: auth.RealmTenant})
+	service := ai.NewAgentRuntimeService(db, nil, nil, nil, nil, nil, nil, nil)
+	confirmation := tooling.ToolConfirmation{ScopeID: scope.ID}
+	if err = service.OnConfirmationApprove(ctx, &confirmation); err != nil {
+		t.Fatalf("unchanged conversation rejected: %v", err)
+	}
+	mutationDB, _ := tenantdata.MigrationDB(db)
+	if err = mutationDB.Model(&ai.Conversation{}).Where("id=?", conversation.ID).Update("revision", conversation.Revision+1).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err = service.OnConfirmationApprove(ctx, &confirmation); !isAppErrorCode(err, errs.CodeRevisionConflict) {
+		t.Fatalf("revision change error=%v, want revision conflict", err)
+	}
+	mutationDB, _ = tenantdata.MigrationDB(db)
+	if err = mutationDB.Model(&ai.Conversation{}).Where("id=?", conversation.ID).Updates(map[string]any{"revision": conversation.Revision, "status": "archived"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err = service.OnConfirmationApprove(ctx, &confirmation); !isAppErrorCode(err, errs.CodeRevisionConflict) {
+		t.Fatalf("archived conversation error=%v, want revision conflict", err)
+	}
+}
 
 func TestAgentRunStateMachineRejectsIllegalTransitions(t *testing.T) {
 	valid := [][2]aiagentruntime.RunStatus{{aiagentruntime.RunQueued, aiagentruntime.RunRunning}, {aiagentruntime.RunRunning, aiagentruntime.RunWaitingConfirmation}, {aiagentruntime.RunWaitingConfirmation, aiagentruntime.RunQueued}, {aiagentruntime.RunFailed, aiagentruntime.RunQueued}}

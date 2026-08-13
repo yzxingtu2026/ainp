@@ -28,6 +28,11 @@ export function toolResultRehydrated(result: unknown): boolean {
   return (result as Record<string, unknown>).status === 'rehydrated';
 }
 
+export function toolResultDeferred(result: unknown): boolean {
+  if (!result || typeof result !== 'object') return false;
+  return (result as Record<string, unknown>).error_category === 'deferred_for_confirmation';
+}
+
 /** 格式化为可展示的 JSON 文本；字符串入参尝试先解析再美化 */
 export function formatToolPayload(value: unknown): string {
   if (value === undefined || value === null) return '';

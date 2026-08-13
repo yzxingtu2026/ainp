@@ -268,6 +268,7 @@ func Register(a *app.App) error {
 	agentRuntime.SetAgentContracts(contracts)
 	agentRuntime.SetMemoryRetriever(memoryRecallAdapter(memoryRetriever))
 	tools.SetConfirmationHooks(agentRuntime.OnConfirmationPending, agentRuntime.OnConfirmationDecided)
+	tools.SetConfirmationApproveHook(agentRuntime.OnConfirmationApprove)
 	if err := RegisterAgentRuntime(a, agentRuntime); err != nil {
 		return err
 	}
