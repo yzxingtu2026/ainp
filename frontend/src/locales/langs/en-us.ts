@@ -527,7 +527,12 @@ const local: App.I18n.Schema = {
         'The current model has no context window configured. Enter the provider value in AI Center > Model Catalog.',
       runFailure: 'Run failed: {category} ({reason})',
       runFailureSimple: 'Run failed: {category}',
-      runBudgetFailure: 'The run budget was insufficient to produce a reliable final response'
+      runBudgetFailure: 'The run budget was insufficient to produce a reliable final response',
+      runTimeout: 'The model response timed out. Try again later',
+      runCancelled: 'The run was cancelled',
+      runProviderUnavailable: 'The model service is temporarily unavailable. Try again later',
+      runStreamProtocolError: 'The model stream response was invalid. Try again later or contact an administrator',
+      completedToolsPreserved: 'Completed tool operations from this run were not rolled back.'
     },
     agentBuilder: {
       back: 'Back to list',
