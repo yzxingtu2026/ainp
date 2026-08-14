@@ -10,6 +10,7 @@ Agent 只读要点：`.agent/rules/backend-layout.md`。本文档为已拍板的
 4. **骨架第一步即接 GORM + PostgreSQL**。
 5. **配置格式**：YAML（提供 `configs/config.example.yaml`）。
 6. **后端测试统一归档**：所有 `_test.go` 放入 `platform/tests/`，使用外部测试包通过公开 API 验证行为；迁移时合并重复覆盖并记录替代位置，禁止仅为测试导出生产私有实现。
+7. **架构门禁共用实现**：AINP 集中测试与外部 CLI 都调用公开 `framework/modulecheck`，不得复制测试或维护第二套规则。
 
 ## 仓库顶层
 
@@ -104,7 +105,7 @@ tests        → framework + modules（仅测试依赖）
 - Action 注册、Service、Repository、模型和领域流程进入子包。大模块优先按能力域拆分（例如 `identity`、`attachment`、`knowledge`），能力包内部再按复杂度组织；小模块可直接采用 `model`、`repository`、`service` 等简单角色分层。
 - `model`、`repository`、`service`、`pagecontext`、`jobs`、`help`、`tools` 均为按需目录，禁止为了满足布局检查创建空目录。
 - 禁止新增 `common`、`commons`、`util`、`utils`、`misc`、`shared`、`helpers` 等兜底包；无法明确归属的跨模块抽象应先审查其所有权，再放入具体能力包或 `framework` 的稳定契约包。
-- 模块内子包可以依赖同模块的根包或其他子包，但必须避免循环依赖；根包 Facade 只做稳定编排和委托，不重新承载实现。
+- 模块内子包可以依赖同模块的其他 owner 子包，但禁止反向 import 模块根包；根包 Facade 只做稳定编排和委托，不重新承载实现。
 
 ### 跨模块依赖
 
@@ -112,11 +113,11 @@ tests        → framework + modules（仅测试依赖）
 
 ### 严格门禁
 
-`platform/tests/module_architecture_test.go` 使用 Go parser 扫描源文件和 import，不依赖文本匹配。门禁规则如下：
+公开 `framework/modulecheck` 使用 Go parser 扫描源文件和 import；`platform/tests/module_architecture_test.go` 与 `cmd/ainp-archcheck` 共用该实现。门禁规则如下：
 
 1. 新增模块根目录实现文件失败，并给出建议目标位置。
 2. 任意跨模块 import 失败，必须改为 framework contract + composition root 注入。
-3. 新增兜底包、空目录或未冻结的 AI 一级包失败。
+3. 新增兜底包、空/无源码叶子目录、模块树内 `_test.go` 或未冻结的 AI 一级包失败。
 4. 子包 import 本模块根包失败，避免形成父子循环依赖。
 5. 每个模块必须有 `register.go`，并提供返回 `error` 的 `Register` 函数。
 
@@ -188,6 +189,19 @@ main → config → logging → database → app.New
 HTTP → request_id → AuthContext → permission(action.id)
     → Handler → Audit(meta.audit) → 信封响应
 ```
+
+## 模块架构门禁
+
+AINP 自身从 `platform/` 执行：
+
+```bash
+go run ./cmd/ainp-archcheck \
+  --profile ainp \
+  --modules-root ./modules \
+  --tests-root ./tests
+```
+
+检查器从最近的 `go.mod` 推导 module import prefix，输出稳定 rule ID、相对文件、非法目标和修复方向，发现任何违规即非零退出。`ainp` profile 额外执行冻结 AI 能力依赖图；下游只在 `host.Module` 入口形态上使用 `downstream` profile，共同包边界不得放宽。禁止 TSV 基线、通配豁免和自定义白名单。
 
 ## 与规范文档映射
 

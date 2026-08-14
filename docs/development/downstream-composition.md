@@ -55,6 +55,50 @@ worker, err := host.OpenWorker(ctx, cfg, profile, options...)
 
 调用方负责配置和日志初始化、OS 信号以及最终调用 `Close`；Host 负责 App、Outbox、Job、Worker runner 与关闭顺序。最小独立模块见 `platform/examples/downstream`。
 
+## 严格模块包架构
+
+官方示例使用同一 `composition.Modules` 装配 API 与 Worker，模块实现采用以下生产结构：
+
+```text
+platform/examples/downstream/
+├── composition/
+├── modules/
+│   └── orders/
+│       ├── register.go
+│       ├── constants.go
+│       └── catalog/
+│           ├── model.go
+│           ├── service.go
+│           └── register.go
+├── migrations/
+├── prompts/
+├── i18n/
+└── tests/
+```
+
+根 `register.go` 只实现 `host.Module` 生命周期和资源装配；Action、Service、Model、Authenticator、Agent Contract 与 Job 归入 `catalog` owner 包。模块树内不放测试，`tests` 使用外部包和公开 API 验证 Host、迁移、运行时资源及 AI Action 契约。
+
+下游 CI 必须在 `go vet`、`go test` 前运行由已固定 platform 版本提供的门禁：
+
+```bash
+go run github.com/yzxingtu2026/ainp/platform/cmd/ainp-archcheck \
+  --profile downstream \
+  --modules-root ./modules \
+  --tests-root ./tests
+```
+
+检查器自动从最近的 `go.mod` 推导外部 module import prefix，不硬编码 AINP 仓库路径。失败输出包含稳定 rule ID、相对文件、目标 import/目录和修复方向；禁止复制 `platform/tests/module_architecture_test.go`，也不接受基线或白名单。
+
+## Agent 规则接入
+
+正式 `platform/vX.Y.Z` 发布物包含 `rules/downstream-module-architecture.md`。下游升级必须显式完成：
+
+1. 将 `go.mod` 升级到正式 `platform/vX.Y.Z` 并验证依赖。
+2. 从该版本发布物复制或同步精简规则到下游 `.agent/rules/`，在 `.agent/rules/main.md` 引用，并在 `.agent/adapters/rules.json` 增加 `source` 及 Qoder/Cursor 目标登记；随后运行下游自己的 `agent-rules sync` 和 `doctor`。
+3. 在下游 backend quality job 中显式加入上述 `ainp-archcheck` 命令。
+
+规则文件、检查器和 Go API 必须来自同一 platform 版本。`docs/upstream` 只读快照不会被 Agent 自动加载，升级 Go 依赖也不会自动改写下游目录、Agent adapter 或 CI。
+
 ## Runtime Assets
 
 AINP 正式 Prompt 与后端 i18n 通过 `embed.FS` 随 `platform/vX.Y.Z` 发布，默认 Host 不读取 cwd，也不要求下游或容器复制 `prompts/`、`i18n/`。API、安装模式、embedded worker 与独立 Worker 均由同一 `Composition` 加载完全相同的资源源。
