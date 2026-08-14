@@ -9,3 +9,6 @@
 - Provider 仅在 `Prepare` 注入，业务能力在 `Register` 注册；新安装 Schema 使用 `AutoMigrator`，已有环境只走 namespaced forward-only migration。
 - 下游 migration owner 必须等于模块 ID；不得改写 AINP 已发布迁移历史或恢复任何架构豁免。
 - 正式消费固定 `platform/vX.Y.Z`；根 Tag 与模块 Tag 必须同版本、同 Commit。
+- 下游模块根包只保留薄 `Module` 生命周期、稳定 Facade/contracts/constants；Action、Service、Repository、Model、HTTP 与领域流程进入 owner 明确的能力子包，测试集中到模块树外的 `tests`。
+- 下游 CI 必须在 `go vet/go test` 前显式运行依赖版本提供的 `cmd/ainp-archcheck --profile downstream`；不接受架构基线、通配豁免或本地白名单。
+- 发布物中的精简规则来源是 `platform/rules/downstream-module-architecture.md`。下游升级后仍须复制或同步同版本规则、登记自身 `.agent/rules/main.md` 与 `.agent/adapters/rules.json`，再运行 `agent-rules sync/doctor`；保存文档快照或只升级 Go 依赖不会自动启用规则。

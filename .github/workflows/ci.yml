@@ -73,6 +73,10 @@ jobs:
       - name: Verify external downstream module
         working-directory: platform/examples/downstream
         run: |
+          go run github.com/yzxingtu2026/ainp/platform/cmd/ainp-archcheck \
+            --profile downstream \
+            --modules-root ./modules \
+            --tests-root ./tests
           go vet ./...
           go test ./...
           if grep -R "platform/internal/" --include='*.go' .; then

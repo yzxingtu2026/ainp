@@ -1,4 +1,4 @@
-package downstream
+package downstream_test
 
 import (
 	"context"
@@ -7,6 +7,9 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"example.com/ainp-downstream/composition"
+	"example.com/ainp-downstream/modules/orders"
 
 	"github.com/google/uuid"
 	"github.com/yzxingtu2026/ainp/platform/framework/action"
@@ -22,12 +25,11 @@ import (
 )
 
 func TestOneModuleDeclarationBuildsAPIAndWorkerCompositions(t *testing.T) {
-	modules := []host.Module{Module{}}
-	api, err := host.New(host.WithModules(modules...))
+	api, err := host.New(host.WithModules(composition.Modules...))
 	if err != nil {
 		t.Fatal(err)
 	}
-	worker, err := host.New(host.WithModules(modules...))
+	worker, err := host.New(host.WithModules(composition.Modules...))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +37,7 @@ func TestOneModuleDeclarationBuildsAPIAndWorkerCompositions(t *testing.T) {
 		t.Fatal("production downstream compositions must exclude Demo by default")
 	}
 
-	showcase, err := host.New(host.WithModules(modules...), host.WithDemo())
+	showcase, err := host.New(host.WithModules(composition.Modules...), host.WithDemo())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +82,7 @@ func TestDownstreamHostLoadsEmbeddedRuntimeAssetsFromArbitraryWorkingDirectory(t
 		Outbox:  config.OutboxConfig{Enabled: &disabled},
 		Jobs:    config.JobsConfig{Enabled: &disabled},
 	}
-	platform, err := host.OpenInstalled(context.Background(), cfg, host.WithModules(Module{}))
+	platform, err := host.OpenInstalled(context.Background(), cfg, host.WithModules(composition.Modules...))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +91,7 @@ func TestDownstreamHostLoadsEmbeddedRuntimeAssetsFromArbitraryWorkingDirectory(t
 		_ = platform.Close()
 	})
 
-	if prompt.Get("agent/system-operations") == "" || prompt.Get(ordersAgentPromptKey) == "" || prompt.Get("example.orders/order-summary") == "" {
+	if prompt.Get("agent/system-operations") == "" || prompt.Get(orders.AgentPromptKey) == "" || prompt.Get("example.orders/order-summary") == "" {
 		t.Fatal("built-in and downstream Prompts must both load from embedded filesystems")
 	}
 	if got := i18n.T("zh-CN", "example.orders.order_list"); got != "订单" {
@@ -102,30 +104,27 @@ func TestDownstreamHostLoadsEmbeddedRuntimeAssetsFromArbitraryWorkingDirectory(t
 			t.Fatalf("unsafe or missing asset digest: %#v", asset)
 		}
 	}
-	if !owners["ainp"] || !owners["example.orders"] {
+	if !owners["ainp"] || !owners[orders.ModuleID] {
 		t.Fatalf("runtime asset manifest is missing owners: %#v", owners)
 	}
 }
 
 func TestExternalModuleRegistersAtomicAICreateContract(t *testing.T) {
-	prompts, err := fsSub(migrationFiles, "prompts")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := prompt.LoadSources(prompt.Source{Owner: "example.orders", FS: prompts}); err != nil {
+	assets := (orders.Module{}).RuntimeAssets()
+	if err := prompt.LoadSources(prompt.Source{Owner: orders.ModuleID, FS: assets.Prompts}); err != nil {
 		t.Fatal(err)
 	}
 	application := app.New(&config.Config{}, nil, nil, nil)
 	application.AgentContracts = aiagent.NewRegistry()
 	application.Jobs = &job.Runtime{Registry: job.NewRegistry()}
-	if err := (Module{}).Register(application); err != nil {
+	if err := (orders.Module{}).Register(application); err != nil {
 		t.Fatal(err)
 	}
-	contract, ok := application.AgentContracts.Get("example.orders", "1.0.0")
+	contract, ok := application.AgentContracts.Get(orders.ModuleID, "1.0.0")
 	if !ok {
 		t.Fatal("downstream Agent Contract was not registered")
 	}
-	if contract.BaseInstructionsVersion != "1.0.0" || !slices.Equal(contract.AllowedToolSources, []string{"action"}) || !slices.Equal(contract.AllowedToolCapabilities, []string{"orders"}) {
+	if contract.BaseInstructionsVersion != "1.0.0" || !slices.Equal(contract.AllowedToolSources, []string{"action"}) || !slices.Equal(contract.AllowedToolCapabilities, []string{orders.CapabilityID}) {
 		t.Fatalf("downstream Agent Contract does not expose the orders Action scope: %#v", contract)
 	}
 	registered, ok := application.Actions.Get("orders.batch_create")
