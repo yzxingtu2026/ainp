@@ -112,7 +112,7 @@ func Register(a *app.App) error {
 	if err := registerRuntimeContextDefaultsSetting(a); err != nil {
 		return err
 	}
-	settingSvc := NewSettingService(a.DB, a.Settings)
+	settingSvc := NewSettingService(a.DB, a.Settings, a.CredentialCipher)
 	settingSvc.SetChangeRegistry(a.SettingChanges)
 	settingSvc.SetValidatorRegistry(a.SettingValidators)
 	a.SettingValues = settingSvc.Provider()

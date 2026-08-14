@@ -835,6 +835,11 @@ declare namespace App {
           reset: string;
           resetConfirm: string;
           resetSuccess: string;
+          secretConfigured: string;
+          secretNotConfigured: string;
+          secretKeepHint: string;
+          secretClear: string;
+          secretClearConfirm: string;
           navigationIndex: {
             title: string;
             summary: string;

@@ -55,13 +55,16 @@ func ValidateValues(def Definition, values map[string]any) error {
 
 func validateFieldValue(defKey string, field Field, raw any, asDefault bool) error {
 	switch field.Type {
-	case FieldText, FieldTextarea, FieldColor, FieldSelect, FieldRemoteSelect:
+	case FieldText, FieldTextarea, FieldColor, FieldSelect, FieldRemoteSelect, FieldSecret:
 		s, ok := raw.(string)
 		if !ok {
 			return fmt.Errorf("expected string")
 		}
 		if field.Required && strings.TrimSpace(s) == "" {
 			return fmt.Errorf("field required: %s", field.Key)
+		}
+		if field.Type == FieldSecret && strings.TrimSpace(s) == "" {
+			return fmt.Errorf("secret value required: %s", field.Key)
 		}
 		if field.MinLength != nil && len([]rune(s)) < *field.MinLength {
 			return fmt.Errorf("min_length %d", *field.MinLength)

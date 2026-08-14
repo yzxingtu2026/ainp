@@ -48,11 +48,15 @@ func TestSystemManagementAndPersonalActionsExposeSafeAIContracts(t *testing.T) {
 		assertSystemAIContract(t, application, actionID, true)
 	}
 
-	for _, actionID := range []string{system.ActionAccountCreate, system.ActionAccountPasswordReset} {
+	for _, actionID := range []string{system.ActionAccountCreate, system.ActionAccountPasswordReset, system.ActionSettingSecretUpdate} {
 		credentialAction, ok := application.Actions.Get(actionID)
 		if !ok || credentialAction.Meta.AI == nil || credentialAction.Meta.AI.ExposeTool || credentialAction.Meta.AI.ExclusionReason != action.AIExcludeSensitiveCredential {
 			t.Fatalf("credential Action %s must remain behind the sensitive credential boundary: %#v", actionID, credentialAction.Meta.AI)
 		}
+	}
+	secretUpdate, _ := application.Actions.Get(system.ActionSettingSecretUpdate)
+	if secretUpdate.Meta.PermissionCode(system.ActionSettingSecretUpdate) != system.ActionSettingUpdate {
+		t.Fatal("setting secret update must reuse system.setting_update permission")
 	}
 
 	projected, err := (&aitool.ActionProvider{Actions: application.Actions}).List(context.Background())
@@ -73,7 +77,7 @@ func TestSystemManagementAndPersonalActionsExposeSafeAIContracts(t *testing.T) {
 			t.Fatalf("second-batch action was not projected from Action Registry: %s", actionID)
 		}
 	}
-	if projectedIDs[system.ActionAccountCreate] || projectedIDs[system.ActionAccountPasswordReset] {
+	if projectedIDs[system.ActionAccountCreate] || projectedIDs[system.ActionAccountPasswordReset] || projectedIDs[system.ActionSettingSecretUpdate] {
 		t.Fatal("credential-bearing user Actions must not be projected as Action Tools")
 	}
 	for actionID, want := range map[string]string{

@@ -27,6 +27,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/capability"
 	"github.com/yzxingtu2026/ainp/platform/framework/codeset"
 	"github.com/yzxingtu2026/ainp/platform/framework/config"
+	"github.com/yzxingtu2026/ainp/platform/framework/credential"
 	"github.com/yzxingtu2026/ainp/platform/framework/httpserver"
 	"github.com/yzxingtu2026/ainp/platform/framework/i18n"
 	"github.com/yzxingtu2026/ainp/platform/framework/idempotency"
@@ -61,6 +62,7 @@ type App struct {
 	SettingValues            *setting.Provider
 	SettingChanges           *setting.ChangeRegistry
 	SettingValidators        *setting.ValidatorRegistry
+	CredentialCipher         credential.Cipher
 	RuntimeContextProvider   runtimecontext.Provider
 	StateMachines            *statemachine.Registry
 	AIProviderTypes          *aimodel.ProviderTypeRegistry
@@ -117,6 +119,10 @@ func New(cfg *config.Config, db *gorm.DB, auditor audit.Recorder, tokens *auth.T
 	idemExec := idempotency.NewExecutor(idemRepo)
 	actions.SetIdempotencyExecutor(idempotency.NewActionAdapter(idemExec))
 
+	var credentialCipher credential.Cipher
+	if cfg != nil && cfg.EffectiveCredentialEncryptionKey() != "" {
+		credentialCipher, _ = credential.NewAESGCMCipher(cfg.EffectiveCredentialEncryptionKey())
+	}
 	return &App{
 		Config:               cfg,
 		DB:                   db,
@@ -131,6 +137,7 @@ func New(cfg *config.Config, db *gorm.DB, auditor audit.Recorder, tokens *auth.T
 		Settings:             setting.NewRegistry(),
 		SettingChanges:       setting.NewChangeRegistry(),
 		SettingValidators:    setting.NewValidatorRegistry(),
+		CredentialCipher:     credentialCipher,
 		StateMachines:        statemachine.NewRegistry(),
 		AttachmentPolicies:   attachment.NewPolicyRegistry(),
 		Notifications:        notification.NewDefinitionRegistry(),

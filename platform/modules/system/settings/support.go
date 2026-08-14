@@ -15,6 +15,7 @@ const (
 	ActionSettingList                = setting.ActionListPermission
 	ActionSettingGet                 = "system.setting_get"
 	ActionSettingUpdate              = setting.ActionUpdatePermission
+	ActionSettingSecretUpdate        = "system.setting_secret_update"
 	ActionSettingReset               = "system.setting_reset"
 	ActionProfileGet                 = "system.profile_get"
 	ActionProfileUpdate              = "system.profile_update"

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"sort"
+	"strings"
 
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
@@ -35,13 +36,13 @@ func localizedDefinition(lang, key, fallback string) string {
 	return translated
 }
 
-func NewSettingService(db *gorm.DB, registry *setting.Registry) *SettingService {
+func NewSettingService(db *gorm.DB, registry *setting.Registry, ciphers ...setting.SecretCipher) *SettingService {
 	store := NewSettingValueStore(db)
 	return &SettingService{
 		db:       db,
 		registry: registry,
 		store:    store,
-		provider: setting.NewProvider(registry, store),
+		provider: setting.NewProvider(registry, store, ciphers...),
 	}
 }
 
@@ -75,6 +76,14 @@ type settingResetRequest struct {
 	Revision *int64 `json:"revision" validate:"required"`
 }
 
+type settingSecretUpdateRequest struct {
+	Key               string            `json:"key" validate:"required"`
+	Revision          *int64            `json:"revision" validate:"required"`
+	Values            map[string]any    `json:"values"`
+	Secrets           map[string]string `json:"secrets"`
+	ClearSecretFields []string          `json:"clear_secret_fields"`
+}
+
 type SettingFieldView struct {
 	Key                string                      `json:"key"`
 	Type               setting.FieldType           `json:"type"`
@@ -94,6 +103,7 @@ type SettingFieldView struct {
 	AllowCustomValues  bool                        `json:"allow_custom_values,omitempty"`
 	CustomValuePattern string                      `json:"custom_value_pattern,omitempty"`
 	VisibleWhen        *setting.VisibleWhen        `json:"visible_when,omitempty"`
+	SecretConfigured   *bool                       `json:"secret_configured,omitempty"`
 }
 
 type SettingDefinitionView struct {
@@ -139,11 +149,11 @@ func (s *SettingService) List(ctx context.Context, _ json.RawMessage) (any, erro
 		if def.Permission != "" && !ac.HasPermission(def.Permission) {
 			continue
 		}
-		eff, err := s.provider.Get(ctx, tenantID, def.Key)
+		view, err := s.definitionView(ctx, tenantID, lang, def)
 		if err != nil {
 			return nil, mapSettingError(err)
 		}
-		byCategory[def.CategoryKey] = append(byCategory[def.CategoryKey], toDefinitionView(lang, eff))
+		byCategory[def.CategoryKey] = append(byCategory[def.CategoryKey], view)
 	}
 
 	result := make([]SettingCategoryView, 0, len(categories))
@@ -187,11 +197,11 @@ func (s *SettingService) Get(ctx context.Context, input json.RawMessage) (any, e
 	if def.Permission != "" && !ac.HasPermission(def.Permission) {
 		return nil, errs.NewKey(errs.CodeForbidden, "common.forbidden", "forbidden")
 	}
-	eff, err := s.provider.Get(ctx, tenantID, req.Key)
+	view, err := s.definitionView(ctx, tenantID, ac.Language, def)
 	if err != nil {
 		return nil, mapSettingError(err)
 	}
-	return toDefinitionView(ac.Language, eff), nil
+	return view, nil
 }
 
 func (s *SettingService) Update(ctx context.Context, input json.RawMessage) (any, error) {
@@ -209,6 +219,9 @@ func (s *SettingService) Update(ctx context.Context, input json.RawMessage) (any
 	}
 	if def.Scope != setting.ScopeTenant {
 		return nil, errs.NewKey(errs.CodeNotFound, "setting.not_found", "setting not found")
+	}
+	if setting.HasSecretFields(def) {
+		return nil, errs.ValidationKey("setting.secret_action_required", "setting contains secret fields and requires the secret update endpoint")
 	}
 	ac := auth.MustFromContext(ctx)
 	if def.Permission != "" && !ac.HasPermission(def.Permission) {
@@ -239,6 +252,138 @@ func (s *SettingService) Update(ctx context.Context, input json.RawMessage) (any
 	return toDefinitionView(ac.Language, eff), nil
 }
 
+func (s *SettingService) UpdateSecret(ctx context.Context, input json.RawMessage) (any, error) {
+	tenantID, userID, err := tenantIdentity(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var req settingSecretUpdateRequest
+	if err := json.Unmarshal(input, &req); err != nil || req.Key == "" || req.Revision == nil {
+		return nil, errs.ValidationKey("common.validation_failed", "invalid setting secret update request")
+	}
+	def, ok := s.registry.GetDefinition(req.Key)
+	if !ok || def.Scope != setting.ScopeTenant {
+		return nil, errs.NewKey(errs.CodeNotFound, "setting.not_found", "setting not found")
+	}
+	if !setting.HasSecretFields(def) {
+		return nil, errs.ValidationKey("setting.validation_failed", "setting has no secret fields")
+	}
+	ac := auth.MustFromContext(ctx)
+	if def.Permission != "" && !ac.HasPermission(def.Permission) {
+		return nil, errs.NewKey(errs.CodeForbidden, "common.forbidden", "forbidden")
+	}
+	plain, unavailable, err := s.loadSecretValues(ctx, tenantID, def)
+	if err != nil {
+		return nil, mapSettingError(err)
+	}
+	secretFields := map[string]setting.Field{}
+	for _, field := range def.Fields {
+		if field.Type == setting.FieldSecret {
+			secretFields[field.Key] = field
+		}
+	}
+	for key, value := range req.Values {
+		if _, secret := secretFields[key]; secret {
+			return nil, errs.ValidationKey("setting.validation_failed", "secret fields must use the secrets object")
+		}
+		plain[key] = value
+	}
+	changed := make([]string, 0, len(req.Secrets)+len(req.ClearSecretFields))
+	for key, value := range req.Secrets {
+		if _, ok := secretFields[key]; !ok || strings.TrimSpace(value) == "" {
+			return nil, errs.ValidationKey("setting.validation_failed", "invalid secret field update")
+		}
+		plain[key] = value
+		changed = append(changed, key)
+	}
+	cleared := map[string]struct{}{}
+	for _, key := range req.ClearSecretFields {
+		field, ok := secretFields[key]
+		if !ok || field.Required {
+			return nil, errs.ValidationKey("setting.validation_failed", "secret field cannot be cleared")
+		}
+		if _, duplicate := cleared[key]; duplicate {
+			return nil, errs.ValidationKey("setting.validation_failed", "duplicate secret field clear")
+		}
+		cleared[key] = struct{}{}
+		delete(plain, key)
+		changed = append(changed, key)
+	}
+	for key := range unavailable {
+		_, replaced := req.Secrets[key]
+		_, cleared := cleared[key]
+		if !replaced && !cleared {
+			return nil, errs.NewKey(errs.CodeConflict, "setting.secret_unavailable", "setting secret unavailable and must be reconfigured")
+		}
+	}
+	if err := setting.ValidateValues(def, plain); err != nil {
+		return nil, errs.ValidationKey("setting.validation_failed", err.Error())
+	}
+	if s.validators != nil {
+		if err := s.validators.Validate(ctx, setting.Validation{TenantID: tenantID, ActorID: userID, Key: req.Key, Values: plain}); err != nil {
+			return nil, errs.ValidationKey("setting.validation_failed", err.Error())
+		}
+	}
+	storedValues := cloneSettingValues(plain)
+	for key := range secretFields {
+		value, exists := plain[key].(string)
+		if !exists || value == "" {
+			delete(storedValues, key)
+			continue
+		}
+		if s.provider == nil || s.provider.SecretCipher() == nil {
+			return nil, errs.NewKey(errs.CodeInternal, "setting.secret_unavailable", "setting secret unavailable")
+		}
+		ciphertext, encryptErr := s.provider.SecretCipher().Encrypt(ctx, value, setting.SecretAAD(tenantID, req.Key, key, def.SchemaVersion))
+		if encryptErr != nil {
+			return nil, errs.NewKey(errs.CodeInternal, "setting.secret_unavailable", "setting secret unavailable")
+		}
+		storedValues[key] = ciphertext
+	}
+	sort.Strings(changed)
+	setSettingAudit(ctx, req.Key, "setting secret fields updated: "+strings.Join(changed, ","))
+	if _, err := s.store.Put(ctx, tenantID, req.Key, *req.Revision, def.SchemaVersion, storedValues, userID); err != nil {
+		return nil, mapSettingError(err)
+	}
+	s.provider.Invalidate(tenantID, req.Key)
+	s.notifyChange(ctx, setting.Change{TenantID: tenantID, ActorID: userID, Key: req.Key, Operation: setting.ChangeUpdated})
+	return s.definitionView(ctx, tenantID, ac.Language, def)
+}
+
+func (s *SettingService) loadSecretValues(ctx context.Context, tenantID string, def setting.Definition) (map[string]any, map[string]struct{}, error) {
+	plain := setting.DefaultValues(def)
+	unavailable := map[string]struct{}{}
+	stored, err := s.store.Get(ctx, tenantID, def.Key)
+	if err != nil || stored == nil {
+		return plain, unavailable, err
+	}
+	if stored.SchemaVersion != def.SchemaVersion {
+		return nil, nil, setting.ErrSchemaVersionMismatch
+	}
+	fieldTypes := make(map[string]setting.FieldType, len(def.Fields))
+	for _, field := range def.Fields {
+		fieldTypes[field.Key] = field.Type
+	}
+	for key, value := range stored.Values {
+		if fieldTypes[key] != setting.FieldSecret {
+			plain[key] = value
+			continue
+		}
+		ciphertext, ok := value.(string)
+		if !ok || ciphertext == "" || s.provider.SecretCipher() == nil {
+			unavailable[key] = struct{}{}
+			continue
+		}
+		plaintext, decryptErr := s.provider.SecretCipher().Decrypt(ctx, ciphertext, setting.SecretAAD(tenantID, def.Key, key, stored.SchemaVersion))
+		if decryptErr != nil || plaintext == "" {
+			unavailable[key] = struct{}{}
+			continue
+		}
+		plain[key] = plaintext
+	}
+	return plain, unavailable, nil
+}
+
 func (s *SettingService) Reset(ctx context.Context, input json.RawMessage) (any, error) {
 	tenantID, userID, err := tenantIdentity(ctx)
 	if err != nil {
@@ -265,11 +410,7 @@ func (s *SettingService) Reset(ctx context.Context, input json.RawMessage) (any,
 	}
 	s.provider.Invalidate(tenantID, req.Key)
 	s.notifyChange(ctx, setting.Change{TenantID: tenantID, ActorID: userID, Key: req.Key, Operation: setting.ChangeReset})
-	eff, err := s.provider.Get(ctx, tenantID, req.Key)
-	if err != nil {
-		return nil, mapSettingError(err)
-	}
-	return toDefinitionView(ac.Language, eff), nil
+	return s.definitionView(ctx, tenantID, ac.Language, def)
 }
 
 // Preferences is the typed view of general.preferences.
@@ -302,7 +443,7 @@ func (s *SettingService) Preferences(ctx context.Context) (*Preferences, error) 
 	return &prefs, nil
 }
 
-func toDefinitionView(lang string, eff *setting.Effective) SettingDefinitionView {
+func toDefinitionView(lang string, eff *setting.Effective, configured ...map[string]bool) SettingDefinitionView {
 	def := eff.Definition
 	fields := make([]SettingFieldView, 0, len(def.Fields))
 	for _, field := range def.Fields {
@@ -312,7 +453,7 @@ func toDefinitionView(lang string, eff *setting.Effective) SettingDefinitionView
 				Value: opt.Value, Label: localizedDefinition(lang, opt.LabelKey, opt.Label), LabelKey: opt.LabelKey,
 			})
 		}
-		fields = append(fields, SettingFieldView{
+		view := SettingFieldView{
 			Key: field.Key, Type: field.Type,
 			Label: localizedDefinition(lang, field.LabelKey, field.Label), LabelKey: field.LabelKey,
 			Description: localizedDefinition(lang, field.DescriptionKey, field.Description), DescriptionKey: field.DescriptionKey,
@@ -320,15 +461,75 @@ func toDefinitionView(lang string, eff *setting.Effective) SettingDefinitionView
 			MinLength: field.MinLength, MaxLength: field.MaxLength, Min: field.Min, Max: field.Max, Step: field.Step,
 			Options: localizedOpts, RemoteSource: field.RemoteSource, AllowCustomValues: field.AllowCustomValues,
 			CustomValuePattern: field.CustomValuePattern, VisibleWhen: field.VisibleWhen,
-		})
+		}
+		if field.Type == setting.FieldSecret {
+			value := false
+			if len(configured) > 0 {
+				value = configured[0][field.Key]
+			}
+			view.Default = nil
+			view.SecretConfigured = &value
+		}
+		fields = append(fields, view)
+	}
+	values := cloneSettingValues(eff.Values)
+	for _, field := range def.Fields {
+		if field.Type == setting.FieldSecret {
+			delete(values, field.Key)
+		}
 	}
 	return SettingDefinitionView{
 		Key: def.Key, CategoryKey: def.CategoryKey,
 		Title: localizedDefinition(lang, def.TitleKey, def.Title), TitleKey: def.TitleKey,
 		Description: localizedDefinition(lang, def.DescriptionKey, def.Description), DescriptionKey: def.DescriptionKey,
 		Permission: def.Permission, Order: def.Order, SchemaVersion: eff.SchemaVersion,
-		Revision: eff.Revision, Source: eff.Source, Values: eff.Values, Fields: fields,
+		Revision: eff.Revision, Source: eff.Source, Values: values, Fields: fields,
 	}
+}
+
+func (s *SettingService) definitionView(ctx context.Context, tenantID, lang string, def setting.Definition) (SettingDefinitionView, error) {
+	if !setting.HasSecretFields(def) {
+		eff, err := s.provider.Get(ctx, tenantID, def.Key)
+		if err != nil {
+			return SettingDefinitionView{}, err
+		}
+		return toDefinitionView(lang, eff), nil
+	}
+	stored, err := s.store.Get(ctx, tenantID, def.Key)
+	if err != nil {
+		return SettingDefinitionView{}, err
+	}
+	eff := &setting.Effective{Definition: def, Values: setting.DefaultValues(def), SchemaVersion: def.SchemaVersion, Source: "default"}
+	configured := map[string]bool{}
+	if stored != nil {
+		if stored.SchemaVersion != def.SchemaVersion {
+			return SettingDefinitionView{}, setting.ErrSchemaVersionMismatch
+		}
+		eff.Revision, eff.SchemaVersion, eff.Source = stored.Revision, stored.SchemaVersion, "tenant"
+		for key, value := range stored.Values {
+			eff.Values[key] = value
+		}
+		for _, field := range def.Fields {
+			if field.Type != setting.FieldSecret {
+				continue
+			}
+			ciphertext, ok := stored.Values[field.Key].(string)
+			if !ok || ciphertext == "" || s.provider.SecretCipher() == nil {
+				continue
+			}
+			plaintext, decryptErr := s.provider.SecretCipher().Decrypt(ctx, ciphertext, setting.SecretAAD(tenantID, def.Key, field.Key, stored.SchemaVersion))
+			configured[field.Key] = decryptErr == nil && plaintext != ""
+		}
+	}
+	return toDefinitionView(lang, eff, configured), nil
+}
+
+func cloneSettingValues(values map[string]any) map[string]any {
+	out := make(map[string]any, len(values))
+	for key, value := range values {
+		out[key] = value
+	}
+	return out
 }
 
 func mapSettingError(err error) error {
@@ -337,6 +538,9 @@ func mapSettingError(err error) error {
 	}
 	if errors.Is(err, setting.ErrSchemaVersionMismatch) {
 		return errs.NewKey(errs.CodeConflict, "setting.schema_mismatch", "setting schema version mismatch")
+	}
+	if errors.Is(err, setting.ErrSecretUnavailable) {
+		return errs.NewKey(errs.CodeConflict, "setting.secret_unavailable", "setting secret unavailable")
 	}
 	if errors.Is(err, tenant.ErrTenantContextRequired) {
 		return errs.NewKey(errs.CodeUnauthorized, "common.unauthorized", "unauthorized")

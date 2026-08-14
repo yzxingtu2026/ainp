@@ -21,7 +21,7 @@ Provider Type 由代码注册，`protocol` 是稳定契约。注册项包含配�
 
 ## Provider 与加密凭证
 
-Provider 按 AuthContext 的 `tenant_id` 隔离。管理员提交的供应商凭证通过 AES-256-GCM 加密后保存到 `credential_ciphertext`，供应商凭证不支持 `env:*` 引用。平台级 `ai.credential_encryption_key` 必须是 32 字节随机密钥的 Base64，生产通过 `AI_CREDENTIAL_ENCRYPTION_KEY` 注入，不得与 JWT Secret 共用。
+Provider 按 AuthContext 的 `tenant_id` 隔离。管理员提交的供应商凭证通过 framework-owned Credential Cipher（AES-256-GCM）加密后保存到 `credential_ciphertext`，供应商凭证不支持 `env:*` 引用。平台级 `credential_encryption_key` 必须是 32 字节随机密钥的 Base64，生产通过 `CREDENTIAL_ENCRYPTION_KEY` 注入，不得与 JWT Secret 共用；旧 AI 配置名仅保留一个明确弃用周期。
 
 每次加密使用随机 nonce，并以 `tenant_id + provider_id` 作为 AAD，密文不能跨 Provider 搬用。API 只返回 `credential_configured`；不返回明文或密文。编辑 Provider 时凭证留空表示保留，填写表示重新加密。解密后的凭证只能存在于单次服务端发现/解析请求内存中，禁止进入 API、日志、审计或普通租户设置。
 

@@ -20,8 +20,8 @@ type (
 	MCPConnectionInfoView  = settings.MCPConnectionInfoView
 )
 
-func NewSettingService(db *gorm.DB, registry *setting.Registry) *SettingService {
-	return settings.NewSettingService(db, registry)
+func NewSettingService(db *gorm.DB, registry *setting.Registry, ciphers ...setting.SecretCipher) *SettingService {
+	return settings.NewSettingService(db, registry, ciphers...)
 }
 func NewSettingValueStore(db *gorm.DB) setting.ValueStore { return settings.NewSettingValueStore(db) }
 func NewUserSettingService(db *gorm.DB, registry *setting.Registry) *UserSettingService {

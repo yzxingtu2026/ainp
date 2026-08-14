@@ -63,6 +63,42 @@ func TestSettingRegistryRejectsInvalidDefinitions(t *testing.T) {
 	}
 }
 
+func TestSettingSecretDefinitionContract(t *testing.T) {
+	categories := map[string]setting.Category{"general": {Key: "general", Title: "General", Icon: "mdi:cog", Surface: auth.RealmTenant}}
+	minLength, maxLength := 8, 128
+	valid := setting.Definition{Key: "general.secret", CategoryKey: "general", Title: "Secret", Scope: setting.ScopeTenant, Surface: auth.RealmTenant, SchemaVersion: 1, Fields: []setting.Field{
+		{Key: "enabled", Type: setting.FieldBoolean, Label: "Enabled", Default: false},
+		{Key: "api_key", Type: setting.FieldSecret, Label: "API key", Required: true, MinLength: &minLength, MaxLength: &maxLength, VisibleWhen: &setting.VisibleWhen{Field: "enabled", Eq: true}},
+	}}
+	if err := setting.ValidateDefinition(valid, categories); err != nil {
+		t.Fatalf("valid tenant secret rejected: %v", err)
+	}
+	tests := []struct {
+		name string
+		edit func(*setting.Definition)
+	}{
+		{"user scope", func(def *setting.Definition) { def.Scope = setting.ScopeUser }},
+		{"non-empty default", func(def *setting.Definition) { def.Fields[1].Default = "source-secret" }},
+		{"invalid lengths", func(def *setting.Definition) {
+			low, high := 20, 10
+			def.Fields[1].MinLength, def.Fields[1].MaxLength = &low, &high
+		}},
+		{"secret dependency", func(def *setting.Definition) {
+			def.Fields[0].VisibleWhen = &setting.VisibleWhen{Field: "api_key", Eq: "x"}
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			candidate := valid
+			candidate.Fields = append([]setting.Field(nil), valid.Fields...)
+			test.edit(&candidate)
+			if err := setting.ValidateDefinition(candidate, categories); err == nil {
+				t.Fatal("invalid secret definition must fail")
+			}
+		})
+	}
+}
+
 func TestSettingMultiSelectCustomValues(t *testing.T) {
 	options := []setting.FieldOption{{Value: ".pdf", Label: ".pdf"}}
 	strict := setting.Definition{

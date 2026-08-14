@@ -28,6 +28,9 @@ func main() {
 	}
 	logCloser := logging.InitConfig(logging.Config{Level: cfg.Logging.Level, Format: cfg.Logging.Format, Outputs: cfg.Logging.Outputs, Service: cfg.Logging.Service, InstanceID: cfg.Logging.InstanceID, File: logging.FileConfig{Path: cfg.Logging.File.Path, MaxSizeMB: cfg.Logging.File.MaxSizeMB, MaxBackups: cfg.Logging.File.MaxBackups, MaxAgeDays: cfg.Logging.File.MaxAgeDays, Compress: cfg.Logging.File.Compress}})
 	defer logCloser.Close()
+	for _, warning := range cfg.DeprecationWarnings() {
+		logging.Warn(ctx, warning, "configuration", "credential_encryption_key")
+	}
 
 	info := buildinfo.Current()
 	logging.Info(ctx, "starting ainp", "addr", cfg.Server.Addr,

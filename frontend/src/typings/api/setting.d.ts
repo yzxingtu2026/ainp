@@ -1,6 +1,15 @@
 declare namespace Api {
   namespace Setting {
-    type FieldType = 'text' | 'textarea' | 'number' | 'boolean' | 'select' | 'multi_select' | 'remote_select' | 'color';
+    type FieldType =
+      | 'text'
+      | 'textarea'
+      | 'number'
+      | 'boolean'
+      | 'select'
+      | 'multi_select'
+      | 'remote_select'
+      | 'color'
+      | 'secret';
     type Source = 'default' | 'tenant';
 
     interface FieldOption {
@@ -42,6 +51,7 @@ declare namespace Api {
       allow_custom_values?: boolean;
       custom_value_pattern?: string;
       visible_when?: VisibleWhen;
+      secret_configured?: boolean;
     }
 
     interface Definition {

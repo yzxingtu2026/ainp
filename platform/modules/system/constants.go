@@ -24,10 +24,11 @@ const (
 	ActionAccountRolesUpdate   = access.ActionAccountRolesUpdate
 	ActionAccountPasswordReset = access.ActionAccountPasswordReset
 
-	ActionSettingList   = settings.ActionSettingList
-	ActionSettingGet    = settings.ActionSettingGet
-	ActionSettingUpdate = settings.ActionSettingUpdate
-	ActionSettingReset  = settings.ActionSettingReset
+	ActionSettingList         = settings.ActionSettingList
+	ActionSettingGet          = settings.ActionSettingGet
+	ActionSettingUpdate       = settings.ActionSettingUpdate
+	ActionSettingSecretUpdate = settings.ActionSettingSecretUpdate
+	ActionSettingReset        = settings.ActionSettingReset
 
 	ActionProfileGet                 = settings.ActionProfileGet
 	ActionProfileUpdate              = settings.ActionProfileUpdate
