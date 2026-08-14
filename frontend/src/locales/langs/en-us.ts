@@ -507,7 +507,8 @@ const local: App.I18n.Schema = {
       documentUnavailable: 'The document attachment is unavailable or has changed',
       documentUnsupported: 'The document format or file content is not supported',
       documentTooLarge: 'The document exceeds the assistant size or context limit',
-      documentUnsafe: 'The document contains formulas, macros, external references, or other active content that is not supported',
+      documentUnsafe:
+        'The document contains uncached or external-data formulas, macros, external references, or other unsupported active content',
       documentCorrupt: 'The document is damaged or could not be parsed safely',
       documentEmpty: 'The document contains no readable text',
       documentParseFailed: 'The document could not be parsed. Check the file and try again',

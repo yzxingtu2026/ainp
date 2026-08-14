@@ -78,7 +78,7 @@ func TestKnowledgeSafeParserDecodesPDFToUnicodeMapping(t *testing.T) {
 	)
 
 	sections, err := aiknowledge.NewSafeParser(aiknowledge.DefaultParseLimits()).Parse(context.Background(), parsingDoc("application/pdf", "knowledge.pdf"), bytes.NewReader(pdfData))
-	if err != nil || len(sections) != 1 || sections[0].Text != "知识库" || sections[0].ParserVersion != "safe-parser-v4" {
+	if err != nil || len(sections) != 1 || sections[0].Text != "知识库" || sections[0].ParserVersion != "safe-parser-v5" {
 		t.Fatalf("unexpected PDF text extraction: %#v %v", sections, err)
 	}
 }
@@ -116,13 +116,122 @@ func TestKnowledgeSafeParserParsesSpreadsheetRowsWithSharedStrings(t *testing.T)
 		t.Fatalf("spreadsheet rows must remain independently retrievable: %#v %v", chunks, err)
 	}
 
-	formula := zipFixture(t, map[string]string{
-		"xl/workbook.xml":          `<workbook/>`,
-		"xl/worksheets/sheet1.xml": `<worksheet><sheetData><row r="1"><c r="A1"><f>WEBSERVICE("https://example.com")</f><v>0</v></c></row></sheetData></worksheet>`,
-	})
-	if _, err = p.Parse(context.Background(), doc, bytes.NewReader(formula)); !errors.Is(err, aiknowledge.ErrUnsafeContent) {
-		t.Fatalf("spreadsheet formulas must fail closed: %v", err)
+}
+
+func TestKnowledgeSafeParserReadsSafeFormulaCachesWithoutEvaluation(t *testing.T) {
+	p := aiknowledge.NewSafeParser(aiknowledge.DefaultParseLimits())
+	doc := parsingDoc("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "formula.xlsx")
+	fixture := spreadsheetFixture(t, `
+<row r="1">
+  <c r="A1" t="inlineStr"><is><t>普通公式</t></is></c>
+  <c r="B1" t="inlineStr"><is><t>共享公式</t></is></c>
+  <c r="C1" t="inlineStr"><is><t>百分比</t></is></c>
+  <c r="D1" t="inlineStr"><is><t>跨表引用</t></is></c>
+  <c r="E1" t="inlineStr"><is><t>结构化引用</t></is></c>
+  <c r="F1" t="inlineStr"><is><t>错误缓存</t></is></c>
+</row>
+<row r="2">
+  <c r="A2"><f>1+1</f><v>42</v></c>
+  <c r="B2"><f t="shared" ref="B2:B3" si="0">SUM(A2,1)</f><v>43</v></c>
+  <c r="C2" s="1"><f>A2/168</f><v>0.25</v></c>
+  <c r="D2"><f>'其他工作表'!A1+1</f><v>44</v></c>
+  <c r="E2"><f>SUM(Table1[金额])</f><v>88</v></c>
+  <c r="F2" t="e"><f>1/0</f><v>#DIV/0!</v></c>
+</row>
+<row r="3"><c r="B3"><f t="shared" si="0"/><v>45</v></c></row>`, nil)
+	sections, err := p.Parse(context.Background(), doc, bytes.NewReader(fixture))
+	if err != nil {
+		t.Fatal(err)
 	}
+	if len(sections) != 3 {
+		t.Fatalf("expected header and two formula rows, got %#v", sections)
+	}
+	for _, expected := range []string{"普通公式: 42", "共享公式: 43", "百分比: 25.00%", "跨表引用: 44", "结构化引用: 88", "错误缓存: #DIV/0!"} {
+		if !strings.Contains(sections[1].Text, expected) {
+			t.Fatalf("formula output must use cached display values, missing %q in %q", expected, sections[1].Text)
+		}
+	}
+	if !strings.Contains(sections[2].Text, "共享公式: 45") || strings.Contains(sections[1].Text, "1+1") {
+		t.Fatalf("shared formulas must use caches without exposing or evaluating formulas: %#v", sections)
+	}
+}
+
+func TestKnowledgeSafeParserAllowsEmptyFormulaCache(t *testing.T) {
+	p := aiknowledge.NewSafeParser(aiknowledge.DefaultParseLimits())
+	doc := parsingDoc("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "empty-cache.xlsx")
+	fixture := spreadsheetFixture(t, `<row r="1"><c r="A1" t="inlineStr"><is><t>结果</t></is></c></row><row r="2"><c r="A2" t="str"><f>IF(1=1,"","x")</f><v></v></c></row>`, nil)
+	sections, err := p.Parse(context.Background(), doc, bytes.NewReader(fixture))
+	if err != nil || len(sections) != 1 {
+		t.Fatalf("an explicitly saved empty cache is safe but produces no data row: %#v %v", sections, err)
+	}
+}
+
+func TestKnowledgeSafeParserRejectsUnsafeOrUncachedFormulas(t *testing.T) {
+	p := aiknowledge.NewSafeParser(aiknowledge.DefaultParseLimits())
+	doc := parsingDoc("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "unsafe-formula.xlsx")
+	formulas := map[string]string{
+		"missing cache":        `<f>SUM(40,2)</f>`,
+		"external function":    `<f>WebService ("safe-looking-value")</f><v>0</v>`,
+		"filter xml":           `<f>FILTERXML(A1,"//x")</f><v>0</v>`,
+		"real time data":       `<f>RTD("server",,"topic")</f><v>0</v>`,
+		"hyperlink":            `<f>HYPERLINK("example","label")</f><v>0</v>`,
+		"encoded url":          `<f>ENCODEURL(A1)</f><v>0</v>`,
+		"https url":            `<f>"https://example.com"</f><v>0</v>`,
+		"ftp url":              `<f>"ftp://example.com/file"</f><v>0</v>`,
+		"file url":             `<f>"file://server/share"</f><v>0</v>`,
+		"dde":                  `<f>cmd|'/c calc'!A1</f><v>0</v>`,
+		"external xls":         `<f>'[remote.xls]Sheet1'!A1</f><v>1</v>`,
+		"external xlsx":        `<f>'[remote.xlsx]Sheet1'!A1</f><v>1</v>`,
+		"external xlsm":        `<f>'[remote.xlsm]Sheet1'!A1</f><v>1</v>`,
+		"external xlsb":        `<f>'[remote.xlsb]Sheet1'!A1</f><v>1</v>`,
+		"nested fake cache":    `<f>SUM(40,2)<v>42</v></f>`,
+		"formula outside cell": `</c><f>SUM(40,2)</f><c r="A1"><v>42</v>`,
+	}
+	for name, cell := range formulas {
+		t.Run(name, func(t *testing.T) {
+			worksheet := `<worksheet><sheetData><row r="1"><c r="A1">` + cell + `</c></row></sheetData></worksheet>`
+			fixture := zipFixture(t, map[string]string{"xl/workbook.xml": `<workbook/>`, "xl/worksheets/sheet1.xml": worksheet})
+			if _, err := p.Parse(context.Background(), doc, bytes.NewReader(fixture)); !errors.Is(err, aiknowledge.ErrUnsafeContent) {
+				t.Fatalf("unsafe or uncached formula must fail closed: %v", err)
+			}
+		})
+	}
+}
+
+func TestKnowledgeSafeParserRejectsSpreadsheetActiveContent(t *testing.T) {
+	p := aiknowledge.NewSafeParser(aiknowledge.DefaultParseLimits())
+	doc := parsingDoc("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "active.xlsx")
+	fixtures := map[string][]byte{
+		"external relationship": zipFixture(t, map[string]string{"xl/workbook.xml": `<workbook/>`, "xl/worksheets/sheet1.xml": `<worksheet/>`, "xl/_rels/workbook.xml.rels": `<Relationships><Relationship TargetMode = 'external' Target="https://example.com"/></Relationships>`}),
+		"external links":        zipFixture(t, map[string]string{"xl/workbook.xml": `<workbook/>`, "xl/worksheets/sheet1.xml": `<worksheet/>`, "xl/externalLinks/externalLink1.xml": `<externalLink/>`}),
+		"macro":                 zipFixture(t, map[string]string{"xl/workbook.xml": `<workbook/>`, "xl/worksheets/sheet1.xml": `<worksheet/>`, "xl/vbaProject.bin": "macro"}),
+		"embedded object":       zipFixture(t, map[string]string{"xl/workbook.xml": `<workbook/>`, "xl/worksheets/sheet1.xml": `<worksheet/>`, "xl/embeddings/oleObject1.bin": "object"}),
+		"worksheet object":      zipFixture(t, map[string]string{"xl/workbook.xml": `<workbook/>`, "xl/worksheets/sheet1.xml": `<worksheet><object/></worksheet>`}),
+		"field instruction":     zipFixture(t, map[string]string{"xl/workbook.xml": `<workbook/>`, "xl/worksheets/sheet1.xml": `<worksheet><instrText>INCLUDETEXT remote</instrText></worksheet>`}),
+	}
+	for name, fixture := range fixtures {
+		t.Run(name, func(t *testing.T) {
+			if _, err := p.Parse(context.Background(), doc, bytes.NewReader(fixture)); !errors.Is(err, aiknowledge.ErrUnsafeContent) {
+				t.Fatalf("spreadsheet active content must fail closed: %v", err)
+			}
+		})
+	}
+}
+
+func spreadsheetFixture(t *testing.T, rows string, extra map[string]string) []byte {
+	t.Helper()
+	files := map[string]string{
+		"[Content_Types].xml":        `<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`,
+		"_rels/.rels":                `<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`,
+		"xl/workbook.xml":            `<?xml version="1.0"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="收益" sheetId="1" r:id="rId1"/></sheets></workbook>`,
+		"xl/_rels/workbook.xml.rels": `<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`,
+		"xl/styles.xml":              `<?xml version="1.0"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="1"><font/></fonts><fills count="1"><fill/></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf/></cellStyleXfs><cellXfs count="2"><xf/><xf numFmtId="10" applyNumberFormat="1"/></cellXfs></styleSheet>`,
+		"xl/worksheets/sheet1.xml":   `<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>` + rows + `</sheetData></worksheet>`,
+	}
+	for name, body := range extra {
+		files[name] = body
+	}
+	return zipFixture(t, files)
 }
 
 func TestKnowledgeSafeParserNormalizesTextAndRejectsSpoofedMIME(t *testing.T) {
@@ -201,7 +310,7 @@ func TestKnowledgeFixedTokenChunkerIsDeterministicAndTraceable(t *testing.T) {
 		t.Fatalf("chunks are not deterministic: %#v", first)
 	}
 	for _, chunk := range first {
-		if chunk.SourceRevision != doc.SourceRevision || chunk.ParserVersion != "safe-parser-v4" || chunk.ChunkingVersion != "fixed-tokens-v1" || chunk.PreprocessingVersion != "normalize-text-v2" {
+		if chunk.SourceRevision != doc.SourceRevision || chunk.ParserVersion != aiknowledge.ParserVersion || chunk.ChunkingVersion != "fixed-tokens-v1" || chunk.PreprocessingVersion != "normalize-text-v2" {
 			t.Fatalf("missing provenance: %#v", chunk)
 		}
 	}
