@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/yzxingtu2026/ainp/platform/framework/action"
+	"github.com/yzxingtu2026/ainp/platform/framework/prompt"
 )
 
 type SingletonScope string
@@ -35,8 +36,18 @@ type Contract struct {
 	UpgradePolicy             string          `json:"upgrade_policy"`
 }
 
+type ContractContribution struct {
+	Owner                     string
+	TargetKey                 string
+	TargetVersion             string
+	AllowedToolCapabilities   []string
+	BaseInstructionsPromptKey string
+	BaseInstructionsVersion   string
+}
+
 var keyPattern = regexp.MustCompile(`^[a-z][a-z0-9]*(\.[a-z][a-z0-9_-]*)+$`)
 var keySegmentPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
+var ownerPattern = regexp.MustCompile(`^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$`)
 var versionPattern = regexp.MustCompile(`^[1-9][0-9]*\.[0-9]+\.[0-9]+$`)
 var toolPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]*:[a-z][a-z0-9_.-]*$`)
 var capabilities = map[string]bool{"chat": true, "streaming": true, "tools": true, "vision": true, "json_mode": true}
@@ -153,6 +164,84 @@ func (r *Registry) Register(contract Contract) error {
 	return nil
 }
 
+func (r *Registry) ApplyContributions(contributions []ContractContribution) error {
+	ordered := append([]ContractContribution(nil), contributions...)
+	sort.Slice(ordered, func(i, j int) bool { return ordered[i].Owner < ordered[j].Owner })
+	r.mu.RLock()
+	working := make(map[string]map[string]Contract, len(r.contracts))
+	for key, versions := range r.contracts {
+		working[key] = make(map[string]Contract, len(versions))
+		for version, contract := range versions {
+			working[key][version] = contract
+		}
+	}
+	r.mu.RUnlock()
+	seenOwners := map[string]struct{}{}
+	for _, contribution := range ordered {
+		owner := strings.TrimSpace(contribution.Owner)
+		if !ownerPattern.MatchString(owner) {
+			return fmt.Errorf("invalid Agent Contract contribution owner: %q", owner)
+		}
+		if _, exists := seenOwners[owner]; exists {
+			return fmt.Errorf("duplicate Agent Contract contribution owner: %s", owner)
+		}
+		seenOwners[owner] = struct{}{}
+		key := strings.TrimSpace(contribution.TargetKey)
+		version := strings.TrimSpace(contribution.TargetVersion)
+		contract, ok := working[key][version]
+		if !ok {
+			return fmt.Errorf("Agent Contract contribution owner %s targets unknown contract %s@%s", owner, key, version)
+		}
+		capabilities := append([]string(nil), contribution.AllowedToolCapabilities...)
+		if len(capabilities) == 0 && strings.TrimSpace(contribution.BaseInstructionsPromptKey) == "" {
+			return fmt.Errorf("Agent Contract contribution owner %s is empty", owner)
+		}
+		for _, capability := range capabilities {
+			if !keySegmentPattern.MatchString(capability) {
+				return fmt.Errorf("Agent Contract contribution owner %s has invalid capability %q", owner, capability)
+			}
+		}
+		contract.AllowedToolCapabilities = append(contract.AllowedToolCapabilities, capabilities...)
+		contract.AllowedToolCapabilities = sortedUnique(contract.AllowedToolCapabilities)
+		promptKey := strings.TrimSpace(contribution.BaseInstructionsPromptKey)
+		if promptKey != "" {
+			if !strings.HasPrefix(promptKey, owner+"/") {
+				return fmt.Errorf("Agent Contract contribution owner %s cannot use Prompt %s", owner, promptKey)
+			}
+			metadata, ok := prompt.MetadataFor(promptKey)
+			if !ok || strings.TrimSpace(contribution.BaseInstructionsVersion) == "" || metadata.Version != contribution.BaseInstructionsVersion {
+				return fmt.Errorf("Agent Contract contribution owner %s requires Prompt %s@%s", owner, promptKey, contribution.BaseInstructionsVersion)
+			}
+			instructions := strings.TrimSpace(prompt.Get(promptKey))
+			if instructions == "" {
+				return fmt.Errorf("Agent Contract contribution owner %s Prompt %s is empty", owner, promptKey)
+			}
+			contract.BaseInstructions += "\n\n--- downstream module instructions: " + owner + " ---\n\n" + instructions
+		}
+		if err := contract.Validate(); err != nil {
+			return fmt.Errorf("Agent Contract contribution owner %s produced invalid contract: %w", owner, err)
+		}
+		working[key][version] = contract
+	}
+	r.mu.Lock()
+	r.contracts = working
+	r.mu.Unlock()
+	return nil
+}
+
+func sortedUnique(values []string) []string {
+	set := map[string]struct{}{}
+	for _, value := range values {
+		set[value] = struct{}{}
+	}
+	result := make([]string, 0, len(set))
+	for value := range set {
+		result = append(result, value)
+	}
+	sort.Strings(result)
+	return result
+}
+
 func (r *Registry) Get(key, version string) (Contract, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -182,6 +271,14 @@ func (r *Registry) List() []Contract {
 // deliberately reachable from at least one builtin Agent Contract. Exclusions are
 // explicit safety decisions and are checked in both directions to prevent drift.
 func (r *Registry) ValidateActionToolCapabilityCoverage(actions *action.Registry, exclusions []string) error {
+	reachable := map[string]struct{}{}
+	for _, contract := range r.List() {
+		reachable[contract.Key+"@"+contract.Version] = struct{}{}
+	}
+	return r.ValidateActionToolCapabilityReachability(actions, reachable, exclusions)
+}
+
+func (r *Registry) ValidateActionToolCapabilityReachability(actions *action.Registry, reachableContracts map[string]struct{}, exclusions []string) error {
 	if actions == nil {
 		return fmt.Errorf("action registry is required for Agent Contract capability coverage")
 	}
@@ -193,6 +290,10 @@ func (r *Registry) ValidateActionToolCapabilityCoverage(actions *action.Registry
 	}
 	covered := map[string]struct{}{}
 	for _, contract := range r.List() {
+		identity := contract.Key + "@" + contract.Version
+		if _, reachable := reachableContracts[identity]; !reachable {
+			continue
+		}
 		for _, capability := range contract.AllowedToolCapabilities {
 			covered[capability] = struct{}{}
 		}
@@ -229,5 +330,14 @@ func (r *Registry) ValidateActionToolCapabilityCoverage(actions *action.Registry
 	}
 	sort.Strings(missing)
 	sort.Strings(stale)
-	return fmt.Errorf("Agent Contract capability coverage invalid: missing=%v stale_exclusions=%v; review AllowedToolCapabilities in modules/ai/register.go", missing, stale)
+	return fmt.Errorf("Agent Contract capability reachability invalid: missing=%v stale_exclusions=%v reachable_contracts=%v; verify Contract -> builtin Agent -> Agent Slot -> Runtime Tool Scope", missing, stale, sortedMapKeys(reachableContracts))
+}
+
+func sortedMapKeys(values map[string]struct{}) []string {
+	result := make([]string, 0, len(values))
+	for value := range values {
+		result = append(result, value)
+	}
+	sort.Strings(result)
+	return result
 }

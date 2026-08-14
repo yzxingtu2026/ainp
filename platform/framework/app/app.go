@@ -12,6 +12,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/yzxingtu2026/ainp/platform/framework/action"
+	"github.com/yzxingtu2026/ainp/platform/framework/agentslot"
 	"github.com/yzxingtu2026/ainp/platform/framework/aiagent"
 	"github.com/yzxingtu2026/ainp/platform/framework/aiconversation"
 	"github.com/yzxingtu2026/ainp/platform/framework/aiknowledge"
@@ -63,6 +64,7 @@ type App struct {
 	StateMachines            *statemachine.Registry
 	AIProviderTypes          *aimodel.ProviderTypeRegistry
 	AgentContracts           *aiagent.Registry
+	AgentSlots               *agentslot.Registry
 	ContextCompactor         aiconversation.ContextCompactor
 	KnowledgeService         aiknowledge.Service
 	KnowledgeAccessPolicy    aiknowledge.AccessPolicy

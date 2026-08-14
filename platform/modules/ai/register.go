@@ -220,6 +220,7 @@ func Register(a *app.App) error {
 	if err := slotRegistry.Register(agentslot.Slot{Key: WorkspaceDefaultSlot, Version: "1.0.0", Module: "workspace", Title: "默认 AI 工作台", Description: "AI 工作台新会话使用的默认智能体", DefaultContractKey: "system.operations", DefaultContractVersion: "1.0.0", RequiredCapabilities: []string{"chat", "tools"}, TenantOverride: true, UserOverride: true, FallbackPolicy: agentslot.FallbackFailClosed, UpgradePolicy: agentslot.UpgradeCompatible}); err != nil {
 		return err
 	}
+	a.AgentSlots = slotRegistry
 	slots := NewAgentSlotService(a.DB, slotRegistry, agents)
 	personalization.SetContextSources(slots, a.RuntimeContextProvider)
 	slots.SetChangedHook(func(ctx context.Context, slotKey string) error {

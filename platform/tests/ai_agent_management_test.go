@@ -137,7 +137,7 @@ func TestAgentContractActionToolCapabilityCoverage(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := contracts.ValidateActionToolCapabilityCoverage(actions, nil); err == nil || !strings.Contains(err.Error(), "missing=[foundation]") || !strings.Contains(err.Error(), "modules/ai/register.go") {
+	if err := contracts.ValidateActionToolCapabilityCoverage(actions, nil); err == nil || !strings.Contains(err.Error(), "missing=[foundation]") || !strings.Contains(err.Error(), "Runtime Tool Scope") {
 		t.Fatalf("missing capability must point to the builtin Contract whitelist: %v", err)
 	}
 	if err := contracts.ValidateActionToolCapabilityCoverage(actions, []string{"foundation"}); err != nil {
@@ -157,6 +157,24 @@ func TestAgentContractActionToolCapabilityCoverage(t *testing.T) {
 	}
 	if err := covered.ValidateActionToolCapabilityCoverage(actions, []string{"foundation"}); err == nil || !strings.Contains(err.Error(), "stale_exclusions=[foundation]") {
 		t.Fatalf("covered exclusion must be removed: %v", err)
+	}
+}
+
+func TestAgentContractCapabilityRequiresReachableSlotContract(t *testing.T) {
+	actions := action.NewRegistry(nil, nil)
+	if err := actions.Register(action.Action{ID: "orders.read", Handler: func(context.Context, json.RawMessage) (any, error) { return nil, nil }, Meta: action.Metadata{Capability: "orders", AI: &action.AIMeta{ExposeTool: true, ToolTitle: "查询订单", Summary: "查询订单", HumanDescription: "查询订单", ResultSummary: "已返回订单", Risk: "low", SideEffect: "read", InputSchema: action.InputSchemaFor[ai.AgentEmptyRequest]()}}}); err != nil {
+		t.Fatal(err)
+	}
+	contracts := aiagent.NewRegistry()
+	ghost := validAgentContract()
+	ghost.Key = "orders.assistant"
+	ghost.AllowedToolCapabilities = []string{"orders"}
+	if err := contracts.Register(ghost); err != nil {
+		t.Fatal(err)
+	}
+	err := contracts.ValidateActionToolCapabilityReachability(actions, map[string]struct{}{"system.operations@1.0.0": {}}, nil)
+	if err == nil || !strings.Contains(err.Error(), "missing=[orders]") || !strings.Contains(err.Error(), "system.operations@1.0.0") {
+		t.Fatalf("ghost Contract must not satisfy reachable capability coverage: %v", err)
 	}
 }
 

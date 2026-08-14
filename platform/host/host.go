@@ -197,6 +197,9 @@ func (c *Composition) openSetup(ctx context.Context, cfg *config.Config, st *sta
 	if err != nil {
 		return nil, fmt.Errorf("register builtin agent contracts: %w", err)
 	}
+	if err := c.applyAgentContractContributionsTo(contracts); err != nil {
+		return nil, err
+	}
 	agents := ai.NewAgentService(nil, contracts, nil, nil)
 	setupSvc.SetInitialDataHook(func(ctx context.Context, db *gorm.DB, tenantID, principalID string) error {
 		if err := audit.NewGormRecorder(db).AutoMigrate(); err != nil {
@@ -350,6 +353,9 @@ func (c *Composition) OpenInstalled(ctx context.Context, cfg *config.Config) (*P
 	if err := c.register(application); err != nil {
 		return nil, err
 	}
+	if err := c.applyAgentContractContributions(application); err != nil {
+		return nil, err
+	}
 	if err := validateAgentToolCapabilityCoverage(application); err != nil {
 		return nil, err
 	}
@@ -370,7 +376,14 @@ func (c *Composition) OpenInstalled(ctx context.Context, cfg *config.Config) (*P
 }
 
 func validateAgentToolCapabilityCoverage(application *app.App) error {
-	if err := application.AgentContracts.ValidateActionToolCapabilityCoverage(application.Actions, nil); err != nil {
+	if application.AgentSlots == nil || application.AgentTenantInitializer == nil {
+		return fmt.Errorf("validate AI tool capability coverage: Agent Slot and builtin reconcile path are required")
+	}
+	reachableContracts := map[string]struct{}{}
+	for _, slot := range application.AgentSlots.List() {
+		reachableContracts[slot.DefaultContractKey+"@"+slot.DefaultContractVersion] = struct{}{}
+	}
+	if err := application.AgentContracts.ValidateActionToolCapabilityReachability(application.Actions, reachableContracts, nil); err != nil {
 		return fmt.Errorf("validate AI tool capability coverage: %w", err)
 	}
 	return nil

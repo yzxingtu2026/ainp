@@ -6,6 +6,7 @@
 - API 与 Worker 复用同一稳定模块声明；模块 ID、阶段顺序、重复注册与迁移 checksum 全部 fail-closed。
 - 公开 Host 默认不装配 Demo；仅官方演示或本地 showcase 可在 composition root 显式传 `host.WithDemo()`，API 与 Worker 必须复用同一选择，禁止环境变量隐式启用或路由黑名单。
 - AINP Prompt/i18n 默认内嵌；下游 Module 仅以 owner-scoped `fs.FS` 注册自身命名空间，冲突 fail-closed，API/Worker 共享清单，正式环境禁止 cwd 资源和开发 reload。
+- 下游默认助手能力通过 Module 的 `AgentContractContributions` 显式贡献到 `system.operations@1.0.0`；API/Worker 共用聚合结果，禁止自动扩权或独立幽灵 Contract。
 - Provider 仅在 `Prepare` 注入，业务能力在 `Register` 注册；新安装 Schema 使用 `AutoMigrator`，已有环境只走 namespaced forward-only migration。
 - 下游 migration owner 必须等于模块 ID；不得改写 AINP 已发布迁移历史或恢复任何架构豁免。
 - 正式消费固定 `platform/vX.Y.Z`；根 Tag 与模块 Tag 必须同版本、同 Commit。

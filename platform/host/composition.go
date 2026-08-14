@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/yzxingtu2026/ainp/platform/framework/aiagent"
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
 	"github.com/yzxingtu2026/ainp/platform/framework/i18n"
 	"github.com/yzxingtu2026/ainp/platform/framework/prompt"
@@ -54,6 +55,12 @@ type RuntimeAssets struct {
 // RuntimeAssetProvider optionally contributes namespaced runtime resources.
 type RuntimeAssetProvider interface {
 	RuntimeAssets() RuntimeAssets
+}
+
+// AgentContractContributionProvider extends a built-in Agent Contract without
+// creating a second downstream builtin Agent.
+type AgentContractContributionProvider interface {
+	AgentContractContributions() []aiagent.ContractContribution
 }
 
 type Option func(*options) error
@@ -211,6 +218,33 @@ func (c *Composition) register(application *app.App) error {
 		if err := module.Register(application); err != nil {
 			return fmt.Errorf("host: register module %q: %w", module.ID(), err)
 		}
+	}
+	return nil
+}
+
+func (c *Composition) applyAgentContractContributions(application *app.App) error {
+	return c.applyAgentContractContributionsTo(application.AgentContracts)
+}
+
+func (c *Composition) applyAgentContractContributionsTo(contracts *aiagent.Registry) error {
+	contributions := make([]aiagent.ContractContribution, 0)
+	for _, module := range c.modules {
+		provider, ok := module.(AgentContractContributionProvider)
+		if !ok {
+			continue
+		}
+		for _, contribution := range provider.AgentContractContributions() {
+			if strings.TrimSpace(contribution.Owner) == "" {
+				contribution.Owner = module.ID()
+			}
+			if contribution.Owner != module.ID() {
+				return fmt.Errorf("host: module %q Agent Contract contribution owner must match module id", module.ID())
+			}
+			contributions = append(contributions, contribution)
+		}
+	}
+	if err := contracts.ApplyContributions(contributions); err != nil {
+		return fmt.Errorf("host: apply Agent Contract contributions: %w", err)
 	}
 	return nil
 }
