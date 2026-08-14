@@ -4,13 +4,16 @@ import (
 	"context"
 	"embed"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/yzxingtu2026/ainp/platform/framework/action"
+	"github.com/yzxingtu2026/ainp/platform/framework/aiagent"
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
 	"github.com/yzxingtu2026/ainp/platform/framework/authentication"
 	"github.com/yzxingtu2026/ainp/platform/framework/capability"
 	"github.com/yzxingtu2026/ainp/platform/framework/job"
+	"github.com/yzxingtu2026/ainp/platform/framework/prompt"
 	"github.com/yzxingtu2026/ainp/platform/host"
 	"github.com/yzxingtu2026/ainp/platform/migrations"
 )
@@ -22,12 +25,38 @@ type Module struct{}
 
 func (Module) ID() string { return "example.orders" }
 
+const ordersAgentPromptKey = "example.orders/agent"
+
 func (Module) Prepare(application *app.App) error {
 	return application.Authenticators.Register(exampleAuthenticator{})
 }
 
 func (Module) Register(application *app.App) error {
 	if err := application.RegisterCapability(capability.Capability{ID: "orders", Name: "Orders", Module: "example.orders"}); err != nil {
+		return err
+	}
+	if application.AgentContracts == nil {
+		return fmt.Errorf("agent contract registry is required")
+	}
+	promptMetadata, ok := prompt.MetadataFor(ordersAgentPromptKey)
+	if !ok || promptMetadata.Version != "1.0.0" {
+		return fmt.Errorf("agent contract example.orders@1.0.0 requires prompt %s@1.0.0", ordersAgentPromptKey)
+	}
+	if err := application.AgentContracts.Register(aiagent.Contract{
+		Key:                       "example.orders",
+		Version:                   "1.0.0",
+		Name:                      "Order operations assistant",
+		Description:               "Safely operates downstream orders within the current user's permissions",
+		BaseInstructions:          prompt.MustGet(ordersAgentPromptKey),
+		BaseInstructionsVersion:   promptMetadata.Version,
+		RequiredModelCapabilities: []string{"chat", "tools"},
+		AllowedToolSources:        []string{"action"},
+		AllowedToolCapabilities:   []string{"orders"},
+		ConfigSchema:              json.RawMessage(`{"type":"object","additionalProperties":false}`),
+		SingletonScope:            aiagent.SingletonNone,
+		ManagedFields:             []string{"code", "source", "contract_key", "contract_version", "base_instructions", "visibility"},
+		UpgradePolicy:             "managed-fields",
+	}); err != nil {
 		return err
 	}
 	if err := application.RegisterAction(action.Action{

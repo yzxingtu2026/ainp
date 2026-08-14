@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/yzxingtu2026/ainp/platform/framework/action"
+	"github.com/yzxingtu2026/ainp/platform/framework/aiagent"
 	"github.com/yzxingtu2026/ainp/platform/framework/aitool"
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
 	"github.com/yzxingtu2026/ainp/platform/framework/config"
@@ -87,7 +89,7 @@ func TestDownstreamHostLoadsEmbeddedRuntimeAssetsFromArbitraryWorkingDirectory(t
 		_ = platform.Close()
 	})
 
-	if prompt.Get("agent/system-operations") == "" || prompt.Get("example.orders/order-summary") == "" {
+	if prompt.Get("agent/system-operations") == "" || prompt.Get(ordersAgentPromptKey) == "" || prompt.Get("example.orders/order-summary") == "" {
 		t.Fatal("built-in and downstream Prompts must both load from embedded filesystems")
 	}
 	if got := i18n.T("zh-CN", "example.orders.order_list"); got != "订单" {
@@ -106,10 +108,25 @@ func TestDownstreamHostLoadsEmbeddedRuntimeAssetsFromArbitraryWorkingDirectory(t
 }
 
 func TestExternalModuleRegistersAtomicAICreateContract(t *testing.T) {
+	prompts, err := fsSub(migrationFiles, "prompts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := prompt.LoadSources(prompt.Source{Owner: "example.orders", FS: prompts}); err != nil {
+		t.Fatal(err)
+	}
 	application := app.New(&config.Config{}, nil, nil, nil)
+	application.AgentContracts = aiagent.NewRegistry()
 	application.Jobs = &job.Runtime{Registry: job.NewRegistry()}
 	if err := (Module{}).Register(application); err != nil {
 		t.Fatal(err)
+	}
+	contract, ok := application.AgentContracts.Get("example.orders", "1.0.0")
+	if !ok {
+		t.Fatal("downstream Agent Contract was not registered")
+	}
+	if contract.BaseInstructionsVersion != "1.0.0" || !slices.Equal(contract.AllowedToolSources, []string{"action"}) || !slices.Equal(contract.AllowedToolCapabilities, []string{"orders"}) {
+		t.Fatalf("downstream Agent Contract does not expose the orders Action scope: %#v", contract)
 	}
 	registered, ok := application.Actions.Get("orders.batch_create")
 	if !ok || registered.Meta.AI == nil {
@@ -124,5 +141,8 @@ func TestExternalModuleRegistersAtomicAICreateContract(t *testing.T) {
 	}
 	if definition.Operation != action.AIOperationCreate || definition.Batch == nil || definition.Batch.ItemsPath != "items" {
 		t.Fatalf("AI create contract was not projected: %#v", definition)
+	}
+	if err := application.AgentContracts.ValidateActionToolCapabilityCoverage(application.Actions, nil); err != nil {
+		t.Fatalf("downstream Action capabilities must be reachable from an Agent Contract: %v", err)
 	}
 }
