@@ -46,10 +46,54 @@ func (Module) Register(application *app.App) error {
 	}); err != nil {
 		return err
 	}
+	if err := application.RegisterAction(action.Action{
+		ID: "orders.batch_create",
+		Handler: action.JSON(func(_ context.Context, request orderBatchCreateRequest) (any, error) {
+			items := make([]orderCreateResponse, len(request.Items))
+			for index, item := range request.Items {
+				items[index] = orderCreateResponse{Reference: item.Reference}
+			}
+			return orderBatchCreateResponse{CreatedCount: len(items), Items: items}, nil
+		}),
+		Meta: action.Metadata{
+			Capability: "orders",
+			Access:     action.AccessPermission,
+			Name:       "Create orders",
+			Permission: "orders:create",
+			AI: &action.AIMeta{
+				ExposeTool: true, Operation: action.AIOperationCreate,
+				Batch:     &action.AIBatchMeta{Mode: action.AIBatchAtomic, ItemsPath: "items"},
+				ToolTitle: "Create orders", Summary: "Create one or more orders atomically", HumanDescription: "Create one or more orders in request order", ResultSummary: "Orders created",
+				Risk: "high", SideEffect: "write", RequiresConfirmation: true,
+				InputSchema: action.InputSchemaFor[orderBatchCreateRequest](), OutputSchema: action.SchemaFor[orderBatchCreateResponse](),
+			},
+			Idempotency: &action.IdempotencyMeta{Mode: "required", TTL: 24 * time.Hour},
+			HTTP:        &action.HTTPMeta{Method: "POST", Path: "/api/v1/orders/batch/create"},
+		},
+	}); err != nil {
+		return err
+	}
 	return application.Jobs.Register(
 		job.Definition{Type: "orders.sync", SchemaVersion: 1, Queue: job.QueueDefault, MaxAttempts: 3, Timeout: time.Minute, Description: "Sync downstream orders"},
 		job.HandlerFunc{JobType: "orders.sync", Fn: func(context.Context, job.Envelope, json.RawMessage, job.Reporter) error { return nil }},
 	)
+}
+
+type orderCreateRequest struct {
+	Reference string `json:"reference" validate:"required,min=1,max=64"`
+}
+
+type orderBatchCreateRequest struct {
+	Items []orderCreateRequest `json:"items" validate:"required,min=1,max=50,dive"`
+}
+
+type orderCreateResponse struct {
+	Reference string `json:"reference"`
+}
+
+type orderBatchCreateResponse struct {
+	CreatedCount int                   `json:"created_count"`
+	Items        []orderCreateResponse `json:"items"`
 }
 
 func (Module) MigrationSource() migrations.Source {

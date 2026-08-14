@@ -8,9 +8,13 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/yzxingtu2026/ainp/platform/framework/action"
+	"github.com/yzxingtu2026/ainp/platform/framework/aitool"
+	"github.com/yzxingtu2026/ainp/platform/framework/app"
 	"github.com/yzxingtu2026/ainp/platform/framework/config"
 	"github.com/yzxingtu2026/ainp/platform/framework/database"
 	"github.com/yzxingtu2026/ainp/platform/framework/i18n"
+	"github.com/yzxingtu2026/ainp/platform/framework/job"
 	"github.com/yzxingtu2026/ainp/platform/framework/prompt"
 	"github.com/yzxingtu2026/ainp/platform/host"
 )
@@ -98,5 +102,27 @@ func TestDownstreamHostLoadsEmbeddedRuntimeAssetsFromArbitraryWorkingDirectory(t
 	}
 	if !owners["ainp"] || !owners["example.orders"] {
 		t.Fatalf("runtime asset manifest is missing owners: %#v", owners)
+	}
+}
+
+func TestExternalModuleRegistersAtomicAICreateContract(t *testing.T) {
+	application := app.New(&config.Config{}, nil, nil, nil)
+	application.Jobs = &job.Runtime{Registry: job.NewRegistry()}
+	if err := (Module{}).Register(application); err != nil {
+		t.Fatal(err)
+	}
+	registered, ok := application.Actions.Get("orders.batch_create")
+	if !ok || registered.Meta.AI == nil {
+		t.Fatal("downstream batch create action was not registered")
+	}
+	if registered.Meta.AI.Operation != action.AIOperationCreate || registered.Meta.AI.Batch == nil || registered.Meta.AI.Batch.Mode != action.AIBatchAtomic || registered.Meta.IdempotencyMode() != "required" {
+		t.Fatalf("downstream batch contract is incomplete: %#v", registered.Meta)
+	}
+	definition, err := (&aitool.ActionProvider{Actions: application.Actions}).Get(context.Background(), "action:orders.batch_create")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if definition.Operation != action.AIOperationCreate || definition.Batch == nil || definition.Batch.ItemsPath != "items" {
+		t.Fatalf("AI create contract was not projected: %#v", definition)
 	}
 }

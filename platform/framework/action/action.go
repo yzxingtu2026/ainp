@@ -44,6 +44,8 @@ func (h *HTTPMeta) IsEnabled() bool {
 type AIMeta struct {
 	ExposeTool           bool
 	ExclusionReason      string
+	Operation            AIOperation
+	Batch                *AIBatchMeta
 	ToolTitle            string
 	Risk                 string
 	SideEffect           string
@@ -254,7 +256,7 @@ func (r *Registry) Register(a Action) error {
 		return fmt.Errorf("action %s: %w", a.ID, err)
 	}
 	if a.Meta.Capability != "demo" || a.Meta.AI != nil {
-		if err := ValidateAIClassification(a.ID, a.Meta.AI); err != nil {
+		if err := ValidateAIContract(a.ID, a.Meta); err != nil {
 			return err
 		}
 	}
@@ -286,6 +288,15 @@ func ValidateAIClassification(actionID string, meta *AIMeta) error {
 		return fmt.Errorf("action %s: excluded AI action requires an exclusion reason", actionID)
 	}
 	return nil
+}
+
+// ValidateAIContract validates both exposure classification and operation-specific
+// contracts. Callers registering a full Action should use this entry point.
+func ValidateAIContract(actionID string, metadata Metadata) error {
+	if err := ValidateAIClassification(actionID, metadata.AI); err != nil {
+		return err
+	}
+	return validateAICreateContract(actionID, metadata)
 }
 
 func validateAIMeta(actionID string, meta *AIMeta) error {

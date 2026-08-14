@@ -160,6 +160,8 @@ purchase_order_create    # 禁止缺少 capability 点分前缀（除非 capabil
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | `expose_tool` | bool | 是否作为 Agent/MCP Tool |
+| `operation` | enum | 可选的显式业务操作语义；当前受控值为 `create`，禁止从 Action ID/路径/标题推断 |
+| `batch` | AIBatchMeta | `operation=create` 时必填；声明 `atomic` / `preview_commit` / `async_job` / `single_only` |
 | `risk` | string | `low` / `medium` / `high` / `critical` |
 | `side_effect` | string | `none` / `read` / `write` / `external` / `paid` / `destructive` |
 | `requires_confirmation` | bool | 是否强制单次确认 |
@@ -169,6 +171,48 @@ purchase_order_create    # 禁止缺少 capability 点分前缀（除非 capabil
 | `result_summary` | string | 不含参数与正文的安全结果摘要 |
 | `input_schema` | JSON Schema | 由 `action.InputSchemaFor[Request]()` 生成；字段 required/optional 必须显式声明 |
 | `output_schema` | JSON Schema | 由 `action.SchemaFor[Response]()` 生成 |
+
+#### AI 创建与批量契约
+
+新注册或修改的、面向 AI 且可重复创建同类资源的 Action 必须显式声明 `Operation: action.AIOperationCreate`，并选择一个受控 `AIBatchMeta.Mode`。Action Registry 只根据该元数据启用门禁，不根据 `_create`、HTTP 路径或展示文案猜测；未迁移存量暂不阻断，应在后续业务改动时显式分类。
+
+`Registry.AIContractInventory()` 从真实注册元数据生成稳定排序的审查清单：显式 operation/batch 原样报告，未声明 operation 的 exposed Action 标记为 `legacy=true`，但不会因名称包含 create 而被自动分类。CI 契约测试应消费该清单验证渐进策略，不维护 Action ID 白名单或第二份 inventory。
+
+| Mode | 适用场景 | 注册契约 |
+|------|----------|----------|
+| `atomic` | 同类资源可在同步事务内全成全败 | 推荐默认；必须声明 `ItemsPath`、required 幂等和一次确认 |
+| `preview_commit` | 文件解析、大批量预检或人工修正后的两阶段提交 | 预览与提交 Action、预览令牌和提交幂等按领域契约实现 |
+| `async_job` | 超出同步事务或响应预算的长任务 | 通过 Outbox → Job，返回稳定 Job 引用；不得宣称数据库同步原子 |
+| `single_only` | 天然单例或领域明确禁止一次创建多条 | 仅允许 `singleton-resource` / `domain-single-item` 原因代码，禁止自由文本豁免 |
+
+`atomic` 输入必须来自 `action.InputSchemaFor[Request]()`，顶层为 closed object，`ItemsPath`（通常为 `items`）沿途字段全部 required，叶节点为 array；array 必须有 `minItems >= 1` 与有限 `maxItems <= action.AIMaxAtomicBatchItems`（当前为 100），item 必须为拒绝额外字段的 object。领域可把上限设得更小。
+
+`atomic` Action 必须为 `side_effect=write`、`RequiresConfirmation=true`、`Metadata.Idempotency.Mode=required`。输出必须是 closed object，并至少包含 integer `created_count` 与按请求顺序返回的 object-array `items`。HTTP、Action Tool 与 MCP 复用同一 DTO、Handler 和 Service；tenant、actor、realm、社区等可信范围不得放入 `items`。
+
+```go
+type OrderBatchCreateRequest struct {
+  Items []OrderCreateRequest `json:"items" validate:"required,min=1,max=50,dive"`
+}
+
+type OrderBatchCreateResponse struct {
+  CreatedCount int         `json:"created_count"`
+  Items        []OrderView `json:"items"`
+}
+
+AI: &action.AIMeta{
+  ExposeTool: true,
+  Operation: action.AIOperationCreate,
+  Batch: &action.AIBatchMeta{Mode: action.AIBatchAtomic, ItemsPath: "items"},
+  Risk: "high", SideEffect: "write", RequiresConfirmation: true,
+  ToolTitle: "批量创建采购订单",
+  Summary: "在一个事务内创建一至多张采购订单",
+  HumanDescription: "整批校验并按请求顺序返回结果，任一项失败时全部回滚",
+  ResultSummary: "采购订单已批量创建",
+  InputSchema: action.InputSchemaFor[OrderBatchCreateRequest](),
+  OutputSchema: action.SchemaFor[OrderBatchCreateResponse](),
+},
+Idempotency: &action.IdempotencyMeta{Mode: "required", TTL: 24 * time.Hour},
+```
 
 #### Dynamic Reference Contract
 
@@ -242,21 +286,25 @@ RegisterMenu(Menu{
 
 ```go
 RegisterAction(Action{
-  ID: "purchase.order_create",
-  Handler: CreatePurchaseOrder,
+  ID: "purchase.order_batch_create",
+  Handler: action.JSON(CreatePurchaseOrders),
   Meta: Metadata{
     Capability: "purchase",
     Audit: true,
     HTTP: &HTTPMeta{Method: "POST", Path: "/api/v1/purchase/orders"},
     AI: &AIMeta{
-      ExposeTool: true, Risk: "medium", SideEffect: "write",
+      ExposeTool: true,
+      Operation: action.AIOperationCreate,
+      Batch: &action.AIBatchMeta{Mode: action.AIBatchAtomic, ItemsPath: "items"},
+      Risk: "high", SideEffect: "write",
       RequiresConfirmation: true,
-      ToolTitle: "创建采购订单",
-      Summary: "创建采购订单", HumanDescription: "在当前租户创建一张新的采购订单",
-      ResultSummary: "采购订单已创建",
-      InputSchema: action.InputSchemaFor[OrderCreateRequest](),
-      OutputSchema: action.SchemaFor[OrderView](),
+      ToolTitle: "批量创建采购订单",
+      Summary: "在一个事务内创建采购订单", HumanDescription: "整批校验并按请求顺序返回结果",
+      ResultSummary: "采购订单已批量创建",
+      InputSchema: action.InputSchemaFor[OrderBatchCreateRequest](),
+      OutputSchema: action.SchemaFor[OrderBatchCreateResponse](),
     },
+    Idempotency: &action.IdempotencyMeta{Mode: "required"},
   },
 })
 ```

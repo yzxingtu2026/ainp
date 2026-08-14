@@ -1087,46 +1087,11 @@ func (s *ToolService) mergeFTS(ctx context.Context, ac *auth.Context, scope *Too
 }
 
 func validateToolArguments(schema, arguments json.RawMessage) error {
-	var spec struct {
-		Required   []string `json:"required"`
-		Properties map[string]struct {
-			Type string `json:"type"`
-		} `json:"properties"`
-		Additional bool `json:"additionalProperties"`
-	}
-	if json.Unmarshal(schema, &spec) != nil {
-		return errs.Validation("invalid tool schema")
-	}
-	var values map[string]any
-	if json.Unmarshal(arguments, &values) != nil {
-		return errs.Validation("arguments must be object")
-	}
-	for _, key := range spec.Required {
-		if _, ok := values[key]; !ok {
-			return errs.Validation("required argument missing")
-		}
-	}
-	for key, value := range values {
-		field, ok := spec.Properties[key]
-		if !ok && !spec.Additional {
-			return errs.Validation("unknown argument")
-		}
-		if !ok {
-			continue
-		}
-		valid := field.Type == "" || (field.Type == "string" && isString(value)) || (field.Type == "number" && isNumber(value)) || (field.Type == "integer" && isInteger(value)) || (field.Type == "boolean" && isBool(value)) || (field.Type == "object" && isObject(value)) || (field.Type == "array" && isArray(value))
-		if !valid {
-			return errs.Validation("argument type mismatch")
-		}
+	if err := aitool.ValidateArguments(schema, arguments); err != nil {
+		return errs.Validation("arguments do not match tool schema")
 	}
 	return nil
 }
-func isString(v any) bool  { _, ok := v.(string); return ok }
-func isNumber(v any) bool  { _, ok := v.(float64); return ok }
-func isInteger(v any) bool { n, ok := v.(float64); return ok && n == float64(int64(n)) }
-func isBool(v any) bool    { _, ok := v.(bool); return ok }
-func isObject(v any) bool  { _, ok := v.(map[string]any); return ok }
-func isArray(v any) bool   { _, ok := v.([]any); return ok }
 
 func toolActor(ctx context.Context) (*auth.Context, error) {
 	ac := auth.MustFromContext(ctx)

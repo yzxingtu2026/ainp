@@ -54,6 +54,12 @@ Handle 使用服务端签名并绑定 tenant、user、realm、session/auth versi
 
 ## 确认与事实记录
 
+Action Tool 的输入在创建 confirmation 前按完整 JSON Schema 校验，包含嵌套 object、`additionalProperties`、字符串/数值约束及 array `minItems/maxItems`；不能只检查顶层字段类型。Schema 校验不是授权或领域校验，批准执行前仍需实时重鉴权，并由同一 Action DTO/Service 重做领域约束。
+
+显式 `Operation=create` 的 Action 会把 `operation/batch` 投影进稳定 Tool Definition 并纳入 Schema Hash。`atomic` 模式的一次 Tool Call 对应一个 Invocation、一个 Confirmation 和一个幂等执行请求；Runtime 不拆分 `items`，也不合并多个独立 Tool Call。确认仍绑定完整 `ArgumentsHash`，展示截断不得改变执行集合。
+
+领域批量 Presenter 可使用 `aitool.SummarizeBatchForConfirmation` 统一应用最多 10 项的展示预算，再生成本地化、安全的数量、可读标识和 omitted 提示。Presenter 输入应先完成 tenant/permission 只读解析；摘要 helper 只裁剪展示副本，不修改原 arguments。`atomic` Tool Result 必须按请求顺序返回 `created_count + items`，任一项失败时不得把未提交项目描述为成功。
+
 写入、外部、付费、破坏性、高风险工具默认单次确认，critical 默认禁止。确认绑定不可变 arguments hash；批准后重新校验全部安全条件并单次消费，不提供“始终允许”。
 
 Assistant Tool Call 创建时从当前投影 Definition 固化 `ToolPresentation{title,description}` 快照。模型协议仍保留 `tool_name` / `tool_call_id`，但前端主视图只消费展示快照；历史消息没有快照时才降级显示原始工具名。Definition 后续改名不得改变历史消息，前端禁止解析 `action__...`、`meta__...` 或维护具体 Tool ID 名称映射。

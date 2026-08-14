@@ -20,6 +20,7 @@
 - Scope 只保存 Resolver ID、Discovery Tool、版本摘要、读取时间和 Invocation ID；禁止保存完整候选。Runtime 只按通用 Dynamic Reference 元数据执行，禁止识别角色等业务 Action ID。
 - project/search/load/execute 共用 Slot 动态可用性协议且只能收紧权限；Step/Invocation 分类、专用预算和事实摘要由 Slot 元数据生成，观测只持久化白名单字段。
 - Handle 绑定 actor/session/auth version/scope/tool/runtime/schema hash/TTL；任何变化立即失效。
+- Tool 参数在确认前按完整 JSON Schema 校验嵌套对象、额外字段和集合上下限。显式 AI create 的 operation/batch 必须进入稳定 Definition 与 Schema Hash；`atomic` 一次 Tool Call 只对应一个 Invocation/Confirmation，Runtime 不拆 items、不合并独立调用。
 - 写/外部/付费/破坏性/high 必须单次确认，critical 默认禁止；批准后重新鉴权，不支持始终允许。
 - 同批 Tool Call 遇确认后停止执行剩余调用并逐个追加 deferred Tool Result；全部 canonical Result 落库后才固定最终会话 revision、切换等待状态并发布事件。批准执行前必须校验 Run 仍等待且会话 active/revision 未被外部改变；批准、拒绝、过期等确认终态必须保证所有 Tool Call/Result 配对，禁止永久等待。
 - Invocation 终态与 Outbox 同事务，日志/Outbox/审计禁止完整参数、结果、Secret 和原始第三方响应。
@@ -28,6 +29,7 @@
 - 批准必须在短事务中原子认领 confirmation 与 invocation；Executor 在事务外最多执行一次。成功或失败都必须在同一终态事务写 invocation、confirmation=`consumed`、安全 Result 与 finished Outbox；重复决策只返回稳定业务冲突，不得重放或暴露内部状态。
 - Agent 恢复必须消费 completed/failed invocation 的配对 Tool Result；可纠正失败只能通过新参数、新 Tool Call 和新逐次确认重试。前端决策期间同时禁用批准/拒绝，并在完成后刷新移除非 pending 卡片。
 - 确认文案只能由 Tool Runtime 默认生成器或已注册的可信 Presenter 生成；领域 Presenter 必须租户隔离、权限受控、只读且失败安全降级，Runtime/SSE 禁止按具体 Tool ID 写业务分支或临时查询拼文案。
+- 批量 Presenter 使用通用摘要预算（默认最多 10 项）裁剪展示副本并明确 omitted 数；展示截断不得改变 Arguments Hash 或实际 items，atomic Result 必须按请求顺序返回 `created_count + items`。
 - `knowledge.search` 必须经 Registry/Scope/Executor，且仅在存在当前可读、enabled、ready 的 Agent 绑定库时投影；知识正文不得进入 Invocation/Step/事件事实摘要。
 - 测试统一放在 `platform/tests`。详见 `docs/development/tool-runtime.md`。
 - 新增 Action Tool 或 Provider/Executor 时同时遵循 `docs/development/ai-tool-development.md`。
