@@ -12,6 +12,7 @@ import (
 	"io"
 	"mime"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -25,7 +26,7 @@ import (
 )
 
 const (
-	ParserVersion        = "safe-parser-v4"
+	ParserVersion        = "safe-parser-v5"
 	ChunkingVersion      = "fixed-tokens-v1"
 	PreprocessingVersion = "normalize-text-v2"
 )
@@ -267,7 +268,7 @@ func (p *SafeParser) parseOpenXML(ctx context.Context, data []byte, contentType,
 	files := map[string]*zip.File{}
 	for _, f := range zr.File {
 		name := strings.ToLower(f.Name)
-		if strings.Contains(name, "vbaproject") || strings.Contains(name, "/embeddings/") || strings.HasSuffix(name, ".bin") || strings.HasSuffix(name, ".js") {
+		if strings.Contains(name, "vbaproject") || strings.Contains(name, "/embeddings/") || strings.Contains(name, "/externallinks/") || strings.HasSuffix(name, ".bin") || strings.HasSuffix(name, ".js") {
 			return nil, ErrUnsafeContent
 		}
 		if f.UncompressedSize64 > uint64(p.Limits.MaxExpandedBytes) {
@@ -289,7 +290,7 @@ func (p *SafeParser) parseOpenXML(ctx context.Context, data []byte, contentType,
 	case "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
 		for name := range files {
 			if strings.HasPrefix(name, "xl/worksheets/sheet") && strings.HasSuffix(name, ".xml") {
-				if _, err := extractXMLText(files[name], p.Limits.MaxExpandedBytes); err != nil {
+				if err := validateSpreadsheetWorksheet(files[name], p.Limits.MaxExpandedBytes); err != nil {
 					return nil, err
 				}
 			}
@@ -468,13 +469,131 @@ func hasExternalRelationship(files map[string]*zip.File, max int64) bool {
 		if err != nil {
 			return true
 		}
-		lower := strings.ToLower(string(b))
-		if strings.Contains(lower, "targetmode=\"external\"") || strings.Contains(lower, "targetmode='external'") {
+		decoder := xml.NewDecoder(bytes.NewReader(b))
+		for {
+			token, tokenErr := decoder.Token()
+			if tokenErr == io.EOF {
+				break
+			}
+			if tokenErr != nil {
+				return true
+			}
+			start, ok := token.(xml.StartElement)
+			if !ok || !strings.EqualFold(start.Name.Local, "Relationship") {
+				continue
+			}
+			for _, attribute := range start.Attr {
+				if strings.EqualFold(attribute.Name.Local, "TargetMode") && strings.EqualFold(strings.TrimSpace(attribute.Value), "External") {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+var (
+	unsafeSpreadsheetFormulaFunction = regexp.MustCompile(`(?i)(WEBSERVICE|FILTERXML|RTD|HYPERLINK|ENCODEURL)[[:space:]]*\(`)
+	unsafeSpreadsheetFormulaMarkers  = []string{
+		"HTTP://", "HTTPS://", "FTP://", "FILE://", "|",
+		".XLS]", ".XLSX]", ".XLSM]", ".XLSB]",
+	}
+)
+
+// validateSpreadsheetWorksheet permits formulas only as inert cached values.
+// The parser never evaluates formulas or refreshes workbook data.
+func validateSpreadsheetWorksheet(file *zip.File, max int64) error {
+	b, err := readZipFile(file, max)
+	if err != nil {
+		return err
+	}
+	decoder := xml.NewDecoder(bytes.NewReader(b))
+	cellDepth := 0
+	inFormula := false
+	hasFormula := false
+	hasCachedValue := false
+	var formula strings.Builder
+	for {
+		token, tokenErr := decoder.Token()
+		if tokenErr == io.EOF {
+			break
+		}
+		if tokenErr != nil {
+			return ErrCorruptDocument
+		}
+		switch value := token.(type) {
+		case xml.StartElement:
+			name := strings.ToLower(value.Name.Local)
+			if name == "oleobject" || name == "object" || name == "embeddedfont" || name == "instrtext" {
+				return ErrUnsafeContent
+			}
+			if name == "c" {
+				if cellDepth != 0 {
+					return ErrCorruptDocument
+				}
+				cellDepth = 1
+				hasFormula = false
+				hasCachedValue = false
+				formula.Reset()
+				continue
+			}
+			if cellDepth == 0 {
+				if name == "f" {
+					return ErrUnsafeContent
+				}
+				continue
+			}
+			if cellDepth == 1 {
+				switch name {
+				case "f":
+					hasFormula = true
+					inFormula = true
+				case "v":
+					hasCachedValue = true
+				}
+			}
+			cellDepth++
+		case xml.CharData:
+			if inFormula {
+				formula.Write(value)
+			}
+		case xml.EndElement:
+			if cellDepth == 0 {
+				continue
+			}
+			name := strings.ToLower(value.Name.Local)
+			if cellDepth == 2 && name == "f" {
+				inFormula = false
+			}
+			if cellDepth == 1 && name == "c" {
+				if hasFormula {
+					if !hasCachedValue || unsafeSpreadsheetFormula(formula.String()) {
+						return ErrUnsafeContent
+					}
+				}
+				cellDepth = 0
+				inFormula = false
+				continue
+			}
+			cellDepth--
+		}
+	}
+	return nil
+}
+
+func unsafeSpreadsheetFormula(formula string) bool {
+	if unsafeSpreadsheetFormulaFunction.MatchString(formula) {
+		return true
+	}
+	upper := strings.ToUpper(strings.TrimSpace(formula))
+	for _, marker := range unsafeSpreadsheetFormulaMarkers {
+		if strings.Contains(upper, marker) {
 			return true
 		}
 	}
 	return false
 }
+
 func readZipFile(f *zip.File, max int64) ([]byte, error) {
 	rc, err := f.Open()
 	if err != nil {
