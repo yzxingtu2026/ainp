@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/yzxingtu2026/ainp/platform/framework/aimodelruntime"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/codeset"
 	"github.com/yzxingtu2026/ainp/platform/framework/database"
@@ -213,6 +214,30 @@ func TestJobErrorClassification(t *testing.T) {
 	err = job.Cancelled(nil)
 	if !job.IsCancelled(err) {
 		t.Fatal("cancelled")
+	}
+}
+
+func TestEmbeddingJobErrorClassification(t *testing.T) {
+	tests := []struct {
+		category  aimodelruntime.ErrorCategory
+		retryable bool
+		permanent bool
+	}{
+		{category: aimodelruntime.ErrorInvalidRequest, permanent: true},
+		{category: aimodelruntime.ErrorCapabilityNotSupported, permanent: true},
+		{category: aimodelruntime.ErrorAuthenticationFailed, permanent: true},
+		{category: aimodelruntime.ErrorInvalidVector, permanent: true},
+		{category: aimodelruntime.ErrorTimeout, retryable: true},
+		{category: aimodelruntime.ErrorRateLimited, retryable: true},
+		{category: aimodelruntime.ErrorProviderUnavailable, retryable: true},
+	}
+	for _, test := range tests {
+		runtimeErr := &aimodelruntime.RuntimeError{Category: test.category, Message: "provider secret body", Retryable: test.retryable}
+		classified := job.ClassifyEmbeddingError("tool_catalog.embedding", runtimeErr)
+		category, stage, summary := job.ErrorFacts(classified)
+		if job.IsRetryable(classified) != test.retryable || job.IsPermanent(classified) != test.permanent || category != string(test.category) || stage != "tool_catalog.embedding" || summary == "" || strings.Contains(summary, "secret") {
+			t.Fatalf("unexpected classification for %s: retryable=%v permanent=%v facts=%q/%q/%q", test.category, job.IsRetryable(classified), job.IsPermanent(classified), category, stage, summary)
+		}
 	}
 }
 

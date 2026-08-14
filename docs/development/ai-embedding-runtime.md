@@ -55,6 +55,12 @@ Tool Runtime 使用租户设置 `ai.tool_search.embedding_model_alias` 选择受
 ## 注入与测试
 
 - 应用装配后通过 `app.EmbeddingRuntime` 注入给 Tool / Knowledge / Memory
+
+## 配置与失败协议
+
+Tool Search、Navigation Search 等设置在写入前通过统一 Setting Validator 解析 Embedding Alias；Alias 必须在当前租户解析到 enabled、能力合格且 Adapter 可用的 Embedding Deployment。空 Alias 仍表示显式使用词法降级。Knowledge 在自身创建、更新和启用边界复用同一 `EmbeddingRequirements`，业务模块不得复制能力判断。
+
+Embedding 索引 Job 使用统一安全分类：configuration/capability/authentication/invalid response/provenance 为 permanent；timeout/rate limit/provider unavailable 为 retryable；persistence 故障为 retryable；superseded revision 成功收口。JobRun、结构化日志和索引文档写入一致的 `error_category`、`error_stage` 与受控摘要，禁止保存完整输入、向量、Secret 或 provider 原始响应。配置修正后通过 reconcile/reindex 恢复 ready vector 与 provenance。
 - Runtime 不得反向依赖 Tool / Knowledge / Memory 模块
 - 默认测试使用 Fake Adapter 与 httptest fixture；不依赖真实网络、Key 或额度
 - 集成测试覆盖租户隔离、invocation/Outbox 原子性与跨租户拒绝，统一放在 `platform/tests`

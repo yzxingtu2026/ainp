@@ -73,6 +73,16 @@ func TestSettingServiceTenantIsolationAndRevision(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc.SetChangeRegistry(changes)
+	validators := setting.NewValidatorRegistry()
+	if err := validators.Register("general.preferences", func(_ context.Context, validation setting.Validation) error {
+		if validation.Values["display_name"] == "Rejected" {
+			return fmt.Errorf("configured alias is unavailable")
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	svc.SetValidatorRegistry(validators)
 	ctxA := auth.WithContext(context.Background(), &auth.Context{
 		TenantID: "tenant-a", PrincipalID: "user-a", Realm: auth.RealmTenant, Authenticated: true,
 		Permissions: []string{system.ActionSettingList, system.ActionSettingUpdate, system.ActionSettingReset, system.ActionSettingGet},
@@ -127,6 +137,13 @@ func TestSettingServiceTenantIsolationAndRevision(t *testing.T) {
 	}
 	if _, err := svc.Update(ctxA, json.RawMessage(`{"key":"general.preferences","revision":0,"values":{"display_name":"stale","page_size":30,"dark_mode":true,"language":"en-US","tags":["biz"],"brand_color":"#112233","notes":""}}`)); appErrorCode(err) != errs.CodeConflict {
 		t.Fatalf("stale revision error = %v", err)
+	}
+	if _, err := svc.Update(ctxA, json.RawMessage(`{"key":"general.preferences","revision":1,"values":{"display_name":"Rejected","page_size":30,"dark_mode":true,"language":"en-US","tags":["biz"],"brand_color":"#112233","notes":""}}`)); appErrorCode(err) != errs.CodeValidation {
+		t.Fatalf("setting validator must reject before persistence: %v", err)
+	}
+	stored, err := svc.Get(ctxA, json.RawMessage(`{"key":"general.preferences"}`))
+	if err != nil || stored.(system.SettingDefinitionView).Values["display_name"] != "Tenant A" {
+		t.Fatalf("rejected setting update was persisted: %#v err=%v", stored, err)
 	}
 
 	_, err = svc.Update(ctxB, json.RawMessage(`{"key":"general.preferences","revision":0,"values":{"display_name":"Tenant B","page_size":10,"dark_mode":false,"language":"zh-CN","tags":["ops"],"brand_color":"#18A058","notes":""}}`))

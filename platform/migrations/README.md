@@ -24,6 +24,7 @@
 - `0049_mcp_confirmation_resume.sql` 为确认事实增加短期加密 Action 参数，使标准 MCP 工具可按确认 ID 单次恢复原调用。
 - `0050_user_avatar.sql` 为用户增加头像附件引用；头像文件继续由统一附件元数据、资源绑定与访问策略治理。
 - `0052_conversation_tool_working_set.sql` 创建 Conversation 级有界工具工作集，并让新 ToolScope 关联 Conversation；工作集仅保存投影偏好，运行时仍实时重验授权与 Schema。
+- `0057_job_error_classification.sql` 为 JobRun、Tool Catalog 与 Navigation 索引文档增加受控错误分类和阶段字段，不保存供应商原始错误或敏感输入。
 - `0005_attachments.sql` 创建 `attachments` / `attachment_links` 与状态 CHECK；附件策略与 AccessPolicy 由代码注册。
 - `0011_audit_log_indexes.sql` 为租户审计时间线、Action 与资源筛选增加复合索引。
 - `0012_authentication_sessions.sql` 创建统一认证身份、challenge 与轮换会话表；旧 JWT 缺少 `sid`，升级后需重新登录。

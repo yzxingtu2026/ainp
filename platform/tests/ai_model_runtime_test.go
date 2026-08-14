@@ -51,6 +51,29 @@ func TestModelAdapterRegistryFailsClosed(t *testing.T) {
 	}
 }
 
+func TestEmbeddingDeploymentCapabilityContract(t *testing.T) {
+	valid := aimodel.Capabilities{InputModalities: []aimodel.Modality{aimodel.ModalityText}, Features: []aimodel.Feature{aimodel.FeatureEmbeddings}}
+	if err := aimodel.ValidateEmbeddingDeployment(aimodel.ModelTypeEmbedding, valid, aimodel.Limits{Dimensions: 1536, MaxDimensions: 3072}, true); err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name         string
+		modelType    aimodel.ModelType
+		capabilities aimodel.Capabilities
+		adapter      bool
+	}{
+		{name: "wrong type", modelType: aimodel.ModelTypeChat, capabilities: valid, adapter: true},
+		{name: "missing feature", modelType: aimodel.ModelTypeEmbedding, capabilities: aimodel.Capabilities{InputModalities: []aimodel.Modality{aimodel.ModalityText}}, adapter: true},
+		{name: "missing text", modelType: aimodel.ModelTypeEmbedding, capabilities: aimodel.Capabilities{Features: []aimodel.Feature{aimodel.FeatureEmbeddings}}, adapter: true},
+		{name: "missing adapter", modelType: aimodel.ModelTypeEmbedding, capabilities: valid, adapter: false},
+	}
+	for _, test := range tests {
+		if err := aimodel.ValidateEmbeddingDeployment(test.modelType, test.capabilities, aimodel.Limits{}, test.adapter); err == nil {
+			t.Fatalf("%s must fail", test.name)
+		}
+	}
+}
+
 func TestGenerateRequestValidation(t *testing.T) {
 	r := aimodelruntime.GenerateRequest{ModelAlias: "chat", Messages: []aimodelruntime.Message{{Role: aimodelruntime.RoleUser, Content: []aimodelruntime.ContentPart{{Type: aimodelruntime.PartInputText, Text: "hello"}}}}}
 	r.Normalize()

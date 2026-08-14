@@ -45,7 +45,7 @@ func RegisterNavigationEmbedding(a *app.App, navigation *NavigationSearchService
 				_ = reporter.Progress(ctx, 100, "navigation.superseded")
 				return nil
 			}
-			return job.Retryable(errors.New("navigation embedding failed"))
+			return job.ClassifyEmbeddingError("navigation.embedding", err)
 		}
 		_ = reporter.Progress(ctx, 100, "navigation.ready")
 		return nil

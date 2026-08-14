@@ -429,10 +429,7 @@ func (s *KnowledgeService) resolveEmbedding(ctx context.Context, alias string) e
 	if s.models == nil {
 		return errs.NewKey(errs.CodeValidation, "ai.knowledge.embedding_unavailable", "embedding model resolver is unavailable")
 	}
-	_, err := s.models.Resolve(ctx, alias, aimodel.CapabilityRequirements{
-		ModelType: aimodel.ModelTypeEmbedding,
-		Features:  []aimodel.Feature{aimodel.FeatureEmbeddings},
-	})
+	_, err := s.models.Resolve(ctx, alias, aimodel.EmbeddingRequirements())
 	return err
 }
 

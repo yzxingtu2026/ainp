@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/yzxingtu2026/ainp/platform/framework/aimodelruntime"
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/job"
@@ -45,11 +44,7 @@ func RegisterToolCatalogEmbedding(a *app.App, tools *ToolService) error {
 				_ = reporter.Progress(ctx, 100, "tool_catalog.superseded")
 				return nil
 			}
-			var runtimeErr *aimodelruntime.RuntimeError
-			if errors.As(err, &runtimeErr) && !runtimeErr.Retryable {
-				return job.Permanent(errors.New("tool embedding runtime failed"))
-			}
-			return job.Retryable(errors.New("tool embedding runtime failed"))
+			return job.ClassifyEmbeddingError("tool_catalog.embedding", err)
 		}
 		_ = reporter.Progress(ctx, 100, "tool_catalog.ready")
 		_ = reporter.SetResultRef(ctx, "ai_tool_catalog:"+payload.ToolID)

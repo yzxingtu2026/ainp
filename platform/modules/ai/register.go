@@ -190,6 +190,23 @@ func Register(a *app.App) error {
 	tools := NewToolService(a.DB, toolRegistry, handleSigner, writer)
 	tools.SetEmbeddingRuntime(a.EmbeddingRuntime)
 	tools.SetSettingProvider(a.SettingValues)
+	validateEmbeddingSetting := func(field string) setting.Validator {
+		return func(ctx context.Context, validation setting.Validation) error {
+			alias, _ := validation.Values[field].(string)
+			alias = strings.TrimSpace(alias)
+			if alias == "" {
+				return nil
+			}
+			_, err := svc.Resolve(ctx, alias, aimodel.EmbeddingRequirements())
+			return err
+		}
+	}
+	if err := a.SettingValidators.Register(aitool.SettingKeySearch, validateEmbeddingSetting(aitool.SettingFieldModelAlias)); err != nil {
+		return err
+	}
+	if err := a.SettingValidators.Register(menu.SettingKeySemanticSearch, validateEmbeddingSetting(menu.SettingFieldModelAlias)); err != nil {
+		return err
+	}
 	tools.SetCatalogProjectionSynchronous(a.Outbox == nil || !a.Outbox.Enabled)
 	if err := RegisterToolCatalogEmbedding(a, tools); err != nil {
 		return err

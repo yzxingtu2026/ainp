@@ -114,6 +114,7 @@ func Register(a *app.App) error {
 	}
 	settingSvc := NewSettingService(a.DB, a.Settings)
 	settingSvc.SetChangeRegistry(a.SettingChanges)
+	settingSvc.SetValidatorRegistry(a.SettingValidators)
 	a.SettingValues = settingSvc.Provider()
 	if err := registerSettingActions(a, settingSvc); err != nil {
 		return err

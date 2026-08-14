@@ -180,10 +180,12 @@ func process(ctx context.Context, db *gorm.DB, registry *job.Registry, store job
 	now := time.Now().UTC()
 	queueLatency := now.Sub(run.UpdatedAt).Milliseconds()
 	_ = store.UpdateFields(ctx, run.ID, map[string]any{
-		"status":     status.JobRunning,
-		"attempt":    attempt,
-		"started_at": now,
-		"last_error": "",
+		"status":         status.JobRunning,
+		"attempt":        attempt,
+		"started_at":     now,
+		"last_error":     "",
+		"error_category": "",
+		"error_stage":    "",
 	})
 
 	jobCtx := auth.WithContext(ctx, &auth.Context{
@@ -215,9 +217,14 @@ func process(ctx context.Context, db *gorm.DB, registry *job.Registry, store job
 	}
 
 	finished := time.Now().UTC()
+	errorCategory, errorStage, safeSummary := job.ErrorFacts(err)
+	lastError := job.TruncateError(err)
+	if safeSummary != "" {
+		lastError = safeSummary
+	}
 	if err == nil {
 		_ = store.UpdateFields(ctx, run.ID, map[string]any{
-			"status": status.JobSucceeded, "progress": 100, "finished_at": finished, "last_error": "",
+			"status": status.JobSucceeded, "progress": 100, "finished_at": finished, "last_error": "", "error_category": "", "error_stage": "",
 		})
 		logging.Info(jobCtx, "job succeeded",
 			"job_id", run.ID, "job_type", run.JobType, "attempt", attempt, "duration_ms", dur.Milliseconds())
@@ -225,13 +232,13 @@ func process(ctx context.Context, db *gorm.DB, registry *job.Registry, store job
 	}
 	if job.IsCancelled(err) {
 		_ = store.UpdateFields(ctx, run.ID, map[string]any{
-			"status": status.JobCancelled, "finished_at": finished, "last_error": job.TruncateError(err),
+			"status": status.JobCancelled, "finished_at": finished, "last_error": lastError, "error_category": errorCategory, "error_stage": errorStage,
 		})
 		return nil
 	}
 	if job.IsPermanent(err) {
 		_ = store.UpdateFields(ctx, run.ID, map[string]any{
-			"status": status.JobDead, "finished_at": finished, "last_error": job.TruncateError(err),
+			"status": status.JobDead, "finished_at": finished, "last_error": lastError, "error_category": errorCategory, "error_stage": errorStage,
 		})
 		logJobFailure(jobCtx, "job permanent failure", run.ID, run.JobType, attempt, dur, err, true)
 		return fmt.Errorf("%w: %v", asynq.SkipRetry, err)
@@ -243,21 +250,25 @@ func process(ctx context.Context, db *gorm.DB, registry *job.Registry, store job
 	}
 	if attempt >= maxAttempts {
 		_ = store.UpdateFields(ctx, run.ID, map[string]any{
-			"status": status.JobDead, "finished_at": finished, "last_error": job.TruncateError(err),
+			"status": status.JobDead, "finished_at": finished, "last_error": lastError, "error_category": errorCategory, "error_stage": errorStage,
 		})
 		logJobFailure(jobCtx, "job dead", run.ID, run.JobType, attempt, dur, err, true)
 		return fmt.Errorf("%w: %v", asynq.SkipRetry, err)
 	}
 	_ = store.UpdateFields(ctx, run.ID, map[string]any{
-		"status": status.JobRetrying, "last_error": job.TruncateError(err),
+		"status": status.JobRetrying, "last_error": lastError, "error_category": errorCategory, "error_stage": errorStage,
 	})
-	logging.Warn(jobCtx, "job retryable failure",
-		"job_id", run.ID, "job_type", run.JobType, "attempt", attempt, "error", job.TruncateError(err))
+	logJobFailure(jobCtx, "job retryable failure", run.ID, run.JobType, attempt, dur, err, false)
 	return err
 }
 
 func logJobFailure(ctx context.Context, message, id, jobType string, attempt int, duration time.Duration, err error, final bool) {
 	meta := diagnostic.Describe(err, "job.handler")
+	if category, stage, summary := job.ErrorFacts(err); category != "" {
+		meta.Category = diagnostic.Category(category)
+		meta.Stage = stage
+		meta.SafeSummary = summary
+	}
 	attrs := []any{"job_id", id, "job_type", jobType, "attempt", attempt, "duration_ms", duration.Milliseconds(), "final", final, "error_category", meta.Category, "error_stage", meta.Stage, "safe_summary", meta.SafeSummary}
 	if final {
 		logging.Error(ctx, message, err, attrs...)

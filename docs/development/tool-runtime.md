@@ -28,6 +28,8 @@ Reconcile 按 Tool ID 比较完整安全定义：新增和变更写入 Catalog�
 
 租户设置 `ai.tool_search.embedding_model_alias` 控制语义检索，空值表示只使用 exact + 中文词法归一化 + PostgreSQL FTS。配置 Alias 后，Catalog 事件经 Outbox 入队 `ai.tool_catalog.embed`，Job 只通过统一 `EmbeddingRuntime` 以 `purpose=tool_index`、`cosine_normalize.v1` 生成 pgvector，并持久化 alias、deployment、remote model、dimensions、preprocessing、schema version 与 catalog revision。模型、维度、预处理或 revision 不匹配的向量不得参与查询；失败标记 `failed`，可重试或通过 rebuild 生成新 revision。
 
+设置写入边界必须先解析并验证 Alias 的租户、enabled 状态、Embedding 能力与 Adapter；配置或 capability 错误不得进入重复 Job。索引失败文档保存受控 `error_category/error_stage`，非法 response/provenance 首次 permanent，临时 provider 故障才重试；superseded revision 正常成功收口且不得覆盖新版文档。
+
 核心 `builtin:knowledge.search` 是首个直接投影 Slot，但只在当前 Agent 至少存在一个绑定、当前 actor 可读、enabled 且索引 ready 的知识库时可用。动态描述只能列出这些候选的名称、用途和稳定 ID，不得暴露 tenant、对象存储字段或无权资源。
 
 ## Search、Scope 与 Handle
