@@ -54,7 +54,7 @@ if err := a.RegisterAction(action.Action{
             Risk:                "low",
             SideEffect:          "read",
             ResultSummary:       "已返回当前用户有权查看的采购单",
-            InputSchema:         action.SchemaFor[OrderGetRequest](),
+            InputSchema:         action.InputSchemaFor[OrderGetRequest](),
             OutputSchema:        action.SchemaFor[OrderView](),
         },
     },
@@ -87,7 +87,7 @@ AI: &action.AIMeta{
     Risk:                 "medium",
     SideEffect:           "write",
     RequiresConfirmation: true,
-    InputSchema:          action.SchemaFor[OrderCreateRequest](),
+    InputSchema:          action.InputSchemaFor[OrderCreateRequest](),
     OutputSchema:         action.SchemaFor[OrderView](),
 }
 ```
@@ -95,6 +95,41 @@ AI: &action.AIMeta{
 `ToolTitle` 是工具过程卡片使用的简短动作标题，必须由 Action 注册处显式声明为“动作 + 对象”，例如“查询采购单”“准备下载附件”“预览通知模板”。`Summary` 面向模型描述能力，`HumanDescription` 面向用户补充范围与约束，`ResultSummary` 描述结果类别。禁止根据 `SideEffect`、Action ID 或模型工具名推导标题。
 
 写操作还应按业务约定配置 `IdempotencyMeta`。模型不能传 `skip_confirmation`，也不能降低风险等级。
+
+### 可重复创建默认使用批量契约
+
+新建面向 AI、可重复创建同类资源的能力时，优先保留现有单条 HTTP/管理端接口，并为 AI 注册一个显式批量 Action；`items` 长度为 1 即覆盖单条场景。禁止让模型生成多个独立单条写 Tool Call，也禁止由 Runtime 合并或一次批准任意调用。
+
+```go
+type OrderBatchCreateRequest struct {
+    Items []OrderCreateRequest `json:"items" validate:"required,min=1,max=50,dive"`
+}
+
+type OrderBatchCreateResponse struct {
+    CreatedCount int         `json:"created_count"`
+    Items        []OrderView `json:"items"`
+}
+
+AI: &action.AIMeta{
+    ExposeTool:           true,
+    Operation:            action.AIOperationCreate,
+    Batch:                &action.AIBatchMeta{Mode: action.AIBatchAtomic, ItemsPath: "items"},
+    ToolTitle:            "批量创建采购订单",
+    Summary:              "在一个事务内创建一至多张采购订单",
+    HumanDescription:     "整批校验并按请求顺序返回结果，任一项失败时全部回滚",
+    ResultSummary:        "采购订单已批量创建",
+    Risk:                 "high",
+    SideEffect:           "write",
+    RequiresConfirmation: true,
+    InputSchema:          action.InputSchemaFor[OrderBatchCreateRequest](),
+    OutputSchema:         action.SchemaFor[OrderBatchCreateResponse](),
+},
+Idempotency: &action.IdempotencyMeta{Mode: "required", TTL: 24 * time.Hour},
+```
+
+Registry 会校验顶层 object、required `ItemsPath`、array 上下限、closed object item、确认、必需幂等以及 `created_count + items` 输出。Tool Runtime 使用完整 JSON Schema 在确认前校验嵌套字段与 `minItems/maxItems`；领域 Service 仍必须执行同一 DTO 验证、租户校验、事务与数据库不变量，不能把 Schema 当作授权或事务保证。
+
+不能同步原子完成时只能显式选择 `preview_commit`、`async_job` 或 `single_only`。`single_only` 仅接受框架原因常量；外部副作用、付费调用、文件导入和长任务不得伪装为 `atomic`。完整模式与结果协议见 [Action 元数据](./action-metadata.md#ai-创建与批量契约)。
 
 ## 新增 Provider 和 Executor
 
@@ -144,7 +179,7 @@ func weatherDefinition() aitool.Definition {
         DescriptionForHuman: "访问天气服务读取实时天气",
         Capability:          "weather",
         Tags:                []string{"天气", "温度", "降雨"},
-        InputSchema:         action.SchemaFor[WeatherRequest](),
+        InputSchema:         action.InputSchemaFor[WeatherRequest](),
         Risk:                aitool.RiskLow,
         SideEffect:          aitool.SideEffectExternal,
         RequiresConfirmation: true,

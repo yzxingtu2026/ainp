@@ -14,6 +14,8 @@
 - 非 `demo` 生产 Action 注册时必须在 `Metadata.AI` 明确二选一：完整 `ExposeTool=true`，或 `ExcludeFromAI(稳定原因代码)`；两者互斥，禁止空原因和平行 AI 暴露清单。
 - 暴露 Action 必须完整声明风险、side effect、输入 Schema、用户说明和结果摘要；写入、外部、付费、破坏性或高风险操作必须进入确认机制。
 - 暴露 Action 输入统一使用 `action.InputSchemaFor[Request]()` 并通过显式字段存在语义门禁；普通 `SchemaFor` 仅用于响应等非输入 Schema。
+- 新增或修改的可重复创建类 AI Action 必须显式 `Operation=create` 并声明受控 Batch Mode，禁止按 Action ID、路径或标题推断。`atomic` 必须使用 required `items` object-array、`minItems>=1`、有限 `maxItems<=100`、closed object item、`side_effect=write`、一次确认、required 幂等及 `created_count + items` 输出；HTTP/Tool/MCP 复用同一 DTO、Handler、Service 与事务。
+- 非同步原子创建只可显式选择 `preview_commit` / `async_job` / `single_only`；`single_only` 仅允许框架稳定原因代码，外部副作用、文件导入和长任务禁止伪装 atomic。未声明 Operation 的存量不按名称猜测，业务修改时再分类迁移。
 - 实时候选字段必须显式声明 `AIMeta.DynamicReferences`（字段路径、稳定 Resolver ID、只读 Discovery Action、证据要求）；候选不得展开为 Schema `enum`。Resolver 与 Discovery Action 必须注册且同 realm，写 Action、HTTP 和目录 Action 复用同一 Resolver，Tool Runtime 禁止按 Action ID 特判。
 - Job、Outbox、通知投递等运维 mutation Tool 只接受稳定资源 ID，禁止接受或修改原始 payload、metadata、任务类型和通知正文；重试由领域服务复用持久化事实，并按 `write/external` 强制单次确认。
 - AI 管理 Action 必须区分管理面与运行面：Agent、版本、Slot、知识、会话治理和用户记忆治理可按风险暴露；Tool/Agent Runtime、索引维护、诊断恢复及预览物化保持 `internal-runtime-operation` 排除。

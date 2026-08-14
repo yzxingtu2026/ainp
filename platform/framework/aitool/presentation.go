@@ -9,6 +9,7 @@ import (
 )
 
 const ConfirmationPresentationVersion = 1
+const ConfirmationBatchItemLimit = 10
 
 type ToolPresentation struct {
 	Title       string `json:"title"`
@@ -30,6 +31,29 @@ type ConfirmationPresentationDetail struct {
 type ConfirmationPresentationRequest struct {
 	Definition Definition
 	Arguments  json.RawMessage
+}
+
+type ConfirmationBatchSummary struct {
+	Total   int
+	Items   []string
+	Omitted int
+}
+
+// SummarizeBatchForConfirmation applies the shared confirmation-card item
+// budget. Domain presenters remain responsible for safe, localized labels.
+func SummarizeBatchForConfirmation(items []string, limit int) ConfirmationBatchSummary {
+	if limit <= 0 || limit > ConfirmationBatchItemLimit {
+		limit = ConfirmationBatchItemLimit
+	}
+	shown := len(items)
+	if shown > limit {
+		shown = limit
+	}
+	return ConfirmationBatchSummary{
+		Total:   len(items),
+		Items:   append([]string(nil), items[:shown]...),
+		Omitted: len(items) - shown,
+	}
 }
 
 type ConfirmationPresenter interface {

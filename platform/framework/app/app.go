@@ -148,7 +148,7 @@ func (a *App) RegisterAction(act action.Action) error {
 		return fmt.Errorf("capability not registered: %s", act.Meta.Capability)
 	}
 	if act.Meta.Capability != "demo" {
-		if err := action.ValidateAIClassification(act.ID, act.Meta.AI); err != nil {
+		if err := action.ValidateAIContract(act.ID, act.Meta); err != nil {
 			return err
 		}
 	}
