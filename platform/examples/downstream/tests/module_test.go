@@ -107,25 +107,54 @@ func TestDownstreamHostLoadsEmbeddedRuntimeAssetsFromArbitraryWorkingDirectory(t
 	if !owners["ainp"] || !owners[orders.ModuleID] {
 		t.Fatalf("runtime asset manifest is missing owners: %#v", owners)
 	}
+	contract, ok := platform.App.AgentContracts.Get("system.operations", "1.0.0")
+	if !ok || !slices.Contains(contract.AllowedToolCapabilities, orders.CapabilityID) {
+		t.Fatalf("default Agent Contract is missing downstream capability: %#v", contract.AllowedToolCapabilities)
+	}
+	slot, ok := platform.App.AgentSlots.Get("workspace.default", "1.0.0")
+	if !ok || slot.DefaultContractKey != "system.operations" || slot.DefaultContractVersion != "1.0.0" {
+		t.Fatalf("workspace default Slot no longer resolves the builtin Contract: %#v", slot)
+	}
+	tenantID := "tenant-default-agent"
+	userID := "user-default-agent"
+	if err := platform.App.AgentTenantInitializer(context.Background(), platform.DB, tenantID, userID); err != nil {
+		t.Fatal(err)
+	}
+	var builtinCount int64
+	if err := platform.DB.Table("ai_agents").Where("tenant_id=? AND source=? AND contract_key=?", tenantID, "builtin", "system.operations").Count(&builtinCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if builtinCount != 1 {
+		t.Fatalf("tenant initializer created %d builtin system operations Agents", builtinCount)
+	}
 }
 
-func TestExternalModuleRegistersAtomicAICreateContract(t *testing.T) {
+func TestExternalModuleContributesAtomicAICreateToDefaultContract(t *testing.T) {
 	assets := (orders.Module{}).RuntimeAssets()
-	if err := prompt.LoadSources(prompt.Source{Owner: orders.ModuleID, FS: assets.Prompts}); err != nil {
+	if err := prompt.LoadSources(prompt.Source{Owner: "ainp", FS: os.DirFS("../../../prompts")}, prompt.Source{Owner: orders.ModuleID, FS: assets.Prompts}); err != nil {
 		t.Fatal(err)
 	}
 	application := app.New(&config.Config{}, nil, nil, nil)
+	contract := aiagent.Contract{Key: "system.operations", Version: "1.0.0", Name: "System operations", BaseInstructions: prompt.MustGet("agent/system-operations"), BaseInstructionsVersion: "2.2.0", RequiredModelCapabilities: []string{"chat", "tools"}, AllowedToolSources: []string{"action"}, AllowedToolCapabilities: []string{"system", "operations", "ai"}, ConfigSchema: []byte(`{"type":"object"}`), SingletonScope: aiagent.SingletonTenant, ManagedFields: []string{"code", "source", "contract_key", "contract_version", "base_instructions", "visibility"}, UpgradePolicy: "managed-fields"}
 	application.AgentContracts = aiagent.NewRegistry()
+	if err := application.AgentContracts.Register(contract); err != nil {
+		t.Fatal(err)
+	}
 	application.Jobs = &job.Runtime{Registry: job.NewRegistry()}
 	if err := (orders.Module{}).Register(application); err != nil {
 		t.Fatal(err)
 	}
-	contract, ok := application.AgentContracts.Get(orders.ModuleID, "1.0.0")
-	if !ok {
-		t.Fatal("downstream Agent Contract was not registered")
+	contributions := (orders.Module{}).AgentContractContributions()
+	contributions[0].Owner = orders.ModuleID
+	if err := application.AgentContracts.ApplyContributions(contributions); err != nil {
+		t.Fatal(err)
 	}
-	if contract.BaseInstructionsVersion != "1.0.0" || !slices.Equal(contract.AllowedToolSources, []string{"action"}) || !slices.Equal(contract.AllowedToolCapabilities, []string{orders.CapabilityID}) {
-		t.Fatalf("downstream Agent Contract does not expose the orders Action scope: %#v", contract)
+	contract, ok := application.AgentContracts.Get("system.operations", "1.0.0")
+	if !ok || !slices.Contains(contract.AllowedToolCapabilities, orders.CapabilityID) || !strings.Contains(contract.BaseInstructions, "downstream module instructions: "+orders.ModuleID) {
+		t.Fatalf("default Agent Contract does not include the orders contribution: %#v", contract)
+	}
+	if _, exists := application.AgentContracts.Get(orders.ModuleID, "1.0.0"); exists {
+		t.Fatal("downstream contribution must not create a ghost Agent Contract")
 	}
 	registered, ok := application.Actions.Get("orders.batch_create")
 	if !ok || registered.Meta.AI == nil {
@@ -141,7 +170,7 @@ func TestExternalModuleRegistersAtomicAICreateContract(t *testing.T) {
 	if definition.Operation != action.AIOperationCreate || definition.Batch == nil || definition.Batch.ItemsPath != "items" {
 		t.Fatalf("AI create contract was not projected: %#v", definition)
 	}
-	if err := application.AgentContracts.ValidateActionToolCapabilityCoverage(application.Actions, nil); err != nil {
+	if err := application.AgentContracts.ValidateActionToolCapabilityReachability(application.Actions, map[string]struct{}{"system.operations@1.0.0": {}}, nil); err != nil {
 		t.Fatalf("downstream Action capabilities must be reachable from an Agent Contract: %v", err)
 	}
 }

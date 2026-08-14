@@ -1,6 +1,7 @@
 # 智能体管理硬约束
 
 - 内置能力必须注册 Agent Contract；数据库记录不得伪造或覆盖 Contract 安全字段。
+- 下游扩展默认系统助手必须经 `host.AgentContractContributionProvider` 显式贡献 capability；禁止注册无 builtin/Slot 消费路径的幽灵 Contract，Contribution 不授予权限或降低确认/审计边界。
 - Agent 只引用 Model Alias；Tool Binding 只引用 namespaced Tool ID，绝不授予权限、Credential 或降低确认要求。
 - Tool Definition 显式声明 `binding_mode` / `loading_mode`；Action 固定不可绑定且只经 Contract Scope 渐进发现，Meta/Runtime Slot 可按声明绑定。Contract 必选项作为不可移除的有效绑定但不复制数据库事实；候选、写入、列表与 Run Scope 共用 Registry 门禁。
 - Agent Version 创建后不可变；未来 Run 必须引用 `agent_version_id`。

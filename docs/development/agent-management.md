@@ -14,6 +14,8 @@ Agent Contract（代码注册的能力与安全契约）
 
 新增工具仍按 `docs/development/tool-runtime.md` 注册 Provider/Definition/Executor。Agent Tool Binding 只保存 Tool ID 和选择策略，不复制 Schema，不授予 permission、Credential 或更低风险等级。运行时必须重新计算当前用户可见工具并执行确认策略。
 
+下游模块若只需让默认“系统运营助手”发现本模块 Action，不得注册没有 builtin Agent 与 Slot 消费路径的独立 Contract。模块应实现 `host.AgentContractContributionProvider`，显式向 `system.operations@1.0.0` 贡献 owner、`AllowedToolCapabilities`，以及可选的 owner-scoped Prompt key/version。Host 在 API、embedded worker 和独立 Worker 共用的装配路径中按 owner 排序聚合；重复 owner、未知 target、非法 capability、跨 owner Prompt、空指令或版本漂移均启动失败。Contribution 不授予 Permission、Credential，也不覆盖内置安全指令、Required Tool selectors、确认、审计或租户边界。
+
 ## ownership 与版本
 
 - `builtin` 由 Contract 驱动，不能物理删除；框架字段只由 reconcile 升级。
@@ -29,6 +31,8 @@ Agent Contract（代码注册的能力与安全契约）
 ## Setup 与 reconcile
 
 数据库 migration 只建 schema。Setup 通过租户初始化 hook 幂等创建 `system.operations`；存量租户由显式 `ai.agent_builtin_reconcile` Action 同步。reconcile 只创建缺失实例或升级托管字段，不覆盖租户可编辑字段，不删除历史版本。由于内置 Contract 不绑定租户 Model Alias，新创建的 builtin 保持 `draft + current_version=0`；管理员必须先在 Builder 选择模型并发布首个 release，列表才允许启用。后端启用入口同样 fail-closed，并返回稳定的 `ai.agent.publish_required`，不得用不存在的 version 0 继续诊断或运行。
+
+Contract contribution 不创建第二个 builtin Agent，也不写 migration 业务种子。存量 `system.operations` Definition 继续引用同一 Contract key/version；聚合结果对新 Run 创建的 Tool Scope 生效，已固定的历史 Conversation、Version 和已持久化 Run Scope 不回写、不漂移。
 
 ## Agent Builder
 

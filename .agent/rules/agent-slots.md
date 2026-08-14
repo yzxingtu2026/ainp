@@ -5,5 +5,6 @@
 - 解析顺序为允许时的用户偏好、租户绑定、系统默认；显式配置失效必须 fail-closed，不得静默回退。
 - Binding 保存 `agent_id`；新 Conversation 必须由服务端解析并固定实际 release `agent_version_id`，历史会话不得漂移。
 - Slot Definition 不入库；migration 不写业务默认，reconcile 不覆盖租户或用户选择。
+- capability 覆盖必须验证 Contract→builtin reconcile→registered Slot→Runtime Tool Scope 的真实可达性，Registry 并集不算可达。
 
 详见 `docs/development/agent-slots.md`。

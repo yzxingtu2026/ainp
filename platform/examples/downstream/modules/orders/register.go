@@ -5,6 +5,7 @@ import (
 	downstreammigrations "example.com/ainp-downstream/migrations"
 	"example.com/ainp-downstream/modules/orders/catalog"
 	downstreamprompts "example.com/ainp-downstream/prompts"
+	"github.com/yzxingtu2026/ainp/platform/framework/aiagent"
 
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
 	"github.com/yzxingtu2026/ainp/platform/host"
@@ -33,4 +34,14 @@ func (Module) MigrationSource() platformmigrations.Source {
 
 func (Module) RuntimeAssets() host.RuntimeAssets {
 	return host.RuntimeAssets{Prompts: downstreamprompts.FS(), I18n: downstreami18n.FS()}
+}
+
+func (Module) AgentContractContributions() []aiagent.ContractContribution {
+	return []aiagent.ContractContribution{{
+		TargetKey:                 "system.operations",
+		TargetVersion:             "1.0.0",
+		AllowedToolCapabilities:   []string{CapabilityID},
+		BaseInstructionsPromptKey: AgentPromptKey,
+		BaseInstructionsVersion:   "1.0.0",
+	}}
 }

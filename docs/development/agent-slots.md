@@ -28,4 +28,6 @@ Agent Contract 定义智能体能力和安全约束，Agent Definition 是租户
 
 新 AI 功能应在模块初始化时注册 Slot，并声明默认 Contract、能力要求、租户/用户覆盖策略、fail-closed 策略与升级策略。页面和业务服务禁止硬编码 Agent ID、builtin code 或自行实现解析优先级。
 
+扩展现有 `workspace.default` 的下游业务工具时，不新增 Slot 或业务 builtin Agent；通过 `host.AgentContractContributionProvider` 扩展该 Slot 已消费的 `system.operations@1.0.0`。启动门禁按 `ExposeTool capability -> Contract -> builtin reconcile -> registered Slot -> Runtime Tool Scope` 校验真实可达性，仅存在于 Contract Registry 但没有 Slot 消费路径的“幽灵 Contract”不能满足覆盖要求。
+
 后续可按相同方式注册 `i18n.translate`、`agent.prompt_authoring`、`content.copywriting`；这些示例不代表对应业务智能体已经实现。

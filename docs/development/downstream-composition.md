@@ -107,6 +107,12 @@ AINP 正式 Prompt 与后端 i18n 通过 `embed.FS` 随 `platform/vX.Y.Z` 发布
 
 `Platform.RuntimeAssets` 提供 owner、key、类型、locale/version 与 SHA-256 摘要，供 API/Worker 和构建清单核对；不包含 Prompt 或翻译正文。下游发布清单应同时记录 AINP Module 版本与该清单的确定性摘要。
 
+## 扩展默认系统运营助手
+
+需要让默认 AI 工作台发现下游 Action 时，Module 实现 `host.AgentContractContributionProvider`，返回目标为 `system.operations@1.0.0` 的 `aiagent.ContractContribution`。`Owner` 可留空由 Host 固定为 Module ID；必须显式列出 capability。可选业务基础指令必须来自同 owner 的 Runtime Assets Prompt，并同时固定 key 与版本。
+
+Host 在内置 AI 与全部下游模块注册后统一应用 contribution，再执行真实可达性门禁；Setup 初始化使用同一聚合 Contract。API 与 Worker 因此得到一致结果。禁止按 Action Registry 自动扩权，也禁止通过注册独立下游 Contract 来假装默认工作台可达。无 contribution 时内置 `system.operations` 的 capability、指令与工具集合保持不变。
+
 外置开发目录不是生产配置。只有显式传 `host.WithDevelopmentRuntimeAssets(promptDir, i18nDir)`（官方命令对应 `-dev-runtime-assets`）时才替换 `ainp` 内嵌源并允许 reload；目录缺失或内容非法会阻止启动，reload 失败保留上一份有效快照。
 
 ## 下游迁移
