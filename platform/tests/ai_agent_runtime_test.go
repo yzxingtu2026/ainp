@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/yzxingtu2026/ainp/platform/framework/aimodelruntime"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/database"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
@@ -82,6 +83,90 @@ func TestConfirmationApproveRejectsExternalConversationChangesPostgres(t *testin
 		t.Fatalf("archived conversation error=%v, want revision conflict", err)
 	}
 }
+
+func TestAgentRunCancelPersistsTerminalCategoryPostgres(t *testing.T) {
+	dsn := os.Getenv("AINP_TEST_DATABASE_DSN")
+	if dsn == "" {
+		t.Skip("AINP_TEST_DATABASE_DSN is not set")
+	}
+	admin, err := database.Open(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	schema := "ainp_agent_cancel_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	if err = admin.Exec(fmt.Sprintf(`CREATE SCHEMA %q`, schema)).Error; err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = admin.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE`, schema)).Error })
+	db, err := database.Open(dsn + " search_path=" + schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = ai.AutoMigrate(db); err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Now().UTC()
+	run := ai.AgentRun{ID: "run-cancel", TenantID: "tenant-a", UserID: "user-a", ConversationID: "conversation-a", ConversationRevision: 1, TriggerMessageID: "message-a", AgentVersionID: "version-a", SessionID: "session-a", AuthVersion: 1, Status: "running", BudgetJSON: json.RawMessage(`{}`), IdempotencyKey: "run-cancel", LeaseOwner: "worker-a", LeaseExpiresAt: ptrTime(now.Add(time.Minute)), Revision: 3, StartedAt: &now}
+	steps := []ai.AgentStep{
+		{ID: "step-model", TenantID: run.TenantID, RunID: run.ID, StepIndex: 1, Type: "model", Status: "running", InputSummary: json.RawMessage(`{}`), OutputSummary: json.RawMessage(`{}`), CreatedAt: now, StartedAt: &now},
+		{ID: "step-tool", TenantID: run.TenantID, RunID: run.ID, StepIndex: 2, Type: "tool_execute", Status: "waiting", InputSummary: json.RawMessage(`{}`), OutputSummary: json.RawMessage(`{}`), CreatedAt: now, StartedAt: &now},
+	}
+	fixtureDB, err := tenantdata.MigrationDB(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = fixtureDB.Create(&run).Error; err != nil {
+		t.Fatal(err)
+	}
+	for index := range steps {
+		step := steps[index]
+		if err = fixtureDB.Exec(`INSERT INTO ai_agent_steps
+(id,tenant_id,run_id,step_index,type,status,input_summary,output_summary,created_at,started_at)
+VALUES (?,?,?,?,?,?,?,?,?,?)`, step.ID, step.TenantID, step.RunID, step.StepIndex, step.Type, step.Status, step.InputSummary, step.OutputSummary, step.CreatedAt, step.StartedAt).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	ctx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: run.TenantID, PrincipalID: run.UserID, SessionID: run.SessionID, AuthVersion: run.AuthVersion, Realm: auth.RealmTenant})
+	service := ai.NewAgentRuntimeService(db, nil, nil, nil, nil, nil, nil, nil)
+	if _, err = service.Cancel(ctx, ai.AgentRunIDRequest{ID: run.ID, Revision: run.Revision}); err != nil {
+		t.Fatal(err)
+	}
+	tdb, err := tenantdata.TenantDB(ctx, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runs, err := tenantdata.TenantRaw[ai.AgentRun](tdb, "SELECT * FROM ai_agent_runs WHERE tenant_id=? AND id=? LIMIT 1", run.ID)
+	if err != nil || len(runs) != 1 {
+		t.Fatalf("run query rows=%d err=%v", len(runs), err)
+	}
+	if runs[0].Status != "cancelled" || runs[0].ErrorCategory != string(aimodelruntime.ErrorCancelled) || runs[0].FinishedAt == nil {
+		t.Fatalf("cancelled run mismatch: %#v", runs[0])
+	}
+	persistedSteps, err := tenantdata.TenantRaw[ai.AgentStep](tdb, "SELECT * FROM ai_agent_steps WHERE tenant_id=? AND run_id=? ORDER BY step_index", run.ID)
+	if err != nil || len(persistedSteps) != 2 {
+		t.Fatalf("step query rows=%d err=%v", len(persistedSteps), err)
+	}
+	for _, step := range persistedSteps {
+		if step.Status != "cancelled" || step.ErrorCategory != string(aimodelruntime.ErrorCancelled) || step.FinishedAt == nil {
+			t.Fatalf("cancelled step mismatch: %#v", step)
+		}
+	}
+	events, err := tenantdata.TenantRaw[ai.AgentRunEvent](tdb, "SELECT * FROM ai_agent_run_events WHERE tenant_id=? AND run_id=? ORDER BY sequence", run.ID)
+	if err != nil || len(events) != 3 {
+		t.Fatalf("event query rows=%d err=%v", len(events), err)
+	}
+	wantTypes := []string{"step.cancelled", "step.cancelled", "run.cancelled"}
+	for index, event := range events {
+		var payload map[string]any
+		if json.Unmarshal(event.Payload, &payload) != nil || payload["error_category"] != string(aimodelruntime.ErrorCancelled) || event.Type != wantTypes[index] {
+			t.Fatalf("cancel event mismatch: %#v payload=%#v", event, payload)
+		}
+	}
+}
+
+func ptrTime(value time.Time) *time.Time { return &value }
 
 func TestAgentRunStateMachineRejectsIllegalTransitions(t *testing.T) {
 	valid := [][2]aiagentruntime.RunStatus{{aiagentruntime.RunQueued, aiagentruntime.RunRunning}, {aiagentruntime.RunRunning, aiagentruntime.RunWaitingConfirmation}, {aiagentruntime.RunWaitingConfirmation, aiagentruntime.RunQueued}, {aiagentruntime.RunFailed, aiagentruntime.RunQueued}}

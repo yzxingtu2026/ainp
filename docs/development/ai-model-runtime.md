@@ -14,6 +14,16 @@
 
 HTTP Action 的流式响应使用 SSE。生产者使用有界 channel，使慢客户端形成反压；客户端断开必须向下传播取消。
 
+### 流终态契约
+
+Model Runtime 返回运行时自有的 `ResultStream`：有界 `Events` 只承载已验证的增量事件，独立的 buffered `Terminal` 在 Invocation 完成持久化后恰好报告一次最终 error 语义，`InvocationID` 随 stream 直接交给 consumer。consumer 不得仅根据事件 channel close 推断错误。
+
+终态分类固定为：请求 deadline 为 `timeout`；用户或可信上游主动取消为 `cancelled`；Adapter/Runtime 的稳定 Provider 分类原样保留；只有事件顺序违法，或没有 terminal 且没有可识别上游错误的 EOF，才是 `stream_protocol_error`。已识别的 terminal event 胜过随后同时发生的 deadline、cancel 或 provider body close error，禁止竞态二次覆盖。
+
+生产者必须先用不继承原取消信号、但带 5 秒上限的 context 完成 Invocation 终态，再发布 `Terminal` 并关闭 channel。退出路径必须取消 provider context、关闭 provider response body，且 consumer 提前退出时不得造成 goroutine 或 channel 阻塞。账本和下游只保留安全分类，不透传 provider body、凭证、完整参数、堆栈或原始错误。
+
+文本 delta 和 Tool Arguments delta 都是追加式部分事实。失败前的文本可用于流式展示；未收到完整 tool call terminal 的 arguments 只能作为部分响应诊断，绝不能进入 Tool Runtime 执行。
+
 ## 结构化输出
 
 业务模块只能用 `StructuredOutput` 声明稳定名称、JSON Schema 和 strict 期望，不得直接构造供应商参数，也不得把输出约束放进 `GenerateRequest.Tools`。后者始终是可执行 Agent Tool，必须经过 Tool Registry、Scope、Handle、权限重校验和确认协议。
@@ -46,4 +56,4 @@ OpenAI Responses 的 response-only function 固定只投影一个私有函数，
 
 ## 测试要求
 
-Adapter 变更必须在 `platform/tests` 增加请求/响应 fixture、结构化输出策略映射、流事件顺序、取消/超时与敏感字段测试。供应商协议变化应先更新 fixture，再调整映射。
+Adapter 变更必须在 `platform/tests` 增加请求/响应 fixture、结构化输出策略映射、流事件顺序、取消/超时与敏感字段测试。流测试至少覆盖首 token 前、文本 delta 后、Tool Arguments 中途、Provider 分类错误、主动取消、缺 terminal EOF、非法序列、terminal/deadline 竞态、consumer 提前退出和 provider body 关闭。供应商协议变化应先更新 fixture，再调整映射。

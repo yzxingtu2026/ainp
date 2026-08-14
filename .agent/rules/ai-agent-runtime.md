@@ -15,6 +15,8 @@
 - Run 创建时固定 origin request/trace；执行、重试和确认恢复沿用该关联并设置 `client=agent`，不得继承 Job/Outbox client。Action Audit 与 ToolInvocation 共享关联 ID 并记录可信 Run/Invocation 引用。
 - `purpose=builder_preview` 才允许 draft agent 执行；workspace 禁止 preview Version；非 builder 路径不得放宽 enabled。
 - 模型只经统一 Model Runtime，Agent 输出必须消费真实 Stream delta，禁止完整 Generate 后切片伪流式；工具只经 Tool Runtime，压缩只经 ContextCompactor。
+- Model Invocation、model Step、Run 与终态 Event 必须透传同一稳定错误分类和 Invocation ID；timeout/provider/protocol 进入 failed，可信主动取消进入 cancelled，禁止把 channel close 二次解释为协议异常。
+- 已接收 delta 保持追加式；未完成 Tool Arguments 不得执行。工具副作用提示只能依据已持久化且 completed 的 Tool Step/Invocation 事实，不能按错误分类猜测。
 - ToolConfirmation 暂停时释放 lease；恢复必须校验 auth、permission、Agent/Tool/Schema、参数 hash、会话 revision 与 Snapshot。
 - 同批 Tool Call 的 deferred 配对消息必须先于等待状态、revision 快照和 `run.waiting_confirmation` 事件完成；批准前真实外部会话变化必须阻止 Action 执行。
 - 确认执行的 completed/failed invocation 都必须恢复为原 Tool Call 的配对 Result；可纠正失败使用新 Tool Call 与新 confirmation，只有成功恢复可补足收尾 Step。

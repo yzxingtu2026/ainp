@@ -672,6 +672,11 @@ declare namespace App {
           runFailure: string;
           runFailureSimple: string;
           runBudgetFailure: string;
+          runTimeout: string;
+          runCancelled: string;
+          runProviderUnavailable: string;
+          runStreamProtocolError: string;
+          completedToolsPreserved: string;
         };
         agentBuilder: {
           back: string;

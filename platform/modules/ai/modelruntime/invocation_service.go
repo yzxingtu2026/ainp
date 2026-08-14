@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/yzxingtu2026/ainp/platform/framework/action"
 	"github.com/yzxingtu2026/ainp/platform/framework/aimodel"
 	"github.com/yzxingtu2026/ainp/platform/framework/aimodelruntime"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
@@ -113,9 +112,10 @@ func (s *InvocationService) Stream(ctx context.Context, req aimodelruntime.Gener
 		_ = s.finish(ctx, prepared.row, nil, aimodelruntime.FinishError, runtimeErrorCategory(err), "")
 		return nil, err
 	}
-	events := make(chan action.StreamEvent, 16)
-	go s.forwardStream(ctx, prepared, source, events)
-	return action.StreamResult{Events: events, Cancel: prepared.cancel}, nil
+	events := make(chan aimodelruntime.StreamEvent, 16)
+	terminal := make(chan error, 1)
+	go s.forwardStream(ctx, prepared, source, events, terminal)
+	return aimodelruntime.ResultStream{InvocationID: prepared.row.ID, Events: events, Terminal: terminal, Cancel: prepared.cancel}, nil
 }
 
 func (s *InvocationService) Embed(ctx context.Context, req aimodelruntime.EmbeddingRequest) (*aimodelruntime.EmbeddingResponse, error) {
@@ -366,8 +366,9 @@ done:
 	return aimodel.CapabilityRequirements{ModelType: aimodel.ModelTypeChat, InputModalities: inputs, OutputModalities: []aimodel.Modality{aimodel.ModalityText}, Features: features}
 }
 
-func (s *InvocationService) forwardStream(parent context.Context, p *preparedInvocation, source aimodelruntime.EventStream, out chan<- action.StreamEvent) {
+func (s *InvocationService) forwardStream(parent context.Context, p *preparedInvocation, source aimodelruntime.EventStream, out chan<- aimodelruntime.StreamEvent, result chan<- error) {
 	defer close(out)
+	defer close(result)
 	defer p.cancel()
 	defer source.Close()
 	defer p.releaseImages()
@@ -376,6 +377,7 @@ func (s *InvocationService) forwardStream(parent context.Context, p *preparedInv
 	errorCategory := aimodelruntime.ErrorStreamProtocol
 	providerRequestID := ""
 	terminal := false
+	var streamErr error
 	lastSequence := int64(0)
 	for {
 		event, err := source.Recv(p.ctx)
@@ -388,11 +390,14 @@ func (s *InvocationService) forwardStream(parent context.Context, p *preparedInv
 				errorCategory = runtimeErrorCategory(p.ctx.Err())
 				finishReason = aimodelruntime.FinishCancelled
 			}
+			runtimeErr := &aimodelruntime.RuntimeError{Category: errorCategory, Message: "model stream failed"}
+			streamErr = runtimeErr
 			if p.ctx.Err() == nil {
 				lastSequence++
-				failed := aimodelruntime.StreamEvent{Type: aimodelruntime.EventResponseFailed, Sequence: lastSequence, ResponseID: providerRequestID, FinishReason: aimodelruntime.FinishError, Error: &aimodelruntime.RuntimeError{Category: errorCategory, Message: "model stream failed"}, At: time.Now().UTC()}
+				failed := aimodelruntime.StreamEvent{Type: aimodelruntime.EventResponseFailed, Sequence: lastSequence, ResponseID: providerRequestID, FinishReason: aimodelruntime.FinishError, Error: runtimeErr, At: time.Now().UTC()}
 				select {
-				case out <- action.StreamEvent{Event: string(failed.Type), Data: failed}:
+				case out <- failed:
+					terminal = true
 				case <-p.ctx.Done():
 				}
 			}
@@ -421,16 +426,35 @@ func (s *InvocationService) forwardStream(parent context.Context, p *preparedInv
 			finishReason = aimodelruntime.FinishError
 			if event.Error != nil {
 				errorCategory = event.Error.Category
+				streamErr = event.Error
+			} else {
+				errorCategory = aimodelruntime.ErrorProviderUnavailable
+				streamErr = &aimodelruntime.RuntimeError{Category: aimodelruntime.ErrorProviderUnavailable, Message: "model stream failed"}
 			}
 		}
+		// Prefer an already recognized event when the provider terminal and the
+		// request deadline become ready together. The fallback remains cancellable
+		// so an exited consumer cannot strand the producer.
+		delivered := false
 		select {
-		case out <- action.StreamEvent{Event: string(event.Type), Data: event}:
-		case <-p.ctx.Done():
-			errorCategory = runtimeErrorCategory(p.ctx.Err())
-			finishReason = aimodelruntime.FinishCancelled
-			terminal = false
+		case out <- event:
+			delivered = true
+		default:
+		}
+		if !delivered {
+			select {
+			case out <- event:
+				delivered = true
+			case <-p.ctx.Done():
+				errorCategory = runtimeErrorCategory(p.ctx.Err())
+				finishReason = aimodelruntime.FinishCancelled
+				terminal = false
+			}
 		}
 		if p.ctx.Err() != nil {
+			break
+		}
+		if terminal {
 			break
 		}
 	}
@@ -446,7 +470,8 @@ func (s *InvocationService) forwardStream(parent context.Context, p *preparedInv
 	}
 	finishCtx, cancel := context.WithTimeout(context.WithoutCancel(parent), 5*time.Second)
 	defer cancel()
-	_ = s.finish(finishCtx, p.row, usage, finishReason, errorCategory, providerRequestID, status)
+	finishErr := s.finish(finishCtx, p.row, usage, finishReason, errorCategory, providerRequestID, status)
+	result <- errors.Join(streamErr, finishErr)
 }
 
 func (p *preparedInvocation) releaseImages() {

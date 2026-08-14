@@ -493,6 +493,17 @@ type EventStream interface {
 	Recv(context.Context) (StreamEvent, error)
 	Close() error
 }
+
+// ResultStream is the runtime-owned stream returned to model consumers.
+// Terminal is buffered by the producer and reports exactly one final error
+// semantic after Invocation persistence has completed; nil means success.
+type ResultStream struct {
+	InvocationID string
+	Events       <-chan StreamEvent
+	Terminal     <-chan error
+	Cancel       context.CancelFunc
+}
+
 type AdapterRequest struct {
 	Request                  GenerateRequest
 	Model                    *aimodel.ResolvedModel

@@ -52,6 +52,8 @@ Builder 预览约束：
 - 每次 Job 从 AuthorizationProvider 重新加载 actor 当前权限和 auth version，不使用平台管理员身份或长期 service token。
 - 授权恢复后必须沿用 Run 固定的 origin request/trace，并设置 `client=agent`、可信 `agent_run_id`；Job/Outbox 的关联 ID 与 client 只用于投递，不得覆盖最终 Action 执行主体。
 - 模型调用只经统一 Model Runtime；Agent 执行使用 `Stream`，Provider 的 `output_text.delta` 到达后立即追加为 `run.delta`，禁止等待完整 `Generate` 响应后再人为切片伪造流式输出。调用前由 ContextCompactor 按目标模型判断预算并固定 Snapshot。
+- Agent consumer 同时消费结构化事件与独立 terminal result，并直接使用 stream 携带的 Invocation ID。Invocation 已经确定的 `timeout`、`cancelled`、Provider 分类或 `stream_protocol_error` 必须原样写入 model Step、Run 和终态 Event；不得在 channel close 后重新猜测分类。`cancelled` 将 Run/活动 Step 收口为 cancelled，其余模型错误收口为 failed。
+- 已发送的文本 delta 保持追加式，不因 Run 失败删除；Tool Arguments 只有在完整 tool call terminal 到达且整个模型 stream 成功时才可进入执行循环。超时或取消发生在 arguments 中途时，禁止解析、补全、执行或伪造 Tool Result。
 - Provider context overflow 只允许受预算限制的压缩重试；step/model/tool/compaction/Token/时长均有硬上限。
 - 普通轮已返回并落库的 Tool Call 可在既有 tool/time/confirmation 预算内完成；若随后进入 completion-only，恢复后只能消费已预留的单次收尾调用，不接受或执行新的 Tool Call，也不为违规 Tool Call 伪造 Tool Result。
 - ToolScope 只允许 Agent bindings 与 meta search/load。Handle 只在服务端内存使用，不写 Message/Event。
@@ -66,6 +68,8 @@ Builder 预览约束：
 ## 事件与敏感信息
 
 Run 事件使用单调 sequence，查询和 SSE 均按 tenant/user + run 过滤，支持 `after_sequence` 续传。事件仅包含状态、游标、Step 类型、安全错误分类和可展示文本 delta；不包含 Secret、工具 Handle、完整敏感参数、压缩摘要或供应商原始响应。
+
+前端按稳定分类分别展示 timeout、cancelled、provider unavailable 与 stream protocol error。只有持久化事实中存在 `type=tool_execute`、`status=completed` 且关联真实 `tool_invocation_id` 的 Step，才可提示“已完成工具操作不会回滚”；不能仅依据 Run 错误分类推断发生过副作用。
 
 Run/Step 终态与 `ai.agent_run.terminal.v1` 在同一事务提交。requested/resume 事件经 Outbox → Job，Job 使用稳定 idempotency key，崩溃后从 canonical Message、Snapshot、ToolInvocation 和 Confirmation 重建。
 

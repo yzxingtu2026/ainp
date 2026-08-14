@@ -521,7 +521,12 @@ const local: App.I18n.Schema = {
       diagnosticContextWindow: '当前模型未配置上下文窗口，请先在 AI 中心的模型目录中填写供应商提供的实际值。',
       runFailure: '运行失败：{category}（{reason}）',
       runFailureSimple: '运行失败：{category}',
-      runBudgetFailure: '本次运行预算不足，无法生成可靠的最终答复'
+      runBudgetFailure: '本次运行预算不足，无法生成可靠的最终答复',
+      runTimeout: '模型响应超时，请稍后重试',
+      runCancelled: '本次运行已取消',
+      runProviderUnavailable: '模型服务暂时不可用，请稍后重试',
+      runStreamProtocolError: '模型流响应异常，请稍后重试或联系管理员',
+      completedToolsPreserved: '本次运行中已完成的工具操作不会回滚。'
     },
     agentBuilder: {
       back: '返回列表',

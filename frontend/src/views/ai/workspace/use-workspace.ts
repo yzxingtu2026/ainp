@@ -18,7 +18,7 @@ import { agentRunEventDelta, subscribeAgentRun } from '@/service/ai-run-stream';
 import { $t } from '@/locales';
 import { capturePageContext } from '@/composables/page-context';
 import { getStandaloneErrorMessage, isRequestError } from '@/service/request';
-import { isBudgetFailureCategory } from '@/components/ai/run-budget-message';
+import { runFailurePresentation } from '@/components/ai/run-failure-message';
 import { createLatestRequestGate, loadAllCursorPages } from './modules/message-sync';
 import { isWorkspaceDocument } from './modules/document-attachment';
 
@@ -57,8 +57,10 @@ function diagnosticMessage(issue: Api.AI.AgentDiagnosticIssue) {
 }
 
 function runFailureMessage(detail: Api.AI.AgentRunDetail) {
-  const category = detail.run.error_category || 'unknown';
-  if (isBudgetFailureCategory(category)) return $t('page.aiWorkspace.runBudgetFailure');
+  const presentation = runFailurePresentation(detail);
+  const { category } = presentation;
+  let message = '';
+  if (presentation.kind === 'budget') message = $t('page.aiWorkspace.runBudgetFailure');
   const documentFailureKeys: Partial<Record<string, App.I18n.I18nKey>> = {
     document_unavailable: 'page.aiWorkspace.documentUnavailable',
     document_unsupported_format: 'page.aiWorkspace.documentUnsupported',
@@ -69,16 +71,28 @@ function runFailureMessage(detail: Api.AI.AgentRunDetail) {
     document_parse_failed: 'page.aiWorkspace.documentParseFailed'
   };
   const documentFailureKey = documentFailureKeys[category];
-  if (documentFailureKey) return $t(documentFailureKey);
-  if (category !== 'tool_failed') {
-    return $t('page.aiWorkspace.runFailureSimple', { category });
+  if (!message && documentFailureKey) message = $t(documentFailureKey);
+  if (!message) {
+    const modelFailureKeys: Partial<Record<typeof presentation.kind, App.I18n.I18nKey>> = {
+      timeout: 'page.aiWorkspace.runTimeout',
+      cancelled: 'page.aiWorkspace.runCancelled',
+      providerUnavailable: 'page.aiWorkspace.runProviderUnavailable',
+      streamProtocol: 'page.aiWorkspace.runStreamProtocolError'
+    };
+    const modelFailureKey = modelFailureKeys[presentation.kind];
+    if (modelFailureKey) message = $t(modelFailureKey);
   }
-  const failedStep = [...detail.steps].reverse().find(step => step.status === 'failed');
-  const reason = typeof failedStep?.output_summary?.reason === 'string' ? failedStep.output_summary.reason : '';
-  return $t('page.aiWorkspace.runFailure', {
-    category,
-    reason: reason || failedStep?.error_category || 'unknown'
-  });
+  if (!message && presentation.kind === 'tool') {
+    const failedStep = [...detail.steps].reverse().find(step => step.status === 'failed');
+    const reason = typeof failedStep?.output_summary?.reason === 'string' ? failedStep.output_summary.reason : '';
+    message = $t('page.aiWorkspace.runFailure', {
+      category,
+      reason: reason || failedStep?.error_category || 'unknown'
+    });
+  }
+  if (!message) message = $t('page.aiWorkspace.runFailureSimple', { category });
+  if (presentation.completedToolOperation) message += ` ${$t('page.aiWorkspace.completedToolsPreserved')}`;
+  return message;
 }
 
 function createAiConversationController() {
@@ -220,7 +234,7 @@ function createAiConversationController() {
     if (!data) return null;
     runDetail.value = data;
     applyRunStatus(data.run);
-    if (data.run.status === 'failed') error.value = runFailureMessage(data);
+    if (data.run.status === 'failed' || data.run.status === 'cancelled') error.value = runFailureMessage(data);
     if (data.run.status === 'waiting_confirmation' || data.run.status === 'paused') await refreshConfirmations();
     if (refreshContent || isRunTerminal(data.run.status)) {
       const refreshed = await refreshMessages();
