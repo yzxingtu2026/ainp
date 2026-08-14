@@ -24,6 +24,9 @@ func main() {
 	if err != nil {
 		fail(err)
 	}
+	for _, warning := range cfg.DeprecationWarnings() {
+		fmt.Fprintf(os.Stderr, "warning: %s\n", warning)
+	}
 	st, err := state.Load(cfg.StateFile)
 	if err != nil {
 		fail(fmt.Errorf("load state: %w", err))

@@ -6,21 +6,24 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/yzxingtu2026/ainp/platform/framework/credential"
 )
 
 type Config struct {
-	Server    ServerConfig   `yaml:"server"`
-	Database  DatabaseConfig `yaml:"database"`
-	Logging   LoggingConfig  `yaml:"logging"`
-	Auth      AuthConfig     `yaml:"auth"`
-	MCP       MCPConfig      `yaml:"mcp"`
-	I18n      I18nConfig     `yaml:"i18n"`
-	Storage   StorageConfig  `yaml:"storage"`
-	Outbox    OutboxConfig   `yaml:"outbox"`
-	Redis     RedisConfig    `yaml:"redis"`
-	Jobs      JobsConfig     `yaml:"jobs"`
-	AI        AIConfig       `yaml:"ai"`
-	StateFile string         `yaml:"state_file"` // 安装状态文件路径，默认 configs/state.yaml
+	Server                  ServerConfig   `yaml:"server"`
+	Database                DatabaseConfig `yaml:"database"`
+	Logging                 LoggingConfig  `yaml:"logging"`
+	Auth                    AuthConfig     `yaml:"auth"`
+	MCP                     MCPConfig      `yaml:"mcp"`
+	I18n                    I18nConfig     `yaml:"i18n"`
+	Storage                 StorageConfig  `yaml:"storage"`
+	Outbox                  OutboxConfig   `yaml:"outbox"`
+	Redis                   RedisConfig    `yaml:"redis"`
+	Jobs                    JobsConfig     `yaml:"jobs"`
+	AI                      AIConfig       `yaml:"ai"`
+	CredentialEncryptionKey string         `yaml:"credential_encryption_key"`
+	StateFile               string         `yaml:"state_file"` // 安装状态文件路径，默认 configs/state.yaml
 }
 
 type MCPConfig struct {
@@ -377,9 +380,32 @@ func (c *Config) applyEnvOverrides() {
 	if user := os.Getenv("REDIS_USERNAME"); user != "" {
 		c.Redis.Username = user
 	}
-	if key := os.Getenv("AI_CREDENTIAL_ENCRYPTION_KEY"); key != "" {
+	if key := os.Getenv("CREDENTIAL_ENCRYPTION_KEY"); key != "" {
+		c.CredentialEncryptionKey = key
+	} else if key := os.Getenv("AI_CREDENTIAL_ENCRYPTION_KEY"); key != "" {
 		c.AI.CredentialEncryptionKey = key
 	}
+}
+
+func (c *Config) EffectiveCredentialEncryptionKey() string {
+	if c == nil {
+		return ""
+	}
+	if c.CredentialEncryptionKey != "" {
+		return c.CredentialEncryptionKey
+	}
+	return c.AI.CredentialEncryptionKey
+}
+
+func (c *Config) UsesDeprecatedCredentialEncryptionKey() bool {
+	return c != nil && c.CredentialEncryptionKey == "" && c.AI.CredentialEncryptionKey != ""
+}
+
+func (c *Config) DeprecationWarnings() []string {
+	if c.UsesDeprecatedCredentialEncryptionKey() {
+		return []string{"deprecated credential encryption configuration in use; migrate to CREDENTIAL_ENCRYPTION_KEY or credential_encryption_key"}
+	}
+	return nil
 }
 
 // Validate 校验必填项；setup 模式（DSN 可为空）由调用方在 Load 后自行判断。
@@ -390,8 +416,11 @@ func (c *Config) Validate(requireDSN bool) error {
 	if c.Auth.JWT.Secret == "" {
 		return fmt.Errorf("auth.jwt.secret is required")
 	}
-	if c.AI.CredentialEncryptionKey == "" {
-		return fmt.Errorf("ai.credential_encryption_key is required")
+	if c.EffectiveCredentialEncryptionKey() == "" {
+		return fmt.Errorf("credential_encryption_key is required")
+	}
+	if _, err := credential.NewAESGCMCipher(c.EffectiveCredentialEncryptionKey()); err != nil {
+		return err
 	}
 	if duration, err := time.ParseDuration(c.Auth.JWT.TTL); err != nil || duration <= 0 {
 		return fmt.Errorf("auth.jwt.ttl is invalid")

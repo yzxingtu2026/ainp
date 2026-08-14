@@ -127,9 +127,13 @@ func Register(a *app.App) error {
 		return err
 	}
 	a.AIProviderTypes = registry
-	credentialCipher, err := aimodel.NewAESGCMCredentialCipher(a.Config.AI.CredentialEncryptionKey)
-	if err != nil {
-		return err
+	credentialCipher := a.CredentialCipher
+	if credentialCipher == nil {
+		var err error
+		credentialCipher, err = aimodel.NewAESGCMCredentialCipher(a.Config.EffectiveCredentialEncryptionKey())
+		if err != nil {
+			return err
+		}
 	}
 	svc := NewService(a.DB, registry, credentialCipher)
 	a.ModelResolver = svc

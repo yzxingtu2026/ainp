@@ -4,6 +4,7 @@ const SETTING_API = {
   list: '/api/v1/system/settings/list',
   get: '/api/v1/system/settings/get',
   update: '/api/v1/system/settings/update',
+  secretUpdate: '/api/v1/system/settings/secret/update',
   reset: '/api/v1/system/settings/reset',
   toolIndexStatus: '/api/v1/ai/tools/index/status',
   toolIndexRebuild: '/api/v1/ai/tools/index/rebuild',
@@ -48,6 +49,20 @@ export function updateSetting(key: string, revision: number, values: Record<stri
     url: SETTING_API.update,
     method: 'post',
     data: { key, revision, values }
+  });
+}
+
+export function updateSettingSecret(
+  key: string,
+  revision: number,
+  values: Record<string, unknown>,
+  secrets: Record<string, string>,
+  clearSecretFields: string[]
+) {
+  return request<Api.Setting.Definition>({
+    url: SETTING_API.secretUpdate,
+    method: 'post',
+    data: { key, revision, values, secrets, clear_secret_fields: clearSecretFields }
   });
 }
 

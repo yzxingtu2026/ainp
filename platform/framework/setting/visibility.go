@@ -8,6 +8,10 @@ import (
 
 func validateVisibleWhenGraph(def Definition, fieldKeys map[string]struct{}) error {
 	edges := make(map[string]string, len(def.Fields))
+	fieldTypes := make(map[string]FieldType, len(def.Fields))
+	for _, field := range def.Fields {
+		fieldTypes[field.Key] = field.Type
+	}
 	for _, field := range def.Fields {
 		when := field.VisibleWhen
 		if when == nil {
@@ -21,6 +25,9 @@ func validateVisibleWhenGraph(def Definition, fieldKeys map[string]struct{}) err
 		}
 		if _, ok := fieldKeys[when.Field]; !ok {
 			return fmt.Errorf("visible_when references unknown field %q: %s.%s", when.Field, def.Key, field.Key)
+		}
+		if fieldTypes[when.Field] == FieldSecret {
+			return fmt.Errorf("visible_when cannot depend on secret field %q: %s.%s", when.Field, def.Key, field.Key)
 		}
 		hasEq := when.Eq != nil
 		hasIn := len(when.In) > 0

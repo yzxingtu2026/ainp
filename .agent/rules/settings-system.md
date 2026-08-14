@@ -11,6 +11,10 @@
 - `multi_select` 自定义值必须由字段显式开启 `allow_custom_values`，并优先配置 `custom_value_pattern`；禁止全局放开任意选项。
 - `remote_select` 必须声明同源 `/api/v1/...` endpoint、固定参数与 label/value 映射；选项接口自行执行 Action 权限和租户隔离，禁止前端按 Setting key 写业务分支。
 - 字段关联显隐只用声明式 `visible_when`（同组兄弟字段 + `eq`/`in`）；禁止表达式/脚本；隐藏字段跳过必填校验且保留值。
+- `secret` 仅允许 tenant scope、空默认值和普通字段显隐依赖；其他字段禁止依赖 Secret。密文经公共 Credential Cipher + 完整 AAD 写 `value_json`，Provider 仅向受信后端解密。
+- 含 Secret 的 Definition 只能由复用 update 权限且 `AIExcludeSensitiveCredential` 的 `system.setting_secret_update` 原子修改；普通 Update fail-closed。API 只返回 `secret_configured`，不得返回明文、密文或掩码。
+- 管理端 Secret 不回填、不持久化，留空保留、非空替换、可选值二次确认清除，保存后立即清空；审计/日志/Change Hook 禁止记录值或长度。
+- 平台根密钥由 `CREDENTIAL_ENCRYPTION_KEY` 注入并由部署 Secret Manager 备份；旧 AI key 仅兼容一个弃用周期，禁止把根密钥放入 Setting，禁止无轮换方案直接替换。
 - 启动配置（DSN/JWT/端口）不得纳入设置系统；Setting 不承载状态/业务字典。
 - `ai.memory_policy` 只由 Settings Action 管理；Agent 模块经类型化 Provider 读取并在发布时冻结，禁止直接读写设置表或散落 JSON。
 - `ai.agent_runtime_budget` 只由 Settings Action 管理；Agent 模块经类型化 Provider 读取并在 Run 创建时冻结，读取/类型/范围异常 fail-closed，客户端不得覆盖。

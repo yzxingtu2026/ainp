@@ -702,6 +702,11 @@ const local: App.I18n.Schema = {
       reset: 'Reset to defaults',
       resetConfirm: 'Delete tenant overrides and restore code defaults?',
       resetSuccess: 'Settings reset to defaults',
+      secretConfigured: 'Configured',
+      secretNotConfigured: 'Not configured',
+      secretKeepHint: 'Configured. Leave blank to keep the current value.',
+      secretClear: 'Clear',
+      secretClearConfirm: 'Clear the saved credential? This cannot be undone.',
       navigationIndex: {
         title: 'Navigation index',
         summary: '{total} active, {ready} ready, {pending} pending, {failed} failed, {stale} retired',

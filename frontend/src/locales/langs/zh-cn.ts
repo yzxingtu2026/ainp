@@ -694,6 +694,11 @@ const local: App.I18n.Schema = {
       reset: '重置为默认',
       resetConfirm: '确认删除租户覆盖并恢复代码默认值？',
       resetSuccess: '已重置为默认值',
+      secretConfigured: '已配置',
+      secretNotConfigured: '未配置',
+      secretKeepHint: '已配置，留空表示不修改',
+      secretClear: '清除',
+      secretClearConfirm: '确认清除已保存的凭据？此操作不可撤销。',
       navigationIndex: {
         title: '导航索引',
         summary: '有效 {total}，就绪 {ready}，处理中 {pending}，失败 {failed}，退役 {stale}',

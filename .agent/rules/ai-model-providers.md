@@ -5,7 +5,7 @@
 - Provider 协议只描述传输、认证和消息映射；Deployment 单独声明模型实际能力，禁止把协议名称当作能力事实。
 - Provider、Deployment、Alias 必须从 AuthContext 强制 tenant scope，缺租户 fail-closed。
 - 供应商凭证只接受 API 写入并以 AES-256-GCM 密文落库，不兼容 `env:*`；API 只返回 `credential_configured`。
-- 数据加密主密钥由 `AI_CREDENTIAL_ENCRYPTION_KEY` 注入，禁止与 JWT Secret 共用；明文和密文均禁止进入日志、审计与响应。
+- 数据加密主密钥由平台 `CREDENTIAL_ENCRYPTION_KEY` 注入，AI 只复用 framework-owned Cipher Facade；旧 AI key 仅兼容一个弃用周期。禁止与 JWT Secret 共用；明文和密文均禁止进入日志、审计与响应。
 - 远端模型仅是候选，管理员确认类型、能力、限制并保存为 enabled Deployment 后才可解析。
 - 有效能力不得超过 Adapter 与 Deployment 声明的交集；Resolver 不满足要求时禁止静默降级。
 - Enabled Embedding Deployment 的创建、Discovery 导入、更新、启用及 Alias 绑定必须复用统一能力契约；disabled 存量错误配置只允许诊断和修正，不得重新启用。

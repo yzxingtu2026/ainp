@@ -18,11 +18,12 @@ const (
 	FieldMultiSelect  FieldType = "multi_select"
 	FieldRemoteSelect FieldType = "remote_select"
 	FieldColor        FieldType = "color"
+	FieldSecret       FieldType = "secret"
 )
 
 func (t FieldType) Valid() bool {
 	switch t {
-	case FieldText, FieldTextarea, FieldNumber, FieldBoolean, FieldSelect, FieldMultiSelect, FieldRemoteSelect, FieldColor:
+	case FieldText, FieldTextarea, FieldNumber, FieldBoolean, FieldSelect, FieldMultiSelect, FieldRemoteSelect, FieldColor, FieldSecret:
 		return true
 	default:
 		return false
@@ -188,6 +189,7 @@ func ValidateDefinition(def Definition, categories map[string]Category) error {
 		return fmt.Errorf("setting definition fields required: %s", def.Key)
 	}
 	seen := make(map[string]struct{}, len(def.Fields))
+	hasSecret := false
 	for i := range def.Fields {
 		if err := validateField(def.Key, &def.Fields[i]); err != nil {
 			return err
@@ -196,6 +198,10 @@ func ValidateDefinition(def Definition, categories map[string]Category) error {
 			return fmt.Errorf("duplicate field key %q in %s", def.Fields[i].Key, def.Key)
 		}
 		seen[def.Fields[i].Key] = struct{}{}
+		hasSecret = hasSecret || def.Fields[i].Type == FieldSecret
+	}
+	if hasSecret && scope != ScopeTenant {
+		return fmt.Errorf("secret fields require tenant scope: %s", def.Key)
 	}
 	return validateVisibleWhenGraph(def, seen)
 }
@@ -221,6 +227,22 @@ func validateField(defKey string, field *Field) error {
 	}
 	if field.AllowCustomValues && field.Type != FieldMultiSelect {
 		return fmt.Errorf("allow_custom_values requires multi_select: %s.%s", defKey, field.Key)
+	}
+	if field.Type == FieldSecret {
+		if field.MinLength != nil && *field.MinLength < 0 || field.MaxLength != nil && *field.MaxLength < 1 {
+			return fmt.Errorf("secret field length constraints are invalid: %s.%s", defKey, field.Key)
+		}
+		if value, ok := field.Default.(string); ok && value != "" {
+			return fmt.Errorf("secret field default must be empty: %s.%s", defKey, field.Key)
+		}
+		if field.Default != nil {
+			if value, ok := field.Default.(string); !ok || value != "" {
+				return fmt.Errorf("secret field default must be empty: %s.%s", defKey, field.Key)
+			}
+		}
+		if field.Min != nil || field.Max != nil || field.Step != nil || len(field.Options) > 0 || field.RemoteSource != nil || field.AllowCustomValues || field.CustomValuePattern != "" {
+			return fmt.Errorf("secret field has unsupported constraints: %s.%s", defKey, field.Key)
+		}
 	}
 	if field.Type == FieldRemoteSelect {
 		if field.RemoteSource == nil {
@@ -266,7 +288,7 @@ func validateField(defKey string, field *Field) error {
 		if field.Min != nil && field.Max != nil && *field.Min > *field.Max {
 			return fmt.Errorf("field min > max in %s.%s", defKey, field.Key)
 		}
-	case FieldText, FieldTextarea, FieldRemoteSelect:
+	case FieldText, FieldTextarea, FieldRemoteSelect, FieldSecret:
 		if field.MinLength != nil && field.MaxLength != nil && *field.MinLength > *field.MaxLength {
 			return fmt.Errorf("field min_length > max_length in %s.%s", defKey, field.Key)
 		}
@@ -281,7 +303,7 @@ func validateField(defKey string, field *Field) error {
 		if err := validateFieldValue(defKey, defaultField, field.Default, true); err != nil {
 			return fmt.Errorf("invalid default for %s.%s: %w", defKey, field.Key, err)
 		}
-	} else if field.Required && field.VisibleWhen == nil {
+	} else if field.Required && field.VisibleWhen == nil && field.Type != FieldSecret {
 		return fmt.Errorf("required field must declare default: %s.%s", defKey, field.Key)
 	}
 	return nil

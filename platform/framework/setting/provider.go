@@ -43,16 +43,21 @@ type Effective struct {
 type Provider struct {
 	registry *Registry
 	store    ValueStore
+	cipher   SecretCipher
 	mu       sync.RWMutex
 	cache    map[string]*Effective // key: tenantID + "\x00" + settingKey
 }
 
-func NewProvider(registry *Registry, store ValueStore) *Provider {
-	return &Provider{
+func NewProvider(registry *Registry, store ValueStore, ciphers ...SecretCipher) *Provider {
+	provider := &Provider{
 		registry: registry,
 		store:    store,
 		cache:    make(map[string]*Effective),
 	}
+	if len(ciphers) > 0 {
+		provider.cipher = ciphers[0]
+	}
+	return provider
 }
 
 func cacheKey(tenantID, settingKey string) string {
@@ -64,6 +69,8 @@ func (p *Provider) Invalidate(tenantID, settingKey string) {
 	defer p.mu.Unlock()
 	delete(p.cache, cacheKey(tenantID, settingKey))
 }
+
+func (p *Provider) SecretCipher() SecretCipher { return p.cipher }
 
 func (p *Provider) Get(ctx context.Context, tenantID, settingKey string) (*Effective, error) {
 	if tenantID == "" {
@@ -99,6 +106,24 @@ func (p *Provider) Get(ctx context.Context, tenantID, settingKey string) (*Effec
 			return nil, ErrSchemaVersionMismatch
 		}
 		eff.Values = cloneMap(stored.Values)
+		for _, field := range def.Fields {
+			if field.Type != FieldSecret {
+				continue
+			}
+			raw, exists := eff.Values[field.Key]
+			if !exists || raw == nil || raw == "" {
+				continue
+			}
+			ciphertext, ok := raw.(string)
+			if !ok || p.cipher == nil {
+				return nil, ErrSecretUnavailable
+			}
+			plaintext, decryptErr := p.cipher.Decrypt(ctx, ciphertext, SecretAAD(tenantID, settingKey, field.Key, stored.SchemaVersion))
+			if decryptErr != nil || plaintext == "" {
+				return nil, ErrSecretUnavailable
+			}
+			eff.Values[field.Key] = plaintext
+		}
 		eff.Revision = stored.Revision
 		eff.SchemaVersion = stored.SchemaVersion
 		eff.Source = "tenant"

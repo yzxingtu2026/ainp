@@ -12,9 +12,11 @@ import {
   rebuildNavigationIndex,
   rebuildToolIndex,
   resetSetting,
-  updateSetting
+  updateSetting,
+  updateSettingSecret
 } from '@/service/api';
 import { useAuthStore } from '@/store/modules/auth';
+import { buildSettingUpdatePayload } from './secret-state';
 
 defineOptions({ name: 'SystemSettings' });
 
@@ -27,6 +29,8 @@ const activeDefinitionKey = ref('');
 const formRef = ref<FormInst | null>(null);
 const formModel = reactive<Record<string, unknown>>({});
 const baseline = ref<Record<string, unknown>>({});
+const secretInputs = reactive<Record<string, string>>({});
+const clearedSecretFields = reactive(new Set<string>());
 const current = ref<Api.Setting.Definition | null>(null);
 const semanticIndexStatus = ref<Api.Setting.NavigationIndexStatus | null>(null);
 const indexStatusLoading = ref(false);
@@ -104,7 +108,10 @@ const categoryMenuOptions = computed<MenuOption[]>(() =>
 
 const isDirty = computed(() => {
   if (!current.value) return false;
-  return current.value.fields.some(field => !isSameValue(formModel[field.key], baseline.value[field.key]));
+  return current.value.fields.some(field => {
+    if (field.type === 'secret') return Boolean(secretInputs[field.key]) || clearedSecretFields.has(field.key);
+    return !isSameValue(formModel[field.key], baseline.value[field.key]);
+  });
 });
 
 const showActions = computed(
@@ -124,6 +131,7 @@ const formRules = computed<FormRules>(() => {
         trigger: ['blur', 'change'],
         message: $t('page.setting.required'),
         validator: (_rule, value) => {
+          if (field.type === 'secret') return field.secret_configured || Boolean(secretInputs[field.key]);
           if (field.type === 'boolean') return true;
           if (field.type === 'multi_select') return Array.isArray(value) && value.length > 0;
           return !(value === null || value === undefined || value === '');
@@ -182,6 +190,7 @@ function cloneValues(values: Record<string, unknown>) {
 function snapshotValues(definition: Api.Setting.Definition) {
   const values: Record<string, unknown> = {};
   definition.fields.forEach(field => {
+    if (field.type === 'secret') return;
     const value = definition.values[field.key];
     values[field.key] = value === undefined ? field.default : value;
   });
@@ -191,6 +200,8 @@ function snapshotValues(definition: Api.Setting.Definition) {
 function applyDefinition(definition: Api.Setting.Definition | null) {
   current.value = definition;
   Object.keys(formModel).forEach(key => Reflect.deleteProperty(formModel, key));
+  Object.keys(secretInputs).forEach(key => Reflect.deleteProperty(secretInputs, key));
+  clearedSecretFields.clear();
   if (!definition) {
     baseline.value = {};
     return;
@@ -253,11 +264,17 @@ async function handleSave() {
   await formRef.value?.validate();
   saving.value = true;
   try {
-    const values: Record<string, unknown> = {};
-    current.value.fields.forEach(field => {
-      values[field.key] = formModel[field.key];
-    });
-    const { data, error } = await updateSetting(current.value.key, current.value.revision, values);
+    const payload = buildSettingUpdatePayload(current.value, formModel, secretInputs, clearedSecretFields);
+    const request = payload.hasSecretFields
+      ? updateSettingSecret(
+          current.value.key,
+          current.value.revision,
+          payload.values,
+          payload.secrets,
+          payload.clearSecretFields
+        )
+      : updateSetting(current.value.key, current.value.revision, payload.values);
+    const { data, error } = await request;
     if (!error && data) {
       window.$message?.success($t('common.updateSuccess'));
       activeDefinitionKey.value = data.key;
@@ -266,6 +283,15 @@ async function handleSave() {
   } finally {
     saving.value = false;
   }
+}
+
+function clearSecret(field: Api.Setting.Field) {
+  secretInputs[field.key] = '';
+  clearedSecretFields.add(field.key);
+}
+
+function restoreSecret(field: Api.Setting.Field) {
+  clearedSecretFields.delete(field.key);
 }
 
 async function handleReset() {
@@ -404,6 +430,42 @@ onBeforeUnmount(clearIndexPoll);
                     v-model:value="(formModel[field.key] as string)"
                     :show-alpha="false"
                   />
+                  <div v-else-if="field.type === 'secret'" class="flex-col-stretch gap-8px">
+                    <NInput
+                      v-model:value="secretInputs[field.key]"
+                      type="password"
+                      show-password-on="click"
+                      :maxlength="field.max_length"
+                      autocomplete="new-password"
+                      :placeholder="
+                        $t(
+                          field.secret_configured ? 'page.setting.secretConfigured' : 'page.setting.secretNotConfigured'
+                        )
+                      "
+                      @update:value="restoreSecret(field)"
+                    />
+                    <div class="flex items-center justify-between gap-8px text-12px text-gray-500">
+                      <span>
+                        {{
+                          $t(
+                            field.secret_configured ? 'page.setting.secretKeepHint' : 'page.setting.secretNotConfigured'
+                          )
+                        }}
+                      </span>
+                      <NPopconfirm
+                        v-if="field.secret_configured && !field.required && !clearedSecretFields.has(field.key)"
+                        @positive-click="clearSecret(field)"
+                      >
+                        <template #trigger>
+                          <NButton text type="error">{{ $t('page.setting.secretClear') }}</NButton>
+                        </template>
+                        {{ $t('page.setting.secretClearConfirm') }}
+                      </NPopconfirm>
+                      <NButton v-else-if="clearedSecretFields.has(field.key)" text @click="restoreSecret(field)">
+                        {{ $t('common.cancel') }}
+                      </NButton>
+                    </div>
+                  </div>
                   <div v-if="field.description" class="mt-4px text-12px text-gray-500">{{ field.description }}</div>
                 </div>
               </NFormItem>

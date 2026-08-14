@@ -27,8 +27,9 @@ mcp:
 i18n:
   default_language: zh-CN
   dir: /app/i18n
-ai:
-  credential_encryption_key: "overridden-by-AI_CREDENTIAL_ENCRYPTION_KEY"
+credential_encryption_key: "overridden-by-CREDENTIAL_ENCRYPTION_KEY"
+
+ai: {}
 storage:
   provider: local
   local:
