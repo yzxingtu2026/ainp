@@ -23,6 +23,8 @@ Agent 只读要点：`.agent/rules/background-jobs.md`。本文档为 Job 基础
 
 表 `job_runs` 是租户可见事实源；Asynq 消息只带 `job_run_id`。Worker 通过私有 trusted load 获取 JobRun 后，必须恢复 actor/session/auth version 的 AuthContext、重新加载授权，再获取 TenantDB 访问业务数据；不得把 Redis payload 或 Envelope tenant 直接当数据库 scope，也不得在 Handler 内回退根 DB。
 
+可分类失败必须通过统一 Job classified error 携带受控 `error_category/error_stage/safe_summary`。Worker 在 `retrying/dead/cancelled` 时将三者一致写入 JobRun 和结构化日志，重新运行与成功时清空旧分类。分类错误的公开字符串只能包含安全摘要，底层 cause 仅供进程内判定，禁止持久化 provider body、Secret、完整输入或堆栈。
+
 pending enqueue、trusted load 和已 claim Run 状态更新属于 AuthContext 恢复前的精确基础设施例外；业务列表、详情、取消与领域资源访问仍必须走 TenantRaw/TenantDB。详见 [`tenant-data-access.md`](tenant-data-access.md)。
 
 状态：`pending_enqueue` → `queued` → `running` → `succeeded` | `retrying` → `failed`/`dead` | `cancelled`。

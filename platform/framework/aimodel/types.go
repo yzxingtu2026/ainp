@@ -130,6 +130,26 @@ func Intersect(left, right Capabilities) Capabilities {
 func Satisfies(have Capabilities, req CapabilityRequirements) bool {
 	return contains(have.InputModalities, req.InputModalities) && contains(have.OutputModalities, req.OutputModalities) && contains(have.Features, req.Features)
 }
+
+func EmbeddingRequirements() CapabilityRequirements {
+	return CapabilityRequirements{ModelType: ModelTypeEmbedding, InputModalities: []Modality{ModalityText}, Features: []Feature{FeatureEmbeddings}}
+}
+
+func ValidateEmbeddingDeployment(modelType ModelType, capabilities Capabilities, limits Limits, adapterSupported bool) error {
+	if modelType != ModelTypeEmbedding {
+		return fmt.Errorf("embedding deployment must use model_type embedding")
+	}
+	if !Satisfies(capabilities, EmbeddingRequirements()) {
+		return fmt.Errorf("embedding deployment must support text input and embeddings feature")
+	}
+	if !adapterSupported {
+		return fmt.Errorf("embedding adapter is unavailable for provider protocol")
+	}
+	if err := limits.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
 func intersect[T ~string](a, b []T) []T {
 	s := map[T]bool{}
 	for _, v := range a {

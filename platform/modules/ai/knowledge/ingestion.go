@@ -103,7 +103,7 @@ func NewKnowledgeIngestionService(db *gorm.DB, sources aiknowledge.DocumentSourc
 	return &KnowledgeIngestionService{db: tenantdata.GuardedDB(db), sources: sources, parser: parser, chunker: chunker, models: models, embeddings: embeddings}
 }
 
-func (s *KnowledgeIngestionService) Process(ctx context.Context, payload KnowledgeIngestionJobPayload) error {
+func (s *KnowledgeIngestionService) Process(ctx context.Context, payload KnowledgeIngestionJobPayload) (processErr error) {
 	if !s.db.Available() || s.sources == nil || s.parser == nil || s.chunker == nil || s.models == nil || s.embeddings == nil {
 		return job.Permanent(errors.New("knowledge ingestion dependencies unavailable"))
 	}
@@ -133,11 +133,15 @@ func (s *KnowledgeIngestionService) Process(ctx context.Context, payload Knowled
 		if completed {
 			return
 		}
+		category, _, _ := job.ErrorFacts(processErr)
+		if category == "" {
+			category = "processing_failed"
+		}
 		if versionID != "" {
-			s.failVersion(context.WithoutCancel(ctx), document, versionID, "processing_failed")
+			s.failVersion(context.WithoutCancel(ctx), document, versionID, category)
 			return
 		}
-		s.failDocument(context.WithoutCancel(ctx), document, "processing_failed")
+		s.failDocument(context.WithoutCancel(ctx), document, category)
 	}()
 	var base KnowledgeBase
 	if err := s.db.WithContext(ctx).Where("id=?", document.KnowledgeBaseID).First(&base).Error; err != nil {
@@ -201,25 +205,21 @@ func (s *KnowledgeIngestionService) Process(ctx context.Context, payload Knowled
 		}
 		response, embedErr := s.embeddings.Embed(ctx, aimodelruntime.EmbeddingRequest{ModelAlias: base.EmbeddingAlias, Inputs: inputs, Purpose: aimodelruntime.EmbeddingPurposeKnowledgeIngestion})
 		if embedErr != nil {
-			var runtimeErr *aimodelruntime.RuntimeError
-			if errors.As(embedErr, &runtimeErr) && !runtimeErr.Retryable {
-				return job.Permanent(errors.New("embedding runtime failed"))
-			}
-			return job.Retryable(errors.New("embedding runtime failed"))
+			return job.ClassifyEmbeddingError("knowledge.embedding", embedErr)
 		}
 		if dimensions == 0 {
 			dimensions = response.Dimensions
 			preprocessingVersion = response.PreprocessingVersion
 		}
 		if response.Dimensions != dimensions || response.Model.DeploymentID != deploymentID || response.PreprocessingVersion != preprocessingVersion {
-			return job.Permanent(errors.New("embedding model changed during index build"))
+			return job.ClassifyEmbeddingError("knowledge.embedding", &aimodelruntime.RuntimeError{Category: aimodelruntime.ErrorResponseMismatch, Retryable: false, Message: "embedding provenance changed"})
 		}
 		for _, vector := range response.Vectors {
 			vectors[vector.ID] = vector
 		}
 	}
 	if dimensions <= 0 || deploymentID == "" {
-		return job.Permanent(errors.New("embedding provenance unavailable"))
+		return job.ClassifyEmbeddingError("knowledge.embedding", &aimodelruntime.RuntimeError{Category: aimodelruntime.ErrorResponseMismatch, Retryable: false, Message: "embedding provenance unavailable"})
 	}
 	if err = s.publish(ctx, base, documents, version, chunks, vectors, deploymentID, preprocessingVersion, dimensions); err != nil {
 		if errors.Is(err, errStaleKnowledgeIngestion) {

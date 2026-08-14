@@ -15,6 +15,7 @@
 - 同一 Run 的 loaded tools 只能递增；重复 load 只返回紧凑状态，不重复写完整 Schema。Conversation 工作集只表达有界投影偏好，不是授权凭证；显式 Load、新 Scope 恢复和 rehydrate 必须复用统一激活原语并实时重验权限、Contract、动态投影与预算。工作集未命中禁止隐式扩容；Schema 变化时只写配对的中性恢复结果并由主循环基于正式 Schema 重试，禁止执行旧参数。Registry ID 只用于 search/load，执行只接受唯一映射的投影模型名；名称歧义必须 fail-closed。
 - Catalog 在模块注册完成、新租户初始化或显式 rebuild 时幂等投影；请求路径禁止写 Catalog。变更以单调 revision 同事务写 Outbox，移除/停用立即 stale，重复/乱序事件不得覆盖当前 Search Document。
 - 语义索引只经统一 Embedding Runtime（`purpose=tool_index`）和 Outbox→Job 写 pgvector；Alias、deployment、dimensions、preprocessing、schema/revision 必须匹配。失败自动降级 exact + 中文词法/FTS，混合排序不得先于权限和 Scope 过滤。
+- Embedding 设置写入前验证 Alias；索引配置/能力/非法 provenance 首次 permanent，临时 provider 故障才重试，failed 文档保留受控 category/stage 并可 rebuild 恢复。
 - search/load/execute 每次重新应用 tenant、realm、permission、Scope 与启用状态；Embedding/索引绝不是权限事实源。
 - Dynamic Reference prerequisite 必须随 search/load 投影但不进入稳定 Schema。`require_evidence` 写调用仅接受同 actor/session/auth version/Scope/Run 的成功 Discovery 摘要证据；缺证据、目录外值在确认前失败且不创建 confirmation，批准后按当前 Resolver 版本和值重校验，失败沿用 consumed/failed 配对 Result 收口。
 - Scope 只保存 Resolver ID、Discovery Tool、版本摘要、读取时间和 Invocation ID；禁止保存完整候选。Runtime 只按通用 Dynamic Reference 元数据执行，禁止识别角色等业务 Action ID。

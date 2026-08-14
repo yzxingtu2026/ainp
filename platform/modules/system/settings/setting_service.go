@@ -16,11 +16,12 @@ import (
 )
 
 type SettingService struct {
-	db       *gorm.DB
-	registry *setting.Registry
-	provider *setting.Provider
-	store    setting.ValueStore
-	changes  *setting.ChangeRegistry
+	db         *gorm.DB
+	registry   *setting.Registry
+	provider   *setting.Provider
+	store      setting.ValueStore
+	changes    *setting.ChangeRegistry
+	validators *setting.ValidatorRegistry
 }
 
 func localizedDefinition(lang, key, fallback string) string {
@@ -46,6 +47,9 @@ func NewSettingService(db *gorm.DB, registry *setting.Registry) *SettingService 
 
 func (s *SettingService) Provider() *setting.Provider                       { return s.provider }
 func (s *SettingService) SetChangeRegistry(changes *setting.ChangeRegistry) { s.changes = changes }
+func (s *SettingService) SetValidatorRegistry(validators *setting.ValidatorRegistry) {
+	s.validators = validators
+}
 
 func (s *SettingService) notifyChange(ctx context.Context, change setting.Change) {
 	if s.changes == nil {
@@ -215,6 +219,11 @@ func (s *SettingService) Update(ctx context.Context, input json.RawMessage) (any
 	}
 	if err := setting.ValidateValues(def, req.Values); err != nil {
 		return nil, errs.ValidationKey("setting.validation_failed", err.Error())
+	}
+	if s.validators != nil {
+		if err := s.validators.Validate(ctx, setting.Validation{TenantID: tenantID, ActorID: userID, Key: req.Key, Values: req.Values}); err != nil {
+			return nil, errs.ValidationKey("setting.validation_failed", err.Error())
+		}
 	}
 	setSettingAudit(ctx, req.Key, "setting updated")
 	stored, err := s.store.Put(ctx, tenantID, req.Key, *req.Revision, def.SchemaVersion, req.Values, userID)

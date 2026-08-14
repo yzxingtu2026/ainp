@@ -13,6 +13,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/aimodelruntime"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/database"
+	"github.com/yzxingtu2026/ainp/platform/framework/job"
 	"github.com/yzxingtu2026/ainp/platform/framework/menu"
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
 	"github.com/yzxingtu2026/ainp/platform/framework/setting"
@@ -310,25 +311,35 @@ func (s *NavigationSearchService) IndexDocuments(ctx context.Context, refs []Nav
 		}
 	}
 	if !valid {
+		category, stage := navigationEmbeddingFailureFacts(embedErr)
 		for _, document := range documents {
-			_ = s.db.WithContext(ctx).Model(&NavigationSearchDocument{}).Where("id = ? AND catalog_revision = ?", document.ID, document.CatalogRevision).Update("index_status", "failed").Error
+			_ = s.db.WithContext(ctx).Model(&NavigationSearchDocument{}).Where("id = ? AND catalog_revision = ?", document.ID, document.CatalogRevision).Updates(map[string]any{"index_status": "failed", "error_category": category, "error_stage": stage}).Error
 		}
 		if embedErr != nil {
 			return embedErr
 		}
-		return errors.New("navigation embedding provenance is invalid")
+		return &aimodelruntime.RuntimeError{Category: aimodelruntime.ErrorResponseMismatch, Retryable: false, Message: "navigation embedding provenance is invalid"}
 	}
 	now := time.Now().UTC()
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for _, document := range documents {
 			vector := PGVector(vectors[document.ID])
-			updates := map[string]any{"embedding_alias": alias, "embedding_model": response.Model.RemoteModelID, "embedding_deployment_id": response.Model.DeploymentID, "embedding_dimensions": response.Dimensions, "embedding_preprocessing": response.PreprocessingVersion, "embedding_schema_version": navigationEmbeddingSchemaVersion, "embedding_vector": &vector, "vector_updated_at": now, "index_status": "ready"}
+			updates := map[string]any{"embedding_alias": alias, "embedding_model": response.Model.RemoteModelID, "embedding_deployment_id": response.Model.DeploymentID, "embedding_dimensions": response.Dimensions, "embedding_preprocessing": response.PreprocessingVersion, "embedding_schema_version": navigationEmbeddingSchemaVersion, "embedding_vector": &vector, "vector_updated_at": now, "index_status": "ready", "error_category": "", "error_stage": ""}
 			if err := tx.Model(&NavigationSearchDocument{}).Where("id = ? AND catalog_revision = ? AND index_status IN ?", document.ID, document.CatalogRevision, []string{"pending", "failed"}).Updates(updates).Error; err != nil {
 				return err
 			}
 		}
 		return nil
 	})
+}
+
+func navigationEmbeddingFailureFacts(err error) (string, string) {
+	if err == nil {
+		return string(aimodelruntime.ErrorResponseMismatch), "navigation.embedding"
+	}
+	classified := job.ClassifyEmbeddingError("navigation.embedding", err)
+	category, stage, _ := job.ErrorFacts(classified)
+	return category, stage
 }
 
 type navigationVectorCandidate struct {

@@ -37,6 +37,8 @@ Deployment 是管理员确认后的本地模型资产。远端发现结果只是
 
 Resolver 再验证调用方 `CapabilityRequirements` 是否为有效能力的子集。非法 modality、feature 或负数 limit 拒绝保存。Embedding Deployment 可通过 `limits.dimensions` / `limits.max_dimensions` 声明默认维度与可覆盖上限；Runtime 在调用前强制校验。
 
+Enabled Embedding Deployment 在创建、Discovery 导入、更新和重新启用时必须复用统一能力契约：`model_type=embedding`、text input、`embeddings` feature、合法 dimensions/limits，且协议已注册 Embedding Adapter。Disabled 的存量错误声明可保留用于诊断，但不得重新启用；Alias 只能绑定 enabled 且通过该契约的 Deployment。禁止根据远端模型名推断或补造能力。
+
 结构化输出能力独立于传输协议。Deployment 勾选 `structured_output` 时必须同时提供有序 `structured_output_strategies`，取消 feature 时策略必须为空。Runtime 再与所选 Adapter 的策略声明求交集；例如同样使用 OpenAI 线协议的 Deployment 可以分别声明 `openai_json_schema` 或 `response_only_function`。新增供应商复用现有协议时只新增 Provider 和 Deployment 能力；只有线协议、认证或消息格式不同才新增 Adapter。
 
 ## Alias 与解析

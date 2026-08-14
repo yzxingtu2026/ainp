@@ -39,6 +39,8 @@ type ToolSearchDocument struct {
 	SearchText             string             `gorm:"type:text;not null"`
 	InputHintsJSON         json.RawMessage    `gorm:"type:jsonb;not null;default:'[]'"`
 	IndexStatus            string             `gorm:"size:16;not null"`
+	ErrorCategory          string             `gorm:"size:64;not null;default:''"`
+	ErrorStage             string             `gorm:"size:64;not null;default:''"`
 	CatalogRevision        uint64             `gorm:"not null;default:1"`
 	EmbeddingModel         string             `gorm:"size:128"`
 	EmbeddingAlias         string             `gorm:"size:64"`

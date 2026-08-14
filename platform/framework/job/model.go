@@ -28,6 +28,8 @@ type Run struct {
 	FinishedAt        *time.Time          `json:"finished_at,omitempty"`
 	CancelRequestedAt *time.Time          `json:"cancel_requested_at,omitempty"`
 	LastError         string              `gorm:"size:512" json:"last_error,omitempty"`
+	ErrorCategory     string              `gorm:"size:64" json:"error_category,omitempty"`
+	ErrorStage        string              `gorm:"size:64" json:"error_stage,omitempty"`
 	ResultRef         string              `gorm:"size:512" json:"result_ref,omitempty"`
 	CreatedAt         time.Time           `json:"created_at"`
 	UpdatedAt         time.Time           `json:"updated_at"`

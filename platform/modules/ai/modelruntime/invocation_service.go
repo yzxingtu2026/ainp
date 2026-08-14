@@ -13,6 +13,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/aimodel"
 	"github.com/yzxingtu2026/ainp/platform/framework/aimodelruntime"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
+	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
 	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"gorm.io/gorm"
@@ -165,7 +166,11 @@ func (s *InvocationService) prepareEmbedding(ctx context.Context, req aimodelrun
 	}
 	resolved, err := s.resolver.Resolve(ctx, req.ModelAlias, requirements)
 	if err != nil {
-		return nil, err
+		category := aimodelruntime.ErrorInvalidRequest
+		if appErr, ok := errs.AsAppError(err); ok && appErr.Code == errs.CodeValidation && strings.Contains(appErr.Key(), "capability") {
+			category = aimodelruntime.ErrorCapabilityNotSupported
+		}
+		return nil, &aimodelruntime.RuntimeError{Category: category, Message: "embedding model configuration is unavailable", Retryable: false, Cause: err}
 	}
 	if err := aimodelruntime.ValidateResolvedEmbeddingDimensions(resolved, req.Dimensions); err != nil {
 		return nil, err

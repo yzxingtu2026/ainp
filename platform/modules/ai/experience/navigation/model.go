@@ -18,6 +18,8 @@ type SearchDocument struct {
 	HelpVersion            string             `gorm:"size:32;not null;default:''"`
 	ContentHash            string             `gorm:"size:64;not null"`
 	IndexStatus            string             `gorm:"size:16;not null"`
+	ErrorCategory          string             `gorm:"size:64;not null;default:''"`
+	ErrorStage             string             `gorm:"size:64;not null;default:''"`
 	CatalogRevision        uint64             `gorm:"not null;default:1"`
 	EmbeddingModel         string             `gorm:"size:128"`
 	EmbeddingAlias         string             `gorm:"size:64"`

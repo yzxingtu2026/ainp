@@ -277,7 +277,7 @@ func (s *Service) Discover(ctx context.Context, r DiscoverRequest) (any, error) 
 	return page, nil
 }
 
-func validateDeployment(r DeploymentCreateRequest) error {
+func (s *Service) validateDeployment(ctx context.Context, r DeploymentCreateRequest) error {
 	if !codePattern.MatchString(r.Code) || !r.ModelType.Valid() {
 		return errs.Validation("invalid deployment code or model type")
 	}
@@ -291,6 +291,20 @@ func validateDeployment(r DeploymentCreateRequest) error {
 	if err := r.Limits.Validate(); err != nil {
 		return errs.Validation(err.Error())
 	}
+	status := r.Status
+	if status == "" {
+		status = enabled
+	}
+	if r.ModelType == aimodel.ModelTypeEmbedding && status == enabled {
+		var provider Provider
+		if r.ProviderID == "" || s.db.WithContext(ctx).Where("id=?", r.ProviderID).First(&provider).Error != nil {
+			return errs.Validation("embedding provider is unavailable")
+		}
+		_, adapterSupported := s.types.Get(provider.Protocol)
+		if err := aimodel.ValidateEmbeddingDeployment(r.ModelType, r.Capabilities, r.Limits, adapterSupported && (provider.Protocol == aimodel.ProtocolOpenAI || provider.Protocol == aimodel.ProtocolOpenAICompatible)); err != nil {
+			return errs.Validation(err.Error())
+		}
+	}
 	if r.Status == "" {
 		return nil
 	}
@@ -300,7 +314,7 @@ func validateDeployment(r DeploymentCreateRequest) error {
 	return nil
 }
 func (s *Service) createDeployment(ctx context.Context, tid string, r DeploymentCreateRequest) (Deployment, error) {
-	if e := validateDeployment(r); e != nil {
+	if e := s.validateDeployment(ctx, r); e != nil {
 		return Deployment{}, e
 	}
 	var count int64
@@ -376,8 +390,12 @@ func (s *Service) UpdateDeployment(ctx context.Context, r DeploymentUpdateReques
 	if e != nil {
 		return nil, e
 	}
-	tmp := DeploymentCreateRequest{Code: "valid", ModelType: r.ModelType, Capabilities: r.Capabilities, Limits: r.Limits}
-	if e = validateDeployment(tmp); e != nil {
+	var current Deployment
+	if e = s.db.WithContext(ctx).Where("id=?", r.ID).First(&current).Error; e != nil {
+		return nil, errs.New(errs.CodeNotFound, "deployment not found")
+	}
+	tmp := DeploymentCreateRequest{ProviderID: current.ProviderID, Code: "valid", ModelType: r.ModelType, Capabilities: r.Capabilities, Limits: r.Limits, Status: current.Status}
+	if e = s.validateDeployment(ctx, tmp); e != nil {
 		return nil, e
 	}
 	res := s.db.WithContext(ctx).Model(&Deployment{}).Where("id=?", r.ID).Updates(map[string]any{"display_name": r.DisplayName, "model_type": r.ModelType, "capabilities_json": marshal(r.Capabilities), "limits_json": marshal(r.Limits), "config_json": marshal(r.Config)})
@@ -396,6 +414,22 @@ func (s *Service) UpdateDeploymentStatus(ctx context.Context, r StatusRequest) (
 	_, e := tenant(ctx)
 	if e != nil {
 		return nil, e
+	}
+	if r.Status == enabled {
+		var deployment Deployment
+		if e = s.db.WithContext(ctx).Where("id=?", r.ID).First(&deployment).Error; e != nil {
+			return nil, errs.New(errs.CodeNotFound, "deployment not found")
+		}
+		if aimodel.ModelType(deployment.ModelType) == aimodel.ModelTypeEmbedding {
+			var capabilities aimodel.Capabilities
+			var limits aimodel.Limits
+			if json.Unmarshal(deployment.CapabilitiesJSON, &capabilities) != nil || json.Unmarshal(deployment.LimitsJSON, &limits) != nil {
+				return nil, errs.Validation("deployment metadata is invalid")
+			}
+			if e = s.validateDeployment(ctx, DeploymentCreateRequest{ProviderID: deployment.ProviderID, Code: "valid", ModelType: aimodel.ModelTypeEmbedding, Capabilities: capabilities, Limits: limits, Status: enabled}); e != nil {
+				return nil, e
+			}
+		}
 	}
 	res := s.db.WithContext(ctx).Model(&Deployment{}).Where("id=?", r.ID).Update("status", r.Status)
 	if res.Error != nil {
@@ -465,12 +499,22 @@ func (s *Service) UpsertAlias(ctx context.Context, r AliasUpsertRequest) (any, e
 	if !aliasCodePattern.MatchString(r.Code) {
 		return nil, errs.ValidationKey("common.validation_failed", "invalid alias code", errs.FieldError{Field: "code", Message: "must start with a lowercase letter and contain only lowercase letters, digits, dot, underscore or hyphen", MessageKey: "validation.invalid"})
 	}
-	var n int64
-	if e = s.db.WithContext(ctx).Model(&Deployment{}).Where("id=?", r.DeploymentID).Count(&n).Error; e != nil {
+	var deployment Deployment
+	if e = s.db.WithContext(ctx).Where("id=? AND status=?", r.DeploymentID, enabled).First(&deployment).Error; e != nil && e != gorm.ErrRecordNotFound {
 		return nil, dbError(e, "check alias deployment")
 	}
-	if n == 0 {
-		return nil, errs.New(errs.CodeNotFound, "deployment not found")
+	if e == gorm.ErrRecordNotFound {
+		return nil, errs.Validation("enabled deployment not found")
+	}
+	if aimodel.ModelType(deployment.ModelType) == aimodel.ModelTypeEmbedding {
+		var capabilities aimodel.Capabilities
+		var limits aimodel.Limits
+		if json.Unmarshal(deployment.CapabilitiesJSON, &capabilities) != nil || json.Unmarshal(deployment.LimitsJSON, &limits) != nil {
+			return nil, errs.Validation("deployment metadata is invalid")
+		}
+		if e = s.validateDeployment(ctx, DeploymentCreateRequest{ProviderID: deployment.ProviderID, Code: "valid", ModelType: aimodel.ModelTypeEmbedding, Capabilities: capabilities, Limits: limits, Status: enabled}); e != nil {
+			return nil, e
+		}
 	}
 	var v Alias
 	e = s.db.WithContext(ctx).Where("code=?", r.Code).First(&v).Error

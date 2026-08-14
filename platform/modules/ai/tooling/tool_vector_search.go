@@ -10,6 +10,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/aimodelruntime"
 	"github.com/yzxingtu2026/ainp/platform/framework/aitool"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
+	"github.com/yzxingtu2026/ainp/platform/framework/job"
 	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
 )
 
@@ -39,7 +40,7 @@ func (s *ToolService) IndexCatalogDocument(ctx context.Context, toolID string, r
 		return err
 	}
 	if currentAlias != modelAlias {
-		_ = s.markCatalogDocumentFailed(ctx, toolID, revision)
+		_ = s.markCatalogDocumentFailed(ctx, toolID, revision, "superseded", "tool_catalog.embedding")
 		return ErrToolEmbeddingSuperseded
 	}
 	var catalog ToolCatalog
@@ -55,16 +56,17 @@ func (s *ToolService) IndexCatalogDocument(ctx context.Context, toolID string, r
 	}
 	response, err := s.embeddings.Embed(ctx, aimodelruntime.EmbeddingRequest{ModelAlias: modelAlias, Inputs: []aimodelruntime.EmbeddingItem{{ID: toolID, Text: document.SearchText}}, Purpose: aimodelruntime.EmbeddingPurposeToolIndex, Preprocessing: aimodelruntime.EmbeddingPreprocessingCosineNorm})
 	if err != nil {
-		_ = s.markCatalogDocumentFailed(ctx, toolID, revision)
+		category, stage := embeddingFailureFacts(err, "tool_catalog.embedding")
+		_ = s.markCatalogDocumentFailed(ctx, toolID, revision, category, stage)
 		return err
 	}
 	if response == nil || response.Dimensions <= 0 || response.Model.DeploymentID == "" || len(response.Vectors) != 1 || response.Vectors[0].ID != toolID || len(response.Vectors[0].Vector) != response.Dimensions || response.PreprocessingVersion != aimodelruntime.EmbeddingPreprocessingVersionCosine {
-		_ = s.markCatalogDocumentFailed(ctx, toolID, revision)
-		return errors.New("tool embedding provenance is invalid")
+		_ = s.markCatalogDocumentFailed(ctx, toolID, revision, string(aimodelruntime.ErrorResponseMismatch), "tool_catalog.embedding")
+		return &aimodelruntime.RuntimeError{Category: aimodelruntime.ErrorResponseMismatch, Retryable: false, Message: "tool embedding provenance is invalid"}
 	}
 	now := time.Now().UTC()
 	vector := PGVector(response.Vectors[0].Vector)
-	updates := map[string]any{"embedding_alias": modelAlias, "embedding_model": response.Model.RemoteModelID, "embedding_deployment_id": response.Model.DeploymentID, "embedding_dimensions": response.Dimensions, "embedding_preprocessing": response.PreprocessingVersion, "embedding_schema_version": toolEmbeddingSchemaVersion, "embedding_vector": &vector, "vector_updated_at": now, "index_status": "ready"}
+	updates := map[string]any{"embedding_alias": modelAlias, "embedding_model": response.Model.RemoteModelID, "embedding_deployment_id": response.Model.DeploymentID, "embedding_dimensions": response.Dimensions, "embedding_preprocessing": response.PreprocessingVersion, "embedding_schema_version": toolEmbeddingSchemaVersion, "embedding_vector": &vector, "vector_updated_at": now, "index_status": "ready", "error_category": "", "error_stage": ""}
 	result := s.db.WithContext(ctx).Model(&ToolSearchDocument{}).Where("tool_id=? AND catalog_revision=? AND index_status IN ?", toolID, revision, []string{"pending", "failed"}).Updates(updates)
 	if result.Error != nil {
 		return result.Error
@@ -75,8 +77,14 @@ func (s *ToolService) IndexCatalogDocument(ctx context.Context, toolID string, r
 	return nil
 }
 
-func (s *ToolService) markCatalogDocumentFailed(ctx context.Context, toolID string, revision uint64) error {
-	return s.db.WithContext(ctx).Model(&ToolSearchDocument{}).Where("tool_id=? AND catalog_revision=? AND index_status=?", toolID, revision, "pending").Update("index_status", "failed").Error
+func (s *ToolService) markCatalogDocumentFailed(ctx context.Context, toolID string, revision uint64, category, stage string) error {
+	return s.db.WithContext(ctx).Model(&ToolSearchDocument{}).Where("tool_id=? AND catalog_revision=? AND index_status=?", toolID, revision, "pending").Updates(map[string]any{"index_status": "failed", "error_category": category, "error_stage": stage}).Error
+}
+
+func embeddingFailureFacts(err error, stage string) (string, string) {
+	classified := job.ClassifyEmbeddingError(stage, err)
+	category, classifiedStage, _ := job.ErrorFacts(classified)
+	return category, classifiedStage
 }
 
 type toolVectorCandidate struct {

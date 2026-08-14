@@ -373,6 +373,26 @@ func TestEmbeddingRuntimePostgresInvocationAndTenantIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	provider := createdProvider.(ai.Provider)
+	if _, err = svc.CreateDeployment(ctx1, ai.DeploymentCreateRequest{
+		ProviderID: provider.ID, Code: "embed-invalid", RemoteModelID: "embedding-invalid", DisplayName: "Invalid Embed",
+		ModelType: aimodel.ModelTypeEmbedding, Capabilities: aimodel.Capabilities{InputModalities: []aimodel.Modality{aimodel.ModalityText}, Features: []aimodel.Feature{aimodel.FeatureStreaming}}, Status: "enabled",
+	}); err == nil {
+		t.Fatal("enabled embedding deployment without embeddings feature must fail")
+	}
+	disabledDeployment, err := svc.CreateDeployment(ctx1, ai.DeploymentCreateRequest{
+		ProviderID: provider.ID, Code: "embed-disabled-invalid", RemoteModelID: "embedding-disabled-invalid", DisplayName: "Disabled Invalid Embed",
+		ModelType: aimodel.ModelTypeEmbedding, Capabilities: aimodel.Capabilities{InputModalities: []aimodel.Modality{aimodel.ModalityText}}, Status: "disabled",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	disabled := disabledDeployment.(ai.Deployment)
+	if _, err = svc.UpdateDeploymentStatus(ctx1, ai.StatusRequest{ID: disabled.ID, Status: "enabled"}); err == nil {
+		t.Fatal("invalid stored embedding deployment must not be enabled")
+	}
+	if _, err = svc.UpsertAlias(ctx1, ai.AliasUpsertRequest{Code: "embed-invalid", DeploymentID: disabled.ID}); err == nil {
+		t.Fatal("alias must not target disabled embedding deployment")
+	}
 	createdDeployment, err := svc.CreateDeployment(ctx1, ai.DeploymentCreateRequest{
 		ProviderID: provider.ID, Code: "embed-small", RemoteModelID: "text-embedding-3-small", DisplayName: "Embed",
 		ModelType:    aimodel.ModelTypeEmbedding,
