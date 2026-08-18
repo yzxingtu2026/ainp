@@ -5,6 +5,7 @@
 - Conversation/Message/SSE/Run/确认/附件/幂等/Page Context 只由应用级单例 controller 管理；Workspace 与 Sidebar 必须复用同一 Conversation Surface，不得复制协议或合并逻辑。
 - `deferred_for_confirmation` Tool Result 是“已延后/未执行”终态；等待事件、重连、刷新与历史回放不得显示为执行中或永久等待。
 - Composer 统一支持 JPG/PNG/GIF/WebP/PDF/XLSX/DOCX/TXT/MD，严格匹配 MIME+扩展名，单项 10 MiB、合计 4 个；选择/上传、发送与历史展示由 Workspace/Sidebar 共用实现。图片粘贴行为保持，Office 文件不做剪贴板特殊处理。
+- 共享 Composer 使用 VueUse `useTextareaAutosize` 按内容、程序化草稿和宽度变化重算；默认两行，Sidebar 上限约 8 行且不超过 `32dvh`，Workspace 上限约 10 行且不超过 `38dvh`，达到上限后才允许内部滚动。必须提供可访问名称；Enter/Shift+Enter/IME、附件和发送/停止行为保持不变。
 - 用户消息优先展示认证态当前用户头像 attachment ID，经统一附件下载协议加载；无头像或失败时降级账户图标，禁止保存对象 URL 或在容器层重复实现。
 - 面板挂载于应用壳，关闭/跨路由不清 controller；展开 Workspace 保留 Conversation、草稿和 Run。刷新只持久化 Conversation ID 并从服务端恢复事实。
 - 登出、认证失效、身份/realm 变化或入口撤权必须 abort 流并清空草稿、附件、Conversation、Run 和恢复引用。

@@ -660,6 +660,7 @@ declare namespace App {
           documentEmpty: string;
           documentParseFailed: string;
           clipboardImageUnsupported: string;
+          promptInput: string;
           placeholder: string;
           stop: string;
           send: string;

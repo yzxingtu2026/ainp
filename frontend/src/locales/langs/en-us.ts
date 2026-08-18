@@ -517,6 +517,7 @@ const local: App.I18n.Schema = {
       documentEmpty: 'The document contains no readable text',
       documentParseFailed: 'The document could not be parsed. Check the file and try again',
       clipboardImageUnsupported: 'The clipboard image format is not supported',
+      promptInput: 'Message for the AI assistant',
       placeholder: 'Message AI',
       stop: 'Stop generating',
       send: 'Send',
