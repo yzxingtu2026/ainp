@@ -55,13 +55,14 @@ func TestSetupStateKeepsRedisEnvironmentOverride(t *testing.T) {
 	}
 }
 
-func TestSetupTestRedis(t *testing.T) {
+func TestSetupTestRedisChecksQueueCompatibility(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer listener.Close()
-	go serveRedisPing(listener)
+	server := &redisProbeServer{listener: listener}
+	go server.Serve()
 
 	cfg := &config.Config{Redis: config.RedisConfig{DialTimeout: "1s", ReadTimeout: "1s", WriteTimeout: "1s"}}
 	svc := system.NewSetupService(cfg, "", &setupstate.State{}, nil)
@@ -69,8 +70,120 @@ func TestSetupTestRedis(t *testing.T) {
 	if err != nil {
 		t.Fatalf("test redis: %v", err)
 	}
-	if ok := result.(map[string]any)["ok"]; ok != true {
-		t.Fatalf("unexpected result: %#v", result)
+	body, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		OK              bool `json:"ok"`
+		Reachable       bool `json:"reachable"`
+		QueueCompatible bool `json:"queue_compatible"`
+		Capabilities    struct {
+			Ping      bool `json:"ping"`
+			Lua       bool `json:"lua"`
+			String    bool `json:"string"`
+			Hash      bool `json:"hash"`
+			List      bool `json:"list"`
+			Set       bool `json:"set"`
+			SortedSet bool `json:"sorted_set"`
+			PubSub    bool `json:"pub_sub"`
+			Cleanup   bool `json:"cleanup"`
+		} `json:"capabilities"`
+	}
+	if err = json.Unmarshal(body, &got); err != nil {
+		t.Fatal(err)
+	}
+	if !got.OK || !got.Reachable || !got.QueueCompatible || !got.Capabilities.Ping || !got.Capabilities.Lua || !got.Capabilities.String || !got.Capabilities.Hash || !got.Capabilities.List || !got.Capabilities.Set || !got.Capabilities.SortedSet || !got.Capabilities.PubSub || !got.Capabilities.Cleanup {
+		t.Fatalf("unexpected result: %#v", got)
+	}
+	if server.businessKeysTouched {
+		t.Fatal("compatibility probe touched a non-isolated key")
+	}
+}
+
+func TestSetupTestRedisReturnsStableFailureCodes(t *testing.T) {
+	for _, tc := range []struct {
+		name, failureCode string
+		mode              redisProbeMode
+		reachable         bool
+	}{
+		{name: "authentication", mode: redisProbeAuthenticationFailure, failureCode: "redis_authentication_failed"},
+		{name: "lua unavailable", mode: redisProbeLuaUnavailable, failureCode: "redis_lua_unavailable", reachable: true},
+		{name: "queue command incompatible", mode: redisProbeQueueIncompatible, failureCode: "redis_queue_incompatible", reachable: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			listener, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer listener.Close()
+			server := &redisProbeServer{listener: listener, mode: tc.mode}
+			go server.Serve()
+			cfg := &config.Config{Redis: config.RedisConfig{DialTimeout: "1s", ReadTimeout: "1s", WriteTimeout: "1s"}}
+			svc := system.NewSetupService(cfg, "", &setupstate.State{}, nil)
+			result, err := svc.TestRedis(context.Background(), json.RawMessage(`{"addr":"`+listener.Addr().String()+`","db":0}`))
+			if err != nil {
+				t.Fatal(err)
+			}
+			body, _ := json.Marshal(result)
+			var got struct {
+				OK, Reachable, QueueCompatible bool
+				FailureCode                    string `json:"failure_code"`
+			}
+			if err = json.Unmarshal(body, &got); err != nil {
+				t.Fatal(err)
+			}
+			if got.OK || got.QueueCompatible || got.Reachable != tc.reachable || got.FailureCode != tc.failureCode {
+				t.Fatalf("unexpected failure result: %#v", got)
+			}
+		})
+	}
+}
+
+func TestSetupTestRedisReturnsStableConnectionFailure(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := listener.Addr().String()
+	_ = listener.Close()
+	cfg := &config.Config{Redis: config.RedisConfig{DialTimeout: "10ms", ReadTimeout: "10ms", WriteTimeout: "10ms"}}
+	svc := system.NewSetupService(cfg, "", &setupstate.State{}, nil)
+	result, err := svc.TestRedis(context.Background(), json.RawMessage(`{"addr":"`+addr+`","db":0}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := json.Marshal(result)
+	var got struct {
+		OK, Reachable, QueueCompatible bool
+		FailureCode                    string `json:"failure_code"`
+	}
+	if err = json.Unmarshal(body, &got); err != nil || got.OK || got.Reachable || got.QueueCompatible || got.FailureCode != "redis_connection_failed" {
+		t.Fatalf("unexpected connection failure: %#v %v", got, err)
+	}
+}
+
+func TestSetupCheckEnvReportsReachableButQueueIncompatible(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	go (&redisProbeServer{listener: listener, mode: redisProbeLuaUnavailable}).Serve()
+	cfg := &config.Config{Redis: config.RedisConfig{Addr: listener.Addr().String(), DialTimeout: "1s", ReadTimeout: "1s", WriteTimeout: "1s"}}
+	svc := system.NewSetupService(cfg, "", &setupstate.State{}, nil)
+	result, err := svc.CheckEnv(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := json.Marshal(result)
+	var got struct {
+		RedisReachable       bool   `json:"redis_reachable"`
+		RedisQueueCompatible bool   `json:"redis_queue_compatible"`
+		RedisFailureCode     string `json:"redis_failure_code"`
+	}
+	if err = json.Unmarshal(body, &got); err != nil || !got.RedisReachable || got.RedisQueueCompatible || got.RedisFailureCode != "redis_lua_unavailable" {
+		t.Fatalf("unexpected env result: %#v %v", got, err)
 	}
 }
 
@@ -86,6 +199,36 @@ func TestSetupInitializeRejectsEnabledJobsWhenRedisUnavailable(t *testing.T) {
 	appErr, ok := err.(*errs.AppError)
 	if !ok || appErr.MessageKey != "setup.redis_unreachable" {
 		t.Fatalf("expected redis validation error, got %v", err)
+	}
+}
+
+func TestSetupInitializeReturnsStableQueueCompatibilityError(t *testing.T) {
+	for _, tc := range []struct {
+		name, messageKey string
+		mode             redisProbeMode
+	}{
+		{name: "authentication", mode: redisProbeAuthenticationFailure, messageKey: "setup.redis_authentication_failed"},
+		{name: "lua", mode: redisProbeLuaUnavailable, messageKey: "setup.redis_lua_unavailable"},
+		{name: "commands", mode: redisProbeQueueIncompatible, messageKey: "setup.redis_queue_incompatible"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			listener, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer listener.Close()
+			go (&redisProbeServer{listener: listener, mode: tc.mode}).Serve()
+			cfg := &config.Config{Redis: config.RedisConfig{DialTimeout: "1s", ReadTimeout: "1s", WriteTimeout: "1s"}}
+			svc := system.NewSetupService(cfg, "", &setupstate.State{}, nil)
+			_, err = svc.Initialize(context.Background(), json.RawMessage(`{
+				"tenant_name":"Tenant","username":"admin","password":"Admin1234",
+				"jobs_enabled":true,"redis_addr":"`+listener.Addr().String()+`","redis_db":0
+			}`))
+			appErr, ok := err.(*errs.AppError)
+			if !ok || appErr.MessageKey != tc.messageKey || appErr.Cause != nil {
+				t.Fatalf("expected stable queue validation error, got %#v", err)
+			}
+		})
 	}
 }
 
@@ -149,40 +292,104 @@ func TestSetupInitializeKeepsUninstalledStateWhenStateSaveFails(t *testing.T) {
 	}
 }
 
-func serveRedisPing(listener net.Listener) {
-	conn, err := listener.Accept()
-	if err != nil {
-		return
+type redisProbeMode int
+
+const (
+	redisProbeCompatible redisProbeMode = iota
+	redisProbeAuthenticationFailure
+	redisProbeLuaUnavailable
+	redisProbeQueueIncompatible
+)
+
+type redisProbeServer struct {
+	listener            net.Listener
+	mode                redisProbeMode
+	businessKeysTouched bool
+}
+
+func (s *redisProbeServer) Serve() {
+	for {
+		conn, err := s.listener.Accept()
+		if err != nil {
+			return
+		}
+		go s.serveConn(conn)
 	}
+}
+
+func (s *redisProbeServer) serveConn(conn net.Conn) {
 	defer conn.Close()
 	reader := bufio.NewReader(conn)
 	for {
-		line, readErr := reader.ReadString('\n')
-		if readErr != nil {
+		parts, err := readRedisCommand(reader)
+		if err != nil {
 			return
 		}
-		count, parseErr := strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(line, "*")))
-		if parseErr != nil {
-			return
-		}
-		parts := make([]string, 0, count)
-		for range count {
-			if _, readErr = reader.ReadString('\n'); readErr != nil {
-				return
-			}
-			part, partErr := reader.ReadString('\n')
-			if partErr != nil {
-				return
-			}
-			parts = append(parts, strings.TrimSpace(part))
-		}
-		switch strings.ToLower(parts[0]) {
+		command := strings.ToLower(parts[0])
+		switch command {
 		case "hello":
 			_, _ = conn.Write([]byte("%1\r\n$6\r\nserver\r\n$5\r\nredis\r\n"))
 		case "ping":
-			_, _ = conn.Write([]byte("+PONG\r\n"))
+			if s.mode == redisProbeAuthenticationFailure {
+				_, _ = conn.Write([]byte("-NOAUTH Authentication required\r\n"))
+			} else {
+				_, _ = conn.Write([]byte("+PONG\r\n"))
+			}
+		case "evalsha":
+			if s.mode == redisProbeLuaUnavailable {
+				_, _ = conn.Write([]byte("-ERR This instance has Lua scripting support disabled\r\n"))
+			} else {
+				_, _ = conn.Write([]byte("-NOSCRIPT No matching script. Please use EVAL.\r\n"))
+			}
+		case "eval":
+			if s.mode == redisProbeLuaUnavailable {
+				_, _ = conn.Write([]byte("-ERR This instance has Lua scripting support disabled\r\n"))
+			} else if len(parts) > 2 && parts[2] == "0" {
+				_, _ = conn.Write([]byte(":1\r\n"))
+			} else if s.mode == redisProbeQueueIncompatible {
+				_, _ = conn.Write([]byte("-ERR unknown command 'ZADD'\r\n"))
+			} else {
+				keyCount, _ := strconv.Atoi(parts[2])
+				for _, key := range parts[3 : 3+keyCount] {
+					if !strings.HasPrefix(key, "ainp:queue-compatibility-probe:") {
+						s.businessKeysTouched = true
+					}
+				}
+				_, _ = conn.Write([]byte(":1\r\n"))
+			}
+		case "exists":
+			_, _ = conn.Write([]byte(":0\r\n"))
+		case "del":
+			_, _ = conn.Write([]byte(":0\r\n"))
+		case "subscribe":
+			_, _ = conn.Write([]byte("*3\r\n$9\r\nsubscribe\r\n$" + strconv.Itoa(len(parts[1])) + "\r\n" + parts[1] + "\r\n:1\r\n"))
+		case "publish":
+			_, _ = conn.Write([]byte(":1\r\n"))
 		default:
 			_, _ = conn.Write([]byte("+OK\r\n"))
 		}
 	}
+}
+
+func readRedisCommand(reader *bufio.Reader) ([]string, error) {
+	line, err := reader.ReadString('\n')
+	if err != nil {
+		return nil, err
+	}
+	count, err := strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(line, "*")))
+	if err != nil {
+		return nil, err
+	}
+	parts := make([]string, 0, count)
+	for range count {
+		if _, err = reader.ReadString('\n'); err != nil {
+			return nil, err
+		}
+		part, readErr := reader.ReadString('\n')
+		if readErr != nil {
+			return nil, readErr
+		}
+		parts = append(parts, strings.TrimSpace(part))
+	}
+	return parts, nil
 }

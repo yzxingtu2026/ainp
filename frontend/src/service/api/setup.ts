@@ -25,9 +25,9 @@ export function fetchSetupTestDB(dsn?: string) {
   });
 }
 
-/** 测试 Redis 连通性 */
+/** 测试 Redis/Asynq 队列兼容性 */
 export function fetchSetupTestRedis(addr: string, db: number) {
-  return request<Api.Setup.TestDBResult>({
+  return request<Api.Setup.RedisProbeResult>({
     url: '/api/v1/setup/test-redis',
     method: 'post',
     data: { addr, db },

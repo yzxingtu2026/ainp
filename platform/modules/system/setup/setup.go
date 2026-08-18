@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/redis/go-redis/v9"
+	"github.com/yzxingtu2026/ainp/platform/framework/asynqadapter"
 	"github.com/yzxingtu2026/ainp/platform/framework/config"
 	"github.com/yzxingtu2026/ainp/platform/framework/database"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
@@ -74,16 +74,18 @@ func (s *SetupService) Status(_ context.Context, _ json.RawMessage) (any, error)
 }
 
 type checkEnvResp struct {
-	GoVersion      string `json:"go_version"`
-	OS             string `json:"os"`
-	Arch           string `json:"arch"`
-	DSNSource      string `json:"dsn_source"`
-	DSNPresent     bool   `json:"dsn_present"`
-	I18nLangs      int    `json:"i18n_langs"`
-	I18nKeys       int    `json:"i18n_keys"`
-	RedisAddr      string `json:"redis_addr"`
-	RedisReachable bool   `json:"redis_reachable"`
-	RedisError     string `json:"redis_error,omitempty"`
+	GoVersion            string                                 `json:"go_version"`
+	OS                   string                                 `json:"os"`
+	Arch                 string                                 `json:"arch"`
+	DSNSource            string                                 `json:"dsn_source"`
+	DSNPresent           bool                                   `json:"dsn_present"`
+	I18nLangs            int                                    `json:"i18n_langs"`
+	I18nKeys             int                                    `json:"i18n_keys"`
+	RedisAddr            string                                 `json:"redis_addr"`
+	RedisReachable       bool                                   `json:"redis_reachable"`
+	RedisQueueCompatible bool                                   `json:"redis_queue_compatible"`
+	RedisCapabilities    asynqadapter.CompatibilityCapabilities `json:"redis_capabilities"`
+	RedisFailureCode     asynqadapter.CompatibilityFailure      `json:"redis_failure_code,omitempty"`
 }
 
 func (s *SetupService) CheckEnv(ctx context.Context, _ json.RawMessage) (any, error) {
@@ -105,11 +107,11 @@ func (s *SetupService) CheckEnv(ctx context.Context, _ json.RawMessage) (any, er
 	}
 	probeCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
 	defer cancel()
-	if err := pingRedis(probeCtx, s.cfg.Redis.Addr, s.cfg.Redis.DB, s.cfg); err != nil {
-		resp.RedisError = err.Error()
-	} else {
-		resp.RedisReachable = true
-	}
+	probe := s.probeRedis(probeCtx, s.cfg.Redis.Addr, s.cfg.Redis.DB)
+	resp.RedisReachable = probe.Reachable
+	resp.RedisQueueCompatible = probe.QueueCompatible
+	resp.RedisCapabilities = probe.Capabilities
+	resp.RedisFailureCode = probe.FailureCode
 	return resp, nil
 }
 
@@ -147,6 +149,14 @@ type testRedisRequest struct {
 	DB   int    `json:"db"`
 }
 
+type testRedisResponse struct {
+	OK              bool                                   `json:"ok"`
+	Reachable       bool                                   `json:"reachable"`
+	QueueCompatible bool                                   `json:"queue_compatible"`
+	Capabilities    asynqadapter.CompatibilityCapabilities `json:"capabilities"`
+	FailureCode     asynqadapter.CompatibilityFailure      `json:"failure_code,omitempty"`
+}
+
 func (s *SetupService) TestRedis(ctx context.Context, input json.RawMessage) (any, error) {
 	var req testRedisRequest
 	if err := json.Unmarshal(input, &req); err != nil {
@@ -159,20 +169,19 @@ func (s *SetupService) TestRedis(ctx context.Context, input json.RawMessage) (an
 	if strings.TrimSpace(req.Addr) == "" {
 		return nil, errs.ValidationKey("setup.redis_addr_required", "Redis address is required")
 	}
-	if err := pingRedis(ctx, req.Addr, req.DB, s.cfg); err != nil {
-		return map[string]any{"ok": false, "error": err.Error()}, nil
-	}
-	return map[string]any{"ok": true}, nil
+	probe := s.probeRedis(ctx, req.Addr, req.DB)
+	return testRedisResponse{
+		OK: probe.QueueCompatible, Reachable: probe.Reachable,
+		QueueCompatible: probe.QueueCompatible, Capabilities: probe.Capabilities,
+		FailureCode: probe.FailureCode,
+	}, nil
 }
 
-func pingRedis(ctx context.Context, addr string, db int, cfg *config.Config) error {
-	client := redis.NewClient(&redis.Options{
-		Addr: addr, Username: cfg.Redis.Username, Password: cfg.Redis.Password, DB: db,
-		DialTimeout: cfg.Redis.DialTimeoutDuration(), ReadTimeout: cfg.Redis.ReadTimeoutDuration(),
-		WriteTimeout: cfg.Redis.WriteTimeoutDuration(),
-	})
-	defer client.Close()
-	return client.Ping(ctx).Err()
+func (s *SetupService) probeRedis(ctx context.Context, addr string, db int) asynqadapter.CompatibilityResult {
+	opt := asynqadapter.RedisOptFromConfig(s.cfg.Redis)
+	opt.Addr = strings.TrimSpace(addr)
+	opt.DB = db
+	return asynqadapter.ProbeCompatibility(ctx, opt)
 }
 
 type initRequest struct {
@@ -209,8 +218,9 @@ func (s *SetupService) Initialize(ctx context.Context, input json.RawMessage) (a
 		if strings.TrimSpace(req.RedisAddr) == "" {
 			return nil, errs.ValidationKey("setup.redis_addr_required", "Redis address is required")
 		}
-		if err := pingRedis(ctx, req.RedisAddr, req.RedisDB, s.cfg); err != nil {
-			return nil, errs.NewKey(errs.CodeValidation, "setup.redis_unreachable", "Redis is unreachable")
+		probe := s.probeRedis(ctx, req.RedisAddr, req.RedisDB)
+		if !probe.QueueCompatible {
+			return nil, redisCompatibilityError(probe.FailureCode)
 		}
 	}
 
@@ -267,6 +277,19 @@ func (s *SetupService) Initialize(ctx context.Context, input json.RawMessage) (a
 		"jobs_enabled":    req.JobsEnabled,
 		"embedded_worker": req.JobsEnabled && req.EmbeddedWorker,
 	}, nil
+}
+
+func redisCompatibilityError(failure asynqadapter.CompatibilityFailure) error {
+	switch failure {
+	case asynqadapter.CompatibilityAuthenticationFailed:
+		return errs.NewKey(errs.CodeValidation, "setup.redis_authentication_failed", "Redis authentication failed")
+	case asynqadapter.CompatibilityLuaUnavailable:
+		return errs.NewKey(errs.CodeValidation, "setup.redis_lua_unavailable", "Redis Lua scripting is unavailable")
+	case asynqadapter.CompatibilityQueueIncompatible:
+		return errs.NewKey(errs.CodeValidation, "setup.redis_queue_incompatible", "Redis is incompatible with the background job queue")
+	default:
+		return errs.NewKey(errs.CodeValidation, "setup.redis_unreachable", "Redis is unreachable")
+	}
 }
 
 func (s *SetupService) persistInstalledState(req initRequest) (time.Time, error) {

@@ -18,13 +18,41 @@ declare namespace Api {
       i18n_keys: number;
       redis_addr: string;
       redis_reachable: boolean;
-      redis_error?: string;
+      redis_queue_compatible: boolean;
+      redis_capabilities: RedisCapabilities;
+      redis_failure_code?: RedisFailureCode;
     }
 
     /** DB 测试结果 */
     interface TestDBResult {
       ok: boolean;
       error?: string;
+    }
+
+    type RedisFailureCode =
+      | 'redis_connection_failed'
+      | 'redis_authentication_failed'
+      | 'redis_lua_unavailable'
+      | 'redis_queue_incompatible';
+
+    interface RedisCapabilities {
+      ping: boolean;
+      lua: boolean;
+      string: boolean;
+      hash: boolean;
+      list: boolean;
+      set: boolean;
+      sorted_set: boolean;
+      pub_sub: boolean;
+      cleanup: boolean;
+    }
+
+    interface RedisProbeResult {
+      ok: boolean;
+      reachable: boolean;
+      queue_compatible: boolean;
+      capabilities: RedisCapabilities;
+      failure_code?: RedisFailureCode;
     }
 
     interface RedisOptions {
