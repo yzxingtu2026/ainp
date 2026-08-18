@@ -26,6 +26,8 @@ const documentFailureCategories = new Set([
   "document_unsupported_format",
   "document_too_large",
   "document_unsafe_content",
+  "document_unsafe_docx_content",
+  "document_unsafe_xlsx_content",
   "document_corrupt",
   "document_empty",
   "document_parse_failed",

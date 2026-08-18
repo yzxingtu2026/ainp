@@ -654,6 +654,8 @@ declare namespace App {
           documentUnsupported: string;
           documentTooLarge: string;
           documentUnsafe: string;
+          documentUnsafeDocx: string;
+          documentUnsafeXlsx: string;
           documentCorrupt: string;
           documentEmpty: string;
           documentParseFailed: string;

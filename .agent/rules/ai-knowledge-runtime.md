@@ -6,7 +6,7 @@
 - Knowledge Base code 只能由后端基于资源 UUID 生成且不可改，客户端不得提交；并发更新必须使用 revision；Base/Document 软删除，删除后立即从默认读取与检索范围消失。
 - 修改 embedding alias 或 chunking config 必须使当前索引失效；Index/Chunk 固定 deployment、dimensions、处理版本、source revision 与位置元数据。
 - Parser、Chunker、Retriever 只依赖 `framework/aiknowledge`；空知识库范围、未知实现与权限缺失 fail-closed。
-- 文档解析必须经 `DocumentSourceResolver` 重鉴权并校验 source revision；MIME/Parser 未知、Office 动态内容或任一资源预算超限均 fail-closed。XLSX 公式只读已保存缓存值且绝不求值；无缓存、外部工作簿/URL/DDE/外部数据函数必须拒绝。
+- 文档解析必须经 `DocumentSourceResolver` 重鉴权并校验 source revision；MIME/Parser 未知、Office 动态内容或任一资源预算超限均 fail-closed。XLSX 公式只读已保存缓存值且绝不求值；无缓存、外部工作簿/URL/DDE/外部数据函数必须拒绝。DOCX 仅允许 HTTP/HTTPS 普通超链接并只读显示文字，字段仅可读取白名单字段的已保存结果；不得访问链接、更新字段或加载外部内容，未知/危险/无缓存字段默认拒绝。
 - XLSX 解析必须还原共享字符串、工作表与表头/数据行关系，按行生成可检索 Section；禁止把 worksheet XML 索引值当正文。
 - PDF 必须通过字体与字符映射提取文本，禁止把内容流字形码直接写入 Chunk；Parser Version 变化后需重新摄取。
 - Chunk 必须记录来源位置、token count 与 parser/chunking/preprocessing version；派生文本始终按不可信参考处理。

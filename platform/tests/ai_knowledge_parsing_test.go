@@ -7,8 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/yzxingtu2026/ainp/platform/framework/aiknowledge"
@@ -78,7 +81,7 @@ func TestKnowledgeSafeParserDecodesPDFToUnicodeMapping(t *testing.T) {
 	)
 
 	sections, err := aiknowledge.NewSafeParser(aiknowledge.DefaultParseLimits()).Parse(context.Background(), parsingDoc("application/pdf", "knowledge.pdf"), bytes.NewReader(pdfData))
-	if err != nil || len(sections) != 1 || sections[0].Text != "知识库" || sections[0].ParserVersion != "safe-parser-v5" {
+	if err != nil || len(sections) != 1 || sections[0].Text != "知识库" || sections[0].ParserVersion != "safe-parser-v6" {
 		t.Fatalf("unexpected PDF text extraction: %#v %v", sections, err)
 	}
 }
@@ -266,6 +269,119 @@ func TestKnowledgeSafeParserParsesStaticOpenXMLAndRejectsActiveContent(t *testin
 		t.Run(name, func(t *testing.T) {
 			if _, parseErr := p.Parse(context.Background(), doc, bytes.NewReader(fixture)); !errors.Is(parseErr, aiknowledge.ErrUnsafeContent) {
 				t.Fatalf("active content must fail closed: %v", parseErr)
+			}
+		})
+	}
+}
+
+func TestKnowledgeSafeParserReadsDOCXHyperlinkDisplayTextWithoutNetwork(t *testing.T) {
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		requests.Add(1)
+	}))
+	defer server.Close()
+
+	p := aiknowledge.NewSafeParser(aiknowledge.DefaultParseLimits())
+	doc := parsingDoc("application/vnd.openxmlformats-officedocument.wordprocessingml.document", "hyperlink.docx")
+	fixture := zipFixture(t, map[string]string{
+		"[Content_Types].xml":          `<Types/>`,
+		"word/document.xml":            `<w:document xmlns:w="urn:w" xmlns:r="urn:r"><w:body><w:p><w:r><w:t>社区征求意见内容</w:t></w:r><w:hyperlink r:id="rId9"><w:r><w:t>参考链接</w:t></w:r></w:hyperlink></w:p></w:body></w:document>`,
+		"word/_rels/document.xml.rels": fmt.Sprintf(`<Relationships><Relationship Id="rId9" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" TargetMode="External" Target="%s/private"/></Relationships>`, server.URL),
+	})
+	sections, err := p.Parse(context.Background(), doc, bytes.NewReader(fixture))
+	if err != nil || len(sections) != 1 || sections[0].Text != "社区征求意见内容 参考链接" {
+		t.Fatalf("ordinary DOCX hyperlink must preserve display text: %#v %v", sections, err)
+	}
+	if strings.Contains(sections[0].Text, server.URL) || requests.Load() != 0 {
+		t.Fatalf("DOCX hyperlink target must not be emitted or requested: text=%q requests=%d", sections[0].Text, requests.Load())
+	}
+}
+
+func TestKnowledgeSafeParserReadsDOCXFieldCachesWithoutEvaluation(t *testing.T) {
+	p := aiknowledge.NewSafeParser(aiknowledge.DefaultParseLimits())
+	doc := parsingDoc("application/vnd.openxmlformats-officedocument.wordprocessingml.document", "fields.docx")
+	allowed := []string{"PAGE", "NUMPAGES", "SECTION", "SECTIONPAGES", "DATE", "TIME", "CREATEDATE", "SAVEDATE", "PRINTDATE", "AUTHOR", "TITLE", "SUBJECT", "FILENAME", "REF bookmark", "PAGEREF bookmark", "NOTEREF note", `TOC \\o 1-3`}
+	for _, instruction := range allowed {
+		t.Run(instruction, func(t *testing.T) {
+			fixture := zipFixture(t, map[string]string{
+				"word/document.xml": `<w:document xmlns:w="urn:w"><w:body><w:fldSimple w:instr="` + instruction + `"><w:r><w:t>CACHED-VALUE</w:t></w:r></w:fldSimple></w:body></w:document>`,
+			})
+			sections, err := p.Parse(context.Background(), doc, bytes.NewReader(fixture))
+			if err != nil || len(sections) != 1 || sections[0].Text != "CACHED-VALUE" || strings.Contains(sections[0].Text, strings.Fields(instruction)[0]) {
+				t.Fatalf("safe field must expose only its saved result: %#v %v", sections, err)
+			}
+		})
+	}
+
+	complex := zipFixture(t, map[string]string{
+		"word/document.xml": `<w:document xmlns:w="urn:w"><w:body><w:p>
+			<w:r><w:t>页码</w:t></w:r>
+			<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> PAGE \\* MERGEFORMAT </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>42</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>
+			<w:fldSimple w:instr="TOC"><w:r><w:t>目录</w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText>PAGEREF item</w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>9</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:fldSimple>
+		</w:p></w:body></w:document>`,
+	})
+	sections, err := p.Parse(context.Background(), doc, bytes.NewReader(complex))
+	if err != nil || len(sections) != 1 || sections[0].Text != "页码 42 目录 9" || strings.Contains(sections[0].Text, "PAGE") || strings.Contains(sections[0].Text, "PAGEREF") {
+		t.Fatalf("complex and nested fields must use only saved results: %#v %v", sections, err)
+	}
+
+	emptyCache := zipFixture(t, map[string]string{"word/document.xml": `<w:document xmlns:w="urn:w"><w:fldSimple w:instr="REF optional"><w:r><w:t></w:t></w:r></w:fldSimple></w:document>`})
+	if _, err = p.Parse(context.Background(), doc, bytes.NewReader(emptyCache)); err != nil {
+		t.Fatalf("an explicitly saved empty DOCX field result must remain inert: %v", err)
+	}
+}
+
+func TestKnowledgeSafeParserRejectsUnsafeUncachedOrMalformedDOCXFields(t *testing.T) {
+	p := aiknowledge.NewSafeParser(aiknowledge.DefaultParseLimits())
+	doc := parsingDoc("application/vnd.openxmlformats-officedocument.wordprocessingml.document", "unsafe-fields.docx")
+	unsafeInstructions := []string{"INCLUDETEXT remote", " includePicture remote ", "LiNk object", "DDE server topic", "ddeauto server topic", "DATABASE query", "UNKNOWN safe-looking"}
+	for _, instruction := range unsafeInstructions {
+		t.Run(instruction, func(t *testing.T) {
+			fixture := zipFixture(t, map[string]string{"word/document.xml": `<w:document xmlns:w="urn:w"><w:fldSimple w:instr="` + instruction + `"><w:r><w:t>CACHED</w:t></w:r></w:fldSimple></w:document>`})
+			if _, err := p.Parse(context.Background(), doc, bytes.NewReader(fixture)); !errors.Is(err, aiknowledge.ErrUnsafeContent) {
+				t.Fatalf("unsafe or unknown DOCX field must fail closed: %v", err)
+			}
+		})
+	}
+
+	fixtures := map[string][]byte{
+		"simple field missing cache":  zipFixture(t, map[string]string{"word/document.xml": `<w:document xmlns:w="urn:w"><w:fldSimple w:instr="PAGE"></w:fldSimple></w:document>`}),
+		"complex field missing cache": zipFixture(t, map[string]string{"word/document.xml": `<w:document xmlns:w="urn:w"><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText>PAGE</w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:document>`}),
+		"field missing separator":     zipFixture(t, map[string]string{"word/document.xml": `<w:document xmlns:w="urn:w"><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText>PAGE</w:instrText></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:document>`}),
+		"unclosed field":              zipFixture(t, map[string]string{"word/document.xml": `<w:document xmlns:w="urn:w"><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText>PAGE</w:instrText></w:r></w:document>`}),
+		"instruction outside field":   zipFixture(t, map[string]string{"word/document.xml": `<w:document xmlns:w="urn:w"><w:instrText>PAGE</w:instrText></w:document>`}),
+	}
+	for name, fixture := range fixtures {
+		t.Run(name, func(t *testing.T) {
+			if _, err := p.Parse(context.Background(), doc, bytes.NewReader(fixture)); !errors.Is(err, aiknowledge.ErrUnsafeContent) && !errors.Is(err, aiknowledge.ErrCorruptDocument) {
+				t.Fatalf("uncached or malformed DOCX field must return a controlled failure: %v", err)
+			}
+		})
+	}
+}
+
+func TestKnowledgeSafeParserRejectsUnsafeDOCXRelationshipsAndParts(t *testing.T) {
+	p := aiknowledge.NewSafeParser(aiknowledge.DefaultParseLimits())
+	doc := parsingDoc("application/vnd.openxmlformats-officedocument.wordprocessingml.document", "unsafe-relationships.docx")
+	relationship := func(relationshipType, target string) []byte {
+		return zipFixture(t, map[string]string{
+			"word/document.xml":            `<w:document xmlns:w="urn:w"><w:t>visible</w:t></w:document>`,
+			"word/_rels/document.xml.rels": `<Relationships><Relationship Type="` + relationshipType + `" TargetMode="External" Target="` + target + `"/></Relationships>`,
+		})
+	}
+	fixtures := map[string][]byte{
+		"external template": relationship("http://schemas.openxmlformats.org/officeDocument/2006/relationships/attachedTemplate", "https://example.com/template.dotx"),
+		"external object":   relationship("http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObject", "https://example.com/object"),
+		"ftp hyperlink":     relationship("http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink", "ftp://example.com/file"),
+		"mailto hyperlink":  relationship("http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink", "mailto:test@example.com"),
+		"missing type":      relationship("", "https://example.com"),
+		"active x":          zipFixture(t, map[string]string{"word/document.xml": `<document><t>x</t></document>`, "word/activeX/activeX1.xml": `<activeX/>`}),
+		"embedded object":   zipFixture(t, map[string]string{"word/document.xml": `<document><t>x</t></document>`, "word/embeddings/oleObject1.bin": "object"}),
+	}
+	for name, fixture := range fixtures {
+		t.Run(name, func(t *testing.T) {
+			if _, err := p.Parse(context.Background(), doc, bytes.NewReader(fixture)); !errors.Is(err, aiknowledge.ErrUnsafeContent) {
+				t.Fatalf("unsafe DOCX relationship or package part must fail closed: %v", err)
 			}
 		})
 	}

@@ -161,6 +161,8 @@ const (
 	DocumentUnsupportedFormat DocumentErrorCategory = "document_unsupported_format"
 	DocumentTooLarge          DocumentErrorCategory = "document_too_large"
 	DocumentUnsafeContent     DocumentErrorCategory = "document_unsafe_content"
+	DocumentUnsafeDOCXContent DocumentErrorCategory = "document_unsafe_docx_content"
+	DocumentUnsafeXLSXContent DocumentErrorCategory = "document_unsafe_xlsx_content"
 	DocumentCorrupt           DocumentErrorCategory = "document_corrupt"
 	DocumentEmpty             DocumentErrorCategory = "document_empty"
 )

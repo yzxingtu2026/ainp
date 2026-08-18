@@ -64,6 +64,16 @@ test("maps stable model stream failure categories independently", () => {
   );
 });
 
+test("keeps generic and format-specific unsafe document categories presentable", () => {
+  for (const category of [
+    "document_unsafe_content",
+    "document_unsafe_docx_content",
+    "document_unsafe_xlsx_content",
+  ]) {
+    assert.equal(runFailurePresentation(detail(category)).kind, "document");
+  }
+});
+
 test("shows the side-effect notice only from a completed linked tool step", () => {
   assert.equal(
     runFailurePresentation(

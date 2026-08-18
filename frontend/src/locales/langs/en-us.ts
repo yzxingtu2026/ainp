@@ -509,6 +509,10 @@ const local: App.I18n.Schema = {
       documentTooLarge: 'The document exceeds the assistant size or context limit',
       documentUnsafe:
         'The document contains uncached or external-data formulas, macros, external references, or other unsupported active content',
+      documentUnsafeDocx:
+        'The DOCX contains uncached or unsupported fields, external documents or objects, macros, or other unsupported active content',
+      documentUnsafeXlsx:
+        'The XLSX contains uncached or external-data formulas, external workbooks, macros, or other unsupported active content',
       documentCorrupt: 'The document is damaged or could not be parsed safely',
       documentEmpty: 'The document contains no readable text',
       documentParseFailed: 'The document could not be parsed. Check the file and try again',
