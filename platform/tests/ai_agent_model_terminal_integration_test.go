@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -76,7 +77,7 @@ func TestAgentModelTimeoutPersistsCanonicalTerminalFactsPostgres(t *testing.T) {
 		}
 	}
 
-	source := &runtimeStepStream{steps: []runtimeStreamStep{{waitContext: true}}}
+	source := &deadlineSignalStream{ready: make(chan struct{})}
 	adapters := aimodelruntime.NewAdapterRegistry()
 	if err = adapters.Register("fixture", streamFixtureAdapter{source: source}); err != nil {
 		t.Fatal(err)
@@ -93,8 +94,16 @@ func TestAgentModelTimeoutPersistsCanonicalTerminalFactsPostgres(t *testing.T) {
 	runtime := ai.NewAgentRuntimeService(db, conversations, invocations, tools, agentTerminalCompactor{}, nil, authorization, nil, agentTerminalContextProvider{now: now})
 
 	baseCtx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: run.TenantID, PrincipalID: run.UserID, SessionID: run.SessionID, AuthVersion: run.AuthVersion, Realm: auth.RealmTenant})
-	executeCtx, cancel := context.WithTimeout(baseCtx, time.Second)
+	deadlineCtx := &deadlineSignalContext{Context: baseCtx, done: make(chan struct{})}
+	executeCtx, cancel := context.WithTimeout(deadlineCtx, 15*time.Second)
 	defer cancel()
+	go func() {
+		select {
+		case <-source.ready:
+			deadlineCtx.expire()
+		case <-executeCtx.Done():
+		}
+	}()
 	if err = runtime.Execute(executeCtx, run.ID, "worker-a"); err != nil {
 		t.Fatal(err)
 	}
@@ -136,6 +145,46 @@ func TestAgentModelTimeoutPersistsCanonicalTerminalFactsPostgres(t *testing.T) {
 			t.Fatalf("terminal event mismatch: %#v payload=%#v", event, payload)
 		}
 	}
+}
+
+// deadlineSignalStream separates the timeout under test from database setup
+// time by returning the deadline only after the runtime starts reading.
+type deadlineSignalStream struct {
+	ready  chan struct{}
+	closed atomic.Bool
+}
+
+func (s *deadlineSignalStream) Recv(ctx context.Context) (aimodelruntime.StreamEvent, error) {
+	close(s.ready)
+	<-ctx.Done()
+	return aimodelruntime.StreamEvent{}, ctx.Err()
+}
+
+func (s *deadlineSignalStream) Close() error {
+	s.closed.Store(true)
+	return nil
+}
+
+type deadlineSignalContext struct {
+	context.Context
+	done chan struct{}
+}
+
+func (c *deadlineSignalContext) Done() <-chan struct{} {
+	return c.done
+}
+
+func (c *deadlineSignalContext) Err() error {
+	select {
+	case <-c.done:
+		return context.DeadlineExceeded
+	default:
+		return nil
+	}
+}
+
+func (c *deadlineSignalContext) expire() {
+	close(c.done)
 }
 
 type agentTerminalCompactor struct{}
