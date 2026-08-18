@@ -1111,6 +1111,7 @@ const local: App.I18n.Schema = {
     toolCall: '工具调用',
     toolRunning: '执行中',
     toolSuccess: '已完成',
+    toolSuccessAfterDeferral: '延后后完成',
     toolFailed: '执行失败',
     toolRehydrated: '工具已恢复',
     toolDeferred: '已延后 / 未执行',

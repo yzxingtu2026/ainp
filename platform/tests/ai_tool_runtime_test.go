@@ -832,7 +832,9 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, 0, ?)`, res
 	if err = guarded.WithContext(ctx).Where("id=?", workingSet.ID).First(&workingSet).Error; err != nil || workingSet.UseCount != 2 {
 		t.Fatalf("confirmed completion must count exactly once: %#v %v", workingSet, err)
 	}
-	executor.err = errs.Validation("supplier is invalid")
+	validationErr := errs.WithSafeDetails(errs.Validation("supplier is invalid"), errs.SafeDetails{Field: "supplier_id", Reason: "invalid_supplier"})
+	validationErr.Cause = errors.New("database secret must not leak")
+	executor.err = validationErr
 	failureValue, err := service.Execute(ctx, ai.ToolExecuteRequest{Handle: confirmationHandle, ToolCallID: "call-confirm-failure", Arguments: json.RawMessage(`{"supplier_id":"invalid"}`)})
 	if err != nil {
 		t.Fatal(err)
@@ -844,7 +846,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, 0, ?)`, res
 		t.Fatalf("approve with executor failure returned an API error: %v", err)
 	}
 	failedResult := failedValue.(*aitool.Result)
-	if failedResult.Status != "failed" || failedResult.ErrorCategory != "invalid_arguments" || failedResult.Summary != "supplier is invalid" || strings.Contains(failedResult.Summary, `"supplier_id"`) {
+	if failedResult.Status != "failed" || failedResult.ErrorCategory != "invalid_arguments" || failedResult.Summary != "supplier is invalid" || failedResult.ErrorDetails == nil || failedResult.ErrorDetails.Reason != "invalid_supplier" || strings.Contains(failedResult.Summary, `"supplier_id"`) || strings.Contains(failedResult.Summary, "database secret") {
 		t.Fatalf("unsafe or invalid failure result: %#v", failedResult)
 	}
 	if executor.calls.Load() != callsBeforeFailureApproval+1 {
@@ -870,6 +872,37 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, 0, ?)`, res
 	}
 	if executor.calls.Load() != callsBeforeFailureApproval+1 {
 		t.Fatalf("repeat decisions re-executed tool: calls=%d", executor.calls.Load())
+	}
+	for index, failure := range []struct {
+		err      error
+		category string
+		summary  string
+	}{
+		{err: errs.New(errs.CodeNotFound, "supplier was not found"), category: "resource_not_found", summary: "supplier was not found"},
+		{err: errs.New(errs.CodeConflict, "supplier code already exists"), category: "conflict", summary: "supplier code already exists"},
+		{err: errs.New(errs.CodeRevisionConflict, "supplier revision changed"), category: "revision_conflict", summary: "supplier revision changed"},
+		{err: errs.New(errs.CodeIdempotencyConflict, "supplier request conflicts"), category: "idempotency_conflict", summary: "supplier request conflicts"},
+		{err: errors.New("raw database secret"), category: "execution_failed", summary: "tool execution failed"},
+	} {
+		executor.err = failure.err
+		callID := fmt.Sprintf("call-confirm-domain-failure-%d", index)
+		pendingValue, executeErr := service.Execute(ctx, ai.ToolExecuteRequest{Handle: confirmationHandle, ToolCallID: callID, Arguments: json.RawMessage(`{"supplier_id":"invalid"}`)})
+		if executeErr != nil {
+			t.Fatal(executeErr)
+		}
+		failureConfirmation := pendingValue.(*aitool.Result).Data.(ai.ToolConfirmation)
+		failedValue, approveErr := service.Approve(ctx, ai.ToolConfirmationRequest{ID: failureConfirmation.ID})
+		if approveErr != nil {
+			t.Fatalf("approve domain failure returned an API error: %v", approveErr)
+		}
+		failedResult := failedValue.(*aitool.Result)
+		if failedResult.Status != "failed" || failedResult.ErrorCategory != failure.category || failedResult.Summary != failure.summary || strings.Contains(failedResult.Summary, "raw database secret") {
+			t.Fatalf("domain failure classification mismatch: %#v", failedResult)
+		}
+		var failedInvocation ai.ToolInvocation
+		if err = guarded.WithContext(ctx).Where("id=?", failureConfirmation.InvocationID).First(&failedInvocation).Error; err != nil || failedInvocation.Status != "failed" || failedInvocation.ErrorCategory != failure.category {
+			t.Fatalf("domain failure invocation mismatch: %#v %v", failedInvocation, err)
+		}
 	}
 	executor.err = nil
 	concurrentValue, err := service.Execute(ctx, ai.ToolExecuteRequest{Handle: confirmationHandle, ToolCallID: "call-confirm-concurrent", Arguments: json.RawMessage(`{"supplier_id":"s1"}`)})

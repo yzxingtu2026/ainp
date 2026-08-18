@@ -152,6 +152,7 @@ declare namespace Api.AI {
     attachment_revision?: string;
     detail?: string;
     tool_call_id?: string;
+    retry_of_tool_call_id?: string;
     tool_name?: string;
     presentation?: ToolPresentation;
     arguments?: unknown;

@@ -20,6 +20,7 @@ const props = defineProps<{
   /** 配对 tool_result 结果，未返回时为空 */
   result: unknown;
   hasResult: boolean;
+  retriedAfterDeferral?: boolean;
   /** 所属运行是否仍在进行（无结果时用于区分「执行中」与「等待中」） */
   pending: boolean;
 }>();
@@ -49,7 +50,9 @@ const statusIcon = computed(() => {
 
 const statusText = computed(() => {
   if (status.value === 'running') return $t('chat.toolRunning');
-  if (status.value === 'success') return $t('chat.toolSuccess');
+  if (status.value === 'success') {
+    return props.retriedAfterDeferral ? $t('chat.toolSuccessAfterDeferral') : $t('chat.toolSuccess');
+  }
   if (status.value === 'failed') return $t('chat.toolFailed');
   if (status.value === 'rehydrated') return $t('chat.toolRehydrated');
   if (status.value === 'deferred') return $t('chat.toolDeferred');

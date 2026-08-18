@@ -122,6 +122,7 @@ watch(
           :request="operation.request"
           :result="operation.result"
           :has-result="operation.hasResult"
+          :retried-after-deferral="operation.retriedAfterDeferral"
           :pending="active"
         />
       </div>

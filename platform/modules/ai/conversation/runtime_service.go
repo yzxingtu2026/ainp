@@ -2,9 +2,11 @@ package conversation
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
@@ -702,8 +704,18 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 	if err != nil {
 		return err
 	}
+	if run.Status != "running" {
+		return nil
+	}
 	stepLimit := stepLimitAfterConfirmation(budget.MaxSteps, run.CurrentStep, resumedConfirmation)
-	toolResultsPending := false
+	waiting, queuedToolResultsPending, queueErr := s.continueDeferredConfirmationQueue(ctx, run, scopeID, budget.MaxToolCalls, stepLimit)
+	if queueErr != nil {
+		return s.fail(ctx, run, "deferred_confirmation_queue_failed")
+	}
+	if waiting {
+		return nil
+	}
+	toolResultsPending := resumedConfirmation || queuedToolResultsPending
 	for {
 		allowed, stepCompletionOnly := reactTurnMode(run.CurrentStep, stepLimit, toolResultsPending)
 		if !allowed || !s.now().Before(deadline) {
@@ -864,16 +876,6 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 			return s.commitFinalAnswer(ctx, run, text, startedAt, resultPlan.CompletionReason)
 		}
 		_ = s.finishStep(ctx, run, step, "completed", map[string]any{"finish_reason": response.FinishReason, "output_items": len(response.Output)}, "")
-		nextPlan, nextErr := aiagentruntime.PlanTurn(aiagentruntime.TurnBudgetInput{
-			HardLimit: budget.RunTokenBudget, ConsumedInput: run.InputTokens, ConsumedOutput: run.OutputTokens,
-			EstimatedInput: int64(estimatedInput), DeploymentMaxOutput: int64(modelBudget.ReservedOutputTokens), Reserve: reserve,
-			CurrentMode: aiagentruntime.ExecutionModeNormal,
-		})
-		if nextErr == nil && nextPlan.Mode == aiagentruntime.ExecutionModeCompletionOnly {
-			if err := s.enterCompletionOnly(ctx, run, reserve, nextPlan.Reason); err != nil {
-				return err
-			}
-		}
 		// Provider 要求 tool_result 前必须有配对的 assistant tool_call；先落库再执行工具。
 		if e := s.appendAssistantToolCalls(ctx, run, step, text, toolCalls); e != nil {
 			return s.fail(ctx, run, "assistant_tool_call_persist_failed")
@@ -1791,6 +1793,7 @@ func (s *AgentRuntimeService) appendToolResult(ctx context.Context, run *AgentRu
 	if err == nil {
 		summary := map[string]any{"tool_call_id": call.ToolCallID}
 		category := ""
+		status := "completed"
 		toolID := ""
 		for _, d := range s.tools.Registry().List() {
 			if tooling.ModelToolName(d.ID) == call.ToolName {
@@ -1798,9 +1801,12 @@ func (s *AgentRuntimeService) appendToolResult(ctx context.Context, run *AgentRu
 				break
 			}
 		}
-		if metadata, exists := s.tools.Registry().SlotMetadata(toolID); exists {
-			if result, resultOK := value.(*aitool.Result); resultOK {
-				category = result.ErrorCategory
+		if result, resultOK := value.(*aitool.Result); resultOK {
+			category = result.ErrorCategory
+			if result.Status == aitool.ResultStatusFailed {
+				status = "failed"
+			}
+			if metadata, exists := s.tools.Registry().SlotMetadata(toolID); exists {
 				data, _ := result.Data.(map[string]any)
 				for _, observation := range metadata.Observations {
 					switch observation.Source {
@@ -1812,15 +1818,11 @@ func (s *AgentRuntimeService) appendToolResult(ctx context.Context, run *AgentRu
 						summary[observation.Field] = len(result.ResourceRefs)
 					}
 				}
-				status := "completed"
-				if result.Status == "failed" {
-					status = "failed"
-				}
-				_ = s.finishStep(ctx, run, step, status, summary, category)
-				return false, nil
 			}
+			_ = s.finishStep(ctx, run, step, status, summary, category)
+			return false, nil
 		}
-		_ = s.finishStep(ctx, run, step, "completed", summary, category)
+		_ = s.finishStep(ctx, run, step, status, summary, category)
 	}
 	return false, err
 }
@@ -1830,6 +1832,274 @@ func (s *AgentRuntimeService) appendSyntheticToolFailure(ctx context.Context, ru
 	encoded, _ := json.Marshal(result)
 	_, err := s.conversations.AppendRuntimeMessage(ctx, run.ConversationID, run.ID, "tool", fmt.Sprintf("run:%s:tool-result:%s", run.ID, call.ToolCallID), []aimodelruntime.ContentPart{{Type: aimodelruntime.PartToolResult, ToolCallID: call.ToolCallID, Result: encoded}})
 	return err
+}
+
+type DeferredConfirmationQueueItem struct {
+	OriginalCallID string
+	RetryCallID    string
+	ToolName       string
+	Arguments      json.RawMessage
+	RetryPersisted bool
+}
+
+type DeferredConfirmationQueueState struct {
+	Next          *DeferredConfirmationQueueItem
+	Blocked       bool
+	ExecutedCalls int
+}
+
+type canonicalToolCallBatch struct {
+	Calls []aimodelruntime.ContentPart
+}
+
+type canonicalToolResult struct {
+	Status        string `json:"status"`
+	ErrorCategory string `json:"error_category"`
+}
+
+func DeferredConfirmationRetryCallID(runID, originalCallID string) string {
+	digest := sha256.Sum256([]byte(runID + "\x00" + originalCallID))
+	return fmt.Sprintf("confirmation_retry_%x", digest[:16])
+}
+
+func BuildDeferredConfirmationQueue(runID string, messages []ConversationMessage) DeferredConfirmationQueueState {
+	batches := make([]canonicalToolCallBatch, 0)
+	callsByID := make(map[string]aimodelruntime.ContentPart)
+	retriesByOriginal := make(map[string][]aimodelruntime.ContentPart)
+	resultsByID := make(map[string][]canonicalToolResult)
+	for _, message := range messages {
+		var parts []aimodelruntime.ContentPart
+		if json.Unmarshal(message.Content, &parts) != nil {
+			return DeferredConfirmationQueueState{Blocked: true}
+		}
+		if message.Role == string(aimodelruntime.RoleAssistant) {
+			batch := canonicalToolCallBatch{}
+			for _, part := range parts {
+				if part.Type != aimodelruntime.PartToolCall || part.ToolCallID == "" {
+					continue
+				}
+				if _, exists := callsByID[part.ToolCallID]; exists {
+					return DeferredConfirmationQueueState{Blocked: true}
+				}
+				callsByID[part.ToolCallID] = part
+				if part.RetryOfToolCallID != "" {
+					retriesByOriginal[part.RetryOfToolCallID] = append(retriesByOriginal[part.RetryOfToolCallID], part)
+					continue
+				}
+				batch.Calls = append(batch.Calls, part)
+			}
+			if len(batch.Calls) > 0 {
+				batches = append(batches, batch)
+			}
+		}
+		if message.Role == string(aimodelruntime.RoleTool) {
+			for _, part := range parts {
+				if part.Type != aimodelruntime.PartToolResult || part.ToolCallID == "" {
+					continue
+				}
+				var result canonicalToolResult
+				if json.Unmarshal(part.Result, &result) != nil {
+					return DeferredConfirmationQueueState{Blocked: true}
+				}
+				resultsByID[part.ToolCallID] = append(resultsByID[part.ToolCallID], result)
+			}
+		}
+	}
+	for originalCallID, retries := range retriesByOriginal {
+		original, exists := callsByID[originalCallID]
+		if !exists || original.RetryOfToolCallID != "" || len(retries) != 1 {
+			return DeferredConfirmationQueueState{Blocked: true}
+		}
+	}
+	executedCalls := 0
+	for callID, results := range resultsByID {
+		if _, exists := callsByID[callID]; !exists || len(results) != 1 {
+			return DeferredConfirmationQueueState{Blocked: true}
+		}
+		if results[0].ErrorCategory != "deferred_for_confirmation" {
+			executedCalls++
+		}
+	}
+
+batchLoop:
+	for _, batch := range batches {
+		firstDeferred := -1
+		for index, call := range batch.Calls {
+			results := resultsByID[call.ToolCallID]
+			if len(results) == 1 && results[0].ErrorCategory == "deferred_for_confirmation" {
+				firstDeferred = index
+				break
+			}
+		}
+		if firstDeferred < 0 {
+			continue
+		}
+		if firstDeferred == 0 {
+			return DeferredConfirmationQueueState{Blocked: true}
+		}
+		for _, call := range batch.Calls[:firstDeferred] {
+			results := resultsByID[call.ToolCallID]
+			if len(results) != 1 || results[0].Status != "completed" || results[0].ErrorCategory != "" {
+				continue batchLoop
+			}
+		}
+		for _, call := range batch.Calls[firstDeferred:] {
+			results := resultsByID[call.ToolCallID]
+			if len(results) != 1 || results[0].ErrorCategory != "deferred_for_confirmation" {
+				return DeferredConfirmationQueueState{Blocked: true}
+			}
+			retryCallID := DeferredConfirmationRetryCallID(runID, call.ToolCallID)
+			retries := retriesByOriginal[call.ToolCallID]
+			if len(retries) > 1 {
+				return DeferredConfirmationQueueState{Blocked: true}
+			}
+			if len(retries) == 0 {
+				if _, collision := callsByID[retryCallID]; collision {
+					return DeferredConfirmationQueueState{Blocked: true}
+				}
+				return DeferredConfirmationQueueState{Next: &DeferredConfirmationQueueItem{OriginalCallID: call.ToolCallID, RetryCallID: retryCallID, ToolName: call.ToolName, Arguments: append(json.RawMessage(nil), call.Arguments...)}, ExecutedCalls: executedCalls}
+			}
+			retry := retries[0]
+			if retry.ToolCallID != retryCallID || retry.ToolName != call.ToolName || !sameJSON(retry.Arguments, call.Arguments) {
+				return DeferredConfirmationQueueState{Blocked: true}
+			}
+			retryResults := resultsByID[retryCallID]
+			if len(retryResults) == 0 {
+				return DeferredConfirmationQueueState{Next: &DeferredConfirmationQueueItem{OriginalCallID: call.ToolCallID, RetryCallID: retryCallID, ToolName: call.ToolName, Arguments: append(json.RawMessage(nil), call.Arguments...), RetryPersisted: true}, ExecutedCalls: executedCalls}
+			}
+			if len(retryResults) != 1 || retryResults[0].Status != "completed" {
+				continue batchLoop
+			}
+		}
+	}
+	return DeferredConfirmationQueueState{ExecutedCalls: executedCalls}
+}
+
+func sameJSON(left, right json.RawMessage) bool {
+	var leftValue, rightValue any
+	return json.Unmarshal(left, &leftValue) == nil && json.Unmarshal(right, &rightValue) == nil && reflect.DeepEqual(leftValue, rightValue)
+}
+
+func (s *AgentRuntimeService) deferredConfirmationQueue(ctx context.Context, run *AgentRun) (DeferredConfirmationQueueState, error) {
+	var messages []ConversationMessage
+	err := s.db.WithContext(ctx).Where("conversation_id=? AND run_id=? AND status=?", run.ConversationID, run.ID, "committed").Order("sequence ASC").Find(&messages).Error
+	if err != nil {
+		return DeferredConfirmationQueueState{}, err
+	}
+	return BuildDeferredConfirmationQueue(run.ID, messages), nil
+}
+
+func (s *AgentRuntimeService) appendDeferredConfirmationRetry(ctx context.Context, run *AgentRun, item DeferredConfirmationQueueItem) error {
+	arguments := item.Arguments
+	if len(arguments) == 0 || !json.Valid(arguments) {
+		arguments = json.RawMessage(`{}`)
+	}
+	part := aimodelruntime.ContentPart{Type: aimodelruntime.PartToolCall, ToolCallID: item.RetryCallID, RetryOfToolCallID: item.OriginalCallID, ToolName: item.ToolName, Arguments: arguments}
+	if toolID := s.registryToolID(item.ToolName); toolID != "" {
+		if definition, ok := s.tools.Registry().Get(toolID); ok {
+			presentation := aitool.PresentationFor(definition)
+			part.Presentation = &presentation
+		}
+	}
+	_, err := s.conversations.AppendRuntimeMessage(ctx, run.ConversationID, run.ID, "assistant", fmt.Sprintf("run:%s:confirmation-retry:%s", run.ID, item.RetryCallID), []aimodelruntime.ContentPart{part})
+	return err
+}
+
+func (s *AgentRuntimeService) continueDeferredConfirmationQueue(ctx context.Context, run *AgentRun, scopeID string, maxToolCalls, stepLimit int) (waiting, toolResultsPending bool, resultErr error) {
+	for {
+		queue, err := s.deferredConfirmationQueue(ctx, run)
+		if err != nil {
+			return false, toolResultsPending, err
+		}
+		if queue.Blocked {
+			return false, toolResultsPending, errs.New(errs.CodeConflict, "deferred confirmation queue is inconsistent")
+		}
+		if err = s.persistToolCallFloor(ctx, run, queue.ExecutedCalls); err != nil {
+			return false, toolResultsPending, err
+		}
+		if queue.Next == nil {
+			return false, toolResultsPending, nil
+		}
+		item := *queue.Next
+		if item.RetryPersisted {
+			var invocation tooling.ToolInvocation
+			err = s.db.WithContext(ctx).Where("agent_run_id=? AND tool_call_id=?", run.ID, item.RetryCallID).Order("created_at DESC").First(&invocation).Error
+			if err == nil {
+				if err = s.persistToolCallFloor(ctx, run, queue.ExecutedCalls+1); err != nil {
+					return false, toolResultsPending, err
+				}
+				switch invocation.Status {
+				case tooling.ToolInvocationWaitingConfirmation:
+					return true, toolResultsPending, s.finalizeConfirmationWait(ctx, run)
+				case tooling.ToolInvocationCompleted, tooling.ToolInvocationFailed:
+					var result aitool.Result
+					if json.Unmarshal(invocation.ResultJSON, &result) != nil {
+						return false, toolResultsPending, errs.New(errs.CodeConflict, "persisted confirmation retry result is unavailable")
+					}
+					var step AgentStep
+					if stepErr := s.db.WithContext(ctx).Where("run_id=? AND tool_invocation_id=? AND status IN ?", run.ID, invocation.ID, []string{"running", "waiting"}).Order("step_index DESC").First(&step).Error; stepErr != nil {
+						return false, toolResultsPending, stepErr
+					}
+					call := aimodelruntime.OutputItem{Type: aimodelruntime.PartToolCall, ToolCallID: item.RetryCallID, ToolName: item.ToolName, Arguments: item.Arguments}
+					if _, appendErr := s.appendToolResult(ctx, run, &step, call, &result, nil); appendErr != nil {
+						return false, toolResultsPending, appendErr
+					}
+					toolResultsPending = true
+					if step.ParentStepID != nil {
+						var parent AgentStep
+						if parentErr := s.db.WithContext(ctx).Where("id=?", *step.ParentStepID).First(&parent).Error; parentErr != nil {
+							return false, toolResultsPending, parentErr
+						}
+						parentStatus, category := "completed", ""
+						if invocation.Status == tooling.ToolInvocationFailed {
+							parentStatus, category = "failed", result.ErrorCategory
+						}
+						if parentErr := s.finishStep(ctx, run, &parent, parentStatus, map[string]any{"confirmation_id": invocation.ConfirmationID, "executed": true, "recovered": true}, category); parentErr != nil {
+							return false, toolResultsPending, parentErr
+						}
+					}
+					continue
+				default:
+					return false, toolResultsPending, errs.New(errs.CodeConflict, "persisted confirmation retry execution is not recoverable")
+				}
+			}
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return false, toolResultsPending, err
+			}
+		}
+		if run.ToolCalls >= maxToolCalls {
+			return false, toolResultsPending, errs.New(errs.CodeConflict, "tool budget exhausted while continuing confirmations")
+		}
+		if run.CurrentStep+2 > stepLimit {
+			return false, toolResultsPending, errs.New(errs.CodeConflict, "step budget exhausted while continuing confirmations")
+		}
+		if !item.RetryPersisted {
+			if err = s.appendDeferredConfirmationRetry(ctx, run, item); err != nil {
+				return false, toolResultsPending, err
+			}
+		}
+		call := aimodelruntime.OutputItem{Type: aimodelruntime.PartToolCall, ToolCallID: item.RetryCallID, ToolName: item.ToolName, Arguments: item.Arguments}
+		waiting, executeErr := s.executeToolCall(ctx, run, scopeID, call)
+		if executeErr != nil {
+			return false, toolResultsPending, executeErr
+		}
+		run.ToolCalls++
+		if err = s.persistCounters(ctx, run); err != nil {
+			return false, toolResultsPending, err
+		}
+		if waiting {
+			return true, toolResultsPending, s.finalizeConfirmationWait(ctx, run)
+		}
+		toolResultsPending = true
+	}
+}
+
+func (s *AgentRuntimeService) persistToolCallFloor(ctx context.Context, run *AgentRun, floor int) error {
+	if run.ToolCalls >= floor {
+		return nil
+	}
+	run.ToolCalls = floor
+	return s.persistCounters(ctx, run)
 }
 
 func syntheticToolFailure(callID, category, summary string) *aitool.Result {
@@ -2007,7 +2277,7 @@ func (s *AgentRuntimeService) terminalLike(ctx context.Context, run *AgentRun, s
 	if finished {
 		updates["finished_at"] = now
 	}
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		res := tx.Model(&AgentRun{}).Where("id=? AND status=? AND lease_owner=?", run.ID, run.Status, run.LeaseOwner).Updates(updates)
 		if res.Error != nil {
 			return res.Error
@@ -2025,6 +2295,18 @@ func (s *AgentRuntimeService) terminalLike(ctx context.Context, run *AgentRun, s
 		}
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	run.Status = status
+	run.ErrorCategory = category
+	run.CompletionReason = completionReason
+	run.LeaseOwner = ""
+	run.LeaseExpiresAt = nil
+	if finished {
+		run.FinishedAt = &now
+	}
+	return nil
 }
 
 var _ = action.StreamEvent{}

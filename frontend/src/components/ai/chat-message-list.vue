@@ -4,7 +4,7 @@ import { $t } from '@/locales';
 import { useAttachmentAvatar } from '@/hooks/business/agent-avatar';
 import { attachmentTypeIcon } from '@/hooks/business/attachment';
 import { fetchAttachment } from '@/service/api';
-import type { ToolOperation } from './tool-activity';
+import { collapseRetriedToolOperations, type ToolOperation } from './tool-activity';
 
 defineOptions({ name: 'ChatMessageList' });
 
@@ -188,6 +188,7 @@ const renderedItems = computed<RenderedItem[]>(() => {
       const callId = part.tool_call_id || '';
       operations.push({
         toolCallId: callId,
+        retryOfToolCallId: part.retry_of_tool_call_id,
         toolName: part.tool_name || '',
         presentation: part.presentation,
         request: part.arguments,
@@ -202,6 +203,15 @@ const renderedItems = computed<RenderedItem[]>(() => {
 
   // 逐个 run 分组收尾：活跃 run 保持穿插并追加流式文本；已结束 run 合并为文本段 + 工具汇总段
   for (const group of runGroups.values()) {
+    const operationSegments = group.segments.filter(segment => segment.kind === 'operations');
+    const collapsedOperations = collapseRetriedToolOperations(operationSegments.flatMap(segment => segment.operations));
+    const collapsedByCallId = new Map(collapsedOperations.map(operation => [operation.toolCallId, operation] as const));
+    for (const segment of operationSegments) {
+      segment.operations = segment.operations
+        .filter(operation => collapsedByCallId.has(operation.toolCallId))
+        .map(operation => collapsedByCallId.get(operation.toolCallId) || operation);
+    }
+    group.segments = group.segments.filter(segment => segment.kind !== 'operations' || segment.operations.length > 0);
     if (group.live) {
       if (props.streamingText) {
         const last = group.segments[group.segments.length - 1];

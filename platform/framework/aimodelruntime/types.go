@@ -83,6 +83,7 @@ type ContentPart struct {
 	AttachmentRevision string                   `json:"attachment_revision,omitempty"`
 	ImageDetail        ImageDetail              `json:"detail,omitempty"`
 	ToolCallID         string                   `json:"tool_call_id,omitempty"`
+	RetryOfToolCallID  string                   `json:"retry_of_tool_call_id,omitempty"`
 	ToolName           string                   `json:"tool_name,omitempty"`
 	Presentation       *aitool.ToolPresentation `json:"presentation,omitempty"`
 	Arguments          json.RawMessage          `json:"arguments,omitempty"`
@@ -97,7 +98,7 @@ func (p *ContentPart) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &fields); err != nil {
 		return err
 	}
-	allowed := map[string]bool{"type": true, "text": true, "image_attachment_id": true, "file_attachment_id": true, "attachment_revision": true, "detail": true, "tool_call_id": true, "tool_name": true, "presentation": true, "arguments": true, "result": true, "derived_source": true}
+	allowed := map[string]bool{"type": true, "text": true, "image_attachment_id": true, "file_attachment_id": true, "attachment_revision": true, "detail": true, "tool_call_id": true, "retry_of_tool_call_id": true, "tool_name": true, "presentation": true, "arguments": true, "result": true, "derived_source": true}
 	for key := range fields {
 		if !allowed[key] {
 			return fmt.Errorf("unsupported content part field: %s", key)
