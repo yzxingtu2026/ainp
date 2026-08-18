@@ -107,7 +107,7 @@ func RegisterSetupActions(a *app.App, svc *SetupService) error {
 		Meta: action.Metadata{
 			Capability: "setup", Access: action.AccessPublic,
 			Name: "测试 Redis", NameKey: "action.setup.test_redis.name",
-			Description: "测试 Redis 连通性", DescriptionKey: "action.setup.test_redis.description",
+			Description: "测试 Redis/Asynq 队列兼容性", DescriptionKey: "action.setup.test_redis.description",
 			Audit: &auditOff, AI: action.ExcludeFromAI(action.AIExcludeSetupOperation),
 			HTTP: &action.HTTPMeta{Method: "POST", Path: "/api/v1/setup/test-redis"},
 		},

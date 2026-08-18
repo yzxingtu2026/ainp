@@ -1085,6 +1085,12 @@ declare namespace App {
           testRedis: string;
           redisConnectOk: string;
           redisConnectFail: string;
+          redisQueueCompatible: string;
+          redisReachableQueueIncompatible: string;
+          redisConnectionFailed: string;
+          redisAuthenticationFailed: string;
+          redisLuaUnavailable: string;
+          redisQueueIncompatible: string;
           redisStatus: string;
           redisReachable: string;
           redisUnavailable: string;
