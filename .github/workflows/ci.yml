@@ -89,11 +89,37 @@ jobs:
             echo "official commands must use platform/host" >&2
             exit 1
           fi
+      - name: Verify Windows executables embed IANA timezone data
+        run: |
+          for command in ainp ainp-worker ainp-migrate; do
+            executable="${RUNNER_TEMP}/${command}.exe"
+            CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -o "${executable}" "./cmd/${command}"
+            go tool nm "${executable}" > "${executable}.nm"
+            if ! grep -Fq "time/tzdata.loadFromEmbeddedTZData" "${executable}.nm"; then
+              echo "${command}.exe must embed time/tzdata" >&2
+              exit 1
+            fi
+            stat --format='%n %s bytes' "${executable}"
+          done
       - name: Verify release linker flags
         run: |
           flags="-X github.com/yzxingtu2026/ainp/platform/framework/buildinfo.version=v0.0.0-ci -X github.com/yzxingtu2026/ainp/platform/framework/buildinfo.commit=${GITHUB_SHA} -X github.com/yzxingtu2026/ainp/platform/framework/buildinfo.buildTime=1970-01-01T00:00:00Z"
           go build -ldflags "$flags" ./cmd/ainp
           go build -ldflags "$flags" ./cmd/ainp-worker
+
+  windows-timezone:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: platform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: platform/go.mod
+          cache-dependency-path: platform/go.sum
+      - name: Verify standalone IANA timezone behavior
+        run: go test ./tests -run '^Test(PublicHostEmbedsIANATimezoneData|EmbeddedIANATimezoneBehavior)$' -count=1
 
   frontend:
     runs-on: ubuntu-latest
@@ -139,7 +165,7 @@ jobs:
         run: pnpm test:downstream-build
 
   containers:
-    needs: [repository-gates, backend, frontend]
+    needs: [repository-gates, backend, frontend, windows-timezone]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

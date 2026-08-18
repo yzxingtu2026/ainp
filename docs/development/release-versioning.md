@@ -6,6 +6,8 @@ AINP 正式版本以不可变 Git SemVer Tag 为唯一事实源。`package.json`
 
 AINP 内置 Prompt 与后端 i18n 属于 `platform` 版本内容，通过 `embed.FS` 编译进 API/Worker；发布镜像和下游二进制不得依赖复制工作目录资源。构建清单除 Module 版本外应记录 Runtime Assets owner/key/type 摘要，用于核对 API/Worker 一致性，禁止记录资源正文。
 
+公开 Host 还内嵌 IANA timezone 数据。正式 API、Worker 与 migration runner 必须保留 `time/tzdata` 依赖；CI 交叉构建 Windows/amd64 三个独立 EXE 并检查嵌入符号，同时在 Windows Runner 的无效 `ZONEINFO`/`GOROOT` 环境中执行时区行为测试，不能只依赖安装 Go SDK 或系统 zoneinfo 的开发机结果。以 Go 1.26.5、Windows/amd64、`CGO_ENABLED=0`、`-trimpath` 的本仓库基线测量，API 增加 418,304 字节（408.5 KiB）、Worker 增加 412,160 字节（402.5 KiB）、Migrate 增加 410,112 字节（400.5 KiB），属于可接受的自包含成本；Go 版本、链接参数或依赖变化后应重新测量。
+
 ## BuildInfo 协议
 
 backend、worker 与 web 必须由同一 Tag、Commit 和 UTC RFC3339 构建时间生成，并暴露以下字段：

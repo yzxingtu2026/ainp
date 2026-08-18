@@ -16,6 +16,12 @@ Trusted Runtime Context 为 Agent Run、记忆召回和时间语义工具提供�
 - `ResolveRelativeDate` 只接受可信快照，按 timezone 的自然日计算 `[start,end)` UTC 范围，DST 日可以是 23/25 小时。
 - 非法 timezone、派生字段漂移、主体冲突和用户禁用均 fail-closed。
 
+## IANA 时区数据自包含
+
+公开 `platform/host` 统一内嵌 Go `time/tzdata`。经 `host.OpenAPI`、`host.OpenWorker` 或 `host.New` 组合的 API、独立/内嵌 Worker 与 migration runner 都能在未安装 Go、未设置 `ZONEINFO`、没有系统 zoneinfo 文件的最小环境中解析 `Asia/Shanghai` 等受支持的 IANA timezone。PostgreSQL DSN 的 `TimeZone` 和操作系统 `TZ` 不替代该运行时契约。
+
+`ZONEINFO` 只用于不包含本修复的旧版本应急恢复，不是新版本的长期生产依赖。依赖图测试要求公开 Host 及三个官方命令包含 `time/tzdata`；CI 还会交叉构建 Windows/amd64 独立 EXE 并检查嵌入符号，避免开发机系统时区库掩盖回归。
+
 ## Prompt 与 Snapshot
 
 - 固定 Agent instructions 保持前缀；临时 `TRUSTED RUNTIME CONTEXT` developer section 插在尾部 user message 前。
