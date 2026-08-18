@@ -367,7 +367,7 @@ onMounted(loadList);
 </script>
 
 <template>
-  <div class="min-h-500px flex-col-stretch gap-16px overflow-hidden lt-sm:overflow-auto">
+  <div class="min-h-500px flex-col-stretch gap-16px">
     <NCard :title="$t('notificationAdmin.templateTitle')" :bordered="false" class="card-wrapper">
       <NTabs v-model:value="activeChannel" type="line" class="mb-12px">
         <NTab name="all">{{ $t('notificationAdmin.tabAll') }}</NTab>

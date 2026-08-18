@@ -189,7 +189,7 @@ onMounted(loadData);
 </script>
 
 <template>
-  <div class="min-h-500px flex-col-stretch gap-16px overflow-hidden lt-sm:overflow-auto">
+  <div class="min-h-500px flex-col-stretch gap-16px">
     <NCard :title="$t('page.attachment.centerTitle')" :bordered="false" class="card-wrapper">
       <NSpace class="mb-16px" align="center">
         <NInput

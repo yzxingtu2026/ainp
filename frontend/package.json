@@ -40,6 +40,7 @@
     "test:composer": "vitest run --config vitest.config.ts src/views/ai/workspace/modules/workspace-composer.test.ts && tsx --test src/views/ai/workspace/modules/clipboard-image.test.ts src/components/ai/run-failure-message.test.ts",
     "test:composition": "tsx --test src/composition/define-app.test.ts",
     "test:downstream-build": "pnpm build:downstream-example && ! rg -l 'demo-task-1|/api/v1/demo/hello' dist",
+    "test:list-page-overflow": "node --test scripts/check-list-page-overflow.test.mjs && node scripts/check-list-page-overflow.mjs",
     "test:menu": "tsx --test src/store/modules/route/shared.test.ts",
     "test:request-error-boundary": "tsx --test src/service/request/error.test.ts && node --test scripts/check-request-error-boundary.test.mjs && node scripts/check-request-error-boundary.mjs",
     "test:select": "vitest run --config vitest.config.ts src/components/common/app-select.test.ts",

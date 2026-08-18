@@ -149,6 +149,8 @@ jobs:
         run: pnpm test:app-select-architecture
       - name: Request error boundary check
         run: pnpm test:request-error-boundary
+      - name: List page overflow check
+        run: pnpm test:list-page-overflow
       - name: Lint
         run: pnpm exec oxlint . && pnpm exec eslint .
       - name: Production build

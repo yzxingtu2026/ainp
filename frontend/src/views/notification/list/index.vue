@@ -130,7 +130,7 @@ onMounted(loadList);
 </script>
 
 <template>
-  <div class="min-h-500px flex-col-stretch gap-16px overflow-hidden lt-sm:overflow-auto">
+  <div class="min-h-500px flex-col-stretch gap-16px">
     <NCard :title="$t('notification.pageTitle')" :bordered="false" class="card-wrapper">
       <template #header-extra>
         <NSpace align="center">

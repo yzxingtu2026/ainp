@@ -41,7 +41,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="min-h-500px flex-col-stretch gap-16px overflow-hidden lt-sm:overflow-auto">
+  <div class="min-h-500px flex-col-stretch gap-16px">
     <NCard title="Demo Hello" :bordered="false" class="card-wrapper">
       <NSpace vertical>
         <NAlert type="info" title="联调说明">

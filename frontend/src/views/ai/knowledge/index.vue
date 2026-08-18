@@ -420,7 +420,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="min-h-500px flex-col gap-16px overflow-hidden lt-sm:overflow-auto">
+  <div class="min-h-500px flex-col gap-16px">
     <header class="flex flex-wrap items-center justify-between gap-12px">
       <div class="min-w-0">
         <h1 class="m-0 truncate text-20px font-600">{{ $t('page.knowledge.title') }}</h1>
