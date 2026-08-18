@@ -55,6 +55,8 @@ worker, err := host.OpenWorker(ctx, cfg, profile, options...)
 
 调用方负责配置和日志初始化、OS 信号以及最终调用 `Close`；Host 负责 App、Outbox、Job、Worker runner 与关闭顺序。最小独立模块见 `platform/examples/downstream`。
 
+公开 Host 同时统一内嵌 Go `time/tzdata`。下游通过 `host.OpenAPI`、`host.OpenWorker` 和 `host.New` 构建的 API、Worker 与 migration runner 自动获得相同的 IANA timezone 数据，不应在各 `main` 包重复添加空白导入，也不应要求 Windows 服务器安装 Go SDK、复制 `zoneinfo.zip` 或长期设置 `ZONEINFO`。Migrate 当前不直接执行 Runtime Context，但因其正式入口使用 `host.New`，仍纳入相同的产物契约和发布门禁，防止未来迁移路径增加时区依赖后产生漂移。
+
 ## 严格模块包架构
 
 官方示例使用同一 `composition.Modules` 装配 API 与 Worker，模块实现采用以下生产结构：
