@@ -508,6 +508,7 @@ const local: App.I18n.Schema = {
       documentEmpty: '文档中没有可读取的文本内容',
       documentParseFailed: '文档解析失败，请检查文件后重试',
       clipboardImageUnsupported: '剪贴板图片格式不受支持',
+      promptInput: '给 AI 助手的消息',
       placeholder: '给 AI 发送消息',
       stop: '停止生成',
       send: '发送',

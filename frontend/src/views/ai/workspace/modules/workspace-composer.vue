@@ -1,16 +1,13 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
+import { useTextareaAutosize } from '@vueuse/core';
 import { attachmentTypeIcon, isImageContentType, useAttachmentGridThumbs } from '@/hooks/business/attachment';
 import { useAttachmentUploadQueue } from '@/hooks/business/attachment-upload-queue';
 import { useAttachmentThumbStatusPolling } from '@/hooks/business/attachment-thumb-poll';
 import AttachmentPicker from '@/components/common/attachment-picker.vue';
 import { $t } from '@/locales';
 import { normalizeClipboardImage } from './clipboard-image';
-import {
-  isWorkspaceAttachment,
-  workspaceAttachmentExts,
-  workspaceAttachmentMimes
-} from './document-attachment';
+import { isWorkspaceAttachment, workspaceAttachmentExts, workspaceAttachmentMimes } from './document-attachment';
 
 defineOptions({ name: 'WorkspaceComposer' });
 
@@ -19,12 +16,18 @@ const props = defineProps<{
   canSend?: boolean;
   active?: boolean;
   draftKey?: string;
+  density?: 'workspace' | 'sidebar';
 }>();
 const text = defineModel<string>({ default: '' });
 const attachments = defineModel<Api.Attachment.Item[]>('attachments', { default: () => [] });
 const emit = defineEmits<{ send: []; stop: [] }>();
 
 const pickerVisible = ref(false);
+const textareaElement = ref<HTMLTextAreaElement>();
+const { triggerResize } = useTextareaAutosize({ element: textareaElement, input: text });
+const composerStyle = computed<Record<string, string>>(() => ({
+  '--workspace-composer-textarea-max-height': props.density === 'sidebar' ? 'min(194px, 32dvh)' : 'min(238px, 38dvh)'
+}));
 const imageAttachments = computed(() => attachments.value.filter(item => isImageContentType(item.content_type)));
 const thumbsEnabled = computed(() => imageAttachments.value.length > 0);
 const thumbs = useAttachmentGridThumbs(imageAttachments, { enabled: thumbsEnabled });
@@ -46,6 +49,7 @@ watch(
   () => props.draftKey,
   () => uploadQueue.reset()
 );
+watch(() => props.density, triggerResize, { flush: 'post' });
 
 function onKeydown(event: KeyboardEvent) {
   if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return;
@@ -88,13 +92,12 @@ function selectAttachments(items: Api.Attachment.Item[]) {
     item => item.status === 'ready' && item.sha256 && item.size <= 10 * 1024 * 1024 && isWorkspaceAttachment(item)
   );
   if (selected.length !== items.length) window.$message?.warning($t('page.aiWorkspace.attachmentUnsupported'));
-  attachments.value = selected
-    .slice(0, 4);
+  attachments.value = selected.slice(0, 4);
 }
 </script>
 
 <template>
-  <div class="workspace-composer">
+  <div class="workspace-composer" :class="`workspace-composer--${density || 'workspace'}`" :style="composerStyle">
     <div v-if="attachments.length || uploadQueue.items.value.length" class="workspace-composer__attachments">
       <div v-for="item in attachments" :key="item.id" class="workspace-composer__attachment">
         <img v-if="thumbs.urls[item.id]" :src="thumbs.urls[item.id]" :alt="item.original_name" />
@@ -128,11 +131,7 @@ function selectAttachments(items: Api.Attachment.Item[]) {
           >
             <SvgIcon icon="mdi:refresh" />
           </button>
-          <button
-            type="button"
-            :title="$t('page.aiWorkspace.removeImage')"
-            @click="uploadQueue.remove(item.localId)"
-          >
+          <button type="button" :title="$t('page.aiWorkspace.removeImage')" @click="uploadQueue.remove(item.localId)">
             <SvgIcon icon="mdi:close" />
           </button>
         </span>
@@ -149,8 +148,10 @@ function selectAttachments(items: Api.Attachment.Item[]) {
         <SvgIcon icon="mdi:plus" class="text-22px" />
       </button>
       <textarea
+        ref="textareaElement"
         v-model="text"
-        rows="1"
+        rows="2"
+        :aria-label="$t('page.aiWorkspace.promptInput')"
         :placeholder="$t('page.aiWorkspace.placeholder')"
         :disabled="disabled || active"
         @keydown="onKeydown"
@@ -183,6 +184,7 @@ function selectAttachments(items: Api.Attachment.Item[]) {
 
 <style scoped>
 .workspace-composer {
+  --workspace-composer-textarea-max-height: min(238px, 38dvh);
   width: min(820px, 100%);
   margin: 0 auto;
 }
@@ -293,10 +295,12 @@ function selectAttachments(items: Api.Attachment.Item[]) {
 }
 
 .workspace-composer textarea {
-  min-height: 40px;
-  max-height: 160px;
+  min-height: 62px;
+  max-height: var(--workspace-composer-textarea-max-height);
   flex: 1;
   resize: none;
+  overflow-x: hidden;
+  overflow-y: auto;
   border: 0;
   outline: none;
   background: transparent;

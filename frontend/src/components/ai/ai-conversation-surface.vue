@@ -113,6 +113,7 @@ onBeforeUnmount(() => {
         :can-send="controller.canSend.value"
         :active="runActive"
         :draft-key="controller.conversation.value?.id || 'new'"
+        :density="density"
         @send="controller.send"
         @stop="controller.stop"
       />
