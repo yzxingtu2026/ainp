@@ -86,7 +86,14 @@ func (s *AttachmentService) ResolveDocument(ctx context.Context, req aimodelrunt
 		case errors.Is(err, aiknowledge.ErrUnsupportedFormat), errors.Is(err, aiknowledge.ErrMIMEMismatch):
 			category = aimodelruntime.DocumentUnsupportedFormat
 		case errors.Is(err, aiknowledge.ErrUnsafeContent):
-			category = aimodelruntime.DocumentUnsafeContent
+			switch mime {
+			case "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+				category = aimodelruntime.DocumentUnsafeDOCXContent
+			case "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
+				category = aimodelruntime.DocumentUnsafeXLSXContent
+			default:
+				category = aimodelruntime.DocumentUnsafeContent
+			}
 		}
 		return nil, &aimodelruntime.DocumentError{Category: category, Cause: err}
 	}

@@ -66,6 +66,8 @@ function runFailureMessage(detail: Api.AI.AgentRunDetail) {
     document_unsupported_format: 'page.aiWorkspace.documentUnsupported',
     document_too_large: 'page.aiWorkspace.documentTooLarge',
     document_unsafe_content: 'page.aiWorkspace.documentUnsafe',
+    document_unsafe_docx_content: 'page.aiWorkspace.documentUnsafeDocx',
+    document_unsafe_xlsx_content: 'page.aiWorkspace.documentUnsafeXlsx',
     document_corrupt: 'page.aiWorkspace.documentCorrupt',
     document_empty: 'page.aiWorkspace.documentEmpty',
     document_parse_failed: 'page.aiWorkspace.documentParseFailed'

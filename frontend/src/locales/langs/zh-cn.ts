@@ -504,6 +504,8 @@ const local: App.I18n.Schema = {
       documentUnsupported: '文档格式或文件内容不受支持',
       documentTooLarge: '文档内容超过助手当前可处理的大小或上下文限制',
       documentUnsafe: '文档包含无缓存或外部数据公式、宏、外部引用等主动内容，当前不支持处理',
+      documentUnsafeDocx: 'DOCX 包含无缓存或不受支持的字段、外部文档或对象、宏等主动内容，当前不支持处理',
+      documentUnsafeXlsx: 'XLSX 包含无缓存或外部数据公式、外部工作簿、宏等主动内容，当前不支持处理',
       documentCorrupt: '文档已损坏或无法安全解析',
       documentEmpty: '文档中没有可读取的文本内容',
       documentParseFailed: '文档解析失败，请检查文件后重试',

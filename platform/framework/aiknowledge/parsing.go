@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"mime"
+	"net/url"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -26,7 +27,7 @@ import (
 )
 
 const (
-	ParserVersion        = "safe-parser-v5"
+	ParserVersion        = "safe-parser-v6"
 	ChunkingVersion      = "fixed-tokens-v1"
 	PreprocessingVersion = "normalize-text-v2"
 )
@@ -268,7 +269,7 @@ func (p *SafeParser) parseOpenXML(ctx context.Context, data []byte, contentType,
 	files := map[string]*zip.File{}
 	for _, f := range zr.File {
 		name := strings.ToLower(f.Name)
-		if strings.Contains(name, "vbaproject") || strings.Contains(name, "/embeddings/") || strings.Contains(name, "/externallinks/") || strings.HasSuffix(name, ".bin") || strings.HasSuffix(name, ".js") {
+		if strings.Contains(name, "vbaproject") || strings.Contains(name, "/embeddings/") || strings.Contains(name, "/externallinks/") || strings.Contains(name, "/activex/") || strings.HasSuffix(name, ".bin") || strings.HasSuffix(name, ".js") {
 			return nil, ErrUnsafeContent
 		}
 		if f.UncompressedSize64 > uint64(p.Limits.MaxExpandedBytes) {
@@ -280,8 +281,8 @@ func (p *SafeParser) parseOpenXML(ctx context.Context, data []byte, contentType,
 		}
 		files[f.Name] = f
 	}
-	if hasExternalRelationship(files, p.Limits.MaxExpandedBytes) {
-		return nil, ErrUnsafeContent
+	if err := validateOpenXMLRelationships(files, p.Limits.MaxExpandedBytes, contentType); err != nil {
+		return nil, err
 	}
 	var names []string
 	switch contentType {
@@ -318,7 +319,12 @@ func (p *SafeParser) parseOpenXML(ctx context.Context, data []byte, contentType,
 		if f == nil {
 			return nil, ErrCorruptDocument
 		}
-		text, err := extractXMLText(f, p.Limits.MaxExpandedBytes)
+		var text string
+		if contentType == "application/vnd.openxmlformats-officedocument.wordprocessingml.document" {
+			text, err = extractDOCXText(f, p.Limits.MaxExpandedBytes)
+		} else {
+			text, err = extractXMLText(f, p.Limits.MaxExpandedBytes)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -460,14 +466,14 @@ func formatSpreadsheetRow(sheetName string, rowNumber int, headers, cells []stri
 	return strings.Join(parts, " | ")
 }
 
-func hasExternalRelationship(files map[string]*zip.File, max int64) bool {
+func validateOpenXMLRelationships(files map[string]*zip.File, max int64, contentType string) error {
 	for name, f := range files {
 		if !strings.HasSuffix(strings.ToLower(name), ".rels") {
 			continue
 		}
 		b, err := readZipFile(f, max)
 		if err != nil {
-			return true
+			return err
 		}
 		decoder := xml.NewDecoder(bytes.NewReader(b))
 		for {
@@ -476,20 +482,45 @@ func hasExternalRelationship(files map[string]*zip.File, max int64) bool {
 				break
 			}
 			if tokenErr != nil {
-				return true
+				return ErrCorruptDocument
 			}
 			start, ok := token.(xml.StartElement)
 			if !ok || !strings.EqualFold(start.Name.Local, "Relationship") {
 				continue
 			}
+			var targetMode, target, relationshipType string
 			for _, attribute := range start.Attr {
-				if strings.EqualFold(attribute.Name.Local, "TargetMode") && strings.EqualFold(strings.TrimSpace(attribute.Value), "External") {
-					return true
+				switch strings.ToLower(attribute.Name.Local) {
+				case "targetmode":
+					targetMode = strings.TrimSpace(attribute.Value)
+				case "target":
+					target = strings.TrimSpace(attribute.Value)
+				case "type":
+					relationshipType = strings.TrimSpace(attribute.Value)
 				}
 			}
+			if !strings.EqualFold(targetMode, "External") {
+				continue
+			}
+			if contentType == "application/vnd.openxmlformats-officedocument.wordprocessingml.document" && isSafeDOCXHyperlink(relationshipType, target) {
+				continue
+			}
+			return ErrUnsafeContent
 		}
 	}
-	return false
+	return nil
+}
+
+func isSafeDOCXHyperlink(relationshipType, target string) bool {
+	typeName := strings.ToLower(strings.TrimSpace(relationshipType))
+	if typeName != "http://schemas.openxmlformats.org/officedocument/2006/relationships/hyperlink" && typeName != "http://purl.oclc.org/ooxml/officedocument/relationships/hyperlink" {
+		return false
+	}
+	u, err := url.Parse(strings.TrimSpace(target))
+	if err != nil || u.Host == "" {
+		return false
+	}
+	return strings.EqualFold(u.Scheme, "http") || strings.EqualFold(u.Scheme, "https")
 }
 
 var (
@@ -632,6 +663,187 @@ func extractXMLText(f *zip.File, max int64) (string, error) {
 		}
 	}
 	return out.String(), nil
+}
+
+type docxField struct {
+	instruction strings.Builder
+	result      strings.Builder
+	stage       string
+	hasCache    bool
+	simple      bool
+}
+
+var safeDOCXFields = map[string]struct{}{
+	"PAGE": {}, "NUMPAGES": {}, "SECTION": {}, "SECTIONPAGES": {},
+	"DATE": {}, "TIME": {}, "CREATEDATE": {}, "SAVEDATE": {}, "PRINTDATE": {},
+	"AUTHOR": {}, "TITLE": {}, "SUBJECT": {}, "FILENAME": {},
+	"REF": {}, "PAGEREF": {}, "NOTEREF": {}, "TOC": {},
+}
+
+func extractDOCXText(f *zip.File, max int64) (string, error) {
+	b, err := readZipFile(f, max)
+	if err != nil {
+		return "", err
+	}
+	d := xml.NewDecoder(bytes.NewReader(b))
+	var fields []*docxField
+	var output strings.Builder
+	var textBuffer strings.Builder
+	instrDepth, textDepth := 0, 0
+	appendVisible := func(value string) error {
+		if len(fields) > 0 {
+			field := fields[len(fields)-1]
+			if field.stage != "result" {
+				return ErrCorruptDocument
+			}
+			field.hasCache = true
+			field.result.WriteString(value)
+			field.result.WriteByte(' ')
+			return nil
+		}
+		output.WriteString(value)
+		output.WriteByte(' ')
+		return nil
+	}
+	appendField := func(field *docxField) error {
+		if len(fields) > 0 {
+			parent := fields[len(fields)-1]
+			if parent.stage != "result" {
+				return ErrCorruptDocument
+			}
+			parent.hasCache = true
+			parent.result.WriteString(field.result.String())
+			return nil
+		}
+		output.WriteString(field.result.String())
+		return nil
+	}
+	for {
+		tok, tokenErr := d.Token()
+		if tokenErr == io.EOF {
+			break
+		}
+		if tokenErr != nil {
+			return "", ErrCorruptDocument
+		}
+		switch value := tok.(type) {
+		case xml.StartElement:
+			name := strings.ToLower(value.Name.Local)
+			switch name {
+			case "fldsimple":
+				if len(fields) > 0 && fields[len(fields)-1].stage == "instruction" {
+					return "", ErrCorruptDocument
+				}
+				instruction := ""
+				for _, attribute := range value.Attr {
+					if strings.EqualFold(attribute.Name.Local, "instr") {
+						instruction = attribute.Value
+					}
+				}
+				if !isSafeDOCXField(instruction) {
+					return "", ErrUnsafeContent
+				}
+				fields = append(fields, &docxField{stage: "result", simple: true})
+			case "fldchar":
+				fieldType := ""
+				for _, attribute := range value.Attr {
+					if strings.EqualFold(attribute.Name.Local, "fldchartype") {
+						fieldType = strings.ToLower(strings.TrimSpace(attribute.Value))
+					}
+				}
+				switch fieldType {
+				case "begin":
+					if len(fields) > 0 && fields[len(fields)-1].stage == "instruction" {
+						return "", ErrCorruptDocument
+					}
+					fields = append(fields, &docxField{stage: "instruction"})
+				case "separate":
+					if len(fields) == 0 || fields[len(fields)-1].stage != "instruction" || !isSafeDOCXField(fields[len(fields)-1].instruction.String()) {
+						return "", ErrUnsafeContent
+					}
+					fields[len(fields)-1].stage = "result"
+				case "end":
+					if len(fields) == 0 || fields[len(fields)-1].stage != "result" || !fields[len(fields)-1].hasCache {
+						return "", ErrUnsafeContent
+					}
+					field := fields[len(fields)-1]
+					fields = fields[:len(fields)-1]
+					if err := appendField(field); err != nil {
+						return "", err
+					}
+				default:
+					return "", ErrCorruptDocument
+				}
+			case "instrtext":
+				if len(fields) == 0 || fields[len(fields)-1].stage != "instruction" {
+					return "", ErrUnsafeContent
+				}
+				instrDepth++
+			case "t":
+				if len(fields) > 0 && fields[len(fields)-1].stage == "instruction" {
+					return "", ErrCorruptDocument
+				}
+				textDepth++
+				textBuffer.Reset()
+			case "tab", "br", "cr":
+				if err := appendVisible(" "); err != nil {
+					return "", err
+				}
+			case "oleobject", "object", "embeddedfont":
+				return "", ErrUnsafeContent
+			}
+		case xml.CharData:
+			if instrDepth > 0 {
+				if len(fields) == 0 || fields[len(fields)-1].stage != "instruction" {
+					return "", ErrCorruptDocument
+				}
+				fields[len(fields)-1].instruction.Write(value)
+			} else if textDepth > 0 {
+				textBuffer.Write(value)
+			}
+		case xml.EndElement:
+			name := strings.ToLower(value.Name.Local)
+			switch name {
+			case "instrtext":
+				if instrDepth == 0 {
+					return "", ErrCorruptDocument
+				}
+				instrDepth--
+			case "t":
+				if textDepth == 0 {
+					return "", ErrCorruptDocument
+				}
+				textDepth--
+				if textDepth == 0 {
+					if err := appendVisible(textBuffer.String()); err != nil {
+						return "", err
+					}
+				}
+			case "fldsimple":
+				if len(fields) == 0 || !fields[len(fields)-1].simple || fields[len(fields)-1].stage != "result" || !fields[len(fields)-1].hasCache {
+					return "", ErrUnsafeContent
+				}
+				field := fields[len(fields)-1]
+				fields = fields[:len(fields)-1]
+				if err := appendField(field); err != nil {
+					return "", err
+				}
+			}
+		}
+	}
+	if instrDepth != 0 || textDepth != 0 || len(fields) != 0 {
+		return "", ErrCorruptDocument
+	}
+	return output.String(), nil
+}
+
+func isSafeDOCXField(instruction string) bool {
+	parts := strings.Fields(strings.TrimSpace(instruction))
+	if len(parts) == 0 {
+		return false
+	}
+	_, ok := safeDOCXFields[strings.ToUpper(parts[0])]
+	return ok
 }
 
 func textSections(text, revision string) []ParsedSection {

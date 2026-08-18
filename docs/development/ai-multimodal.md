@@ -37,7 +37,7 @@ ModelResolver 能力校验
 
 平台当前限制为单图 10 MiB、最多 4 图、总计 20 MiB、最大边长 8192、最大 2500 万像素，仅允许 JPEG、PNG、GIF、WebP。Adapter 还需执行供应商限制，Anthropic 单图当前限制为 5 MiB。任何限制必须在发送 Provider 前完成。
 
-即时文档使用独立 `DocumentResolver`：消息创建时校验 tenant/user、AccessPolicy、ready、revision、MIME 和 10 MiB 上限，每次 Run 装配时重新授权并经 ObjectStore 有界读取。解析复用 `aiknowledge.SafeParser`，仅允许 PDF、XLSX、DOCX、UTF-8 TXT、Markdown；单文档最多 100 页/工作表，单次 Run 派生文本合计最多 100,000 个规范化字符。MIME 伪造、主动 Office 内容、损坏/空文本、非 UTF-8/NUL 和资源超限均在 Provider 前 fail-closed。
+即时文档使用独立 `DocumentResolver`：消息创建时校验 tenant/user、AccessPolicy、ready、revision、MIME 和 10 MiB 上限，每次 Run 装配时重新授权并经 ObjectStore 有界读取。解析复用 `aiknowledge.SafeParser`，仅允许 PDF、XLSX、DOCX、UTF-8 TXT、Markdown；DOCX 普通 HTTP/HTTPS 超链接只读取显示文字且不访问目标，白名单字段只读取已保存结果，未知/危险/无缓存字段拒绝；XLSX 公式同样只读已保存缓存，绝不执行或刷新。单文档最多 100 页/工作表，单次 Run 派生文本合计最多 100,000 个规范化字符。MIME 伪造、主动 Office 内容、损坏/空文本、非 UTF-8/NUL 和资源超限均在 Provider 前 fail-closed；DOCX 与 XLSX 主动内容使用可区分的稳定错误类别，提示不得暴露 URL、字段指令、Object Key 或内部路径。
 
 ## Provider 映射与生命周期
 

@@ -39,7 +39,10 @@ Knowledge Runtime 管理租户知识库、附件来源、不可变索引版本�
 
 - 解析入口必须经 `DocumentSourceResolver` 重新校验当前 actor、tenant、Document 权限、附件绑定和 source revision；禁止业务直接使用 Object Key。
 - Parser Registry 仅注册明确支持的 MIME，声明类型必须与内容嗅探一致，未知类型和未知 Parser 一律 fail-closed。
-- 首期只处理 UTF-8 文本、Markdown、PDF 及 OOXML（DOCX/XLSX/PPTX）；Office 宏、字段指令、嵌入对象、外部关系和脚本一律拒绝，不执行外部程序或联网请求。XLSX 普通公式仅允许读取文件中已保存的缓存值，禁止求值或刷新；缺少缓存值、外部工作簿引用、URL/DDE 或外部数据函数必须 fail-closed。
+- 首期只处理 UTF-8 文本、Markdown、PDF 及 OOXML（DOCX/XLSX/PPTX），不调用 Word/LibreOffice、执行外部程序或发起联网请求。宏、ActiveX、OLE/嵌入对象、脚本和非白名单外部关系一律拒绝。
+- DOCX 普通 HTTP/HTTPS `hyperlink` Relationship 仅允许读取正文显示文字，不读取到派生正文、不访问目标 URL；外部模板、外部文档、链接对象及其他 External Relationship 默认 fail-closed。
+- DOCX 复杂字段与 `w:fldSimple` 仅允许读取文件中已保存的显示结果，字段指令不进入派生正文且绝不更新或执行。首期白名单为 `PAGE`、`NUMPAGES`、`SECTION`、`SECTIONPAGES`、`DATE/TIME`、`CREATEDATE/SAVEDATE/PRINTDATE`、`AUTHOR/TITLE/SUBJECT/FILENAME`、`REF/PAGEREF/NOTEREF`、`TOC`；缺少缓存、未知字段、畸形/未闭合字段及 `INCLUDETEXT`、`INCLUDEPICTURE`、`LINK`、`DDE/DDEAUTO`、`DATABASE` 必须 fail-closed。缓存可能过期，始终按不可信派生事实处理。
+- XLSX 普通公式仅允许读取文件中已保存的缓存值，禁止求值或刷新；缺少缓存值、外部工作簿引用、URL/DDE 或外部数据函数必须 fail-closed。
 - PDF 文本提取必须解析嵌入字体及字符映射，禁止直接把内容流字形码作为正文；解析器版本变化后，历史文档必须重新摄取才能生成新索引。
 - XLSX 必须解析工作表顺序、名称、共享字符串与单元格显示值；公式单元格只使用已保存缓存值并视为可能过期的不可信派生事实，不执行公式；按非空行生成带工作表、行号和表头映射的独立 Section，禁止直接向量化 worksheet XML 中的共享字符串索引。
 - 文件字节、页数/工作表/幻灯片数、字符数、压缩条目和展开字节都必须受限；读取与解析过程必须传播 context 取消和超时。
