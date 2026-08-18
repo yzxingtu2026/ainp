@@ -8,7 +8,7 @@ const demoResourceId = 'demo-task-1';
 </script>
 
 <template>
-  <div class="min-h-500px flex-col-stretch gap-16px overflow-hidden lt-sm:overflow-auto">
+  <div class="min-h-500px flex-col-stretch gap-16px">
     <NCard :title="$t('page.attachment.demoTitle')" :bordered="false" class="card-wrapper">
       <NSpace vertical>
         <NAlert type="info" :title="$t('page.attachment.demoHint')">

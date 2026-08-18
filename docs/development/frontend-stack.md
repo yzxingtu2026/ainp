@@ -64,6 +64,14 @@ if (result.error) {
 
 `pnpm test:request-error-boundary` 同时执行错误模式单测、静态扫描正反例和全仓扫描。门禁会追踪 `await` 返回的解构 `error`、别名以及 `result.error`，阻止其 `.message` 流入 toast 或内联状态；无需展示文案的默认失败分支直接返回即可。
 
+## 列表页滚动容器
+
+`AdminLayout` 的 `scrollMode=content` 已由主内容区提供唯一纵向滚动；`scrollMode=wrapper` 则由外层 wrapper 负责。业务列表页必须保持根内容流自然增长，不得在页面根容器使用 `overflow-hidden`、`overflow-auto`、`overflow-y-auto` 或响应式等价类裁剪/接管纵向滚动，否则长表格底部与分页器会永久不可达。
+
+宽表继续通过 `NDataTable :scroll-x` 或等价表格容器处理局部横向滚动，不给页面根容器增加横向滚动来代替。弹窗、抽屉、图片预览及明确固定高度的局部面板仍可独立使用 overflow；其滚动边界不得包住页面主内容流。`pnpm test:list-page-overflow` 使用 Vue SFC/Template AST 扫描 `src/views`，阻止标准列表页根节点重新引入纵向 overflow。
+
+下游升级时应固定到包含本修复的正式版本，删除针对列表页根容器的临时补丁，并在 10/20/50 条分页、100%/125%/150% 缩放和常见窄屏宽度下验证分页器可达；禁止正式环境长期消费 `main` 或临时分支。
+
 ## 起壳与裁剪建议
 
 1. 以 Soybean Admin 的 Naive UI 版为起点初始化 `frontend/`。

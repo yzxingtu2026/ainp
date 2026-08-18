@@ -187,7 +187,7 @@ function handleFilterChange() {
 </script>
 
 <template>
-  <div class="min-h-500px flex-col-stretch gap-16px overflow-hidden lt-sm:overflow-auto">
+  <div class="min-h-500px flex-col-stretch gap-16px">
     <NCard :title="$t('notificationAdmin.deliveryTitle')" :bordered="false" class="card-wrapper">
       <NSpace class="mb-12px">
         <AppSelect
