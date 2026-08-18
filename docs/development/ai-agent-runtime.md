@@ -21,6 +21,7 @@ Run 固化的版本化预算使用 `schema_version=1` 与 snake_case 字段：`m
 - 正常 ReAct 只能使用扣除最终输入、最终输出与估算安全余量后的软预算；`max_output_tokens` 同时受 Deployment 上限和软预算约束。
 - 下一次正常调用将侵占收尾预留、或只剩最后一次模型调用额度时，Run 持久化切换为 `execution_mode=completion_only`。该状态在 confirmation 暂停、恢复、lease 接管和 retry 中不得回退为 normal。
 - completion-only 最多调用一次。调用前先持久化 `completion_attempted`，临时追加 `ai/budget-completion` runtime 指令，并在协议层清空 Tool Scope/Tools、设置 `tool_choice=none`；指令不得写入 canonical Message。
+- `completion_only` 的模式切换发生在实际发起无工具收尾请求之前，而不是正常模型轮返回 Tool Call 之后。正常轮已经形成的 Tool Call 必须先持久化并进入执行/确认；确认恢复追加 Tool Result 后，即使已到 step 边界，也必须保留一次模型消费结果的机会。若预算只允许收尾，runtime 指令必须说明工具仅因本 Run 的预算策略在当前轮禁用，禁止模型声称工具被移除、未加载、不可用或配置发生变化。
 - 收尾成功仍提交 canonical assistant Message，Run 为 `completed` 且 `completion_reason=budget_limit`。前端显示本地化预算提示，不向普通用户暴露预算错误机器码。
 - 剩余预算无法容纳最小收尾、压缩不能降低上下文、Provider 失败或仅返回不可用输出时才 fail-closed。若调用已经返回无新工具依赖的可用文本，即使真实 Usage 超出估算安全余量，也先幂等提交该文本，不得直接丢弃。
 
@@ -61,6 +62,8 @@ Builder 预览约束：
 - Knowledge binding 只限定候选 Knowledge Base；每次模型调用前由统一 `KnowledgeRetriever` 使用 Run 当前 actor 重鉴权并执行预算受控检索。结果只能作为 `user` 级不可信参考消息注入，禁止写入 Contract、system/developer instructions、Snapshot 或事件摘要。
 - 记忆启用且用户允许自动记忆时，模型调用前由统一 Memory Retriever 执行受预算混合召回；无高质量结果不注入，结果只能进入 `UNTRUSTED USER MEMORY` user reference，Snapshot 只记录 provenance refs。
 - 敏感工具复用 ToolConfirmation。批量 Tool Call 遇确认时先为后续调用写完 `deferred_for_confirmation` 配对结果，再固定最终会话 revision、切换等待状态并发布事件。Run 保存 confirmation/invocation 引用并释放 lease；批准执行前和恢复时都校验 actor、auth version、会话 active/revision、Agent/Tool/Schema 和已持久化调用结果。
+- 首项确认成功后，Runtime 必须先于下一次模型调用扫描 canonical Message，并按原响应顺序恢复同批 deferred 队列。每项 retry 使用由 Run ID 与原 Call ID 确定性派生的新 Call ID，创建独立 Invocation 和 Confirmation；批准当前项不批准后续项。拒绝、过期、取消、执行失败、会话 revision 改变、Tool/Step 预算耗尽或 lineage 不一致都立即终止自动队列。
+- Worker 恢复只允许继续“retry Call 已提交但无 Invocation”的确定状态；`waiting_confirmation` 恢复最终等待快照，completed/failed Invocation 只从持久安全 Result 补 canonical Result。`running` 等不确定 Invocation 禁止猜测或重放 Action。恢复不重置 model/tool/compaction/Token/时长预算。
 - 确认恢复必须同时接受 invocation 的 `completed` 与 `failed` 终态，并为原 assistant tool_call 追加一一配对的成功或失败 Tool Result。`invalid_arguments` 等可纠正失败允许模型生成新参数并发起新的 Tool Call 与逐次确认，禁止修改或复用旧 confirmation；只有确认执行成功才补足收尾 Step 额度。
 - 已确认工具成功恢复后必须至少保留 4 个收尾 Step；仅补足不足的 Step 额度，不重置或扩张 model/tool/compaction/Token/时长预算，普通执行与未成功确认不得获得该额度。
 - 模型返回 tool_call 后，必须先幂等追加 assistant（含 `tool_call`）消息，再追加 tool result；二者成对出现，禁止只落 tool_result。最终无工具回复经 finalize 提交；失败或取消不伪造 assistant 完成消息。

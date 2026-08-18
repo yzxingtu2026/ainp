@@ -74,11 +74,13 @@ Action Tool 的 `TitleForHuman` 必须来自注册处显式声明的 `AIMeta.Too
 
 前端确认卡片默认显示标题、描述、摘要、结构化 Details、风险和副作用；原始 Tool ID、Tool Call ID 与脱敏参数摘要进入默认折叠的技术详情。`PresentationVersion=0` 或快照为空表示历史数据，必须兼容读取且不得阻断批准流程。
 
-同一模型响应含多个 Tool Call 时按顺序执行。任一调用进入确认后必须立即停止执行同批后续调用，并为每个未执行调用追加配对的 `deferred_for_confirmation` Tool Result；模型在确认恢复后按需重新发起。批准、拒绝、过期及其他确认终态都必须为原 Tool Call 产生配对结果，禁止留下永久等待卡片。
+同一模型响应含多个 Tool Call 时按顺序执行。任一调用进入确认后必须立即停止执行同批后续调用，并为每个未执行调用追加配对的 `deferred_for_confirmation` Tool Result。首项确认成功后由 Runtime 按原顺序逐项生成稳定的新 Call ID，并为每项重新创建独立 Confirmation；不得依赖模型决定是否继续，不得一次确认自动批准后续项。Canonical 保留原/retry 全部事实，retry Call 以 `retry_of_tool_call_id` 关联原 Call；拒绝、过期、取消、执行失败、revision 变化和预算耗尽均停止队列。原子批量业务仍应实现一个强类型 atomic Action、一个 Tool Call、一次确认和一个事务，独立 Tool Call 队列不提供跨调用原子性。
 
 Runtime 必须先完成同批全部 canonical Tool Result，再固定最终 Conversation revision，最后将 Run 转为 `waiting_confirmation` 并发布等待事件。批准前必须校验 Agent Run 仍在等待该确认、Conversation 仍 active 且 revision 等于批次收口后的快照；用户新增消息、归档或其他可信外部变化必须在 Action 副作用前 fail-closed。
 
 批准使用短事务同时将 confirmation 从 `pending` 认领为 `approved`、将 invocation 从 `waiting_confirmation` 认领为 `running`；任一条件更新失败必须整体回滚。确认恢复后的 Executor 上下文必须使用由 Tool invocation ID 派生的稳定幂等键，同一 invocation 稳定、不同 invocation 隔离，且不得继承批准请求自身的幂等键；未经确认的调用继续使用 Agent Runtime 提供的原始幂等键。Action Executor 在事务外最多执行一次，不允许通过重复批准重放。执行实际开始后，无论成功还是失败，invocation 终态、confirmation=`consumed`、`consumed_at`、安全 Result 与 `ai.tool_invocation.finished.v1` 必须在同一事务提交。失败 Result 只持久化 `call_id`、`status=failed`、安全摘要和稳定 `error_category`，禁止包含原始参数、Secret、数据库错误或堆栈。
+
+错误分类必须区分 Executor 前的 Runtime/授权/契约变化与已进入 Executor 的领域错误。Executor 返回经过 AppError 契约审查的 Validation、NotFound、Conflict、RevisionConflict、IdempotencyConflict 时，分别投影为稳定 `invalid_arguments`、`resource_not_found`、`conflict`、`revision_conflict`、`idempotency_conflict`，且只携带安全 `Message` / `SafeDetails`；Cause、数据库错误、参数、Secret 与堆栈不得进入 Result。`authorization_changed` 只用于 Executor 前 Handle、Scope、Schema、权限或 Run 授权快照真实变化。Action 和 RuntimeSlot 的失败 Result 都必须把 Agent Step 收口为 failed。
 
 对 `consumed/rejected/expired/cancelled` confirmation 的重复批准或拒绝统一返回稳定业务冲突，不得暴露 invocation 内部状态或把查询不到 `pending` 映射为 500。前端在决策请求期间必须同时禁用批准和拒绝；请求完成后按服务端状态刷新列表，失败时保留第一次安全业务错误，不得让后续重复决策冲突覆盖它。
 

@@ -28,6 +28,8 @@ Conversation 是租户内、供应商无关的会话事实边界。它固定一�
 
 Message content 复用 `aimodelruntime.ContentPart`。数据库保存最终 canonical Content Parts；流式 delta 属于内部可重放传输事实，不能替代完成快照，也不能创建多个 assistant Message。
 
+Runtime 为 deferred retry Tool Call 持久化 `retry_of_tool_call_id`，该字段只表达审计与恢复 lineage，不进入执行参数、授权或 Provider 私有字段。Canonical 历史完整保留原 Call/deferred Result 与 retry Call/最终 Result；ContextAssembler 和 Compactor 向模型提供业务视图时，仅在原 Result 确为 `deferred_for_confirmation`、原/retry Call 与 Result 唯一且 Tool/参数一致时，移除 retry Call/Result，并以原 Call ID 归一最终 Result。投影不得修改 canonical Message，字节预算可继续按 canonical 保守计算；孤立、重复、歧义或非法 Result 不折叠并 fail-closed，确保所有 Provider 始终获得合法的一一配对 Call/Result。
+
 消息正文、附件内容和 Snapshot payload 不进入普通日志、Outbox 或审计摘要。审计只记录会话管理 mutation 的资源与结果。
 
 即时文档正文只在 Run 内存中由 `DocumentResolver + SafeParser` 展开为 `derived_text`。canonical Message 和幂等重放始终保留 `input_file` 引用；刷新/恢复时前端按当前附件授权读取显示元数据，失败只显示安全不可用状态。

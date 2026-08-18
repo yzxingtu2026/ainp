@@ -1127,6 +1127,7 @@ const local: App.I18n.Schema = {
     toolCall: 'Tool call',
     toolRunning: 'Running',
     toolSuccess: 'Completed',
+    toolSuccessAfterDeferral: 'Completed after deferral',
     toolFailed: 'Failed',
     toolRehydrated: 'Tool restored',
     toolDeferred: 'Deferred / not executed',

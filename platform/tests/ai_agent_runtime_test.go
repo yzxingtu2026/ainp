@@ -395,6 +395,25 @@ func TestAgentRunBudgetCompletionMigrationAndRuntimeContract(t *testing.T) {
 			t.Fatalf("budget completion runtime contract missing %q", expected)
 		}
 	}
+	if strings.Count(source, "s.enterCompletionOnly(ctx, run, reserve, plan.Reason)") != 1 {
+		t.Fatal("completion-only mode must be persisted only before the completion model request")
+	}
+	if !strings.Contains(source, "toolResultsPending := resumedConfirmation || queuedToolResultsPending") {
+		t.Fatal("confirmation tool results must remain pending for model consumption")
+	}
+	if !strings.Contains(source, "return toolResultsPending, toolResultsPending") {
+		t.Fatal("pending tool results at the step limit must get a completion turn")
+	}
+	promptBody, err := os.ReadFile("../prompts/ai/budget-completion.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	promptText := string(promptBody)
+	for _, expected := range []string{"disabled only for this final turn", "Do not claim or imply", "reached its budget limit"} {
+		if !strings.Contains(promptText, expected) {
+			t.Fatalf("budget completion prompt missing %q", expected)
+		}
+	}
 	anthropicBody, err := os.ReadFile("../framework/aimodelruntime/anthropic.go")
 	if err != nil {
 		t.Fatal(err)

@@ -691,11 +691,14 @@ func (s *ToolService) execute(ctx context.Context, ac *auth.Context, scope *Tool
 	}
 	result, execErr := executor.Execute(aitool.WithScopeID(executionCtx, scope.ID), loaded, args)
 	if execErr != nil {
-		if approved == nil {
-			_ = s.finishInvocation(ctx, &inv, nil, "failed", "execution_failed", execErr)
+		var recoverable bool
+		result, recoverable = executorFailure(callID, execErr)
+		if approved == nil && !recoverable {
+			if finishErr := s.finishInvocation(ctx, &inv, result, "failed", result.ErrorCategory, execErr); finishErr != nil {
+				return nil, errors.Join(execErr, finishErr)
+			}
 			return nil, execErr
 		}
-		result = executionFailure(callID, execErr)
 	}
 	result.CallID = callID
 	if execErr == nil && result.Status != aitool.ResultStatusFailed {
@@ -718,31 +721,45 @@ func (s *ToolService) execute(ctx context.Context, ac *auth.Context, scope *Tool
 	return result, nil
 }
 
-func executionFailure(callID string, err error) *aitool.Result {
+func executorFailure(callID string, err error) (*aitool.Result, bool) {
 	category := "execution_failed"
 	summary := "tool execution failed"
+	recoverable := false
 	var details *errs.SafeDetails
 	var appErr *errs.AppError
 	if errors.As(err, &appErr) {
 		switch appErr.Code {
-		case errs.CodeValidation:
-			category = "invalid_arguments"
-			if strings.TrimSpace(appErr.Message) != "" {
-				summary = appErr.Message
-				details = appErr.Details
-				if appErr.Details != nil && appErr.Details.Reason != "" {
-					category = appErr.Details.Reason
-				}
-			} else {
-				summary = "tool arguments are invalid; correct them to match the input schema and retry"
-			}
+		case errs.CodeValidation, errs.CodeIdempotencyKeyRequired:
+			category, recoverable = "invalid_arguments", true
+		case errs.CodeNotFound:
+			category, recoverable = "resource_not_found", true
+		case errs.CodeConflict:
+			category, recoverable = "conflict", true
+		case errs.CodeRevisionConflict:
+			category, recoverable = "revision_conflict", true
+		case errs.CodeIdempotencyConflict:
+			category, recoverable = "idempotency_conflict", true
+		case errs.CodeOperationInProgress:
+			category = "operation_in_progress"
+		case errs.CodeResourceLocked:
+			category = "resource_locked"
 		case errs.CodeUnauthorized, errs.CodeForbidden:
 			category = "authorization_failed"
-		case errs.CodeConflict, errs.CodeRevisionConflict:
-			category = "authorization_changed"
+		case errs.CodeActionNotFound:
+			category = "tool_unavailable"
+		case errs.CodeTooManyRequests:
+			category = "rate_limited"
+		}
+		if recoverable {
+			if strings.TrimSpace(appErr.Message) != "" {
+				summary = appErr.Message
+			} else if category == "invalid_arguments" {
+				summary = "tool arguments are invalid; correct them to match the input schema and retry"
+			}
+			details = appErr.Details
 		}
 	}
-	return &aitool.Result{CallID: callID, Status: "failed", Summary: summary, ErrorCategory: category, ErrorDetails: details}
+	return &aitool.Result{CallID: callID, Status: "failed", Summary: summary, ErrorCategory: category, ErrorDetails: details}, recoverable
 }
 
 func (s *ToolService) validateDynamicReferences(ctx context.Context, scope *ToolScope, d aitool.Definition, args json.RawMessage) (*aitool.Result, error) {

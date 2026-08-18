@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/yzxingtu2026/ainp/platform/framework/aiconversation"
 	"github.com/yzxingtu2026/ainp/platform/framework/aimodel"
 	"github.com/yzxingtu2026/ainp/platform/framework/aimodelruntime"
 	"github.com/yzxingtu2026/ainp/platform/modules/ai"
@@ -148,6 +149,64 @@ func TestOpenAIInputPairsFunctionCallWithOutput(t *testing.T) {
 	output, ok := gotInput[outIdx].(map[string]any)["output"].(string)
 	if !ok || output != `{"items":[]}` {
 		t.Fatalf("function_call_output.output must be a JSON string, got %#v", gotInput[outIdx])
+	}
+}
+
+func TestProviderWireReceivesProjectedRetryBusinessView(t *testing.T) {
+	canonical := []aiconversation.Message{
+		{Role: aimodelruntime.RoleAssistant, Content: []aimodelruntime.ContentPart{{Type: aimodelruntime.PartToolCall, ToolCallID: "call-b", ToolName: "demo_write", Arguments: json.RawMessage(`{"id":"b"}`)}}},
+		{Role: aimodelruntime.RoleTool, Content: []aimodelruntime.ContentPart{{Type: aimodelruntime.PartToolResult, ToolCallID: "call-b", Result: json.RawMessage(`{"call_id":"call-b","status":"failed","error_category":"deferred_for_confirmation"}`)}}},
+		{Role: aimodelruntime.RoleAssistant, Content: []aimodelruntime.ContentPart{{Type: aimodelruntime.PartToolCall, ToolCallID: "retry-b", RetryOfToolCallID: "call-b", ToolName: "demo_write", Arguments: json.RawMessage(`{"id":"b"}`)}}},
+		{Role: aimodelruntime.RoleTool, Content: []aimodelruntime.ContentPart{{Type: aimodelruntime.PartToolResult, ToolCallID: "retry-b", Result: json.RawMessage(`{"call_id":"retry-b","status":"completed"}`)}}},
+	}
+	projected := aiconversation.ProjectToolCallRetries(canonical)
+	messages := make([]aimodelruntime.Message, 0, len(projected))
+	for _, message := range projected {
+		messages = append(messages, aimodelruntime.Message{Role: message.Role, Content: message.Content})
+	}
+
+	for _, test := range []struct {
+		name, protocol, response string
+		invoke                   func(*http.Client, aimodelruntime.AdapterRequest) error
+	}{
+		{name: "openai", protocol: aimodel.ProtocolOpenAI, response: `{"id":"resp","status":"completed","output":[{"id":"msg","type":"message","content":[{"type":"output_text","text":"done"}]}],"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}`, invoke: func(client *http.Client, request aimodelruntime.AdapterRequest) error {
+			_, err := aimodelruntime.NewOpenAIAdapter(client).Generate(context.Background(), request)
+			return err
+		}},
+		{name: "anthropic", protocol: aimodel.ProtocolAnthropic, response: `{"id":"msg","stop_reason":"end_turn","content":[{"type":"text","text":"done"}],"usage":{"input_tokens":1,"output_tokens":1}}`, invoke: func(client *http.Client, request aimodelruntime.AdapterRequest) error {
+			_, err := aimodelruntime.NewAnthropicAdapter(client).Generate(context.Background(), request)
+			return err
+		}},
+		{name: "openai compatible", protocol: aimodel.ProtocolOpenAICompatible, response: `{"id":"chat","choices":[{"finish_reason":"stop","message":{"content":"done"}}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`, invoke: func(client *http.Client, request aimodelruntime.AdapterRequest) error {
+			_, err := aimodelruntime.NewOpenAICompatibleAdapter(client).Generate(context.Background(), request)
+			return err
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var payload []byte
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+				payload, _ = io.ReadAll(request.Body)
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = io.WriteString(w, test.response)
+			}))
+			defer server.Close()
+			request := fixtureAdapterRequest(server.URL, test.protocol)
+			request.Request.Messages = messages
+			if err := test.invoke(server.Client(), request); err != nil {
+				t.Fatal(err)
+			}
+			wire := string(payload)
+			if strings.Contains(wire, "retry_of_tool_call_id") || strings.Contains(wire, "retry-b") {
+				t.Fatalf("runtime lineage leaked to provider: %s", wire)
+			}
+			if strings.Count(wire, "call-b") < 2 || strings.Contains(wire, "deferred_for_confirmation") {
+				t.Fatalf("provider did not receive the normalized call/result pair: %s", wire)
+			}
+			callIndex, resultIndex := strings.Index(wire, "demo_write"), strings.LastIndex(wire, "call-b")
+			if callIndex < 0 || resultIndex < callIndex {
+				t.Fatalf("provider tool result precedes its call: %s", wire)
+			}
+		})
 	}
 }
 

@@ -636,6 +636,7 @@ func (s *ConversationService) Assemble(ctx context.Context, r aiconversation.Ass
 		}
 		out.SourceSequenceTo = record.Sequence
 	}
+	out.Messages = aiconversation.ProjectToolCallRetries(out.Messages)
 	out.Budget.EstimatedTokens = (out.Budget.UsedBytes + 3) / 4
 	if out.Budget.UsedBytes > r.MaxBytes || out.Budget.EstimatedTokens > r.MaxTokens {
 		out.Status = "compaction_required"
