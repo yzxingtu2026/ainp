@@ -166,13 +166,62 @@ type Alias struct {
 	HTTP     *HTTPMeta
 }
 
+// HTTPRoute projects an additional first-class HTTP path to one canonical Action.
+// It does not create another Action identity, permission, catalog item, or compatibility warning.
+type HTTPRoute struct {
+	ActionID string
+	HTTP     *HTTPMeta
+}
+
 type Registry struct {
 	items               map[string]Action
 	aliases             map[string]Alias
+	httpRoutes          []HTTPRoute
 	resolvers           map[string]ReferenceResolver
 	checker             *permission.Checker
 	auditor             audit.Recorder
 	idempotencyExecutor IdempotencyExecutor
+}
+
+func (r *Registry) RegisterHTTPRoute(route HTTPRoute) error {
+	if strings.TrimSpace(route.ActionID) == "" || route.HTTP == nil || !route.HTTP.IsEnabled() || strings.TrimSpace(route.HTTP.Method) == "" || strings.TrimSpace(route.HTTP.Path) == "" {
+		return fmt.Errorf("action HTTP route requires action, method and path")
+	}
+	if _, ok := r.items[route.ActionID]; !ok {
+		return fmt.Errorf("action HTTP route target not registered: %s", route.ActionID)
+	}
+	method, path := strings.ToUpper(strings.TrimSpace(route.HTTP.Method)), strings.TrimSpace(route.HTTP.Path)
+	for _, item := range r.items {
+		if item.Meta.HTTP != nil && item.Meta.HTTP.IsEnabled() && strings.ToUpper(item.Meta.HTTP.Method) == method && item.Meta.HTTP.Path == path {
+			return fmt.Errorf("action HTTP route conflicts with canonical route: %s %s", method, path)
+		}
+	}
+	for _, alias := range r.aliases {
+		if alias.HTTP != nil && alias.HTTP.IsEnabled() && strings.ToUpper(alias.HTTP.Method) == method && alias.HTTP.Path == path {
+			return fmt.Errorf("action HTTP route conflicts with alias route: %s %s", method, path)
+		}
+	}
+	for _, existing := range r.httpRoutes {
+		if strings.ToUpper(existing.HTTP.Method) == method && existing.HTTP.Path == path {
+			return fmt.Errorf("action HTTP route already registered: %s %s", method, path)
+		}
+	}
+	route.HTTP = &HTTPMeta{Method: method, Path: path, Enabled: route.HTTP.Enabled}
+	r.httpRoutes = append(r.httpRoutes, route)
+	return nil
+}
+
+func (r *Registry) HTTPRoutes() []HTTPRoute {
+	out := make([]HTTPRoute, 0, len(r.httpRoutes))
+	for _, route := range r.httpRoutes {
+		copy := route
+		if route.HTTP != nil {
+			httpMeta := *route.HTTP
+			copy.HTTP = &httpMeta
+		}
+		out = append(out, copy)
+	}
+	return out
 }
 
 // IdempotencyExecutor is the interface for idempotent execution.
@@ -213,6 +262,13 @@ func (r *Registry) RegisterAlias(alias Alias) error {
 		if strings.TrimSpace(alias.HTTP.Method) == "" || strings.TrimSpace(alias.HTTP.Path) == "" {
 			return fmt.Errorf("action alias %s: HTTP method and path are required", alias.ID)
 		}
+		method, path := strings.ToUpper(strings.TrimSpace(alias.HTTP.Method)), strings.TrimSpace(alias.HTTP.Path)
+		for _, route := range r.httpRoutes {
+			if strings.ToUpper(route.HTTP.Method) == method && route.HTTP.Path == path {
+				return fmt.Errorf("action alias HTTP route conflicts with projected route: %s %s", method, path)
+			}
+		}
+		alias.HTTP = &HTTPMeta{Method: method, Path: path, Enabled: alias.HTTP.Enabled}
 	}
 	r.aliases[alias.ID] = alias
 	return nil
@@ -286,6 +342,14 @@ func (r *Registry) Register(a Action) error {
 	}
 	if _, exists := r.aliases[a.ID]; exists {
 		return fmt.Errorf("action conflicts with registered alias: %s", a.ID)
+	}
+	if a.Meta.HTTP != nil && a.Meta.HTTP.IsEnabled() {
+		method, path := strings.ToUpper(strings.TrimSpace(a.Meta.HTTP.Method)), strings.TrimSpace(a.Meta.HTTP.Path)
+		for _, route := range r.httpRoutes {
+			if strings.ToUpper(route.HTTP.Method) == method && route.HTTP.Path == path {
+				return fmt.Errorf("action HTTP route conflicts with projected route: %s %s", method, path)
+			}
+		}
 	}
 	r.items[a.ID] = a
 	return nil

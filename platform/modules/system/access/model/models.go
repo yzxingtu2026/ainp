@@ -42,10 +42,15 @@ func (AuthIdentity) TableName() string { return "auth_identities" }
 
 type AuthSession struct {
 	ID                       string     `gorm:"primaryKey;size:64"`
-	TenantID                 string     `gorm:"size:64;not null;index:idx_auth_sessions_account"`
-	AccountID                string     `gorm:"size:64;not null;index:idx_auth_sessions_account"`
+	TenantID                 string     `gorm:"size:64;not null;index:idx_auth_sessions_principal"`
+	PrincipalKind            string     `gorm:"size:128;not null;index:idx_auth_sessions_principal"`
+	PrincipalID              string     `gorm:"size:255;not null;index:idx_auth_sessions_principal"`
+	AccountID                *string    `gorm:"size:64;index:idx_auth_sessions_account"`
 	Realm                    string     `gorm:"size:32;not null"`
 	Client                   string     `gorm:"size:64;not null"`
+	ClientSurface            string     `gorm:"size:128;not null"`
+	Audience                 string     `gorm:"size:255;not null"`
+	TokenFamilyID            string     `gorm:"size:64;not null;index"`
 	DeviceSummary            string     `gorm:"size:255"`
 	RefreshTokenHash         string     `gorm:"size:64;not null;uniqueIndex"`
 	PreviousRefreshTokenHash string     `gorm:"size:64;index"`
@@ -58,6 +63,15 @@ type AuthSession struct {
 }
 
 func (AuthSession) TableName() string { return "auth_sessions" }
+
+type AuthRefreshTokenUse struct {
+	TokenHash     string    `gorm:"primaryKey;size:64"`
+	SessionID     string    `gorm:"size:64;not null;index"`
+	TokenFamilyID string    `gorm:"size:64;not null;index"`
+	UsedAt        time.Time `gorm:"not null"`
+}
+
+func (AuthRefreshTokenUse) TableName() string { return "auth_refresh_token_uses" }
 
 type AuthChallenge struct {
 	ID          string     `gorm:"primaryKey;size:64"`

@@ -8,6 +8,8 @@ Agent 只读要点：`.agent/rules/action-metadata.md`。本文档为 Phase 1 �
 
 注册期验证引用的 Kind/Surface；执行期使用可信 `AuthContext.Principal` 与 `ClientSurface` 复核。`authenticated` 和 `permission` 均不得跨 Kind/Surface；permission 只使用对应 Principal Provider 返回的实时权限。
 
+同一 canonical Action 需要投影到多个 Client Surface path 时使用 `RegisterActionHTTPRoute`。HTTP Route 不创建第二个 Action ID、permission、目录项或兼容告警；`ActionAlias` 只保留给真正的历史兼容入口，不得用于首等多 Surface 路由。
+
 ## 目标
 
 - Capability、Action、Menu 职责分离，后端代码定义导航与权限。

@@ -68,7 +68,13 @@ type SessionService struct {
 	preAuth    *preAuthStore
 	tokens     *auth.TokenService
 	auth       *AuthService
+	principals *auth.PrincipalRegistry
+	surfaces   *auth.ClientSurfaceRegistry
 	refreshTTL time.Duration
+}
+
+func (s *SessionService) Configure(principals *auth.PrincipalRegistry, surfaces *auth.ClientSurfaceRegistry) {
+	s.principals, s.surfaces = principals, surfaces
 }
 
 func NewSessionService(db *gorm.DB, tokens *auth.TokenService, authService *AuthService, configuredTTL ...time.Duration) *SessionService {
@@ -76,7 +82,13 @@ func NewSessionService(db *gorm.DB, tokens *auth.TokenService, authService *Auth
 	if len(configuredTTL) > 0 && configuredTTL[0] > 0 {
 		ttl = configuredTTL[0]
 	}
-	return &SessionService{preAuth: newPreAuthStore(db), tokens: tokens, auth: authService, refreshTTL: ttl}
+	principals := auth.NewPrincipalRegistry()
+	if authService != nil {
+		_ = principals.Register(authService)
+	}
+	surfaces := auth.NewClientSurfaceRegistry()
+	_ = surfaces.Register(auth.BuiltinTenantConsoleSurface())
+	return &SessionService{preAuth: newPreAuthStore(db), tokens: tokens, auth: authService, principals: principals, surfaces: surfaces, refreshTTL: ttl}
 }
 
 type SessionTokens struct {
@@ -111,21 +123,50 @@ func refreshSessionID(token string) string {
 }
 
 func (s *SessionService) Create(ctx context.Context, account *model.TenantAccount, client, device string) (*SessionTokens, error) {
+	if account == nil {
+		return nil, auth.ErrAuthorizationInvalid
+	}
+	snapshot := &auth.AuthorizationSnapshot{TenantID: account.TenantID, Principal: auth.PrincipalRef{Kind: auth.PrincipalKindAccount, ID: account.ID}, PrincipalID: account.ID, AuthVersion: account.AuthVersion}
+	return s.CreatePrincipal(ctx, snapshot, auth.BuiltinTenantConsoleSurface(), client, device)
+}
+
+func (s *SessionService) CreatePrincipal(ctx context.Context, snapshot *auth.AuthorizationSnapshot, surface auth.ClientSurface, client, device string) (*SessionTokens, error) {
+	if snapshot == nil || snapshot.TenantID == "" || !snapshot.Principal.Valid() || snapshot.AuthVersion == 0 || surface.ID == "" || !surface.AllowsKind(snapshot.Principal.Kind) {
+		return nil, auth.ErrAuthorizationInvalid
+	}
+	if s.principals == nil || s.surfaces == nil {
+		return nil, auth.ErrAuthorizationInvalid
+	}
+	registeredSurface, ok := s.surfaces.Get(surface.ID)
+	if !ok || registeredSurface.Audience != surface.Audience || !registeredSurface.AllowsKind(snapshot.Principal.Kind) {
+		return nil, auth.ErrAuthorizationInvalid
+	}
+	verified, err := s.principals.LoadAuthorization(ctx, auth.AuthorizationRequest{TenantID: snapshot.TenantID, Principal: snapshot.Principal, PrincipalID: snapshot.Principal.ID, Realm: auth.RealmTenant, AuthVersion: snapshot.AuthVersion, Audience: surface.Audience, ClientSurface: surface.ID})
+	if err != nil || verified == nil || verified.TenantID != snapshot.TenantID || verified.Principal != snapshot.Principal || verified.AuthVersion != snapshot.AuthVersion {
+		return nil, auth.ErrAuthorizationInvalid
+	}
+	snapshot = verified
 	now := time.Now().UTC()
 	sessionID := uuid.NewString()
 	refresh, refreshHash, err := newRefreshToken(sessionID)
 	if err != nil {
 		return nil, err
 	}
+	var accountID *string
+	if snapshot.Principal.Kind == auth.PrincipalKindAccount {
+		value := snapshot.Principal.ID
+		accountID = &value
+	}
 	row := model.AuthSession{
-		ID: sessionID, TenantID: account.TenantID, AccountID: account.ID, Realm: string(auth.RealmTenant),
-		Client: normalizeClient(client), DeviceSummary: strings.TrimSpace(device), RefreshTokenHash: refreshHash,
-		AuthVersion: account.AuthVersion, ExpiresAt: now.Add(s.refreshTTL), LastSeenAt: now,
+		ID: sessionID, TenantID: snapshot.TenantID, PrincipalKind: string(snapshot.Principal.Kind), PrincipalID: snapshot.Principal.ID, AccountID: accountID, Realm: string(auth.RealmTenant),
+		Client: normalizeClient(client), ClientSurface: surface.ID, Audience: surface.Audience, TokenFamilyID: sessionID,
+		DeviceSummary: strings.TrimSpace(device), RefreshTokenHash: refreshHash,
+		AuthVersion: snapshot.AuthVersion, ExpiresAt: now.Add(s.refreshTTL), LastSeenAt: now,
 	}
 	if err := s.preAuth.createSession(ctx, &row); err != nil {
 		return nil, err
 	}
-	access, exp, err := s.tokens.Issue(account.TenantID, account.ID, sessionID, account.AuthVersion)
+	access, exp, err := s.tokens.IssueFor(snapshot.TenantID, snapshot.Principal, surface.ID, surface.Audience, sessionID, snapshot.AuthVersion)
 	if err != nil {
 		return nil, err
 	}
@@ -153,12 +194,19 @@ func (s *SessionService) Refresh(ctx context.Context, token string) (*SessionTok
 	replayed := false
 	err := s.preAuth.rotateSession(ctx, sessionID, func(tx *gorm.DB, session *model.AuthSession) error {
 		now := time.Now().UTC()
+		if expected := auth.MustFromContext(ctx).ClientSurface; expected != "" && expected != session.ClientSurface {
+			return auth.ErrAuthorizationInvalid
+		}
 		if session.RevokedAt != nil || !session.ExpiresAt.After(now) {
 			return auth.ErrAuthorizationInvalid
 		}
-		if session.PreviousRefreshTokenHash == providedHash {
+		var usedCount int64
+		if err := tx.Model(&model.AuthRefreshTokenUse{}).Where("token_hash = ? AND token_family_id = ?", providedHash, session.TokenFamilyID).Count(&usedCount).Error; err != nil {
+			return err
+		}
+		if usedCount == 1 || session.PreviousRefreshTokenHash == providedHash {
 			session.RevokedAt = &now
-			if err := tx.Model(session).Update("revoked_at", now).Error; err != nil {
+			if err := tx.Model(&model.AuthSession{}).Where("token_family_id = ? AND revoked_at IS NULL", session.TokenFamilyID).Updates(map[string]any{"revoked_at": now, "updated_at": now}).Error; err != nil {
 				return err
 			}
 			replayed = true
@@ -167,15 +215,26 @@ func (s *SessionService) Refresh(ctx context.Context, token string) (*SessionTok
 		if session.RefreshTokenHash != providedHash {
 			return auth.ErrAuthorizationInvalid
 		}
-		account, err := s.loadActiveAccount(ctx, tx, session.TenantID, session.AccountID)
-		if err != nil || account.AuthVersion != session.AuthVersion {
+		if err := tx.Create(&model.AuthRefreshTokenUse{TokenHash: providedHash, SessionID: session.ID, TokenFamilyID: session.TokenFamilyID, UsedAt: now}).Error; err != nil {
+			return err
+		}
+		principal := auth.PrincipalRef{Kind: auth.PrincipalKind(session.PrincipalKind), ID: session.PrincipalID}
+		if !principal.Valid() || s.principals == nil || s.surfaces == nil {
+			return auth.ErrAuthorizationInvalid
+		}
+		surface, ok := s.surfaces.Get(session.ClientSurface)
+		if !ok || surface.Audience != session.Audience || !surface.AllowsKind(principal.Kind) {
+			return auth.ErrAuthorizationInvalid
+		}
+		snapshot, err := s.principals.LoadAuthorization(ctx, auth.AuthorizationRequest{TenantID: session.TenantID, Principal: principal, PrincipalID: principal.ID, SessionID: session.ID, Realm: auth.Realm(session.Realm), AuthVersion: session.AuthVersion, Audience: session.Audience, ClientSurface: session.ClientSurface})
+		if err != nil || snapshot == nil || snapshot.AuthVersion != session.AuthVersion {
 			return auth.ErrAuthorizationInvalid
 		}
 		refresh, refreshHash, err := newRefreshToken(session.ID)
 		if err != nil {
 			return err
 		}
-		access, exp, err := s.tokens.Issue(account.TenantID, account.ID, session.ID, account.AuthVersion)
+		access, exp, err := s.tokens.IssueFor(session.TenantID, principal, session.ClientSurface, session.Audience, session.ID, session.AuthVersion)
 		if err != nil {
 			return err
 		}
@@ -201,22 +260,4 @@ func (s *SessionService) Refresh(ctx context.Context, token string) (*SessionTok
 		return nil, errs.NewKey(errs.CodeUnauthorized, "auth.session_invalid", "invalid session")
 	}
 	return output, nil
-}
-
-func (s *SessionService) loadActiveAccount(ctx context.Context, db *gorm.DB, tenantID, accountID string) (*model.TenantAccount, error) {
-	account, err := s.preAuth.findAccountByID(ctx, db, tenantID, accountID)
-	if err != nil || account.Status != status.ActivationEnabled {
-		if err == nil {
-			err = auth.ErrAuthorizationInvalid
-		}
-		return nil, err
-	}
-	tenantRow, err := s.auth.FindTenant(ctx, tenantID)
-	if err != nil || tenantRow.Status != status.ActivationEnabled {
-		if err == nil {
-			err = auth.ErrAuthorizationInvalid
-		}
-		return nil, err
-	}
-	return account, nil
 }

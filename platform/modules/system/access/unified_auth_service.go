@@ -42,12 +42,18 @@ type LegacyLoginRequest struct {
 }
 
 type UnifiedAuthService struct {
-	db       *gorm.DB
-	registry *authentication.Registry
-	auth     *AuthService
-	sessions *SessionService
-	limiter  authentication.RateLimiter
-	preAuth  *preAuthStore
+	db         *gorm.DB
+	registry   *authentication.Registry
+	auth       *AuthService
+	sessions   *SessionService
+	limiter    authentication.RateLimiter
+	preAuth    *preAuthStore
+	principals *auth.PrincipalRegistry
+	surfaces   *auth.ClientSurfaceRegistry
+}
+
+func (s *UnifiedAuthService) Configure(principals *auth.PrincipalRegistry, surfaces *auth.ClientSurfaceRegistry) {
+	s.principals, s.surfaces = principals, surfaces
 }
 
 func NewUnifiedAuthService(db *gorm.DB, registry *authentication.Registry, authService *AuthService, sessions *SessionService, limiter authentication.RateLimiter) *UnifiedAuthService {
@@ -73,7 +79,21 @@ func authenticationRateKey(method, client string, payload json.RawMessage) strin
 	return method + ":" + normalizeClient(client) + ":" + hex.EncodeToString(sum[:8])
 }
 
-func (s *UnifiedAuthService) Methods() any { return map[string]any{"methods": s.registry.Methods()} }
+func (s *UnifiedAuthService) Methods(ctx context.Context) any {
+	methods := s.registry.Methods()
+	if surfaceID := auth.MustFromContext(ctx).ClientSurface; surfaceID != "" && s.surfaces != nil {
+		if surface, ok := s.surfaces.Get(surfaceID); ok {
+			filtered := methods[:0]
+			for _, method := range methods {
+				if surface.AllowsMethod(method.Method) {
+					filtered = append(filtered, method)
+				}
+			}
+			methods = filtered
+		}
+	}
+	return map[string]any{"methods": methods}
+}
 
 func (s *UnifiedAuthService) Begin(ctx context.Context, req ChallengeRequest) (any, error) {
 	if err := s.allow(ctx, "challenge:"+authenticationRateKey(req.Method, req.Client, req.Payload)); err != nil {
@@ -81,6 +101,10 @@ func (s *UnifiedAuthService) Begin(ctx context.Context, req ChallengeRequest) (a
 	}
 	provider, ok := s.registry.Get(req.Method)
 	if !ok {
+		return nil, errs.NewKey(errs.CodeNotFound, "auth.method_unavailable", "authentication method unavailable")
+	}
+	surface, err := s.resolveSurfaceForContext(ctx, req.Client)
+	if err != nil || !surface.AllowsMethod(req.Method) {
 		return nil, errs.NewKey(errs.CodeNotFound, "auth.method_unavailable", "authentication method unavailable")
 	}
 	if !provider.Capabilities().Challenge {
@@ -97,30 +121,78 @@ func (s *UnifiedAuthService) Authenticate(ctx context.Context, req AuthenticateR
 	if !ok {
 		return nil, errs.NewKey(errs.CodeNotFound, "auth.method_unavailable", "authentication method unavailable")
 	}
+	surface, err := s.resolveSurfaceForContext(ctx, req.Client)
+	if err != nil || !surface.AllowsMethod(req.Method) {
+		return nil, errs.NewKey(errs.CodeNotFound, "auth.method_unavailable", "authentication method unavailable")
+	}
 	verified, err := provider.Complete(ctx, authentication.CompleteRequest{ChallengeID: req.ChallengeID, Client: req.Client, Payload: req.Credentials})
 	if err != nil {
 		return nil, err
 	}
-	account, err := s.resolveIdentity(ctx, verified)
+	snapshot, profile, err := s.resolvePrincipal(ctx, verified, surface)
 	if err != nil {
 		return nil, err
 	}
-	profile, err := s.auth.BuildProfile(ctx, account)
-	if err != nil {
-		return nil, err
-	}
-	tokens, err := s.sessions.Create(ctx, account, req.Client, req.DeviceSummary)
+	tokens, err := s.sessions.CreatePrincipal(ctx, snapshot, surface, req.Client, req.DeviceSummary)
 	if err != nil {
 		return nil, errs.Wrap(errs.CodeInternal, "create session failed", err)
 	}
 	if ac := auth.MustFromContext(ctx); ac != nil {
-		ac.TenantID, ac.PrincipalID, ac.SessionID, ac.Realm = account.TenantID, account.ID, tokens.SessionID, auth.RealmTenant
-		ac.Roles, ac.Permissions = append([]string(nil), profile.Roles...), append([]string(nil), profile.Permissions...)
+		ac.TenantID, ac.PrincipalID, ac.SessionID, ac.Realm = snapshot.TenantID, snapshot.Principal.ID, tokens.SessionID, auth.RealmTenant
+		ac.Principal, ac.AuthVersion, ac.Audience, ac.ClientSurface = snapshot.Principal, snapshot.AuthVersion, surface.Audience, surface.ID
+		ac.Roles, ac.Permissions = append([]string(nil), snapshot.Roles...), append([]string(nil), snapshot.Permissions...)
 	}
 	return map[string]any{
 		"access_token": tokens.AccessToken, "refresh_token": tokens.RefreshToken, "token_type": tokens.TokenType,
-		"expires_in": tokens.ExpiresIn, "expires_at": tokens.ExpiresAt.UTC().Format(time.RFC3339), "session_id": tokens.SessionID, "user": profile,
+		"expires_in": tokens.ExpiresIn, "expires_at": tokens.ExpiresAt.UTC().Format(time.RFC3339), "session_id": tokens.SessionID,
+		"principal": snapshot.Principal, "client_surface": surface.ID, "user": profile,
 	}, nil
+}
+
+func (s *UnifiedAuthService) resolveSurfaceForContext(ctx context.Context, client string) (auth.ClientSurface, error) {
+	if s.surfaces == nil {
+		return auth.ClientSurface{}, auth.ErrAuthorizationInvalid
+	}
+	id := strings.TrimSpace(client)
+	if id == "" || id == "web" {
+		id = auth.TenantConsoleSurface
+	}
+	surface, ok := s.surfaces.Get(id)
+	if !ok {
+		return auth.ClientSurface{}, auth.ErrAuthorizationInvalid
+	}
+	if pathSurface := auth.MustFromContext(ctx).ClientSurface; pathSurface != "" && pathSurface != surface.ID {
+		return auth.ClientSurface{}, auth.ErrAuthorizationInvalid
+	}
+	return surface, nil
+}
+
+func (s *UnifiedAuthService) resolvePrincipal(ctx context.Context, identity *authentication.VerifiedIdentity, surface auth.ClientSurface) (*auth.AuthorizationSnapshot, any, error) {
+	if identity == nil || identity.Provider == "" || identity.Subject == "" || identity.TenantID == "" {
+		return nil, nil, errs.NewKey(errs.CodeInvalidCredentials, "auth.invalid_credentials", "invalid credentials")
+	}
+	if identity.Principal.Valid() {
+		if !surface.AllowsKind(identity.Principal.Kind) || identity.AuthVersion == 0 || s.principals == nil {
+			return nil, nil, errs.NewKey(errs.CodeInvalidCredentials, "auth.invalid_credentials", "invalid credentials")
+		}
+		snapshot, err := s.principals.LoadAuthorization(ctx, auth.AuthorizationRequest{TenantID: identity.TenantID, Principal: identity.Principal, PrincipalID: identity.Principal.ID, Realm: auth.RealmTenant, AuthVersion: identity.AuthVersion, Audience: surface.Audience, ClientSurface: surface.ID})
+		if err != nil || snapshot == nil {
+			return nil, nil, errs.NewKey(errs.CodeInvalidCredentials, "auth.invalid_credentials", "invalid credentials")
+		}
+		return snapshot, map[string]any{"principal": snapshot.Principal}, nil
+	}
+	account, err := s.resolveIdentity(ctx, identity)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !surface.AllowsKind(auth.PrincipalKindAccount) {
+		return nil, nil, errs.NewKey(errs.CodeInvalidCredentials, "auth.invalid_credentials", "invalid credentials")
+	}
+	profile, err := s.auth.BuildProfile(ctx, account)
+	if err != nil {
+		return nil, nil, err
+	}
+	return &auth.AuthorizationSnapshot{TenantID: account.TenantID, Principal: auth.PrincipalRef{Kind: auth.PrincipalKindAccount, ID: account.ID}, PrincipalID: account.ID, OrgID: account.OrgID, DeptID: account.DeptID, Roles: profile.Roles, Permissions: profile.Permissions, AuthVersion: account.AuthVersion, Audience: surface.Audience, ClientSurface: surface.ID}, profile, nil
 }
 
 func (s *UnifiedAuthService) LegacyLogin(ctx context.Context, req LegacyLoginRequest) (any, error) {
@@ -181,15 +253,28 @@ type SessionView struct {
 	IsCurrent     bool      `json:"is_current"`
 }
 
+func sessionOwner(ac *auth.Context) (auth.PrincipalRef, string) {
+	principal := ac.Principal
+	if !principal.Valid() {
+		principal = auth.PrincipalRef{Kind: auth.PrincipalKindAccount, ID: ac.PrincipalID}
+	}
+	surface := ac.ClientSurface
+	if surface == "" && principal.Kind == auth.PrincipalKindAccount {
+		surface = auth.TenantConsoleSurface
+	}
+	return principal, surface
+}
+
 func (s *UnifiedAuthService) ListSessions(ctx context.Context) (any, error) {
 	ac := auth.MustFromContext(ctx)
+	principal, surface := sessionOwner(ac)
 	tdb, err := tenant.TenantDB(ctx, s.db)
 	if err != nil {
 		return nil, err
 	}
 	rows, err := tenant.TenantRaw[model.AuthSession](tdb, `SELECT * FROM auth_sessions
-WHERE tenant_id = ? AND account_id = ? AND revoked_at IS NULL AND expires_at > ?
-ORDER BY last_seen_at DESC`, ac.PrincipalID, time.Now().UTC())
+WHERE tenant_id = ? AND principal_kind = ? AND principal_id = ? AND client_surface = ? AND revoked_at IS NULL AND expires_at > ?
+ORDER BY last_seen_at DESC`, principal.Kind, principal.ID, surface, time.Now().UTC())
 	if err != nil {
 		return nil, err
 	}
@@ -202,16 +287,17 @@ ORDER BY last_seen_at DESC`, ac.PrincipalID, time.Now().UTC())
 
 func (s *UnifiedAuthService) RevokeSession(ctx context.Context, sessionID string) (any, error) {
 	ac := auth.MustFromContext(ctx)
+	principal, surface := sessionOwner(ac)
 	tdb, err := tenant.TenantDB(ctx, s.db)
 	if err != nil {
 		return nil, err
 	}
 	now := time.Now().UTC()
 	rows, err := tenant.TenantRaw[struct{ ID string }](tdb, `WITH scoped AS (
-  SELECT id FROM auth_sessions WHERE tenant_id = ? AND id = ? AND account_id = ? AND revoked_at IS NULL FOR UPDATE
+  SELECT id FROM auth_sessions WHERE tenant_id = ? AND id = ? AND principal_kind = ? AND principal_id = ? AND client_surface = ? AND revoked_at IS NULL FOR UPDATE
 )
 UPDATE auth_sessions AS s SET revoked_at = ?, updated_at = ?
-FROM scoped WHERE s.id = scoped.id RETURNING s.id`, sessionID, ac.PrincipalID, now, now)
+FROM scoped WHERE s.id = scoped.id RETURNING s.id`, sessionID, principal.Kind, principal.ID, surface, now, now)
 	if err != nil {
 		return nil, err
 	}
@@ -231,16 +317,17 @@ func (s *UnifiedAuthService) RevokeCurrent(ctx context.Context) (any, error) {
 
 func (s *UnifiedAuthService) RevokeAll(ctx context.Context) (any, error) {
 	ac := auth.MustFromContext(ctx)
+	principal, surface := sessionOwner(ac)
 	tdb, err := tenant.TenantDB(ctx, s.db)
 	if err != nil {
 		return nil, err
 	}
 	now := time.Now().UTC()
 	rows, err := tenant.TenantRaw[struct{ ID string }](tdb, `WITH scoped AS (
-  SELECT id FROM auth_sessions WHERE tenant_id = ? AND account_id = ? AND revoked_at IS NULL FOR UPDATE
+  SELECT id FROM auth_sessions WHERE tenant_id = ? AND principal_kind = ? AND principal_id = ? AND client_surface = ? AND revoked_at IS NULL FOR UPDATE
 )
 UPDATE auth_sessions AS s SET revoked_at = ?, updated_at = ?
-FROM scoped WHERE s.id = scoped.id RETURNING s.id`, ac.PrincipalID, now, now)
+FROM scoped WHERE s.id = scoped.id RETURNING s.id`, principal.Kind, principal.ID, surface, now, now)
 	if err != nil {
 		return nil, err
 	}

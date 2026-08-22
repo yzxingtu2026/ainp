@@ -17,14 +17,15 @@ Agent 只读要点：`.agent/rules/authentication-and-session.md`。
 
 ```text
 Client → Authentication API → Authenticator Registry → Identity Resolver
-       → TenantAccount / Account Policy → Session Service → Token Service
-       → AuthorizationProvider → AuthContext / RBAC
+       → Principal Provider → Principal Snapshot → Session Service → Token Service
+       → Principal Provider recheck → AuthContext / live authorization
 ```
 
 - Authenticator 只验证凭据并返回 `VerifiedIdentity`，禁止签发 Token、加载权限或写 AuthContext。
-- Identity 由 `tenant_id + provider + subject` 唯一标识并通过 `account_id` 映射到一个 `TenantAccount`；Body/Query `tenant_id` 不是可信来源。
+- Authenticator 返回凭据身份；自定义主体必须同时返回 `PrincipalRef` 与候选 `AuthVersion`，随后由对应 Principal Provider 实时复核。Body/Query `tenant_id` 不是独立可信来源。
+- 内置 password identity 继续按 `tenant_id + provider + subject` 映射 `TenantAccount`；该映射不适用于下游主体。
 - `TenantAccount` 是租户后台的凭据、角色、权限和审计主体。当前保持一账号一租户；普通业务 `User/users` 不属于本认证域。
-- Session 管理刷新与撤销；AuthorizationProvider 仍实时加载用户、角色和权限。
+- Session Service 在创建和刷新前都重新调用 Principal Provider，只有 Session Service 可以签发 AINP Token。
 
 ## 扩展认证器
 
@@ -47,14 +48,15 @@ Provider secret 使用启动安全配置或 Secret 管理，不进入普通租�
 
 ## 会话协议
 
-- access token 是短期 JWT，包含 `tenant_id + user_id + realm + auth_version + session_id`，不包含 roles/permissions。
-- refresh token 是高熵 opaque token，数据库只保存 SHA-256 摘要。
-- refresh 在事务与行锁内轮换；旧 token 重放撤销该 session token family。
-- 会话表使用 `account_id` 关联 `TenantAccount`；会话操作只能作用于 AuthContext 当前 tenant/user。`AuthContext.UserID` 和 JWT `user_id` 是兼容协议字段，值为当前 `TenantAccount.ID`。
-- AuthorizationProvider 校验 session 未撤销、未过期且 auth_version 一致；用户/租户停用或授权版本变化后不得刷新。
+- access token 是短期 JWT，包含 tenant、`sub`、Principal Kind、realm、auth version、session、audience 和 Client Surface，不包含 roles/permissions。
+- refresh token 是高熵 opaque token，数据库只保存 SHA-256 摘要；已使用摘要进入 `auth_refresh_token_uses`，不保存 Token 原文。
+- refresh 在事务与行锁内轮换；任意已使用 token（不只上一枚）重放都会撤销该 session token family。
+- 会话唯一主体事实是 `tenant_id + principal_kind + principal_id`，并固定 `client_surface + audience + token_family_id`。仅 `ainp.account` 兼容保留可空 `account_id` 外键；其他 Kind 必须为 NULL。
+- 列表和撤销同时限定当前 tenant、Principal Ref 和 Client Surface，不能跨 Kind、跨主体或跨访问面操作。
+- refresh 在行锁内按 Session 固定 Kind/Surface/Audience 调用 Principal Provider；停用、版本变化、Provider 缺失或注册漂移均拒绝刷新。
 - Web access token 延续现有 local storage；refresh token 仅放 tab 级 session storage。高安全部署可替换为 HttpOnly Secure SameSite Cookie/BFF。
 
-新增 `sid` 后旧 JWT 不兼容，升级需要重新登录。会话基础迁移见 `platform/migrations/0012_authentication_sessions.sql`；账号领域原位重命名见 `0054_tenant_accounts.sql`，该迁移保留既有 identity、session、refresh family 和授权版本。
+会话基础迁移见 `0012_authentication_sessions.sql`，账号领域原位重命名见 `0054_tenant_accounts.sql`。`0058_principal_sessions.sql` 原地回填旧 Account Session 的 Kind、Surface、Audience 和 family，旧 Account access/refresh 继续兼容，无需因本迁移重新登录；新主体不得写入 `account_id`。升级前已经消费且早于 `previous_refresh_token_hash` 的历史 Token 没有可恢复摘要；升级后的每次轮换开始记录完整使用历史。
 
 MCP 使用独立的 OAuth Grant、Token family 和 `ainp:mcp` audience，不复用网页 Session Token。其 Refresh 重放检测沿用本节原则，但撤销 MCP Grant 不影响网页会话，详见 `mcp-oauth.md`。
 
@@ -71,6 +73,8 @@ MCP 使用独立的 OAuth Grant、Token family 和 `ainp:mcp` audience，不复�
 | `POST /api/v1/system/auth/sessions/revoke` | authenticated | 撤销自己的指定会话 |
 | `POST /api/v1/system/auth/sessions/revoke-all` | authenticated | 撤销自己的全部会话 |
 | `POST /api/v1/system/profile/password/update` | authenticated | 校验当前密码后修改本人密码，并使全部旧会话失效 |
+
+每个下游 Client Surface 还会在其 `PathPrefix + /auth/...` 自动投影 methods、challenge、authenticate、refresh、logout 和 session 路由。公共认证请求的 `client` 必须等于请求路径解析出的 Surface；refresh token 也只能从原 Surface 路径轮换。
 
 ## Challenge、限流与审计
 
@@ -90,7 +94,8 @@ Challenge 只保存摘要，必须具备短 TTL、单次消费、失败次数上
 - [ ] Identity 受可信 tenant 约束并 fail-closed
 - [ ] refresh 只存摘要、事务轮换、重放撤销
 - [ ] Token 权限仍由 AuthorizationProvider 实时加载
-- [ ] Identity / Session 仅以 `account_id` 关联 `tenant_accounts`，会话操作强制当前 tenant/user scope
+- [ ] Session 以 Principal Ref + Surface 为事实；仅 Account 兼容关联 `account_id`
+- [ ] Session Service 签发前再次调用 Provider，refresh 固定原 Kind/Surface/Audience
 - [ ] methods 只暴露启用方法和非敏感元数据
 - [ ] challenge 有 TTL、单次消费和次数上限
 - [ ] 敏感凭据未进入日志、审计、响应或普通设置

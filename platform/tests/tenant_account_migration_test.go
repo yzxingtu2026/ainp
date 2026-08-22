@@ -111,6 +111,13 @@ func TestTenantAccountMigrationPostgres(t *testing.T) {
 	if err = db.Exec(`INSERT INTO tenant_account_roles(id,tenant_id,account_id,role_id) VALUES ('cross','tenant-a','account-b','role-a')`).Error; err == nil || !strings.Contains(err.Error(), "fk_tenant_account_roles_account_tenant") {
 		t.Fatalf("cross-tenant account role failed for wrong reason: %v", err)
 	}
+	principalSessionMigration, err := os.ReadFile("../migrations/0058_principal_sessions.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = db.Exec(string(principalSessionMigration)).Error; err != nil {
+		t.Fatal(err)
+	}
 
 	if err = system.AutoMigrate(db); err != nil {
 		t.Fatal(err)

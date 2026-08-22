@@ -79,6 +79,35 @@ func TestRegistryAccessModes(t *testing.T) {
 	}
 }
 
+func TestActionHTTPRouteProjectsCanonicalActionWithoutAlias(t *testing.T) {
+	r := action.NewRegistry(nil, nil)
+	if err := r.Register(action.Action{ID: "demo.route", Handler: func(context.Context, json.RawMessage) (any, error) { return nil, nil }, Meta: action.Metadata{Capability: "demo", Access: action.AccessPublic, HTTP: &action.HTTPMeta{Method: "GET", Path: "/canonical"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.RegisterHTTPRoute(action.HTTPRoute{ActionID: "demo.route", HTTP: &action.HTTPMeta{Method: "GET", Path: "/surface/route"}}); err != nil {
+		t.Fatal(err)
+	}
+	if len(r.HTTPRoutes()) != 1 || len(r.HTTPAliases()) != 0 {
+		t.Fatalf("route projection changed action identity: routes=%#v aliases=%#v", r.HTTPRoutes(), r.HTTPAliases())
+	}
+	if err := r.RegisterHTTPRoute(action.HTTPRoute{ActionID: "demo.route", HTTP: &action.HTTPMeta{Method: "GET", Path: "/surface/route"}}); err == nil {
+		t.Fatal("duplicate projected route must fail")
+	}
+	if err := r.RegisterHTTPRoute(action.HTTPRoute{ActionID: "demo.route", HTTP: &action.HTTPMeta{Method: "GET", Path: "/canonical"}}); err == nil {
+		t.Fatal("projected route must not conflict with canonical route")
+	}
+	if err := r.RegisterHTTPRoute(action.HTTPRoute{ActionID: "missing", HTTP: &action.HTTPMeta{Method: "GET", Path: "/missing"}}); err == nil {
+		t.Fatal("unknown action route must fail")
+	}
+	handler := func(context.Context, json.RawMessage) (any, error) { return nil, nil }
+	if err := r.Register(action.Action{ID: "demo.conflict", Handler: handler, Meta: action.Metadata{Capability: "demo", HTTP: &action.HTTPMeta{Method: "GET", Path: "/surface/route"}}}); err == nil {
+		t.Fatal("canonical route registered after a projected route must fail")
+	}
+	if err := r.RegisterAlias(action.Alias{ID: "demo.alias", TargetID: "demo.route", HTTP: &action.HTTPMeta{Method: "GET", Path: "/surface/route"}}); err == nil {
+		t.Fatal("alias route registered after a projected route must fail")
+	}
+}
+
 func TestRegistryAliasInvokesCanonicalWithoutDiscoveryProjection(t *testing.T) {
 	r := action.NewRegistry(nil, nil)
 	called := 0

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 )
 
 type Capabilities struct {
@@ -36,6 +38,8 @@ type VerifiedIdentity struct {
 	Subject              string
 	NormalizedIdentifier string
 	TenantID             string
+	Principal            auth.PrincipalRef
+	AuthVersion          uint64
 }
 
 type Authenticator interface {

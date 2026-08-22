@@ -3,6 +3,7 @@ package catalog
 import (
 	"context"
 
+	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/authentication"
 )
 
@@ -19,5 +20,5 @@ func (exampleAuthenticator) Begin(context.Context, authentication.BeginRequest) 
 }
 
 func (exampleAuthenticator) Complete(context.Context, authentication.CompleteRequest) (*authentication.VerifiedIdentity, error) {
-	return &authentication.VerifiedIdentity{Provider: "example-sso", Subject: "customer-1", TenantID: "example-tenant"}, nil
+	return &authentication.VerifiedIdentity{Provider: "example-sso", Subject: "customer-1", TenantID: "example-tenant", Principal: auth.PrincipalRef{Kind: CustomerKind, ID: "customer-1"}, AuthVersion: 1}, nil
 }

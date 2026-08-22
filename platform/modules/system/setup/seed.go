@@ -42,6 +42,7 @@ func AutoMigrate(db *gorm.DB) error {
 		&model.TenantAccount{},
 		&model.AuthIdentity{},
 		&model.AuthSession{},
+		&model.AuthRefreshTokenUse{},
 		&model.AuthChallenge{},
 		&model.Role{},
 		&model.RolePermission{},

@@ -144,6 +144,18 @@ type AuthOptions struct {
 // Auth 解析 Authorization：正式 JWT 优先；dev: 桩仅在开关开启时可用。
 func Auth(opts AuthOptions) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		ac := auth.MustFromContext(c.Request.Context())
+		var surface auth.ClientSurface
+		surfaceOK := false
+		if opts.ClientSurfaces != nil {
+			surface, surfaceOK = opts.ClientSurfaces.ResolvePath(c.Request.URL.Path)
+		} else {
+			surface, surfaceOK = auth.BuiltinTenantConsoleSurface(), true
+		}
+		if surfaceOK {
+			ac.Audience, ac.ClientSurface = surface.Audience, surface.ID
+			c.Request = c.Request.WithContext(auth.WithContext(c.Request.Context(), ac))
+		}
 		header := c.GetHeader("Authorization")
 		if header == "" || !strings.HasPrefix(header, "Bearer ") {
 			c.Next()
@@ -155,18 +167,10 @@ func Auth(opts AuthOptions) gin.HandlerFunc {
 			return
 		}
 
-		ac := auth.MustFromContext(c.Request.Context())
-		var surface auth.ClientSurface
-		if opts.ClientSurfaces != nil {
-			var ok bool
-			surface, ok = opts.ClientSurfaces.ResolvePath(c.Request.URL.Path)
-			if !ok {
-				response.Fail(c, errs.NewKey(errs.CodeUnauthorized, "common.unauthorized", "unknown client surface"))
-				c.Abort()
-				return
-			}
-		} else {
-			surface = auth.BuiltinTenantConsoleSurface()
+		if !surfaceOK {
+			response.Fail(c, errs.NewKey(errs.CodeUnauthorized, "common.unauthorized", "unknown client surface"))
+			c.Abort()
+			return
 		}
 
 		// 正式 JWT（非 dev: 前缀）

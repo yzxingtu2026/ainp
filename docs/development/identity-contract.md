@@ -4,8 +4,8 @@
 
 | 语义 | Go / JSON | 使用范围 |
 |---|---|---|
-| 租户后台账号实体 | `AccountID` / `account_id` | `tenant_accounts`、账号角色、认证身份、会话等持久化账号引用 |
-| 当前认证主体 | `PrincipalID` / `principal_id` | `auth.Context`、授权请求/快照、运行时授权 Scope |
+| 租户后台账号实体 | `AccountID` / `account_id` | `tenant_accounts`、账号角色、认证身份；会话中仅作 `ainp.account` 可空兼容外键 |
+| 当前认证主体 | `PrincipalRef` / `principal_kind + principal_id` | `auth.Context`、Session、授权请求/快照、运行时授权 Scope |
 | 操作发起者事实 | `ActorID` / `actor_id` | 审计、Outbox、任务、通知、操作日志和不可变事件 |
 | 业务用户 | 模块自定义 `UserID` / `user_id` | 仅业务域明确建模的普通用户、owner 或个人数据 |
 

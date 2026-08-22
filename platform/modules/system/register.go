@@ -63,7 +63,9 @@ func Register(a *app.App) error {
 	}
 	a.Authorization = a.Principals
 	sessionSvc := NewSessionService(a.DB, a.Tokens, svc, a.Config.Auth.RefreshDuration())
+	sessionSvc.Configure(a.Principals, a.ClientSurfaces)
 	unifiedAuth := NewUnifiedAuthService(a.DB, a.Authenticators, svc, sessionSvc, a.AuthRateLimiter)
+	unifiedAuth.Configure(a.Principals, a.ClientSurfaces)
 	auditOn := true
 	auditOff := false
 

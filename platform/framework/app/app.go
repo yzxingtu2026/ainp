@@ -174,6 +174,10 @@ func (a *App) RegisterActionAlias(alias action.Alias) error {
 	return a.Actions.RegisterAlias(alias)
 }
 
+func (a *App) RegisterActionHTTPRoute(route action.HTTPRoute) error {
+	return a.Actions.RegisterHTTPRoute(route)
+}
+
 func (a *App) RegisterPrincipalProvider(provider auth.PrincipalProvider) error {
 	return a.Principals.Register(provider)
 }
