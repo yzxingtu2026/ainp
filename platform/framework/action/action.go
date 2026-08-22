@@ -86,6 +86,8 @@ type Metadata struct {
 	PermissionGroupName    string
 	PermissionGroupNameKey string
 	Surface                auth.Realm
+	PrincipalKinds         []auth.PrincipalKind
+	ClientSurfaces         []string
 	Permission             string
 	Name                   string // 兜底文案
 	NameKey                string // i18n key，如 action.system.auth_login.name
@@ -242,6 +244,22 @@ func (r *Registry) Register(a Action) error {
 	if !a.Meta.Surface.Valid() {
 		return fmt.Errorf("invalid action surface: %s", a.Meta.Surface)
 	}
+	if len(a.Meta.PrincipalKinds) == 0 {
+		a.Meta.PrincipalKinds = []auth.PrincipalKind{auth.PrincipalKindAccount}
+	}
+	if len(a.Meta.ClientSurfaces) == 0 {
+		a.Meta.ClientSurfaces = []string{auth.TenantConsoleSurface}
+	}
+	for _, kind := range a.Meta.PrincipalKinds {
+		if !kind.Valid() {
+			return fmt.Errorf("action %s: invalid principal kind %q", a.ID, kind)
+		}
+	}
+	for _, surface := range a.Meta.ClientSurfaces {
+		if strings.TrimSpace(surface) == "" {
+			return fmt.Errorf("action %s: client surface is required", a.ID)
+		}
+	}
 	a.Meta.Access = a.Meta.AccessMode()
 	switch a.Meta.Access {
 	case AccessPublic, AccessAuthenticated:
@@ -360,11 +378,42 @@ func (r *Registry) Invoke(ctx context.Context, actionID string, input json.RawMe
 		return nil, err
 	}
 	ac := auth.MustFromContext(ctx)
+	if !ac.Principal.Valid() && ac.PrincipalID != "" {
+		ac.Principal = auth.PrincipalRef{Kind: auth.PrincipalKindAccount, ID: ac.PrincipalID}
+	}
+	if ac.Authenticated && ac.Principal.Kind == "" {
+		ac.Principal.Kind = auth.PrincipalKindAccount
+	}
+	if ac.ClientSurface == "" && ac.Principal.Kind == auth.PrincipalKindAccount {
+		ac.ClientSurface = auth.TenantConsoleSurface
+	}
 	if auth.NormalizeRealm(ac.Realm) != a.Meta.Surface {
 		err := errs.New(errs.CodeForbidden, "action is not available in current realm")
 		r.writeAudit(ctx, a, a.Meta.PermissionCode(a.ID), "failure", err)
 		logActionFailure(ctx, a.ID, a.Meta.Capability, false, start, "action.realm", err)
 		return nil, err
+	}
+	if a.Meta.AccessMode() != AccessPublic && ac.Authenticated {
+		kindAllowed := false
+		for _, kind := range a.Meta.PrincipalKinds {
+			if ac.Principal.Kind == kind {
+				kindAllowed = true
+				break
+			}
+		}
+		surfaceAllowed := false
+		for _, surface := range a.Meta.ClientSurfaces {
+			if ac.ClientSurface == surface {
+				surfaceAllowed = true
+				break
+			}
+		}
+		if !kindAllowed || !surfaceAllowed {
+			err := errs.New(errs.CodeForbidden, "action is not available for current principal or client surface")
+			r.writeAudit(ctx, a, a.Meta.PermissionCode(a.ID), "failure", err)
+			logActionFailure(ctx, a.ID, a.Meta.Capability, false, start, "action.client_surface", err)
+			return nil, err
+		}
 	}
 	perm := a.Meta.PermissionCode(a.ID)
 	if a.Meta.AccessMode() != AccessPublic {

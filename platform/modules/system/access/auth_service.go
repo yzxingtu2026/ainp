@@ -15,6 +15,8 @@ type AuthService struct {
 	preAuth *preAuthStore
 }
 
+func (*AuthService) Kind() auth.PrincipalKind { return auth.PrincipalKindAccount }
+
 func NewAuthService(db *gorm.DB, registries ...*action.Registry) *AuthService {
 	var actions *action.Registry
 	if len(registries) > 0 {
@@ -70,8 +72,9 @@ func (s *AuthService) LoadAuthorization(ctx context.Context, req auth.Authorizat
 		return nil, auth.ErrAuthorizationStale
 	}
 	return &auth.AuthorizationSnapshot{
-		TenantID: u.TenantID, PrincipalID: u.ID, SessionID: req.SessionID, OrgID: u.OrgID, DeptID: u.DeptID,
+		TenantID: u.TenantID, Principal: auth.PrincipalRef{Kind: auth.PrincipalKindAccount, ID: u.ID}, PrincipalID: u.ID, SessionID: req.SessionID, OrgID: u.OrgID, DeptID: u.DeptID,
 		Roles: roles, Permissions: permissions, AuthVersion: u.AuthVersion,
+		Audience: req.Audience, ClientSurface: req.ClientSurface,
 	}, nil
 }
 

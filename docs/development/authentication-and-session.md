@@ -2,6 +2,17 @@
 
 Agent 只读要点：`.agent/rules/authentication-and-session.md`。
 
+## Principal Kind 与 Client Surface
+
+- 主体使用 `auth.PrincipalRef{Kind, ID}`；JWT `sub` 始终等于 `PrincipalRef.ID`，`principal_kind` 必须已注册。
+- AINP 内置 `ainp.account` 与 `ainp.tenant-console`。产品主体使用 owner 命名空间，并通过 `App.RegisterPrincipalProvider` 注册。
+- Client Surface 是服务端安全事实，包含稳定 ID、唯一 audience、HTTP path prefix、允许 Kind 和认证方法；通过 `App.RegisterClientSurface` 注册。
+- Host 在模块完成 `Prepare/Register` 后校验并封存注册表。未知 Kind、Provider、认证方法、Action 引用以及重复 audience/prefix 都阻止启动。
+- HTTP 按最长 path prefix 解析 Surface，再按目标 audience 验签。未知路径、跨 audience、Token surface 与路径不一致、Kind/Surface 不兼容均 fail-closed。
+- 多主体使用 `TokenService.IssueFor/ParseFor`；旧 `Issue/Parse` 仅是 Account + tenant-console 兼容入口。
+
+`PrincipalProvider` 只复核主体、会话版本和实时授权投影，不签 Token、不写 AuthContext，也不得让业务主体继承 Account RBAC。
+
 ## 主链路
 
 ```text

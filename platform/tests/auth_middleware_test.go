@@ -101,3 +101,44 @@ func TestAuthMiddlewareRejectsMismatchedAuthorizationSnapshot(t *testing.T) {
 		t.Fatalf("status = %d, want %d", resp.Code, http.StatusUnauthorized)
 	}
 }
+
+func TestAuthMiddlewareBindsPathSurfaceAudienceAndKind(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	tokens, _ := auth.NewTokenService("test-secret", "ainp-test", time.Hour)
+	ref := auth.PrincipalRef{Kind: "example.customer", ID: "customer-1"}
+	token, _, _ := tokens.IssueFor("tenant-1", ref, "example.mobile", "example:mobile", "session-1", 1)
+	surfaces := auth.NewClientSurfaceRegistry()
+	if err := surfaces.Register(auth.ClientSurface{ID: "example.mobile", Audience: "example:mobile", PathPrefix: "/mobile/", PrincipalKinds: []auth.PrincipalKind{"example.customer"}, Methods: []string{"example-sso"}}); err != nil {
+		t.Fatal(err)
+	}
+	provider := &fakeAuthorizationProvider{snapshot: &auth.AuthorizationSnapshot{TenantID: "tenant-1", Principal: ref, PrincipalID: ref.ID, SessionID: "session-1", AuthVersion: 1}}
+	router := gin.New()
+	router.Use(middleware.RequestID(), middleware.Auth(middleware.AuthOptions{Tokens: tokens, Authorization: provider, ClientSurfaces: surfaces}))
+	router.GET("/mobile/orders", func(c *gin.Context) { c.Status(http.StatusNoContent) })
+	router.GET("/unknown", func(c *gin.Context) { c.Status(http.StatusNoContent) })
+
+	valid := httptest.NewRequest(http.MethodGet, "/mobile/orders", nil)
+	valid.Header.Set("Authorization", "Bearer "+token)
+	validResp := httptest.NewRecorder()
+	router.ServeHTTP(validResp, valid)
+	if validResp.Code != http.StatusNoContent || provider.request.ClientSurface != "example.mobile" || provider.request.Audience != "example:mobile" || provider.request.Principal != ref {
+		t.Fatalf("surface request failed: status=%d req=%#v", validResp.Code, provider.request)
+	}
+
+	legacy, _, _ := tokens.Issue("tenant-1", "customer-1", "session-1", 1)
+	cross := httptest.NewRequest(http.MethodGet, "/mobile/orders", nil)
+	cross.Header.Set("Authorization", "Bearer "+legacy)
+	crossResp := httptest.NewRecorder()
+	router.ServeHTTP(crossResp, cross)
+	if crossResp.Code != http.StatusUnauthorized {
+		t.Fatalf("cross-audience status=%d", crossResp.Code)
+	}
+
+	unknown := httptest.NewRequest(http.MethodGet, "/unknown", nil)
+	unknown.Header.Set("Authorization", "Bearer "+token)
+	unknownResp := httptest.NewRecorder()
+	router.ServeHTTP(unknownResp, unknown)
+	if unknownResp.Code != http.StatusUnauthorized {
+		t.Fatalf("unknown path status=%d", unknownResp.Code)
+	}
+}

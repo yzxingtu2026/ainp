@@ -16,6 +16,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/aiagent"
 	"github.com/yzxingtu2026/ainp/platform/framework/aitool"
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
+	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/config"
 	"github.com/yzxingtu2026/ainp/platform/framework/database"
 	"github.com/yzxingtu2026/ainp/platform/framework/i18n"
@@ -159,6 +160,14 @@ func TestExternalModuleContributesAtomicAICreateToDefaultContract(t *testing.T) 
 	registered, ok := application.Actions.Get("orders.batch_create")
 	if !ok || registered.Meta.AI == nil {
 		t.Fatal("downstream batch create action was not registered")
+	}
+	customerCtx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, Realm: auth.RealmTenant, TenantID: "example-tenant", PrincipalID: "customer-1", Principal: auth.PrincipalRef{Kind: "example.customer", ID: "customer-1"}, ClientSurface: "example.customer-client", Permissions: []string{"orders:read"}})
+	if _, err := application.Actions.Invoke(customerCtx, "orders.customer_list", nil); err != nil {
+		t.Fatalf("customer surface action: %v", err)
+	}
+	accountCtx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, Realm: auth.RealmTenant, TenantID: "example-tenant", PrincipalID: "account-1", Principal: auth.PrincipalRef{Kind: auth.PrincipalKindAccount, ID: "account-1"}, ClientSurface: auth.TenantConsoleSurface, Permissions: []string{"orders:read"}})
+	if _, err := application.Actions.Invoke(accountCtx, "orders.customer_list", nil); err == nil {
+		t.Fatal("account must not invoke customer-only action")
 	}
 	if registered.Meta.AI.Operation != action.AIOperationCreate || registered.Meta.AI.Batch == nil || registered.Meta.AI.Batch.Mode != action.AIBatchAtomic || registered.Meta.IdempotencyMode() != "required" {
 		t.Fatalf("downstream batch contract is incomplete: %#v", registered.Meta)

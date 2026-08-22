@@ -7,6 +7,7 @@ import (
 
 	"github.com/yzxingtu2026/ainp/platform/framework/action"
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
+	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/capability"
 	"github.com/yzxingtu2026/ainp/platform/framework/job"
 )
@@ -18,7 +19,16 @@ type Config struct {
 }
 
 func Prepare(application *app.App) error {
-	return application.Authenticators.Register(exampleAuthenticator{})
+	if err := application.RegisterAuthenticator(exampleAuthenticator{}); err != nil {
+		return err
+	}
+	if err := application.RegisterPrincipalProvider(customerProvider{}); err != nil {
+		return err
+	}
+	return application.RegisterClientSurface(auth.ClientSurface{
+		ID: CustomerSurface, Audience: CustomerAudience, PathPrefix: "/api/v1/customer/",
+		PrincipalKinds: []auth.PrincipalKind{CustomerKind}, Methods: []string{"example-sso"},
+	})
 }
 
 func Register(application *app.App, config Config) error {
@@ -37,6 +47,15 @@ func Register(application *app.App, config Config) error {
 			AI:         action.ExcludeFromAI(action.AIExcludePendingSafetyReview),
 			HTTP:       &action.HTTPMeta{Method: "GET", Path: "/api/v1/orders"},
 		},
+	}); err != nil {
+		return err
+	}
+	if err := application.RegisterAction(action.Action{
+		ID: "orders.customer_list", Handler: service.List,
+		Meta: action.Metadata{Capability: config.CapabilityID, Access: action.AccessPermission, Permission: "orders:read",
+			PrincipalKinds: []auth.PrincipalKind{CustomerKind}, ClientSurfaces: []string{CustomerSurface},
+			Name: "List customer orders", AI: action.ExcludeFromAI(action.AIExcludePendingSafetyReview),
+			HTTP: &action.HTTPMeta{Method: "GET", Path: "/api/v1/customer/orders"}},
 	}); err != nil {
 		return err
 	}

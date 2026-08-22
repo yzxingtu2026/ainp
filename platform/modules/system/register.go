@@ -10,6 +10,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/aiknowledge"
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
 	"github.com/yzxingtu2026/ainp/platform/framework/attachment"
+	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/capability"
 	"github.com/yzxingtu2026/ainp/platform/framework/i18n"
 	"github.com/yzxingtu2026/ainp/platform/framework/mcpserver"
@@ -44,6 +45,23 @@ func Register(a *app.App) error {
 	if err := a.Authenticators.Register(NewPasswordAuthenticator(svc)); err != nil {
 		return err
 	}
+	if a.Principals == nil {
+		return fmt.Errorf("system: principal registry is required")
+	}
+	if _, exists := a.Principals.Get(auth.PrincipalKindAccount); !exists {
+		if err := a.Principals.Register(svc); err != nil {
+			return err
+		}
+	}
+	if a.ClientSurfaces == nil {
+		return fmt.Errorf("system: client surface registry is required")
+	}
+	if _, exists := a.ClientSurfaces.Get(auth.TenantConsoleSurface); !exists {
+		if err := a.ClientSurfaces.Register(auth.BuiltinTenantConsoleSurface()); err != nil {
+			return err
+		}
+	}
+	a.Authorization = a.Principals
 	sessionSvc := NewSessionService(a.DB, a.Tokens, svc, a.Config.Auth.RefreshDuration())
 	unifiedAuth := NewUnifiedAuthService(a.DB, a.Authenticators, svc, sessionSvc, a.AuthRateLimiter)
 	auditOn := true

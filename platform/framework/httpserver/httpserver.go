@@ -29,6 +29,7 @@ type Options struct {
 	DevTokenEnabled bool
 	Tokens          *auth.TokenService
 	Authorization   auth.AuthorizationProvider
+	ClientSurfaces  *auth.ClientSurfaceRegistry
 	Actions         *action.Registry
 	Menus           *menu.Registry
 	CodeSets        *codeset.Registry
@@ -50,6 +51,7 @@ func New(opts Options) *gin.Engine {
 		middleware.Auth(middleware.AuthOptions{
 			Tokens:          opts.Tokens,
 			Authorization:   opts.Authorization,
+			ClientSurfaces:  opts.ClientSurfaces,
 			DevTokenEnabled: opts.DevTokenEnabled,
 		}),
 		middleware.IdempotencyKey(),

@@ -19,5 +19,5 @@ func (exampleAuthenticator) Begin(context.Context, authentication.BeginRequest) 
 }
 
 func (exampleAuthenticator) Complete(context.Context, authentication.CompleteRequest) (*authentication.VerifiedIdentity, error) {
-	return &authentication.VerifiedIdentity{Provider: "example-sso", Subject: "example"}, nil
+	return &authentication.VerifiedIdentity{Provider: "example-sso", Subject: "customer-1", TenantID: "example-tenant"}, nil
 }

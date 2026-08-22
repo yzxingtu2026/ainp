@@ -12,23 +12,36 @@ var (
 
 // AuthorizationRequest contains only identity data verified from a signed token.
 type AuthorizationRequest struct {
-	TenantID    string
-	PrincipalID string
-	SessionID   string
-	Realm       Realm
-	AuthVersion uint64
+	TenantID      string
+	Principal     PrincipalRef
+	PrincipalID   string
+	SessionID     string
+	Realm         Realm
+	AuthVersion   uint64
+	Audience      string
+	ClientSurface string
 }
 
 // AuthorizationSnapshot is the current server-side authorization state.
 type AuthorizationSnapshot struct {
-	TenantID    string
-	PrincipalID string
-	SessionID   string
-	OrgID       string
-	DeptID      string
-	Roles       []string
-	Permissions []string
-	AuthVersion uint64
+	TenantID      string
+	Principal     PrincipalRef
+	PrincipalID   string
+	SessionID     string
+	OrgID         string
+	DeptID        string
+	Roles         []string
+	Permissions   []string
+	AuthVersion   uint64
+	Audience      string
+	ClientSurface string
+}
+
+func (r AuthorizationRequest) PrincipalRef() PrincipalRef {
+	if r.Principal.Valid() {
+		return r.Principal
+	}
+	return PrincipalRef{Kind: PrincipalKindAccount, ID: r.PrincipalID}
 }
 
 // AuthorizationProvider validates identity state and loads current authorization.
