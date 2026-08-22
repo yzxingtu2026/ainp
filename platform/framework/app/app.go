@@ -51,6 +51,8 @@ type App struct {
 	DB                       *gorm.DB
 	Tokens                   *auth.TokenService
 	Authorization            auth.AuthorizationProvider
+	Principals               *auth.PrincipalRegistry
+	ClientSurfaces           *auth.ClientSurfaceRegistry
 	Authenticators           *authentication.Registry
 	AuthRateLimiter          authentication.RateLimiter
 	Capabilities             *capability.Registry
@@ -128,6 +130,8 @@ func New(cfg *config.Config, db *gorm.DB, auditor audit.Recorder, tokens *auth.T
 		DB:                   db,
 		Tokens:               tokens,
 		Authenticators:       authentication.NewRegistry(),
+		Principals:           auth.NewPrincipalRegistry(),
+		ClientSurfaces:       auth.NewClientSurfaceRegistry(),
 		AuthRateLimiter:      authentication.NewMemoryRateLimiter(10, time.Minute),
 		Capabilities:         capability.NewRegistry(),
 		Actions:              actions,
@@ -168,6 +172,47 @@ func (a *App) RegisterAction(act action.Action) error {
 
 func (a *App) RegisterActionAlias(alias action.Alias) error {
 	return a.Actions.RegisterAlias(alias)
+}
+
+func (a *App) RegisterPrincipalProvider(provider auth.PrincipalProvider) error {
+	return a.Principals.Register(provider)
+}
+func (a *App) RegisterClientSurface(surface auth.ClientSurface) error {
+	return a.ClientSurfaces.Register(surface)
+}
+func (a *App) RegisterAuthenticator(provider authentication.Authenticator) error {
+	return a.Authenticators.Register(provider)
+}
+
+func (a *App) SealAuthentication() error {
+	if a.Principals == nil || a.ClientSurfaces == nil || a.Authenticators == nil {
+		return fmt.Errorf("authentication registries are required")
+	}
+	if err := a.ClientSurfaces.Validate(a.Principals); err != nil {
+		return err
+	}
+	for _, surface := range a.ClientSurfaces.List() {
+		for _, method := range surface.Methods {
+			if _, ok := a.Authenticators.Get(method); !ok {
+				return fmt.Errorf("auth: surface %s references unregistered authentication method %s", surface.ID, method)
+			}
+		}
+	}
+	for _, registered := range a.Actions.List() {
+		for _, kind := range registered.Meta.PrincipalKinds {
+			if _, ok := a.Principals.Get(kind); !ok {
+				return fmt.Errorf("action %s references unregistered principal kind %s", registered.ID, kind)
+			}
+		}
+		for _, surface := range registered.Meta.ClientSurfaces {
+			if _, ok := a.ClientSurfaces.Get(surface); !ok {
+				return fmt.Errorf("action %s references unregistered client surface %s", registered.ID, surface)
+			}
+		}
+	}
+	a.Principals.Seal()
+	a.ClientSurfaces.Seal()
+	return nil
 }
 
 func (a *App) RegisterMenu(m menu.Menu) error {
@@ -215,6 +260,7 @@ func (a *App) Run() error {
 		DevTokenEnabled: a.Config.Auth.DevTokenEnabled,
 		Tokens:          a.Tokens,
 		Authorization:   a.Authorization,
+		ClientSurfaces:  a.ClientSurfaces,
 		Actions:         a.Actions,
 		Menus:           a.Menus,
 		CodeSets:        a.CodeSets,

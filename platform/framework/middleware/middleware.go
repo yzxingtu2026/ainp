@@ -137,6 +137,7 @@ func IdempotencyKey() gin.HandlerFunc {
 type AuthOptions struct {
 	Tokens          *auth.TokenService
 	Authorization   auth.AuthorizationProvider
+	ClientSurfaces  *auth.ClientSurfaceRegistry
 	DevTokenEnabled bool
 }
 
@@ -155,6 +156,18 @@ func Auth(opts AuthOptions) gin.HandlerFunc {
 		}
 
 		ac := auth.MustFromContext(c.Request.Context())
+		var surface auth.ClientSurface
+		if opts.ClientSurfaces != nil {
+			var ok bool
+			surface, ok = opts.ClientSurfaces.ResolvePath(c.Request.URL.Path)
+			if !ok {
+				response.Fail(c, errs.NewKey(errs.CodeUnauthorized, "common.unauthorized", "unknown client surface"))
+				c.Abort()
+				return
+			}
+		} else {
+			surface = auth.BuiltinTenantConsoleSurface()
+		}
 
 		// 正式 JWT（非 dev: 前缀）
 		if !strings.HasPrefix(token, "dev:") {
@@ -162,17 +175,27 @@ func Auth(opts AuthOptions) gin.HandlerFunc {
 				c.Next()
 				return
 			}
-			claims, err := opts.Tokens.Parse(token)
+			claims, err := opts.Tokens.ParseFor(token, surface.Audience)
 			if err != nil {
 				// 解析失败可能是附件 transfer token（不同 audience），交由后续专用校验。
+				if opts.Tokens.LooksLikeSessionToken(token) {
+					response.Fail(c, errs.NewKey(errs.CodeUnauthorized, "common.unauthorized", "invalid session token"))
+					c.Abort()
+					return
+				}
 				c.Next()
+				return
+			}
+			if claims.ClientSurface != surface.ID || !surface.AllowsKind(claims.PrincipalKind) {
+				response.Fail(c, errs.NewKey(errs.CodeUnauthorized, "common.unauthorized", "token client surface mismatch"))
+				c.Abort()
 				return
 			}
 			if claims.UsedLegacyID {
 				logging.Warn(c.Request.Context(), "identity compatibility token used", "compatibility_kind", "jwt_uid", "tenant_id", claims.TenantID)
 			}
 			snapshot, err := opts.Authorization.LoadAuthorization(c.Request.Context(), auth.AuthorizationRequest{
-				TenantID: claims.TenantID, PrincipalID: claims.PrincipalID, SessionID: claims.SessionID, Realm: claims.Realm, AuthVersion: claims.AuthVersion,
+				TenantID: claims.TenantID, Principal: auth.PrincipalRef{Kind: claims.PrincipalKind, ID: claims.PrincipalID}, PrincipalID: claims.PrincipalID, SessionID: claims.SessionID, Realm: claims.Realm, AuthVersion: claims.AuthVersion, Audience: surface.Audience, ClientSurface: surface.ID,
 			})
 			if err != nil || snapshot == nil ||
 				snapshot.TenantID != claims.TenantID || snapshot.PrincipalID != claims.PrincipalID || snapshot.SessionID != claims.SessionID || snapshot.AuthVersion != claims.AuthVersion {
@@ -181,9 +204,22 @@ func Auth(opts AuthOptions) gin.HandlerFunc {
 				c.Abort()
 				return
 			}
+			if !snapshot.Principal.Valid() {
+				snapshot.Principal = auth.PrincipalRef{Kind: claims.PrincipalKind, ID: snapshot.PrincipalID}
+			}
+			if snapshot.Principal != (auth.PrincipalRef{Kind: claims.PrincipalKind, ID: claims.PrincipalID}) ||
+				(snapshot.Audience != "" && snapshot.Audience != surface.Audience) ||
+				(snapshot.ClientSurface != "" && snapshot.ClientSurface != surface.ID) {
+				response.Fail(c, errs.NewKey(errs.CodeUnauthorized, "common.unauthorized", "authorization surface mismatch"))
+				c.Abort()
+				return
+			}
 			ac.TenantID = snapshot.TenantID
 			ac.Realm = claims.Realm
 			ac.PrincipalID = snapshot.PrincipalID
+			ac.Principal = snapshot.Principal
+			ac.Audience = surface.Audience
+			ac.ClientSurface = surface.ID
 			ac.SessionID = snapshot.SessionID
 			ac.AuthVersion = snapshot.AuthVersion
 			ac.OrgID = snapshot.OrgID
@@ -203,6 +239,11 @@ func Auth(opts AuthOptions) gin.HandlerFunc {
 			c.Next()
 			return
 		}
+		if !surface.AllowsKind(auth.PrincipalKindAccount) {
+			response.Fail(c, errs.NewKey(errs.CodeUnauthorized, "common.unauthorized", "dev token principal kind mismatch"))
+			c.Abort()
+			return
+		}
 		parts := strings.Split(token, ":")
 		if len(parts) < 3 {
 			c.Next()
@@ -217,6 +258,9 @@ func Auth(opts AuthOptions) gin.HandlerFunc {
 		ac.TenantID = tenantID
 		ac.Realm = auth.RealmTenant
 		ac.PrincipalID = userID
+		ac.Principal = auth.PrincipalRef{Kind: auth.PrincipalKindAccount, ID: userID}
+		ac.Audience = surface.Audience
+		ac.ClientSurface = surface.ID
 		ac.Permissions = perms
 		ac.Authenticated = true
 		ac.Client = "web"

@@ -2,6 +2,12 @@
 
 Agent 只读要点：`.agent/rules/action-metadata.md`。本文档为 Phase 1 字段设计与注册约定。
 
+## 主体与访问面约束
+
+认证型 Action 经过 `PrincipalKinds` 与 `ClientSurfaces` 双重约束。新增下游 Action 必须显式声明；空字段只为历史 Account Action 归一化为 `ainp.account` / `ainp.tenant-console`。
+
+注册期验证引用的 Kind/Surface；执行期使用可信 `AuthContext.Principal` 与 `ClientSurface` 复核。`authenticated` 和 `permission` 均不得跨 Kind/Surface；permission 只使用对应 Principal Provider 返回的实时权限。
+
 ## 目标
 
 - Capability、Action、Menu 职责分离，后端代码定义导航与权限。

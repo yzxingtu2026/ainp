@@ -353,6 +353,9 @@ func (c *Composition) OpenInstalled(ctx context.Context, cfg *config.Config) (*P
 	if err := c.register(application); err != nil {
 		return nil, err
 	}
+	if err := application.SealAuthentication(); err != nil {
+		return nil, fmt.Errorf("validate authentication composition: %w", err)
+	}
 	if err := c.applyAgentContractContributions(application); err != nil {
 		return nil, err
 	}

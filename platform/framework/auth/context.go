@@ -26,6 +26,9 @@ type Context struct {
 	TenantID          string
 	Realm             Realm
 	PrincipalID       string
+	Principal         PrincipalRef
+	Audience          string
+	ClientSurface     string
 	OrgID             string
 	DeptID            string
 	Roles             []string

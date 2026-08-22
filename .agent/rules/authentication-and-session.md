@@ -1,5 +1,10 @@
 # 统一认证与会话
 
+- 新业务主体注册 owner 命名空间 `PrincipalKind`、`PrincipalProvider`、Authenticator 和 Client Surface；禁止任意 Kind 与未知路径回落。
+- Token 绑定 `sub`、Kind、audience、surface、session、auth version，并按请求 path 对应 audience 验签；禁止跨客户端复用。
+- Provider 只做主体/状态/授权复核，不签 Token、不写可信 AuthContext、不借用 Account RBAC。
+- 新认证型 Action 显式声明 `PrincipalKinds` 与 `ClientSurfaces`；Account 默认仅用于历史兼容。
+
 - 新登录方式注册 `Authenticator`；Provider 只验证凭据并返回 `VerifiedIdentity`，禁止自行签 Token、加载权限或写 AuthContext。
 - Identity 在可信 tenant 边界内按 `provider + subject` 解析到唯一 `TenantAccount`，持久化外键使用 `account_id`；禁止信任 Body/Query `tenant_id`。
 - access token 必须含 `session_id` 和 `auth_version`，不得携带/信任 roles/permissions；请求仍经过 `AuthorizationProvider`。
