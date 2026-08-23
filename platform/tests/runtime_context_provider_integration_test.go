@@ -74,6 +74,14 @@ func TestRuntimeContextProviderPrecedenceAndRunSnapshotReuse(t *testing.T) {
 	if first.PreferredAddress != "同学" || first.PreferredAddressSource != "memory_profile" || first.Time.Timezone != "Asia/Shanghai" || first.Time.TimezoneSource != "tenant_default" || first.Time.CurrentLocalDateTime != "2026-07-19T23:59:00+08:00" {
 		t.Fatalf("default context=%#v", first)
 	}
+	if first.PrincipalKind != string(auth.PrincipalKindAccount) {
+		t.Fatalf("legacy request did not inherit principal kind: %#v", first)
+	}
+	invalid := req
+	invalid.PrincipalKind = "example.customer"
+	if _, err := provider.Build(ctx, invalid); err != auth.ErrAuthorizationInvalid {
+		t.Fatalf("mismatched principal kind error=%v", err)
+	}
 	_, err = prefs.Update(ctx, json.RawMessage(`{"revision":0,"values":{"preferred_address_override":"老板","timezone":"America/New_York","locale":"en-US","response_style":"standard","date_format":"YYYY-MM-DD","time_format":"24h","auto_memory_enabled":true}}`))
 	if err != nil {
 		t.Fatal(err)

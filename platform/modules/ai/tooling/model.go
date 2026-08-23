@@ -60,6 +60,9 @@ type ToolScope struct {
 	ID                      string          `gorm:"primaryKey;size:64" json:"id"`
 	TenantID                string          `gorm:"size:64;not null;index" json:"-"`
 	PrincipalID             string          `gorm:"size:64;not null;index" json:"-"`
+	PrincipalKind           string          `gorm:"size:128;not null;default:'ainp.account'" json:"-"`
+	ClientSurface           string          `gorm:"size:128;not null;default:''" json:"-"`
+	Audience                string          `gorm:"size:255;not null;default:''" json:"-"`
 	Realm                   string          `gorm:"size:16;not null" json:"realm"`
 	SessionID               string          `gorm:"size:64;not null" json:"-"`
 	AuthVersion             uint64          `gorm:"not null" json:"-"`

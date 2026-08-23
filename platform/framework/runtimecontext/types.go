@@ -129,6 +129,9 @@ func (s TimeSnapshot) Validate() error {
 type TrustedRuntimeContext struct {
 	TenantID               string       `json:"tenant_id"`
 	PrincipalID            string       `json:"principal_id"`
+	PrincipalKind          string       `json:"principal_kind"`
+	ClientSurface          string       `json:"client_surface"`
+	Audience               string       `json:"audience"`
 	Username               string       `json:"username"`
 	DisplayName            string       `json:"display_name"`
 	PreferredAddress       string       `json:"preferred_address"`
@@ -149,6 +152,9 @@ type TrustedRuntimeContext struct {
 type BuildRequest struct {
 	TenantID              string
 	PrincipalID           string
+	PrincipalKind         string
+	ClientSurface         string
+	Audience              string
 	ConversationID        string
 	ConversationCreatedAt time.Time
 	AgentID               string

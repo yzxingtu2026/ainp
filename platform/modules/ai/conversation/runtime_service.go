@@ -198,7 +198,11 @@ WHERE tenant_id=? AND conversation_id=? AND id=? AND role=? AND status=? LIMIT 1
 	if traceID == "" {
 		traceID = ac.RequestID
 	}
-	run := AgentRun{ID: uuid.NewString(), TenantID: ac.TenantID, UserID: ac.PrincipalID, ConversationID: conversation.ID, ConversationRevision: conversation.Revision, TriggerMessageID: trigger.ID, AgentVersionID: conversation.AgentVersionID, SessionID: ac.SessionID, AuthVersion: ac.AuthVersion, OriginRequestID: ac.RequestID, TraceID: traceID, PageContextJSON: pageContextJSON, PageContextType: pageContextType, PageContextStatus: pageContextStatus, PageContextBytes: pageContextBytes, Status: string(aiagentruntime.RunQueued), ExecutionMode: string(aiagentruntime.ExecutionModeNormal), BudgetJSON: budgetJSON, IdempotencyKey: key, Revision: 1}
+	principal := ac.Principal
+	if !principal.Valid() {
+		principal = auth.PrincipalRef{Kind: auth.PrincipalKindAccount, ID: ac.PrincipalID}
+	}
+	run := AgentRun{ID: uuid.NewString(), TenantID: ac.TenantID, UserID: ac.PrincipalID, PrincipalKind: string(principal.Kind), ClientSurface: ac.ClientSurface, Audience: ac.Audience, ConversationID: conversation.ID, ConversationRevision: conversation.Revision, TriggerMessageID: trigger.ID, AgentVersionID: conversation.AgentVersionID, SessionID: ac.SessionID, AuthVersion: ac.AuthVersion, OriginRequestID: ac.RequestID, TraceID: traceID, PageContextJSON: pageContextJSON, PageContextType: pageContextType, PageContextStatus: pageContextStatus, PageContextBytes: pageContextBytes, Status: string(aiagentruntime.RunQueued), ExecutionMode: string(aiagentruntime.ExecutionModeNormal), BudgetJSON: budgetJSON, IdempotencyKey: key, Revision: 1}
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if e := tx.Where("user_id=? AND idempotency_key=?", ac.PrincipalID, key).First(&run).Error; e == nil {
 			return nil
@@ -493,7 +497,7 @@ func (s *AgentRuntimeService) WakeExpiredConfirmation(ctx context.Context, runID
 		return false, nil
 	}
 	if auth.MustFromContext(ctx).TenantID == "" {
-		ctx = auth.WithContext(ctx, &auth.Context{TenantID: run.TenantID, PrincipalID: run.UserID, Realm: auth.RealmTenant, Authenticated: true})
+		ctx = auth.WithContext(ctx, &auth.Context{TenantID: run.TenantID, PrincipalID: run.UserID, Principal: auth.PrincipalRef{Kind: auth.PrincipalKind(run.PrincipalKind), ID: run.UserID}, ClientSurface: run.ClientSurface, Audience: run.Audience, Realm: auth.RealmTenant, Authenticated: true})
 	}
 	_, err := s.setQueued(ctx, &run, run.Revision, agentRunResumeEvent)
 	return err == nil, err
@@ -619,11 +623,15 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 	if s.authorization == nil {
 		return s.fail(ctx, run, "authorization_unavailable")
 	}
-	snapshot, authErr := s.authorization.LoadAuthorization(ctx, auth.AuthorizationRequest{TenantID: run.TenantID, PrincipalID: run.UserID, SessionID: run.SessionID, Realm: auth.RealmTenant, AuthVersion: run.AuthVersion})
+	principal := auth.PrincipalRef{Kind: auth.PrincipalKind(run.PrincipalKind), ID: run.UserID}
+	if !principal.Valid() {
+		return s.fail(ctx, run, "principal_context_invalid")
+	}
+	snapshot, authErr := s.authorization.LoadAuthorization(ctx, auth.AuthorizationRequest{TenantID: run.TenantID, Principal: principal, PrincipalID: run.UserID, SessionID: run.SessionID, Realm: auth.RealmTenant, AuthVersion: run.AuthVersion, Audience: run.Audience, ClientSurface: run.ClientSurface})
 	if authErr != nil || snapshot.AuthVersion != run.AuthVersion {
 		return s.fail(ctx, run, "authorization_changed")
 	}
-	ctx = auth.WithContext(ctx, &auth.Context{RequestID: run.OriginRequestID, TraceID: run.TraceID, TenantID: snapshot.TenantID, PrincipalID: snapshot.PrincipalID, SessionID: snapshot.SessionID, OrgID: snapshot.OrgID, DeptID: snapshot.DeptID, Roles: snapshot.Roles, Permissions: snapshot.Permissions, AuthVersion: snapshot.AuthVersion, Realm: auth.RealmTenant, Client: "agent", AgentRunID: run.ID, Authenticated: true})
+	ctx = auth.WithContext(ctx, &auth.Context{RequestID: run.OriginRequestID, TraceID: run.TraceID, TenantID: snapshot.TenantID, Principal: principal, PrincipalID: snapshot.PrincipalID, Audience: snapshot.Audience, ClientSurface: snapshot.ClientSurface, SessionID: snapshot.SessionID, OrgID: snapshot.OrgID, DeptID: snapshot.DeptID, Roles: snapshot.Roles, Permissions: snapshot.Permissions, AuthVersion: snapshot.AuthVersion, Realm: auth.RealmTenant, Client: "agent", AgentRunID: run.ID, Authenticated: true})
 	ctx = withDocumentResolveCache(ctx)
 	pageSnapshot, pageErr := pageContextSnapshot(run.PageContextJSON)
 	if pageErr != nil {
@@ -1275,7 +1283,7 @@ func (s *AgentRuntimeService) resolveRuntimeContext(ctx context.Context, run *Ag
 		}
 		existing = &snap
 	}
-	trusted, err := s.runtimeContext.Build(ctx, runtimecontext.BuildRequest{TenantID: run.TenantID, PrincipalID: run.UserID, ConversationID: conversation.ID, ConversationCreatedAt: conversation.CreatedAt, AgentID: agentRow.ID, AgentVersionID: run.AgentVersionID, RunID: run.ID, TimeSnapshot: existing})
+	trusted, err := s.runtimeContext.Build(ctx, runtimecontext.BuildRequest{TenantID: run.TenantID, PrincipalID: run.UserID, PrincipalKind: run.PrincipalKind, ClientSurface: run.ClientSurface, Audience: run.Audience, ConversationID: conversation.ID, ConversationCreatedAt: conversation.CreatedAt, AgentID: agentRow.ID, AgentVersionID: run.AgentVersionID, RunID: run.ID, TimeSnapshot: existing})
 	if err != nil {
 		return nil, err
 	}
@@ -1294,7 +1302,7 @@ func (s *AgentRuntimeService) resolveRuntimeContext(ctx context.Context, run *Ag
 			if json.Unmarshal(current.TimeSnapshotJSON, &snap) != nil {
 				return nil, fmt.Errorf("invalid concurrent time snapshot")
 			}
-			return s.runtimeContext.Build(ctx, runtimecontext.BuildRequest{TenantID: run.TenantID, PrincipalID: run.UserID, ConversationID: conversation.ID, ConversationCreatedAt: conversation.CreatedAt, AgentID: agentRow.ID, AgentVersionID: run.AgentVersionID, RunID: run.ID, TimeSnapshot: &snap})
+			return s.runtimeContext.Build(ctx, runtimecontext.BuildRequest{TenantID: run.TenantID, PrincipalID: run.UserID, PrincipalKind: run.PrincipalKind, ClientSurface: run.ClientSurface, Audience: run.Audience, ConversationID: conversation.ID, ConversationCreatedAt: conversation.CreatedAt, AgentID: agentRow.ID, AgentVersionID: run.AgentVersionID, RunID: run.ID, TimeSnapshot: &snap})
 		}
 		run.EvaluatedAtUTC = &trusted.Time.EvaluatedAtUTC
 		run.Timezone = trusted.Time.Timezone
@@ -1506,7 +1514,7 @@ func (s *AgentRuntimeService) ensureToolScope(ctx context.Context, run *AgentRun
 	}
 	rid := run.ID
 	conversationID := run.ConversationID
-	scope := tooling.ToolScope{ID: uuid.NewString(), TenantID: run.TenantID, PrincipalID: run.UserID, Realm: string(auth.RealmTenant), SessionID: run.SessionID, AuthVersion: run.AuthVersion, AgentRunID: &rid, ConversationID: &conversationID, AllowedToolsJSON: jsonBytes(allowed), AllowedSourcesJSON: jsonBytes(allowedSources), AllowedCapabilitiesJSON: jsonBytes(allowedCapabilities), LoadedToolsJSON: jsonBytes([]string{}), ReferenceEvidenceJSON: jsonBytes([]referenceEvidence{}), ExpiresAt: s.now().Add(30 * time.Minute)}
+	scope := tooling.ToolScope{ID: uuid.NewString(), TenantID: run.TenantID, PrincipalID: run.UserID, PrincipalKind: run.PrincipalKind, ClientSurface: run.ClientSurface, Audience: run.Audience, Realm: string(auth.RealmTenant), SessionID: run.SessionID, AuthVersion: run.AuthVersion, AgentRunID: &rid, ConversationID: &conversationID, AllowedToolsJSON: jsonBytes(allowed), AllowedSourcesJSON: jsonBytes(allowedSources), AllowedCapabilitiesJSON: jsonBytes(allowedCapabilities), LoadedToolsJSON: jsonBytes([]string{}), ReferenceEvidenceJSON: jsonBytes([]referenceEvidence{}), ExpiresAt: s.now().Add(30 * time.Minute)}
 	candidates, err := s.tools.WorkingSetCandidates(ctx, run.ConversationID, conversationToolRestoreLimit)
 	if err != nil {
 		return "", err

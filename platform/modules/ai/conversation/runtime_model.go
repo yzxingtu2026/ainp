@@ -9,6 +9,9 @@ type AgentRun struct {
 	ID                             string          `gorm:"primaryKey;size:64" json:"id"`
 	TenantID                       string          `gorm:"size:64;not null;uniqueIndex:ux_ai_run_idem,priority:1;index:idx_ai_run_list,priority:1" json:"-"`
 	UserID                         string          `gorm:"size:64;not null;uniqueIndex:ux_ai_run_idem,priority:2;index:idx_ai_run_list,priority:2" json:"user_id"`
+	PrincipalKind                  string          `gorm:"size:128;not null;default:'ainp.account';uniqueIndex:ux_ai_run_idem,priority:4" json:"-"`
+	ClientSurface                  string          `gorm:"size:128;not null;default:''" json:"-"`
+	Audience                       string          `gorm:"size:255;not null;default:''" json:"-"`
 	ConversationID                 string          `gorm:"size:64;not null;index" json:"conversation_id"`
 	ConversationRevision           uint64          `gorm:"not null" json:"conversation_revision"`
 	TriggerMessageID               string          `gorm:"size:64;not null" json:"trigger_message_id"`

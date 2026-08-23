@@ -181,13 +181,16 @@ const (
 // RuntimeScope only contains trusted runtime identifiers. Slots must not derive
 // tenant, actor, run, or authorization facts from model arguments.
 type RuntimeScope struct {
-	ID          string
-	TenantID    string
-	PrincipalID string
-	Realm       string
-	SessionID   string
-	AuthVersion uint64
-	AgentRunID  string
+	ID            string
+	TenantID      string
+	PrincipalID   string
+	PrincipalKind string
+	ClientSurface string
+	Audience      string
+	Realm         string
+	SessionID     string
+	AuthVersion   uint64
+	AgentRunID    string
 }
 
 type RuntimeMetadata struct {
