@@ -16,6 +16,15 @@ func AutoMigrate(db *gorm.DB) error {
 	if err != nil {
 		return err
 	}
+	if migrationDB.Migrator().HasTable("idempotency_records") && !migrationDB.Migrator().HasColumn("idempotency_records", "principal_kind") {
+		if err := migrationDB.Exec(`ALTER TABLE idempotency_records ADD COLUMN principal_kind varchar(128);
+UPDATE idempotency_records SET principal_kind = 'ainp.account' WHERE principal_kind IS NULL;
+ALTER TABLE idempotency_records ALTER COLUMN principal_kind SET NOT NULL;
+DROP INDEX IF EXISTS ux_idempotency_records_key;
+DROP INDEX IF EXISTS ux_idempotency_key`).Error; err != nil {
+			return fmt.Errorf("idempotency: backfill principal kind: %w", err)
+		}
+	}
 	if err := migrationDB.AutoMigrate(&Record{}); err != nil {
 		return err
 	}

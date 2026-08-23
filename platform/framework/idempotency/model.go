@@ -19,6 +19,9 @@ type Record struct {
 	ID             string     `gorm:"primaryKey;size:64" json:"id"`
 	TenantID       string     `gorm:"size:64;uniqueIndex:ux_idempotency_key;not null" json:"tenant_id"`
 	PrincipalID    string     `gorm:"size:64;uniqueIndex:ux_idempotency_key;not null" json:"principal_id"`
+	PrincipalKind  string     `gorm:"size:128;uniqueIndex:ux_idempotency_key;not null" json:"principal_kind"`
+	ClientSurface  string     `gorm:"size:128" json:"client_surface,omitempty"`
+	Audience       string     `gorm:"size:255" json:"audience,omitempty"`
 	ActionID       string     `gorm:"size:128;uniqueIndex:ux_idempotency_key;not null" json:"action_id"`
 	IdempotencyKey string     `gorm:"size:191;uniqueIndex:ux_idempotency_key;not null" json:"idempotency_key"`
 	RequestHash    string     `gorm:"size:64;not null" json:"request_hash"`

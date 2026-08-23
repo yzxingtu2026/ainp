@@ -284,6 +284,33 @@ func TestIdempotencyExecutorConflict(t *testing.T) {
 	}
 }
 
+func TestIdempotencySeparatesPrincipalKindsWithSameID(t *testing.T) {
+	repo := openIdempotencyTestDB(t)
+	exec := idempotency.NewExecutor(repo)
+	input := idempotency.ExecuteInput{
+		ActionID: "demo.test", Input: json.RawMessage(`{"v":1}`),
+		Meta:    &idempotency.IdempotencyConfig{Mode: "required", TTL: time.Hour},
+		Handler: func(context.Context, json.RawMessage) (any, error) { return map[string]any{"ok": true}, nil },
+	}
+	for _, kind := range []auth.PrincipalKind{auth.PrincipalKindAccount, "example.customer"} {
+		ctx := auth.WithContext(context.Background(), &auth.Context{
+			TenantID: "t1", PrincipalID: "same-id", Principal: auth.PrincipalRef{Kind: kind, ID: "same-id"},
+			ClientSurface: "example.surface", Audience: "example:surface", Realm: auth.RealmTenant, Authenticated: true, IdempotencyKey: "same-key",
+		})
+		result, err := exec.Execute(ctx, input)
+		if err != nil || result.IsReplay {
+			t.Fatalf("kind %s must have an independent first execution: result=%#v err=%v", kind, result, err)
+		}
+	}
+	for _, kind := range []auth.PrincipalKind{auth.PrincipalKindAccount, "example.customer"} {
+		ctx := auth.WithContext(context.Background(), &auth.Context{TenantID: "t1", PrincipalID: "same-id", Principal: auth.PrincipalRef{Kind: kind, ID: "same-id"}, Realm: auth.RealmTenant, Authenticated: true})
+		record, err := repo.GetByKeyFor(ctx, "t1", auth.PrincipalRef{Kind: kind, ID: "same-id"}, "demo.test", "same-key")
+		if err != nil || record == nil || record.PrincipalKind != string(kind) {
+			t.Fatalf("missing isolated record for kind %s: record=%#v err=%v", kind, record, err)
+		}
+	}
+}
+
 func TestIdempotencyExecutorConcurrentProcessing(t *testing.T) {
 	repo := openIdempotencyTestDB(t)
 	exec := idempotency.NewExecutor(repo)

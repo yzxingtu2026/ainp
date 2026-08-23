@@ -32,6 +32,9 @@ type auditLogListRequest struct {
 	// LegacyUserKeyword is accepted during the user-to-actor compatibility window.
 	LegacyUserKeyword string `json:"user_keyword" validate:"omitempty"`
 	ActorType         string `json:"actor_type" validate:"omitempty"`
+	PrincipalKind     string `json:"principal_kind" validate:"omitempty"`
+	ClientSurface     string `json:"client_surface" validate:"omitempty"`
+	Audience          string `json:"audience" validate:"omitempty"`
 	ActionID          string `json:"action_id" validate:"omitempty"`
 	Result            string `json:"result" validate:"omitempty,oneof=success failure"`
 	ResourceType      string `json:"resource_type" validate:"omitempty"`
@@ -79,7 +82,7 @@ func (s *AuditLogService) list(ctx context.Context, req auditLogListRequest) (an
 	if err != nil {
 		return nil, err
 	}
-	fromSQL := " FROM audit_logs AS a LEFT JOIN tenant_accounts AS u ON u.id = a.actor_id AND u.tenant_id = a.tenant_id" +
+	fromSQL := " FROM audit_logs AS a LEFT JOIN tenant_accounts AS u ON a.principal_kind = 'ainp.account' AND u.id = a.actor_id AND u.tenant_id = a.tenant_id" +
 		" WHERE a.tenant_id = ? AND a.occurred_at >= ? AND a.occurred_at <= ?"
 	args := []any{start, end}
 	keyword := strings.TrimSpace(req.ActorKeyword)
@@ -91,7 +94,7 @@ func (s *AuditLogService) list(ctx context.Context, req auditLogListRequest) (an
 		fromSQL += " AND (LOWER(u.username) LIKE ? OR LOWER(u.display_name) LIKE ?)"
 		args = append(args, like, like)
 	}
-	filters := map[string]string{"a.actor_type": req.ActorType, "a.action_id": req.ActionID, "a.result": req.Result, "a.resource_type": req.ResourceType, "a.resource_id": req.ResourceID, "a.request_id": req.RequestID, "a.client": req.Client}
+	filters := map[string]string{"a.actor_type": req.ActorType, "a.principal_kind": req.PrincipalKind, "a.client_surface": req.ClientSurface, "a.audience": req.Audience, "a.action_id": req.ActionID, "a.result": req.Result, "a.resource_type": req.ResourceType, "a.resource_id": req.ResourceID, "a.request_id": req.RequestID, "a.client": req.Client}
 	for column, value := range filters {
 		if value != "" {
 			fromSQL += " AND " + column + " = ?"
@@ -134,7 +137,7 @@ func (s *AuditLogService) get(ctx context.Context, req auditLogGetRequest) (any,
 	}
 	rows, err := tenant.TenantRaw[AuditLogItem](tdb,
 		"SELECT a.*, COALESCE(u.display_name, u.username, '') AS actor_name FROM audit_logs AS a"+
-			" LEFT JOIN tenant_accounts AS u ON u.id = a.actor_id AND u.tenant_id = a.tenant_id"+
+			" LEFT JOIN tenant_accounts AS u ON a.principal_kind = 'ainp.account' AND u.id = a.actor_id AND u.tenant_id = a.tenant_id"+
 			" WHERE a.tenant_id = ? AND a.id = ? LIMIT 1", req.ID)
 	if len(rows) == 0 && err == nil {
 		return nil, errs.NewKey(errs.CodeNotFound, "audit.not_found", "audit log not found")
