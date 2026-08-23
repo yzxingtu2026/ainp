@@ -17,6 +17,9 @@ type EventContext struct {
 	TenantID      string
 	Realm         auth.Realm
 	ActorID       string
+	Principal     auth.PrincipalRef
+	ClientSurface string
+	Audience      string
 	CorrelationID string
 	CausationID   string
 	Client        string // e.g. job|system
@@ -62,6 +65,9 @@ type resolvedContext struct {
 	TenantID      string
 	Realm         auth.Realm
 	ActorID       string
+	Principal     auth.PrincipalRef
+	ClientSurface string
+	Audience      string
 	CorrelationID string
 	CausationID   string
 }
@@ -76,6 +82,9 @@ func resolveEventContext(ctx context.Context) (resolvedContext, error) {
 			TenantID:      strings.TrimSpace(ec.TenantID),
 			Realm:         realm,
 			ActorID:       firstNonEmpty(ec.ActorID),
+			Principal:     ec.Principal,
+			ClientSurface: strings.TrimSpace(ec.ClientSurface),
+			Audience:      strings.TrimSpace(ec.Audience),
 			CorrelationID: firstNonEmpty(ec.CorrelationID),
 			CausationID:   firstNonEmpty(ec.CausationID),
 		}, nil
@@ -89,6 +98,9 @@ func resolveEventContext(ctx context.Context) (resolvedContext, error) {
 		TenantID:      strings.TrimSpace(ac.TenantID),
 		Realm:         realm,
 		ActorID:       strings.TrimSpace(ac.PrincipalID),
+		Principal:     ac.Principal,
+		ClientSurface: strings.TrimSpace(ac.ClientSurface),
+		Audience:      strings.TrimSpace(ac.Audience),
 		CorrelationID: firstNonEmpty(ac.RequestID, ac.TraceID),
 	}, nil
 }

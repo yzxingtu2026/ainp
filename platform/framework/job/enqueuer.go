@@ -54,7 +54,7 @@ func (e *enqueuer) Enqueue(ctx context.Context, in EnqueueInput) (*Run, error) {
 	if !ok {
 		return nil, Permanent(fmt.Errorf("unknown job type %q", in.Type))
 	}
-	tenantID, realm, actorID, correlationID, err := ResolveTenantContext(ctx)
+	tenantID, realm, principal, surface, audience, correlationID, err := ResolveIdentityContext(ctx)
 	if err != nil {
 		return nil, Permanent(err)
 	}
@@ -86,7 +86,10 @@ func (e *enqueuer) Enqueue(ctx context.Context, in EnqueueInput) (*Run, error) {
 		IdempotencyKey: strings.TrimSpace(in.IdempotencyKey),
 		CorrelationID:  correlationID,
 		CausationID:    firstNonEmpty(in.CausationID),
-		CreatedBy:      actorID,
+		CreatedBy:      principal.ID,
+		PrincipalKind:  string(principal.Kind),
+		ClientSurface:  surface,
+		Audience:       audience,
 		CreatedAt:      now,
 		UpdatedAt:      now,
 	}
@@ -129,6 +132,9 @@ func (e *enqueuer) dispatch(ctx context.Context, run *Run, def Definition, proce
 		TenantID:      run.TenantID,
 		Realm:         auth.Realm(run.Realm),
 		ActorID:       run.CreatedBy,
+		Principal:     auth.PrincipalRef{Kind: auth.PrincipalKind(run.PrincipalKind), ID: run.CreatedBy},
+		ClientSurface: run.ClientSurface,
+		Audience:      run.Audience,
 		CorrelationID: run.CorrelationID,
 		CausationID:   run.CausationID,
 		CreatedAt:     run.CreatedAt,

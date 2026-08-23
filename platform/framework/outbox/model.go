@@ -28,6 +28,9 @@ type Event struct {
 	CorrelationID    string              `gorm:"size:64" json:"correlation_id,omitempty"`
 	CausationID      string              `gorm:"size:64" json:"causation_id,omitempty"`
 	ActorID          string              `gorm:"size:64" json:"actor_id,omitempty"`
+	PrincipalKind    string              `gorm:"size:128" json:"principal_kind,omitempty"`
+	ClientSurface    string              `gorm:"size:128" json:"client_surface,omitempty"`
+	Audience         string              `gorm:"size:255" json:"audience,omitempty"`
 	LastError        string              `gorm:"size:512" json:"last_error,omitempty"`
 	CreatedAt        time.Time           `json:"created_at"`
 	UpdatedAt        time.Time           `json:"updated_at"`

@@ -23,6 +23,18 @@ func TestPrincipalSessionMigrationContract(t *testing.T) {
 	}
 }
 
+func TestAsyncPrincipalContextMigrationContract(t *testing.T) {
+	body, err := os.ReadFile("../migrations/0059_async_principal_context.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{"outbox_events", "job_runs", "principal_kind", "client_surface", "audience", "idx_outbox_principal", "idx_job_runs_principal"} {
+		if !strings.Contains(string(body), expected) {
+			t.Fatalf("async principal context migration is missing %q", expected)
+		}
+	}
+}
+
 func TestPrincipalSessionMigrationPostgres(t *testing.T) {
 	dsn := os.Getenv("AINP_TEST_DATABASE_DSN")
 	if dsn == "" {
