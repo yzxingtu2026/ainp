@@ -205,6 +205,9 @@ func New(opts Options) *gin.Engine {
 			handler := actionHTTPHandler(opts.Actions, alias.ID)
 			registerActionHTTPRoute(r, method, path, handler)
 		}
+		for _, route := range opts.Actions.HTTPRoutes() {
+			registerActionHTTPRoute(r, strings.ToUpper(route.HTTP.Method), route.HTTP.Path, actionHTTPHandler(opts.Actions, route.ActionID))
+		}
 	}
 
 	if opts.OnHTTP != nil {

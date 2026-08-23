@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/yzxingtu2026/ainp/platform/framework/action"
+	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/status"
 	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"github.com/yzxingtu2026/ainp/platform/modules/system/access/model"
@@ -91,7 +92,7 @@ func (s *preAuthStore) loadAuthorization(ctx context.Context, tenantID, accountI
 	if sessionID != "" {
 		var count int64
 		err = s.db.WithContext(ctx).Model(&model.AuthSession{}).
-			Where("tenant_id = ? AND id = ? AND account_id = ? AND auth_version = ? AND revoked_at IS NULL AND expires_at > ?", tenantID, sessionID, accountID, authVersion, time.Now().UTC()).
+			Where("tenant_id = ? AND id = ? AND principal_kind = ? AND principal_id = ? AND auth_version = ? AND revoked_at IS NULL AND expires_at > ?", tenantID, sessionID, auth.PrincipalKindAccount, accountID, authVersion, time.Now().UTC()).
 			Count(&count).Error
 		if err != nil || count != 1 {
 			return nil, nil, nil, err

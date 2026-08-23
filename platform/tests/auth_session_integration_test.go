@@ -2,14 +2,18 @@ package tests
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
+	"github.com/yzxingtu2026/ainp/platform/framework/authentication"
 	"github.com/yzxingtu2026/ainp/platform/framework/database"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 	"github.com/yzxingtu2026/ainp/platform/framework/status"
@@ -17,6 +21,31 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/modules/system"
 	"github.com/yzxingtu2026/ainp/platform/modules/system/model"
 )
+
+type versionedCustomerProvider struct{ version atomic.Uint64 }
+
+type customerAuthenticator struct{}
+
+func (customerAuthenticator) Method() string { return "example-sso" }
+func (customerAuthenticator) Capabilities() authentication.Capabilities {
+	return authentication.Capabilities{}
+}
+func (customerAuthenticator) Begin(context.Context, authentication.BeginRequest) (*authentication.Challenge, error) {
+	return nil, auth.ErrAuthorizationInvalid
+}
+func (customerAuthenticator) Complete(context.Context, authentication.CompleteRequest) (*authentication.VerifiedIdentity, error) {
+	return &authentication.VerifiedIdentity{Provider: "example-sso", Subject: "customer-1", TenantID: "tenant-a", Principal: auth.PrincipalRef{Kind: "example.customer", ID: "customer-1"}, AuthVersion: 1}, nil
+}
+
+func (p *versionedCustomerProvider) Kind() auth.PrincipalKind { return "example.customer" }
+func (p *versionedCustomerProvider) LoadAuthorization(_ context.Context, req auth.AuthorizationRequest) (*auth.AuthorizationSnapshot, error) {
+	ref := req.PrincipalRef()
+	version := p.version.Load()
+	if req.TenantID != "tenant-a" || ref != (auth.PrincipalRef{Kind: "example.customer", ID: "customer-1"}) || req.AuthVersion != version {
+		return nil, auth.ErrAuthorizationStale
+	}
+	return &auth.AuthorizationSnapshot{TenantID: req.TenantID, Principal: ref, PrincipalID: ref.ID, SessionID: req.SessionID, AuthVersion: version, Audience: req.Audience, ClientSurface: req.ClientSurface, Permissions: []string{"orders:read"}}, nil
+}
 
 func TestSessionRefreshRotationReplayAndTenantScope(t *testing.T) {
 	dsn := os.Getenv("AINP_TEST_DATABASE_DSN")
@@ -121,5 +150,186 @@ func TestSessionRefreshRotationReplayAndTenantScope(t *testing.T) {
 	}
 	if revoked.(map[string]any)["revoked_count"] != int64(1) {
 		t.Fatalf("revoke all=%#v", revoked)
+	}
+}
+
+func TestPrincipalSessionRefreshVersionAndConcurrency(t *testing.T) {
+	dsn := os.Getenv("AINP_TEST_DATABASE_DSN")
+	if dsn == "" {
+		t.Skip("AINP_TEST_DATABASE_DSN is not set")
+	}
+	root, err := database.Open(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	schema := "ainp_principal_auth_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	if err = root.Exec(fmt.Sprintf(`CREATE SCHEMA %q`, schema)).Error; err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = root.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE`, schema)).Error })
+	db, err := database.Open(dsn + " search_path=" + schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = system.AutoMigrate(db); err != nil {
+		t.Fatal(err)
+	}
+	if err = db.Create(&tenant.Tenant{ID: "tenant-a", Name: "A", Status: status.ActivationEnabled}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	provider := &versionedCustomerProvider{}
+	provider.version.Store(1)
+	principals := auth.NewPrincipalRegistry()
+	if err = principals.Register(provider); err != nil {
+		t.Fatal(err)
+	}
+	surfaces := auth.NewClientSurfaceRegistry()
+	surface := auth.ClientSurface{ID: "example.mobile", Audience: "example:mobile", PathPrefix: "/api/mobile/", PrincipalKinds: []auth.PrincipalKind{"example.customer"}, Methods: []string{"example-sso"}}
+	if err = surfaces.Register(surface); err != nil {
+		t.Fatal(err)
+	}
+	tokens, _ := auth.NewTokenService("test-secret", "ainp-test", time.Hour)
+	sessions := system.NewSessionService(db, tokens, system.NewAuthService(db))
+	sessions.Configure(principals, surfaces)
+	forged := &auth.AuthorizationSnapshot{TenantID: "tenant-a", Principal: auth.PrincipalRef{Kind: "example.customer", ID: "customer-1"}, PrincipalID: "customer-1", AuthVersion: 2}
+	if _, err = sessions.CreatePrincipal(context.Background(), forged, surface, "mobile", "forged"); err == nil {
+		t.Fatal("session service must revalidate principal snapshot before signing")
+	}
+	snapshot, err := principals.LoadAuthorization(context.Background(), auth.AuthorizationRequest{TenantID: "tenant-a", Principal: auth.PrincipalRef{Kind: "example.customer", ID: "customer-1"}, AuthVersion: 1, Audience: surface.Audience, ClientSurface: surface.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := sessions.CreatePrincipal(context.Background(), snapshot, surface, "mobile", "phone")
+	if err != nil {
+		t.Fatal(err)
+	}
+	claims, err := tokens.ParseFor(created.AccessToken, surface.Audience)
+	if err != nil || claims.PrincipalKind != "example.customer" || claims.ClientSurface != surface.ID || claims.Subject != "customer-1" {
+		t.Fatalf("custom claims=%#v err=%v", claims, err)
+	}
+	var row model.AuthSession
+	if err = db.First(&row, "id = ?", created.SessionID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if row.AccountID != nil || row.PrincipalKind != "example.customer" || row.PrincipalID != "customer-1" {
+		t.Fatalf("custom session leaked account semantics: %#v", row)
+	}
+	historySession, err := sessions.CreatePrincipal(context.Background(), snapshot, surface, "mobile", "history")
+	if err != nil {
+		t.Fatal(err)
+	}
+	historyRotated1, err := sessions.Refresh(context.Background(), historySession.RefreshToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	historyRotated2, err := sessions.Refresh(context.Background(), historyRotated1.RefreshToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = sessions.Refresh(context.Background(), historySession.RefreshToken); err == nil {
+		t.Fatal("replaying any used refresh token must fail")
+	}
+	if _, err = sessions.Refresh(context.Background(), historyRotated2.RefreshToken); err == nil {
+		t.Fatal("old refresh replay must revoke the complete token family")
+	}
+
+	results := make(chan error, 2)
+	var wg sync.WaitGroup
+	for range 2 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, refreshErr := sessions.Refresh(context.Background(), created.RefreshToken)
+			results <- refreshErr
+		}()
+	}
+	wg.Wait()
+	close(results)
+	successes := 0
+	for refreshErr := range results {
+		if refreshErr == nil {
+			successes++
+		}
+	}
+	if successes != 1 {
+		t.Fatalf("concurrent refresh successes=%d, want 1", successes)
+	}
+	if err = db.First(&row, "id = ?", created.SessionID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if row.RevokedAt == nil {
+		t.Fatal("refresh replay must revoke token family")
+	}
+
+	created2, err := sessions.CreatePrincipal(context.Background(), snapshot, surface, "mobile", "phone-2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider.version.Store(2)
+	if _, err = sessions.Refresh(context.Background(), created2.RefreshToken); err == nil {
+		t.Fatal("principal auth version change must invalidate refresh")
+	}
+}
+
+func TestUnifiedAuthenticationCreatesCustomPrincipalSession(t *testing.T) {
+	dsn := os.Getenv("AINP_TEST_DATABASE_DSN")
+	if dsn == "" {
+		t.Skip("AINP_TEST_DATABASE_DSN is not set")
+	}
+	root, err := database.Open(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	schema := "ainp_principal_login_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	if err = root.Exec(fmt.Sprintf(`CREATE SCHEMA %q`, schema)).Error; err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = root.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE`, schema)).Error })
+	db, err := database.Open(dsn + " search_path=" + schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = system.AutoMigrate(db); err != nil {
+		t.Fatal(err)
+	}
+	if err = db.Create(&tenant.Tenant{ID: "tenant-a", Name: "A", Status: status.ActivationEnabled}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	provider := &versionedCustomerProvider{}
+	provider.version.Store(1)
+	principals := auth.NewPrincipalRegistry()
+	if err = principals.Register(provider); err != nil {
+		t.Fatal(err)
+	}
+	surfaces := auth.NewClientSurfaceRegistry()
+	surface := auth.ClientSurface{ID: "example.mobile", Audience: "example:mobile", PathPrefix: "/api/mobile/", PrincipalKinds: []auth.PrincipalKind{"example.customer"}, Methods: []string{"example-sso"}}
+	if err = surfaces.Register(surface); err != nil {
+		t.Fatal(err)
+	}
+	methods := authentication.NewRegistry()
+	if err = methods.Register(customerAuthenticator{}); err != nil {
+		t.Fatal(err)
+	}
+	tokenService, _ := auth.NewTokenService("test-secret", "ainp-test", time.Hour)
+	authService := system.NewAuthService(db)
+	sessions := system.NewSessionService(db, tokenService, authService)
+	sessions.Configure(principals, surfaces)
+	unified := system.NewUnifiedAuthService(db, methods, authService, sessions, nil)
+	unified.Configure(principals, surfaces)
+	ctx := auth.WithContext(context.Background(), &auth.Context{ClientSurface: surface.ID, Audience: surface.Audience})
+	result, err := unified.Authenticate(ctx, system.AuthenticateRequest{Method: "example-sso", Client: surface.ID, Credentials: json.RawMessage(`{}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := result.(map[string]any)
+	claims, err := tokenService.ParseFor(data["access_token"].(string), surface.Audience)
+	if err != nil || claims.PrincipalKind != "example.customer" || claims.Subject != "customer-1" {
+		t.Fatalf("custom login claims=%#v err=%v", claims, err)
+	}
+	wrongPath := auth.WithContext(context.Background(), &auth.Context{ClientSurface: auth.TenantConsoleSurface, Audience: auth.TenantAudience})
+	if _, err = unified.Authenticate(wrongPath, system.AuthenticateRequest{Method: "example-sso", Client: surface.ID, Credentials: json.RawMessage(`{}`)}); err == nil {
+		t.Fatal("credential exchange must match request path surface")
 	}
 }

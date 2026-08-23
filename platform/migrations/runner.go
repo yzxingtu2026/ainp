@@ -47,6 +47,21 @@ func Load() ([]Migration, error) {
 	return loadFS(files)
 }
 
+// Find returns one built-in migration without applying it or changing the
+// migration ledger. Auto-migration uses this to converge legacy development
+// schemas with the same idempotent SQL used by production upgrades.
+func Find(version int) (Migration, error) {
+	known, err := Load()
+	if err != nil {
+		return Migration{}, err
+	}
+	index := sort.Search(len(known), func(i int) bool { return known[i].Version >= version })
+	if index == len(known) || known[index].Version != version {
+		return Migration{}, fmt.Errorf("migration version %04d is not known", version)
+	}
+	return known[index], nil
+}
+
 func loadFS(source fs.FS) ([]Migration, error) {
 	entries, err := fs.ReadDir(source, ".")
 	if err != nil {

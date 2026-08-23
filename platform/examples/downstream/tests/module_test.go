@@ -1,8 +1,12 @@
 package downstream_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"slices"
 	"strings"
@@ -19,6 +23,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/config"
 	"github.com/yzxingtu2026/ainp/platform/framework/database"
+	"github.com/yzxingtu2026/ainp/platform/framework/httpserver"
 	"github.com/yzxingtu2026/ainp/platform/framework/i18n"
 	"github.com/yzxingtu2026/ainp/platform/framework/job"
 	"github.com/yzxingtu2026/ainp/platform/framework/prompt"
@@ -91,6 +96,66 @@ func TestDownstreamHostLoadsEmbeddedRuntimeAssetsFromArbitraryWorkingDirectory(t
 		platform.App.Outbox = nil
 		_ = platform.Close()
 	})
+	routes := platform.App.Actions.HTTPRoutes()
+	for _, want := range []string{"/api/v1/customer/auth/authenticate", "/api/v1/customer/auth/refresh", "/api/v1/customer/auth/logout", "/api/v1/customer/auth/sessions"} {
+		found := false
+		for _, route := range routes {
+			if route.HTTP != nil && route.HTTP.Path == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("custom client surface auth route missing: %s", want)
+		}
+	}
+	sessionAction, ok := platform.App.Actions.Get("system.auth_session_list")
+	if !ok || !slices.Contains(sessionAction.Meta.PrincipalKinds, "example.customer") || !slices.Contains(sessionAction.Meta.ClientSurfaces, "example.customer-client") {
+		t.Fatalf("session action does not include downstream principal surface: %#v", sessionAction.Meta)
+	}
+	engine := httpserver.New(httpserver.Options{Mode: "test", Installed: &platform.App.Installed, Tokens: platform.App.Tokens, Authorization: platform.App.Authorization, ClientSurfaces: platform.App.ClientSurfaces, Actions: platform.App.Actions, Menus: platform.App.Menus, CodeSets: platform.App.CodeSets, DB: platform.DB, OnHTTP: platform.App.OnHTTP})
+	authBody := []byte(`{"method":"example-sso","client":"example.customer-client","credentials":{}}`)
+	authRequest := httptest.NewRequest(http.MethodPost, "/api/v1/customer/auth/authenticate", bytes.NewReader(authBody))
+	authRequest.Header.Set("Content-Type", "application/json")
+	authResponse := httptest.NewRecorder()
+	engine.ServeHTTP(authResponse, authRequest)
+	if authResponse.Code != http.StatusOK {
+		t.Fatalf("custom surface authentication status=%d body=%s", authResponse.Code, authResponse.Body.String())
+	}
+	var authEnvelope struct {
+		Code int `json:"code"`
+		Data struct {
+			RefreshToken string `json:"refresh_token"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(authResponse.Body.Bytes(), &authEnvelope); err != nil || authEnvelope.Code != 0 || authEnvelope.Data.RefreshToken == "" {
+		t.Fatalf("invalid custom authentication response: %s", authResponse.Body.String())
+	}
+	wrongRequest := httptest.NewRequest(http.MethodPost, "/api/v1/system/auth/authenticate", bytes.NewReader(authBody))
+	wrongRequest.Header.Set("Content-Type", "application/json")
+	wrongResponse := httptest.NewRecorder()
+	engine.ServeHTTP(wrongResponse, wrongRequest)
+	var wrongEnvelope struct {
+		Code int `json:"code"`
+	}
+	if err := json.Unmarshal(wrongResponse.Body.Bytes(), &wrongEnvelope); err != nil || wrongEnvelope.Code == 0 {
+		t.Fatalf("mismatched authentication path surface accepted: %s", wrongResponse.Body.String())
+	}
+	refreshBody := []byte(fmt.Sprintf(`{"refresh_token":%q}`, authEnvelope.Data.RefreshToken))
+	wrongRefresh := httptest.NewRequest(http.MethodPost, "/api/v1/system/auth/refresh", bytes.NewReader(refreshBody))
+	wrongRefresh.Header.Set("Content-Type", "application/json")
+	wrongRefreshResponse := httptest.NewRecorder()
+	engine.ServeHTTP(wrongRefreshResponse, wrongRefresh)
+	if err := json.Unmarshal(wrongRefreshResponse.Body.Bytes(), &wrongEnvelope); err != nil || wrongEnvelope.Code == 0 {
+		t.Fatalf("cross-surface refresh accepted: %s", wrongRefreshResponse.Body.String())
+	}
+	validRefresh := httptest.NewRequest(http.MethodPost, "/api/v1/customer/auth/refresh", bytes.NewReader(refreshBody))
+	validRefresh.Header.Set("Content-Type", "application/json")
+	validRefreshResponse := httptest.NewRecorder()
+	engine.ServeHTTP(validRefreshResponse, validRefresh)
+	if err := json.Unmarshal(validRefreshResponse.Body.Bytes(), &wrongEnvelope); err != nil || wrongEnvelope.Code != 0 {
+		t.Fatalf("custom surface refresh failed: %s", validRefreshResponse.Body.String())
+	}
 
 	if prompt.Get("agent/system-operations") == "" || prompt.Get(orders.AgentPromptKey) == "" || prompt.Get("example.orders/order-summary") == "" {
 		t.Fatal("built-in and downstream Prompts must both load from embedded filesystems")

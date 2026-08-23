@@ -12,6 +12,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
 	"github.com/yzxingtu2026/ainp/platform/framework/status"
 	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
+	"github.com/yzxingtu2026/ainp/platform/migrations"
 	"github.com/yzxingtu2026/ainp/platform/modules/system/model"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
@@ -37,16 +38,28 @@ func AutoMigrate(db *gorm.DB) error {
 	if legacySchema || legacyPartial {
 		return fmt.Errorf("legacy tenant account schema detected; run versioned migrations before AutoMigrate")
 	}
+	// Existing development databases may contain Account sessions. Apply the
+	// idempotent backfill before GORM adds the new NOT NULL columns.
+	if db.Migrator().HasTable("auth_sessions") {
+		if err := applyPrincipalSessionSchema(db); err != nil {
+			return err
+		}
+	}
 	if err := db.AutoMigrate(
 		&tenant.Tenant{},
 		&model.TenantAccount{},
 		&model.AuthIdentity{},
 		&model.AuthSession{},
+		&model.AuthRefreshTokenUse{},
 		&model.AuthChallenge{},
 		&model.Role{},
 		&model.RolePermission{},
 		&model.AccountRole{},
 	); err != nil {
+		return err
+	}
+	// Fresh AutoMigrate databases also need the versioned check constraints.
+	if err := applyPrincipalSessionSchema(db); err != nil {
 		return err
 	}
 	if err := ensureAccountConstraints(db); err != nil {
@@ -83,6 +96,17 @@ func AutoMigrate(db *gorm.DB) error {
 	}
 	if err := ensureAttachmentThumbStatusConstraint(migrationDB); err != nil {
 		return err
+	}
+	return nil
+}
+
+func applyPrincipalSessionSchema(db *gorm.DB) error {
+	migration, err := migrations.Find(58)
+	if err != nil {
+		return fmt.Errorf("load principal session migration: %w", err)
+	}
+	if err := db.Exec(migration.SQL).Error; err != nil {
+		return fmt.Errorf("apply principal session migration: %w", err)
 	}
 	return nil
 }

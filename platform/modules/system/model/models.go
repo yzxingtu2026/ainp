@@ -7,13 +7,14 @@ import (
 )
 
 type (
-	TenantAccount  = accessmodel.TenantAccount
-	AuthIdentity   = accessmodel.AuthIdentity
-	AuthSession    = accessmodel.AuthSession
-	AuthChallenge  = accessmodel.AuthChallenge
-	Role           = accessmodel.Role
-	RolePermission = accessmodel.RolePermission
-	AccountRole    = accessmodel.AccountRole
+	TenantAccount       = accessmodel.TenantAccount
+	AuthIdentity        = accessmodel.AuthIdentity
+	AuthSession         = accessmodel.AuthSession
+	AuthRefreshTokenUse = accessmodel.AuthRefreshTokenUse
+	AuthChallenge       = accessmodel.AuthChallenge
+	Role                = accessmodel.Role
+	RolePermission      = accessmodel.RolePermission
+	AccountRole         = accessmodel.AccountRole
 
 	// Deprecated: use TenantAccount.
 	User = TenantAccount
