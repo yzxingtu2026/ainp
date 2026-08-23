@@ -37,7 +37,7 @@ func TestAttachmentTransferTokenIssueAndParse(t *testing.T) {
 		t.Fatal(err)
 	}
 	token, jti, exp, err := svc.Issue(attachment.IssueTransferInput{
-		TenantID: "t1", PrincipalID: "u1", AttachmentID: "a1",
+		TenantID: "t1", PrincipalID: "u1", PrincipalKind: "example.customer", ClientSurface: "example.mobile", SourceAudience: "example:mobile", AttachmentID: "a1",
 		Op: attachment.OpUpload, Size: 12, TTL: time.Minute,
 	})
 	if err != nil || token == "" || jti == "" || exp.Before(time.Now()) {
@@ -49,6 +49,9 @@ func TestAttachmentTransferTokenIssueAndParse(t *testing.T) {
 	}
 	if claims.TenantID != "t1" || claims.PrincipalID != "u1" || claims.AttachmentID != "a1" || claims.Op != attachment.OpUpload || claims.JTI != jti {
 		t.Fatalf("claims = %#v", claims)
+	}
+	if claims.PrincipalKind != "example.customer" || claims.ClientSurface != "example.mobile" || claims.SourceAudience != "example:mobile" {
+		t.Fatalf("principal context = %#v", claims)
 	}
 	if claims.Transport != attachment.TransferTransportRaw || claims.EffectiveUploadTransport() != attachment.TransferTransportRaw {
 		t.Fatalf("default upload transport = %#v", claims)
@@ -92,6 +95,9 @@ func TestAttachmentTransferTokenLegacyUIDFallbackAndConflict(t *testing.T) {
 	claims, err := svc.Parse(legacyToken)
 	if err != nil || claims.PrincipalID != "legacy-account" {
 		t.Fatalf("legacy uid fallback claims=%#v err=%v", claims, err)
+	}
+	if claims.PrincipalKind != "ainp.account" {
+		t.Fatalf("legacy principal kind=%q", claims.PrincipalKind)
 	}
 	base.PrincipalID = "canonical-account"
 	conflictToken, err := jwt.NewWithClaims(jwt.SigningMethodHS256, base).SignedString([]byte("unit-secret"))

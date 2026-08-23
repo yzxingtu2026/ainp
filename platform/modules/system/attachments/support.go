@@ -49,3 +49,11 @@ func tenantIdentity(ctx context.Context) (string, string, error) {
 	}
 	return ac.TenantID, ac.PrincipalID, nil
 }
+
+func attachmentPrincipal(ctx context.Context) auth.PrincipalRef {
+	ac := auth.MustFromContext(ctx)
+	if ac.Principal.Valid() {
+		return ac.Principal
+	}
+	return auth.PrincipalRef{Kind: auth.PrincipalKindAccount, ID: ac.PrincipalID}
+}
