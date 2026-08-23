@@ -34,6 +34,13 @@ func (p *RuntimeContextProvider) Build(ctx context.Context, req runtimecontext.B
 	if !ok || ac == nil || !ac.Authenticated || ac.TenantID == "" || ac.PrincipalID == "" || ac.TenantID != req.TenantID || ac.PrincipalID != req.PrincipalID {
 		return nil, tenant.ErrTenantConflict
 	}
+	principal := ac.Principal
+	if !principal.Valid() {
+		principal = auth.PrincipalRef{Kind: auth.PrincipalKindAccount, ID: ac.PrincipalID}
+	}
+	if req.PrincipalKind != string(principal.Kind) || req.ClientSurface != ac.ClientSurface || req.Audience != ac.Audience {
+		return nil, auth.ErrAuthorizationInvalid
+	}
 	tdb, err := tenant.TenantDB(ctx, p.db)
 	if err != nil {
 		return nil, err
@@ -106,7 +113,7 @@ func (p *RuntimeContextProvider) Build(ctx context.Context, req runtimecontext.B
 	if prefSource != "user" {
 		locale, localeSource = tenantLocale, tenantSource
 	}
-	return &runtimecontext.TrustedRuntimeContext{TenantID: req.TenantID, PrincipalID: req.PrincipalID, Username: user.Username, DisplayName: user.DisplayName, PreferredAddress: preferred, PreferredAddressSource: preferredSource, Locale: locale, LocaleSource: localeSource, AutoMemoryEnabled: prefs.AutoMemoryEnabled, ConversationID: req.ConversationID, ConversationCreatedAt: req.ConversationCreatedAt, AgentID: req.AgentID, AgentVersionID: req.AgentVersionID, RunID: req.RunID, Time: snap, ContextVersion: runtimecontext.ContextVersion, PolicyVersion: runtimecontext.PolicyVersion}, nil
+	return &runtimecontext.TrustedRuntimeContext{TenantID: req.TenantID, PrincipalID: req.PrincipalID, PrincipalKind: req.PrincipalKind, ClientSurface: req.ClientSurface, Audience: req.Audience, Username: user.Username, DisplayName: user.DisplayName, PreferredAddress: preferred, PreferredAddressSource: preferredSource, Locale: locale, LocaleSource: localeSource, AutoMemoryEnabled: prefs.AutoMemoryEnabled, ConversationID: req.ConversationID, ConversationCreatedAt: req.ConversationCreatedAt, AgentID: req.AgentID, AgentVersionID: req.AgentVersionID, RunID: req.RunID, Time: snap, ContextVersion: runtimecontext.ContextVersion, PolicyVersion: runtimecontext.PolicyVersion}, nil
 }
 
 func RegisterRuntimeContextDefaultsSetting(a interface {

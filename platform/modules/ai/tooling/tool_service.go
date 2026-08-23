@@ -317,7 +317,7 @@ func (s *ToolService) Load(ctx context.Context, r ToolLoadRequest) (any, error) 
 		if exp.After(scope.ExpiresAt) {
 			exp = scope.ExpiresAt
 		}
-		token, err := s.signer.Sign(aitool.HandleClaims{TenantID: ac.TenantID, PrincipalID: ac.PrincipalID, Realm: string(auth.NormalizeRealm(ac.Realm)), SessionID: ac.SessionID, AuthVersion: ac.AuthVersion, ScopeID: scope.ID, ToolID: d.ID, RuntimeRef: d.RuntimeRef, SchemaHash: d.SchemaHash, ExpiresAt: exp.Unix()})
+		token, err := s.signer.Sign(aitool.HandleClaims{TenantID: ac.TenantID, PrincipalID: ac.PrincipalID, PrincipalKind: string(toolPrincipal(ac).Kind), ClientSurface: ac.ClientSurface, Audience: ac.Audience, Realm: string(auth.NormalizeRealm(ac.Realm)), SessionID: ac.SessionID, AuthVersion: ac.AuthVersion, ScopeID: scope.ID, ToolID: d.ID, RuntimeRef: d.RuntimeRef, SchemaHash: d.SchemaHash, ExpiresAt: exp.Unix()})
 		if err != nil {
 			return nil, err
 		}
@@ -1004,7 +1004,7 @@ func (s *ToolService) resolveLoaded(ctx context.Context, ac *auth.Context, token
 	if err != nil {
 		return zero, nil, errs.New(errs.CodeForbidden, err.Error())
 	}
-	if claims.TenantID != ac.TenantID || claims.PrincipalID != ac.PrincipalID || claims.SessionID != ac.SessionID || claims.AuthVersion != ac.AuthVersion || claims.Realm != string(auth.NormalizeRealm(ac.Realm)) {
+	if claims.TenantID != ac.TenantID || claims.PrincipalID != ac.PrincipalID || claims.PrincipalKind != string(toolPrincipal(ac).Kind) || claims.ClientSurface != ac.ClientSurface || claims.Audience != ac.Audience || claims.SessionID != ac.SessionID || claims.AuthVersion != ac.AuthVersion || claims.Realm != string(auth.NormalizeRealm(ac.Realm)) {
 		return zero, nil, errs.New(errs.CodeForbidden, "tool handle actor mismatch")
 	}
 	scope, err := s.scope(ctx, ac, claims.ScopeID)
@@ -1028,7 +1028,7 @@ func (s *ToolService) resolveLoaded(ctx context.Context, ac *auth.Context, token
 	return aitool.LoadedTool{Definition: d, Handle: token, ExpiresAt: claims.ExpiresAt}, scope, nil
 }
 func (s *ToolService) project(ctx context.Context, scope *ToolScope, d aitool.Definition) (aitool.Definition, bool, error) {
-	runtimeScope := aitool.RuntimeScope{ID: scope.ID, TenantID: scope.TenantID, PrincipalID: scope.PrincipalID, Realm: scope.Realm, SessionID: scope.SessionID, AuthVersion: scope.AuthVersion}
+	runtimeScope := aitool.RuntimeScope{ID: scope.ID, TenantID: scope.TenantID, PrincipalID: scope.PrincipalID, PrincipalKind: scope.PrincipalKind, ClientSurface: scope.ClientSurface, Audience: scope.Audience, Realm: scope.Realm, SessionID: scope.SessionID, AuthVersion: scope.AuthVersion}
 	if scope.AgentRunID != nil {
 		runtimeScope.AgentRunID = *scope.AgentRunID
 	}
@@ -1037,7 +1037,7 @@ func (s *ToolService) project(ctx context.Context, scope *ToolScope, d aitool.De
 func (s *ToolService) scope(ctx context.Context, ac *auth.Context, id string) (*ToolScope, error) {
 	now := time.Now().UTC()
 	if id == "" {
-		v := &ToolScope{ID: uuid.NewString(), TenantID: ac.TenantID, PrincipalID: ac.PrincipalID, Realm: string(auth.NormalizeRealm(ac.Realm)), SessionID: ac.SessionID, AuthVersion: ac.AuthVersion, AllowedSourcesJSON: jsonBytes([]string{}), AllowedCapabilitiesJSON: jsonBytes([]string{}), AllowedToolsJSON: jsonBytes([]string{}), LoadedToolsJSON: jsonBytes([]string{}), ReferenceEvidenceJSON: jsonBytes([]referenceEvidence{}), ExpiresAt: now.Add(toolScopeTTL)}
+		v := &ToolScope{ID: uuid.NewString(), TenantID: ac.TenantID, PrincipalID: ac.PrincipalID, PrincipalKind: string(toolPrincipal(ac).Kind), ClientSurface: ac.ClientSurface, Audience: ac.Audience, Realm: string(auth.NormalizeRealm(ac.Realm)), SessionID: ac.SessionID, AuthVersion: ac.AuthVersion, AllowedSourcesJSON: jsonBytes([]string{}), AllowedCapabilitiesJSON: jsonBytes([]string{}), AllowedToolsJSON: jsonBytes([]string{}), LoadedToolsJSON: jsonBytes([]string{}), ReferenceEvidenceJSON: jsonBytes([]referenceEvidence{}), ExpiresAt: now.Add(toolScopeTTL)}
 		if err := s.db.WithContext(ctx).Create(v).Error; err != nil {
 			return nil, err
 		}
@@ -1047,7 +1047,7 @@ func (s *ToolService) scope(ctx context.Context, ac *auth.Context, id string) (*
 	if err := s.db.WithContext(ctx).Where("id=? AND principal_id=?", id, ac.PrincipalID).First(&v).Error; err != nil {
 		return nil, err
 	}
-	if v.SessionID != ac.SessionID || v.AuthVersion != ac.AuthVersion || v.Realm != string(auth.NormalizeRealm(ac.Realm)) || !v.ExpiresAt.After(now) {
+	if v.PrincipalKind != string(toolPrincipal(ac).Kind) || v.ClientSurface != ac.ClientSurface || v.Audience != ac.Audience || v.SessionID != ac.SessionID || v.AuthVersion != ac.AuthVersion || v.Realm != string(auth.NormalizeRealm(ac.Realm)) || !v.ExpiresAt.After(now) {
 		return nil, errs.New(errs.CodeForbidden, "tool scope expired or actor changed")
 	}
 	return &v, nil
@@ -1116,6 +1116,12 @@ func toolActor(ctx context.Context) (*auth.Context, error) {
 		return nil, errs.New(errs.CodeUnauthorized, "authenticated tenant actor is required")
 	}
 	return ac, nil
+}
+func toolPrincipal(ac *auth.Context) auth.PrincipalRef {
+	if ac.Principal.Valid() {
+		return ac.Principal
+	}
+	return auth.PrincipalRef{Kind: auth.PrincipalKindAccount, ID: ac.PrincipalID}
 }
 func toolVisible(ac *auth.Context, d aitool.Definition) bool {
 	for _, p := range d.PermissionRefs {

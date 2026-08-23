@@ -11,16 +11,19 @@ import (
 )
 
 type HandleClaims struct {
-	TenantID    string `json:"tid"`
-	PrincipalID string `json:"principal_id"`
-	Realm       string `json:"realm"`
-	SessionID   string `json:"sid"`
-	AuthVersion uint64 `json:"auth_version"`
-	ScopeID     string `json:"scope_id"`
-	ToolID      string `json:"tool_id"`
-	RuntimeRef  string `json:"runtime_ref"`
-	SchemaHash  string `json:"schema_hash"`
-	ExpiresAt   int64  `json:"exp"`
+	TenantID      string `json:"tid"`
+	PrincipalID   string `json:"principal_id"`
+	PrincipalKind string `json:"principal_kind"`
+	ClientSurface string `json:"surface"`
+	Audience      string `json:"audience"`
+	Realm         string `json:"realm"`
+	SessionID     string `json:"sid"`
+	AuthVersion   uint64 `json:"auth_version"`
+	ScopeID       string `json:"scope_id"`
+	ToolID        string `json:"tool_id"`
+	RuntimeRef    string `json:"runtime_ref"`
+	SchemaHash    string `json:"schema_hash"`
+	ExpiresAt     int64  `json:"exp"`
 }
 type HandleSigner struct{ key []byte }
 
