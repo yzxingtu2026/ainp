@@ -15,6 +15,9 @@ type Record struct {
 	Realm            string    `gorm:"size:32;index" json:"realm"`
 	ActorID          string    `gorm:"size:64;index" json:"actor_id"`
 	ActorType        string    `gorm:"size:32" json:"actor_type"`
+	PrincipalKind    string    `gorm:"size:128;index" json:"principal_kind,omitempty"`
+	ClientSurface    string    `gorm:"size:128" json:"client_surface,omitempty"`
+	Audience         string    `gorm:"size:255" json:"audience,omitempty"`
 	ActionID         string    `gorm:"size:128;index" json:"action_id"`
 	Result           string    `gorm:"size:16" json:"result"`
 	RequestID        string    `gorm:"size:64;index" json:"request_id"`

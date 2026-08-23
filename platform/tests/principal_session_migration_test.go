@@ -35,6 +35,60 @@ func TestAsyncPrincipalContextMigrationContract(t *testing.T) {
 	}
 }
 
+func TestAuditIdempotencyPrincipalContextMigrationContract(t *testing.T) {
+	body, err := os.ReadFile("../migrations/0060_audit_idempotency_principal_context.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{"audit_logs", "idempotency_records", "principal_kind", "client_surface", "audience", "ux_idempotency_key"} {
+		if !strings.Contains(string(body), expected) {
+			t.Fatalf("audit/idempotency principal migration is missing %q", expected)
+		}
+	}
+}
+
+func TestAuditIdempotencyPrincipalContextMigrationPostgres(t *testing.T) {
+	dsn := os.Getenv("AINP_TEST_DATABASE_DSN")
+	if dsn == "" {
+		t.Skip("AINP_TEST_DATABASE_DSN is not set")
+	}
+	admin, err := database.Open(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	schema := "ainp_audit_idem_principal_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	if err = admin.Exec(fmt.Sprintf(`CREATE SCHEMA %q`, schema)).Error; err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = admin.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE`, schema)).Error })
+	db, err := database.Open(dsn + " search_path=" + schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, statement := range []string{
+		`CREATE TABLE audit_logs (id varchar(64) PRIMARY KEY, tenant_id varchar(64), actor_id varchar(64), occurred_at timestamptz NOT NULL)`,
+		`CREATE TABLE idempotency_records (id varchar(64) PRIMARY KEY, tenant_id varchar(64) NOT NULL, principal_id varchar(64) NOT NULL, action_id varchar(128) NOT NULL, idempotency_key varchar(191) NOT NULL)`,
+		`CREATE UNIQUE INDEX ux_idempotency_records_key ON idempotency_records(tenant_id,principal_id,action_id,idempotency_key)`,
+		`INSERT INTO audit_logs VALUES ('audit-a','tenant-a','same-id',now())`,
+		`INSERT INTO idempotency_records VALUES ('idem-a','tenant-a','same-id','demo.run','same-key')`,
+	} {
+		if err = db.Exec(statement).Error; err != nil {
+			t.Fatalf("prepare pre-0060 schema: %v\n%s", err, statement)
+		}
+	}
+	applyTestMigration(t, db, "0060_audit_idempotency_principal_context.sql")
+	if err = db.Exec(`INSERT INTO idempotency_records(id,tenant_id,principal_id,principal_kind,action_id,idempotency_key) VALUES ('idem-custom','tenant-a','same-id','example.customer','demo.run','same-key')`).Error; err != nil {
+		t.Fatalf("different Principal Kind must have an independent idempotency key: %v", err)
+	}
+	var count int64
+	if err = db.Raw(`SELECT count(*) FROM audit_logs WHERE id='audit-a' AND principal_kind='ainp.account'`).Scan(&count).Error; err != nil || count != 1 {
+		t.Fatalf("legacy audit was not backfilled: count=%d err=%v", count, err)
+	}
+	if err = db.Raw(`SELECT count(*) FROM idempotency_records WHERE principal_id='same-id' AND action_id='demo.run' AND idempotency_key='same-key'`).Scan(&count).Error; err != nil || count != 2 {
+		t.Fatalf("Principal Kind idempotency isolation missing: count=%d err=%v", count, err)
+	}
+}
+
 func TestPrincipalSessionMigrationPostgres(t *testing.T) {
 	dsn := os.Getenv("AINP_TEST_DATABASE_DSN")
 	if dsn == "" {

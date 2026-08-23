@@ -78,6 +78,8 @@ MCP 使用独立的 OAuth Grant、Token family 和 `ainp:mcp` audience，不复�
 
 异步 Outbox Event 与 JobRun 同样持久化 `principal_kind + actor/created_by + client_surface + audience`。Dispatcher/Worker 恢复 AuthContext 时必须使用这些字段；旧事件/任务仅有 Account actor 时按 `ainp.account` 兼容，禁止默认切换到其他主体或 tenant-console Surface。
 
+审计记录保存 Actor ID 的同时必须保存 Principal Kind、Client Surface 与 audience；幂等唯一键包含 Principal Kind，避免不同主体类型使用相同 ID 和 key 时互相重放或冲突。旧审计与幂等记录按 `ainp.account` 回填，不能据此推断其他业务主体。
+
 ## Challenge、限流与审计
 
 Challenge 只保存摘要，必须具备短 TTL、单次消费、失败次数上限和并发条件更新。具体认证器负责写入并消费，不得存验证码明文。

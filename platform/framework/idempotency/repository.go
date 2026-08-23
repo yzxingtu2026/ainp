@@ -53,10 +53,17 @@ func (r *Repository) currentTenantRepository(ctx context.Context) (*tenant.Repos
 
 // Create inserts a new idempotency record in processing state.
 func (r *Repository) Create(ctx context.Context, tenantID, principalID, actionID, key, requestHash string, ttl time.Duration) (*Record, error) {
+	return r.CreateFor(ctx, tenantID, auth.PrincipalRef{Kind: auth.PrincipalKindAccount, ID: principalID}, "", "", actionID, key, requestHash, ttl)
+}
+
+func (r *Repository) CreateFor(ctx context.Context, tenantID string, principal auth.PrincipalRef, surface, audience, actionID, key, requestHash string, ttl time.Duration) (*Record, error) {
 	now := time.Now().UTC()
 	rec := &Record{
 		ID:             uuid.NewString(),
-		PrincipalID:    principalID,
+		PrincipalID:    principal.ID,
+		PrincipalKind:  string(principal.Kind),
+		ClientSurface:  surface,
+		Audience:       audience,
 		ActionID:       actionID,
 		IdempotencyKey: key,
 		RequestHash:    requestHash,
@@ -76,11 +83,15 @@ func (r *Repository) Create(ctx context.Context, tenantID, principalID, actionID
 
 // GetByKey looks up an idempotency record by its composite key.
 func (r *Repository) GetByKey(ctx context.Context, tenantID, principalID, actionID, key string) (*Record, error) {
+	return r.GetByKeyFor(ctx, tenantID, auth.PrincipalRef{Kind: auth.PrincipalKindAccount, ID: principalID}, actionID, key)
+}
+
+func (r *Repository) GetByKeyFor(ctx context.Context, tenantID string, principal auth.PrincipalRef, actionID, key string) (*Record, error) {
 	repo, err := r.tenantRepository(ctx, tenantID)
 	if err != nil {
 		return nil, err
 	}
-	rec, err := repo.First("principal_id = ? AND action_id = ? AND idempotency_key = ?", principalID, actionID, key)
+	rec, err := repo.First("principal_kind = ? AND principal_id = ? AND action_id = ? AND idempotency_key = ?", principal.Kind, principal.ID, actionID, key)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}

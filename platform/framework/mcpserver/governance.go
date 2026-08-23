@@ -390,7 +390,7 @@ func (s *Service) writeGovernanceAudit(ctx context.Context, ac *auth.Context, co
 	if s.auditor == nil || ac == nil {
 		return
 	}
-	record := audit.Record{OccurredAt: time.Now().UTC(), TenantID: ac.TenantID, Realm: string(auth.RealmTenant), ActorID: ac.PrincipalID, ActorType: "principal", ActionID: actionID, Result: result, RequestID: ac.RequestID, Client: ac.Client, Replay: replay, Summary: "MCP authorization governance updated"}
+	record := audit.Record{OccurredAt: time.Now().UTC(), TenantID: ac.TenantID, Realm: string(auth.RealmTenant), ActorID: ac.PrincipalID, ActorType: "principal", PrincipalKind: string(ac.Principal.Kind), ClientSurface: ac.ClientSurface, Audience: ac.Audience, ActionID: actionID, Result: result, RequestID: ac.RequestID, Client: ac.Client, Replay: replay, Summary: "MCP authorization governance updated"}
 	if confirmation != nil {
 		record.MCPClientID, record.MCPGrantID = confirmation.ClientID, confirmation.GrantID
 	}

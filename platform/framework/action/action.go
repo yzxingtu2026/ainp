@@ -619,12 +619,19 @@ func (r *Registry) writeAuditWithReplay(ctx context.Context, a Action, perm, res
 		return
 	}
 	ac := auth.MustFromContext(ctx)
+	principal := ac.Principal
+	if !principal.Valid() && ac.PrincipalID != "" {
+		principal = auth.PrincipalRef{Kind: auth.PrincipalKindAccount, ID: ac.PrincipalID}
+	}
 	rec := audit.Record{
 		OccurredAt:       time.Now().UTC(),
 		TenantID:         ac.TenantID,
 		Realm:            string(auth.NormalizeRealm(ac.Realm)),
 		ActorID:          ac.PrincipalID,
 		ActorType:        actorType(ac),
+		PrincipalKind:    string(principal.Kind),
+		ClientSurface:    ac.ClientSurface,
+		Audience:         ac.Audience,
 		ActionID:         a.ID,
 		Result:           result,
 		RequestID:        ac.RequestID,

@@ -13,6 +13,7 @@
 - refresh 固定 Session 原 Kind/Surface/Audience 并在行锁内轮换；重放撤销 token family，Provider 停用/版本变化后禁止刷新。
 - 会话列表/撤销限定当前 tenant、Principal Ref 和 Surface；认证 body 的 client 必须匹配请求路径解析出的 Surface。
 - Outbox/Job 持久化并恢复 Principal Kind、Surface 和 audience；异步恢复不得丢失主体事实或默认切换主体类型。
+- 审计保留 Principal Kind/Surface/audience；幂等作用域必须包含 Principal Kind，禁止跨 Kind 共享重放记录。
 - 后台 Account RBAC 事实源仍是 `TenantAccount/tenant_accounts`；业务主体由下游 Provider 持有，不得继承 Account RBAC。
 - 本人修改密码必须校验当前密码、复用统一强度规则并递增 `auth_version`，使全部旧会话失效；不得复用管理员重置密码权限接口。
 - challenge 短 TTL、单次消费、限制失败次数；入口经统一 `RateLimiter`，多实例部署替换共享实现。
