@@ -38,6 +38,15 @@ func (p *RuntimeContextProvider) Build(ctx context.Context, req runtimecontext.B
 	if !principal.Valid() {
 		principal = auth.PrincipalRef{Kind: auth.PrincipalKindAccount, ID: ac.PrincipalID}
 	}
+	if req.PrincipalKind == "" {
+		req.PrincipalKind = string(principal.Kind)
+	}
+	if req.ClientSurface == "" {
+		req.ClientSurface = ac.ClientSurface
+	}
+	if req.Audience == "" {
+		req.Audience = ac.Audience
+	}
 	if req.PrincipalKind != string(principal.Kind) || req.ClientSurface != ac.ClientSurface || req.Audience != ac.Audience {
 		return nil, auth.ErrAuthorizationInvalid
 	}
