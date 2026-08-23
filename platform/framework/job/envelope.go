@@ -9,16 +9,19 @@ import (
 // Envelope is the stable job identity delivered to workers.
 // Asynq messages should carry primarily JobRun ID; workers load trust from PostgreSQL.
 type Envelope struct {
-	ID            string     `json:"id"`
-	Type          string     `json:"type"`
-	SchemaVersion int        `json:"schema_version"`
-	TenantID      string     `json:"tenant_id"`
-	Realm         auth.Realm `json:"realm"`
-	ActorID       string     `json:"actor_id,omitempty"`
-	CorrelationID string     `json:"correlation_id,omitempty"`
-	CausationID   string     `json:"causation_id,omitempty"`
-	CreatedAt     time.Time  `json:"created_at"`
-	Attempt       int        `json:"attempt"`
+	ID            string            `json:"id"`
+	Type          string            `json:"type"`
+	SchemaVersion int               `json:"schema_version"`
+	TenantID      string            `json:"tenant_id"`
+	Realm         auth.Realm        `json:"realm"`
+	ActorID       string            `json:"actor_id,omitempty"`
+	Principal     auth.PrincipalRef `json:"principal,omitempty"`
+	ClientSurface string            `json:"client_surface,omitempty"`
+	Audience      string            `json:"audience,omitempty"`
+	CorrelationID string            `json:"correlation_id,omitempty"`
+	CausationID   string            `json:"causation_id,omitempty"`
+	CreatedAt     time.Time         `json:"created_at"`
+	Attempt       int               `json:"attempt"`
 }
 
 // Queue names (stable resource classes; do not create one queue per job type).

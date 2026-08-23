@@ -247,6 +247,21 @@ func ResolveTenantContext(ctx context.Context) (tenantID string, realm auth.Real
 	return tenantID, realm, strings.TrimSpace(ac.PrincipalID), firstNonEmpty(ac.RequestID, ac.TraceID), nil
 }
 
+func ResolveIdentityContext(ctx context.Context) (tenantID string, realm auth.Realm, principal auth.PrincipalRef, surface, audience, correlationID string, err error) {
+	ac := auth.MustFromContext(ctx)
+	if ac.TenantID == "" || !ac.Authenticated {
+		return "", "", auth.PrincipalRef{}, "", "", "", fmt.Errorf("job: authenticated tenant context is required")
+	}
+	principal = ac.Principal
+	if !principal.Valid() {
+		principal = auth.PrincipalRef{Kind: auth.PrincipalKindAccount, ID: ac.PrincipalID}
+	}
+	if !principal.Valid() {
+		return "", "", auth.PrincipalRef{}, "", "", "", fmt.Errorf("job: principal is required")
+	}
+	return ac.TenantID, auth.NormalizeRealm(ac.Realm), principal, ac.ClientSurface, ac.Audience, firstNonEmpty(ac.RequestID, ac.TraceID), nil
+}
+
 func firstNonEmpty(values ...string) string {
 	for _, v := range values {
 		if strings.TrimSpace(v) != "" {

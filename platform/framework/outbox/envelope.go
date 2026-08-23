@@ -23,6 +23,9 @@ type Envelope struct {
 	CorrelationID    string            `json:"correlation_id,omitempty"`
 	CausationID      string            `json:"causation_id,omitempty"`
 	ActorID          string            `json:"actor_id,omitempty"`
+	Principal        auth.PrincipalRef `json:"principal,omitempty"`
+	ClientSurface    string            `json:"client_surface,omitempty"`
+	Audience         string            `json:"audience,omitempty"`
 	Payload          json.RawMessage   `json:"payload"`
 	Metadata         map[string]string `json:"metadata,omitempty"`
 }

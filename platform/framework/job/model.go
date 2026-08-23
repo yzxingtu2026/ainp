@@ -24,6 +24,9 @@ type Run struct {
 	CorrelationID     string              `gorm:"size:64" json:"correlation_id,omitempty"`
 	CausationID       string              `gorm:"size:64" json:"causation_id,omitempty"`
 	CreatedBy         string              `gorm:"size:64" json:"created_by,omitempty"`
+	PrincipalKind     string              `gorm:"size:128" json:"principal_kind,omitempty"`
+	ClientSurface     string              `gorm:"size:128" json:"client_surface,omitempty"`
+	Audience          string              `gorm:"size:255" json:"audience,omitempty"`
 	StartedAt         *time.Time          `json:"started_at,omitempty"`
 	FinishedAt        *time.Time          `json:"finished_at,omitempty"`
 	CancelRequestedAt *time.Time          `json:"cancel_requested_at,omitempty"`

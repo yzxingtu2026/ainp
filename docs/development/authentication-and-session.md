@@ -76,6 +76,8 @@ MCP 使用独立的 OAuth Grant、Token family 和 `ainp:mcp` audience，不复�
 
 每个下游 Client Surface 还会在其 `PathPrefix + /auth/...` 自动投影 methods、challenge、authenticate、refresh、logout 和 session 路由。公共认证请求的 `client` 必须等于请求路径解析出的 Surface；refresh token 也只能从原 Surface 路径轮换。
 
+异步 Outbox Event 与 JobRun 同样持久化 `principal_kind + actor/created_by + client_surface + audience`。Dispatcher/Worker 恢复 AuthContext 时必须使用这些字段；旧事件/任务仅有 Account actor 时按 `ainp.account` 兼容，禁止默认切换到其他主体或 tenant-console Surface。
+
 ## Challenge、限流与审计
 
 Challenge 只保存摘要，必须具备短 TTL、单次消费、失败次数上限和并发条件更新。具体认证器负责写入并消费，不得存验证码明文。

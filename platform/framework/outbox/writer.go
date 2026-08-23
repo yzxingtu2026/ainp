@@ -103,6 +103,9 @@ func (w *gormWriter) Append(ctx context.Context, tx *gorm.DB, in AppendInput) (E
 		CorrelationID:    ec.CorrelationID,
 		CausationID:      firstNonEmpty(in.CausationID, ec.CausationID),
 		ActorID:          ec.ActorID,
+		PrincipalKind:    string(ec.Principal.Kind),
+		ClientSurface:    ec.ClientSurface,
+		Audience:         ec.Audience,
 		CreatedAt:        now,
 		UpdatedAt:        now,
 	}
@@ -189,6 +192,9 @@ func rowToEnvelope(row Event) Envelope {
 		CorrelationID:    row.CorrelationID,
 		CausationID:      row.CausationID,
 		ActorID:          row.ActorID,
+		Principal:        auth.PrincipalRef{Kind: auth.PrincipalKind(row.PrincipalKind), ID: row.ActorID},
+		ClientSurface:    row.ClientSurface,
+		Audience:         row.Audience,
 		Payload:          json.RawMessage(append([]byte(nil), row.PayloadJSON...)),
 		Metadata:         meta,
 	}
