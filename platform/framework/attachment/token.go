@@ -7,6 +7,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 )
 
 const TransferAudience = "ainp:attachment-transfer"
@@ -23,15 +24,18 @@ const (
 
 // TransferClaims are short-lived transfer tokens. They must not be logged in full.
 type TransferClaims struct {
-	TenantID     string `json:"tid"`
-	PrincipalID  string `json:"principal_id,omitempty"`
-	LegacyUserID string `json:"uid,omitempty"`
-	AttachmentID string `json:"aid"`
-	Op           string `json:"op"`
-	Variant      string `json:"var,omitempty"` // original | thumb | preview；空 = original
-	Transport    string `json:"transport,omitempty"`
-	Size         int64  `json:"size,omitempty"`
-	JTI          string `json:"jti"`
+	TenantID       string `json:"tid"`
+	PrincipalID    string `json:"principal_id,omitempty"`
+	PrincipalKind  string `json:"principal_kind,omitempty"`
+	ClientSurface  string `json:"surface,omitempty"`
+	SourceAudience string `json:"source_audience,omitempty"`
+	LegacyUserID   string `json:"uid,omitempty"`
+	AttachmentID   string `json:"aid"`
+	Op             string `json:"op"`
+	Variant        string `json:"var,omitempty"` // original | thumb | preview；空 = original
+	Transport      string `json:"transport,omitempty"`
+	Size           int64  `json:"size,omitempty"`
+	JTI            string `json:"jti"`
 	jwt.RegisteredClaims
 }
 
@@ -52,19 +56,28 @@ func NewTransferTokenService(secret, issuer string) (*TransferTokenService, erro
 }
 
 type IssueTransferInput struct {
-	TenantID     string
-	PrincipalID  string
-	AttachmentID string
-	Op           string
-	Variant      string // original | thumb | preview；空 = original
-	Transport    string // raw | multipart；仅 upload 使用
-	Size         int64
-	TTL          time.Duration
+	TenantID       string
+	PrincipalID    string
+	PrincipalKind  string
+	ClientSurface  string
+	SourceAudience string
+	AttachmentID   string
+	Op             string
+	Variant        string // original | thumb | preview；空 = original
+	Transport      string // raw | multipart；仅 upload 使用
+	Size           int64
+	TTL            time.Duration
 }
 
 func (s *TransferTokenService) Issue(in IssueTransferInput) (token string, jti string, exp time.Time, err error) {
 	if in.TenantID == "" || in.PrincipalID == "" || in.AttachmentID == "" {
 		return "", "", time.Time{}, fmt.Errorf("transfer token identity required")
+	}
+	if in.PrincipalKind == "" {
+		in.PrincipalKind = string(auth.PrincipalKindAccount)
+	}
+	if !auth.PrincipalKind(in.PrincipalKind).Valid() {
+		return "", "", time.Time{}, fmt.Errorf("invalid transfer principal kind")
 	}
 	if in.Op != OpUpload && in.Op != OpDownload {
 		return "", "", time.Time{}, fmt.Errorf("invalid transfer op")
@@ -101,7 +114,7 @@ func (s *TransferTokenService) Issue(in IssueTransferInput) (token string, jti s
 	exp = now.Add(in.TTL)
 	jti = uuid.NewString()
 	claims := TransferClaims{
-		TenantID: in.TenantID, PrincipalID: in.PrincipalID, LegacyUserID: in.PrincipalID, AttachmentID: in.AttachmentID,
+		TenantID: in.TenantID, PrincipalID: in.PrincipalID, PrincipalKind: in.PrincipalKind, ClientSurface: in.ClientSurface, SourceAudience: in.SourceAudience, LegacyUserID: in.PrincipalID, AttachmentID: in.AttachmentID,
 		Op: in.Op, Variant: variant, Transport: transport, Size: in.Size, JTI: jti,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    s.issuer,
@@ -145,6 +158,12 @@ func (s *TransferTokenService) Parse(tokenString string) (*TransferClaims, error
 	}
 	if claims.PrincipalID == "" {
 		claims.PrincipalID = claims.LegacyUserID
+	}
+	if claims.PrincipalKind == "" {
+		claims.PrincipalKind = string(auth.PrincipalKindAccount)
+	}
+	if !auth.PrincipalKind(claims.PrincipalKind).Valid() {
+		return nil, fmt.Errorf("invalid transfer principal kind")
 	}
 	if claims.TenantID == "" || claims.PrincipalID == "" || claims.AttachmentID == "" || claims.JTI == "" {
 		return nil, fmt.Errorf("incomplete transfer claims")

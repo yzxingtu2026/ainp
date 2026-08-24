@@ -170,11 +170,11 @@ func (s *AttachmentService) UploadPrepare(ctx context.Context, input json.RawMes
 	row := model.Attachment{
 		ID: id, Provider: provider, ObjectKey: objectKey,
 		OriginalName: req.OriginalName, ContentType: req.ContentType,
-		Size: 0, Status: status.AttachmentPending, UploaderID: userID,
+		Size: 0, Status: status.AttachmentPending, UploaderID: userID, UploaderKind: string(attachmentPrincipal(ctx).Kind), ClientSurface: auth.MustFromContext(ctx).ClientSurface, Audience: auth.MustFromContext(ctx).Audience,
 		ExpectedSize: req.Size, ExpiresAt: &exp,
 	}
 	token, jti, tokenExp, err := s.tokens.Issue(attachment.IssueTransferInput{
-		TenantID: tenantID, PrincipalID: userID, AttachmentID: id,
+		TenantID: tenantID, PrincipalID: userID, PrincipalKind: string(attachmentPrincipal(ctx).Kind), ClientSurface: auth.MustFromContext(ctx).ClientSurface, SourceAudience: auth.MustFromContext(ctx).Audience, AttachmentID: id,
 		Op: attachment.OpUpload, Transport: req.Transport, Size: req.Size, TTL: pol.TransferTTL,
 	})
 	if err != nil {
@@ -248,7 +248,7 @@ func (s *AttachmentService) DownloadPrepare(ctx context.Context, input json.RawM
 		return nil, mapAttachmentError(err)
 	}
 	token, _, tokenExp, err := s.tokens.Issue(attachment.IssueTransferInput{
-		TenantID: tenantID, PrincipalID: userID, AttachmentID: row.ID,
+		TenantID: tenantID, PrincipalID: userID, PrincipalKind: string(attachmentPrincipal(ctx).Kind), ClientSurface: auth.MustFromContext(ctx).ClientSurface, SourceAudience: auth.MustFromContext(ctx).Audience, AttachmentID: row.ID,
 		Op: attachment.OpDownload, Variant: variant, Size: size, TTL: pol.TransferTTL,
 	})
 	if err != nil {
@@ -574,7 +574,7 @@ func (s *AttachmentService) CompleteUpload(ctx context.Context, claims *attachme
 	if row.Status != status.AttachmentPending {
 		return nil, errs.ValidationKey("attachment.not_pending", "attachment is not pending upload")
 	}
-	if row.UploaderID != claims.PrincipalID {
+	if row.UploaderID != claims.PrincipalID || row.UploaderKind != claims.PrincipalKind {
 		return nil, errs.NewKey(errs.CodeForbidden, "common.forbidden", "forbidden")
 	}
 	if row.UploadJTI == "" || row.UploadJTI != claims.JTI {
@@ -709,8 +709,8 @@ func (s *AttachmentService) claimUpload(ctx context.Context, row *model.Attachme
 		return "", err
 	}
 	res := repos.attachments.Where(
-		"id = ? AND status = ? AND upload_jti = ? AND uploader_id = ? AND expected_size = ?",
-		row.ID, status.AttachmentPending, claims.JTI, claims.PrincipalID, row.ExpectedSize,
+		"id = ? AND status = ? AND upload_jti = ? AND uploader_id = ? AND uploader_kind = ? AND expected_size = ?",
+		row.ID, status.AttachmentPending, claims.JTI, claims.PrincipalID, claims.PrincipalKind, row.ExpectedSize,
 	).Updates(map[string]any{"upload_jti": claimedJTI, "updated_at": time.Now().UTC()})
 	if res.Error != nil {
 		return "", mapAttachmentError(res.Error)
@@ -844,7 +844,7 @@ func (s *AttachmentService) authorizeDownload(ctx context.Context, tenantID, use
 			return mapAttachmentError(repoErr)
 		}
 		if len(links) == 0 {
-			if row.UploaderID != userID {
+			if row.UploaderID != userID || row.UploaderKind != string(attachmentPrincipal(ctx).Kind) {
 				return errs.NewKey(errs.CodeForbidden, "common.forbidden", "forbidden")
 			}
 			return nil
@@ -856,7 +856,7 @@ func (s *AttachmentService) authorizeDownload(ctx context.Context, tenantID, use
 		}
 		return errs.NewKey(errs.CodeForbidden, "attachment.resource_forbidden", "resource access denied")
 	case status.AttachmentPending, status.AttachmentFailed:
-		if row.UploaderID != userID {
+		if row.UploaderID != userID || row.UploaderKind != string(attachmentPrincipal(ctx).Kind) {
 			return errs.NewKey(errs.CodeForbidden, "common.forbidden", "forbidden")
 		}
 		if row.ExpiresAt != nil && time.Now().UTC().After(*row.ExpiresAt) {

@@ -57,6 +57,7 @@ func transferTokenFromRequest(c *gin.Context) string {
 func withTransferAuth(c *gin.Context, claims *attachment.TransferClaims) context.Context {
 	ac := &auth.Context{
 		TenantID: claims.TenantID, PrincipalID: claims.PrincipalID,
+		Principal: auth.PrincipalRef{Kind: auth.PrincipalKind(claims.PrincipalKind), ID: claims.PrincipalID}, ClientSurface: claims.ClientSurface, Audience: claims.SourceAudience,
 		Realm: auth.RealmTenant, Authenticated: true, Language: i18n.FromCtx(c.Request.Context()),
 	}
 	ctx := auth.WithContext(c.Request.Context(), ac)
