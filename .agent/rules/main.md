@@ -102,6 +102,7 @@
 - `mcp-oauth` → `docs/development/mcp-oauth.md`
 - `release-versioning` → `docs/development/release-versioning.md`
 - `downstream-composition` → `docs/development/downstream-composition.md`
+- `migration-adoption` → `docs/development/migration-adoption.md`（一次性历史内嵌分叉受控接管；禁止手工改账本）
 - `icon-library` → `docs/development/icon-library.md`
 - `logging` → `docs/development/logging.md`
 - `api-response` → `docs/development/api-response.md`

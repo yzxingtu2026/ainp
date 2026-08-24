@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -15,10 +16,30 @@ import (
 func main() {
 	configPath := flag.String("config", "configs/config.yaml", "path to yaml config")
 	baselineThrough := flag.Int("through", 0, "baseline existing built-in schema through this version")
+	planPath := flag.String("plan", "", "versioned adoption plan JSON path")
+	confirmDigest := flag.String("confirm-digest", "", "required adoption plan digest for apply")
 	flag.Parse()
-	if flag.NArg() != 1 || (flag.Arg(0) != "status" && flag.Arg(0) != "up" && flag.Arg(0) != "baseline") {
-		fmt.Fprintln(os.Stderr, "usage: ainp-migrate [-config path] status|up|baseline")
+	if flag.NArg() < 1 || (flag.Arg(0) != "status" && flag.Arg(0) != "up" && flag.Arg(0) != "baseline" && flag.Arg(0) != "adopt") {
+		fmt.Fprintln(os.Stderr, "usage: ainp-migrate [-config path] status|up|baseline|adopt plan|dry-run|apply|verify")
 		os.Exit(2)
+	}
+	if flag.Arg(0) == "adopt" && (flag.NArg() != 2 || *planPath == "") {
+		fmt.Fprintln(os.Stderr, "usage: ainp-migrate -plan plan.json adopt plan|dry-run|apply|verify")
+		os.Exit(2)
+	}
+	if flag.Arg(0) == "adopt" && flag.Arg(1) != "plan" && flag.Arg(1) != "dry-run" && flag.Arg(1) != "apply" && flag.Arg(1) != "verify" {
+		fmt.Fprintln(os.Stderr, "usage: ainp-migrate -plan plan.json adopt plan|dry-run|apply|verify")
+		os.Exit(2)
+	}
+	var plan migrations.AdoptionPlan
+	if flag.Arg(0) == "adopt" {
+		body, err := os.ReadFile(*planPath)
+		if err != nil {
+			fail(fmt.Errorf("read adoption plan: %w", err))
+		}
+		if err := json.Unmarshal(body, &plan); err != nil {
+			fail(fmt.Errorf("decode adoption plan: %w", err))
+		}
 	}
 	cfg, err := config.Load(*configPath)
 	if err != nil {
@@ -43,6 +64,29 @@ func main() {
 		fail(err)
 	}
 	runner := composition.Migrations()
+	if flag.Arg(0) == "adopt" {
+		if flag.Arg(1) == "plan" || flag.Arg(1) == "dry-run" || flag.Arg(1) == "verify" {
+			result, err := plan.Inspect(db, runner)
+			if err != nil {
+				fail(err)
+			}
+			encoded, _ := json.MarshalIndent(result, "", "  ")
+			fmt.Println(string(encoded))
+			return
+		}
+		if flag.Arg(1) == "apply" {
+			if *confirmDigest == "" {
+				fail(fmt.Errorf("-confirm-digest is required for adoption apply"))
+			}
+			result, err := plan.Apply(db, runner, migrations.BridgeRegistry{}, *confirmDigest)
+			if err != nil {
+				fail(err)
+			}
+			encoded, _ := json.MarshalIndent(result, "", "  ")
+			fmt.Println(string(encoded))
+			return
+		}
+	}
 	var status migrations.SetStatus
 	if flag.Arg(0) == "up" {
 		status, err = runner.Up(db)

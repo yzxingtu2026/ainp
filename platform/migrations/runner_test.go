@@ -55,3 +55,36 @@ func TestBaselineThroughRejectsUnknownVersion(t *testing.T) {
 		t.Fatalf("expected unknown baseline version failure, got %v", err)
 	}
 }
+
+func TestAdoptionPlanRejectsUnreleasedTargetAndUnmappedHistory(t *testing.T) {
+	set, err := NewSet(Source{Owner: "orders", FS: fstest.MapFS{"0001_init.sql": {Data: []byte("SELECT 1;")}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := AdoptionPlan{
+		SchemaVersion:   1,
+		Source:          AdoptionIdentity{Project: "fork", Tag: "v0.1.6", Commit: "abc"},
+		Target:          AdoptionIdentity{Project: "ainp", Tag: "main", Commit: "def"},
+		OldLedger:       []LedgerEntry{{Version: 2, Name: "old.sql", Checksum: strings.Repeat("a", 64)}},
+		BackupConfirmed: true, MaintenanceWindow: true,
+	}
+	if err := plan.Validate(set); err == nil || !strings.Contains(err.Error(), "released SemVer") {
+		t.Fatalf("expected released target rejection, got %v", err)
+	}
+	plan.Target.Tag = "v0.2.1"
+	if err := plan.Validate(set); err == nil || !strings.Contains(err.Error(), "every old ledger") {
+		t.Fatalf("expected explicit mapping rejection, got %v", err)
+	}
+}
+
+func TestAdoptionPlanDigestIsStable(t *testing.T) {
+	plan := AdoptionPlan{SchemaVersion: 1, Source: AdoptionIdentity{Project: "fork", Tag: "v0.1.6", Commit: "abc"}, Target: AdoptionIdentity{Project: "ainp", Tag: "v0.2.1", Commit: "def"}}
+	a, err := plan.Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := plan.Digest()
+	if err != nil || a != b || len(a) != 64 {
+		t.Fatalf("unexpected digest: %q %q %v", a, b, err)
+	}
+}
