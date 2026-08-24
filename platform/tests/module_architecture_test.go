@@ -104,6 +104,30 @@ func (Module) Register(*app.App) error { return nil }
 	}
 }
 
+func TestDownstreamRejectsPlatformImplementationImports(t *testing.T) {
+	root := newArchitectureFixture(t)
+	validRegister := `package valid
+import "github.com/yzxingtu2026/ainp/platform/framework/app"
+type Module struct{}
+func (Module) ID() string { return "valid" }
+func (Module) Register(*app.App) error { return nil }
+`
+	writeArchitectureFiles(t, root, map[string]string{
+		"modules/valid/register.go":          validRegister,
+		"modules/valid/catalog/contracts.go": "package catalog\nimport _ \"github.com/yzxingtu2026/ainp/platform/framework/platformresource\"\nimport _ \"github.com/yzxingtu2026/ainp/platform/modules/system\"\n",
+		"modules/valid/catalog/model.go":     "package catalog\nimport _ \"github.com/yzxingtu2026/ainp/platform/modules/system/model\"\n",
+		"modules/valid/catalog/internal.go":  "package catalog\nimport _ \"github.com/yzxingtu2026/ainp/platform/internal/bootstrap\"\n",
+	})
+	violations := checkFixture(t, root, modulecheck.ProfileDownstream)
+	assertViolation(t, violations, "downstream-platform-implementation-import", "modules/valid/catalog/model.go", "github.com/yzxingtu2026/ainp/platform/modules/system/model")
+	assertViolation(t, violations, "downstream-platform-internal-import", "modules/valid/catalog/internal.go", "github.com/yzxingtu2026/ainp/platform/internal/bootstrap")
+	for _, violation := range violations {
+		if violation.Path == "modules/valid/catalog/contracts.go" {
+			t.Fatalf("stable framework contract and module root facade must remain allowed: %+v", violation)
+		}
+	}
+}
+
 func TestDownstreamRegisterShapeFailsClosed(t *testing.T) {
 	tests := map[string]string{
 		"missing module type": `package invalid

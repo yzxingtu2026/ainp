@@ -241,6 +241,20 @@ func (s *scanner) scan() error {
 			if err != nil {
 				return fmt.Errorf("modulecheck: parse import in %s: %w", displayPath, err)
 			}
+			if s.profile == ProfileDownstream {
+				if strings.HasPrefix(importPath, "github.com/yzxingtu2026/ainp/platform/internal/") || importPath == "github.com/yzxingtu2026/ainp/platform/internal" {
+					s.add("downstream-platform-internal-import", displayPath, importPath, "depend on a documented framework contract or platform module root facade")
+					continue
+				}
+				const platformModules = "github.com/yzxingtu2026/ainp/platform/modules/"
+				if strings.HasPrefix(importPath, platformModules) {
+					remainder := strings.TrimPrefix(importPath, platformModules)
+					if strings.Contains(remainder, "/") {
+						s.add("downstream-platform-implementation-import", displayPath, importPath, "depend on framework/platformresource or a documented platform module root facade")
+						continue
+					}
+				}
+			}
 			if !strings.HasPrefix(importPath, s.importPrefix) {
 				continue
 			}

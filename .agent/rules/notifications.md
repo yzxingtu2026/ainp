@@ -60,3 +60,5 @@
 15. **Module 层**：`platform/modules/system/notification_*.go` — 具体实现
 15. **Job**：`platform/modules/system/jobs/notification_deliver.go` — 一个 Job Type 一个文件
 16. **Fake Provider**：`platform/framework/notification/fake/` — 测试用
+
+17. **接收人主体事实**：账号接收人解析复用 `app.App.PlatformResources.Principals`；API/Outbox/Worker 使用同一实现，禁止下游或通知模块复制 system 账号查询。

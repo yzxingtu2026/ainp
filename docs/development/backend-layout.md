@@ -203,6 +203,8 @@ go run ./cmd/ainp-archcheck \
 
 检查器从最近的 `go.mod` 推导 module import prefix，输出稳定 rule ID、相对文件、非法目标和修复方向，发现任何违规即非零退出。`ainp` profile 额外执行冻结 AI 能力依赖图；下游只在 `host.Module` 入口形态上使用 `downstream` profile，共同包边界不得放宽。禁止 TSV 基线、通配豁免和自定义白名单。
 
+`downstream` profile 同时拒绝 `platform/internal/*` 与 `platform/modules/<owner>/...` 实现子包导入；下游平台资源协作应依赖 `framework/platformresource`，或仅使用文档声明的模块根稳定 Facade。
+
 ## 与规范文档映射
 
 | 规范 | 包 |
