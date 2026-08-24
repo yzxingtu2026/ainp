@@ -41,6 +41,11 @@ type Recorder interface {
 	Write(ctx context.Context, rec Record) error
 }
 
+type TransactionalRecorder interface {
+	Recorder
+	WithDB(*gorm.DB) Recorder
+}
+
 type GormRecorder struct {
 	db *gorm.DB
 }
@@ -48,6 +53,8 @@ type GormRecorder struct {
 func NewGormRecorder(db *gorm.DB) *GormRecorder {
 	return &GormRecorder{db: db}
 }
+
+func (r *GormRecorder) WithDB(db *gorm.DB) Recorder { return &GormRecorder{db: db} }
 
 func (r *GormRecorder) AutoMigrate() error {
 	return r.db.AutoMigrate(&Record{})

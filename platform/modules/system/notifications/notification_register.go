@@ -637,7 +637,7 @@ func RegisterActions(a *app.App) error {
 	providers := map[notification.Channel]notification.ChannelProvider{
 		notification.ChannelInApp: inAppProvider,
 	}
-	recipientResolver := notification.NewTenantUserResolver(UserExistsFn(a.DB))
+	recipientResolver := notification.NewTenantUserResolver(PrincipalExistsFn(a.PlatformResources.Principals))
 
 	var notifSvc *NotificationService
 	var enqueuer *NotificationJobEnqueuer

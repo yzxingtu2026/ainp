@@ -157,3 +157,4 @@ outbox.Write(ctx, tx, outbox.Envelope{
 - ActionDescriptor 禁止 javascript: 和外部 URL
 - 用户只能访问自己的通知
 - 个人通知 Action 使用 `access=authenticated`，不进入角色权限目录；服务端固定使用 AuthContext 的 tenant/user scope
+- Account 接收人解析复用 `PlatformResources.Principals`，API、Outbox 与 Worker 使用同一最小主体投影；通知模块和下游不得复制 `tenant_accounts` 查询。

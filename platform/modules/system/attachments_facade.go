@@ -5,6 +5,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/aiknowledge"
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
 	"github.com/yzxingtu2026/ainp/platform/framework/attachment"
+	"github.com/yzxingtu2026/ainp/platform/framework/platformresource"
 	"github.com/yzxingtu2026/ainp/platform/framework/setting"
 	"github.com/yzxingtu2026/ainp/platform/framework/storage"
 	"github.com/yzxingtu2026/ainp/platform/modules/system/attachments"
@@ -12,13 +13,14 @@ import (
 )
 
 type (
-	AttachmentService       = attachments.AttachmentService
-	AttachmentView          = attachments.AttachmentView
-	TransferPrepareView     = attachments.TransferPrepareView
-	AttachmentLinkView      = attachments.AttachmentLinkView
-	AttachmentDetailView    = attachments.AttachmentDetailView
-	UploadPolicyView        = attachments.UploadPolicyView
-	KnowledgeSourceResolver = attachments.KnowledgeSourceResolver
+	AttachmentService        = attachments.AttachmentService
+	AttachmentView           = attachments.AttachmentView
+	TransferPrepareView      = attachments.TransferPrepareView
+	AttachmentLinkView       = attachments.AttachmentLinkView
+	AttachmentDetailView     = attachments.AttachmentDetailView
+	UploadPolicyView         = attachments.UploadPolicyView
+	AttachmentResourceReader = attachments.ResourceReader
+	KnowledgeSourceResolver  = attachments.KnowledgeSourceResolver
 )
 
 func NewSettingUploadPolicyProvider(p *setting.Provider) attachment.PolicyProvider {
@@ -26,6 +28,10 @@ func NewSettingUploadPolicyProvider(p *setting.Provider) attachment.PolicyProvid
 }
 func NewAttachmentService(db *gorm.DB, store storage.ObjectStore, tokens *attachment.TransferTokenService, policies *attachment.PolicyRegistry, provider attachment.PolicyProvider) *AttachmentService {
 	return attachments.NewAttachmentService(db, store, tokens, policies, provider)
+}
+
+func AttachmentResources(svc *AttachmentService) platformresource.AttachmentReader {
+	return svc.ResourceReader()
 }
 func NewKnowledgeSourceResolver(db *gorm.DB, store storage.ObjectStore, knowledge aiknowledge.Service) *KnowledgeSourceResolver {
 	return attachments.NewKnowledgeSourceResolver(db, store, knowledge)

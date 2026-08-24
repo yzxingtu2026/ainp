@@ -131,6 +131,8 @@ Local Provider 返回本服务流式 URL；未来 S3/OSS 可换预签名 URL，�
 
 传输端点是专用 HTTP adapter，不接受业务参数；公开 `platform/host` 和官方应用都由 system 模块的同一 `OnHTTP` 注册自动获得 raw PUT、multipart POST 与下载路由，下游禁止复制 Gin Handler。权限决策只在 Action / 领域服务完成。审计记录 attachment/resource/size/type/result，**禁止**记录文件内容与 transfer token 明文。
 
+独立下游在非 HTTP 业务流程中读取已绑定附件时，只使用 `framework/platformresource.AttachmentReader`，由 `app.App.PlatformResources` 注入。该 Port 必须重新执行当前 tenant/principal、AccessPolicy、绑定、ready、variant、对象存在与大小校验，只返回最小元数据和受控 reader；禁止返回 object key、provider、transfer token 或内部 Model。
+
 ## 检查清单
 
 - [ ] 新业务注册 AccessPolicy，不硬编码「同租户即可」

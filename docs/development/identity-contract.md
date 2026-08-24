@@ -44,3 +44,4 @@
 - 历史持久化字段改名必须使用版本化 migration，并处理新旧值同时存在的冲突。
 - 新兼容入口必须显式声明 alias 且有“不进入 Discovery”的测试。
 - `platform/framework` 与 `platform/modules/system/access` 新增 `UserID/user_id` 会触发架构门禁；例外必须在测试 allowlist 中写明业务语义和删除条件。
+- 独立下游解析后台账号只使用 `framework/platformresource.PrincipalService` 的最小投影。认证失效使用可信 AuthContext、显式权限、revision 条件更新和同事务审计；禁止直接查询 system model 或更新 `tenant_accounts.auth_version` / `auth_sessions`。

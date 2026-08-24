@@ -15,5 +15,6 @@
 - 后处理扩展（转码/OCR/向量化等非本阶段）：仍走 Outbox→Job→独立 object_key→variant token；多产物再拆 derivatives 表，禁止堆列/另起协议。
 - 删除须级联清理 `thumb_object_key`；变更同步 `docs/development/attachments.md` 并 `agent-rules sync`。
 - 官方应用与公开 `platform/host` 必须由 system 模块统一注册 raw/multipart Transfer 路由；下游不得复制 Handler。
+- 下游受权读取附件只经 `framework/platformresource.AttachmentReader`，必须复核 AuthContext、AccessPolicy、绑定、ready/variant、对象和大小；禁止暴露 object key、token 或内部 Model。
 
 详规：`docs/development/attachments.md`
