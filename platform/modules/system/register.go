@@ -161,6 +161,11 @@ func Register(a *app.App) error {
 	}
 	policyProvider := NewSettingUploadPolicyProvider(settingSvc.Provider())
 	attachSvc := NewAttachmentService(a.DB, a.Storage, a.TransferTokens, a.AttachmentPolicies, policyProvider)
+	a.PlatformResources.Attachments = attachSvc.ResourceReader()
+	a.PlatformResources.Principals = access.NewPrincipalResourceService(a.DB, a.Auditor)
+	if err := a.PlatformResources.Validate(); err != nil {
+		return fmt.Errorf("system: platform resource contracts: %w", err)
+	}
 	a.AIAssetResolver = attachSvc
 	a.AIDocumentResolver = attachSvc
 	a.AttachmentResourceLinker = attachSvc

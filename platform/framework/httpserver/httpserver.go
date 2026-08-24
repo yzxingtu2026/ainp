@@ -49,10 +49,11 @@ func New(opts Options) *gin.Engine {
 		middleware.SetupGate(opts.Installed),
 		middleware.AcceptLanguage(),
 		middleware.Auth(middleware.AuthOptions{
-			Tokens:          opts.Tokens,
-			Authorization:   opts.Authorization,
-			ClientSurfaces:  opts.ClientSurfaces,
-			DevTokenEnabled: opts.DevTokenEnabled,
+			Tokens:               opts.Tokens,
+			Authorization:        opts.Authorization,
+			ClientSurfaces:       opts.ClientSurfaces,
+			DedicatedBearerPaths: []string{"/mcp"},
+			DevTokenEnabled:      opts.DevTokenEnabled,
 		}),
 		middleware.IdempotencyKey(),
 	)

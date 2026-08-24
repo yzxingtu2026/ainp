@@ -10,7 +10,9 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/logging"
 	"github.com/yzxingtu2026/ainp/platform/framework/notification"
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
+	"github.com/yzxingtu2026/ainp/platform/framework/platformresource"
 	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
+	"github.com/yzxingtu2026/ainp/platform/modules/system/access"
 	"github.com/yzxingtu2026/ainp/platform/modules/system/notifications/jobs"
 	"gorm.io/gorm"
 )
@@ -72,11 +74,27 @@ func (s *gormOrchestratorStore) FindByIdempotencyKey(ctx context.Context, tenant
 	if !ok || ac == nil || ac.TenantID != tenantID {
 		return "", false, tenant.ErrTenantConflict
 	}
+	principal := ac.Principal
+	if principal != (auth.PrincipalRef{}) && !principal.Valid() {
+		return "", false, fmt.Errorf("notification: invalid principal context")
+	}
+	if principal == (auth.PrincipalRef{}) {
+		principal = auth.PrincipalRef{Kind: auth.PrincipalKindAccount, ID: ac.PrincipalID}
+	}
 	repo, repoErr := s.repo.requestRepository(ctx)
 	if repoErr != nil {
 		return "", false, repoErr
 	}
-	req, err := repo.First("definition_key = ? AND idempotency_key = ?", definitionKey, idempotencyKey)
+	clientSurface, audience := ac.ClientSurface, ac.Audience
+	if principal.Kind == auth.PrincipalKindAccount {
+		if clientSurface == "" {
+			clientSurface = auth.TenantConsoleSurface
+		}
+		if audience == "" {
+			audience = auth.TenantAudience
+		}
+	}
+	req, err := repo.First("definition_key = ? AND principal_kind = ? AND actor_id = ? AND client_surface = ? AND audience = ? AND idempotency_key = ?", definitionKey, principal.Kind, principal.ID, clientSurface, audience, idempotencyKey)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return "", false, nil
@@ -96,6 +114,9 @@ func (s *gormOrchestratorStore) CreateRequest(ctx context.Context, req notificat
 		IdempotencyKey: req.IdempotencyKey,
 		VariablesJSON:  req.VariablesJSON,
 		ActorID:        req.ActorID,
+		PrincipalKind:  string(req.Principal.Kind),
+		ClientSurface:  req.ClientSurface,
+		Audience:       req.Audience,
 		CorrelationID:  req.CorrelationID,
 		CausationID:    req.CausationID,
 	}
@@ -162,22 +183,22 @@ func (s *GormDeliverStore) LoadDelivery(ctx context.Context, deliveryID string) 
 	if err != nil {
 		return nil, err
 	}
-	varsJSON := []byte("{}")
-	defKey := ""
-	if req != nil {
-		varsJSON = req.VariablesJSON
-		defKey = req.DefinitionKey
+	if req == nil {
+		return nil, fmt.Errorf("notification request %q not found", del.RequestID)
 	}
 	return &jobs.DeliveryContext{
 		DeliveryID:    del.ID,
 		RequestID:     del.RequestID,
 		TenantID:      del.TenantID,
-		DefinitionKey: defKey,
+		DefinitionKey: req.DefinitionKey,
 		RecipientType: del.RecipientType,
 		RecipientID:   del.RecipientID,
 		Channel:       del.Channel,
 		Locale:        del.Locale,
-		VariablesJSON: varsJSON,
+		VariablesJSON: req.VariablesJSON,
+		Principal:     req.PrincipalRef(),
+		ClientSurface: req.ClientSurface,
+		Audience:      req.Audience,
 	}, nil
 }
 
@@ -253,6 +274,9 @@ func (h *NotificationOutboxHandler) Handle(ctx context.Context, env outbox.Envel
 		TenantID:      env.TenantID,
 		Realm:         auth.NormalizeRealm(env.Realm),
 		PrincipalID:   env.ActorID,
+		Principal:     env.Principal,
+		ClientSurface: env.ClientSurface,
+		Audience:      env.Audience,
 		RequestID:     env.CorrelationID,
 		Authenticated: true,
 		Client:        "outbox",
@@ -269,6 +293,9 @@ func (h *NotificationOutboxHandler) Handle(ctx context.Context, env outbox.Envel
 		CorrelationID:  env.CorrelationID,
 		CausationID:    env.CausationID,
 		TenantID:       env.TenantID,
+		Principal:      env.Principal,
+		ClientSurface:  env.ClientSurface,
+		Audience:       env.Audience,
 	}
 
 	_, _, err := h.service.Orchestrator().Process(ctx, input)
@@ -282,29 +309,29 @@ func (h *NotificationOutboxHandler) Handle(ctx context.Context, env outbox.Envel
 	return err
 }
 
-// --- User lookup for recipient resolver ---
-
-// UserExistsFn returns a function that checks if a user exists and is enabled in a tenant.
-func UserExistsFn(db *gorm.DB) func(ctx context.Context, tenantID, userID string) (bool, error) {
+// PrincipalExistsFn adapts the stable principal projection to notification's
+// provider-neutral recipient resolver contract.
+func PrincipalExistsFn(principals platformresource.PrincipalService) func(ctx context.Context, tenantID, principalID string) (bool, error) {
 	return func(ctx context.Context, tenantID, userID string) (bool, error) {
 		ac := auth.MustFromContext(ctx)
-		if ac.TenantID != tenantID {
-			return false, tenant.ErrTenantConflict
+		if principals == nil || ac.TenantID != tenantID {
+			return false, platformresource.ErrForbidden
 		}
-		tdb, err := tenant.TenantDB(ctx, db)
-		if err != nil {
+		projection, err := principals.Get(ctx, auth.PrincipalRef{Kind: auth.PrincipalKindAccount, ID: userID})
+		if err != nil || projection == nil {
+			if err == nil {
+				err = platformresource.ErrUnavailable
+			}
 			return false, err
 		}
-		type userRow struct {
-			ID     string
-			Status string
-		}
-		rows, err := tenant.TenantRaw[userRow](tdb, "SELECT id, status FROM tenant_accounts WHERE tenant_id = ? AND id = ? LIMIT 1", userID)
-		if err != nil {
-			return false, err
-		}
-		return len(rows) > 0 && rows[0].Status == "enabled", nil
+		return projection.Active, nil
 	}
+}
+
+// UserExistsFn is retained for source compatibility.
+// Deprecated: use PrincipalExistsFn.
+func UserExistsFn(db *gorm.DB) func(ctx context.Context, tenantID, userID string) (bool, error) {
+	return PrincipalExistsFn(access.NewPrincipalResourceService(db, nil))
 }
 
 // Helper to ensure uuid is used

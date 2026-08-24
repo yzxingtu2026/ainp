@@ -135,3 +135,9 @@ AINP 已发布历史继续保存在 `schema_migrations`，不得插入、重排�
 - 应用失败时回退下游二进制版本；数据库依赖升级前备份和向后兼容 Schema，不执行 down migration。破坏性公开契约变化遵循 SemVer 和迁移窗口。
 
 下游模块仍遵循 owner contracts + composition root 注入、`modules/A` 不依赖 `modules/B`、集中测试和零架构豁免。公开 Host 不授予额外数据库、租户或权限能力。
+
+## 平台资源契约
+
+下游访问 AINP 平台资源只能依赖 `framework/platformresource`，并从 `app.App.PlatformResources` 获取 Host 注入的实现。附件使用最小元数据、授权后的 reader 和绑定投影；主体使用最小显示名/状态/认证版本投影及显式失效 Port。不得导入 `platform/internal/*`、`platform/modules/*/model` 或能力实现子包。
+
+资源请求必须携带可信 tenant/principal AuthContext，API 与 Worker 使用同一注入实例。缺少上下文、跨租户、策略拒绝、非 ready、variant/对象缺失统一 fail-closed，不返回 object key、Transfer Token、裸 DB 或 GORM Model。完整 owner、前置条件、错误边界和版本策略见 `platform-resource-contracts.md`。

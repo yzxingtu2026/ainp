@@ -1,5 +1,7 @@
 # 统一通知协议与站内通知
 
+通知请求必须保存来源 `PrincipalRef`、Client Surface 和 audience。同步调用从可信 AuthContext 取值，Outbox 调用从 Envelope 恢复；Delivery Job 必须校验 Job Envelope 与请求记录一致，禁止退化为默认 Account。幂等作用域包含 tenant、definition、Principal Kind/ID、Surface、audience 和业务 key。
+
 ## 概述
 
 `platform/framework/notification/` 提供统一通知协议，业务模块只提交 Notification Request，不直接调用任何渠道 SDK。
@@ -155,3 +157,4 @@ outbox.Write(ctx, tx, outbox.Envelope{
 - ActionDescriptor 禁止 javascript: 和外部 URL
 - 用户只能访问自己的通知
 - 个人通知 Action 使用 `access=authenticated`，不进入角色权限目录；服务端固定使用 AuthContext 的 tenant/user scope
+- Account 接收人解析复用 `PlatformResources.Principals`，API、Outbox 与 Worker 使用同一最小主体投影；通知模块和下游不得复制 `tenant_accounts` 查询。

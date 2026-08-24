@@ -9,6 +9,7 @@ Agent 只读要点：`.agent/rules/authentication-and-session.md`。
 - Client Surface 是服务端安全事实，包含稳定 ID、唯一 audience、HTTP path prefix、允许 Kind 和认证方法；通过 `App.RegisterClientSurface` 注册。
 - Host 在模块完成 `Prepare/Register` 后校验并封存注册表。未知 Kind、Provider、认证方法、Action 引用以及重复 audience/prefix 都阻止启动。
 - HTTP 按最长 path prefix 解析 Surface，再按目标 audience 验签。未知路径、跨 audience、Token surface 与路径不一致、Kind/Surface 不兼容均 fail-closed。
+- 独立 Bearer 协议入口只能通过显式精确路径跳过 Web Session Auth，并由目标 Handler 校验自己的 audience、授权事实和实时权限；不得使用前缀放行，未知路径仍须 fail-closed。当前仅 `/mcp` 使用该机制。
 - 多主体使用 `TokenService.IssueFor/ParseFor`；旧 `Issue/Parse` 仅是 Account + tenant-console 兼容入口。
 
 `PrincipalProvider` 只复核主体、会话版本和实时授权投影，不签 Token、不写 AuthContext，也不得让业务主体继承 Account RBAC。
@@ -79,6 +80,8 @@ MCP 使用独立的 OAuth Grant、Token family 和 `ainp:mcp` audience，不复�
 异步 Outbox Event 与 JobRun 同样持久化 `principal_kind + actor/created_by + client_surface + audience`。Dispatcher/Worker 恢复 AuthContext 时必须使用这些字段；旧事件/任务仅有 Account actor 时按 `ainp.account` 兼容，禁止默认切换到其他主体或 tenant-console Surface。
 
 审计记录保存 Actor ID 的同时必须保存 Principal Kind、Client Surface 与 audience；幂等唯一键包含 Principal Kind，避免不同主体类型使用相同 ID 和 key 时互相重放或冲突。旧审计与幂等记录按 `ainp.account` 回填，不能据此推断其他业务主体。
+
+通知请求同样保存 Principal Kind、Client Surface 与 audience；Outbox Handler 和 Delivery Job 必须从同一份可信 Envelope 恢复，通知幂等唯一键还必须隔离主体 ID、Surface 和 audience。MCP OAuth Grant、Access Token、Refresh、Confirmation 也必须绑定来源 Principal Ref、Surface 和 audience；当前 MCP 公共入口仅允许 `ainp.account + ainp.tenant-console`，任何伪造或跨 Surface 复用均 fail-closed。
 
 ## Challenge、限流与审计
 

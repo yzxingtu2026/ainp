@@ -45,6 +45,16 @@ func AutoMigrate(db *gorm.DB) error {
 			return err
 		}
 	}
+	if db.Migrator().HasTable("notification_requests") {
+		if err := applyNotificationPrincipalSchema(db); err != nil {
+			return err
+		}
+	}
+	if db.Migrator().HasTable("mcp_oauth_grants") && db.Migrator().HasTable("mcp_action_confirmations") {
+		if err := applyMCPPrincipalSchema(db); err != nil {
+			return err
+		}
+	}
 	if err := db.AutoMigrate(
 		&tenant.Tenant{},
 		&model.TenantAccount{},
@@ -107,6 +117,28 @@ func applyPrincipalSessionSchema(db *gorm.DB) error {
 	}
 	if err := db.Exec(migration.SQL).Error; err != nil {
 		return fmt.Errorf("apply principal session migration: %w", err)
+	}
+	return nil
+}
+
+func applyNotificationPrincipalSchema(db *gorm.DB) error {
+	migration, err := migrations.Find(63)
+	if err != nil {
+		return fmt.Errorf("load notification principal context migration: %w", err)
+	}
+	if err := db.Exec(migration.SQL).Error; err != nil {
+		return fmt.Errorf("apply notification principal context migration: %w", err)
+	}
+	return nil
+}
+
+func applyMCPPrincipalSchema(db *gorm.DB) error {
+	migration, err := migrations.Find(64)
+	if err != nil {
+		return fmt.Errorf("load MCP principal context migration: %w", err)
+	}
+	if err := db.Exec(migration.SQL).Error; err != nil {
+		return fmt.Errorf("apply MCP principal context migration: %w", err)
 	}
 	return nil
 }

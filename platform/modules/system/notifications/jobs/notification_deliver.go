@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/job"
 	"github.com/yzxingtu2026/ainp/platform/framework/logging"
 	"github.com/yzxingtu2026/ainp/platform/framework/notification"
@@ -46,6 +47,9 @@ type DeliveryContext struct {
 	Channel       string
 	Locale        string
 	VariablesJSON []byte
+	Principal     auth.PrincipalRef
+	ClientSurface string
+	Audience      string
 }
 
 func NewNotificationDeliverHandler(
@@ -87,6 +91,31 @@ func (h *NotificationDeliverHandler) Handle(ctx context.Context, env job.Envelop
 	}
 	if dc == nil {
 		return job.Permanent(fmt.Errorf("notification.deliver: delivery %q not found", p.DeliveryID))
+	}
+	envelopePrincipal := env.Principal
+	if envelopePrincipal == (auth.PrincipalRef{}) && env.ActorID != "" {
+		envelopePrincipal = auth.PrincipalRef{Kind: auth.PrincipalKindAccount, ID: env.ActorID}
+	}
+	envelopeSurface, envelopeAudience := env.ClientSurface, env.Audience
+	if envelopePrincipal.Kind == auth.PrincipalKindAccount {
+		if envelopeSurface == "" {
+			envelopeSurface = auth.TenantConsoleSurface
+		}
+		if envelopeAudience == "" {
+			envelopeAudience = auth.TenantAudience
+		}
+	}
+	if dc.TenantID == "" || env.TenantID == "" || dc.TenantID != env.TenantID {
+		return job.Permanent(fmt.Errorf("notification.deliver: tenant context mismatch"))
+	}
+	if !dc.Principal.Valid() || !envelopePrincipal.Valid() || dc.Principal != envelopePrincipal || env.ActorID != envelopePrincipal.ID {
+		return job.Permanent(fmt.Errorf("notification.deliver: principal context mismatch"))
+	}
+	if dc.ClientSurface == "" || envelopeSurface == "" || dc.ClientSurface != envelopeSurface {
+		return job.Permanent(fmt.Errorf("notification.deliver: client surface context mismatch"))
+	}
+	if dc.Audience == "" || envelopeAudience == "" || dc.Audience != envelopeAudience {
+		return job.Permanent(fmt.Errorf("notification.deliver: audience context mismatch"))
 	}
 
 	// Get definition

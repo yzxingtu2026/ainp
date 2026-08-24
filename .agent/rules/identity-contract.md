@@ -7,3 +7,4 @@
 - 禁止机械全仓替换业务 `User/user_id`；持久化改名必须走版本化 migration。
 - framework 与 system access 的 `UserID/user_id` 仅允许进入带语义和删除条件的门禁 allowlist；新账号引用必须分类为 Account、Principal 或 Actor。
 - 兼容入口从 `v0.1.7` 开始，预计 `v0.3.0` 移除；连续两个发布周期无兼容日志、0055 全环境应用且旧存量清零后才可删除。
+- 下游账号投影/失效只经 `framework/platformresource.PrincipalService`；失效必须使用可信 tenant/actor、显式权限、revision 与同事务审计，禁止直查或直写 system 表。

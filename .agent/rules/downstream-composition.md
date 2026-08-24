@@ -14,3 +14,5 @@
 - 下游模块根包只保留薄 `Module` 生命周期、稳定 Facade/contracts/constants；Action、Service、Repository、Model、HTTP 与领域流程进入 owner 明确的能力子包，测试集中到模块树外的 `tests`。
 - 下游 CI 必须在 `go vet/go test` 前显式运行依赖版本提供的 `cmd/ainp-archcheck --profile downstream`；不接受架构基线、通配豁免或本地白名单。
 - 发布物中的精简规则来源是 `platform/rules/downstream-module-architecture.md`。下游升级后仍须复制或同步同版本规则、登记自身 `.agent/rules/main.md` 与 `.agent/adapters/rules.json`，再运行 `agent-rules sync/doctor`；保存文档快照或只升级 Go 依赖不会自动启用规则。
+- 下游平台资源只允许使用 `framework/platformresource` 与 `app.App.PlatformResources`；禁止导入 `platform/internal/*`、`platform/modules/*/model`、能力实现包或自行复制 system 查询。
+- 资源 Port 必须从可信 AuthContext 重新执行 tenant scope、AccessPolicy、状态和并发校验；缺少依赖、跨租户、无权和对象异常 fail-closed。

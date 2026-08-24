@@ -39,6 +39,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
 	"github.com/yzxingtu2026/ainp/platform/framework/pagecontext"
 	"github.com/yzxingtu2026/ainp/platform/framework/permission"
+	"github.com/yzxingtu2026/ainp/platform/framework/platformresource"
 	"github.com/yzxingtu2026/ainp/platform/framework/runtimecontext"
 	"github.com/yzxingtu2026/ainp/platform/framework/setting"
 	"github.com/yzxingtu2026/ainp/platform/framework/statemachine"
@@ -96,6 +97,7 @@ type App struct {
 	Notifications            *notification.DefinitionRegistry
 	LogProviders             *logcenter.Registry
 	PageContexts             *pagecontext.Registry
+	PlatformResources        platformresource.Services
 	NotificationRenderer     *notification.Renderer
 	OnHTTP                   func(engine *gin.Engine)
 	Auditor                  audit.Recorder

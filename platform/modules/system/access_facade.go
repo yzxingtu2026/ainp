@@ -5,33 +5,36 @@ import (
 
 	"github.com/yzxingtu2026/ainp/platform/framework/action"
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
+	"github.com/yzxingtu2026/ainp/platform/framework/audit"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/authentication"
 	"github.com/yzxingtu2026/ainp/platform/framework/capability"
+	"github.com/yzxingtu2026/ainp/platform/framework/platformresource"
 	"github.com/yzxingtu2026/ainp/platform/modules/system/access"
 	"gorm.io/gorm"
 )
 
 type (
-	AuthService            = access.AuthService
-	AccountProfile         = access.AccountProfile
-	PasswordAuthenticator  = access.PasswordAuthenticator
-	SessionService         = access.SessionService
-	SessionTokens          = access.SessionTokens
-	UnifiedAuthService     = access.UnifiedAuthService
-	AuthenticateRequest    = access.AuthenticateRequest
-	ChallengeRequest       = access.ChallengeRequest
-	RefreshRequest         = access.RefreshRequest
-	LegacyLoginRequest     = access.LegacyLoginRequest
-	SessionView            = access.SessionView
-	RoleService            = access.RoleService
-	RoleView               = access.RoleView
-	PermissionCatalogItem  = access.PermissionCatalogItem
-	PermissionCatalogGroup = access.PermissionCatalogGroup
-	AccountService         = access.AccountService
-	AccountSelfProfileView = access.AccountSelfProfileView
-	AccountRoleBrief       = access.AccountRoleBrief
-	AccountView            = access.AccountView
+	AuthService              = access.AuthService
+	AccountProfile           = access.AccountProfile
+	PasswordAuthenticator    = access.PasswordAuthenticator
+	SessionService           = access.SessionService
+	SessionTokens            = access.SessionTokens
+	UnifiedAuthService       = access.UnifiedAuthService
+	AuthenticateRequest      = access.AuthenticateRequest
+	ChallengeRequest         = access.ChallengeRequest
+	RefreshRequest           = access.RefreshRequest
+	LegacyLoginRequest       = access.LegacyLoginRequest
+	SessionView              = access.SessionView
+	RoleService              = access.RoleService
+	RoleView                 = access.RoleView
+	PermissionCatalogItem    = access.PermissionCatalogItem
+	PermissionCatalogGroup   = access.PermissionCatalogGroup
+	AccountService           = access.AccountService
+	AccountSelfProfileView   = access.AccountSelfProfileView
+	AccountRoleBrief         = access.AccountRoleBrief
+	AccountView              = access.AccountView
+	PrincipalResourceService = access.PrincipalResourceService
 
 	// Deprecated: use AccountProfile.
 	UserProfile = AccountProfile
@@ -67,6 +70,10 @@ func NewRoleService(db *gorm.DB, authService *AuthService, actions *action.Regis
 
 func NewAccountService(db *gorm.DB, authService *AuthService) *AccountService {
 	return access.NewAccountService(db, authService)
+}
+
+func NewPrincipalResourceService(db *gorm.DB, auditor audit.Recorder) platformresource.PrincipalService {
+	return access.NewPrincipalResourceService(db, auditor)
 }
 
 // NewUserService is kept for source compatibility.

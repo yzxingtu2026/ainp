@@ -6,6 +6,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
 	"github.com/yzxingtu2026/ainp/platform/framework/job"
 	"github.com/yzxingtu2026/ainp/platform/framework/notification"
+	"github.com/yzxingtu2026/ainp/platform/framework/platformresource"
 	"github.com/yzxingtu2026/ainp/platform/modules/system/notifications"
 	"gorm.io/gorm"
 )
@@ -68,5 +69,8 @@ func NewNotificationOutboxHandler(service *NotificationService) *NotificationOut
 }
 func UserExistsFn(db *gorm.DB) func(context.Context, string, string) (bool, error) {
 	return notifications.UserExistsFn(db)
+}
+func PrincipalExistsFn(principals platformresource.PrincipalService) func(context.Context, string, string) (bool, error) {
+	return notifications.PrincipalExistsFn(principals)
 }
 func registerNotificationActions(a *app.App) error { return notifications.RegisterActions(a) }

@@ -26,6 +26,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/httpserver"
 	"github.com/yzxingtu2026/ainp/platform/framework/i18n"
 	"github.com/yzxingtu2026/ainp/platform/framework/job"
+	"github.com/yzxingtu2026/ainp/platform/framework/platformresource"
 	"github.com/yzxingtu2026/ainp/platform/framework/prompt"
 	"github.com/yzxingtu2026/ainp/platform/host"
 )
@@ -207,6 +208,7 @@ func TestExternalModuleContributesAtomicAICreateToDefaultContract(t *testing.T) 
 		t.Fatal(err)
 	}
 	application.Jobs = &job.Runtime{Registry: job.NewRegistry()}
+	application.PlatformResources = platformresource.Services{Attachments: fakeAttachmentResources{}, Principals: fakePrincipalResources{}}
 	if err := (orders.Module{}).Register(application); err != nil {
 		t.Fatal(err)
 	}
@@ -247,4 +249,25 @@ func TestExternalModuleContributesAtomicAICreateToDefaultContract(t *testing.T) 
 	if err := application.AgentContracts.ValidateActionToolCapabilityReachability(application.Actions, map[string]struct{}{"system.operations@1.0.0": {}}, nil); err != nil {
 		t.Fatalf("downstream Action capabilities must be reachable from an Agent Contract: %v", err)
 	}
+}
+
+type fakeAttachmentResources struct{}
+
+func (fakeAttachmentResources) Open(context.Context, platformresource.AttachmentOpenRequest) (*platformresource.AttachmentContent, error) {
+	return &platformresource.AttachmentContent{Metadata: platformresource.AttachmentMetadata{ID: "attachment-1", Size: 0}, Reader: http.NoBody}, nil
+}
+func (fakeAttachmentResources) BindingExists(context.Context, platformresource.AttachmentOpenRequest) (bool, error) {
+	return true, nil
+}
+func (fakeAttachmentResources) ListBindings(context.Context, platformresource.AttachmentBindingQuery) ([]platformresource.AttachmentBinding, error) {
+	return nil, nil
+}
+
+type fakePrincipalResources struct{}
+
+func (fakePrincipalResources) Get(_ context.Context, ref auth.PrincipalRef) (*platformresource.PrincipalProjection, error) {
+	return &platformresource.PrincipalProjection{Principal: ref, DisplayName: "Example", Active: true, Revision: 1}, nil
+}
+func (fakePrincipalResources) Invalidate(_ context.Context, req platformresource.PrincipalInvalidation) (*platformresource.PrincipalProjection, error) {
+	return &platformresource.PrincipalProjection{Principal: req.Principal, DisplayName: "Example", Active: true, Revision: req.ExpectedRevision + 1}, nil
 }
