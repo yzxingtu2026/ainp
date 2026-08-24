@@ -135,15 +135,23 @@ func IdempotencyKey() gin.HandlerFunc {
 }
 
 type AuthOptions struct {
-	Tokens          *auth.TokenService
-	Authorization   auth.AuthorizationProvider
-	ClientSurfaces  *auth.ClientSurfaceRegistry
-	DevTokenEnabled bool
+	Tokens               *auth.TokenService
+	Authorization        auth.AuthorizationProvider
+	ClientSurfaces       *auth.ClientSurfaceRegistry
+	DedicatedBearerPaths []string
+	DevTokenEnabled      bool
 }
 
 // Auth 解析 Authorization：正式 JWT 优先；dev: 桩仅在开关开启时可用。
 func Auth(opts AuthOptions) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		for _, path := range opts.DedicatedBearerPaths {
+			if c.Request.URL.Path == path {
+				c.Next()
+				return
+			}
+		}
+
 		ac := auth.MustFromContext(c.Request.Context())
 		var surface auth.ClientSurface
 		surfaceOK := false

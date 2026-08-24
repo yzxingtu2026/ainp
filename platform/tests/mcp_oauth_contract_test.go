@@ -17,13 +17,15 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/action"
 	"github.com/yzxingtu2026/ainp/platform/framework/aitool"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
+	"github.com/yzxingtu2026/ainp/platform/framework/httpserver"
 	"github.com/yzxingtu2026/ainp/platform/framework/mcpserver"
 	"github.com/yzxingtu2026/ainp/platform/framework/permission"
 	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
 )
 
 type mcpAuthorizationProvider struct {
-	disabled bool
+	disabled    bool
+	permissions []string
 }
 
 func (p *mcpAuthorizationProvider) LoadAuthorization(_ context.Context, req auth.AuthorizationRequest) (*auth.AuthorizationSnapshot, error) {
@@ -31,7 +33,18 @@ func (p *mcpAuthorizationProvider) LoadAuthorization(_ context.Context, req auth
 		return nil, auth.ErrAuthorizationStale
 	}
 	principal := req.PrincipalRef()
-	return &auth.AuthorizationSnapshot{TenantID: req.TenantID, Principal: principal, PrincipalID: principal.ID, AuthVersion: req.AuthVersion, Audience: req.Audience, ClientSurface: req.ClientSurface}, nil
+	return &auth.AuthorizationSnapshot{TenantID: req.TenantID, Principal: principal, PrincipalID: principal.ID, SessionID: req.SessionID, AuthVersion: req.AuthVersion, Audience: req.Audience, ClientSurface: req.ClientSurface, Permissions: append([]string(nil), p.permissions...)}, nil
+}
+
+type bearerRoundTripper struct {
+	token string
+	base  http.RoundTripper
+}
+
+func (t bearerRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
+	clone := request.Clone(request.Context())
+	clone.Header.Set("Authorization", "Bearer "+t.token)
+	return t.base.RoundTrip(clone)
 }
 
 func TestMCPOAuthMetadataAndProtectedTransport(t *testing.T) {
@@ -60,6 +73,68 @@ func TestMCPOAuthMetadataAndProtectedTransport(t *testing.T) {
 	if response.Code != http.StatusUnauthorized || !strings.Contains(response.Header().Get("WWW-Authenticate"), "oauth-protected-resource") {
 		t.Fatalf("unprotected MCP request status=%d challenge=%q", response.Code, response.Header().Get("WWW-Authenticate"))
 	}
+}
+
+func TestMCPTransportBearerTokenReachesDedicatedAuthenticator(t *testing.T) {
+	db := openOutboxTestDB(t)
+	provider := &mcpAuthorizationProvider{permissions: []string{"demo.read"}}
+	service := mcpserver.NewService(db, provider, "test-secret", "ainp-test", "https://api.ainp.example")
+	if err := mcpserver.AutoMigrate(db); err != nil {
+		t.Fatal(err)
+	}
+
+	registry := action.NewRegistry(permission.NewChecker(), nil)
+	registerMCPTestAction(t, registry, "demo.read", action.AccessPermission, "demo.read", "read", "low", nil)
+	client, err := service.RegisterClient(context.Background(), "Codex", []string{"http://127.0.0.1/callback"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	verifier := strings.Repeat("v", 43)
+	sum := sha256.Sum256([]byte(verifier))
+	challenge := base64.RawURLEncoding.EncodeToString(sum[:])
+	web := &auth.Context{Authenticated: true, Realm: auth.RealmTenant, TenantID: "tenant-a", PrincipalID: "account-a", Principal: auth.PrincipalRef{Kind: auth.PrincipalKindAccount, ID: "account-a"}, ClientSurface: auth.TenantConsoleSurface, Audience: auth.TenantAudience, AuthVersion: 7}
+	code, err := service.Authorize(context.Background(), web, client.ID, "http://127.0.0.1/callback", mcpserver.ScopeRead, challenge, "S256")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tokens, err := service.Exchange(context.Background(), code, client.ID, "http://127.0.0.1/callback", verifier)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	webTokens, err := auth.NewTokenService("test-secret", "ainp-test", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	surfaces := auth.NewClientSurfaceRegistry()
+	if err = surfaces.Register(auth.BuiltinTenantConsoleSurface()); err != nil {
+		t.Fatal(err)
+	}
+	installed := true
+	mcpHTTP := mcpserver.NewHTTPServer(service, registry, "https://api.ainp.example", "https://ainp.example")
+	router := httpserver.New(httpserver.Options{Mode: "test", Installed: &installed, Tokens: webTokens, Authorization: provider, ClientSurfaces: surfaces, Actions: registry, DB: db, OnHTTP: mcpHTTP.Register})
+	testServer := httptest.NewServer(router)
+	defer testServer.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	httpClient := &http.Client{Transport: bearerRoundTripper{token: tokens.AccessToken, base: http.DefaultTransport}}
+	transport := &mcp.StreamableClientTransport{Endpoint: testServer.URL + "/mcp", HTTPClient: httpClient, DisableStandaloneSSE: true}
+	session, err := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "1"}, nil).Connect(ctx, transport, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	result, err := session.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range result.Tools {
+		if tool.Name == mcpserver.MCPToolName("demo.read") {
+			return
+		}
+	}
+	t.Fatalf("MCP tools/list did not expose demo.read: %#v", result.Tools)
 }
 
 func TestMCPSensitiveConfirmationIsBoundAndSingleUse(t *testing.T) {
