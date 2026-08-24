@@ -113,8 +113,10 @@ func TestAuthMiddlewareBindsPathSurfaceAudienceAndKind(t *testing.T) {
 	}
 	provider := &fakeAuthorizationProvider{snapshot: &auth.AuthorizationSnapshot{TenantID: "tenant-1", Principal: ref, PrincipalID: ref.ID, SessionID: "session-1", AuthVersion: 1}}
 	router := gin.New()
-	router.Use(middleware.RequestID(), middleware.Auth(middleware.AuthOptions{Tokens: tokens, Authorization: provider, ClientSurfaces: surfaces}))
+	router.Use(middleware.RequestID(), middleware.Auth(middleware.AuthOptions{Tokens: tokens, Authorization: provider, ClientSurfaces: surfaces, DedicatedBearerPaths: []string{"/mcp"}}))
 	router.GET("/mobile/orders", func(c *gin.Context) { c.Status(http.StatusNoContent) })
+	router.GET("/mcp", func(c *gin.Context) { c.Status(http.StatusNoContent) })
+	router.GET("/mcp/extra", func(c *gin.Context) { c.Status(http.StatusNoContent) })
 	router.GET("/unknown", func(c *gin.Context) { c.Status(http.StatusNoContent) })
 
 	valid := httptest.NewRequest(http.MethodGet, "/mobile/orders", nil)
@@ -140,5 +142,21 @@ func TestAuthMiddlewareBindsPathSurfaceAudienceAndKind(t *testing.T) {
 	router.ServeHTTP(unknownResp, unknown)
 	if unknownResp.Code != http.StatusUnauthorized {
 		t.Fatalf("unknown path status=%d", unknownResp.Code)
+	}
+
+	dedicated := httptest.NewRequest(http.MethodGet, "/mcp", nil)
+	dedicated.Header.Set("Authorization", "Bearer "+token)
+	dedicatedResp := httptest.NewRecorder()
+	router.ServeHTTP(dedicatedResp, dedicated)
+	if dedicatedResp.Code != http.StatusNoContent {
+		t.Fatalf("dedicated bearer path status=%d", dedicatedResp.Code)
+	}
+
+	nested := httptest.NewRequest(http.MethodGet, "/mcp/extra", nil)
+	nested.Header.Set("Authorization", "Bearer "+token)
+	nestedResp := httptest.NewRecorder()
+	router.ServeHTTP(nestedResp, nested)
+	if nestedResp.Code != http.StatusUnauthorized {
+		t.Fatalf("dedicated bearer path must match exactly: status=%d", nestedResp.Code)
 	}
 }

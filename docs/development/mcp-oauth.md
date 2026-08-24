@@ -1,10 +1,13 @@
 # MCP OAuth 与远程传输
 
+MCP OAuth Grant、Access Token、Refresh family 和 Confirmation 必须固定授权来源的 Principal Ref、Client Surface 与 audience。当前公共 MCP 授权仅接受 `ainp.account + ainp.tenant-console + ainp:tenant-console`；MCP 执行 Token 使用独立 `ainp:mcp` audience，但 Action 调用继续按来源 Kind/Surface 约束。Kind、Surface、来源 audience 或 Grant 任一不一致均按无效 Grant/不可用工具处理。
+
 AINP 的远程 MCP 入口使用官方 Go MCP SDK 提供 Streamable HTTP。业务不得手写 JSON-RPC、SSE 或 session 状态机。
 
 ## OAuth 与传输边界
 
 - MCP endpoint 固定为 `/mcp`，OAuth metadata 位于标准 `/.well-known/` 路径。
+- `/mcp` 使用独立 Bearer 认证，由全局 HTTP 认证中间件按精确路径委托给 MCP Handler；MCP Handler 必须完整校验 `ainp:mcp` audience、Grant、Token、Principal、授权来源 Surface 与实时授权。委托不得使用路径前缀，`/mcp/` 及其他未知路径仍按 Web Surface 规则 fail-closed。
 - authorization endpoint `/oauth/authorize` 是前端浏览器页面；它使用网页登录态访问 `/api/v1/mcp/oauth/authorize` 查询并确认授权，避免页面路由与协议 API 冲突。
 - 未登录时进入统一登录页并把完整授权 URL 作为站内 redirect；登录后的账号切换清理不得覆盖该 redirect，且只接受以单 `/` 开头的站内目标。
 - 授权成功后页面短暂展示成功状态并自动返回 Client callback；最终 callback 页面由 MCP 客户端控制，AINP 不得替换或延迟 Token 交换。

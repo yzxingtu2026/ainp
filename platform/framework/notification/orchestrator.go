@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 )
 
 // Orchestrator is the central coordinator for notification processing.
@@ -23,7 +24,7 @@ type Orchestrator struct {
 
 // OrchestratorStore abstracts DB operations for the orchestrator (avoid importing GORM).
 type OrchestratorStore interface {
-	// FindByIdempotencyKey looks up an existing request by tenant+definition+idempotency_key.
+	// FindByIdempotencyKey looks up an existing request in the trusted principal context.
 	FindByIdempotencyKey(ctx context.Context, tenantID, definitionKey, idempotencyKey string) (existingID string, found bool, err error)
 	// CreateRequest persists a notification request.
 	CreateRequest(ctx context.Context, req OrchestratorRequest) error
@@ -54,6 +55,9 @@ type OrchestratorRequest struct {
 	IdempotencyKey string
 	VariablesJSON  []byte
 	ActorID        string
+	Principal      auth.PrincipalRef
+	ClientSurface  string
+	Audience       string
 	CorrelationID  string
 	CausationID    string
 }
@@ -83,6 +87,9 @@ type NotificationInput struct {
 	Priority       Priority  // optional override
 	IdempotencyKey string    // stable business key for dedup
 	ActorID        string
+	Principal      auth.PrincipalRef
+	ClientSurface  string
+	Audience       string
 	CorrelationID  string
 	CausationID    string
 	TenantID       string // from trusted auth context
@@ -109,6 +116,64 @@ func NewOrchestrator(
 
 // Process handles a notification request end-to-end.
 func (o *Orchestrator) Process(ctx context.Context, input NotificationInput) (requestID string, deliveryIDs []string, err error) {
+	ac := auth.MustFromContext(ctx)
+	trustedPrincipal := ac.Principal
+	if trustedPrincipal == (auth.PrincipalRef{}) && ac.PrincipalID != "" {
+		trustedPrincipal = auth.PrincipalRef{Kind: auth.PrincipalKindAccount, ID: ac.PrincipalID}
+	}
+	if input.Principal != (auth.PrincipalRef{}) && !input.Principal.Valid() {
+		return "", nil, fmt.Errorf("notification: invalid principal")
+	}
+	if input.Principal == (auth.PrincipalRef{}) && trustedPrincipal.Valid() {
+		input.Principal = trustedPrincipal
+	}
+	if input.Principal == (auth.PrincipalRef{}) && input.ActorID != "" {
+		input.Principal = auth.PrincipalRef{Kind: auth.PrincipalKindAccount, ID: input.ActorID}
+	}
+	if input.ActorID == "" {
+		input.ActorID = input.Principal.ID
+	}
+	if input.Principal.Valid() && input.ActorID != input.Principal.ID {
+		return "", nil, fmt.Errorf("notification: actor does not match principal")
+	}
+	if ac.Authenticated && (!trustedPrincipal.Valid() || input.Principal != trustedPrincipal) {
+		return "", nil, fmt.Errorf("notification: principal context mismatch")
+	}
+	trustedSurface, trustedAudience := ac.ClientSurface, ac.Audience
+	if trustedPrincipal.Kind == auth.PrincipalKindAccount {
+		if trustedSurface == "" {
+			trustedSurface = auth.TenantConsoleSurface
+		}
+		if trustedAudience == "" {
+			trustedAudience = auth.TenantAudience
+		}
+	}
+	if input.ClientSurface == "" {
+		input.ClientSurface = trustedSurface
+	}
+	if input.Audience == "" {
+		input.Audience = trustedAudience
+	}
+	if ac.Authenticated && (trustedSurface == "" || input.ClientSurface != trustedSurface) {
+		return "", nil, fmt.Errorf("notification: client surface context mismatch")
+	}
+	if ac.Authenticated && (trustedAudience == "" || input.Audience != trustedAudience) {
+		return "", nil, fmt.Errorf("notification: audience context mismatch")
+	}
+	if ac.Authenticated && ac.TenantID != input.TenantID {
+		return "", nil, fmt.Errorf("notification: tenant context mismatch")
+	}
+	if input.Principal.Kind == auth.PrincipalKindAccount {
+		if input.ClientSurface == "" {
+			input.ClientSurface = auth.TenantConsoleSurface
+		}
+		if input.Audience == "" {
+			input.Audience = auth.TenantAudience
+		}
+	}
+	if input.Principal.Valid() && (input.ClientSurface == "" || input.Audience == "") {
+		return "", nil, fmt.Errorf("notification: principal surface context is required")
+	}
 	// 1. Validate definition
 	def, err := o.defs.MustGet(input.DefinitionKey)
 	if err != nil {
@@ -185,6 +250,9 @@ func (o *Orchestrator) Process(ctx context.Context, input NotificationInput) (re
 		IdempotencyKey: input.IdempotencyKey,
 		VariablesJSON:  varsJSON,
 		ActorID:        input.ActorID,
+		Principal:      input.Principal,
+		ClientSurface:  input.ClientSurface,
+		Audience:       input.Audience,
 		CorrelationID:  input.CorrelationID,
 		CausationID:    input.CausationID,
 	}

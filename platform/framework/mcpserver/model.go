@@ -36,18 +36,21 @@ type Client struct {
 func (Client) TableName() string { return "mcp_oauth_clients" }
 
 type Grant struct {
-	ID          string    `gorm:"primaryKey;size:64"`
-	TenantID    string    `gorm:"size:64;not null;index"`
-	AccountID   string    `gorm:"size:64;not null;index"`
-	ClientID    string    `gorm:"size:64;not null;index"`
-	Scopes      string    `gorm:"size:128;not null"`
-	AuthVersion uint64    `gorm:"not null"`
-	Status      string    `gorm:"size:16;not null"`
-	ExpiresAt   time.Time `gorm:"not null;index"`
-	LastUsedAt  *time.Time
-	RevokedAt   *time.Time `gorm:"index"`
-	CreatedAt   time.Time  `gorm:"autoCreateTime"`
-	UpdatedAt   time.Time  `gorm:"autoUpdateTime"`
+	ID            string    `gorm:"primaryKey;size:64"`
+	TenantID      string    `gorm:"size:64;not null;index;index:idx_mcp_grant_principal,priority:1"`
+	AccountID     string    `gorm:"size:64;not null;index;index:idx_mcp_grant_principal,priority:3"`
+	PrincipalKind string    `gorm:"size:128;not null;default:'ainp.account';index:idx_mcp_grant_principal,priority:2"`
+	ClientSurface string    `gorm:"size:128;not null;default:'ainp.tenant-console';index:idx_mcp_grant_principal,priority:4"`
+	Audience      string    `gorm:"size:255;not null;default:'ainp:tenant-console'"`
+	ClientID      string    `gorm:"size:64;not null;index"`
+	Scopes        string    `gorm:"size:128;not null"`
+	AuthVersion   uint64    `gorm:"not null"`
+	Status        string    `gorm:"size:16;not null;index:idx_mcp_grant_principal,priority:5"`
+	ExpiresAt     time.Time `gorm:"not null;index"`
+	LastUsedAt    *time.Time
+	RevokedAt     *time.Time `gorm:"index"`
+	CreatedAt     time.Time  `gorm:"autoCreateTime"`
+	UpdatedAt     time.Time  `gorm:"autoUpdateTime"`
 }
 
 func (Grant) TableName() string { return "mcp_oauth_grants" }
@@ -81,8 +84,11 @@ func (TokenFamily) TableName() string { return "mcp_oauth_token_families" }
 
 type Confirmation struct {
 	ID                  string    `gorm:"primaryKey;size:64"`
-	TenantID            string    `gorm:"size:64;not null;index"`
-	AccountID           string    `gorm:"size:64;not null;index"`
+	TenantID            string    `gorm:"size:64;not null;index;index:idx_mcp_confirmation_principal,priority:1"`
+	AccountID           string    `gorm:"size:64;not null;index;index:idx_mcp_confirmation_principal,priority:3"`
+	PrincipalKind       string    `gorm:"size:128;not null;default:'ainp.account';index:idx_mcp_confirmation_principal,priority:2"`
+	ClientSurface       string    `gorm:"size:128;not null;default:'ainp.tenant-console';index:idx_mcp_confirmation_principal,priority:4"`
+	Audience            string    `gorm:"size:255;not null;default:'ainp:tenant-console'"`
 	GrantID             string    `gorm:"size:64;not null;index"`
 	ClientID            string    `gorm:"size:64;not null;index"`
 	ActionID            string    `gorm:"size:128;not null"`
@@ -95,7 +101,7 @@ type Confirmation struct {
 	Description         string    `gorm:"size:512;not null"`
 	Risk                string    `gorm:"size:16;not null"`
 	SideEffect          string    `gorm:"size:16;not null"`
-	Status              string    `gorm:"size:16;not null;index"`
+	Status              string    `gorm:"size:16;not null;index;index:idx_mcp_confirmation_principal,priority:5"`
 	ExpiresAt           time.Time `gorm:"not null;index"`
 	DecidedAt           *time.Time
 	ConsumedAt          *time.Time

@@ -25,12 +25,15 @@ import (
 var ErrInvalidGrant = errors.New("invalid OAuth grant")
 
 type accessClaims struct {
-	TenantID    string `json:"tid"`
-	PrincipalID string `json:"principal_id,omitempty"`
-	GrantID     string `json:"grant_id"`
-	ClientID    string `json:"client_id"`
-	AuthVersion uint64 `json:"auth_version"`
-	Scopes      string `json:"scopes"`
+	TenantID       string `json:"tid"`
+	PrincipalID    string `json:"principal_id,omitempty"`
+	PrincipalKind  string `json:"principal_kind"`
+	ClientSurface  string `json:"client_surface"`
+	SourceAudience string `json:"source_audience"`
+	GrantID        string `json:"grant_id"`
+	ClientID       string `json:"client_id"`
+	AuthVersion    uint64 `json:"auth_version"`
+	Scopes         string `json:"scopes"`
 	jwt.RegisteredClaims
 }
 
@@ -156,6 +159,11 @@ func (s *Service) Authorize(ctx context.Context, ac *auth.Context, clientID, red
 	if ac == nil || !ac.Authenticated || ac.Realm != auth.RealmTenant || method != "S256" || len(challenge) < 43 || len(challenge) > 128 {
 		return "", ErrInvalidGrant
 	}
+	principal := contextPrincipal(ac)
+	surface, audience := sourceSurface(ac)
+	if ac.TenantID == "" || !principal.Valid() || ac.PrincipalID != principal.ID || ac.AuthVersion == 0 || principal.Kind != auth.PrincipalKindAccount || surface != auth.TenantConsoleSurface || audience != auth.TenantAudience {
+		return "", ErrInvalidGrant
+	}
 	if _, err := s.Client(ctx, clientID, redirectURI); err != nil {
 		return "", err
 	}
@@ -168,7 +176,7 @@ func (s *Service) Authorize(ctx context.Context, ac *auth.Context, clientID, red
 		return "", err
 	}
 	now := time.Now().UTC()
-	grant := Grant{ID: uuid.NewString(), TenantID: ac.TenantID, AccountID: ac.PrincipalID, ClientID: clientID, Scopes: scopes, AuthVersion: ac.AuthVersion, Status: "active", ExpiresAt: now.Add(30 * 24 * time.Hour)}
+	grant := Grant{ID: uuid.NewString(), TenantID: ac.TenantID, AccountID: principal.ID, PrincipalKind: string(principal.Kind), ClientSurface: surface, Audience: audience, ClientID: clientID, Scopes: scopes, AuthVersion: ac.AuthVersion, Status: "active", ExpiresAt: now.Add(30 * 24 * time.Hour)}
 	codeRow := AuthorizationCode{ID: uuid.NewString(), CodeHash: hash(code), GrantID: grant.ID, ClientID: clientID, RedirectURI: redirectURI, CodeChallenge: challenge, ExpiresAt: now.Add(5 * time.Minute)}
 	db, err := s.systemDB(ctx)
 	if err != nil {
@@ -208,10 +216,18 @@ func (s *Service) Exchange(ctx context.Context, code, clientID, redirectURI, ver
 			return ErrInvalidGrant
 		}
 		var grant Grant
-		if err := tx.Where("id = ?", row.GrantID).First(&grant).Error; err != nil {
+		now := time.Now().UTC()
+		if err := tx.Where("id = ? AND client_id = ? AND status = 'active' AND revoked_at IS NULL AND expires_at > ?", row.GrantID, clientID, now).First(&grant).Error; err != nil {
 			return ErrInvalidGrant
 		}
-		now := time.Now().UTC()
+		principal, ok := grantPrincipal(&grant)
+		if !ok || !grantSupportedSource(grant, principal) || s.authorization == nil {
+			return ErrInvalidGrant
+		}
+		snapshot, err := s.authorization.LoadAuthorization(ctx, grantAuthorizationRequest(grant, principal))
+		if err != nil || !grantAuthorizationMatches(snapshot, grant, principal) {
+			return ErrInvalidGrant
+		}
 		row.ConsumedAt = &now
 		if err := tx.Save(&row).Error; err != nil {
 			return err
@@ -277,8 +293,12 @@ func (s *Service) Refresh(ctx context.Context, raw, clientID string) (*TokenResp
 		if err := tx.Where("id = ? AND client_id = ? AND status = 'active' AND revoked_at IS NULL AND expires_at > ?", family.GrantID, clientID, time.Now().UTC()).First(&grant).Error; err != nil {
 			return ErrInvalidGrant
 		}
-		snapshot, err := s.authorization.LoadAuthorization(ctx, auth.AuthorizationRequest{TenantID: grant.TenantID, PrincipalID: grant.AccountID, Realm: auth.RealmTenant, AuthVersion: grant.AuthVersion})
-		if err != nil || snapshot == nil || snapshot.TenantID != grant.TenantID || snapshot.PrincipalID != grant.AccountID || snapshot.AuthVersion != grant.AuthVersion {
+		principal, ok := grantPrincipal(&grant)
+		if !ok || !grantSupportedSource(grant, principal) || s.authorization == nil {
+			return ErrInvalidGrant
+		}
+		snapshot, err := s.authorization.LoadAuthorization(ctx, grantAuthorizationRequest(grant, principal))
+		if err != nil || !grantAuthorizationMatches(snapshot, grant, principal) {
 			return ErrInvalidGrant
 		}
 		secret, err := randomToken()
@@ -339,7 +359,11 @@ func (s *Service) Revoke(ctx context.Context, raw string) error {
 
 func (s *Service) issueAccess(grant Grant) (string, error) {
 	now := time.Now().UTC()
-	claims := accessClaims{TenantID: grant.TenantID, PrincipalID: grant.AccountID, GrantID: grant.ID, ClientID: grant.ClientID, AuthVersion: grant.AuthVersion, Scopes: grant.Scopes, RegisteredClaims: jwt.RegisteredClaims{Issuer: s.issuer, Subject: grant.AccountID, Audience: jwt.ClaimStrings{Audience}, IssuedAt: jwt.NewNumericDate(now), ExpiresAt: jwt.NewNumericDate(now.Add(s.accessTTL))}}
+	principal, ok := grantPrincipal(&grant)
+	if !ok {
+		return "", ErrInvalidGrant
+	}
+	claims := accessClaims{TenantID: grant.TenantID, PrincipalID: principal.ID, PrincipalKind: string(principal.Kind), ClientSurface: grant.ClientSurface, SourceAudience: grant.Audience, GrantID: grant.ID, ClientID: grant.ClientID, AuthVersion: grant.AuthVersion, Scopes: grant.Scopes, RegisteredClaims: jwt.RegisteredClaims{Issuer: s.issuer, Subject: principal.ID, Audience: jwt.ClaimStrings{Audience}, IssuedAt: jwt.NewNumericDate(now), ExpiresAt: jwt.NewNumericDate(now.Add(s.accessTTL))}}
 	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(s.secret)
 }
 
@@ -354,7 +378,7 @@ func (s *Service) parseAccess(raw string) (*accessClaims, error) {
 		return nil, ErrInvalidGrant
 	}
 	claims, ok := token.Claims.(*accessClaims)
-	if !ok || claims.TenantID == "" || claims.GrantID == "" || claims.ClientID == "" || claims.AuthVersion == 0 {
+	if !ok || claims.TenantID == "" || claims.GrantID == "" || claims.ClientID == "" || claims.AuthVersion == 0 || claims.PrincipalKind == "" || claims.ClientSurface == "" || claims.SourceAudience == "" {
 		return nil, ErrInvalidGrant
 	}
 	if claims.Subject != "" && claims.PrincipalID != "" && claims.Subject != claims.PrincipalID {
@@ -367,6 +391,50 @@ func (s *Service) parseAccess(raw string) (*accessClaims, error) {
 		return nil, ErrInvalidGrant
 	}
 	return claims, nil
+}
+
+func contextPrincipal(ac *auth.Context) auth.PrincipalRef {
+	if ac == nil {
+		return auth.PrincipalRef{}
+	}
+	if ac.Principal != (auth.PrincipalRef{}) {
+		return ac.Principal
+	}
+	return auth.PrincipalRef{Kind: auth.PrincipalKindAccount, ID: ac.PrincipalID}
+}
+
+func sourceSurface(ac *auth.Context) (string, string) {
+	if ac == nil {
+		return "", ""
+	}
+	surface, audience := ac.ClientSurface, ac.Audience
+	if contextPrincipal(ac).Kind == auth.PrincipalKindAccount {
+		if surface == "" {
+			surface = auth.TenantConsoleSurface
+		}
+		if audience == "" {
+			audience = auth.TenantAudience
+		}
+	}
+	return surface, audience
+}
+
+func grantPrincipal(grant *Grant) (auth.PrincipalRef, bool) {
+	kind := auth.PrincipalKind(grant.PrincipalKind)
+	principal := auth.PrincipalRef{Kind: kind, ID: grant.AccountID}
+	return principal, principal.Valid()
+}
+
+func grantAuthorizationRequest(grant Grant, principal auth.PrincipalRef) auth.AuthorizationRequest {
+	return auth.AuthorizationRequest{TenantID: grant.TenantID, Principal: principal, PrincipalID: principal.ID, Realm: auth.RealmTenant, AuthVersion: grant.AuthVersion, Audience: grant.Audience, ClientSurface: grant.ClientSurface}
+}
+
+func grantAuthorizationMatches(snapshot *auth.AuthorizationSnapshot, grant Grant, principal auth.PrincipalRef) bool {
+	return snapshot != nil && snapshot.TenantID == grant.TenantID && snapshot.Principal == principal && snapshot.PrincipalID == principal.ID && snapshot.AuthVersion == grant.AuthVersion && snapshot.Audience == grant.Audience && snapshot.ClientSurface == grant.ClientSurface
+}
+
+func grantSupportedSource(grant Grant, principal auth.PrincipalRef) bool {
+	return principal.Kind == auth.PrincipalKindAccount && grant.ClientSurface == auth.TenantConsoleSurface && grant.Audience == auth.TenantAudience
 }
 
 type Principal struct {
@@ -385,11 +453,15 @@ func (s *Service) Authenticate(ctx context.Context, raw string) (*Principal, err
 	if err != nil {
 		return nil, err
 	}
-	if err := db.Where("id = ? AND status = 'active' AND revoked_at IS NULL AND expires_at > ?", claims.GrantID, time.Now().UTC()).First(&grant).Error; err != nil || grant.TenantID != claims.TenantID || grant.AccountID != claims.PrincipalID || grant.ClientID != claims.ClientID || grant.AuthVersion != claims.AuthVersion || grant.Scopes != claims.Scopes {
+	if err := db.Where("id = ? AND status = 'active' AND revoked_at IS NULL AND expires_at > ?", claims.GrantID, time.Now().UTC()).First(&grant).Error; err != nil || grant.TenantID != claims.TenantID || grant.AccountID != claims.PrincipalID || grant.PrincipalKind != claims.PrincipalKind || grant.ClientSurface != claims.ClientSurface || grant.Audience != claims.SourceAudience || grant.ClientID != claims.ClientID || grant.AuthVersion != claims.AuthVersion || grant.Scopes != claims.Scopes {
 		return nil, ErrInvalidGrant
 	}
-	snapshot, err := s.authorization.LoadAuthorization(ctx, auth.AuthorizationRequest{TenantID: claims.TenantID, PrincipalID: claims.PrincipalID, Realm: auth.RealmTenant, AuthVersion: claims.AuthVersion})
-	if err != nil || snapshot == nil || snapshot.TenantID != claims.TenantID || snapshot.PrincipalID != claims.PrincipalID || snapshot.AuthVersion != claims.AuthVersion {
+	principal, ok := grantPrincipal(&grant)
+	if !ok || !grantSupportedSource(grant, principal) || s.authorization == nil {
+		return nil, ErrInvalidGrant
+	}
+	snapshot, err := s.authorization.LoadAuthorization(ctx, grantAuthorizationRequest(grant, principal))
+	if err != nil || !grantAuthorizationMatches(snapshot, grant, principal) {
 		return nil, ErrInvalidGrant
 	}
 	now := time.Now().UTC()
@@ -399,7 +471,7 @@ func (s *Service) Authenticate(ctx context.Context, raw string) (*Principal, err
 		scopes[scope] = true
 	}
 	return &Principal{
-		Auth:   &auth.Context{RequestID: requestContext.RequestID, TraceID: requestContext.TraceID, Language: requestContext.Language, TenantID: snapshot.TenantID, PrincipalID: snapshot.PrincipalID, Realm: auth.RealmTenant, AuthVersion: snapshot.AuthVersion, Roles: snapshot.Roles, Permissions: snapshot.Permissions, OrgID: snapshot.OrgID, DeptID: snapshot.DeptID, SessionID: grant.ID, Client: "mcp", MCPClientID: grant.ClientID, MCPGrantID: grant.ID, Authenticated: true},
+		Auth:   &auth.Context{RequestID: requestContext.RequestID, TraceID: requestContext.TraceID, Language: requestContext.Language, TenantID: snapshot.TenantID, Principal: principal, PrincipalID: snapshot.PrincipalID, Audience: grant.Audience, ClientSurface: grant.ClientSurface, Realm: auth.RealmTenant, AuthVersion: snapshot.AuthVersion, Roles: snapshot.Roles, Permissions: snapshot.Permissions, OrgID: snapshot.OrgID, DeptID: snapshot.DeptID, SessionID: grant.ID, Client: "mcp", MCPClientID: grant.ClientID, MCPGrantID: grant.ID, Authenticated: true},
 		Scopes: scopes,
 	}, nil
 }
