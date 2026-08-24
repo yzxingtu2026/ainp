@@ -3,24 +3,33 @@ package notifications
 import (
 	"database/sql"
 	"time"
+
+	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 )
 
 // NotificationRequest represents a notification request row.
 type NotificationRequest struct {
-	ID             string `gorm:"primaryKey;size:64"`
-	TenantID       string `gorm:"size:64;not null;index:idx_notif_req_tenant"`
-	DefinitionKey  string `gorm:"size:256;not null"`
-	Category       string `gorm:"size:128;not null;default:''"`
-	Priority       string `gorm:"size:32;not null;default:'normal'"`
-	IdempotencyKey string `gorm:"size:256;not null;default:'';uniqueIndex:uq_notif_req_idem,where:idempotency_key != ''"`
-	VariablesJSON  []byte `gorm:"type:jsonb;not null;default:'{}'"`
-	ActorID        string `gorm:"size:64;not null;default:''"`
-	CorrelationID  string `gorm:"size:64;not null;default:''"`
-	CausationID    string `gorm:"size:64;not null;default:''"`
-	CreatedAt      time.Time
+	ID             string    `gorm:"primaryKey;size:64"`
+	TenantID       string    `gorm:"size:64;not null;index:idx_notif_req_tenant;index:idx_notification_requests_principal,priority:1;uniqueIndex:uq_notif_req_idem,priority:1,where:idempotency_key != ''"`
+	DefinitionKey  string    `gorm:"size:256;not null;uniqueIndex:uq_notif_req_idem,priority:2,where:idempotency_key != ''"`
+	Category       string    `gorm:"size:128;not null;default:''"`
+	Priority       string    `gorm:"size:32;not null;default:'normal'"`
+	IdempotencyKey string    `gorm:"size:256;not null;default:'';uniqueIndex:uq_notif_req_idem,priority:7,where:idempotency_key != ''"`
+	VariablesJSON  []byte    `gorm:"type:jsonb;not null;default:'{}'"`
+	ActorID        string    `gorm:"size:64;not null;default:'';index:idx_notification_requests_principal,priority:3;uniqueIndex:uq_notif_req_idem,priority:4,where:idempotency_key != ''"`
+	PrincipalKind  string    `gorm:"size:128;not null;default:'ainp.account';index:idx_notification_requests_principal,priority:2;uniqueIndex:uq_notif_req_idem,priority:3,where:idempotency_key != ''"`
+	ClientSurface  string    `gorm:"size:128;not null;default:'ainp.tenant-console';index:idx_notification_requests_principal,priority:4;uniqueIndex:uq_notif_req_idem,priority:5,where:idempotency_key != ''"`
+	Audience       string    `gorm:"size:255;not null;default:'ainp:tenant-console';uniqueIndex:uq_notif_req_idem,priority:6,where:idempotency_key != ''"`
+	CorrelationID  string    `gorm:"size:64;not null;default:''"`
+	CausationID    string    `gorm:"size:64;not null;default:''"`
+	CreatedAt      time.Time `gorm:"index:idx_notification_requests_principal,priority:5,sort:desc"`
 }
 
 func (NotificationRequest) TableName() string { return "notification_requests" }
+
+func (r NotificationRequest) PrincipalRef() auth.PrincipalRef {
+	return auth.PrincipalRef{Kind: auth.PrincipalKind(r.PrincipalKind), ID: r.ActorID}
+}
 
 // NotificationDelivery represents a notification delivery row.
 type NotificationDelivery struct {

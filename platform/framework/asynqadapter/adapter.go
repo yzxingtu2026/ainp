@@ -188,10 +188,14 @@ func process(ctx context.Context, db *gorm.DB, registry *job.Registry, store job
 		"error_stage":    "",
 	})
 
+	principal, clientSurface, audience := restoredIdentity(run)
 	jobCtx := auth.WithContext(ctx, &auth.Context{
 		TenantID:      run.TenantID,
 		Realm:         auth.Realm(run.Realm),
 		PrincipalID:   run.CreatedBy,
+		Principal:     principal,
+		ClientSurface: clientSurface,
+		Audience:      audience,
 		RequestID:     uuid.NewString(),
 		TraceID:       run.CorrelationID,
 		Client:        "job",
@@ -201,7 +205,8 @@ func process(ctx context.Context, db *gorm.DB, registry *job.Registry, store job
 	env := job.Envelope{
 		ID: run.ID, Type: run.JobType, SchemaVersion: run.SchemaVersion,
 		TenantID: run.TenantID, Realm: auth.Realm(run.Realm),
-		ActorID: run.CreatedBy, CorrelationID: run.CorrelationID, CausationID: run.CausationID,
+		ActorID: run.CreatedBy, Principal: principal, ClientSurface: clientSurface, Audience: audience,
+		CorrelationID: run.CorrelationID, CausationID: run.CausationID,
 		CreatedAt: run.CreatedAt, Attempt: attempt,
 	}
 	reporter := job.NewReporter(store, run.ID)
@@ -260,6 +265,23 @@ func process(ctx context.Context, db *gorm.DB, registry *job.Registry, store job
 	})
 	logJobFailure(jobCtx, "job retryable failure", run.ID, run.JobType, attempt, dur, err, false)
 	return err
+}
+
+func restoredIdentity(run *job.Run) (auth.PrincipalRef, string, string) {
+	principal := auth.PrincipalRef{Kind: auth.PrincipalKind(run.PrincipalKind), ID: run.CreatedBy}
+	if run.PrincipalKind == "" && run.CreatedBy != "" {
+		principal = auth.PrincipalRef{Kind: auth.PrincipalKindAccount, ID: run.CreatedBy}
+	}
+	clientSurface, audience := run.ClientSurface, run.Audience
+	if principal.Kind == auth.PrincipalKindAccount {
+		if clientSurface == "" {
+			clientSurface = auth.TenantConsoleSurface
+		}
+		if audience == "" {
+			audience = auth.TenantAudience
+		}
+	}
+	return principal, clientSurface, audience
 }
 
 func logJobFailure(ctx context.Context, message, id, jobType string, attempt int, duration time.Duration, err error, final bool) {

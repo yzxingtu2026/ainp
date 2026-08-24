@@ -2,6 +2,8 @@ package tests
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -19,6 +21,18 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/permission"
 	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
 )
+
+type mcpAuthorizationProvider struct {
+	disabled bool
+}
+
+func (p *mcpAuthorizationProvider) LoadAuthorization(_ context.Context, req auth.AuthorizationRequest) (*auth.AuthorizationSnapshot, error) {
+	if p.disabled {
+		return nil, auth.ErrAuthorizationStale
+	}
+	principal := req.PrincipalRef()
+	return &auth.AuthorizationSnapshot{TenantID: req.TenantID, Principal: principal, PrincipalID: principal.ID, AuthVersion: req.AuthVersion, Audience: req.Audience, ClientSurface: req.ClientSurface}, nil
+}
 
 func TestMCPOAuthMetadataAndProtectedTransport(t *testing.T) {
 	gin.SetMode(gin.TestMode)
@@ -79,6 +93,10 @@ func TestMCPSensitiveConfirmationIsBoundAndSingleUse(t *testing.T) {
 	web := &auth.Context{Authenticated: true, Realm: auth.RealmTenant, TenantID: "tenant-a", PrincipalID: "user-a"}
 	if _, err = service.DecideConfirmation(context.Background(), web, pending.RecoveryToken, "approve"); err != nil {
 		t.Fatal(err)
+	}
+	impostor := &auth.Context{Authenticated: true, Realm: auth.RealmTenant, TenantID: "tenant-a", PrincipalID: "user-a", Principal: auth.PrincipalRef{Kind: "example.customer", ID: "user-a"}, ClientSurface: "example.customer-client", Audience: "example:customer"}
+	if _, err = service.ConfirmationInfo(context.Background(), impostor, pending.RecoveryToken); err == nil {
+		t.Fatal("same principal ID from another kind/surface accessed MCP confirmation")
 	}
 	if err = service.ConsumeConfirmation(context.Background(), principal, pending.RecoveryToken, definition, "ainp_demo_destroy", json.RawMessage(`{"id":"changed"}`)); err == nil {
 		t.Fatal("changed arguments consumed confirmation")
@@ -186,5 +204,46 @@ func TestWebTokenRejectsMCPAudience(t *testing.T) {
 	raw, _ := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte("test-secret"))
 	if _, err := web.Parse(raw); err == nil {
 		t.Fatal("tenant-console parser accepted MCP audience")
+	}
+}
+
+func TestMCPAuthorizeRejectsNonAccountOrNonTenantSurface(t *testing.T) {
+	service := mcpserver.NewService(nil, nil, "test-secret", "ainp-test", "https://api.ainp.example")
+	for _, ac := range []*auth.Context{
+		{Authenticated: true, Realm: auth.RealmTenant, TenantID: "tenant-a", Principal: auth.PrincipalRef{Kind: "example.customer", ID: "same-id"}, PrincipalID: "same-id", ClientSurface: "example.customer-client", Audience: "example:customer"},
+		{Authenticated: true, Realm: auth.RealmTenant, TenantID: "tenant-a", Principal: auth.PrincipalRef{Kind: auth.PrincipalKindAccount, ID: "account-a"}, PrincipalID: "account-a", ClientSurface: "example.staff-client", Audience: "example:staff"},
+	} {
+		if _, err := service.Authorize(context.Background(), ac, "client-a", "https://client.example/cb", "actions:read", strings.Repeat("a", 43), "S256"); err == nil {
+			t.Fatal("MCP authorize accepted an unsupported principal or surface")
+		}
+	}
+}
+
+func TestMCPExchangeRechecksGrantAndLiveAuthorization(t *testing.T) {
+	db := openOutboxTestDB(t)
+	provider := &mcpAuthorizationProvider{}
+	service := mcpserver.NewService(db, provider, "test-secret", "ainp-test", "https://api.ainp.example")
+	if err := mcpserver.AutoMigrate(db); err != nil {
+		t.Fatal(err)
+	}
+	client, err := service.RegisterClient(context.Background(), "Codex", []string{"https://client.example/cb"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	verifier := strings.Repeat("v", 43)
+	sum := sha256.Sum256([]byte(verifier))
+	challenge := base64.RawURLEncoding.EncodeToString(sum[:])
+	web := &auth.Context{Authenticated: true, Realm: auth.RealmTenant, TenantID: "tenant-a", PrincipalID: "account-a", Principal: auth.PrincipalRef{Kind: auth.PrincipalKindAccount, ID: "account-a"}, ClientSurface: auth.TenantConsoleSurface, Audience: auth.TenantAudience, AuthVersion: 7}
+	code, err := service.Authorize(context.Background(), web, client.ID, "https://client.example/cb", mcpserver.ScopeRead, challenge, "S256")
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider.disabled = true
+	if _, err = service.Exchange(context.Background(), code, client.ID, "https://client.example/cb", verifier); err == nil {
+		t.Fatal("MCP Exchange issued tokens after live authorization became stale")
+	}
+	provider.disabled = false
+	if _, err = service.Exchange(context.Background(), code, client.ID, "https://client.example/cb", verifier); err != nil {
+		t.Fatalf("failed Exchange consumed the authorization code: %v", err)
 	}
 }

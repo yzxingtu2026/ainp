@@ -3,6 +3,7 @@ package notifications
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -141,22 +142,22 @@ func (s *InAppProviderStore) LoadDelivery(ctx context.Context, deliveryID string
 	if err != nil {
 		return nil, err
 	}
-	varsJSON := []byte("{}")
-	defKey := ""
-	if req != nil {
-		varsJSON = req.VariablesJSON
-		defKey = req.DefinitionKey
+	if req == nil {
+		return nil, fmt.Errorf("notification request %q not found", del.RequestID)
 	}
 	return &jobs.DeliveryContext{
 		DeliveryID:    del.ID,
 		RequestID:     del.RequestID,
 		TenantID:      del.TenantID,
-		DefinitionKey: defKey,
+		DefinitionKey: req.DefinitionKey,
 		RecipientType: del.RecipientType,
 		RecipientID:   del.RecipientID,
 		Channel:       del.Channel,
 		Locale:        del.Locale,
-		VariablesJSON: varsJSON,
+		VariablesJSON: req.VariablesJSON,
+		Principal:     req.PrincipalRef(),
+		ClientSurface: req.ClientSurface,
+		Audience:      req.Audience,
 	}, nil
 }
 

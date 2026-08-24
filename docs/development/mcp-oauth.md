@@ -1,5 +1,7 @@
 # MCP OAuth 与远程传输
 
+MCP OAuth Grant、Access Token、Refresh family 和 Confirmation 必须固定授权来源的 Principal Ref、Client Surface 与 audience。当前公共 MCP 授权仅接受 `ainp.account + ainp.tenant-console + ainp:tenant-console`；MCP 执行 Token 使用独立 `ainp:mcp` audience，但 Action 调用继续按来源 Kind/Surface 约束。Kind、Surface、来源 audience 或 Grant 任一不一致均按无效 Grant/不可用工具处理。
+
 AINP 的远程 MCP 入口使用官方 Go MCP SDK 提供 Streamable HTTP。业务不得手写 JSON-RPC、SSE 或 session 状态机。
 
 ## OAuth 与传输边界

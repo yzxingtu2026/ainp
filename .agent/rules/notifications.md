@@ -15,7 +15,7 @@
    - Outbox Handler 调用 Orchestrator 创建 request + deliveries
    - 每个 Delivery 通过 `notification.deliver` Job 执行投递
 
-4. **幂等**：使用 `tenant_id + definition_key + idempotency_key` 保证不重复创建。
+4. **主体事实与幂等**：Request 保存 Principal Kind/ID、Client Surface、audience；Outbox/Job 必须原样恢复并校验。幂等使用 `tenant_id + definition_key + principal_kind + actor_id + client_surface + audience + idempotency_key`。
 
 ## 安全约束
 
