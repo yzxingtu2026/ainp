@@ -427,6 +427,10 @@ func documentConversationError(err error) error {
 }
 
 func documentRuntimeCategory(err error) string {
+	var runtimeErr *aimodelruntime.RuntimeError
+	if errors.As(err, &runtimeErr) && runtimeErr.Category != "" {
+		return string(runtimeErr.Category)
+	}
 	var documentErr *aimodelruntime.DocumentError
 	if errors.As(err, &documentErr) {
 		return string(documentErr.Category)
@@ -589,6 +593,10 @@ func (s *ConversationService) Assemble(ctx context.Context, r aiconversation.Ass
 	if err = s.db.WithContext(ctx).Where("conversation_id=? AND status=?", row.ID, "committed").Order("sequence ASC").Find(&records).Error; err != nil {
 		return nil, err
 	}
+	nativeImages, err := selectNativeImageWorkingSet(records, r.TriggerMessageID, r.MaxNativeImages)
+	if err != nil {
+		return nil, err
+	}
 	out := &aiconversation.AssemblyResult{Status: "within_budget", ConversationRevision: row.Revision, AgentVersionID: row.AgentVersionID, Budget: aiconversation.Budget{MaxBytes: r.MaxBytes, MaxTokens: r.MaxTokens}}
 	documentCharacters := 0
 	for _, record := range records {
@@ -597,9 +605,13 @@ func (s *ConversationService) Assemble(ctx context.Context, r aiconversation.Ass
 			return nil, errs.New(errs.CodeInternal, "invalid canonical message")
 		}
 		expanded := make([]aimodelruntime.ContentPart, 0, len(content))
-		for _, part := range content {
+		for partIndex, part := range content {
 			switch part.Type {
 			case aimodelruntime.PartInputImage:
+				if !nativeImages[imageWorkingSetKey(record.ID, partIndex)] {
+					expanded = append(expanded, aimodelruntime.ContentPart{Type: aimodelruntime.PartInputText, Text: fmt.Sprintf("Historical image is available outside the native media working set (source_sequence=%d).", record.Sequence)})
+					continue
+				}
 				if s.assets == nil {
 					return nil, errs.New(errs.CodeNotFound, "attachment access revoked")
 				}
@@ -643,6 +655,54 @@ func (s *ConversationService) Assemble(ctx context.Context, r aiconversation.Ass
 		out.Reason = "context budget exceeded"
 	}
 	return out, nil
+}
+
+func selectNativeImageWorkingSet(records []ConversationMessage, triggerMessageID string, limit int) (map[string]bool, error) {
+	selected := make(map[string]bool)
+	if limit <= 0 {
+		limit = aimodelruntime.MaxNativeImagesPerRequest
+	}
+	triggerCount := 0
+	for _, record := range records {
+		if record.ID != triggerMessageID {
+			continue
+		}
+		var content []aimodelruntime.ContentPart
+		if json.Unmarshal(record.Content, &content) != nil {
+			return nil, errs.New(errs.CodeInternal, "invalid canonical message")
+		}
+		for i, part := range content {
+			if part.Type == aimodelruntime.PartInputImage {
+				selected[imageWorkingSetKey(record.ID, i)] = true
+				triggerCount++
+			}
+		}
+	}
+	if triggerCount > limit {
+		return nil, &aimodelruntime.RuntimeError{Category: aimodelruntime.ErrorInvalidRequest, Message: fmt.Sprintf("current message exceeds the native image limit of %d", limit)}
+	}
+	remaining := limit - triggerCount
+	for recordIndex := len(records) - 1; recordIndex >= 0 && remaining > 0; recordIndex-- {
+		record := records[recordIndex]
+		if record.ID == triggerMessageID {
+			continue
+		}
+		var content []aimodelruntime.ContentPart
+		if json.Unmarshal(record.Content, &content) != nil {
+			return nil, errs.New(errs.CodeInternal, "invalid canonical message")
+		}
+		for partIndex := len(content) - 1; partIndex >= 0 && remaining > 0; partIndex-- {
+			if content[partIndex].Type == aimodelruntime.PartInputImage {
+				selected[imageWorkingSetKey(record.ID, partIndex)] = true
+				remaining--
+			}
+		}
+	}
+	return selected, nil
+}
+
+func imageWorkingSetKey(messageID string, partIndex int) string {
+	return fmt.Sprintf("%s:%d", messageID, partIndex)
 }
 
 func (s *ConversationService) CreateSnapshot(ctx context.Context, r SnapshotCreateRequest) (*ContextSnapshot, error) {

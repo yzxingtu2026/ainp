@@ -21,6 +21,8 @@ type ErrorCategory string
 
 type ImageDetail string
 
+const MaxNativeImagesPerRequest = 4
+
 const (
 	RoleSystem                  Role          = "system"
 	RoleDeveloper               Role          = "developer"

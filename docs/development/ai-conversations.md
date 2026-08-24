@@ -1,5 +1,7 @@
 # AI Conversation 与上下文装配
 
+Canonical Message 永久保留附件 ID、revision、sequence 与顺序。Run 的 Context projection 不等于 canonical 改写：图片累计超过单次媒体预算时，只选择当前触发消息和最近历史组成有界原生工作集，其余图片投影安全 manifest；禁止删除历史附件或把会话生命周期累计附件数当成单次 Provider 上限。
+
 ## 边界
 
 Conversation 是租户内、供应商无关的会话事实边界。它固定一个明确的 `agent_version_id`；Agent 发布新版本不会改变已有会话语义。Message 是不可变追加事实，模型运行、压缩和 Workspace 都只能引用或追加，不能覆盖已提交消息。

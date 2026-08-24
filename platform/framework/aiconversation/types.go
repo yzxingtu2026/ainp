@@ -122,9 +122,11 @@ type Message struct {
 }
 
 type AssemblyRequest struct {
-	ConversationID string
-	MaxTokens      int
-	MaxBytes       int
+	ConversationID   string
+	TriggerMessageID string
+	MaxTokens        int
+	MaxBytes         int
+	MaxNativeImages  int
 }
 
 type AssemblyResult struct {

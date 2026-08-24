@@ -314,9 +314,9 @@ func (s *InvocationService) resolveImages(ctx context.Context, req *aimodelrunti
 				continue
 			}
 			count++
-			if count > 4 {
+			if count > aimodelruntime.MaxNativeImagesPerRequest {
 				releaseResolvedImageData(data)
-				return 0, 0, nil, &aimodelruntime.RuntimeError{Category: aimodelruntime.ErrorInvalidRequest, Message: "at most 4 images are allowed"}
+				return 0, 0, nil, &aimodelruntime.RuntimeError{Category: aimodelruntime.ErrorInvalidRequest, Message: fmt.Sprintf("at most %d images are allowed", aimodelruntime.MaxNativeImagesPerRequest)}
 			}
 			if s.assets == nil {
 				releaseResolvedImageData(data)

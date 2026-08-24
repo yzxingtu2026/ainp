@@ -1,5 +1,7 @@
 # AI Agent Run Runtime
 
+Agent Run 构造模型请求时必须携带触发消息身份，由 ContextAssembler 先选择有界原生图片工作集。未选历史图片不得读取或发送 Provider；前置媒体校验失败保留 `invalid_request` 等 Model Runtime 分类，不得统一退化为 `model_failed`。
+
 Agent Runtime 把不可变 Agent Version 执行为可暂停、可恢复、可审计的 Run/Step。HTTP 只创建或变更 Run 事实；实际循环由版本化 Outbox 触发 Job，禁止在请求中维持无界模型循环。
 
 ## 状态与事实

@@ -1,5 +1,7 @@
 # AI 上下文压缩
 
+Token 预算与媒体预算必须独立收敛。即使 Token 估算为 `within_budget`，ContextAssembler 仍先应用原生图片工作集上限；ContextSnapshot 只能保存该次安全投影，不能覆盖 canonical 附件事实，也不能通过扩大模型窗口绕过 Provider 媒体硬限制。
+
 上下文压缩只生成版本化 `ContextSnapshot`，不修改或删除 canonical Conversation/Message。执行顺序固定为模型预算计算、确定性缩减、结构化摘要、质量校验、不可变 Snapshot。
 
 ## 预算

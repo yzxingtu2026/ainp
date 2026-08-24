@@ -1139,7 +1139,7 @@ func (s *AgentRuntimeService) runtimeMessages(ctx context.Context, run *AgentRun
 		_ = s.finishStep(ctx, run, assembleStep, "failed", map[string]any{}, "model_context_budget_unavailable")
 		return nil, nil, err
 	}
-	assembly, err := s.conversations.Assemble(ctx, aiconversation.AssemblyRequest{ConversationID: run.ConversationID, MaxTokens: contextTokenLimit, MaxBytes: contextTokenLimit * 8})
+	assembly, err := s.conversations.Assemble(ctx, aiconversation.AssemblyRequest{ConversationID: run.ConversationID, TriggerMessageID: run.TriggerMessageID, MaxTokens: contextTokenLimit, MaxBytes: contextTokenLimit * 8, MaxNativeImages: aimodelruntime.MaxNativeImagesPerRequest})
 	if err != nil {
 		_ = s.finishStep(ctx, run, assembleStep, "failed", map[string]any{}, "context_assemble_failed")
 		return nil, nil, err
