@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/yzxingtu2026/ainp/platform/framework/attachment"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/middleware"
 )
@@ -99,6 +100,62 @@ func TestAuthMiddlewareRejectsMismatchedAuthorizationSnapshot(t *testing.T) {
 	router.ServeHTTP(resp, req)
 	if resp.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want %d", resp.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestAuthMiddlewareDefersAttachmentTransferBearerToken(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	const (
+		secret = "shared-test-secret"
+		issuer = "ainp-test"
+	)
+	sessions, err := auth.NewTokenService(secret, issuer, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transfers, err := attachment.NewTransferTokenService(secret, issuer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, _, _, err := transfers.Issue(attachment.IssueTransferInput{
+		TenantID:       "tenant-1",
+		PrincipalID:    "user-1",
+		PrincipalKind:  string(auth.PrincipalKindAccount),
+		ClientSurface:  auth.TenantConsoleSurface,
+		SourceAudience: auth.TenantAudience,
+		AttachmentID:   "attachment-1",
+		Op:             attachment.OpUpload,
+		Size:           12,
+		TTL:            time.Minute,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	surfaces := auth.NewClientSurfaceRegistry()
+	if err := surfaces.Register(auth.BuiltinTenantConsoleSurface()); err != nil {
+		t.Fatal(err)
+	}
+	provider := &fakeAuthorizationProvider{}
+	router := gin.New()
+	router.Use(middleware.RequestID(), middleware.Auth(middleware.AuthOptions{
+		Tokens: sessions, Authorization: provider, ClientSurfaces: surfaces,
+	}))
+	router.PUT("/api/v1/attachments/transfer/:id", func(c *gin.Context) {
+		if ac := auth.MustFromContext(c.Request.Context()); ac.Authenticated {
+			t.Fatal("transfer token must not create a web session AuthContext")
+		}
+		c.Status(http.StatusNoContent)
+	})
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/attachments/transfer/attachment-1", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+	if resp.Code != http.StatusNoContent {
+		t.Fatalf("status=%d want=%d body=%s", resp.Code, http.StatusNoContent, resp.Body.String())
+	}
+	if provider.request != (auth.AuthorizationRequest{}) {
+		t.Fatalf("attachment token reached session authorization provider: %#v", provider.request)
 	}
 }
 

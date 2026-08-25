@@ -2,6 +2,7 @@
 
 - 附件元数据与绑定走 AttachmentService；业务事务只经强类型 `attachment.ResourceLinker` 原子 Bind/Unbind，禁止直写链接表；字节只经 ObjectStore + 短时 transfer token。
 - upload prepare 显式协商 `raw|multipart`（缺省 raw）；Token 绑定 transport，旧无 claim Token 仅 raw。raw PUT 与 multipart POST 必须共用数据库原子 claim + `AttachmentService.CompleteUpload`，禁止复制完成链路或进程内锁。
+- `Authorization: Bearer` transfer token 不得因共享的 `principal_kind/surface` 被 Web Session Auth 误判；分流后仍由 transfer Handler 完整校验专用 audience、签名、operation、transport、主体、附件、size/variant 与 JTI。不得用前端改传 `X-Attachment-Token` 掩盖服务端分类回归。
 - multipart Adapter 只接受唯一 `file` Part，使用流式 `multipart.Reader` 并限制 Body/元数据/Header；禁止 `ParseMultipartForm`、全量内存/临时文件、普通字段、嵌套 multipart、Content-Transfer-Encoding，以及信任 filename/Part MIME。
 - 上传失败/取消后 Token 不可重放，附件进入 failed 或按 expires_at 清理；小程序失败必须重新 prepare。日志禁止 Token、Header/表单值、文件名、内容、object key 和底层错误全文。
 - `resource_type` 必须注册 AccessPolicy；未注册默认拒绝。

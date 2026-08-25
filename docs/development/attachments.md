@@ -39,6 +39,8 @@
 
 Token 优先放 `Authorization: Bearer` 或 `X-Attachment-Token` Header；兼容 raw 下载/上传仍支持 query token，但小程序上传禁止把 Token 放入文件名或表单字段。失败重试必须重新 prepare，禁止复用一次性 Token。
 
+`Authorization: Bearer` 会先经过共享 HTTP 中间件，但 Web Session Auth 不得仅因 transfer token 携带 `principal_kind` / `surface` 就把它误判为 Session Token。分流后的请求仍是未建立 Web Session 的请求，必须由附件 transfer Handler 按 `ainp:attachment-transfer` audience 完整校验签名、过期时间、operation、transport、tenant、Principal Ref、attachment、variant、size 与 JTI。`X-Attachment-Token` 和 query 仅是同一协议的传递方式，不能作为规避服务端 Token 分类错误的替代修复。
+
 ### Multipart Adapter 安全边界
 
 - 使用 `multipart.Reader` 流式解析，不调用 `ParseMultipartForm`、无界 `io.ReadAll`，也不把完整文件落到 `/tmp` 后再交给 ObjectStore。
