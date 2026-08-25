@@ -178,6 +178,7 @@ declare namespace Api.AI {
   }
   type AgentRunStatus = 'queued' | 'running' | 'waiting_confirmation' | 'paused' | 'completed' | 'failed' | 'cancelled';
   type AgentRunExecutionMode = 'normal' | 'completion_only';
+  type AgentRunFinalizationMode = 'model' | 'template' | 'notice_only' | 'none';
   interface AgentRunBudget {
     schema_version: number;
     max_steps: number;
@@ -215,6 +216,18 @@ declare namespace Api.AI {
     execution_mode?: AgentRunExecutionMode;
     completion_reason?: string;
     completion_attempted?: boolean;
+    terminal_protocol_version?: string;
+    terminal_reason?: string;
+    finalization_mode?: AgentRunFinalizationMode;
+    finalization_attempted?: boolean;
+    retryable?: boolean;
+    user_message_key?: string;
+    safe_args?: Record<string, string | number | boolean>;
+    safe_summary?: string;
+    terminal_message_id?: string;
+    completed_operation_count?: number;
+    failed_operation_count?: number;
+    unfinished_operation_count?: number;
     completion_reserved_input_tokens?: number;
     completion_reserved_output_tokens?: number;
     completion_safety_margin_tokens?: number;

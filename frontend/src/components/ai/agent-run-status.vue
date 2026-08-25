@@ -4,12 +4,15 @@ import { useI18n } from 'vue-i18n';
 import CodeTag from '@/components/common/code-tag.vue';
 import { CODESET_KEYS } from '@/constants/codeset';
 import { isBudgetFailureCategory, runNotice } from './run-budget-message';
+import { runTerminalNotice } from './run-terminal-notice';
 
 const props = defineProps<{ run: Api.AI.AgentRun }>();
 const emit = defineEmits<{ cancel: []; resume: []; retry: [] }>();
 const { t } = useI18n();
 const notice = computed(() => runNotice(props.run));
+const terminalNotice = computed(() => runTerminalNotice(props.run));
 const cancellable = computed(() => ['queued', 'running', 'waiting_confirmation', 'paused'].includes(props.run.status));
+const retryable = computed(() => props.run.retryable ?? true);
 </script>
 
 <template>
@@ -22,8 +25,8 @@ const cancellable = computed(() => ['queued', 'running', 'waiting_confirmation',
       <NText v-if="notice" :type="notice === 'budgetFailed' ? 'error' : 'warning'">
         {{ t(`page.aiRun.${notice}`) }}
       </NText>
-      <NText v-else-if="run.error_category && !isBudgetFailureCategory(run.error_category)" type="error">
-        {{ run.error_category }}
+      <NText v-else-if="terminalNotice && !isBudgetFailureCategory(run.error_category || '')" type="error">
+        {{ t(`page.aiRun.terminal.${terminalNotice}`) }}
       </NText>
     </NSpace>
     <NSpace>
@@ -38,7 +41,7 @@ const cancellable = computed(() => ['queued', 'running', 'waiting_confirmation',
       >
         {{ t('page.aiRun.resume') }}
       </NButton>
-      <NButton v-if="run.status === 'failed'" size="small" type="primary" @click="emit('retry')">
+      <NButton v-if="run.status === 'failed' && retryable" size="small" type="primary" @click="emit('retry')">
         {{ t('page.aiRun.retry') }}
       </NButton>
     </NSpace>

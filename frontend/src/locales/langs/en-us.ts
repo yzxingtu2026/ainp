@@ -690,6 +690,21 @@ const local: App.I18n.Schema = {
       cancel: 'Cancel',
       resume: 'Resume',
       retry: 'Retry',
+      terminal: {
+        providerUnavailable:
+          'The model service is temporarily unavailable. Try again later or contact an administrator if it continues.',
+        modelUnavailable: 'The configured model or required capability is unavailable. Contact an administrator.',
+        authorizationChanged: 'Your login or permissions changed. Sign in again or refresh before retrying.',
+        safetyRefusal: 'This request cannot be processed under the current safety policy. Adjust it and try again.',
+        contextUnavailable:
+          'The context or attachments could not be processed safely. Reduce the input or start a new conversation.',
+        persistenceUnavailable:
+          'The system could not reliably save the result. Try again later or contact an administrator.',
+        cancelled: 'This run was cancelled.',
+        budgetLimit: 'This run reached its safe budget limit. Reduce the task scope and try again.',
+        operationFailed: 'Some operations could not be completed. Review the current result before retrying.',
+        unknown: 'This run could not be completed. Try again later or contact an administrator if it continues.'
+      },
       status: {
         queued: 'Queued',
         running: 'Running',

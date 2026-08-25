@@ -680,6 +680,18 @@ const local: App.I18n.Schema = {
       cancel: '取消',
       resume: '恢复',
       retry: '重试',
+      terminal: {
+        providerUnavailable: '模型服务暂时不可用，请稍后重试；若持续失败，请联系管理员',
+        modelUnavailable: '当前模型或所需能力不可用，请联系管理员检查模型配置',
+        authorizationChanged: '登录或权限状态已变化，请重新登录或刷新后再试',
+        safetyRefusal: '该请求无法按当前安全策略处理，请调整内容后再试',
+        contextUnavailable: '当前上下文或附件无法安全处理，请缩减输入或新建会话后重试',
+        persistenceUnavailable: '系统暂时无法可靠保存结果，请稍后重试或联系管理员',
+        cancelled: '本次运行已取消',
+        budgetLimit: '本次运行已达到安全预算上限，请缩小任务范围后重试',
+        operationFailed: '部分操作未能完成，请检查当前结果后重试',
+        unknown: '本次运行未能完成，请稍后重试；若持续失败，请联系管理员'
+      },
       status: {
         queued: '排队中',
         running: '运行中',

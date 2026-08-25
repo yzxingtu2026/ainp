@@ -7,6 +7,8 @@
 - Adapter 必须注册到协议 Registry，未知协议 fail-closed；自定义 Endpoint 是不带 `/v1` 的根地址。
 - Stream 必须使用有界事件 channel 和独立 buffered terminal result，传播取消，并保证单次开始、单调序号、Item 生命周期、唯一终态及 Invocation 持久化先于 consumer 收口。
 - terminal 已识别时必须胜过随后发生的 close/cancel/deadline；无 terminal 且无可识别上游错误的 EOF 才是 `stream_protocol_error`。`timeout`、`cancelled` 与 Provider 稳定分类禁止相互覆盖。
+- 各 Adapter 必须一致映射安全拒绝文本/分类；有文本原样交付、无文本由 Agent Runtime 模板兜底，禁止调用其他模型改写拒绝或透传 Provider 原始响应。
+- 安全终态模型调用只能接收 `FailureEnvelope v1`，必须无 Tool Scope/Tools 且 `tool_choice=none`；Provider/模型已失败、授权失效、取消或拒绝时禁止发起。
 - Embedding 走统一 `EmbeddingRuntime.Embed` 与 `EmbeddingAdapterRegistry`，禁止旁路或用 Chat 伪造向量；详规见 `ai-embedding-runtime`。
 - Provider 调用前创建 `running` Invocation；终态更新与 `ai.model_invocation.finished.v1` 必须同事务。
 - Invocation/Outbox 禁止保存提示词、输出、工具参数、原文、向量、凭证、原始供应商错误和响应体。

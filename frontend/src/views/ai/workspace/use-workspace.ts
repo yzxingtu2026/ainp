@@ -19,6 +19,7 @@ import { $t } from '@/locales';
 import { capturePageContext } from '@/composables/page-context';
 import { getStandaloneErrorMessage, isRequestError } from '@/service/request';
 import { runFailurePresentation } from '@/components/ai/run-failure-message';
+import { runTerminalNotice } from '@/components/ai/run-terminal-notice';
 import { createLatestRequestGate, loadAllCursorPages } from './modules/message-sync';
 import { isWorkspaceDocument } from './modules/document-attachment';
 
@@ -57,43 +58,13 @@ function diagnosticMessage(issue: Api.AI.AgentDiagnosticIssue) {
 }
 
 function runFailureMessage(detail: Api.AI.AgentRunDetail) {
+  if (detail.run.terminal_message_id) return '';
   const presentation = runFailurePresentation(detail);
-  const { category } = presentation;
-  let message = '';
-  if (presentation.kind === 'budget') message = $t('page.aiWorkspace.runBudgetFailure');
-  const documentFailureKeys: Partial<Record<string, App.I18n.I18nKey>> = {
-    document_unavailable: 'page.aiWorkspace.documentUnavailable',
-    document_unsupported_format: 'page.aiWorkspace.documentUnsupported',
-    document_too_large: 'page.aiWorkspace.documentTooLarge',
-    document_unsafe_content: 'page.aiWorkspace.documentUnsafe',
-    document_unsafe_docx_content: 'page.aiWorkspace.documentUnsafeDocx',
-    document_unsafe_xlsx_content: 'page.aiWorkspace.documentUnsafeXlsx',
-    document_corrupt: 'page.aiWorkspace.documentCorrupt',
-    document_empty: 'page.aiWorkspace.documentEmpty',
-    document_parse_failed: 'page.aiWorkspace.documentParseFailed'
-  };
-  const documentFailureKey = documentFailureKeys[category];
-  if (!message && documentFailureKey) message = $t(documentFailureKey);
-  if (!message) {
-    const modelFailureKeys: Partial<Record<typeof presentation.kind, App.I18n.I18nKey>> = {
-      timeout: 'page.aiWorkspace.runTimeout',
-      cancelled: 'page.aiWorkspace.runCancelled',
-      providerUnavailable: 'page.aiWorkspace.runProviderUnavailable',
-      streamProtocol: 'page.aiWorkspace.runStreamProtocolError'
-    };
-    const modelFailureKey = modelFailureKeys[presentation.kind];
-    if (modelFailureKey) message = $t(modelFailureKey);
+  const notice = runTerminalNotice(detail.run) || 'unknown';
+  let message = $t(`page.aiRun.terminal.${notice}` as App.I18n.I18nKey);
+  if ((detail.run.completed_operation_count || 0) > 0 || presentation.completedToolOperation) {
+    message += ` ${$t('page.aiWorkspace.completedToolsPreserved')}`;
   }
-  if (!message && presentation.kind === 'tool') {
-    const failedStep = [...detail.steps].reverse().find(step => step.status === 'failed');
-    const reason = typeof failedStep?.output_summary?.reason === 'string' ? failedStep.output_summary.reason : '';
-    message = $t('page.aiWorkspace.runFailure', {
-      category,
-      reason: reason || failedStep?.error_category || 'unknown'
-    });
-  }
-  if (!message) message = $t('page.aiWorkspace.runFailureSimple', { category });
-  if (presentation.completedToolOperation) message += ` ${$t('page.aiWorkspace.completedToolsPreserved')}`;
   return message;
 }
 
@@ -237,6 +208,7 @@ function createAiConversationController() {
     runDetail.value = data;
     applyRunStatus(data.run);
     if (data.run.status === 'failed' || data.run.status === 'cancelled') error.value = runFailureMessage(data);
+    else if (isRunTerminal(data.run.status)) error.value = '';
     if (data.run.status === 'waiting_confirmation' || data.run.status === 'paused') await refreshConfirmations();
     if (refreshContent || isRunTerminal(data.run.status)) {
       const refreshed = await refreshMessages();

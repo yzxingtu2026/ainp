@@ -106,6 +106,9 @@ func CollectStream(stream ResultStream, observer func(StreamEvent) error) (Gener
 			if !exists {
 				return response, streamProtocolError("text delta without output item")
 			}
+			if event.Item != nil && event.Item.Type == PartRefusal {
+				response.Output[index].Type = PartRefusal
+			}
 			response.Output[index].Text += event.Delta
 			if event.Delta != "" && observer != nil {
 				if err := observer(event); err != nil {

@@ -141,7 +141,10 @@ VALUES (?,?,?,?,?,?,?,?,?,?)`, step.ID, step.TenantID, step.RunID, step.StepInde
 	if err != nil || len(runs) != 1 {
 		t.Fatalf("run query rows=%d err=%v", len(runs), err)
 	}
-	if runs[0].Status != "cancelled" || runs[0].ErrorCategory != string(aimodelruntime.ErrorCancelled) || runs[0].FinishedAt == nil {
+	if runs[0].Status != "cancelled" || runs[0].ErrorCategory != string(aimodelruntime.ErrorCancelled) || runs[0].FinishedAt == nil ||
+		runs[0].TerminalProtocolVersion != aiagentruntime.TerminalProtocolVersion || runs[0].TerminalReason != "user_cancelled" ||
+		runs[0].FinalizationMode != string(aiagentruntime.FinalizationNoticeOnly) || runs[0].FinalizationAttempted || runs[0].Retryable ||
+		runs[0].UserMessageKey != "ai.run.terminal.cancelled" {
 		t.Fatalf("cancelled run mismatch: %#v", runs[0])
 	}
 	persistedSteps, err := tenantdata.TenantRaw[ai.AgentStep](tdb, "SELECT * FROM ai_agent_steps WHERE tenant_id=? AND run_id=? ORDER BY step_index", run.ID)
@@ -162,6 +165,9 @@ VALUES (?,?,?,?,?,?,?,?,?,?)`, step.ID, step.TenantID, step.RunID, step.StepInde
 		var payload map[string]any
 		if json.Unmarshal(event.Payload, &payload) != nil || payload["error_category"] != string(aimodelruntime.ErrorCancelled) || event.Type != wantTypes[index] {
 			t.Fatalf("cancel event mismatch: %#v payload=%#v", event, payload)
+		}
+		if event.Type == "run.cancelled" && (payload["terminal_reason"] != "user_cancelled" || payload["finalization_mode"] != string(aiagentruntime.FinalizationNoticeOnly) || payload["user_message_key"] != "ai.run.terminal.cancelled") {
+			t.Fatalf("cancel terminal payload mismatch: %#v", payload)
 		}
 	}
 }
