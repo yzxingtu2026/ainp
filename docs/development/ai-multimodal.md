@@ -1,5 +1,7 @@
 # AI 多模态输入开发规范
 
+Conversation 可永久保留多张 canonical `input_image` 引用，但单次 Provider 请求仍受 `MaxNativeImagesPerRequest` 硬上限约束。ContextAssembler 在解析媒体前构造 Run 级原生图片工作集：当前触发消息优先，其余按最近 sequence 补足；未选中的历史图片只投影不含 Attachment ID、Object Key、URL 或原始字节的安全 manifest，且不得调用 AssetResolver。Model Runtime 继续独立执行相同硬上限，作为最终 fail-closed 边界。
+
 ## 稳定协议
 
 模型输入使用供应商无关的强类型 Content Part。可执行输入包括 `input_text`、`input_image`、canonical `input_file` 和工具结果；`input_audio`、`output_audio` 仍必须 fail-closed。模型输出与后续会话可使用 `output_text`、`tool_call`、`refusal`；`derived_text` 只能由服务端生成，必须携带来源且标记为不可信。

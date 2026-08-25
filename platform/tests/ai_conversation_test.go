@@ -88,6 +88,13 @@ func (conversationImageResolverFake) Resolve(_ context.Context, request aimodelr
 	return &aimodelruntime.ResolvedImage{AttachmentID: request.AttachmentID, Revision: "rev"}, nil
 }
 
+type trackingConversationImageResolver struct{ calls []string }
+
+func (f *trackingConversationImageResolver) Resolve(_ context.Context, request aimodelruntime.AssetResolveRequest) (*aimodelruntime.ResolvedImage, error) {
+	f.calls = append(f.calls, request.AttachmentID)
+	return &aimodelruntime.ResolvedImage{AttachmentID: request.AttachmentID, Revision: "rev"}, nil
+}
+
 func openConversationDocumentTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	dsn := os.Getenv("AINP_TEST_DATABASE_DSN")
@@ -198,6 +205,54 @@ func TestConversationAssembleRejectsDocumentCharacterOverflow(t *testing.T) {
 	_, err := service.Assemble(conversationDocumentContext(""), aiconversation.AssemblyRequest{ConversationID: "conversation-document", MaxBytes: 1_000_000, MaxTokens: 250_000})
 	if err == nil || !strings.Contains(err.Error(), string(aimodelruntime.DocumentTooLarge)) {
 		t.Fatalf("expected document character limit, got %v", err)
+	}
+}
+
+func TestConversationAssembleBoundsHistoricalNativeImagesWithoutReadingOmittedAsset(t *testing.T) {
+	db := openConversationDocumentTestDB(t)
+	createConversationDocumentFixture(t, db, []aimodelruntime.ContentPart{{Type: aimodelruntime.PartInputImage, ImageAttachmentID: "image-1", AttachmentRevision: "rev"}})
+	migrationDB, err := tenantdata.MigrationDB(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 2; i <= 5; i++ {
+		body, _ := json.Marshal([]aimodelruntime.ContentPart{{Type: aimodelruntime.PartInputImage, ImageAttachmentID: fmt.Sprintf("image-%d", i), AttachmentRevision: "rev"}})
+		message := ai.ConversationMessage{ID: fmt.Sprintf("message-%d", i), TenantID: "tenant-a", ConversationID: "conversation-document", Role: "user", Status: "committed", Sequence: uint64(i), Content: body, IdempotencyKey: fmt.Sprintf("fixture-%d", i)}
+		if err = migrationDB.Create(&message).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	textBody, _ := json.Marshal([]aimodelruntime.ContentPart{{Type: aimodelruntime.PartInputText, Text: "continue"}})
+	trigger := ai.ConversationMessage{ID: "message-trigger", TenantID: "tenant-a", ConversationID: "conversation-document", Role: "user", Status: "committed", Sequence: 6, Content: textBody, IdempotencyKey: "fixture-trigger"}
+	if err = migrationDB.Create(&trigger).Error; err != nil {
+		t.Fatal(err)
+	}
+	resolver := &trackingConversationImageResolver{}
+	service := ai.NewConversationService(db, resolver)
+	assembled, err := service.Assemble(conversationDocumentContext(""), aiconversation.AssemblyRequest{ConversationID: "conversation-document", TriggerMessageID: trigger.ID, MaxNativeImages: aimodelruntime.MaxNativeImagesPerRequest, MaxBytes: 1_000_000, MaxTokens: 250_000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(resolver.calls, ",") != "image-2,image-3,image-4,image-5" {
+		t.Fatalf("omitted oldest image must not be resolved, calls=%v", resolver.calls)
+	}
+	native, manifests := 0, 0
+	for _, message := range assembled.Messages {
+		for _, part := range message.Content {
+			if part.Type == aimodelruntime.PartInputImage {
+				native++
+			}
+			if part.Type == aimodelruntime.PartInputText && strings.Contains(part.Text, "outside the native media working set") {
+				manifests++
+			}
+		}
+	}
+	if native != 4 || manifests != 1 {
+		t.Fatalf("unexpected working set projection: native=%d manifests=%d", native, manifests)
+	}
+	var canonical []ai.ConversationMessage
+	if err = migrationDB.Where("conversation_id=?", "conversation-document").Order("sequence ASC").Find(&canonical).Error; err != nil || len(canonical) != 6 {
+		t.Fatalf("canonical history changed: count=%d err=%v", len(canonical), err)
 	}
 }
 
