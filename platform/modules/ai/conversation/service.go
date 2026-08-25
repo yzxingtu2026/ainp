@@ -597,7 +597,11 @@ func (s *ConversationService) Assemble(ctx context.Context, r aiconversation.Ass
 	if err != nil {
 		return nil, err
 	}
-	out := &aiconversation.AssemblyResult{Status: "within_budget", ConversationRevision: row.Revision, AgentVersionID: row.AgentVersionID, Budget: aiconversation.Budget{MaxBytes: r.MaxBytes, MaxTokens: r.MaxTokens}}
+	out := &aiconversation.AssemblyResult{
+		Status: "within_budget", ConversationRevision: row.Revision, AgentVersionID: row.AgentVersionID,
+		Budget:             aiconversation.Budget{MaxBytes: r.MaxBytes, MaxTokens: r.MaxTokens},
+		AttachmentManifest: aiconversation.AttachmentReferenceManifest{SchemaVersion: "1", Attachments: []aiconversation.AttachmentReference{}},
+	}
 	documentCharacters := 0
 	for _, record := range records {
 		var content []aimodelruntime.ContentPart
@@ -608,8 +612,12 @@ func (s *ConversationService) Assemble(ctx context.Context, r aiconversation.Ass
 		for partIndex, part := range content {
 			switch part.Type {
 			case aimodelruntime.PartInputImage:
+				out.AttachmentManifest.Attachments = append(out.AttachmentManifest.Attachments, aiconversation.AttachmentReference{
+					SourceSequence: record.Sequence, AttachmentID: part.ImageAttachmentID,
+					AttachmentRevision: part.AttachmentRevision, ContentKind: "image",
+				})
 				if !nativeImages[imageWorkingSetKey(record.ID, partIndex)] {
-					expanded = append(expanded, aimodelruntime.ContentPart{Type: aimodelruntime.PartInputText, Text: fmt.Sprintf("Historical image is available outside the native media working set (source_sequence=%d).", record.Sequence)})
+					expanded = append(expanded, aimodelruntime.ContentPart{Type: aimodelruntime.PartInputText, Text: "Historical image content is outside the native media working set; use the attachment reference manifest and the attachment content inspection Action when needed."})
 					continue
 				}
 				if s.assets == nil {
@@ -620,6 +628,14 @@ func (s *ConversationService) Assemble(ctx context.Context, r aiconversation.Ass
 					return nil, errs.New(errs.CodeNotFound, "attachment access revoked or revision changed")
 				}
 			case aimodelruntime.PartInputFile:
+				out.AttachmentManifest.Attachments = append(out.AttachmentManifest.Attachments, aiconversation.AttachmentReference{
+					SourceSequence: record.Sequence, AttachmentID: part.FileAttachmentID,
+					AttachmentRevision: part.AttachmentRevision, ContentKind: "document",
+				})
+				if r.TriggerMessageID != "" && record.ID != r.TriggerMessageID {
+					expanded = append(expanded, aimodelruntime.ContentPart{Type: aimodelruntime.PartInputText, Text: "Historical document content is available on demand; use the attachment reference manifest and the attachment content inspection Action when needed."})
+					continue
+				}
 				if s.documents == nil {
 					return nil, errs.New(errs.CodeNotFound, "attachment access revoked")
 				}
@@ -649,6 +665,16 @@ func (s *ConversationService) Assemble(ctx context.Context, r aiconversation.Ass
 		out.SourceSequenceTo = record.Sequence
 	}
 	out.Messages = aiconversation.ProjectToolCallRetries(out.Messages)
+	manifestJSON, marshalErr := json.Marshal(out.AttachmentManifest)
+	if marshalErr != nil {
+		return nil, errs.New(errs.CodeInternal, "invalid attachment manifest")
+	}
+	if len(out.AttachmentManifest.Attachments) > 0 {
+		const manifestEnvelopeBytes = 256
+		manifestBytes := len(manifestJSON) + manifestEnvelopeBytes
+		out.Budget.UsedBytes += manifestBytes
+		out.AttachmentTokens = (manifestBytes + 3) / 4
+	}
 	out.Budget.EstimatedTokens = (out.Budget.UsedBytes + 3) / 4
 	if out.Budget.UsedBytes > r.MaxBytes || out.Budget.EstimatedTokens > r.MaxTokens {
 		out.Status = "compaction_required"

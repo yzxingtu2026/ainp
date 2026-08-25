@@ -38,6 +38,11 @@ type AttachmentDetailView struct {
 	Links     []AttachmentLinkView `json:"links"`
 }
 
+type AttachmentDetailToolView struct {
+	AttachmentView
+	Links []AttachmentLinkView `json:"links"`
+}
+
 // PolicyGet returns effective upload policy for the current tenant (frontend precheck).
 func (s *AttachmentService) PolicyGet(ctx context.Context, _ json.RawMessage) (any, error) {
 	tenantID, _, err := tenantIdentity(ctx)
@@ -166,6 +171,9 @@ func (s *AttachmentService) Get(ctx context.Context, input json.RawMessage) (any
 	}
 	if canManage {
 		view.ObjectKey = row.ObjectKey
+	}
+	if ac.ToolInvocationID != "" {
+		return AttachmentDetailToolView{AttachmentView: view.AttachmentView, Links: view.Links}, nil
 	}
 	return view, nil
 }

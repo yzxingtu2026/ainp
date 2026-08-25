@@ -759,6 +759,9 @@ func executorFailure(callID string, err error) (*aitool.Result, bool) {
 			details = appErr.Details
 		}
 	}
+	if stable := errs.StableCategory(err); stable != "" {
+		category = stable
+	}
 	return &aitool.Result{CallID: callID, Status: "failed", Summary: summary, ErrorCategory: category, ErrorDetails: details}, recoverable
 }
 

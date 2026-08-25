@@ -19,6 +19,7 @@ const (
 	ActionAttachmentList            = "system.attachment_list"
 	ActionAttachmentMineList        = "system.attachment_mine_list"
 	ActionAttachmentGet             = "system.attachment_get"
+	ActionAttachmentContentInspect  = "system.attachment_content_inspect"
 	ActionAttachmentPolicyGet       = "system.attachment_policy_get"
 )
 

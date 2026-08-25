@@ -327,6 +327,11 @@ func (s *InvocationService) resolveImages(ctx context.Context, req *aimodelrunti
 				releaseResolvedImageData(data)
 				return 0, 0, nil, &aimodelruntime.RuntimeError{Category: aimodelruntime.ErrorInvalidRequest, Message: "image attachment is unavailable", Cause: err}
 			}
+			if part.AttachmentRevision == "" || asset.Revision != part.AttachmentRevision {
+				clear(asset.Data)
+				releaseResolvedImageData(data)
+				return 0, 0, nil, &aimodelruntime.RuntimeError{Category: aimodelruntime.ErrorInvalidRequest, Message: "image attachment revision changed"}
+			}
 			total += asset.Size
 			if total > 20*1024*1024 {
 				clear(asset.Data)

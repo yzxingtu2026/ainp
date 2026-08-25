@@ -150,6 +150,21 @@ type AssetResolver interface {
 	Resolve(context.Context, AssetResolveRequest) (*ResolvedImage, error)
 }
 
+type GenerationRuntime interface {
+	Generate(context.Context, GenerateRequest) (any, error)
+}
+
+type modelAliasContextKey struct{}
+
+func WithModelAlias(ctx context.Context, alias string) context.Context {
+	return context.WithValue(ctx, modelAliasContextKey{}, strings.TrimSpace(alias))
+}
+
+func ModelAliasFromContext(ctx context.Context) string {
+	alias, _ := ctx.Value(modelAliasContextKey{}).(string)
+	return strings.TrimSpace(alias)
+}
+
 type DocumentResolveRequest struct {
 	AttachmentID string
 	Revision     string

@@ -235,7 +235,7 @@ func (s *ContextCompactionService) Compact(ctx context.Context, r aiconversation
 	if available <= 0 {
 		return &aiconversation.CompactionResult{Status: "cannot_fit", Reason: "fixed_context_exceeds_model_window"}, nil
 	}
-	assembly, err := s.conversations.Assemble(ctx, aiconversation.AssemblyRequest{ConversationID: r.ConversationID, MaxTokens: available, MaxBytes: available * 8})
+	assembly, err := s.conversations.Assemble(ctx, aiconversation.AssemblyRequest{ConversationID: r.ConversationID, TriggerMessageID: r.TriggerMessageID, MaxTokens: available, MaxBytes: available * 8})
 	if err != nil {
 		return nil, err
 	}

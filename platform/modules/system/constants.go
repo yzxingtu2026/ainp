@@ -48,6 +48,7 @@ const (
 	ActionAttachmentList                 = attachments.ActionAttachmentList
 	ActionAttachmentMineList             = attachments.ActionAttachmentMineList
 	ActionAttachmentGet                  = attachments.ActionAttachmentGet
+	ActionAttachmentContentInspect       = attachments.ActionAttachmentContentInspect
 	ActionAttachmentPolicyGet            = attachments.ActionAttachmentPolicyGet
 	AccountProfileAttachmentResourceType = attachments.AccountProfileAttachmentResourceType
 	AccountProfileAvatarField            = attachments.AccountProfileAvatarField

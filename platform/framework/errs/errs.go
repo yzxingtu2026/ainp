@@ -77,6 +77,30 @@ type AppError struct {
 	Details    *SafeDetails
 }
 
+type categorizedError struct {
+	category string
+	err      *AppError
+}
+
+func (e *categorizedError) Error() string          { return e.err.Error() }
+func (e *categorizedError) Unwrap() error          { return e.err }
+func (e *categorizedError) StableCategory() string { return e.category }
+
+func WithStableCategory(err *AppError, category string) error {
+	if err == nil || category == "" {
+		return err
+	}
+	return &categorizedError{category: category, err: err}
+}
+
+func StableCategory(err error) string {
+	var categorized interface{ StableCategory() string }
+	if errors.As(err, &categorized) {
+		return categorized.StableCategory()
+	}
+	return ""
+}
+
 // SafeDetails is a reviewed cross-channel error payload. Arbitrary maps are
 // deliberately unsupported so internal objects cannot leak into responses.
 type SafeDetails struct {

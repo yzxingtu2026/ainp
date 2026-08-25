@@ -145,6 +145,8 @@ func requiredPromptKeys() []string {
 		"ai/trusted-runtime-context",
 		"ai/page-context",
 		"ai/untrusted-user-memory",
+		"ai/attachment-reference-manifest",
+		"ai/attachment-content-inspect",
 		"ai/assistant-personalization",
 		"agent/system-operations",
 	}

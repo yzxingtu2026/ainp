@@ -3,6 +3,7 @@ package tests
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,6 +21,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/yzxingtu2026/ainp/platform/framework/aimodelruntime"
+	"github.com/yzxingtu2026/ainp/platform/framework/aitool"
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
 	"github.com/yzxingtu2026/ainp/platform/framework/attachment"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
@@ -28,8 +30,10 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 	"github.com/yzxingtu2026/ainp/platform/framework/middleware"
 	"github.com/yzxingtu2026/ainp/platform/framework/pagination"
+	"github.com/yzxingtu2026/ainp/platform/framework/prompt"
 	"github.com/yzxingtu2026/ainp/platform/framework/status"
 	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
+	aimodule "github.com/yzxingtu2026/ainp/platform/modules/ai"
 	"github.com/yzxingtu2026/ainp/platform/modules/system"
 	"github.com/yzxingtu2026/ainp/platform/modules/system/model"
 )
@@ -211,6 +215,18 @@ func TestAttachmentUploadBindDownloadRangeAndIsolation(t *testing.T) {
 	if len(adminPage.Items) != 1 || adminPage.Items[0].UploaderName != "admin-a" {
 		t.Fatalf("attachment uploader names = %#v", adminPage.Items)
 	}
+	toolActor := *auth.MustFromContext(ctxA)
+	toolActor.ToolInvocationID = "tool-invocation-attachment-get"
+	toolDetail, err := svc.Get(auth.WithContext(context.Background(), &toolActor), json.RawMessage(fmt.Sprintf(`{"id":%q}`, prep.Attachment.ID)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	encodedToolDetail, _ := json.Marshal(toolDetail)
+	for _, forbidden := range []string{"object_key", "provider", "download_url", "token", "base64"} {
+		if strings.Contains(strings.ToLower(string(encodedToolDetail)), forbidden) {
+			t.Fatalf("attachment_get Tool result exposes %q: %s", forbidden, encodedToolDetail)
+		}
+	}
 
 	if _, err := svc.DownloadPrepare(ctxB, json.RawMessage(fmt.Sprintf(`{"id":%q}`, prep.Attachment.ID))); appErrorCode(err) != errs.CodeNotFound {
 		t.Fatalf("cross-tenant download prepare err=%v", err)
@@ -236,13 +252,159 @@ func TestAttachmentUploadBindDownloadRangeAndIsolation(t *testing.T) {
 	if _, err = svc.ResolveDocument(ctxB, documentRequest); documentErrorCategory(err) != aimodelruntime.DocumentUnavailable {
 		t.Fatalf("cross-tenant document resolve must fail closed, err=%v", err)
 	}
+	inspected, err := svc.ContentInspect(ctxA2, system.AttachmentContentInspectRequest{AttachmentID: prep.Attachment.ID, AttachmentRevision: downPrep.Attachment.SHA256, Question: "attachment"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inspection := inspected.(system.AttachmentContentInspectResult)
+	if inspection.ContentKind != "document" || !inspection.Untrusted || inspection.AttachmentRevision != downPrep.Attachment.SHA256 || len(inspection.Observations) != 1 || !strings.Contains(inspection.Observations[0].Text, "hello-attachment-range") {
+		t.Fatalf("unexpected document inspection: %#v", inspection)
+	}
+	if _, err = svc.ContentInspect(ctxB, system.AttachmentContentInspectRequest{AttachmentID: prep.Attachment.ID, AttachmentRevision: downPrep.Attachment.SHA256}); inspectErrorCategory(err) != "attachment_unavailable" {
+		t.Fatalf("cross-tenant inspection category=%q err=%v", inspectErrorCategory(err), err)
+	}
+	if _, err = svc.ContentInspect(ctxA2WithoutResourcePermission, system.AttachmentContentInspectRequest{AttachmentID: prep.Attachment.ID, AttachmentRevision: downPrep.Attachment.SHA256}); inspectErrorCategory(err) != "attachment_unavailable" {
+		t.Fatalf("revoked inspection category=%q err=%v", inspectErrorCategory(err), err)
+	}
+	if _, err = svc.ContentInspect(ctxA2, system.AttachmentContentInspectRequest{AttachmentID: prep.Attachment.ID, AttachmentRevision: "stale-revision"}); inspectErrorCategory(err) != "attachment_revision_changed" {
+		t.Fatalf("stale inspection category=%q err=%v", inspectErrorCategory(err), err)
+	}
+	if err = aimodule.AutoMigrate(testDB); err != nil {
+		t.Fatal(err)
+	}
+	toolRegistry := aitool.NewRegistry()
+	if err = toolRegistry.RegisterProvider(&aitool.ActionProvider{Actions: application.Actions}, &aitool.ActionExecutor{Actions: application.Actions}); err != nil {
+		t.Fatal(err)
+	}
+	if err = toolRegistry.Refresh(ctxA2); err != nil {
+		t.Fatal(err)
+	}
+	toolSigner, err := aitool.NewHandleSigner(strings.Repeat("a", 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	toolService := aimodule.NewToolService(testDB, toolRegistry, toolSigner, nil)
+	conversationID := "conversation-attachment-inspect"
+	runID := "run-attachment-inspect-tool"
+	toolScopeActor := *auth.MustFromContext(ctxA2)
+	toolScopeActor.SessionID = "session-attachment-inspect"
+	toolCtx := auth.WithContext(context.Background(), &toolScopeActor)
+	deniedToolActor := *auth.MustFromContext(ctxA2WithoutResourcePermission)
+	deniedToolActor.SessionID = toolScopeActor.SessionID
+	deniedToolCtx := auth.WithContext(context.Background(), &deniedToolActor)
+	toolScope := aimodule.ToolScope{
+		ID: "scope-attachment-inspect", TenantID: "tenant-a", PrincipalID: "user-a2", PrincipalKind: string(auth.PrincipalKindAccount),
+		ClientSurface: auth.TenantConsoleSurface, Audience: auth.TenantAudience, Realm: string(auth.RealmTenant), SessionID: toolScopeActor.SessionID, AgentRunID: &runID, ConversationID: &conversationID,
+		AllowedSourcesJSON: json.RawMessage(`["action"]`), AllowedCapabilitiesJSON: json.RawMessage(`["system"]`), AllowedToolsJSON: json.RawMessage(`[]`), LoadedToolsJSON: json.RawMessage(`[]`), ExpiresAt: time.Now().Add(time.Hour),
+	}
+	if err = tenant.GuardedDB(testDB).WithContext(toolCtx).Create(&toolScope).Error; err != nil {
+		t.Fatal(err)
+	}
+	searchedTools, err := toolService.Search(toolCtx, aimodule.ToolSearchRequest{ScopeID: toolScope.ID, Query: "查看附件内容", Capability: "system", Source: aitool.SourceAction, Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inspectToolID := "action:" + system.ActionAttachmentContentInspect
+	foundInspectTool := false
+	for _, candidate := range searchedTools.(aimodule.ToolSearchResponse).Items {
+		if candidate.ID == inspectToolID {
+			foundInspectTool = true
+			break
+		}
+	}
+	if !foundInspectTool {
+		t.Fatalf("system.operations scope did not discover %s: %#v", inspectToolID, searchedTools)
+	}
+	loadedTools, err := toolService.Load(toolCtx, aimodule.ToolLoadRequest{ScopeID: toolScope.ID, ToolIDs: []string{inspectToolID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	loadedInspect := loadedTools.(aimodule.ToolLoadResponse)
+	if len(loadedInspect.Tools) != 1 || loadedInspect.Tools[0].Definition.ID != inspectToolID {
+		t.Fatalf("unexpected loaded inspection tool: %#v", loadedInspect)
+	}
+	inspectArguments := json.RawMessage(fmt.Sprintf(`{"attachment_id":%q,"attachment_revision":%q,"question":"attachment"}`, prep.Attachment.ID, downPrep.Attachment.SHA256))
+	toolResultValue, err := toolService.Execute(toolCtx, aimodule.ToolExecuteRequest{Handle: loadedInspect.Tools[0].Handle, ToolCallID: "inspect-tool-authorized", Arguments: inspectArguments})
+	if err != nil {
+		t.Fatal(err)
+	}
+	toolResult := toolResultValue.(*aitool.Result)
+	toolInspection, ok := toolResult.Data.(map[string]any)
+	toolObservations, observationsOK := toolInspection["observations"].([]any)
+	if toolResult.Status != "completed" || !ok || toolInspection["untrusted"] != true || toolInspection["content_kind"] != "document" || !observationsOK || len(toolObservations) != 1 {
+		t.Fatalf("unexpected authorized inspection Tool result: %#v", toolResult)
+	}
+	deniedToolResult, deniedToolErr := toolService.Execute(deniedToolCtx, aimodule.ToolExecuteRequest{Handle: loadedInspect.Tools[0].Handle, ToolCallID: "inspect-tool-revoked", Arguments: inspectArguments})
+	if deniedToolErr != nil {
+		t.Fatal(deniedToolErr)
+	}
+	deniedResult, _ := deniedToolResult.(*aitool.Result)
+	if deniedResult == nil || deniedResult.Status != "failed" || deniedResult.ErrorCategory != "attachment_unavailable" {
+		t.Fatalf("revoked actor inspection Tool result: %#v", deniedResult)
+	}
+	if err = prompt.LoadDir("../prompts"); err != nil {
+		t.Fatal(err)
+	}
+	imagePayload, err := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")
+	if err != nil {
+		t.Fatal(err)
+	}
+	imagePrepared, err := svc.UploadPrepare(ctxA, json.RawMessage(fmt.Sprintf(
+		`{"original_name":"invoice.png","content_type":"image/png","size":%d}`, len(imagePayload),
+	)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	imagePrep := imagePrepared.(system.TransferPrepareView)
+	imageUpload := httptest.NewRequest(http.MethodPut, imagePrep.UploadURL, bytes.NewReader(imagePayload))
+	imageUpload.Header.Set("Authorization", "Bearer "+imagePrep.Token)
+	imageUpload.Header.Set("Content-Type", "image/png")
+	imageUploadResponse := httptest.NewRecorder()
+	router.ServeHTTP(imageUploadResponse, imageUpload)
+	if code := envelopeCode(imageUploadResponse.Body.Bytes()); code != 0 {
+		t.Fatalf("image upload code=%d body=%s", code, imageUploadResponse.Body.String())
+	}
+	imageDownload, err := svc.DownloadPrepare(ctxA, json.RawMessage(fmt.Sprintf(`{"id":%q}`, imagePrep.Attachment.ID)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	imageRevision := imageDownload.(system.TransferPrepareView).Attachment.SHA256
+	vision := &attachmentInspectGenerationRuntime{}
+	svc.SetModelRuntimeProvider(func() aimodelruntime.GenerationRuntime { return vision })
+	visionActor := *auth.MustFromContext(ctxA)
+	visionActor.AgentRunID = "run-attachment-inspect"
+	visionCtx := aimodelruntime.WithModelAlias(auth.WithContext(context.Background(), &visionActor), "agent-vision")
+	imageInspected, err := svc.ContentInspect(visionCtx, system.AttachmentContentInspectRequest{
+		AttachmentID: imagePrep.Attachment.ID, AttachmentRevision: imageRevision, Question: "What is the total?",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	imageInspection := imageInspected.(system.AttachmentContentInspectResult)
+	if imageInspection.ContentKind != "image" || !imageInspection.Untrusted || len(imageInspection.Observations) != 1 || imageInspection.Observations[0].Text != "A visible invoice total of 100.00." {
+		t.Fatalf("unexpected image inspection: %#v", imageInspection)
+	}
+	if vision.request.ModelAlias != "agent-vision" || vision.request.Metadata["agent_run_id"] != "run-attachment-inspect" || vision.request.EnableTools || vision.request.ToolScopeID != "" {
+		t.Fatalf("unexpected vision runtime request: %#v", vision.request)
+	}
+	if parts := vision.request.Messages[0].Content; len(parts) != 2 || parts[1].ImageAttachmentID != imagePrep.Attachment.ID || parts[1].AttachmentRevision != imageRevision {
+		t.Fatalf("vision attachment reference changed: %#v", vision.request.Messages)
+	}
+	vision.err = &aimodelruntime.RuntimeError{Category: aimodelruntime.ErrorCapabilityNotSupported, Message: "vision unsupported"}
+	if _, err = svc.ContentInspect(visionCtx, system.AttachmentContentInspectRequest{AttachmentID: imagePrep.Attachment.ID, AttachmentRevision: imageRevision}); inspectErrorCategory(err) != "capability_not_supported" {
+		t.Fatalf("unsupported vision category=%q err=%v", inspectErrorCategory(err), err)
+	}
+	vision.err = &aimodelruntime.RuntimeError{Category: aimodelruntime.ErrorInvalidRequest, Message: "image attachment revision changed"}
+	if _, err = svc.ContentInspect(visionCtx, system.AttachmentContentInspectRequest{AttachmentID: imagePrep.Attachment.ID, AttachmentRevision: imageRevision}); inspectErrorCategory(err) != "attachment_revision_changed" {
+		t.Fatalf("runtime revision drift category=%q err=%v", inspectErrorCategory(err), err)
+	}
 	staleRequest := documentRequest
 	staleRequest.Revision = "stale-revision"
 	if _, err = svc.ResolveDocument(ctxA2, staleRequest); documentErrorCategory(err) != aimodelruntime.DocumentUnavailable {
 		t.Fatalf("stale document revision must fail closed, err=%v", err)
 	}
-	if policyChecks != checksBeforePrepare+3 {
-		t.Fatalf("download and document policy checks=%d want=%d", policyChecks, checksBeforePrepare+3)
+	if policyChecks != checksBeforePrepare+10 {
+		t.Fatalf("download, document, and inspection policy checks=%d want=%d", policyChecks, checksBeforePrepare+10)
 	}
 	checksAfterPrepare := policyChecks
 
@@ -948,6 +1110,30 @@ func documentErrorCategory(err error) aimodelruntime.DocumentErrorCategory {
 		return documentErr.Category
 	}
 	return ""
+}
+
+func inspectErrorCategory(err error) string {
+	appErr, ok := errs.AsAppError(err)
+	if !ok || appErr.Details == nil {
+		return ""
+	}
+	return appErr.Details.Reason
+}
+
+type attachmentInspectGenerationRuntime struct {
+	request aimodelruntime.GenerateRequest
+	err     error
+}
+
+func (r *attachmentInspectGenerationRuntime) Generate(_ context.Context, request aimodelruntime.GenerateRequest) (any, error) {
+	r.request = request
+	if r.err != nil {
+		return nil, r.err
+	}
+	return aimodelruntime.GenerateResponse{
+		Output:       []aimodelruntime.OutputItem{{Type: aimodelruntime.PartOutputText, Text: "A visible invoice total of 100.00."}},
+		FinishReason: aimodelruntime.FinishCompleted,
+	}, nil
 }
 
 func envelopeMessageKey(body []byte) string {

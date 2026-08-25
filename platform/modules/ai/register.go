@@ -169,6 +169,7 @@ func Register(a *app.App) error {
 	invocations := NewInvocationService(a.DB, svc, adapters, writer)
 	invocations.SetEmbeddingAdapters(embeddingAdapters)
 	invocations.SetAssetResolver(a.AIAssetResolver)
+	a.AIModelRuntime = invocations
 	personalization := NewPersonalizationService(a.DB, a.SettingValues, writer, invocations)
 	if err := RegisterPersonalization(a, personalization); err != nil {
 		return err
