@@ -132,5 +132,8 @@ func (s *TokenService) LooksLikeSessionToken(tokenString string) bool {
 	if err != nil {
 		return false
 	}
-	return claims.SessionID != "" || claims.AuthVersion != 0 || claims.PrincipalKind != "" || claims.ClientSurface != ""
+	// Principal kind and client surface are shared by other bearer protocols,
+	// including attachment transfer tokens. Only session-owned claims classify
+	// a token for fail-closed handling by the web session middleware.
+	return claims.SessionID != "" || claims.AuthVersion != 0
 }

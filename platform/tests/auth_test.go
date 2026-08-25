@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/yzxingtu2026/ainp/platform/framework/attachment"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 )
 
@@ -32,6 +33,49 @@ func TestTokenServiceIssuesTenantRealmAndAudience(t *testing.T) {
 	}
 	if claims.PrincipalID != "user-1" || claims.Subject != "user-1" || claims.LegacyUserID != "user-1" {
 		t.Fatalf("unexpected principal claims: %#v", claims)
+	}
+}
+
+func TestTokenServiceClassifiesSessionAndAttachmentTokens(t *testing.T) {
+	const (
+		secret = "shared-test-secret"
+		issuer = "ainp-test"
+	)
+	sessions, err := auth.NewTokenService(secret, issuer, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessionToken, _, err := sessions.Issue("tenant-1", "user-1", "session-1", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !sessions.LooksLikeSessionToken(sessionToken) {
+		t.Fatal("valid session token was not classified as a session token")
+	}
+	if !sessions.LooksLikeSessionToken(sessionToken + "x") {
+		t.Fatal("session token with a tampered signature must remain classified as a session token")
+	}
+
+	transfers, err := attachment.NewTransferTokenService(secret, issuer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transferToken, _, _, err := transfers.Issue(attachment.IssueTransferInput{
+		TenantID:       "tenant-1",
+		PrincipalID:    "user-1",
+		PrincipalKind:  string(auth.PrincipalKindAccount),
+		ClientSurface:  auth.TenantConsoleSurface,
+		SourceAudience: auth.TenantAudience,
+		AttachmentID:   "attachment-1",
+		Op:             attachment.OpUpload,
+		Size:           12,
+		TTL:            time.Minute,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sessions.LooksLikeSessionToken(transferToken) {
+		t.Fatal("attachment transfer token was classified as a session token")
 	}
 }
 

@@ -3,6 +3,7 @@
 - 新业务主体注册 owner 命名空间 `PrincipalKind`、`PrincipalProvider`、Authenticator 和 Client Surface；禁止任意 Kind 与未知路径回落。
 - Token 绑定 `sub`、Kind、audience、surface、session、auth version，并按请求 path 对应 audience 验签；禁止跨客户端复用。
 - 使用独立 Bearer 协议的入口只能按精确路径委托给专用认证处理器；禁止前缀放行或未知路径回落，专用处理器必须完整校验自身 audience、授权事实与实时权限。
+- 未验签 Token 的协议分流只能用 `session_id/auth_version` 等会话独占 claim；`principal_kind/surface` 是跨协议事实，不得单独判定为 Session Token。分流不产生 AuthContext，专用 Handler 仍须完整验签授权。
 - Provider 只做主体/状态/授权复核，不签 Token、不写可信 AuthContext、不借用 Account RBAC。
 - 新认证型 Action 显式声明 `PrincipalKinds` 与 `ClientSurfaces`；Account 默认仅用于历史兼容。
 

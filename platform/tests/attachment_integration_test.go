@@ -26,6 +26,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/config"
 	"github.com/yzxingtu2026/ainp/platform/framework/database"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
+	"github.com/yzxingtu2026/ainp/platform/framework/middleware"
 	"github.com/yzxingtu2026/ainp/platform/framework/pagination"
 	"github.com/yzxingtu2026/ainp/platform/framework/status"
 	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
@@ -72,7 +73,11 @@ func TestAttachmentUploadBindDownloadRangeAndIsolation(t *testing.T) {
 		}
 	}
 
-	application := app.New(&config.Config{}, testDB, nil, nil)
+	sessionTokens, err := auth.NewTokenService("test-secret-for-attachments", "ainp", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	application := app.New(&config.Config{}, testDB, nil, sessionTokens)
 	attachStorage(t, application)
 	const resourceReadPermission = "demo.task.attachment_read"
 	denied := 0
@@ -107,16 +112,20 @@ func TestAttachmentUploadBindDownloadRangeAndIsolation(t *testing.T) {
 		system.ActionAttachmentListByResource, system.ActionAttachmentDelete, resourceReadPermission,
 	}
 	ctxA := auth.WithContext(context.Background(), &auth.Context{
-		TenantID: "tenant-a", PrincipalID: "user-a", Realm: auth.RealmTenant, Authenticated: true, Permissions: perms,
+		TenantID: "tenant-a", PrincipalID: "user-a", Principal: auth.PrincipalRef{Kind: auth.PrincipalKindAccount, ID: "user-a"}, Realm: auth.RealmTenant,
+		ClientSurface: auth.TenantConsoleSurface, Audience: auth.TenantAudience, Authenticated: true, Permissions: perms,
 	})
 	ctxA2 := auth.WithContext(context.Background(), &auth.Context{
-		TenantID: "tenant-a", PrincipalID: "user-a2", Realm: auth.RealmTenant, Authenticated: true, Permissions: perms,
+		TenantID: "tenant-a", PrincipalID: "user-a2", Principal: auth.PrincipalRef{Kind: auth.PrincipalKindAccount, ID: "user-a2"}, Realm: auth.RealmTenant,
+		ClientSurface: auth.TenantConsoleSurface, Audience: auth.TenantAudience, Authenticated: true, Permissions: perms,
 	})
 	ctxB := auth.WithContext(context.Background(), &auth.Context{
-		TenantID: "tenant-b", PrincipalID: "user-b", Realm: auth.RealmTenant, Authenticated: true, Permissions: perms,
+		TenantID: "tenant-b", PrincipalID: "user-b", Principal: auth.PrincipalRef{Kind: auth.PrincipalKindAccount, ID: "user-b"}, Realm: auth.RealmTenant,
+		ClientSurface: auth.TenantConsoleSurface, Audience: auth.TenantAudience, Authenticated: true, Permissions: perms,
 	})
 	ctxA2WithoutResourcePermission := auth.WithContext(context.Background(), &auth.Context{
-		TenantID: "tenant-a", PrincipalID: "user-a2", Realm: auth.RealmTenant, Authenticated: true,
+		TenantID: "tenant-a", PrincipalID: "user-a2", Principal: auth.PrincipalRef{Kind: auth.PrincipalKindAccount, ID: "user-a2"}, Realm: auth.RealmTenant,
+		ClientSurface: auth.TenantConsoleSurface, Audience: auth.TenantAudience, Authenticated: true,
 		Permissions: []string{system.ActionAttachmentDownloadPrepare},
 	})
 
@@ -137,6 +146,13 @@ func TestAttachmentUploadBindDownloadRangeAndIsolation(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
+	router.Use(
+		middleware.RequestID(),
+		middleware.AcceptLanguage(),
+		middleware.Auth(middleware.AuthOptions{
+			Tokens: application.Tokens, Authorization: application.Authorization, ClientSurfaces: application.ClientSurfaces,
+		}),
+	)
 	system.RegisterAttachmentTransferRoutes(router, svc)
 
 	uploadReq := httptest.NewRequest(http.MethodPut, prep.UploadURL, bytes.NewReader(payload))
@@ -286,7 +302,8 @@ func TestAttachmentUploadBindDownloadRangeAndIsolation(t *testing.T) {
 		t.Fatalf("invalid transfer repeated resource access policy: checks=%d want=%d", policyChecks, checksAfterPrepare)
 	}
 
-	headReq := httptest.NewRequest(http.MethodHead, downPrep.DownloadURL+"?token="+downPrep.Token, nil)
+	headReq := httptest.NewRequest(http.MethodHead, downPrep.DownloadURL, nil)
+	headReq.Header.Set("Authorization", "Bearer "+downPrep.Token)
 	headResp := httptest.NewRecorder()
 	router.ServeHTTP(headResp, headReq)
 	if headResp.Code != http.StatusOK || headResp.Header().Get("Content-Length") != fmt.Sprintf("%d", len(payload)) {
@@ -294,6 +311,12 @@ func TestAttachmentUploadBindDownloadRangeAndIsolation(t *testing.T) {
 	}
 	if !strings.Contains(headResp.Header().Get("Content-Disposition"), "note.txt") {
 		t.Fatalf("disposition=%q", headResp.Header().Get("Content-Disposition"))
+	}
+	queryReq := httptest.NewRequest(http.MethodGet, downPrep.DownloadURL+"?token="+downPrep.Token, nil)
+	queryResp := httptest.NewRecorder()
+	router.ServeHTTP(queryResp, queryReq)
+	if queryResp.Code != http.StatusOK || !bytes.Equal(queryResp.Body.Bytes(), payload) {
+		t.Fatalf("query transfer status=%d body=%q", queryResp.Code, queryResp.Body.Bytes())
 	}
 
 	rangeReq := httptest.NewRequest(http.MethodGet, downPrep.DownloadURL, nil)
@@ -392,7 +415,7 @@ func TestAttachmentUploadBindDownloadRangeAndIsolation(t *testing.T) {
 	}
 	multipartBody, multipartType := multipartFileBody(t, multipartPrep.FieldName, "untrusted-name.exe", "application/x-untrusted", multipartPayload)
 	multipartReq := httptest.NewRequest(http.MethodPost, multipartPrep.UploadURL, bytes.NewReader(multipartBody))
-	multipartReq.Header.Set("X-Attachment-Token", multipartPrep.Token)
+	multipartReq.Header.Set("Authorization", "Bearer "+multipartPrep.Token)
 	multipartReq.Header.Set("Content-Type", multipartType)
 	multipartResp := httptest.NewRecorder()
 	router.ServeHTTP(multipartResp, multipartReq)
