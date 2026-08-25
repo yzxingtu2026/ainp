@@ -829,6 +829,19 @@ declare namespace App {
           cancel: string;
           resume: string;
           retry: string;
+          terminal: Record<
+            | 'providerUnavailable'
+            | 'modelUnavailable'
+            | 'authorizationChanged'
+            | 'safetyRefusal'
+            | 'contextUnavailable'
+            | 'persistenceUnavailable'
+            | 'cancelled'
+            | 'budgetLimit'
+            | 'operationFailed'
+            | 'unknown',
+            string
+          >;
           status: Record<Api.AI.AgentRunStatus, string>;
         };
         setting: {

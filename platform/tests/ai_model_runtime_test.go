@@ -265,6 +265,58 @@ func TestAnthropicMessagesFixtureMapping(t *testing.T) {
 	}
 }
 
+func TestProviderRefusalFixtureMapping(t *testing.T) {
+	tests := []struct {
+		name     string
+		protocol string
+		path     string
+		response string
+		adapter  func(*http.Client) aimodelruntime.ModelAdapter
+	}{
+		{
+			name: "openai", protocol: aimodel.ProtocolOpenAI, path: "/v1/responses",
+			response: `{"id":"resp_refusal","status":"completed","output":[{"id":"msg_refusal","type":"message","content":[{"type":"refusal","refusal":"I cannot help with that request."}]}],"usage":{"input_tokens":4,"output_tokens":6,"total_tokens":10}}`,
+			adapter:  func(client *http.Client) aimodelruntime.ModelAdapter { return aimodelruntime.NewOpenAIAdapter(client) },
+		},
+		{
+			name: "anthropic", protocol: aimodel.ProtocolAnthropic, path: "/v1/messages",
+			response: `{"id":"msg_refusal","stop_reason":"refusal","content":[{"type":"text","text":"I cannot help with that request."}],"usage":{"input_tokens":4,"output_tokens":6}}`,
+			adapter: func(client *http.Client) aimodelruntime.ModelAdapter {
+				return aimodelruntime.NewAnthropicAdapter(client)
+			},
+		},
+		{
+			name: "openai compatible", protocol: aimodel.ProtocolOpenAICompatible, path: "/v1/chat/completions",
+			response: `{"id":"chat_refusal","choices":[{"finish_reason":"content_filter","message":{"content":"I cannot help with that request."}}],"usage":{"prompt_tokens":4,"completion_tokens":6,"total_tokens":10}}`,
+			adapter: func(client *http.Client) aimodelruntime.ModelAdapter {
+				return aimodelruntime.NewOpenAICompatibleAdapter(client)
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != tt.path {
+					t.Fatalf("unexpected path %s", r.URL.Path)
+				}
+				_, _ = io.WriteString(w, tt.response)
+			}))
+			defer server.Close()
+
+			response, err := tt.adapter(server.Client()).Generate(context.Background(), fixtureAdapterRequest(server.URL, tt.protocol))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if response.FinishReason != aimodelruntime.FinishContentFilter || len(response.Output) != 1 || response.Output[0].Text == "" {
+				t.Fatalf("refusal was not normalized: %#v", response)
+			}
+			if tt.protocol != aimodel.ProtocolAnthropic && response.Output[0].Type != aimodelruntime.PartRefusal {
+				t.Fatalf("refusal text type=%s, want %s", response.Output[0].Type, aimodelruntime.PartRefusal)
+			}
+		})
+	}
+}
+
 func TestAnthropicStructuredOutputUsesResponseOnlyFunction(t *testing.T) {
 	var body map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -431,6 +483,50 @@ func TestOpenAIStreamIgnoresInProgressAndValidatesSequence(t *testing.T) {
 	}
 	if len(types) != 5 || types[0] != aimodelruntime.EventResponseStarted || types[4] != aimodelruntime.EventResponseCompleted {
 		t.Fatalf("unexpected events: %#v", types)
+	}
+}
+
+func TestOpenAIStreamMapsRefusal(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, strings.Join([]string{
+			`data: {"type":"response.created","sequence_number":1,"response":{"id":"resp_refusal"}}`, "",
+			`data: {"type":"response.output_item.added","sequence_number":2,"item":{"id":"msg_refusal","type":"message"}}`, "",
+			`data: {"type":"response.refusal.delta","sequence_number":3,"item_id":"msg_refusal","delta":"I cannot help with that request."}`, "",
+			`data: {"type":"response.refusal.done","sequence_number":4,"item_id":"msg_refusal"}`, "",
+			`data: {"type":"response.output_item.done","sequence_number":5,"item":{"id":"msg_refusal"}}`, "",
+			`data: {"type":"response.completed","sequence_number":6,"response":{"id":"resp_refusal","usage":{"input_tokens":4,"output_tokens":6,"total_tokens":10}}}`, "", "",
+		}, "\n"))
+	}))
+	defer server.Close()
+	stream, err := aimodelruntime.NewOpenAIAdapter(server.Client()).Stream(context.Background(), fixtureAdapterRequest(server.URL, aimodel.ProtocolOpenAI))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stream.Close()
+
+	events := make(chan aimodelruntime.StreamEvent, 8)
+	for {
+		event, recvErr := stream.Recv(context.Background())
+		if recvErr == io.EOF {
+			break
+		}
+		if recvErr != nil {
+			t.Fatal(recvErr)
+		}
+		events <- event
+	}
+	close(events)
+	terminal := make(chan error, 1)
+	terminal <- nil
+	close(terminal)
+	response, err := aimodelruntime.CollectStream(aimodelruntime.ResultStream{Events: events, Terminal: terminal}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.FinishReason != aimodelruntime.FinishContentFilter || len(response.Output) != 1 ||
+		response.Output[0].Type != aimodelruntime.PartRefusal || response.Output[0].Text == "" {
+		t.Fatalf("stream refusal was not normalized: %#v", response)
 	}
 }
 

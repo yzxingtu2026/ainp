@@ -6,6 +6,10 @@
 - 每次模型调用必须在最终请求装配后经统一 Turn Budget Planner；正常 ReAct 只能消费扣除最终输入/输出和安全余量后的软预算，预计侵占预留时必须持久化进入 `completion_only`。
 - `completion_only` 只能在实际发起无工具收尾模型请求前持久化，且在 confirmation/lease/retry 后不可回退；正常轮已返回的 Tool Call 必须先执行/确认，确认恢复的 Tool Result 必须允许模型消费。收尾调用最多一次，临时指令不得写 canonical Message，协议层必须清空工具并设置 `tool_choice=none`，且不得伪报工具不可用。
 - 预算收尾成功必须提交 canonical assistant Message，Run 保持 completed 并写稳定 `completion_reason=budget_limit`；已有可用无工具文本不得因调用后 Usage 超估而丢弃。
+- 所有 failed/cancelled/completed 终态必须经版本化确定性决策矩阵，在 Run/Event/Outbox 同步写 terminal reason、finalization mode/attempted、retryable、user message key + safe args、safe summary、terminal message ID 与持久化 Tool 操作计数；前端禁止裸露机器码。
+- 只有白名单业务/Tool/可降级上下文错误可用 `FailureEnvelope v1` 做最多一次无工具模型收尾；Envelope 只能由安全字段构造，不得含 SQL、堆栈、Secret、权限细节、附件/消息正文、Tool 参数/Result 或 Provider 原文。
+- Provider/模型失败、授权/租户/安全拦截、持久化不可用、取消和未知错误禁止再次调用模型；模型收尾返回 Tool Call/拒绝/空文本/错误时只模板降级一次，不执行工具、不伪造 Result、不递归或切换 Provider。
+- Provider 拒绝有安全文本时原样提交 assistant Message，并以 `completed + completion_reason=safety_refusal` 收口；无文本只用模板，禁止其他模型改写或绕过。友好消息不得改变真实 failed/cancelled 语义。
 - completion-only 返回的新 Tool Call 不得执行或伪造 Tool Result；只有最小收尾不可容纳、压缩不能降、Provider/输出不可用等极端情况才预算失败。
 - HTTP 只写 Run/控制事实；执行必须经版本化 Outbox → Job，禁止请求内无界循环。
 - `ai.agent_run.execute` 固定使用稳定 `ai` 队列；部署可隔离 AI/通用 Worker，本地未覆盖仍保持单 Worker 全队列兼容。记录 Outbox、Job queue、first-delta 分段时延时禁止高基数指标 label。

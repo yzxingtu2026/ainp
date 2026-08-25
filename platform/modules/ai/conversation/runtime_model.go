@@ -32,6 +32,18 @@ type AgentRun struct {
 	ExecutionMode                  string          `gorm:"size:32;not null;default:'normal'" json:"execution_mode"`
 	CompletionReason               string          `gorm:"size:64;not null;default:''" json:"completion_reason,omitempty"`
 	CompletionAttempted            bool            `gorm:"not null;default:false" json:"completion_attempted"`
+	TerminalProtocolVersion        string          `gorm:"size:16;not null;default:'v1'" json:"terminal_protocol_version,omitempty"`
+	TerminalReason                 string          `gorm:"size:64;not null;default:''" json:"terminal_reason,omitempty"`
+	FinalizationMode               string          `gorm:"size:16;not null;default:'none'" json:"finalization_mode,omitempty"`
+	FinalizationAttempted          bool            `gorm:"not null;default:false" json:"finalization_attempted"`
+	Retryable                      bool            `gorm:"not null;default:false" json:"retryable"`
+	UserMessageKey                 string          `gorm:"size:128;not null;default:''" json:"user_message_key,omitempty"`
+	SafeArgsJSON                   json.RawMessage `gorm:"column:safe_args;type:jsonb;not null;default:'{}'" json:"safe_args,omitempty"`
+	SafeSummary                    string          `gorm:"size:255;not null;default:''" json:"safe_summary,omitempty"`
+	TerminalMessageID              *string         `gorm:"size:64" json:"terminal_message_id,omitempty"`
+	CompletedOperationCount        int             `gorm:"not null;default:0" json:"completed_operation_count"`
+	FailedOperationCount           int             `gorm:"not null;default:0" json:"failed_operation_count"`
+	UnfinishedOperationCount       int             `gorm:"not null;default:0" json:"unfinished_operation_count"`
 	CompletionReservedInputTokens  int64           `gorm:"not null;default:0" json:"completion_reserved_input_tokens"`
 	CompletionReservedOutputTokens int64           `gorm:"not null;default:0" json:"completion_reserved_output_tokens"`
 	CompletionSafetyMarginTokens   int64           `gorm:"not null;default:0" json:"completion_safety_margin_tokens"`

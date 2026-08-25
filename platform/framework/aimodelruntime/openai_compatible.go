@@ -155,7 +155,11 @@ func (a *OpenAICompatibleAdapter) Generate(ctx context.Context, in AdapterReques
 	}
 	out := &GenerateResponse{ID: raw.ID, Model: modelSummary(in), FinishReason: FinishCompleted, Output: []OutputItem{}}
 	if text != "" {
-		out.Output = append(out.Output, OutputItem{ID: raw.ID + "-0", Type: PartOutputText, Text: text})
+		partType := PartOutputText
+		if choice.FinishReason == "content_filter" {
+			partType = PartRefusal
+		}
+		out.Output = append(out.Output, OutputItem{ID: raw.ID + "-0", Type: partType, Text: text})
 	}
 	if in.Request.StructuredOutput == nil {
 		for _, call := range choice.Message.ToolCalls {
@@ -166,6 +170,9 @@ func (a *OpenAICompatibleAdapter) Generate(ctx context.Context, in AdapterReques
 	out.Usage = Usage{InputTokens: int64ptr(raw.Usage.PromptTokens), OutputTokens: int64ptr(raw.Usage.CompletionTokens), TotalTokens: int64ptr(raw.Usage.TotalTokens), Reported: true}
 	if choice.FinishReason == "length" {
 		out.FinishReason = FinishLength
+	}
+	if choice.FinishReason == "content_filter" {
+		out.FinishReason = FinishContentFilter
 	}
 	return out, nil
 }

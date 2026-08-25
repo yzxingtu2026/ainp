@@ -341,8 +341,15 @@ func (s *AgentRuntimeService) Cancel(ctx context.Context, r AgentRunIDRequest) (
 	}
 	now := s.now()
 	category := string(aimodelruntime.ErrorCancelled)
+	decision := aiagentruntime.DecideTerminal(aiagentruntime.TerminalDecisionInput{Status: to, ErrorCategory: category})
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		res := tx.Model(&AgentRun{}).Where("id=? AND revision=? AND status=?", run.ID, r.Revision, run.Status).Updates(map[string]any{"status": string(to), "error_category": category, "finished_at": now, "lease_owner": "", "lease_expires_at": nil, "revision": gorm.Expr("revision+1")})
+		res := tx.Model(&AgentRun{}).Where("id=? AND revision=? AND status=?", run.ID, r.Revision, run.Status).Updates(map[string]any{
+			"status": string(to), "error_category": category, "finished_at": now,
+			"terminal_protocol_version": decision.ProtocolVersion, "terminal_reason": decision.TerminalReason,
+			"finalization_mode": decision.Mode, "retryable": decision.Retryable,
+			"user_message_key": decision.UserMessageKey, "safe_summary": decision.SafeSummary,
+			"lease_owner": "", "lease_expires_at": nil, "revision": gorm.Expr("revision+1"),
+		})
 		if res.Error != nil {
 			return res.Error
 		}
@@ -365,11 +372,33 @@ func (s *AgentRuntimeService) Cancel(ctx context.Context, r AgentRunIDRequest) (
 				}
 			}
 		}
-		if e := s.appendEvent(ctx, tx, run, "run.cancelled", nil, map[string]any{"error_category": category}); e != nil {
+		operations, e := loadTerminalOperationSummary(tx, run.ID)
+		if e != nil {
+			return e
+		}
+		safeArgs := terminalSafeArgs(decision, operations)
+		if e = tx.Model(&AgentRun{}).Where("id=?", run.ID).Updates(map[string]any{
+			"completed_operation_count":  operations.Completed,
+			"failed_operation_count":     operations.Failed,
+			"unfinished_operation_count": operations.Unfinished,
+			"safe_args":                  safeArgs,
+		}).Error; e != nil {
+			return e
+		}
+		payload := map[string]any{
+			"error_category": category, "terminal_protocol_version": decision.ProtocolVersion,
+			"terminal_reason": decision.TerminalReason, "finalization_mode": decision.Mode,
+			"finalization_attempted": false, "retryable": decision.Retryable,
+			"user_message_key": decision.UserMessageKey, "safe_args": safeArgs, "safe_summary": decision.SafeSummary,
+			"completed_operation_count": operations.Completed, "failed_operation_count": operations.Failed,
+			"unfinished_operation_count": operations.Unfinished,
+		}
+		if e := s.appendEvent(ctx, tx, run, "run.cancelled", nil, payload); e != nil {
 			return e
 		}
 		if s.writer != nil {
-			_, e := s.writer.Append(ctx, tx, outbox.AppendInput{EventType: agentRunTerminalEvent, AggregateType: "ai_agent_run", AggregateID: run.ID, AggregateVersion: int64(run.Revision + 1), Payload: map[string]any{"run_id": run.ID, "status": "cancelled", "error_category": category}})
+			payload["run_id"], payload["status"] = run.ID, "cancelled"
+			_, e := s.writer.Append(ctx, tx, outbox.AppendInput{EventType: agentRunTerminalEvent, AggregateType: "ai_agent_run", AggregateID: run.ID, AggregateVersion: int64(run.Revision + 1), Payload: payload})
 			return e
 		}
 		return nil
@@ -650,6 +679,16 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 	if err := s.syncModelUsage(ctx, run); err != nil {
 		return err
 	}
+	if recovered, err := s.recoverRefusalFinalization(ctx, run); err != nil {
+		return err
+	} else if recovered {
+		return nil
+	}
+	if recovered, err := s.recoverTerminalFinalization(ctx, run); err != nil {
+		return err
+	} else if recovered {
+		return nil
+	}
 	if recovered, err := s.recoverFinalAnswer(ctx, run); err != nil {
 		return err
 	} else if recovered {
@@ -697,7 +736,7 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 	}
 	trustedContext, err := s.resolveRuntimeContext(ctx, run, &conversation, &agentRow)
 	if err != nil {
-		return s.fail(ctx, run, "runtime_context_failed")
+		return s.finalizeSafeFailure(ctx, run, "runtime_context_failed", version.ModelAlias, budget, startedAt)
 	}
 	if trustedContext.Locale != "" {
 		localizedActor := *auth.MustFromContext(ctx)
@@ -748,7 +787,7 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 		if err != nil {
 			category := documentRuntimeCategory(err)
 			if category != "document_parse_failed" {
-				return s.fail(ctx, run, category)
+				return s.finalizeSafeFailure(ctx, run, category, version.ModelAlias, budget, startedAt)
 			}
 			return s.fail(ctx, run, "budget_completion_unavailable")
 		}
@@ -865,13 +904,40 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 		cancelTerminal()
 		toolCalls := []aimodelruntime.OutputItem{}
 		text := ""
+		refusalText := ""
 		for _, item := range response.Output {
 			if item.Type == aimodelruntime.PartOutputText {
 				text += item.Text
 			}
+			if item.Type == aimodelruntime.PartRefusal {
+				refusalText += item.Text
+			}
 			if item.Type == aimodelruntime.PartToolCall {
 				toolCalls = append(toolCalls, item)
 			}
+		}
+		if response.FinishReason == aimodelruntime.FinishContentFilter || strings.TrimSpace(refusalText) != "" {
+			if strings.TrimSpace(refusalText) == "" {
+				refusalText = text
+			}
+			if strings.TrimSpace(refusalText) == "" {
+				_ = s.finishStep(ctx, run, step, "failed", map[string]any{"finish_reason": response.FinishReason, "refusal_text_available": false}, string(aimodelruntime.ErrorContentFiltered))
+				return s.fail(ctx, run, string(aimodelruntime.ErrorContentFiltered))
+			}
+			decision := aiagentruntime.DecideTerminal(aiagentruntime.TerminalDecisionInput{
+				Status: aiagentruntime.RunFailed, ErrorCategory: string(aimodelruntime.ErrorContentFiltered), HasSafeRefusalText: true,
+			})
+			if persistErr := s.markRefusalDetected(ctx, run, decision); persistErr != nil {
+				return persistErr
+			}
+			messageID, commitErr := s.commitTerminalMessage(ctx, run, refusalText, "run-refusal:"+run.ID, startedAt)
+			if commitErr != nil {
+				_ = s.finishStep(ctx, run, step, "failed", map[string]any{"finish_reason": response.FinishReason, "fallback": "notice_only"}, "finalize_failed")
+				return s.fail(ctx, run, "finalize_failed")
+			}
+			run.TerminalMessageID = &messageID
+			_ = s.finishStep(ctx, run, step, "completed", map[string]any{"finish_reason": response.FinishReason, "refusal_text_committed": true, "terminal_message_id": messageID}, "")
+			return s.terminalWithDecision(ctx, run, string(decision.Status), "", decision.CompletionReason, true, decision)
 		}
 		hardExceeded := run.InputTokens+run.OutputTokens > budget.RunTokenBudget
 		usableText := strings.TrimSpace(text) != ""
@@ -895,7 +961,7 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 			}
 			waiting, err := s.executeToolCall(ctx, run, scopeID, call)
 			if err != nil {
-				return s.fail(ctx, run, "tool_failed")
+				return s.finalizeSafeFailure(ctx, run, "tool_failed", version.ModelAlias, budget, startedAt)
 			}
 			run.ToolCalls++
 			if err := s.persistCounters(ctx, run); err != nil {
@@ -1031,6 +1097,268 @@ func (s *AgentRuntimeService) syncModelUsage(ctx context.Context, run *AgentRun)
 	return s.persistCounters(ctx, run)
 }
 
+func (s *AgentRuntimeService) markFinalizationAttempted(ctx context.Context, run *AgentRun, decision aiagentruntime.TerminalDecision, category string) error {
+	if run.FinalizationAttempted {
+		return errs.New(errs.CodeConflict, "agent run finalization already attempted")
+	}
+	updates := map[string]any{
+		"finalization_attempted":    true,
+		"finalization_mode":         decision.Mode,
+		"terminal_protocol_version": decision.ProtocolVersion,
+		"terminal_reason":           decision.TerminalReason,
+		"retryable":                 decision.Retryable,
+		"user_message_key":          decision.UserMessageKey,
+		"safe_summary":              decision.SafeSummary,
+		"error_category":            category,
+		"revision":                  gorm.Expr("revision+1"),
+	}
+	res := s.db.WithContext(ctx).Model(&AgentRun{}).
+		Where("id=? AND status=? AND lease_owner=? AND finalization_attempted=?", run.ID, "running", run.LeaseOwner, false).
+		Updates(updates)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected != 1 {
+		return errs.New(errs.CodeConflict, "agent run finalization attempt changed")
+	}
+	run.FinalizationAttempted = true
+	run.FinalizationMode = string(decision.Mode)
+	run.TerminalProtocolVersion = decision.ProtocolVersion
+	run.TerminalReason = decision.TerminalReason
+	run.Retryable = decision.Retryable
+	run.UserMessageKey = decision.UserMessageKey
+	run.SafeSummary = decision.SafeSummary
+	run.ErrorCategory = category
+	return nil
+}
+
+func (s *AgentRuntimeService) markRefusalDetected(ctx context.Context, run *AgentRun, decision aiagentruntime.TerminalDecision) error {
+	category := string(aimodelruntime.ErrorContentFiltered)
+	updates := map[string]any{
+		"error_category": category, "terminal_protocol_version": decision.ProtocolVersion,
+		"terminal_reason": decision.TerminalReason, "completion_reason": decision.CompletionReason,
+		"finalization_mode": decision.Mode, "retryable": decision.Retryable,
+		"user_message_key": decision.UserMessageKey, "safe_summary": decision.SafeSummary,
+		"revision": gorm.Expr("revision+1"),
+	}
+	res := s.db.WithContext(ctx).Model(&AgentRun{}).
+		Where("id=? AND status=? AND lease_owner=?", run.ID, "running", run.LeaseOwner).
+		Updates(updates)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected != 1 {
+		return errs.New(errs.CodeConflict, "agent run refusal state changed")
+	}
+	run.ErrorCategory = category
+	run.TerminalProtocolVersion = decision.ProtocolVersion
+	run.TerminalReason = decision.TerminalReason
+	run.CompletionReason = decision.CompletionReason
+	run.FinalizationMode = string(decision.Mode)
+	run.Retryable = decision.Retryable
+	run.UserMessageKey = decision.UserMessageKey
+	run.SafeSummary = decision.SafeSummary
+	return nil
+}
+
+func (s *AgentRuntimeService) finalizeSafeFailure(ctx context.Context, run *AgentRun, category, modelAlias string, budget aiagentruntime.Budget, startedAt time.Time) error {
+	operations, err := loadTerminalOperationSummary(s.db.WithContext(ctx), run.ID)
+	if err != nil {
+		return s.fail(ctx, run, category)
+	}
+	canUseModel := s.invocations != nil && s.conversations != nil && s.contextBudget != nil &&
+		!run.FinalizationAttempted && run.ModelCalls < budget.MaxModelCalls
+	decision := aiagentruntime.DecideTerminal(aiagentruntime.TerminalDecisionInput{
+		Status: aiagentruntime.RunFailed, ErrorCategory: category, CanUseModel: canUseModel,
+		CompletedOperations: operations.Completed,
+	})
+	if decision.Mode != aiagentruntime.FinalizationModel {
+		return s.fail(ctx, run, category)
+	}
+	locale := ""
+	if actor, ok := auth.FromContext(ctx); ok {
+		locale = actor.Language
+	}
+	envelope, err := json.Marshal(aiagentruntime.BuildFailureEnvelope(decision, aiagentruntime.TerminalOperationSummary{
+		Completed: operations.Completed, Failed: operations.Failed, Unfinished: operations.Unfinished,
+	}, locale))
+	if err != nil {
+		return s.fail(ctx, run, category)
+	}
+	request := safeTerminalRequest(modelAlias, run.ID, envelope)
+	estimatedInput, err := s.estimateRuntimeRequest(ctx, request)
+	if err != nil {
+		return s.fail(ctx, run, category)
+	}
+	remaining := budget.RunTokenBudget - run.InputTokens - run.OutputTokens - int64(estimatedInput)
+	maxOutput := int64(512)
+	if remaining < maxOutput {
+		maxOutput = remaining
+	}
+	if maxOutput < aiagentruntime.MinCompletionOutputTokens {
+		return s.fail(ctx, run, category)
+	}
+	request.MaxOutputTokens = &maxOutput
+	if err = s.markFinalizationAttempted(ctx, run, decision, category); err != nil {
+		return err
+	}
+	step, err := s.newStep(ctx, run, aiagentruntime.StepFinalize, map[string]any{
+		"terminal_protocol_version": decision.ProtocolVersion, "terminal_reason": decision.TerminalReason,
+		"finalization_mode": decision.Mode, "retryable": decision.Retryable,
+		"completed_operation_count": operations.Completed, "max_output_tokens": maxOutput,
+	})
+	if err != nil {
+		return s.fail(ctx, run, category)
+	}
+	value, callErr := s.invocations.Generate(ctx, request)
+	response, responseOK := asGenerateResponse(value)
+	if callErr == nil && !responseOK {
+		callErr = &aimodelruntime.RuntimeError{Category: aimodelruntime.ErrorResponseMismatch, Message: "invalid terminal finalization response"}
+	}
+	run.ModelCalls++
+	terminalCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	_ = s.attachModelInvocationMode(terminalCtx, run, step, response.InvocationID, "generate")
+	_ = s.syncModelUsage(terminalCtx, run)
+	if callErr != nil {
+		_ = s.finishStep(terminalCtx, run, step, "failed", map[string]any{"fallback": "template"}, modelFailureCategory(callErr))
+		return s.fail(terminalCtx, run, category)
+	}
+	text, hasToolCall, hasRefusal := terminalResponseText(response)
+	if strings.TrimSpace(text) == "" || hasToolCall || hasRefusal || response.FinishReason == aimodelruntime.FinishContentFilter {
+		_ = s.finishStep(terminalCtx, run, step, "failed", map[string]any{"fallback": "template", "tool_calls_ignored": hasToolCall}, "finalization_invalid_output")
+		return s.fail(terminalCtx, run, category)
+	}
+	messageID, err := s.commitTerminalMessage(terminalCtx, run, text, "run-terminal-final:"+run.ID, startedAt)
+	if err != nil {
+		_ = s.finishStep(terminalCtx, run, step, "failed", map[string]any{"fallback": "notice_only"}, "finalize_failed")
+		return s.fail(terminalCtx, run, "finalize_failed")
+	}
+	run.TerminalMessageID = &messageID
+	_ = s.finishStep(terminalCtx, run, step, "completed", map[string]any{"message_committed": true, "terminal_message_id": messageID}, "")
+	return s.terminalWithDecision(terminalCtx, run, "failed", category, "", true, decision)
+}
+
+func safeTerminalRequest(modelAlias, runID string, envelope []byte) aimodelruntime.GenerateRequest {
+	return aimodelruntime.GenerateRequest{
+		ModelAlias:   modelAlias,
+		EnableTools:  false,
+		ToolChoice:   &aimodelruntime.ToolChoice{Mode: "none"},
+		Instructions: prompt.MustGet("ai/safe-terminal-finalization"),
+		Messages: []aimodelruntime.Message{{
+			Role:    aimodelruntime.RoleUser,
+			Content: []aimodelruntime.ContentPart{{Type: aimodelruntime.PartInputText, Text: string(envelope)}},
+		}},
+		Metadata: map[string]string{
+			"agent_run_id": runID, "terminal_protocol_version": aiagentruntime.TerminalProtocolVersion, "finalization": "safe_failure",
+		},
+	}
+}
+
+func terminalResponseText(response aimodelruntime.GenerateResponse) (text string, hasToolCall, hasRefusal bool) {
+	for _, item := range response.Output {
+		switch item.Type {
+		case aimodelruntime.PartOutputText:
+			text += item.Text
+		case aimodelruntime.PartToolCall:
+			hasToolCall = true
+		case aimodelruntime.PartRefusal:
+			hasRefusal = true
+		}
+	}
+	return text, hasToolCall, hasRefusal
+}
+
+func (s *AgentRuntimeService) commitTerminalMessage(ctx context.Context, run *AgentRun, text, idempotencyKey string, startedAt time.Time) (string, error) {
+	streamID, err := s.conversations.Begin(ctx, run.ConversationID, idempotencyKey, run.ID)
+	if err != nil {
+		return "", err
+	}
+	if err = s.conversations.Append(ctx, streamID, aiconversation.StreamDelta{Cursor: 1, Type: "output_text.delta", Data: []byte(text)}); err != nil {
+		return "", err
+	}
+	logging.Info(ctx, "agent terminal message persisted", "agent_first_delta_latency_ms", s.now().Sub(startedAt).Milliseconds(), "finalization_mode", run.FinalizationMode)
+	return s.conversations.Commit(ctx, streamID, []aimodelruntime.ContentPart{{Type: aimodelruntime.PartOutputText, Text: text}})
+}
+
+func (s *AgentRuntimeService) recoverTerminalFinalization(ctx context.Context, run *AgentRun) (bool, error) {
+	if !run.FinalizationAttempted || run.Status != "running" {
+		return false, nil
+	}
+	var stream AssistantStream
+	err := s.db.WithContext(ctx).Where("conversation_id=? AND run_id=? AND idempotency_key=?", run.ConversationID, run.ID, "run-terminal-final:"+run.ID).First(&stream).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return true, s.fail(ctx, run, run.ErrorCategory)
+	}
+	if err != nil {
+		return false, err
+	}
+	if stream.Status == "streaming" {
+		var deltas []AssistantStreamDelta
+		if err = s.db.WithContext(ctx).Where("stream_id=? AND type=?", stream.ID, "output_text.delta").Order("cursor ASC").Find(&deltas).Error; err != nil {
+			return false, err
+		}
+		var text strings.Builder
+		for _, delta := range deltas {
+			text.Write(delta.Data)
+		}
+		if strings.TrimSpace(text.String()) == "" {
+			return true, s.fail(ctx, run, run.ErrorCategory)
+		}
+		messageID, commitErr := s.conversations.Commit(ctx, stream.ID, []aimodelruntime.ContentPart{{Type: aimodelruntime.PartOutputText, Text: text.String()}})
+		if commitErr != nil {
+			return true, s.fail(ctx, run, "finalize_failed")
+		}
+		stream.MessageID = &messageID
+	}
+	if stream.MessageID == nil {
+		return true, s.fail(ctx, run, "finalize_failed")
+	}
+	run.TerminalMessageID = stream.MessageID
+	decision := aiagentruntime.DecideTerminal(aiagentruntime.TerminalDecisionInput{Status: aiagentruntime.RunFailed, ErrorCategory: run.ErrorCategory, CanUseModel: true})
+	return true, s.terminalWithDecision(ctx, run, "failed", run.ErrorCategory, "", true, decision)
+}
+
+func (s *AgentRuntimeService) recoverRefusalFinalization(ctx context.Context, run *AgentRun) (bool, error) {
+	if run.Status != "running" || run.ErrorCategory != string(aimodelruntime.ErrorContentFiltered) || run.TerminalReason != "safety_refusal" {
+		return false, nil
+	}
+	decision := aiagentruntime.DecideTerminal(aiagentruntime.TerminalDecisionInput{
+		Status: aiagentruntime.RunFailed, ErrorCategory: string(aimodelruntime.ErrorContentFiltered), HasSafeRefusalText: true,
+	})
+	var stream AssistantStream
+	err := s.db.WithContext(ctx).Where("conversation_id=? AND run_id=? AND idempotency_key=?", run.ConversationID, run.ID, "run-refusal:"+run.ID).First(&stream).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return true, s.fail(ctx, run, string(aimodelruntime.ErrorContentFiltered))
+	}
+	if err != nil {
+		return false, err
+	}
+	if stream.Status == "streaming" {
+		var deltas []AssistantStreamDelta
+		if err = s.db.WithContext(ctx).Where("stream_id=? AND type=?", stream.ID, "output_text.delta").Order("cursor ASC").Find(&deltas).Error; err != nil {
+			return false, err
+		}
+		var text strings.Builder
+		for _, delta := range deltas {
+			text.Write(delta.Data)
+		}
+		if strings.TrimSpace(text.String()) == "" {
+			return true, s.fail(ctx, run, string(aimodelruntime.ErrorContentFiltered))
+		}
+		messageID, commitErr := s.conversations.Commit(ctx, stream.ID, []aimodelruntime.ContentPart{{Type: aimodelruntime.PartOutputText, Text: text.String()}})
+		if commitErr != nil {
+			return true, s.fail(ctx, run, "finalize_failed")
+		}
+		stream.MessageID = &messageID
+	}
+	if stream.MessageID == nil {
+		return true, s.fail(ctx, run, "finalize_failed")
+	}
+	run.TerminalMessageID = stream.MessageID
+	return true, s.terminalWithDecision(ctx, run, string(decision.Status), "", decision.CompletionReason, true, decision)
+}
+
 func (s *AgentRuntimeService) commitFinalAnswer(ctx context.Context, run *AgentRun, text string, startedAt time.Time, completionReason string) error {
 	finalStep, stepErr := s.newStep(ctx, run, aiagentruntime.StepFinalize, map[string]any{"text_bytes": len(text), "completion_reason": completionReason})
 	if stepErr != nil {
@@ -1044,10 +1372,12 @@ func (s *AgentRuntimeService) commitFinalAnswer(ctx context.Context, run *AgentR
 		return s.fail(ctx, run, "finalize_failed")
 	}
 	logging.Info(ctx, "agent first delta persisted", "agent_first_delta_latency_ms", s.now().Sub(startedAt).Milliseconds())
-	if _, err = s.conversations.Commit(ctx, streamID, []aimodelruntime.ContentPart{{Type: aimodelruntime.PartOutputText, Text: text}}); err != nil {
+	messageID, err := s.conversations.Commit(ctx, streamID, []aimodelruntime.ContentPart{{Type: aimodelruntime.PartOutputText, Text: text}})
+	if err != nil {
 		return s.fail(ctx, run, "finalize_failed")
 	}
-	_ = s.finishStep(ctx, run, finalStep, "completed", map[string]any{"message_committed": true, "completion_reason": completionReason}, "")
+	run.TerminalMessageID = &messageID
+	_ = s.finishStep(ctx, run, finalStep, "completed", map[string]any{"message_committed": true, "completion_reason": completionReason, "terminal_message_id": messageID}, "")
 	return s.completeWithReason(ctx, run, completionReason)
 }
 
@@ -1061,6 +1391,7 @@ func (s *AgentRuntimeService) recoverFinalAnswer(ctx context.Context, run *Agent
 		return false, err
 	}
 	if stream.Status == "committed" {
+		run.TerminalMessageID = stream.MessageID
 		return true, nil
 	}
 	if stream.Status != "streaming" {
@@ -1077,9 +1408,11 @@ func (s *AgentRuntimeService) recoverFinalAnswer(ctx context.Context, run *Agent
 	if strings.TrimSpace(text.String()) == "" {
 		return false, nil
 	}
-	if _, err := s.conversations.Commit(ctx, stream.ID, []aimodelruntime.ContentPart{{Type: aimodelruntime.PartOutputText, Text: text.String()}}); err != nil {
+	messageID, err := s.conversations.Commit(ctx, stream.ID, []aimodelruntime.ContentPart{{Type: aimodelruntime.PartOutputText, Text: text.String()}})
+	if err != nil {
 		return false, err
 	}
+	run.TerminalMessageID = &messageID
 	var step AgentStep
 	if err := s.db.WithContext(ctx).Where("run_id=? AND type=? AND status=?", run.ID, string(aiagentruntime.StepFinalize), string(aiagentruntime.StepRunning)).Order("step_index DESC").First(&step).Error; err == nil {
 		_ = s.finishStep(ctx, run, &step, "completed", map[string]any{"message_committed": true, "recovered": true}, "")
@@ -1459,9 +1792,13 @@ func (s *AgentRuntimeService) streamModel(ctx context.Context, run *AgentRun, re
 }
 
 func (s *AgentRuntimeService) attachModelInvocation(ctx context.Context, run *AgentRun, step *AgentStep, invocationID string) error {
+	return s.attachModelInvocationMode(ctx, run, step, invocationID, "stream")
+}
+
+func (s *AgentRuntimeService) attachModelInvocationMode(ctx context.Context, run *AgentRun, step *AgentStep, invocationID, mode string) error {
 	if invocationID == "" {
 		var invocation modelruntime.ModelInvocation
-		if err := s.db.WithContext(ctx).Where("agent_run_id=? AND mode=?", run.ID, "stream").Order("created_at DESC").First(&invocation).Error; err != nil {
+		if err := s.db.WithContext(ctx).Where("agent_run_id=? AND mode=?", run.ID, mode).Order("created_at DESC").First(&invocation).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return nil
 			}
@@ -2303,16 +2640,85 @@ func (s *AgentRuntimeService) complete(ctx context.Context, run *AgentRun) error
 func (s *AgentRuntimeService) completeWithReason(ctx context.Context, run *AgentRun, completionReason string) error {
 	return s.terminalLike(ctx, run, "completed", "", completionReason, true)
 }
+
+type terminalOperationSummary struct {
+	Completed  int `gorm:"column:completed"`
+	Failed     int `gorm:"column:failed"`
+	Unfinished int `gorm:"column:unfinished"`
+}
+
+func loadTerminalOperationSummary(tx *gorm.DB, runID string) (terminalOperationSummary, error) {
+	var summary terminalOperationSummary
+	err := tx.Model(&AgentStep{}).Where("run_id=? AND type=?", runID, string(aiagentruntime.StepToolExecute)).
+		Select(`COUNT(*) FILTER (WHERE status='completed' AND tool_invocation_id IS NOT NULL) AS completed,
+			COUNT(*) FILTER (WHERE status='failed' AND tool_invocation_id IS NOT NULL) AS failed,
+			COUNT(*) FILTER (WHERE status NOT IN ('completed','failed','cancelled')) AS unfinished`).
+		Scan(&summary).Error
+	return summary, err
+}
+
+func terminalSafeArgs(decision aiagentruntime.TerminalDecision, operations terminalOperationSummary) json.RawMessage {
+	value, _ := json.Marshal(map[string]any{
+		"retryable":                  decision.Retryable,
+		"completed_operation_count":  operations.Completed,
+		"failed_operation_count":     operations.Failed,
+		"unfinished_operation_count": operations.Unfinished,
+	})
+	return value
+}
+
+func terminalDecision(run *AgentRun, status, category, completionReason string) aiagentruntime.TerminalDecision {
+	if status == string(aiagentruntime.RunCompleted) && category == "" {
+		decision := aiagentruntime.TerminalDecision{
+			ProtocolVersion:  aiagentruntime.TerminalProtocolVersion,
+			Status:           aiagentruntime.RunCompleted,
+			TerminalReason:   completionReason,
+			CompletionReason: completionReason,
+			Mode:             aiagentruntime.FinalizationNone,
+		}
+		if completionReason == "budget_limit" {
+			decision.Mode = aiagentruntime.FinalizationModel
+			decision.UserMessageKey = "ai.run.terminal.budget_limit"
+			decision.SafeSummary = "run_budget_exhausted"
+		}
+		return decision
+	}
+	return aiagentruntime.DecideTerminal(aiagentruntime.TerminalDecisionInput{
+		Status:        aiagentruntime.RunStatus(status),
+		ErrorCategory: category,
+	})
+}
+
 func (s *AgentRuntimeService) terminalLike(ctx context.Context, run *AgentRun, status, category, completionReason string, finished bool) error {
+	return s.terminalWithDecision(ctx, run, status, category, completionReason, finished, terminalDecision(run, status, category, completionReason))
+}
+
+func (s *AgentRuntimeService) terminalWithDecision(ctx context.Context, run *AgentRun, status, category, completionReason string, finished bool, decision aiagentruntime.TerminalDecision) error {
 	if err := aiagentruntime.ValidateRunTransition(aiagentruntime.RunStatus(run.Status), aiagentruntime.RunStatus(status)); err != nil {
 		return errs.New(errs.CodeConflict, err.Error())
 	}
 	now := s.now()
-	updates := map[string]any{"status": status, "error_category": category, "completion_reason": completionReason, "lease_owner": "", "lease_expires_at": nil, "revision": gorm.Expr("revision+1")}
+	updates := map[string]any{
+		"status": status, "error_category": category, "completion_reason": completionReason,
+		"terminal_protocol_version": decision.ProtocolVersion, "terminal_reason": decision.TerminalReason,
+		"finalization_mode": decision.Mode, "retryable": decision.Retryable,
+		"user_message_key": decision.UserMessageKey, "safe_summary": decision.SafeSummary,
+		"terminal_message_id": run.TerminalMessageID,
+		"lease_owner":         "", "lease_expires_at": nil, "revision": gorm.Expr("revision+1"),
+	}
 	if finished {
 		updates["finished_at"] = now
 	}
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		operations, e := loadTerminalOperationSummary(tx, run.ID)
+		if e != nil {
+			return e
+		}
+		updates["completed_operation_count"] = operations.Completed
+		updates["failed_operation_count"] = operations.Failed
+		updates["unfinished_operation_count"] = operations.Unfinished
+		safeArgs := terminalSafeArgs(decision, operations)
+		updates["safe_args"] = safeArgs
 		res := tx.Model(&AgentRun{}).Where("id=? AND status=? AND lease_owner=?", run.ID, run.Status, run.LeaseOwner).Updates(updates)
 		if res.Error != nil {
 			return res.Error
@@ -2321,11 +2727,21 @@ func (s *AgentRuntimeService) terminalLike(ctx context.Context, run *AgentRun, s
 			return errs.New(errs.CodeConflict, "agent run lease changed")
 		}
 		event := "run." + status
-		if e := s.appendEvent(ctx, tx, run, event, nil, map[string]any{"error_category": category, "completion_reason": completionReason}); e != nil {
+		payload := map[string]any{
+			"error_category": category, "completion_reason": completionReason,
+			"terminal_protocol_version": decision.ProtocolVersion, "terminal_reason": decision.TerminalReason,
+			"finalization_mode": decision.Mode, "finalization_attempted": run.FinalizationAttempted,
+			"retryable": decision.Retryable, "user_message_key": decision.UserMessageKey,
+			"safe_args": safeArgs, "safe_summary": decision.SafeSummary, "terminal_message_id": run.TerminalMessageID,
+			"completed_operation_count": operations.Completed, "failed_operation_count": operations.Failed,
+			"unfinished_operation_count": operations.Unfinished,
+		}
+		if e := s.appendEvent(ctx, tx, run, event, nil, payload); e != nil {
 			return e
 		}
 		if finished && s.writer != nil {
-			_, e := s.writer.Append(ctx, tx, outbox.AppendInput{EventType: agentRunTerminalEvent, AggregateType: "ai_agent_run", AggregateID: run.ID, AggregateVersion: int64(run.Revision + 1), Payload: map[string]any{"run_id": run.ID, "status": status, "error_category": category, "completion_reason": completionReason}})
+			payload["run_id"], payload["status"] = run.ID, status
+			_, e := s.writer.Append(ctx, tx, outbox.AppendInput{EventType: agentRunTerminalEvent, AggregateType: "ai_agent_run", AggregateID: run.ID, AggregateVersion: int64(run.Revision + 1), Payload: payload})
 			return e
 		}
 		return nil
@@ -2336,6 +2752,20 @@ func (s *AgentRuntimeService) terminalLike(ctx context.Context, run *AgentRun, s
 	run.Status = status
 	run.ErrorCategory = category
 	run.CompletionReason = completionReason
+	run.TerminalProtocolVersion = decision.ProtocolVersion
+	run.TerminalReason = decision.TerminalReason
+	run.FinalizationMode = string(decision.Mode)
+	run.Retryable = decision.Retryable
+	run.UserMessageKey = decision.UserMessageKey
+	run.SafeSummary = decision.SafeSummary
+	if summary, summaryErr := loadTerminalOperationSummary(s.db.WithContext(ctx), run.ID); summaryErr == nil {
+		run.CompletedOperationCount = summary.Completed
+		run.FailedOperationCount = summary.Failed
+		run.UnfinishedOperationCount = summary.Unfinished
+	}
+	run.SafeArgsJSON = terminalSafeArgs(decision, terminalOperationSummary{
+		Completed: run.CompletedOperationCount, Failed: run.FailedOperationCount, Unfinished: run.UnfinishedOperationCount,
+	})
 	run.LeaseOwner = ""
 	run.LeaseExpiresAt = nil
 	if finished {

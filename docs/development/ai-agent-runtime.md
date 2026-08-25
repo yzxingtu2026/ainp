@@ -10,6 +10,22 @@ Run 固定 tenant、actor、session/auth version、origin request ID、trace ID�
 
 Run 状态为 queued/running/waiting_confirmation/paused/completed/failed/cancelled；Step 为 pending/running/waiting/completed/failed/skipped/cancelled。非法迁移 fail-closed，completed/cancelled 不可恢复；failed 只能显式 retry。
 
+## 安全终态协议
+
+每个终态统一写入版本化事实：`terminal_protocol_version`、`terminal_reason`、`completion_reason`、`finalization_mode=model|template|notice_only|none`、`finalization_attempted`、`retryable`、`user_message_key`、`safe_args`、`safe_summary`、`terminal_message_id`，以及 completed/failed/unfinished 工具操作计数。`safe_args` 只包含重试布尔值和这三个有界计数。Run、终态 Event 与 `ai.agent_run.terminal.v1` Outbox 使用同一份安全投影并在同一事务提交，SSE 重连和详情查询不得重新推断终态。
+
+集中决策矩阵只允许以下双轨行为：
+
+- 业务校验、资源不存在、Tool 失败、部分结果及可安全降级的文档/上下文错误，在授权已重验、当前 Provider 未失败、模型与 Token 预算仍足够时，可使用 `FailureEnvelope v1` 做最多一次无工具模型收尾。
+- Provider/模型认证、限流、超时、不可用、协议错误，授权/租户/安全边界变化，持久化不可用、未知错误和用户取消禁止再次调用模型，直接使用本地化模板或 notice-only。
+- Provider 拒绝包含可安全展示文本时，按原文提交 assistant Message，Run 为 `completed` 且 `completion_reason=safety_refusal`；只有拒绝分类时使用本地模板。禁止调用其他模型改写或弱化拒绝。
+
+`FailureEnvelope v1` 由代码从白名单字段构造，只包含稳定终态类别、安全摘要、`retryable`、受控 locale、下一步动作和有界 completed/failed/unfinished 操作计数。禁止接收任意错误 map，也禁止包含 SQL、堆栈、Secret、Token、Handle、对象存储标识、权限内部细节、附件/消息正文、压缩摘要、完整 Tool 参数/Result、Provider 原始响应或隐藏推理。Envelope 仅作为本次临时 user 级输入，不写 canonical Message、日志、Event、Outbox 或普通 API。
+
+模型收尾在调用前原子写入 `finalization_attempted=true`，请求清空 Tool Scope/Tools 并强制 `tool_choice=none`，最多输出 512 Token 且仍受 Run 原始模型次数和 Token 硬预算约束。返回 Tool Call、拒绝、空文本、Provider 错误或超时后只降级一次模板；不得执行 Tool Call、伪造 Tool Result、递归收尾、切换 Provider 或扩大预算。Worker 在调用前后或消息提交阶段崩溃时，恢复只消费稳定 attempt/stream/message 事实：已提交消息补齐终态，未形成可恢复消息则模板降级，绝不重复模型调用。
+
+状态语义保持真实：普通回答和带文本安全拒绝可为 `completed`；Provider、系统、协议和不可恢复 Runtime 故障即使有友好消息仍为 `failed`；用户取消始终为 `cancelled`。模板不是模型内容，不写 assistant Message；`terminal_message_id` 只指向真实持久化 assistant Message。已完成操作计数只统计 `tool_execute + completed + tool_invocation_id`，不得按错误类别或模型文本推断副作用。
+
 ## 运行预算
 
 租户管理员只通过“系统设置 → AI → Agent 运行预算”维护 `ai.agent_runtime_budget`。解析顺序固定为：平台硬上限 → 租户设置默认/覆盖 → Run 创建时固化。客户端 Start 请求不接受预算字段，不能放大服务端限制；Agent Version 级覆盖属于未来能力，首期不实现。
@@ -74,7 +90,7 @@ Builder 预览约束：
 
 Run 事件使用单调 sequence，查询和 SSE 均按 tenant/user + run 过滤，支持 `after_sequence` 续传。事件仅包含状态、游标、Step 类型、安全错误分类和可展示文本 delta；不包含 Secret、工具 Handle、完整敏感参数、压缩摘要或供应商原始响应。
 
-前端按稳定分类分别展示 timeout、cancelled、provider unavailable 与 stream protocol error。只有持久化事实中存在 `type=tool_execute`、`status=completed` 且关联真实 `tool_invocation_id` 的 Step，才可提示“已完成工具操作不会回滚”；不能仅依据 Run 错误分类推断发生过副作用。
+前端先展示 `terminal_message_id` 指向的持久化 assistant Message；无 Message 时按 `user_message_key` 展示本地化 terminal notice，最后才使用内置通用服务错误。重试按钮必须与 `retryable` 一致，普通用户界面不得展示 `model_failed` 等机器分类。只有持久化事实中存在 `type=tool_execute`、`status=completed` 且关联真实 `tool_invocation_id` 的 Step，才可提示“已完成工具操作不会回滚”；不能仅依据 Run 错误分类推断发生过副作用。
 
 Run/Step 终态与 `ai.agent_run.terminal.v1` 在同一事务提交。requested/resume 事件经 Outbox → Job，Job 使用稳定 idempotency key，崩溃后从 canonical Message、Snapshot、ToolInvocation 和 Confirmation 重建。
 

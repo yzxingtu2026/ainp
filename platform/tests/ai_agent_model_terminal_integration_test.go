@@ -124,7 +124,10 @@ func TestAgentModelTimeoutPersistsCanonicalTerminalFactsPostgres(t *testing.T) {
 		t.Fatalf("invocation terminal mismatch: %#v", invocation)
 	}
 	runRows, err := tenantdata.TenantRaw[ai.AgentRun](tdb, "SELECT * FROM ai_agent_runs WHERE tenant_id=? AND id=? LIMIT 1", run.ID)
-	if err != nil || len(runRows) != 1 || runRows[0].Status != "failed" || runRows[0].ErrorCategory != string(aimodelruntime.ErrorTimeout) {
+	if err != nil || len(runRows) != 1 || runRows[0].Status != "failed" || runRows[0].ErrorCategory != string(aimodelruntime.ErrorTimeout) ||
+		runRows[0].TerminalProtocolVersion != aiagentruntime.TerminalProtocolVersion || runRows[0].TerminalReason != "provider_failure" ||
+		runRows[0].FinalizationMode != string(aiagentruntime.FinalizationTemplate) || runRows[0].FinalizationAttempted || !runRows[0].Retryable ||
+		runRows[0].UserMessageKey != "ai.run.terminal.provider_unavailable" || runRows[0].TerminalMessageID != nil {
 		t.Fatalf("run terminal mismatch: rows=%#v err=%v", runRows, err)
 	}
 	stepRows, err := tenantdata.TenantRaw[ai.AgentStep](tdb, "SELECT * FROM ai_agent_steps WHERE tenant_id=? AND run_id=? AND type='model' LIMIT 1", run.ID)
@@ -143,6 +146,9 @@ func TestAgentModelTimeoutPersistsCanonicalTerminalFactsPostgres(t *testing.T) {
 		var payload map[string]any
 		if json.Unmarshal(event.Payload, &payload) != nil || payload["error_category"] != string(aimodelruntime.ErrorTimeout) {
 			t.Fatalf("terminal event mismatch: %#v payload=%#v", event, payload)
+		}
+		if event.Type == "run.failed" && (payload["terminal_reason"] != "provider_failure" || payload["finalization_mode"] != string(aiagentruntime.FinalizationTemplate) || payload["user_message_key"] != "ai.run.terminal.provider_unavailable") {
+			t.Fatalf("run terminal notice mismatch: %#v", payload)
 		}
 	}
 }

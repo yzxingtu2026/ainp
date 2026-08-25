@@ -174,6 +174,7 @@ func (a *OpenAIAdapter) Generate(ctx context.Context, in AdapterRequest) (*Gener
 					out.Output = append(out.Output, OutputItem{ID: item.ID, Type: PartOutputText, Text: c.Text})
 				} else if c.Type == "refusal" {
 					out.Output = append(out.Output, OutputItem{ID: item.ID, Type: PartRefusal, Text: c.Refusal})
+					out.FinishReason = FinishContentFilter
 				}
 			}
 		case "function_call":
@@ -219,6 +220,7 @@ func (a *OpenAIAdapter) Stream(ctx context.Context, in AdapterRequest) (EventStr
 	}
 	seq := int64(0)
 	responseID := ""
+	refused := false
 	toolArguments := map[string]string{}
 	mapper := func(data json.RawMessage) ([]StreamEvent, error) {
 		var e struct {
@@ -277,6 +279,14 @@ func (a *OpenAIAdapter) Stream(ctx context.Context, in AdapterRequest) (EventStr
 		case "response.output_text.delta":
 			event.Type = EventOutputTextDelta
 			event.Delta = e.Delta
+		case "response.refusal.delta":
+			refused = true
+			event.Type = EventOutputTextDelta
+			event.Delta = e.Delta
+			event.Item = &OutputItem{ID: itemID, Type: PartRefusal}
+		case "response.refusal.done":
+			refused = true
+			return nil, nil
 		case "response.function_call_arguments.delta":
 			event.Type = EventToolArgumentsDelta
 			event.Delta = e.Delta
@@ -296,6 +306,9 @@ func (a *OpenAIAdapter) Stream(ctx context.Context, in AdapterRequest) (EventStr
 		case "response.completed":
 			event.Type = EventResponseCompleted
 			event.FinishReason = FinishCompleted
+			if refused {
+				event.FinishReason = FinishContentFilter
+			}
 			if e.Response.Usage != nil {
 				event.Usage = &Usage{InputTokens: int64ptr(e.Response.Usage.InputTokens), OutputTokens: int64ptr(e.Response.Usage.OutputTokens), TotalTokens: int64ptr(e.Response.Usage.TotalTokens), Reported: true}
 			}

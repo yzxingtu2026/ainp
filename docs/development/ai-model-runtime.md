@@ -24,6 +24,12 @@ Model Runtime 返回运行时自有的 `ResultStream`：有界 `Events` 只承�
 
 文本 delta 和 Tool Arguments delta 都是追加式部分事实。失败前的文本可用于流式展示；未收到完整 tool call terminal 的 arguments 只能作为部分响应诊断，绝不能进入 Tool Runtime 执行。
 
+### 拒绝与终态映射
+
+OpenAI、Anthropic 与 OpenAI-Compatible Adapter 必须把供应商安全拒绝统一映射为 `PartRefusal` / `FinishContentFilter` 或稳定 `content_filtered` 分类，不得把拒绝误归为普通 `model_failed`。有安全拒绝文本时只允许原样交给 Agent Runtime 持久化；无文本时由 Runtime 的本地化模板兜底。Adapter、Model Runtime 和 Agent Runtime 均不得调用其他模型改写拒绝，也不得把 Provider 原始响应体、安全规则细节或请求正文放入 Invocation、日志、Event、Outbox 或 API。
+
+Agent Runtime 的安全终态模型调用属于独立 `finalization=safe_failure` Invocation：输入只能是 `FailureEnvelope v1`，必须 `EnableTools=false`、无 Tool Scope/Tools 且 `tool_choice=none`。Provider/Model Runtime 本身已失败、当前授权失效、用户取消或安全拒绝时禁止发起该调用。
+
 ## 结构化输出
 
 业务模块只能用 `StructuredOutput` 声明稳定名称、JSON Schema 和 strict 期望，不得直接构造供应商参数，也不得把输出约束放进 `GenerateRequest.Tools`。后者始终是可执行 Agent Tool，必须经过 Tool Registry、Scope、Handle、权限重校验和确认协议。
