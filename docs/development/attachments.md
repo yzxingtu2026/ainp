@@ -121,17 +121,20 @@ Local Provider 返回本服务流式 URL；未来 S3/OSS 可换预签名 URL，�
 
 | Action | 说明 | audit |
 |--------|------|-------|
-| `system.attachment_upload_prepare` | 准备上传 | true |
-| `system.attachment_download_prepare` | 准备下载（含 variant） | true |
+| `system.attachment_upload_prepare` | 准备上传；返回传输凭据，因此不暴露为 AI Tool | true |
+| `system.attachment_download_prepare` | 准备下载（含 variant）；返回传输凭据，因此不暴露为 AI Tool | true |
 | `system.attachment_bind` / `unbind` | 绑定/解绑 | true |
 | `system.attachment_list_by_resource` | 按资源列表 | true |
 | `system.attachment_list` | 分页列表（mine/all）；补充 `uploader_name`、`thumb_status` | false |
 | `system.attachment_mine_list` | authenticated 本人附件列表（Picker / 对话自助） | false |
 | `system.attachment_get` | 详情与 links；补充 `uploader_name`、`thumb_status` | false |
+| `system.attachment_content_inspect` | AI 按需查看文档片段或图片观察；每次重验授权/revision，结果为有界不可信文本 | false |
 | `system.attachment_policy_get` | 有效上传策略 | false |
 | `system.attachment_delete` | 删除（级联派生对象） | true |
 
 传输端点是专用 HTTP adapter，不接受业务参数；公开 `platform/host` 和官方应用都由 system 模块的同一 `OnHTTP` 注册自动获得 raw PUT、multipart POST 与下载路由，下游禁止复制 Gin Handler。权限决策只在 Action / 领域服务完成。审计记录 attachment/resource/size/type/result，**禁止**记录文件内容与 transfer token 明文。
+
+AI Tool Result 使用独立安全投影：上传/下载 prepare 因返回 transfer token/URL 而不进入 Tool Catalog；`system.attachment_get` 不返回 Provider/Object Key，`system.attachment_content_inspect` 不返回原始字节、base64、Object Key、下载 token/URL 或 Provider 管理字段。`attachment_id` 只用于定位，不能授予读取权限；内容查看必须在读取 ObjectStore 或调用 Vision 前重新执行 tenant、actor、Client Surface、AccessPolicy、ready 与 revision 校验。
 
 独立下游在非 HTTP 业务流程中读取已绑定附件时，只使用 `framework/platformresource.AttachmentReader`，由 `app.App.PlatformResources` 注入。该 Port 必须重新执行当前 tenant/principal、AccessPolicy、绑定、ready、variant、对象存在与大小校验，只返回最小元数据和受控 reader；禁止返回 object key、provider、transfer token 或内部 Model。
 

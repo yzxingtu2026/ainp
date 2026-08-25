@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/yzxingtu2026/ainp/platform/framework/action"
 	"github.com/yzxingtu2026/ainp/platform/framework/aiknowledge"
+	"github.com/yzxingtu2026/ainp/platform/framework/aimodelruntime"
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
 	"github.com/yzxingtu2026/ainp/platform/framework/attachment"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
@@ -161,6 +162,7 @@ func Register(a *app.App) error {
 	}
 	policyProvider := NewSettingUploadPolicyProvider(settingSvc.Provider())
 	attachSvc := NewAttachmentService(a.DB, a.Storage, a.TransferTokens, a.AttachmentPolicies, policyProvider)
+	attachSvc.SetModelRuntimeProvider(func() aimodelruntime.GenerationRuntime { return a.AIModelRuntime })
 	a.PlatformResources.Attachments = attachSvc.ResourceReader()
 	a.PlatformResources.Principals = access.NewPrincipalResourceService(a.DB, a.Auditor)
 	if err := a.PlatformResources.Validate(); err != nil {

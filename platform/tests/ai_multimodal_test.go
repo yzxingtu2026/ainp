@@ -89,6 +89,61 @@ func TestProviderAdaptersReceiveDerivedDocumentTextWithoutInternalReferences(t *
 	}
 }
 
+func TestProviderAdaptersReceiveAttachmentManifestAndSafeInspectionResultWithoutOmittedMedia(t *testing.T) {
+	manifest := `ATTACHMENT REFERENCE MANIFEST: {"schema_version":"1","attachments":[{"source_sequence":1,"attachment_id":"image-history","attachment_revision":"revision-history","content_kind":"image"},{"source_sequence":2,"attachment_id":"document-history","attachment_revision":"revision-document","content_kind":"document"}]}`
+	result := json.RawMessage(`{"status":"completed","data":{"attachment_id":"image-history","attachment_revision":"revision-history","original_name":"invoice.png","mime":"image/png","content_kind":"image","status":"ready","observations":[{"location":"image","text":"invoice total 100"}],"truncated":false,"untrusted":true}}`)
+	messages := []aimodelruntime.Message{
+		{Role: aimodelruntime.RoleDeveloper, Content: []aimodelruntime.ContentPart{{Type: aimodelruntime.PartInputText, Text: manifest}}},
+		{Role: aimodelruntime.RoleUser, Content: []aimodelruntime.ContentPart{{Type: aimodelruntime.PartInputText, Text: "inspect the earlier image"}}},
+		{Role: aimodelruntime.RoleAssistant, Content: []aimodelruntime.ContentPart{{Type: aimodelruntime.PartToolCall, ToolCallID: "inspect-1", ToolName: "system__attachment_content_inspect", Arguments: json.RawMessage(`{"attachment_id":"image-history","attachment_revision":"revision-history"}`)}}},
+		{Role: aimodelruntime.RoleTool, Content: []aimodelruntime.ContentPart{{Type: aimodelruntime.PartToolResult, ToolCallID: "inspect-1", Result: result}}},
+	}
+	for _, test := range []struct {
+		name, protocol, response string
+		invoke                   func(*http.Client, aimodelruntime.AdapterRequest) error
+	}{
+		{name: "openai", protocol: aimodel.ProtocolOpenAI, response: `{"id":"resp","status":"completed","output":[]}`, invoke: func(client *http.Client, request aimodelruntime.AdapterRequest) error {
+			_, err := aimodelruntime.NewOpenAIAdapter(client).Generate(context.Background(), request)
+			return err
+		}},
+		{name: "anthropic", protocol: aimodel.ProtocolAnthropic, response: `{"id":"msg","stop_reason":"end_turn","content":[],"usage":{"input_tokens":1,"output_tokens":1}}`, invoke: func(client *http.Client, request aimodelruntime.AdapterRequest) error {
+			_, err := aimodelruntime.NewAnthropicAdapter(client).Generate(context.Background(), request)
+			return err
+		}},
+		{name: "openai-compatible", protocol: aimodel.ProtocolOpenAICompatible, response: `{"id":"chat","choices":[{"finish_reason":"stop","message":{"content":"ok"}}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`, invoke: func(client *http.Client, request aimodelruntime.AdapterRequest) error {
+			_, err := aimodelruntime.NewOpenAICompatibleAdapter(client).Generate(context.Background(), request)
+			return err
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var body string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+				var raw json.RawMessage
+				_ = json.NewDecoder(request.Body).Decode(&raw)
+				body = string(raw)
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(test.response))
+			}))
+			defer server.Close()
+			request := fixtureAdapterRequest(server.URL, test.protocol)
+			request.Request.Messages = messages
+			if err := test.invoke(server.Client(), request); err != nil {
+				t.Fatal(err)
+			}
+			for _, expected := range []string{"image-history", "revision-history", "document-history", "revision-document", "invoice total 100", "untrusted"} {
+				if !strings.Contains(body, expected) {
+					t.Fatalf("%s wire payload missing %q: %s", test.name, expected, body)
+				}
+			}
+			for _, forbidden := range []string{"object_key", "download_url", "provider_file_id", "data:image", "base64"} {
+				if strings.Contains(strings.ToLower(body), forbidden) {
+					t.Fatalf("%s wire payload leaked omitted media field %q: %s", test.name, forbidden, body)
+				}
+			}
+		})
+	}
+}
+
 func TestProviderAdaptersRejectUnexpandedInputFile(t *testing.T) {
 	request := fixtureAdapterRequest("http://invalid.local", aimodel.ProtocolOpenAI)
 	request.Request.Messages[0].Content = []aimodelruntime.ContentPart{{Type: aimodelruntime.PartInputFile, FileAttachmentID: "att", AttachmentRevision: "rev"}}

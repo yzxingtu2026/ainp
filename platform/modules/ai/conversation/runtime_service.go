@@ -668,6 +668,7 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 	if err != nil {
 		return s.fail(ctx, run, "agent_version_unavailable")
 	}
+	ctx = aimodelruntime.WithModelAlias(ctx, version.ModelAlias)
 	if s.contextBudget == nil {
 		return s.fail(ctx, run, "model_context_budget_unavailable")
 	}
@@ -1155,8 +1156,9 @@ func (s *AgentRuntimeService) runtimeMessages(ctx context.Context, run *AgentRun
 			reason = "run_budget_pressure"
 		}
 		result, err := s.compactor.Compact(ctx, aiconversation.CompactionRequest{
-			ConversationID: run.ConversationID, ModelAlias: modelAlias,
+			ConversationID: run.ConversationID, TriggerMessageID: run.TriggerMessageID, ModelAlias: modelAlias,
 			ReservedOutputTokens: int(reserve.OutputTokens), SafetyMarginTokens: int(reserve.SafetyTokens),
+			AttachmentTokens:  assembly.AttachmentTokens,
 			TargetInputTokens: targetInputTokens, Reason: reason, AgentRunID: run.ID, DisableTools: disableTools,
 			IdempotencyKey: fmt.Sprintf("run:%s:compact:%d:%d", run.ID, run.Compactions, targetInputTokens), ParentSnapshotID: run.ContextSnapshotID,
 		})
@@ -1210,6 +1212,7 @@ func (s *AgentRuntimeService) runtimeMessages(ctx context.Context, run *AgentRun
 			if err != nil {
 				return nil, nil, err
 			}
+			messages = injectAttachmentReferenceManifest(messages, assembly.AttachmentManifest)
 			return injectPageContext(injectTrustedRuntimeContext(messages, trusted), pageSnapshot), &id, nil
 		}
 	}
@@ -1217,7 +1220,31 @@ func (s *AgentRuntimeService) runtimeMessages(ctx context.Context, run *AgentRun
 	for _, m := range assembly.Messages {
 		messages = append(messages, aimodelruntime.Message{Role: m.Role, Content: m.Content})
 	}
+	messages = injectAttachmentReferenceManifest(messages, assembly.AttachmentManifest)
 	return injectPageContext(injectTrustedRuntimeContext(messages, trusted), pageSnapshot), nil, nil
+}
+
+func injectAttachmentReferenceManifest(messages []aimodelruntime.Message, manifest aiconversation.AttachmentReferenceManifest) []aimodelruntime.Message {
+	if len(manifest.Attachments) == 0 {
+		return messages
+	}
+	body, _ := json.Marshal(manifest)
+	section := aimodelruntime.Message{Role: aimodelruntime.RoleDeveloper, Content: []aimodelruntime.ContentPart{{
+		Type: aimodelruntime.PartInputText,
+		Text: prompt.Render("ai/attachment-reference-manifest", map[string]any{"Payload": string(body)}),
+	}}}
+	index := len(messages)
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role == aimodelruntime.RoleUser {
+			index = i
+			break
+		}
+	}
+	out := make([]aimodelruntime.Message, 0, len(messages)+1)
+	out = append(out, messages[:index]...)
+	out = append(out, section)
+	out = append(out, messages[index:]...)
+	return out
 }
 
 func (s *AgentRuntimeService) attachPageContextRefs(ctx context.Context, snapshotID string, snapshot *pagecontext.Snapshot) error {

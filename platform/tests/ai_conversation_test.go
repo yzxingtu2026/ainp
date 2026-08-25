@@ -236,23 +236,66 @@ func TestConversationAssembleBoundsHistoricalNativeImagesWithoutReadingOmittedAs
 	if strings.Join(resolver.calls, ",") != "image-2,image-3,image-4,image-5" {
 		t.Fatalf("omitted oldest image must not be resolved, calls=%v", resolver.calls)
 	}
-	native, manifests := 0, 0
+	native, placeholders := 0, 0
 	for _, message := range assembled.Messages {
 		for _, part := range message.Content {
 			if part.Type == aimodelruntime.PartInputImage {
 				native++
 			}
 			if part.Type == aimodelruntime.PartInputText && strings.Contains(part.Text, "outside the native media working set") {
-				manifests++
+				placeholders++
 			}
 		}
 	}
-	if native != 4 || manifests != 1 {
-		t.Fatalf("unexpected working set projection: native=%d manifests=%d", native, manifests)
+	if native != 4 || placeholders != 1 {
+		t.Fatalf("unexpected working set projection: native=%d placeholders=%d", native, placeholders)
+	}
+	manifest := assembled.AttachmentManifest
+	if manifest.SchemaVersion != "1" || len(manifest.Attachments) != 5 || assembled.AttachmentTokens <= 0 {
+		t.Fatalf("unexpected attachment manifest: %#v tokens=%d", manifest, assembled.AttachmentTokens)
+	}
+	for i, reference := range manifest.Attachments {
+		if reference.SourceSequence != uint64(i+1) || reference.AttachmentID != fmt.Sprintf("image-%d", i+1) || reference.AttachmentRevision != "rev" || reference.ContentKind != "image" {
+			t.Fatalf("attachment manifest order changed at %d: %#v", i, reference)
+		}
 	}
 	var canonical []ai.ConversationMessage
 	if err = migrationDB.Where("conversation_id=?", "conversation-document").Order("sequence ASC").Find(&canonical).Error; err != nil || len(canonical) != 6 {
 		t.Fatalf("canonical history changed: count=%d err=%v", len(canonical), err)
+	}
+}
+
+func TestConversationAssembleDoesNotReparseHistoricalDocuments(t *testing.T) {
+	db := openConversationDocumentTestDB(t)
+	createConversationDocumentFixture(t, db, []aimodelruntime.ContentPart{{Type: aimodelruntime.PartInputFile, FileAttachmentID: "file-history", AttachmentRevision: "rev-history"}})
+	migrationDB, err := tenantdata.MigrationDB(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	triggerBody, _ := json.Marshal([]aimodelruntime.ContentPart{{Type: aimodelruntime.PartInputText, Text: "continue"}})
+	trigger := ai.ConversationMessage{ID: "message-trigger", TenantID: "tenant-a", ConversationID: "conversation-document", Role: "user", Status: "committed", Sequence: 2, Content: triggerBody, IdempotencyKey: "fixture-trigger"}
+	if err = migrationDB.Create(&trigger).Error; err != nil {
+		t.Fatal(err)
+	}
+	resolver := &conversationDocumentResolverFake{document: resolvedConversationDocument("must not be parsed")}
+	service := ai.NewConversationService(db, nil)
+	service.SetDocumentResolver(resolver)
+	assembled, err := service.Assemble(conversationDocumentContext(""), aiconversation.AssemblyRequest{ConversationID: "conversation-document", TriggerMessageID: trigger.ID, MaxBytes: 1_000_000, MaxTokens: 250_000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolver.calls != 0 {
+		t.Fatalf("historical document was reparsed: calls=%d", resolver.calls)
+	}
+	if len(assembled.AttachmentManifest.Attachments) != 1 || assembled.AttachmentManifest.Attachments[0].AttachmentID != "file-history" || assembled.AttachmentManifest.Attachments[0].ContentKind != "document" {
+		t.Fatalf("historical document reference missing: %#v", assembled.AttachmentManifest)
+	}
+	for _, message := range assembled.Messages {
+		for _, part := range message.Content {
+			if part.Type == aimodelruntime.PartDerivedText || strings.Contains(part.Text, "must not be parsed") {
+				t.Fatalf("historical document content leaked into assembly: %#v", part)
+			}
+		}
 	}
 }
 

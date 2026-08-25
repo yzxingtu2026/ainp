@@ -43,7 +43,7 @@
 - AI 模型调用见 `ai-model-runtime`（统一 Generate/Stream、Adapter Registry、Invocation 与敏感信息边界）。
 - AI Embedding 调用见 `ai-embedding-runtime`（统一 Embed、批量向量协议、Invocation 与禁止旁路供应商）。
 - AI 多模态输入见 `ai-multimodal`（Content Parts、附件安全解析、媒体预算与不可信派生文本）。
-- 会话历史附件按 Run 构造有界原生媒体工作集；未选历史媒体不读取、不发送 Provider，canonical 附件事实不得改写。
+- 会话历史附件按 Run 构造有界原生媒体工作集和确定性 ID/revision Manifest；未选历史媒体不读取、不发送 Provider，历史文档只按需查看，canonical 附件事实不得改写。
 - AI 工具运行时见 `tool-runtime`（常驻 search/load、动态 Schema 投影、Handle、确认与调用事实）。
 - AI 智能体管理见 `agent-management`（Contract/Definition/不可变 Version、ownership、Alias 与 Tool Binding 边界）。
 - AI 功能默认智能体见 `agent-slots`（代码注册 Slot、分层覆盖、fail-closed 解析与 Conversation 固定 Version）。

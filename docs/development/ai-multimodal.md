@@ -1,6 +1,6 @@
 # AI 多模态输入开发规范
 
-Conversation 可永久保留多张 canonical `input_image` 引用，但单次 Provider 请求仍受 `MaxNativeImagesPerRequest` 硬上限约束。ContextAssembler 在解析媒体前构造 Run 级原生图片工作集：当前触发消息优先，其余按最近 sequence 补足；未选中的历史图片只投影不含 Attachment ID、Object Key、URL 或原始字节的安全 manifest，且不得调用 AssetResolver。Model Runtime 继续独立执行相同硬上限，作为最终 fail-closed 边界。
+Conversation 可永久保留多张 canonical `input_image` 引用，但单次 Provider 请求仍受 `MaxNativeImagesPerRequest` 硬上限约束。ContextAssembler 在解析媒体前构造 Run 级原生图片工作集：当前触发消息优先，其余按最近 sequence 补足；未选中的历史图片不得调用 AssetResolver。每次 Run 从全部 canonical 图片/文档另投影只含 `source_sequence + attachment_id + attachment_revision + content_kind` 的 Manifest；它不含 Object Key、URL、token、base64、Provider file ID 或原始字节，ID 只是引用而非凭证。Model Runtime 继续独立执行相同硬上限，作为最终 fail-closed 边界。
 
 ## 稳定协议
 
@@ -39,7 +39,9 @@ ModelResolver 能力校验
 
 平台当前限制为单图 10 MiB、最多 4 图、总计 20 MiB、最大边长 8192、最大 2500 万像素，仅允许 JPEG、PNG、GIF、WebP。Adapter 还需执行供应商限制，Anthropic 单图当前限制为 5 MiB。任何限制必须在发送 Provider 前完成。
 
-即时文档使用独立 `DocumentResolver`：消息创建时校验 tenant/user、AccessPolicy、ready、revision、MIME 和 10 MiB 上限，每次 Run 装配时重新授权并经 ObjectStore 有界读取。解析复用 `aiknowledge.SafeParser`，仅允许 PDF、XLSX、DOCX、UTF-8 TXT、Markdown；DOCX 普通 HTTP/HTTPS 超链接只读取显示文字且不访问目标，白名单字段只读取已保存结果，未知/危险/无缓存字段拒绝；XLSX 公式同样只读已保存缓存，绝不执行或刷新。单文档最多 100 页/工作表，单次 Run 派生文本合计最多 100,000 个规范化字符。MIME 伪造、主动 Office 内容、损坏/空文本、非 UTF-8/NUL 和资源超限均在 Provider 前 fail-closed；DOCX 与 XLSX 主动内容使用可区分的稳定错误类别，提示不得暴露 URL、字段指令、Object Key 或内部路径。
+即时文档使用独立 `DocumentResolver`：消息创建时校验 tenant/user、AccessPolicy、ready、revision、MIME 和 10 MiB 上限；只有当前触发消息中的文档在本轮装配时重新授权并经 ObjectStore 有界读取。历史文档不得每轮重复解析，内容通过 `system.attachment_content_inspect` 按需读取。解析复用 `aiknowledge.SafeParser`，仅允许 PDF、XLSX、DOCX、UTF-8 TXT、Markdown；DOCX 普通 HTTP/HTTPS 超链接只读取显示文字且不访问目标，白名单字段只读取已保存结果，未知/危险/无缓存字段拒绝；XLSX 公式同样只读已保存缓存，绝不执行或刷新。单文档最多 100 页/工作表，Action Result 最多 8 个观察、12000 字符。MIME 伪造、主动 Office 内容、损坏/空文本、非 UTF-8/NUL 和资源超限均在 Provider 前 fail-closed。
+
+`system.attachment_content_inspect` 是 `Capability=system`、`Risk=low`、`SideEffect=read` 的普通渐进发现 Action。每次调用重新校验 authenticated tenant actor、Client Surface、tenant、上传者或资源 AccessPolicy、ready、revision、MIME、大小与运行时预算。文档分支复用 `DocumentResolver + SafeParser` 并按 question/location 返回有界片段；图片分支复用 `AIAssetResolver`，使用当前 Agent 的受治理 Model Alias 经统一 Model Runtime 做 Vision 观察，不支持 Vision 时返回 `capability_not_supported`。结果只包含安全文件名、MIME、revision、位置/观察、`truncated`、`untrusted=true`；附件正文只存在于当次 Tool Result/模型输入。
 
 ## Provider 映射与生命周期
 
@@ -47,7 +49,7 @@ OpenAI Adapter 映射到 Responses `input_image`，Anthropic Adapter 映射到 M
 
 Generate、Stream 成功、失败和取消后都必须释放解析后的媒体字节。Invocation 只记录输入 modality、附件数量和总字节，不记录附件 ID、正文、对象信息或供应商原始请求。
 
-同一 Run 使用 `attachment ID + revision + parser version` 的内存缓存复用解析结果；Run 结束即释放，Worker 恢复允许重新授权并确定性解析。解析正文不得进入 canonical Message、ContextSnapshot、日志、审计、Outbox、Agent Step 或 ModelInvocation。
+同一 Run 的当前文档使用 `attachment ID + revision + parser version` 内存缓存复用解析结果；Run 结束即释放，Worker 恢复允许重新授权并确定性解析。Action 首期不做跨 Run 内容缓存。解析正文和 Vision 观察不得进入 canonical Message、ContextSnapshot、日志、审计、Outbox、Agent Step 或 ModelInvocation 摘要；Vision 调用仍必须生成统一 ModelInvocation 用量事实。
 
 ## 视觉派生扩展
 

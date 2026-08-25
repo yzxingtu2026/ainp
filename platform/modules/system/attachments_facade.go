@@ -13,14 +13,17 @@ import (
 )
 
 type (
-	AttachmentService        = attachments.AttachmentService
-	AttachmentView           = attachments.AttachmentView
-	TransferPrepareView      = attachments.TransferPrepareView
-	AttachmentLinkView       = attachments.AttachmentLinkView
-	AttachmentDetailView     = attachments.AttachmentDetailView
-	UploadPolicyView         = attachments.UploadPolicyView
-	AttachmentResourceReader = attachments.ResourceReader
-	KnowledgeSourceResolver  = attachments.KnowledgeSourceResolver
+	AttachmentService               = attachments.AttachmentService
+	AttachmentView                  = attachments.AttachmentView
+	TransferPrepareView             = attachments.TransferPrepareView
+	AttachmentLinkView              = attachments.AttachmentLinkView
+	AttachmentDetailView            = attachments.AttachmentDetailView
+	AttachmentDetailToolView        = attachments.AttachmentDetailToolView
+	AttachmentContentInspectRequest = attachments.AttachmentContentInspectRequest
+	AttachmentContentInspectResult  = attachments.AttachmentContentInspectResult
+	UploadPolicyView                = attachments.UploadPolicyView
+	AttachmentResourceReader        = attachments.ResourceReader
+	KnowledgeSourceResolver         = attachments.KnowledgeSourceResolver
 )
 
 func NewSettingUploadPolicyProvider(p *setting.Provider) attachment.PolicyProvider {

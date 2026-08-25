@@ -15,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+	"github.com/yzxingtu2026/ainp/platform/framework/aimodelruntime"
 	"github.com/yzxingtu2026/ainp/platform/framework/attachment"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/dblock"
@@ -30,13 +31,14 @@ import (
 )
 
 type AttachmentService struct {
-	db       *gorm.DB
-	store    storage.ObjectStore
-	tokens   *attachment.TransferTokenService
-	policies *attachment.PolicyRegistry
-	policy   attachment.PolicyProvider
-	outbox   outbox.Writer
-	baseURL  string // public API base for transfer URLs, e.g. empty => relative paths
+	db           *gorm.DB
+	store        storage.ObjectStore
+	tokens       *attachment.TransferTokenService
+	policies     *attachment.PolicyRegistry
+	policy       attachment.PolicyProvider
+	outbox       outbox.Writer
+	baseURL      string // public API base for transfer URLs, e.g. empty => relative paths
+	modelRuntime func() aimodelruntime.GenerationRuntime
 }
 
 func NewAttachmentService(
@@ -58,6 +60,10 @@ func NewAttachmentService(
 
 // SetOutboxWriter enables reliable thumb-job enqueue after upload ready (optional).
 func (s *AttachmentService) SetOutboxWriter(w outbox.Writer) { s.outbox = w }
+
+func (s *AttachmentService) SetModelRuntimeProvider(provider func() aimodelruntime.GenerationRuntime) {
+	s.modelRuntime = provider
+}
 
 func (s *AttachmentService) Policies() *attachment.PolicyRegistry { return s.policies }
 

@@ -129,15 +129,29 @@ type AssemblyRequest struct {
 	MaxNativeImages  int
 }
 
+type AttachmentReference struct {
+	SourceSequence     uint64 `json:"source_sequence"`
+	AttachmentID       string `json:"attachment_id"`
+	AttachmentRevision string `json:"attachment_revision"`
+	ContentKind        string `json:"content_kind"`
+}
+
+type AttachmentReferenceManifest struct {
+	SchemaVersion string                `json:"schema_version"`
+	Attachments   []AttachmentReference `json:"attachments"`
+}
+
 type AssemblyResult struct {
-	Status               string    `json:"status"`
-	Messages             []Message `json:"messages"`
-	Budget               Budget    `json:"budget"`
-	SourceSequenceFrom   uint64    `json:"source_sequence_from"`
-	SourceSequenceTo     uint64    `json:"source_sequence_to"`
-	ConversationRevision uint64    `json:"conversation_revision"`
-	AgentVersionID       string    `json:"agent_version_id"`
-	Reason               string    `json:"reason,omitempty"`
+	Status               string                      `json:"status"`
+	Messages             []Message                   `json:"messages"`
+	Budget               Budget                      `json:"budget"`
+	SourceSequenceFrom   uint64                      `json:"source_sequence_from"`
+	SourceSequenceTo     uint64                      `json:"source_sequence_to"`
+	ConversationRevision uint64                      `json:"conversation_revision"`
+	AgentVersionID       string                      `json:"agent_version_id"`
+	Reason               string                      `json:"reason,omitempty"`
+	AttachmentManifest   AttachmentReferenceManifest `json:"attachment_manifest"`
+	AttachmentTokens     int                         `json:"attachment_tokens"`
 }
 
 type ContextAssembler interface {
@@ -149,6 +163,7 @@ type ContextCompactor interface {
 
 type CompactionRequest struct {
 	ConversationID       string  `json:"conversation_id"`
+	TriggerMessageID     string  `json:"trigger_message_id,omitempty"`
 	ModelAlias           string  `json:"model_alias"`
 	ReservedOutputTokens int     `json:"reserved_output_tokens"`
 	SafetyMarginTokens   int     `json:"safety_margin_tokens"`

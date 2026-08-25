@@ -20,8 +20,8 @@ func RegisterActions(a *app.App, svc *AttachmentService) error {
 		AI                                     *action.AIMeta
 	}
 	actions := []def{
-		{ActionAttachmentUploadPrepare, "/api/v1/system/attachments/upload/prepare", "附件上传准备", "action.system.attachment_upload_prepare.name", "创建 pending 附件并签发短时上传令牌", "action.system.attachment_upload_prepare.description", "", &auditOn, typedAction[attachmentPrepareRequest](svc.UploadPrepare), writeAIMeta("创建待上传附件记录并签发短时上传令牌", "准备上传附件", "创建待上传附件记录并签发短时上传令牌", "附件上传已准备", "medium", action.InputSchemaFor[attachmentPrepareRequest](), action.SchemaFor[TransferPrepareView](), "附件", "上传", "准备")},
-		{ActionAttachmentDownloadPrepare, "/api/v1/system/attachments/download/prepare", "附件下载准备", "action.system.attachment_download_prepare.name", "校验权限并签发短时下载令牌", "action.system.attachment_download_prepare.description", "", &auditOn, svc.DownloadPrepare, readAIMeta("校验附件访问权限并签发短时下载令牌", "准备下载附件", "校验附件访问权限并签发短时下载令牌", "附件下载已准备", action.InputSchemaFor[attachmentDownloadPrepareRequest](), action.SchemaFor[TransferPrepareView](), "附件", "下载", "准备")},
+		{ActionAttachmentUploadPrepare, "/api/v1/system/attachments/upload/prepare", "附件上传准备", "action.system.attachment_upload_prepare.name", "创建 pending 附件并签发短时上传令牌", "action.system.attachment_upload_prepare.description", "", &auditOn, typedAction[attachmentPrepareRequest](svc.UploadPrepare), action.ExcludeFromAI(action.AIExcludeSensitiveCredential)},
+		{ActionAttachmentDownloadPrepare, "/api/v1/system/attachments/download/prepare", "附件下载准备", "action.system.attachment_download_prepare.name", "校验权限并签发短时下载令牌", "action.system.attachment_download_prepare.description", "", &auditOn, svc.DownloadPrepare, action.ExcludeFromAI(action.AIExcludeSensitiveCredential)},
 		{ActionAttachmentBind, "/api/v1/system/attachments/bind", "绑定附件", "action.system.attachment_bind.name", "将附件绑定到业务资源", "action.system.attachment_bind.description", "", &auditOn, typedAction[attachmentBindRequest](svc.Bind), writeAIMeta("将当前用户上传的就绪附件绑定到有权访问的业务资源", "绑定附件到业务资源", "将当前用户上传的就绪附件绑定到有权访问的业务资源", "附件已绑定", "medium", action.InputSchemaFor[attachmentBindRequest](), nil, "附件", "绑定", "业务资源")},
 		{ActionAttachmentUnbind, "/api/v1/system/attachments/unbind", "解绑附件", "action.system.attachment_unbind.name", "解除附件与业务资源关联", "action.system.attachment_unbind.description", "", &auditOn, typedAction[attachmentBindRequest](svc.Unbind), writeAIMeta("解除附件与有权访问的业务资源之间的绑定", "解绑业务资源附件", "解除附件与有权访问的业务资源之间的绑定", "附件已解绑", "medium", action.InputSchemaFor[attachmentBindRequest](), nil, "附件", "解绑", "业务资源")},
 		{ActionAttachmentListByResource, "/api/v1/system/attachments/list_by_resource", "按资源列附件", "action.system.attachment_list_by_resource.name", "按业务资源列出已绑定附件", "action.system.attachment_list_by_resource.description", "", &auditOn, svc.ListByResource, readAIMeta("列出当前用户有权访问的指定业务资源附件", "查询业务资源附件", "列出当前用户有权访问的指定业务资源附件", "已返回业务资源附件", action.InputSchemaFor[attachmentListRequest](), nil, "附件", "业务资源", "列表")},
@@ -32,7 +32,8 @@ func RegisterActions(a *app.App, svc *AttachmentService) error {
 			req.Uploader = ""
 			return svc.list(ctx, req)
 		}), action.ExcludeFromAI(action.AIExcludeInternalRuntime)},
-		{ActionAttachmentGet, "/api/v1/system/attachments/get", "附件详情", "action.system.attachment_get.name", "查询附件详情与业务绑定", "action.system.attachment_get.description", "", &auditOff, svc.Get, readAIMeta("查询指定附件详情及其业务资源绑定", "查询附件详情", "查询指定附件详情及其业务资源绑定", "已返回附件详情", action.InputSchemaFor[attachmentIDRequest](), action.SchemaFor[AttachmentDetailView](), "附件", "详情", "绑定")},
+		{ActionAttachmentGet, "/api/v1/system/attachments/get", "附件详情", "action.system.attachment_get.name", "查询附件详情与业务绑定", "action.system.attachment_get.description", "", &auditOff, svc.Get, readAIMeta("查询指定附件详情及其业务资源绑定", "查询附件详情", "查询指定附件详情及其业务资源绑定", "已返回附件详情", action.InputSchemaFor[attachmentIDRequest](), action.SchemaFor[AttachmentDetailToolView](), "附件", "详情", "绑定")},
+		{ActionAttachmentContentInspect, "/api/v1/system/attachments/content/inspect", "查看附件内容", "action.system.attachment_content_inspect.name", "按需查看有权访问的图片或文档内容", "action.system.attachment_content_inspect.description", "", &auditOff, action.JSON(svc.ContentInspect), readAIMeta("重新校验附件权限和 revision，并按需返回有界的不可信内容观察", "查看附件内容", "安全查看指定图片或文档的内容", "已返回附件内容观察", action.InputSchemaFor[AttachmentContentInspectRequest](), action.SchemaFor[AttachmentContentInspectResult](), "附件", "内容", "图片", "文档")},
 		{ActionAttachmentPolicyGet, "/api/v1/system/attachments/policy", "附件上传策略", "action.system.attachment_policy_get.name", "返回当前租户有效上传策略", "action.system.attachment_policy_get.description", ActionAttachmentUploadPrepare, &auditOff, svc.PolicyGet, readAIMeta("查询当前租户生效的附件类型、大小和传输限制", "查询附件上传策略", "查询当前租户生效的附件类型、大小和传输限制", "已返回附件上传策略", action.InputSchemaFor[struct{}](), nil, "附件", "上传策略", "查询")},
 	}
 	for _, item := range actions {
@@ -40,7 +41,7 @@ func RegisterActions(a *app.App, svc *AttachmentService) error {
 		access := action.AccessMode("")
 		permission := item.Permission
 		switch item.ID {
-		case ActionAttachmentUploadPrepare, ActionAttachmentDownloadPrepare, ActionAttachmentMineList, ActionAttachmentPolicyGet:
+		case ActionAttachmentUploadPrepare, ActionAttachmentDownloadPrepare, ActionAttachmentMineList, ActionAttachmentContentInspect, ActionAttachmentPolicyGet:
 			access = action.AccessAuthenticated
 			permission = ""
 		}

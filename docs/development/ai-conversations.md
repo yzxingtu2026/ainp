@@ -1,6 +1,6 @@
 # AI Conversation 与上下文装配
 
-Canonical Message 永久保留附件 ID、revision、sequence 与顺序。Run 的 Context projection 不等于 canonical 改写：图片累计超过单次媒体预算时，只选择当前触发消息和最近历史组成有界原生工作集，其余图片投影安全 manifest；禁止删除历史附件或把会话生命周期累计附件数当成单次 Provider 上限。
+Canonical Message 永久保留附件 ID、revision、sequence 与顺序。Run 的 Context projection 不等于 canonical 改写：图片累计超过单次媒体预算时，只选择当前触发消息和最近历史组成有界原生工作集；每次 Run 另从全部 canonical `input_image` / `input_file` 确定性投影 Attachment Reference Manifest，固定包含 `source_sequence + attachment_id + attachment_revision + content_kind`。禁止删除历史附件或把会话生命周期累计附件数当成单次 Provider 上限。
 
 ## 边界
 
@@ -34,13 +34,13 @@ Runtime 为 deferred retry Tool Call 持久化 `retry_of_tool_call_id`，该字�
 
 消息正文、附件内容和 Snapshot payload 不进入普通日志、Outbox 或审计摘要。审计只记录会话管理 mutation 的资源与结果。
 
-即时文档正文只在 Run 内存中由 `DocumentResolver + SafeParser` 展开为 `derived_text`。canonical Message 和幂等重放始终保留 `input_file` 引用；刷新/恢复时前端按当前附件授权读取显示元数据，失败只显示安全不可用状态。
+当前触发消息中的即时文档正文只在 Run 内存中由 `DocumentResolver + SafeParser` 展开为 `derived_text`。历史文档不得在每轮无条件读取或解析，模型需要内容时通过 `tool.search -> tool.load -> system.attachment_content_inspect` 按需查看。canonical Message 和幂等重放始终保留 `input_file` 引用；刷新/恢复时前端按当前附件授权读取显示元数据，失败只显示安全不可用状态。
 
 ## ContextSnapshot
 
 Snapshot 固定 conversation revision、Agent Version、模型 Deployment、来源 sequence 范围、parent、kind、策略版本与 Token 估算。Runtime Context 不是 Message；Snapshot 只附加 run/context/policy version、timezone/source 与 evaluated_at refs，不保存完整动态 Prompt、称呼或记忆正文。Snapshot 创建使用租户内会话级幂等键，创建后不可覆盖 payload。
 
-Snapshot 的 retained messages 必须把文档 `derived_text` 还原为 canonical `input_file` 引用，禁止持久化解析正文；恢复调用前重新授权解析。
+Snapshot 的 retained messages 必须把文档 `derived_text` 还原为 canonical `input_file` 引用，禁止持久化解析正文。Attachment Reference Manifest 不进入 Snapshot；Snapshot 消息装配完成后，Runtime 必须从 canonical Message 重新投影并注入 Manifest，不能依赖摘要、retained messages 或历史 Tool Result 偶然保留附件 ID。
 
 ## 前端边界
 

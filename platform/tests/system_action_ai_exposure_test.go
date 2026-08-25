@@ -3,6 +3,7 @@ package tests
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/yzxingtu2026/ainp/platform/framework/action"
@@ -26,8 +27,8 @@ func TestSystemManagementAndPersonalActionsExposeSafeAIContracts(t *testing.T) {
 		system.ActionProfileGet, system.ActionUserPreferencesGet,
 		system.ActionNotificationList, system.ActionNotificationUnreadCount,
 		system.ActionNotificationTemplateList, system.ActionNotificationTemplatePreview,
-		system.ActionAttachmentDownloadPrepare, system.ActionAttachmentListByResource,
-		system.ActionAttachmentList, system.ActionAttachmentGet, system.ActionAttachmentPolicyGet,
+		system.ActionAttachmentListByResource,
+		system.ActionAttachmentList, system.ActionAttachmentGet, system.ActionAttachmentContentInspect, system.ActionAttachmentPolicyGet,
 	}
 	writeActions := []string{
 		system.ActionAccountUpdate, system.ActionAccountStatusUpdate, system.ActionAccountRolesUpdate,
@@ -37,7 +38,7 @@ func TestSystemManagementAndPersonalActionsExposeSafeAIContracts(t *testing.T) {
 		system.ActionNotificationMarkRead, system.ActionNotificationMarkAllRead,
 		system.ActionNotificationArchive, system.ActionNotificationUnarchive,
 		system.ActionNotificationTemplateUpdate, system.ActionNotificationTemplateReset,
-		system.ActionAttachmentUploadPrepare, system.ActionAttachmentBind,
+		system.ActionAttachmentBind,
 		system.ActionAttachmentUnbind, system.ActionAttachmentDelete,
 	}
 
@@ -48,7 +49,7 @@ func TestSystemManagementAndPersonalActionsExposeSafeAIContracts(t *testing.T) {
 		assertSystemAIContract(t, application, actionID, true)
 	}
 
-	for _, actionID := range []string{system.ActionAccountCreate, system.ActionAccountPasswordReset, system.ActionSettingSecretUpdate} {
+	for _, actionID := range []string{system.ActionAccountCreate, system.ActionAccountPasswordReset, system.ActionSettingSecretUpdate, system.ActionAttachmentUploadPrepare, system.ActionAttachmentDownloadPrepare} {
 		credentialAction, ok := application.Actions.Get(actionID)
 		if !ok || credentialAction.Meta.AI == nil || credentialAction.Meta.AI.ExposeTool || credentialAction.Meta.AI.ExclusionReason != action.AIExcludeSensitiveCredential {
 			t.Fatalf("credential Action %s must remain behind the sensitive credential boundary: %#v", actionID, credentialAction.Meta.AI)
@@ -83,7 +84,6 @@ func TestSystemManagementAndPersonalActionsExposeSafeAIContracts(t *testing.T) {
 	for actionID, want := range map[string]string{
 		system.ActionAccountList:                 "查询后台账号列表",
 		system.ActionAccountUpdate:               "更新后台账号资料",
-		system.ActionAttachmentDownloadPrepare:   "准备下载附件",
 		system.ActionNotificationTemplatePreview: "预览通知模板",
 	} {
 		if got := projectedTitles[actionID]; got != want {
@@ -92,6 +92,15 @@ func TestSystemManagementAndPersonalActionsExposeSafeAIContracts(t *testing.T) {
 	}
 	userUpdate, _ := application.Actions.Get(system.ActionAccountUpdate)
 	assertSchemaRequired(t, userUpdate.Meta.AI.InputSchema, "id", "display_name")
+	inspect, _ := application.Actions.Get(system.ActionAttachmentContentInspect)
+	assertSchemaRequired(t, inspect.Meta.AI.InputSchema, "attachment_id", "attachment_revision")
+	attachmentGet, _ := application.Actions.Get(system.ActionAttachmentGet)
+	getSchema := strings.ToLower(string(attachmentGet.Meta.AI.OutputSchema))
+	for _, forbidden := range []string{"object_key", "provider", "download_url", "token", "base64"} {
+		if strings.Contains(getSchema, forbidden) {
+			t.Fatalf("attachment_get Tool schema exposes %q: %s", forbidden, getSchema)
+		}
+	}
 }
 
 func assertSystemAIContract(t *testing.T, application *app.App, actionID string, mutation bool) {
