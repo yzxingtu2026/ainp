@@ -2,6 +2,7 @@ package attachments
 
 import (
 	"context"
+	"io"
 	"strings"
 
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
@@ -13,6 +14,11 @@ import (
 // ResourceReader is the narrow downstream attachment contract. It deliberately
 // lives beside the implementation so the framework package stays provider-neutral.
 type ResourceReader struct{ service *AttachmentService }
+
+type limitedReadCloser struct {
+	io.Reader
+	io.Closer
+}
 
 func (s *AttachmentService) ResourceReader() platformresource.AttachmentReader {
 	return ResourceReader{service: s}
@@ -97,6 +103,34 @@ func (r ResourceReader) Open(ctx context.Context, req platformresource.Attachmen
 		return &platformresource.AttachmentContent{Metadata: metadata, Reader: reader}, nil
 	}
 	return nil, platformresource.ErrUnavailable
+}
+
+func (r ResourceReader) OpenOwnedUpload(ctx context.Context, req platformresource.OwnedUploadOpenRequest) (*platformresource.AttachmentContent, error) {
+	ac, err := r.identity(ctx)
+	if err != nil {
+		return nil, err
+	}
+	attachmentID := strings.TrimSpace(req.AttachmentID)
+	if attachmentID == "" || req.MaxBytes <= 0 {
+		return nil, platformresource.ErrUnavailable
+	}
+	row, err := r.service.getOwned(ctx, ac.TenantID, attachmentID)
+	principal := attachmentPrincipal(ctx)
+	if err != nil || row.Status != status.AttachmentReady || row.UploaderID != principal.ID || row.UploaderKind != string(principal.Kind) || row.Size < 0 || row.Size > req.MaxBytes {
+		return nil, platformresource.ErrUnavailable
+	}
+	reader, info, err := r.service.store.Open(ctx, row.ObjectKey)
+	if err != nil {
+		return nil, platformresource.ErrUnavailable
+	}
+	if info.Size != row.Size || info.Size > req.MaxBytes {
+		_ = reader.Close()
+		return nil, platformresource.ErrUnavailable
+	}
+	return &platformresource.AttachmentContent{
+		Metadata: attachmentMetadata(*row, platformresource.AttachmentVariantOriginal),
+		Reader:   &limitedReadCloser{Reader: io.LimitReader(reader, row.Size), Closer: reader},
+	}, nil
 }
 
 func (r ResourceReader) BindingExists(ctx context.Context, req platformresource.AttachmentOpenRequest) (bool, error) {

@@ -341,7 +341,7 @@ func (s *AttachmentService) BindResource(ctx context.Context, tx *gorm.DB, req a
 	if repoErr != nil {
 		return attachment.ResourceLink{}, errs.NewKey(errs.CodeNotFound, "attachment.not_found", "attachment not found")
 	}
-	if row.UploaderID != userID {
+	if row.UploaderID != userID || row.UploaderKind != string(attachmentPrincipal(ctx).Kind) {
 		return attachment.ResourceLink{}, errs.NewKey(errs.CodeNotFound, "attachment.not_found", "attachment not found")
 	}
 	policyCtx := attachment.WithResourceLinkOperation(attachment.WithResourceTransaction(ctx, tx), attachment.ResourceLinkBind)

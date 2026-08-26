@@ -12,6 +12,7 @@ func TestPlatformResourceDTOsDoNotExposePersistenceOrSecrets(t *testing.T) {
 	for _, typ := range []reflect.Type{
 		reflect.TypeOf(platformresource.AttachmentMetadata{}),
 		reflect.TypeOf(platformresource.AttachmentBinding{}),
+		reflect.TypeOf(platformresource.OwnedUploadOpenRequest{}),
 		reflect.TypeOf(platformresource.PrincipalProjection{}),
 	} {
 		for i := 0; i < typ.NumField(); i++ {

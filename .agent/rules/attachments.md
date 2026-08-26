@@ -20,5 +20,6 @@
 - 删除须级联清理 `thumb_object_key`；变更同步 `docs/development/attachments.md` 并 `agent-rules sync`。
 - 官方应用与公开 `platform/host` 必须由 system 模块统一注册 raw/multipart Transfer 路由；下游不得复制 Handler。
 - 下游受权读取附件只经 `framework/platformresource.AttachmentReader`，必须复核 AuthContext、AccessPolicy、绑定、ready/variant、对象和大小；禁止暴露 object key、token 或内部 Model。
+- 下游绑定前校验只经 `AttachmentReader.OpenOwnedUpload`；仅 tenant realm 当前 `Principal kind + id` 本人上传的 ready 原始附件可见，必须要求正数 `MaxBytes` 并在对象打开前后校验大小，返回受限 reader。跨租户、非本人、无认证、非 ready 与对象缺失统一 fail-closed。
 
 详规：`docs/development/attachments.md`
