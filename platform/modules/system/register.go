@@ -165,6 +165,7 @@ func Register(a *app.App) error {
 	attachSvc.SetModelRuntimeProvider(func() aimodelruntime.GenerationRuntime { return a.AIModelRuntime })
 	a.PlatformResources.Attachments = attachSvc.ResourceReader()
 	a.PlatformResources.Principals = access.NewPrincipalResourceService(a.DB, a.Auditor)
+	a.PlatformResources.AccountIdentities = access.NewAccountIdentityResourceService(a.DB, a.Auditor)
 	if err := a.PlatformResources.Validate(); err != nil {
 		return fmt.Errorf("system: platform resource contracts: %w", err)
 	}

@@ -26,9 +26,9 @@ func (TenantAccount) TableName() string { return "tenant_accounts" }
 
 type AuthIdentity struct {
 	ID                   string                  `gorm:"primaryKey;size:64"`
-	TenantID             string                  `gorm:"size:64;uniqueIndex:ux_auth_identity_subject;not null;index:idx_auth_identities_account"`
-	AccountID            string                  `gorm:"size:64;not null;index:idx_auth_identities_account"`
-	Provider             string                  `gorm:"size:64;uniqueIndex:ux_auth_identity_subject;not null"`
+	TenantID             string                  `gorm:"size:64;uniqueIndex:ux_auth_identity_subject;uniqueIndex:ux_auth_identities_tenant_account_provider;not null;index:idx_auth_identities_account"`
+	AccountID            string                  `gorm:"size:64;uniqueIndex:ux_auth_identities_tenant_account_provider;not null;index:idx_auth_identities_account"`
+	Provider             string                  `gorm:"size:64;uniqueIndex:ux_auth_identity_subject;uniqueIndex:ux_auth_identities_tenant_account_provider;not null"`
 	Subject              string                  `gorm:"size:255;uniqueIndex:ux_auth_identity_subject;not null"`
 	NormalizedIdentifier string                  `gorm:"size:255;index"`
 	Status               status.ActivationStatus `gorm:"size:32;not null;default:enabled"`

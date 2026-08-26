@@ -15,26 +15,27 @@ import (
 )
 
 type (
-	AuthService              = access.AuthService
-	AccountProfile           = access.AccountProfile
-	PasswordAuthenticator    = access.PasswordAuthenticator
-	SessionService           = access.SessionService
-	SessionTokens            = access.SessionTokens
-	UnifiedAuthService       = access.UnifiedAuthService
-	AuthenticateRequest      = access.AuthenticateRequest
-	ChallengeRequest         = access.ChallengeRequest
-	RefreshRequest           = access.RefreshRequest
-	LegacyLoginRequest       = access.LegacyLoginRequest
-	SessionView              = access.SessionView
-	RoleService              = access.RoleService
-	RoleView                 = access.RoleView
-	PermissionCatalogItem    = access.PermissionCatalogItem
-	PermissionCatalogGroup   = access.PermissionCatalogGroup
-	AccountService           = access.AccountService
-	AccountSelfProfileView   = access.AccountSelfProfileView
-	AccountRoleBrief         = access.AccountRoleBrief
-	AccountView              = access.AccountView
-	PrincipalResourceService = access.PrincipalResourceService
+	AuthService                    = access.AuthService
+	AccountProfile                 = access.AccountProfile
+	PasswordAuthenticator          = access.PasswordAuthenticator
+	SessionService                 = access.SessionService
+	SessionTokens                  = access.SessionTokens
+	UnifiedAuthService             = access.UnifiedAuthService
+	AuthenticateRequest            = access.AuthenticateRequest
+	ChallengeRequest               = access.ChallengeRequest
+	RefreshRequest                 = access.RefreshRequest
+	LegacyLoginRequest             = access.LegacyLoginRequest
+	SessionView                    = access.SessionView
+	RoleService                    = access.RoleService
+	RoleView                       = access.RoleView
+	PermissionCatalogItem          = access.PermissionCatalogItem
+	PermissionCatalogGroup         = access.PermissionCatalogGroup
+	AccountService                 = access.AccountService
+	AccountSelfProfileView         = access.AccountSelfProfileView
+	AccountRoleBrief               = access.AccountRoleBrief
+	AccountView                    = access.AccountView
+	PrincipalResourceService       = access.PrincipalResourceService
+	AccountIdentityResourceService = access.AccountIdentityResourceService
 
 	// Deprecated: use AccountProfile.
 	UserProfile = AccountProfile
@@ -74,6 +75,10 @@ func NewAccountService(db *gorm.DB, authService *AuthService) *AccountService {
 
 func NewPrincipalResourceService(db *gorm.DB, auditor audit.Recorder) platformresource.PrincipalService {
 	return access.NewPrincipalResourceService(db, auditor)
+}
+
+func NewAccountIdentityResourceService(db *gorm.DB, auditor audit.Recorder) platformresource.AccountIdentityService {
+	return access.NewAccountIdentityResourceService(db, auditor)
 }
 
 // NewUserService is kept for source compatibility.

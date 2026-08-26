@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"io"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
@@ -15,7 +17,10 @@ var (
 	ErrUnavailable = errors.New("platform resource unavailable")
 	ErrForbidden   = errors.New("platform resource forbidden")
 	ErrConflict    = errors.New("platform resource revision conflict")
+	ErrInvalid     = errors.New("platform resource input invalid")
 )
+
+var accountIdentityProviderPattern = regexp.MustCompile(`^[a-z][a-z0-9._-]{0,63}$`)
 
 type AttachmentVariant string
 
@@ -92,15 +97,68 @@ type PrincipalService interface {
 	Invalidate(context.Context, PrincipalInvalidation) (*PrincipalProjection, error)
 }
 
+// AccountIdentity is the minimum external-identity projection exposed to the
+// currently authenticated AINP account. Tenant and account ownership are
+// intentionally absent because both are derived from trusted AuthContext.
+type AccountIdentity struct {
+	ID                   string    `json:"id"`
+	Provider             string    `json:"provider"`
+	Subject              string    `json:"subject"`
+	NormalizedIdentifier string    `json:"normalized_identifier"`
+	VerifiedAt           time.Time `json:"verified_at"`
+}
+
+// AccountIdentityBindRequest must be assembled by trusted server code from a
+// successfully verified external identity. It is not a client credential or
+// proof and must not be exposed as a direct bind endpoint payload.
+type AccountIdentityBindRequest struct {
+	Provider             string `json:"provider"`
+	Subject              string `json:"subject"`
+	NormalizedIdentifier string `json:"normalized_identifier"`
+}
+
+func (r AccountIdentityBindRequest) Validate() error {
+	if !accountIdentityProviderPattern.MatchString(r.Provider) || r.Provider == "password" ||
+		!validAccountIdentityValue(r.Subject, 255) || !validAccountIdentityValue(r.NormalizedIdentifier, 255) {
+		return ErrInvalid
+	}
+	return nil
+}
+
+type AccountIdentityUnbindRequest struct {
+	IdentityID string `json:"identity_id"`
+}
+
+func (r AccountIdentityUnbindRequest) Validate() error {
+	if !validAccountIdentityValue(r.IdentityID, 64) {
+		return ErrInvalid
+	}
+	return nil
+}
+
+func validAccountIdentityValue(value string, max int) bool {
+	if value == "" || value != strings.TrimSpace(value) || len(value) > max {
+		return false
+	}
+	return !strings.ContainsFunc(value, func(r rune) bool { return r < 0x20 || r == 0x7f })
+}
+
+type AccountIdentityService interface {
+	List(context.Context) ([]AccountIdentity, error)
+	Bind(context.Context, AccountIdentityBindRequest) (*AccountIdentity, error)
+	Unbind(context.Context, AccountIdentityUnbindRequest) error
+}
+
 // Services is the immutable platform-resource surface injected into API and
 // Worker module registration through app.App.
 type Services struct {
-	Attachments AttachmentReader
-	Principals  PrincipalService
+	Attachments       AttachmentReader
+	Principals        PrincipalService
+	AccountIdentities AccountIdentityService
 }
 
 func (s Services) Validate() error {
-	if s.Attachments == nil || s.Principals == nil {
+	if s.Attachments == nil || s.Principals == nil || s.AccountIdentities == nil {
 		return ErrUnavailable
 	}
 	return nil

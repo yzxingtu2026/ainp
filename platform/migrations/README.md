@@ -26,6 +26,7 @@
 - `0052_conversation_tool_working_set.sql` 创建 Conversation 级有界工具工作集，并让新 ToolScope 关联 Conversation；工作集仅保存投影偏好，运行时仍实时重验授权与 Schema。
 - `0057_job_error_classification.sql` 为 JobRun、Tool Catalog 与 Navigation 索引文档增加受控错误分类和阶段字段，不保存供应商原始错误或敏感输入。
 - `0065_agent_run_terminal_finalization.sql` 为 Agent Run 增加版本化安全终态、模型/模板收尾、重试语义、terminal Message 引用与持久化 Tool 操作计数字段。
+- `0066_account_identity_binding.sql` 为公开 Account Identity Binding 契约增加租户、账号、Provider 唯一约束；历史重复绑定会 fail-closed，需先审查数据再重试迁移。
 - `0005_attachments.sql` 创建 `attachments` / `attachment_links` 与状态 CHECK；附件策略与 AccessPolicy 由代码注册。
 - `0011_audit_log_indexes.sql` 为租户审计时间线、Action 与资源筛选增加复合索引。
 - `0012_authentication_sessions.sql` 创建统一认证身份、challenge 与轮换会话表；旧 JWT 缺少 `sid`，升级后需重新登录。

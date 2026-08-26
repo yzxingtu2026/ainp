@@ -208,9 +208,12 @@ func TestExternalModuleContributesAtomicAICreateToDefaultContract(t *testing.T) 
 		t.Fatal(err)
 	}
 	application.Jobs = &job.Runtime{Registry: job.NewRegistry()}
-	application.PlatformResources = platformresource.Services{Attachments: fakeAttachmentResources{}, Principals: fakePrincipalResources{}}
+	application.PlatformResources = platformresource.Services{Attachments: fakeAttachmentResources{}, Principals: fakePrincipalResources{}, AccountIdentities: fakeAccountIdentityResources{}}
 	if err := (orders.Module{}).Register(application); err != nil {
 		t.Fatal(err)
+	}
+	if _, exposed := application.Actions.Get("orders.account_identity_bind"); exposed {
+		t.Fatal("downstream example must not expose unverified provider/subject as a direct bind Action")
 	}
 	contributions := (orders.Module{}).AgentContractContributions()
 	contributions[0].Owner = orders.ModuleID
@@ -273,4 +276,16 @@ func (fakePrincipalResources) Get(_ context.Context, ref auth.PrincipalRef) (*pl
 }
 func (fakePrincipalResources) Invalidate(_ context.Context, req platformresource.PrincipalInvalidation) (*platformresource.PrincipalProjection, error) {
 	return &platformresource.PrincipalProjection{Principal: req.Principal, DisplayName: "Example", Active: true, Revision: req.ExpectedRevision + 1}, nil
+}
+
+type fakeAccountIdentityResources struct{}
+
+func (fakeAccountIdentityResources) List(context.Context) ([]platformresource.AccountIdentity, error) {
+	return nil, nil
+}
+func (fakeAccountIdentityResources) Bind(_ context.Context, req platformresource.AccountIdentityBindRequest) (*platformresource.AccountIdentity, error) {
+	return &platformresource.AccountIdentity{ID: "identity-1", Provider: req.Provider, Subject: req.Subject, NormalizedIdentifier: req.NormalizedIdentifier}, nil
+}
+func (fakeAccountIdentityResources) Unbind(context.Context, platformresource.AccountIdentityUnbindRequest) error {
+	return nil
 }

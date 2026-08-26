@@ -7,6 +7,7 @@ import (
 	"io"
 
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
+	"github.com/yzxingtu2026/ainp/platform/framework/authentication"
 	"github.com/yzxingtu2026/ainp/platform/framework/job"
 	"github.com/yzxingtu2026/ainp/platform/framework/platformresource"
 )
@@ -59,4 +60,24 @@ func (s Service) InvalidatePrincipal(ctx context.Context, req principalInvalidat
 		Principal:        auth.PrincipalRef{Kind: auth.PrincipalKindAccount, ID: req.PrincipalID},
 		ExpectedRevision: req.ExpectedRevision, RequiredPermission: "orders:manage", Reason: req.Reason,
 	})
+}
+
+func (s Service) ListAccountIdentities(ctx context.Context, _ json.RawMessage) (any, error) {
+	return s.Resources.AccountIdentities.List(ctx)
+}
+
+// BindVerifiedAccountIdentity is called only after the downstream OAuth
+// adapter has verified credentials. Provider and subject must never be decoded
+// directly from an account-authenticated client request.
+func (s Service) BindVerifiedAccountIdentity(ctx context.Context, identity authentication.VerifiedIdentity) (*platformresource.AccountIdentity, error) {
+	return s.Resources.AccountIdentities.Bind(ctx, platformresource.AccountIdentityBindRequest{
+		Provider: identity.Provider, Subject: identity.Subject, NormalizedIdentifier: identity.NormalizedIdentifier,
+	})
+}
+
+func (s Service) UnbindAccountIdentity(ctx context.Context, req platformresource.AccountIdentityUnbindRequest) (any, error) {
+	if err := s.Resources.AccountIdentities.Unbind(ctx, req); err != nil {
+		return nil, err
+	}
+	return map[string]bool{"unbound": true}, nil
 }

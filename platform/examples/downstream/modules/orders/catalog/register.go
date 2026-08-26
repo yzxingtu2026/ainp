@@ -61,6 +61,8 @@ func Register(application *app.App, config Config) error {
 		{"orders.attachment_binding_exists", "Check order attachment binding", "orders:read", "POST", "/api/v1/orders/attachments/binding/exists", action.JSON(service.AttachmentBindingExists)},
 		{"orders.principal_get", "Get account projection", "orders:read", "POST", "/api/v1/orders/principals/get", action.JSON(service.Principal)},
 		{"orders.principal_invalidate", "Invalidate account sessions", "orders:manage", "POST", "/api/v1/orders/principals/invalidate", action.JSON(service.InvalidatePrincipal)},
+		{"orders.account_identity_list", "List current account identities", "orders:read", "GET", "/api/v1/orders/account-identities", service.ListAccountIdentities},
+		{"orders.account_identity_unbind", "Unbind current account identity", "orders:manage", "POST", "/api/v1/orders/account-identities/unbind", action.JSON(service.UnbindAccountIdentity)},
 	} {
 		if err := application.RegisterAction(action.Action{ID: definition.id, Handler: definition.handler, Meta: action.Metadata{Capability: config.CapabilityID, Access: action.AccessPermission, Name: definition.name, Permission: definition.permission, AI: action.ExcludeFromAI(action.AIExcludePendingSafetyReview), HTTP: &action.HTTPMeta{Method: definition.method, Path: definition.path}}}); err != nil {
 			return err
