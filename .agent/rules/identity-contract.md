@@ -8,3 +8,4 @@
 - framework 与 system access 的 `UserID/user_id` 仅允许进入带语义和删除条件的门禁 allowlist；新账号引用必须分类为 Account、Principal 或 Actor。
 - 兼容入口从 `v0.1.7` 开始，预计 `v0.3.0` 移除；连续两个发布周期无兼容日志、0055 全环境应用且旧存量清零后才可删除。
 - 下游账号投影/失效只经 `framework/platformresource.PrincipalService`；失效必须使用可信 tenant/actor、显式权限、revision 与同事务审计，禁止直查或直写 system 表。
+- 下游当前账号外部身份绑定只经 `app.App.PlatformResources.AccountIdentities`；Bind 输入必须来自服务端已完成的外部凭据验证，禁止客户端直接声明 Provider/Subject。服务端固定可信 `ainp.account` 的 tenant/account，拒绝内置 `password`、跨租户/账号、停用账号、重复 Provider 与身份冲突，绑定/解绑写脱敏审计。Authenticator 只返回 `VerifiedIdentity`，不得签 Token 或复制 system 身份表查询。

@@ -17,6 +17,14 @@
 - `Invalidate` 必须由可信 tenant/actor 调用；目标不是当前主体时需显式权限，使用 revision 条件更新并写统一审计。跨租户、未知主体、并发 revision 冲突均 fail-closed。
 - 调用方不得把客户端传入的 tenant 当作授权依据，不得直接更新 `tenant_accounts.auth_version` 或 `auth_sessions`。
 
+### Account Identity Binding
+
+- `AccountIdentities` 仅服务可信 tenant AuthContext 中的当前 `ainp.account`；`List`、`Bind`、`Unbind` 均不接收 tenant ID、account ID、角色或权限字段，账号或租户停用时 fail-closed。
+- `Bind` 只接收下游 OAuth/企业身份适配器在服务端完成凭据验证后生成的规范化小写 Provider、稳定 Subject 与 `normalized_identifier`；这些字段不是凭据或绑定证明，禁止把该 DTO 直接暴露为客户端“声明身份”接口。内置 `password` Provider 不开放绑定；服务端在同一 `auth_identities` 唯一事实源上强制 `(tenant_id, provider, subject)` 和 `(tenant_id, account_id, provider)` 唯一，冲突及并发重复统一拒绝。
+- `Unbind` 只接收公共稳定 identity ID，并重新校验当前 tenant/account 所有权；未知、跨租户、其他账号或内置密码身份均按不可用处理，不泄露记录存在性。
+- 返回投影仅含 identity ID、Provider、Subject、规范化标识与验证时间，不暴露 GORM Model、Metadata、Token、Session、裸 DB 或 SQL 条件。绑定/解绑写统一审计，摘要不含 Provider、Subject、标识、OAuth code/state/token/secret。
+- 下游 Authenticator 仍只返回 `authentication.VerifiedIdentity`；登录前解析由 system access 私有 store 完成，绑定服务不创建账号、Session、JWT 或权限事实。
+
 ## 通知接收人
 
 通知 Resolver 通过同一主体投影解析账号接收人；不得恢复直接查询 `tenant_accounts` 的下游实现。API、Outbox 与 Worker 共享这一个 Port 实现。

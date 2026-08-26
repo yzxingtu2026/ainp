@@ -6,6 +6,7 @@
 - 根 `register.go` 定义 `type Module`，并实现 `ID() string` 与 `Register(*app.App) error`；`Prepare`、`MigrationSource`、`AutoMigrate`、`RuntimeAssets` 按需实现。
 - Action、Service、Repository、Model、HTTP 和领域流程进入 owner 明确的能力子包，禁止空目录与 `common`、`utils`、`misc`、`shared` 等兜底包。
 - 平台资源只经 `framework/platformresource` 和 `app.App.PlatformResources` 注入；禁止 `platform/internal/*`、`platform/modules/*/model` 与其他能力实现子包导入。模块根 Facade 只用于文档声明的稳定兼容面。
+- 当前 `ainp.account` 的外部身份绑定只经 `PlatformResources.AccountIdentities`；Provider/Subject 必须来自服务端已验证身份，禁止客户端直接声明；请求不得包含 tenant/account/role/permission，禁止直查 `auth_identities`、复制 system 登录解析或自签 Session/JWT。
 - `modules/A` 禁止 import `modules/B`；能力子包禁止反向 import 自身模块根包。跨模块协作通过 framework contract 和 composition root 注入。
 - 模块树内禁止 `_test.go`；测试集中到仓库指定的 `tests` 目录，并通过公开 API 验证行为。
 - 禁止用基线、通配豁免或自定义白名单绕过架构失败。
