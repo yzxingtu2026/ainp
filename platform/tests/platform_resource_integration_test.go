@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"sync"
 	"testing"
@@ -83,6 +84,10 @@ func TestPlatformResourceContractsEnforceTenantPolicyStateAndAudit(t *testing.T)
 	}
 
 	ctxA := platformResourceContext("tenant-a", "actor-a", resourcePermission, "orders:manage")
+	ctxAOther := platformResourceContext("tenant-a", "target-a", resourcePermission, "orders:manage")
+	ctxAWrongKind := platformResourceContext("tenant-a", "actor-a", resourcePermission, "orders:manage")
+	wrongKindAuth, _ := auth.FromContext(ctxAWrongKind)
+	wrongKindAuth.Principal.Kind = auth.PrincipalKind("example.operator")
 	ctxADenied := platformResourceContext("tenant-a", "actor-a")
 	ctxB := platformResourceContext("tenant-b", "actor-b", resourcePermission, "orders:manage")
 	payload := []byte("controlled-platform-resource")
@@ -99,7 +104,52 @@ func TestPlatformResourceContractsEnforceTenantPolicyStateAndAudit(t *testing.T)
 	if _, err := svc.CompleteUpload(ctxA, claims, bytes.NewReader(payload)); err != nil {
 		t.Fatal(err)
 	}
+	ownedRequest := platformresource.OwnedUploadOpenRequest{AttachmentID: prep.Attachment.ID, MaxBytes: int64(len(payload))}
+	ownedContent, err := application.PlatformResources.Attachments.OpenOwnedUpload(ctxA, ownedRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ownedPayload, err := io.ReadAll(ownedContent.Reader)
+	closeErr := ownedContent.Reader.Close()
+	if err != nil || closeErr != nil || !bytes.Equal(ownedPayload, payload) {
+		t.Fatalf("owned upload read payload=%q err=%v close_err=%v", ownedPayload, err, closeErr)
+	}
+	if ownedContent.Metadata.Size != int64(len(payload)) || ownedContent.Metadata.ContentType != "text/plain" || ownedContent.Metadata.Variant != platformresource.AttachmentVariantOriginal {
+		t.Fatalf("unexpected owned upload metadata: %#v", ownedContent.Metadata)
+	}
+	for name, testCase := range map[string]struct {
+		ctx     context.Context
+		request platformresource.OwnedUploadOpenRequest
+		wantErr error
+	}{
+		"same tenant other principal":  {ctx: ctxAOther, request: ownedRequest, wantErr: platformresource.ErrUnavailable},
+		"same id other principal kind": {ctx: ctxAWrongKind, request: ownedRequest, wantErr: platformresource.ErrUnavailable},
+		"cross tenant":                 {ctx: ctxB, request: ownedRequest, wantErr: platformresource.ErrUnavailable},
+		"missing authentication":       {ctx: context.Background(), request: ownedRequest, wantErr: platformresource.ErrForbidden},
+		"size budget exceeded":         {ctx: ctxA, request: platformresource.OwnedUploadOpenRequest{AttachmentID: prep.Attachment.ID, MaxBytes: int64(len(payload) - 1)}, wantErr: platformresource.ErrUnavailable},
+	} {
+		t.Run("owned upload "+name, func(t *testing.T) {
+			if content, openErr := application.PlatformResources.Attachments.OpenOwnedUpload(testCase.ctx, testCase.request); !errors.Is(openErr, testCase.wantErr) || content != nil {
+				if content != nil {
+					_ = content.Reader.Close()
+				}
+				t.Fatalf("content=%#v err=%v", content, openErr)
+			}
+		})
+	}
+	if err := db.WithContext(ctxAWrongKind).Transaction(func(tx *gorm.DB) error {
+		_, bindErr := svc.BindResource(ctxAWrongKind, tx, attachment.ResourceLinkRequest{AttachmentID: prep.Attachment.ID, ResourceType: "example.order", ResourceID: "wrong-kind-order", Field: "documents"})
+		return bindErr
+	}); err == nil {
+		t.Fatal("same principal id with a different kind must not bind the upload")
+	}
+	if err := db.Exec(`CREATE TABLE example_orders (id varchar(64) PRIMARY KEY, tenant_id varchar(64) NOT NULL)`).Error; err != nil {
+		t.Fatal(err)
+	}
 	if err := db.WithContext(ctxA).Transaction(func(tx *gorm.DB) error {
+		if createErr := tx.Exec(`INSERT INTO example_orders (id, tenant_id) VALUES (?, ?)`, "order-1", "tenant-a").Error; createErr != nil {
+			return createErr
+		}
 		_, bindErr := svc.BindResource(ctxA, tx, attachment.ResourceLinkRequest{AttachmentID: prep.Attachment.ID, ResourceType: "example.order", ResourceID: "order-1", Field: "documents"})
 		return bindErr
 	}); err != nil {
@@ -140,6 +190,9 @@ UPDATE attachments SET status = ? WHERE id IN (SELECT id FROM scoped)`, prep.Att
 	if _, err := application.PlatformResources.Attachments.Open(ctxA, request); !errors.Is(err, platformresource.ErrUnavailable) {
 		t.Fatalf("non-ready attachment err=%v", err)
 	}
+	if _, err := application.PlatformResources.Attachments.OpenOwnedUpload(ctxA, ownedRequest); !errors.Is(err, platformresource.ErrUnavailable) {
+		t.Fatalf("non-ready owned upload err=%v", err)
+	}
 	type storedAttachment struct{ ObjectKey string }
 	storedRows, err := tenant.TenantRaw[storedAttachment](tdb, "SELECT object_key FROM attachments WHERE tenant_id = ? AND id = ? LIMIT 1", prep.Attachment.ID)
 	if err != nil || len(storedRows) != 1 {
@@ -154,6 +207,9 @@ UPDATE attachments SET status = ? WHERE id IN (SELECT id FROM scoped)`, prep.Att
 	}
 	if _, err := application.PlatformResources.Attachments.Open(ctxA, request); !errors.Is(err, platformresource.ErrUnavailable) {
 		t.Fatalf("missing object err=%v", err)
+	}
+	if _, err := application.PlatformResources.Attachments.OpenOwnedUpload(ctxA, ownedRequest); !errors.Is(err, platformresource.ErrUnavailable) {
+		t.Fatalf("missing owned upload object err=%v", err)
 	}
 
 	target := auth.PrincipalRef{Kind: auth.PrincipalKindAccount, ID: "target-a"}

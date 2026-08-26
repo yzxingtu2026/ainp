@@ -256,6 +256,9 @@ type fakeAttachmentResources struct{}
 func (fakeAttachmentResources) Open(context.Context, platformresource.AttachmentOpenRequest) (*platformresource.AttachmentContent, error) {
 	return &platformresource.AttachmentContent{Metadata: platformresource.AttachmentMetadata{ID: "attachment-1", Size: 0}, Reader: http.NoBody}, nil
 }
+func (fakeAttachmentResources) OpenOwnedUpload(context.Context, platformresource.OwnedUploadOpenRequest) (*platformresource.AttachmentContent, error) {
+	return &platformresource.AttachmentContent{Metadata: platformresource.AttachmentMetadata{ID: "attachment-1", Size: 0}, Reader: http.NoBody}, nil
+}
 func (fakeAttachmentResources) BindingExists(context.Context, platformresource.AttachmentOpenRequest) (bool, error) {
 	return true, nil
 }

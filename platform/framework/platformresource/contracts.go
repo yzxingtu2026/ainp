@@ -36,6 +36,14 @@ type AttachmentOpenRequest struct {
 	Variant      AttachmentVariant      `json:"variant,omitempty"`
 }
 
+// OwnedUploadOpenRequest opens the original bytes of an attachment uploaded by
+// the current principal. MaxBytes is required so downstream callers make their
+// processing budget explicit before any object is opened.
+type OwnedUploadOpenRequest struct {
+	AttachmentID string `json:"attachment_id"`
+	MaxBytes     int64  `json:"max_bytes"`
+}
+
 type AttachmentMetadata struct {
 	ID           string            `json:"id"`
 	OriginalName string            `json:"original_name"`
@@ -60,6 +68,7 @@ type AttachmentBinding struct {
 
 type AttachmentReader interface {
 	Open(context.Context, AttachmentOpenRequest) (*AttachmentContent, error)
+	OpenOwnedUpload(context.Context, OwnedUploadOpenRequest) (*AttachmentContent, error)
 	BindingExists(context.Context, AttachmentOpenRequest) (bool, error)
 	ListBindings(context.Context, AttachmentBindingQuery) ([]AttachmentBinding, error)
 }

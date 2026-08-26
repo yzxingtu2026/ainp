@@ -136,7 +136,7 @@ Local Provider 返回本服务流式 URL；未来 S3/OSS 可换预签名 URL，�
 
 AI Tool Result 使用独立安全投影：上传/下载 prepare 因返回 transfer token/URL 而不进入 Tool Catalog；`system.attachment_get` 不返回 Provider/Object Key，`system.attachment_content_inspect` 不返回原始字节、base64、Object Key、下载 token/URL 或 Provider 管理字段。`attachment_id` 只用于定位，不能授予读取权限；内容查看必须在读取 ObjectStore 或调用 Vision 前重新执行 tenant、actor、Client Surface、AccessPolicy、ready 与 revision 校验。
 
-独立下游在非 HTTP 业务流程中读取已绑定附件时，只使用 `framework/platformresource.AttachmentReader`，由 `app.App.PlatformResources` 注入。该 Port 必须重新执行当前 tenant/principal、AccessPolicy、绑定、ready、variant、对象存在与大小校验，只返回最小元数据和受控 reader；禁止返回 object key、provider、transfer token 或内部 Model。
+独立下游在非 HTTP 业务流程中读取附件时，只使用 `framework/platformresource.AttachmentReader`，由 `app.App.PlatformResources` 注入。读取已绑定附件必须重新执行当前 tenant/principal、AccessPolicy、绑定、ready、variant、对象存在与大小校验。绑定前校验只使用 `OpenOwnedUpload`：仅 tenant realm 当前 `Principal kind + id` 本人上传的 ready 原始附件可见，调用方必须提供正数 `MaxBytes`，实现须在打开对象前后校验元数据、对象实际大小与预算，并返回受限 reader。两种读取均只返回最小元数据和受控 reader；禁止返回 object key、provider、transfer token 或内部 Model。
 
 ## 检查清单
 

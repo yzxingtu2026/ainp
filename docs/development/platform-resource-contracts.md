@@ -7,6 +7,7 @@
 - Owner：`system.attachments`。
 - 前置：可信 tenant/principal AuthContext；调用者提供资源类型、资源 ID 和可选字段，服务端重新执行 AccessPolicy、tenant scope、绑定查询和 `ready`/variant 状态检查。
 - `Open` 返回 `AttachmentMetadata` 与受控 `io.ReadCloser`；元数据不含 object key、provider、transfer token 或 GORM Model。`BindingExists` 与 `ListBindings` 只返回最小绑定投影。
+- `OpenOwnedUpload` 仅打开 tenant realm 中当前 `Principal kind + id` 上传的 `ready` 原始附件，供下游在绑定前校验 MIME、大小、页数与摘要。调用方必须显式提供正数 `MaxBytes`；服务端在打开对象前后校验元数据、对象实际大小与预算，并返回受限 `io.ReadCloser`。该能力不要求附件已有绑定，也不授予任意附件查询或 object key 访问。
 - 未绑定、跨租户、策略拒绝、非 ready、variant 不存在、对象缺失和缺少依赖都返回不可用/拒绝错误，不透露资源是否存在。
 
 ## 主体/账号
