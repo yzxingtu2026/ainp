@@ -80,32 +80,48 @@ func authenticationRateKey(method, client string, payload json.RawMessage) strin
 }
 
 func (s *UnifiedAuthService) Methods(ctx context.Context) any {
-	methods := s.registry.Methods()
+	methods := make([]authentication.Method, 0)
+	if s.registry == nil {
+		return map[string]any{"methods": methods}
+	}
+	var surface *auth.ClientSurface
 	if surfaceID := auth.MustFromContext(ctx).ClientSurface; surfaceID != "" && s.surfaces != nil {
-		if surface, ok := s.surfaces.Get(surfaceID); ok {
-			filtered := methods[:0]
-			for _, method := range methods {
-				if surface.AllowsMethod(method.Method) {
-					filtered = append(filtered, method)
-				}
-			}
-			methods = filtered
+		if resolved, ok := s.surfaces.Get(surfaceID); ok {
+			surface = &resolved
 		}
 	}
+	for _, registered := range s.registry.Methods() {
+		provider, ok := s.registry.Get(registered.Method)
+		if !ok || (surface != nil && !surface.AllowsMethod(registered.Method)) || !authentication.Available(ctx, provider) {
+			continue
+		}
+		methods = append(methods, registered)
+	}
 	return map[string]any{"methods": methods}
+}
+
+func (s *UnifiedAuthService) resolveAvailableMethod(ctx context.Context, method, client string) (authentication.Authenticator, auth.ClientSurface, error) {
+	if s.registry == nil {
+		return nil, auth.ClientSurface{}, errs.NewKey(errs.CodeNotFound, "auth.method_unavailable", "authentication method unavailable")
+	}
+	provider, ok := s.registry.Get(method)
+	if !ok {
+		return nil, auth.ClientSurface{}, errs.NewKey(errs.CodeNotFound, "auth.method_unavailable", "authentication method unavailable")
+	}
+	surface, err := s.resolveSurfaceForContext(ctx, client)
+	if err != nil || !surface.AllowsMethod(method) || !authentication.Available(ctx, provider) {
+		return nil, auth.ClientSurface{}, errs.NewKey(errs.CodeNotFound, "auth.method_unavailable", "authentication method unavailable")
+	}
+	return provider, surface, nil
 }
 
 func (s *UnifiedAuthService) Begin(ctx context.Context, req ChallengeRequest) (any, error) {
 	if err := s.allow(ctx, "challenge:"+authenticationRateKey(req.Method, req.Client, req.Payload)); err != nil {
 		return nil, err
 	}
-	provider, ok := s.registry.Get(req.Method)
-	if !ok {
-		return nil, errs.NewKey(errs.CodeNotFound, "auth.method_unavailable", "authentication method unavailable")
-	}
-	surface, err := s.resolveSurfaceForContext(ctx, req.Client)
-	if err != nil || !surface.AllowsMethod(req.Method) {
-		return nil, errs.NewKey(errs.CodeNotFound, "auth.method_unavailable", "authentication method unavailable")
+	provider, _, err := s.resolveAvailableMethod(ctx, req.Method, req.Client)
+	if err != nil {
+		return nil, err
 	}
 	if !provider.Capabilities().Challenge {
 		return nil, errs.NewKey(errs.CodeValidation, "auth.challenge_not_supported", "authentication method does not use challenge")
@@ -117,13 +133,9 @@ func (s *UnifiedAuthService) Authenticate(ctx context.Context, req AuthenticateR
 	if err := s.allow(ctx, "authenticate:"+authenticationRateKey(req.Method, req.Client, req.Credentials)); err != nil {
 		return nil, err
 	}
-	provider, ok := s.registry.Get(req.Method)
-	if !ok {
-		return nil, errs.NewKey(errs.CodeNotFound, "auth.method_unavailable", "authentication method unavailable")
-	}
-	surface, err := s.resolveSurfaceForContext(ctx, req.Client)
-	if err != nil || !surface.AllowsMethod(req.Method) {
-		return nil, errs.NewKey(errs.CodeNotFound, "auth.method_unavailable", "authentication method unavailable")
+	provider, surface, err := s.resolveAvailableMethod(ctx, req.Method, req.Client)
+	if err != nil {
+		return nil, err
 	}
 	verified, err := provider.Complete(ctx, authentication.CompleteRequest{ChallengeID: req.ChallengeID, Client: req.Client, Payload: req.Credentials})
 	if err != nil {

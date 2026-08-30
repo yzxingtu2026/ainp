@@ -1041,6 +1041,15 @@ declare namespace App {
           bindWeChat: {
             title: string;
           };
+          redirect: {
+            divider: string;
+            invalidAuthorizeUrl: string;
+            processing: string;
+            failed: string;
+            providerRejected: string;
+            invalidCallback: string;
+            backToLogin: string;
+          };
         };
         home: {
           greeting: string;

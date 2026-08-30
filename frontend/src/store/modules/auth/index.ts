@@ -162,6 +162,15 @@ export const useAuthStore = defineStore(SetupStoreId.Auth, () => {
     return false;
   }
 
+  async function finishExternalLogin(loginToken: Api.Auth.LoginToken) {
+    const pass = await loginByToken(loginToken);
+    if (!pass) {
+      await resetStore();
+      return false;
+    }
+    return true;
+  }
+
   async function getUserInfo() {
     const { data: info, error } = await fetchGetUserInfo();
 
@@ -197,6 +206,7 @@ export const useAuthStore = defineStore(SetupStoreId.Auth, () => {
     resetStore,
     logout,
     login,
+    finishExternalLogin,
     initUserInfo
   };
 });

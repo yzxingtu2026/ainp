@@ -24,7 +24,7 @@ export function setupElegantRouter() {
     onRouteMetaGen(routeName) {
       const key = routeName as RouteKey;
 
-      const constantRoutes: RouteKey[] = ['login', 'setup', '403', '404', '500'];
+      const constantRoutes: RouteKey[] = ['login', 'auth-callback', 'setup', '403', '404', '500'];
       // 业务页由后端 Metadata 注入菜单；扫目录生成的静态路由不进侧栏，避免 route.xxx 与中文菜单重复
       const backendDrivenMenus: string[] = [
         'demo',

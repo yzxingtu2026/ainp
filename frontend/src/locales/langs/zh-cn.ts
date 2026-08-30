@@ -252,6 +252,7 @@ const local: App.I18n.Schema = {
     ai_providers: '模型供应商',
     ai_workspace: 'AI 工作台',
     login: '登录',
+    'auth-callback': '登录回调',
     403: '无权限',
     404: '页面不存在',
     500: '服务器错误',
@@ -912,6 +913,15 @@ const local: App.I18n.Schema = {
       },
       bindWeChat: {
         title: '绑定微信'
+      },
+      redirect: {
+        divider: '其他登录方式',
+        invalidAuthorizeUrl: '认证服务返回了无效的授权地址',
+        processing: '正在完成登录',
+        failed: '第三方登录失败',
+        providerRejected: '你已取消或拒绝第三方授权',
+        invalidCallback: '回调参数无效，请重新发起登录',
+        backToLogin: '返回登录页'
       }
     },
     home: {

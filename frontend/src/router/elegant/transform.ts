@@ -174,6 +174,7 @@ const routeMap: RouteMap = {
   "ai_models": "/ai/models",
   "ai_providers": "/ai/providers",
   "ai_workspace": "/ai/workspace",
+  "auth-callback": "/auth-callback",
   "demo": "/demo",
   "demo_attachments": "/demo/attachments",
   "demo_hello": "/demo/hello",

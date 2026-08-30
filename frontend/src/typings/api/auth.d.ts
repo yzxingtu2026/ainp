@@ -27,7 +27,25 @@ declare namespace Api {
 
     interface AuthMethod {
       method: string;
-      capabilities: { challenge: boolean; redirect: boolean; label_key?: string };
+      capabilities: {
+        challenge: boolean;
+        redirect: boolean;
+        label?: string;
+        label_key?: string;
+        icon?: string;
+        order?: number;
+      };
+    }
+
+    interface AuthChallenge {
+      challenge_id: string;
+      expires_in: number;
+      data?: { authorize_url?: string; provider?: string };
+    }
+
+    interface UnifiedAuthToken extends AinPLoginData {
+      session_id: string;
+      client_surface: string;
     }
 
     interface Session {
