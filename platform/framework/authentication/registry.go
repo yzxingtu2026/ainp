@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -13,8 +14,16 @@ import (
 type Capabilities struct {
 	Challenge bool   `json:"challenge"`
 	Redirect  bool   `json:"redirect"`
+	Label     string `json:"label,omitempty"`
 	LabelKey  string `json:"label_key,omitempty"`
+	Icon      string `json:"icon,omitempty"`
+	Order     int    `json:"order,omitempty"`
 }
+
+var (
+	labelKeyPattern = regexp.MustCompile(`^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$`)
+	iconPattern     = regexp.MustCompile(`^[a-z0-9]+:[a-z0-9][a-z0-9-]*$`)
+)
 
 type BeginRequest struct {
 	Client  string
@@ -49,9 +58,21 @@ type Authenticator interface {
 	Complete(context.Context, CompleteRequest) (*VerifiedIdentity, error)
 }
 
-type Registry struct{ items map[string]Authenticator }
+// AvailabilityChecker is an optional request-context-aware boundary for
+// authenticators backed by runtime configuration such as tenant integrations.
+// Returning false hides the method and blocks Begin/Complete consistently.
+type AvailabilityChecker interface {
+	Available(context.Context) bool
+}
 
-func NewRegistry() *Registry { return &Registry{items: make(map[string]Authenticator)} }
+type registryItem struct {
+	provider Authenticator
+	method   Method
+}
+
+type Registry struct{ items map[string]registryItem }
+
+func NewRegistry() *Registry { return &Registry{items: make(map[string]registryItem)} }
 
 func (r *Registry) Register(provider Authenticator) error {
 	if provider == nil {
@@ -68,16 +89,46 @@ func (r *Registry) Register(provider Authenticator) error {
 	if capabilities.Redirect && !capabilities.Challenge {
 		return fmt.Errorf("authentication: redirect method %q must support challenge", method)
 	}
+	capabilities.Label = strings.TrimSpace(capabilities.Label)
+	capabilities.LabelKey = strings.TrimSpace(capabilities.LabelKey)
+	capabilities.Icon = strings.TrimSpace(capabilities.Icon)
+	if len(capabilities.Label) > 80 || strings.ContainsAny(capabilities.Label, "\r\n\t") {
+		return fmt.Errorf("authentication: invalid label for method %q", method)
+	}
+	if capabilities.LabelKey != "" && !labelKeyPattern.MatchString(capabilities.LabelKey) {
+		return fmt.Errorf("authentication: invalid label key for method %q", method)
+	}
+	if capabilities.Icon != "" && !iconPattern.MatchString(capabilities.Icon) {
+		return fmt.Errorf("authentication: invalid icon for method %q", method)
+	}
+	if capabilities.Order < 0 || capabilities.Order > 10000 {
+		return fmt.Errorf("authentication: invalid order for method %q", method)
+	}
 	if _, exists := r.items[method]; exists {
 		return fmt.Errorf("authentication: method already registered: %s", method)
 	}
-	r.items[method] = provider
+	r.items[method] = registryItem{provider: provider, method: Method{Method: method, Capabilities: capabilities}}
 	return nil
 }
 
+// Available evaluates the optional runtime boundary and fails closed if a
+// downstream checker panics. Provider-specific failures are never exposed.
+func Available(ctx context.Context, provider Authenticator) (available bool) {
+	checker, ok := provider.(AvailabilityChecker)
+	if !ok {
+		return true
+	}
+	defer func() {
+		if recover() != nil {
+			available = false
+		}
+	}()
+	return checker.Available(ctx)
+}
+
 func (r *Registry) Get(method string) (Authenticator, bool) {
-	provider, ok := r.items[strings.TrimSpace(method)]
-	return provider, ok
+	item, ok := r.items[strings.TrimSpace(method)]
+	return item.provider, ok
 }
 
 type Method struct {
@@ -87,9 +138,15 @@ type Method struct {
 
 func (r *Registry) Methods() []Method {
 	methods := make([]Method, 0, len(r.items))
-	for method, provider := range r.items {
-		methods = append(methods, Method{Method: method, Capabilities: provider.Capabilities()})
+	for _, item := range r.items {
+		methods = append(methods, item.method)
 	}
-	sort.Slice(methods, func(i, j int) bool { return methods[i].Method < methods[j].Method })
+	sort.Slice(methods, func(i, j int) bool {
+		left, right := methods[i].Capabilities.Order, methods[j].Capabilities.Order
+		if left != right {
+			return left < right
+		}
+		return methods[i].Method < methods[j].Method
+	})
 	return methods
 }

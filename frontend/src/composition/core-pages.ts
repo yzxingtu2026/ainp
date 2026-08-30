@@ -6,6 +6,7 @@ export const corePages = [
   page('500', () => import('@/views/_builtin/500/index.vue')),
   page('iframe-page', () => import('@/views/_builtin/iframe-page/[url].vue')),
   page('login', () => import('@/views/_builtin/login/index.vue')),
+  page('auth-callback', () => import('@/views/_builtin/auth-callback/index.vue')),
   page('setup', () => import('@/views/_builtin/setup/index.vue')),
   page('home', () => import('@/views/home/index.vue')),
   page('mcp_confirm', () => import('@/views/mcp/confirm/index.vue')),

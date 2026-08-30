@@ -256,6 +256,7 @@ const local: App.I18n.Schema = {
     ai_providers: 'Model Providers',
     ai_workspace: 'AI Workspace',
     login: 'Login',
+    'auth-callback': 'Sign-in callback',
     403: 'No Permission',
     404: 'Page Not Found',
     500: 'Server Error',
@@ -927,6 +928,15 @@ const local: App.I18n.Schema = {
       },
       bindWeChat: {
         title: 'Bind WeChat'
+      },
+      redirect: {
+        divider: 'Other sign-in methods',
+        invalidAuthorizeUrl: 'The authentication service returned an invalid authorization URL',
+        processing: 'Completing sign-in',
+        failed: 'Third-party sign-in failed',
+        providerRejected: 'Authorization was cancelled or rejected',
+        invalidCallback: 'Invalid callback parameters. Please start sign-in again',
+        backToLogin: 'Back to sign in'
       }
     },
     home: {

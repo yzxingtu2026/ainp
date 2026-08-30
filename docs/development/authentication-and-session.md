@@ -42,6 +42,10 @@ type Authenticator interface {
 }
 ```
 
+运行时依赖 Integration、Credential 或租户配置的认证器可额外实现可选接口 `Available(context.Context) bool`。统一认证服务会在 methods、challenge 和 authenticate 三条公开入口使用同一检查；返回 false 或检查 panic 均 fail-closed，对外只返回通用 method unavailable，不泄露配置、数据库或 credential 细节。未实现该接口的认证器按静态可用处理。
+
+`Capabilities` 同时是受信任的静态展示元数据边界：redirect method 必须声明 `challenge=true`，可提供 `label` / `label_key`、Iconify 风格的固定 `icon`（例如 `simple-icons:dingtalk`）和非负 `order`。注册时校验格式，目录按 order、method 确定性排序；这些字段不得承载动态 import、远程组件、HTML 或 Provider 配置。
+
 Provider secret 使用启动安全配置或 Secret 管理，不进入普通租户设置 JSON。短信、邮件、Passkey、OIDC、微信或钉钉 Adapter 必须单开 Issue，并复用统一身份、会话、限流和审计链路。
 
 ## 密码认证
@@ -78,6 +82,8 @@ MCP 使用独立的 OAuth Grant、Token family 和 `ainp:mcp` audience，不复�
 
 每个下游 Client Surface 还会在其 `PathPrefix + /auth/...` 自动投影 methods、challenge、authenticate、refresh、logout 和 session 路由。公共认证请求的 `client` 必须等于请求路径解析出的 Surface；refresh token 也只能从原 Surface 路径轮换。
 
+Admin 登录页只消费 `/auth/methods` 中通过校验且 `redirect=true + challenge=true` 的条目。点击后调用统一 challenge 获取 `authorize_url`，不拼 Provider URL。Provider callback 固定进入平台 `/auth-callback` 页面，由页面调用统一 authenticate 保存 Session/Token；成功后只恢复登录前的单斜杠站内路径，协议相对、跨域与带凭据 URL 一律拒绝。callback 在成功或失败后都 replace 清理 code、state、error 等 query；刷新或重复提交因一次性临时上下文和下游 state 消费规则安全失败并返回密码登录。
+
 异步 Outbox Event 与 JobRun 同样持久化 `principal_kind + actor/created_by + client_surface + audience`。Dispatcher/Worker 恢复 AuthContext 时必须使用这些字段；旧事件/任务仅有 Account actor 时按 `ainp.account` 兼容，禁止默认切换到其他主体或 tenant-console Surface。
 
 审计记录保存 Actor ID 的同时必须保存 Principal Kind、Client Surface 与 audience；幂等唯一键包含 Principal Kind，避免不同主体类型使用相同 ID 和 key 时互相重放或冲突。旧审计与幂等记录按 `ainp.account` 回填，不能据此推断其他业务主体。
@@ -105,6 +111,8 @@ Challenge 只保存摘要，必须具备短 TTL、单次消费、失败次数上
 - [ ] Session 以 Principal Ref + Surface 为事实；仅 Account 兼容关联 `account_id`
 - [ ] Session Service 签发前再次调用 Provider，refresh 固定原 Kind/Surface/Audience
 - [ ] methods 只暴露启用方法和非敏感元数据
+- [ ] methods / challenge / authenticate 复用同一 Available 边界
+- [ ] redirect callback 使用平台固定路由并清理敏感 query
 - [ ] challenge 有 TTL、单次消费和次数上限
 - [ ] 敏感凭据未进入日志、审计、响应或普通设置
 

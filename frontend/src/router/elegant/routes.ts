@@ -121,6 +121,17 @@ export const generatedRoutes: GeneratedRoute[] = [
     ]
   },
   {
+    name: 'auth-callback',
+    path: '/auth-callback',
+    component: 'layout.blank$view.auth-callback',
+    meta: {
+      title: 'auth-callback',
+      i18nKey: 'route.auth-callback',
+      constant: true,
+      hideInMenu: true
+    }
+  },
+  {
     name: 'demo',
     path: '/demo',
     component: 'layout.base',

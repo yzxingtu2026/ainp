@@ -81,6 +81,28 @@ export function fetchAuthMethods() {
   return request<{ methods: Api.Auth.AuthMethod[] }>({ url: '/api/v1/system/auth/methods' });
 }
 
+export function createAuthChallenge(method: string) {
+  return request<Api.Auth.AuthChallenge>({
+    url: '/api/v1/system/auth/challenges',
+    method: 'post',
+    data: { method, client: 'ainp.tenant-console', payload: {} }
+  });
+}
+
+export function authenticateRedirect(input: { method: string; challengeId?: string; code: string; state: string }) {
+  return request<Api.Auth.UnifiedAuthToken>({
+    url: '/api/v1/system/auth/authenticate',
+    method: 'post',
+    errorMode: 'inline',
+    data: {
+      method: input.method,
+      challenge_id: input.challengeId || '',
+      client: 'ainp.tenant-console',
+      credentials: { code: input.code, state: input.state }
+    }
+  });
+}
+
 export function fetchLogout() {
   return request<{ revoked: boolean }>({ url: '/api/v1/system/auth/logout', method: 'post' });
 }

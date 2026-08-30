@@ -28,6 +28,7 @@ declare module "@elegant-router/types" {
     "ai_models": "/ai/models";
     "ai_providers": "/ai/providers";
     "ai_workspace": "/ai/workspace";
+    "auth-callback": "/auth-callback";
     "demo": "/demo";
     "demo_attachments": "/demo/attachments";
     "demo_hello": "/demo/hello";
@@ -91,6 +92,7 @@ declare module "@elegant-router/types" {
     | "404"
     | "500"
     | "ai"
+    | "auth-callback"
     | "demo"
     | "home"
     | "iframe-page"
@@ -121,6 +123,7 @@ declare module "@elegant-router/types" {
     | "403"
     | "404"
     | "500"
+    | "auth-callback"
     | "iframe-page"
     | "login"
     | "setup"

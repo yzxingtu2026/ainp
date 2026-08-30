@@ -23,5 +23,7 @@
 - 密码、验证码、Token、challenge secret 禁止进入日志、审计、响应或普通租户设置。
 - 生物认证只允许 Passkey/WebAuthn；禁止采集、上传、存储原始指纹或人脸。
 - 新具体渠道单开 Issue，复用统一认证/身份/会话主链。
+- 运行时配置型 Authenticator 实现可选 `Available(ctx) bool`；methods/challenge/authenticate 必须复用同一检查并 fail-closed，禁止泄露 Integration/Credential 细节。
+- redirect 展示只使用受校验的静态 label/label_key/icon/order；Admin 固定 `/auth-callback` 经统一 authenticate 建 Session，清理 code/state，登录后仅允许站内单斜杠 redirect。
 
 详规：`docs/development/authentication-and-session.md`

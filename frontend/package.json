@@ -42,6 +42,7 @@
     "test:downstream-build": "pnpm build:downstream-example && ! rg -l 'demo-task-1|/api/v1/demo/hello' dist",
     "test:list-page-overflow": "node --test scripts/check-list-page-overflow.test.mjs && node scripts/check-list-page-overflow.mjs",
     "test:menu": "tsx --test src/store/modules/route/shared.test.ts",
+    "test:redirect-auth": "tsx --test src/utils/auth-redirect.test.ts",
     "test:request-error-boundary": "tsx --test src/service/request/error.test.ts && node --test scripts/check-request-error-boundary.test.mjs && node scripts/check-request-error-boundary.mjs",
     "test:select": "vitest run --config vitest.config.ts src/components/common/app-select.test.ts",
     "test:service-url": "tsx --test src/utils/service.test.ts",
