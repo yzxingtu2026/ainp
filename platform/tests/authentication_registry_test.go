@@ -67,7 +67,9 @@ func TestAuthenticatorAvailabilityFailsClosed(t *testing.T) {
 func TestAuthenticatorMetadataIsSnapshottedAtRegistration(t *testing.T) {
 	provider := &fakeAuthenticator{method: "oidc", capabilities: authentication.Capabilities{Challenge: true, Redirect: true, Label: "OIDC", Order: 20}}
 	registry := authentication.NewRegistry()
-	if err := registry.Register(provider); err != nil { t.Fatal(err) }
+	if err := registry.Register(provider); err != nil {
+		t.Fatal(err)
+	}
 	provider.capabilities.Label = "changed"
 	provider.capabilities.Icon = "<svg>"
 	methods := registry.Methods()

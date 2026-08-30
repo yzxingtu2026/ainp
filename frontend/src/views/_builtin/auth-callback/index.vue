@@ -32,31 +32,46 @@ onMounted(async () => {
   const denied = queryValue(route.query.error);
   const redirect = safeInternalRedirect(context?.redirect);
 
+  if (denied) {
+    await clearSensitiveQuery();
+    status.value = 'error';
+    errorMessage.value = $t('page.login.redirect.providerRejected');
+    return;
+  }
+  if (
+    !isValidAuthMethod(method) ||
+    !code ||
+    !state ||
+    (context && callbackMethod && callbackMethod !== context.method)
+  ) {
+    await clearSensitiveQuery();
+    status.value = 'error';
+    errorMessage.value = $t('page.login.redirect.invalidCallback');
+    return;
+  }
+
   try {
-    if (denied) throw new Error($t('page.login.redirect.providerRejected'));
-    if (
-      !isValidAuthMethod(method) ||
-      !code ||
-      !state ||
-      (context && callbackMethod && callbackMethod !== context.method)
-    )
-      throw new Error($t('page.login.redirect.invalidCallback'));
     const { data, error } = await authenticateRedirect({ method, challengeId: context?.challengeId, code, state });
-    if (error || !data) throw error || new Error($t('page.login.redirect.failed'));
+    if (error || !data) {
+      errorMessage.value = getRequestErrorMessage(error, $t('page.login.redirect.failed'));
+      status.value = 'error';
+      return;
+    }
     await clearSensitiveQuery();
     const loggedIn = await authStore.finishExternalLogin({
       token: data.access_token,
       refreshToken: data.refresh_token
     });
-    if (!loggedIn) throw new Error($t('page.login.redirect.failed'));
+    if (!loggedIn) {
+      status.value = 'error';
+      errorMessage.value = $t('page.login.redirect.failed');
+      return;
+    }
     await router.replace(redirect || '/');
-  } catch (error) {
+  } catch (requestError) {
     await clearSensitiveQuery();
     status.value = 'error';
-    errorMessage.value =
-      error instanceof Error && !('response' in error)
-        ? error.message
-        : getRequestErrorMessage(error, $t('page.login.redirect.failed'));
+    errorMessage.value = getRequestErrorMessage(requestError, $t('page.login.redirect.failed'));
   }
 });
 </script>
