@@ -40,6 +40,17 @@ export interface ServiceRegistration<T = unknown> extends OwnedRegistration {
   service: T;
 }
 
+export type ProfileExtensionPlacement = 'tab';
+export type ProfileExtensionComponent = () => Promise<RouteComponent | { default: RouteComponent }>;
+
+export interface ProfileExtensionRegistration extends OwnedRegistration {
+  placement: ProfileExtensionPlacement;
+  label?: string;
+  labelKey?: string;
+  order?: number;
+  component: ProfileExtensionComponent;
+}
+
 export interface AdminInitializerContext {
   app: VueApp;
   services: ReadonlyMap<string, unknown>;
@@ -57,17 +68,21 @@ export interface AdminAppDefinition {
   i18n?: readonly I18nRegistration[];
   initializers?: readonly InitializerRegistration[];
   services?: readonly ServiceRegistration[];
+  profileExtensions?: readonly ProfileExtensionRegistration[];
   homePageKey?: string;
 }
 
-export interface ResolvedAdminApp
-  extends Omit<AdminAppDefinition, 'modules' | 'pages' | 'routes' | 'i18n' | 'initializers' | 'services'> {
+export interface ResolvedAdminApp extends Omit<
+  AdminAppDefinition,
+  'modules' | 'pages' | 'routes' | 'i18n' | 'initializers' | 'services' | 'profileExtensions'
+> {
   modules: readonly AdminModule[];
   pages: readonly PageRegistration[];
   routes: readonly RouteRegistration[];
   i18n: readonly I18nRegistration[];
   initializers: readonly InitializerRegistration[];
   services: readonly ServiceRegistration[];
+  profileExtensions: readonly Readonly<ProfileExtensionRegistration>[];
   pageMap: Readonly<Record<string, PageRegistration['component']>>;
   servicesMap: ReadonlyMap<string, unknown>;
 }

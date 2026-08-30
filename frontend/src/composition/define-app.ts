@@ -1,8 +1,16 @@
-import type { AdminAppDefinition, AdminModule, OwnedRegistration, ResolvedAdminApp } from './contract';
+import type {
+  AdminAppDefinition,
+  AdminModule,
+  OwnedRegistration,
+  ProfileExtensionRegistration,
+  ResolvedAdminApp
+} from './contract';
 
 const ID_PATTERN = /^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/;
 const PAGE_KEY_PATTERN = /^[a-z0-9]+(?:[_-][a-z0-9]+)*$/;
 const SAFE_PATH_PATTERN = /^\/(?:[a-z0-9][a-z0-9._~-]*)(?:\/[a-z0-9][a-z0-9._~-]*)*$/;
+export const RESERVED_PROFILE_TAB_IDS = Object.freeze(['basic', 'preferences', 'memory', 'mcp', 'security'] as const);
+const RESERVED_PROFILE_TAB_ID_SET = new Set<string>(RESERVED_PROFILE_TAB_IDS);
 
 const MODULE_DEPENDENCIES: Readonly<Record<AdminModule, readonly AdminModule[]>> = {
   core: [],
@@ -23,10 +31,44 @@ function assertUnique(kind: string, registrations: readonly OwnedRegistration[],
     assertId(`${kind} owner`, item.owner);
     const previous = owners.get(item.id);
     if (previous) {
-      throw new Error(`[admin-composition] duplicate ${kind} "${item.id}" from owners "${previous}" and "${item.owner}"`);
+      throw new Error(
+        `[admin-composition] duplicate ${kind} "${item.id}" from owners "${previous}" and "${item.owner}"`
+      );
     }
     owners.set(item.id, item.owner);
   }
+}
+
+function resolveProfileExtensions(
+  registrations: readonly ProfileExtensionRegistration[]
+): readonly Readonly<ProfileExtensionRegistration>[] {
+  assertUnique('profile extension', registrations);
+  const extensions = registrations.map(item => {
+    if (RESERVED_PROFILE_TAB_ID_SET.has(item.id)) {
+      throw new Error(`[admin-composition] profile extension "${item.id}" conflicts with a reserved platform tab`);
+    }
+    if (!item.id.startsWith(`${item.owner}.`)) {
+      throw new Error(`[admin-composition] profile extension "${item.id}" must use owner namespace "${item.owner}."`);
+    }
+    if (item.placement !== 'tab') {
+      throw new Error(`[admin-composition] unknown profile extension placement "${String(item.placement)}"`);
+    }
+    if (!item.label?.trim() && !item.labelKey?.trim()) {
+      throw new Error(`[admin-composition] profile extension "${item.id}" requires label or labelKey`);
+    }
+    if (item.labelKey && !ID_PATTERN.test(item.labelKey)) {
+      throw new Error(`[admin-composition] invalid profile extension labelKey "${item.labelKey}"`);
+    }
+    if (item.order !== undefined && (!Number.isSafeInteger(item.order) || item.order < 0)) {
+      throw new Error(`[admin-composition] invalid profile extension order for "${item.id}"`);
+    }
+    if (typeof item.component !== 'function') {
+      throw new Error(`[admin-composition] invalid profile extension component for "${item.id}"`);
+    }
+    return Object.freeze({ ...item });
+  });
+  extensions.sort((a, b) => (a.order ?? 1000) - (b.order ?? 1000) || a.id.localeCompare(b.id));
+  return Object.freeze(extensions);
 }
 
 export function defineAdminApp(definition: AdminAppDefinition): ResolvedAdminApp {
@@ -52,6 +94,7 @@ export function defineAdminApp(definition: AdminAppDefinition): ResolvedAdminApp
   const i18n = [...(definition.i18n || [])].sort((a, b) => a.id.localeCompare(b.id));
   const initializers = [...(definition.initializers || [])].sort((a, b) => a.id.localeCompare(b.id));
   const services = [...(definition.services || [])].sort((a, b) => a.id.localeCompare(b.id));
+  const profileExtensions = resolveProfileExtensions(definition.profileExtensions || []);
 
   assertUnique('page', pages, PAGE_KEY_PATTERN);
   assertUnique('route', routes);
@@ -77,6 +120,7 @@ export function defineAdminApp(definition: AdminAppDefinition): ResolvedAdminApp
     i18n: Object.freeze(i18n),
     initializers: Object.freeze(initializers),
     services: Object.freeze(services),
+    profileExtensions,
     pageMap: Object.freeze(pageMap),
     servicesMap: new Map(services.map(item => [item.id, item.service]))
   });
@@ -103,7 +147,8 @@ export function assertRegisteredRouteComponents(
     for (const component of (route.component || '').split('$')) {
       if (component.startsWith('view.')) {
         const pageKey = component.slice('view.'.length);
-        if (!pages[pageKey]) throw new Error(`[admin-composition] route "${route.name}" references unknown page "${pageKey}"`);
+        if (!pages[pageKey])
+          throw new Error(`[admin-composition] route "${route.name}" references unknown page "${pageKey}"`);
       } else if (component.startsWith('layout.')) {
         const layoutKey = component.slice('layout.'.length);
         if (!layouts[layoutKey]) {

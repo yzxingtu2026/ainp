@@ -29,5 +29,15 @@ export const adminApplication = defineAdminApp({
   i18n: [{ id: 'example.orders', owner: 'example.orders', messages: { 'zh-CN': zhCN } }],
   services: [{ id: 'example.orders', owner: 'example.orders', service: ordersService }],
   initializers: [{ id: 'example.orders.store', owner: 'example.orders', setup: installOrdersStore }],
+  profileExtensions: [
+    {
+      id: 'example.orders.account',
+      owner: 'example.orders',
+      placement: 'tab',
+      label: '账号扩展示例',
+      order: 100,
+      component: () => import('./src/profile-extension.vue')
+    }
+  ],
   homePageKey: 'example_orders'
 });

@@ -11,6 +11,7 @@ const baselineFiles = [
   'src/composition/define-app.ts',
   'src/composition/index.ts',
   'src/composition/page.ts',
+  'src/composition/profile-extension.ts',
   'src/composition/core-pages.ts',
   'src/composition/system-pages.ts',
   'src/composition/operations-pages.ts',
