@@ -21,14 +21,16 @@ import { useAttachmentAvatar } from '@/hooks/business/agent-avatar';
 import { ATTACHMENT_RESOURCE_TYPES } from '@/constants/attachment';
 import { REG_PWD } from '@/constants/reg';
 import { formatDateTime } from '@/utils/datetime';
+import { getAdminApplication, resolveProfileTabId, shouldReplaceProfileTabQuery } from '@/composition';
+import ProfileExtensionHost from './profile-extension-host.vue';
 
 defineOptions({ name: 'SystemProfile' });
 
-type Tab = 'basic' | 'preferences' | 'memory' | 'mcp' | 'security';
 const route = useRoute();
 const router = useRouter();
 const authStore = useAuthStore();
-const tab = ref<Tab>((route.query.tab as Tab) || 'basic');
+const profileExtensions = getAdminApplication().profileExtensions;
+const tab = ref(resolveProfileTabId(route.query.tab, profileExtensions));
 const loading = ref(false);
 const saving = ref(false);
 const passwordSaving = ref(false);
@@ -70,7 +72,20 @@ const mcpJSONConfig = computed(() =>
   )
 );
 
-watch(tab, value => router.replace({ query: { ...route.query, tab: value } }));
+watch(
+  () => route.query.tab,
+  requested => {
+    const resolved = resolveProfileTabId(requested, profileExtensions);
+    if (tab.value !== resolved) tab.value = resolved;
+    if (shouldReplaceProfileTabQuery(requested, resolved)) {
+      void router.replace({ query: { ...route.query, tab: resolved } });
+    }
+  },
+  { immediate: true }
+);
+watch(tab, value => {
+  if (route.query.tab !== value) void router.replace({ query: { ...route.query, tab: value } });
+});
 
 async function load() {
   loading.value = true;
@@ -534,6 +549,15 @@ onMounted(load);
               <NEmpty v-if="sessions.length === 0" description="暂无活动会话" class="py-24px" />
             </NList>
           </NSpace>
+        </NTabPane>
+
+        <NTabPane
+          v-for="extension in profileExtensions"
+          :key="extension.id"
+          :name="extension.id"
+          :tab="extension.labelKey ? $t(extension.labelKey) : extension.label"
+        >
+          <ProfileExtensionHost :registration="extension" />
         </NTabPane>
       </NTabs>
       <AttachmentPicker

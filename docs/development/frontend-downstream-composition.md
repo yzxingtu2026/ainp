@@ -8,6 +8,10 @@ AINP Vue 管理后台使用编译期静态装配。`frontend/src/composition/con
 
 三类所有权边界：`frontend/packages/@sa/*` 是 Soybean 通用基础包，当前 workspace 包不承诺公共 npm 契约；`frontend/src/composition/*` 是稳定装配契约；其余 `frontend/src/*` 是 AINP 内部实现。AppSelect、请求、CodeSet、附件和时间展示仍按对应规范使用，不得复制分叉。
 
+个人中心只开放 `profileExtensions` 的 `tab` placement。注册项 ID 必须使用 `owner.` namespace，提供 `label` 或下游 i18n `labelKey`、非负整数 `order`（默认 1000）以及编译期可解析的 lazy component；相同 order 按 ID 排序。`basic`、`preferences`、`memory`、`mcp`、`security` 是平台保留 ID。重复 ID、保留 ID、未知 placement、非法 owner/namespace、无效 label/component 会在 `defineAdminApp` 阶段立即失败。扩展只追加在平台内置 Tab 之后，不能替换内置 Tab、整页或注入 selector/DOM/文件路径。
+
+扩展组件拥有自己的业务状态，只能从下游自有目录导入已注册 service、统一请求客户端和公开组件契约；它不会收到个人中心资料、密码、Session、MCP 状态，也不得深层导入平台 Store 或内部页面实现。合法 `?tab=<extension-id>` 可直接恢复；未知 query 会替换为 `basic`，异步组件加载失败只在该 Tab 内显示受控错误边界。
+
 下游 service 必须复用基线的统一请求客户端及其错误展示契约，不得另建 Axios 拦截器或在业务页面补第二个全局 toast。默认 `errorMode=global` 时，页面只处理成功数据或在 `error` 时终止流程；静默降级、表单内联和页面自定义提示分别显式使用 `silent`、`inline`、`custom`，并由调用方独占展示。接管展示时只通过 `getRequestErrorMessage(error, fallback)` 读取后端信封安全文案；原生 `fetch`、下载、SSE 等独立链路使用 `getStandaloneErrorMessage`，任何 UI 都不得直接消费 Axios `error.message`。升级基线时必须运行 `pnpm test:request-error-boundary`。
 
 ## 生命周期与安全边界
@@ -33,4 +37,4 @@ node scripts/admin-baseline.mjs preflight
 
 通用改进优先回提 AINP。上游包含修复后删除临时补丁。失败回滚恢复旧 Tag、旧清单和旧锁文件，不修改已发布清单。
 
-`frontend/examples/downstream-admin` 展示自定义品牌、页面/路由、i18n namespace、Store initializer、AINP 信封 service 和可选 AI 模块，默认不包含 Demo。
+`frontend/examples/downstream-admin` 展示自定义品牌、页面/路由、i18n namespace、Store initializer、AINP 信封 service、个人中心 lazy Tab 和可选 AI 模块，默认不包含 Demo。升级到包含个人中心扩展契约的基线时，应将新增 `profile-extension.ts` 纳入清单，并重新执行 `pnpm test:composition`、`pnpm typecheck`、`pnpm lint`、生产构建和 `pnpm baseline:verify`。

@@ -22,6 +22,7 @@ test('resolves a deterministic application registry', () => {
   definition.pages.push({ id: '403', owner: 'ainp', component });
   const app = defineAdminApp(definition);
   assert.deepEqual(app.modules, ['core', 'system']);
+  assert.deepEqual(app.profileExtensions, []);
   assert.equal(app.pageMap.example_orders, component);
   assert.equal(app.pageMap['403'], component);
 });
@@ -45,11 +46,16 @@ test('rejects malformed page keys while allowing numeric builtin keys', () => {
 
 test('rejects unknown pages, unsafe paths and illegal module combinations', () => {
   assert.throws(
-    () => defineAdminApp({ ...validDefinition(), routes: [{ id: 'x.route', owner: 'x', path: '/x', pageKey: 'missing' }] }),
+    () =>
+      defineAdminApp({ ...validDefinition(), routes: [{ id: 'x.route', owner: 'x', path: '/x', pageKey: 'missing' }] }),
     /unknown page/
   );
   assert.throws(
-    () => defineAdminApp({ ...validDefinition(), routes: [{ id: 'x.route', owner: 'x', path: 'https://evil.test/x', pageKey: 'example_orders' }] }),
+    () =>
+      defineAdminApp({
+        ...validDefinition(),
+        routes: [{ id: 'x.route', owner: 'x', path: 'https://evil.test/x', pageKey: 'example_orders' }]
+      }),
     /invalid route path/
   );
   assert.throws(() => defineAdminApp({ ...validDefinition(), modules: ['core', 'operations'] }), /requires "system"/);
@@ -57,8 +63,72 @@ test('rejects unknown pages, unsafe paths and illegal module combinations', () =
 
 test('rejects remote brand assets', () => {
   assert.throws(
-    () => defineAdminApp({ ...validDefinition(), brand: { ...validDefinition().brand, logo: 'https://cdn.test/logo.svg' } }),
+    () =>
+      defineAdminApp({
+        ...validDefinition(),
+        brand: { ...validDefinition().brand, logo: 'https://cdn.test/logo.svg' }
+      }),
     /build-local/
+  );
+});
+
+test('resolves deterministic frozen profile extensions', () => {
+  const componentA = () => Promise.resolve({});
+  const componentB = () => Promise.resolve({});
+  const app = defineAdminApp({
+    ...validDefinition(),
+    profileExtensions: [
+      { id: 'other.second', owner: 'other', placement: 'tab', label: 'Second', order: 20, component: componentB },
+      {
+        id: 'example.first',
+        owner: 'example',
+        placement: 'tab',
+        labelKey: 'example.profile.first',
+        order: 10,
+        component: componentA
+      }
+    ]
+  });
+  assert.deepEqual(
+    app.profileExtensions.map(item => item.id),
+    ['example.first', 'other.second']
+  );
+  assert.ok(Object.isFrozen(app.profileExtensions));
+  assert.ok(app.profileExtensions.every(Object.isFrozen));
+});
+
+test('fails closed for invalid profile extensions', () => {
+  const base = validDefinition();
+  const extension = {
+    id: 'example.identity',
+    owner: 'example',
+    placement: 'tab' as const,
+    label: 'Identity',
+    component
+  };
+  assert.throws(
+    () => defineAdminApp({ ...base, profileExtensions: [extension, extension] }),
+    /duplicate profile extension/
+  );
+  assert.throws(
+    () => defineAdminApp({ ...base, profileExtensions: [{ ...extension, id: 'basic' }] }),
+    /reserved platform tab/
+  );
+  assert.throws(
+    () => defineAdminApp({ ...base, profileExtensions: [{ ...extension, id: 'other.identity' }] }),
+    /owner namespace/
+  );
+  assert.throws(
+    () => defineAdminApp({ ...base, profileExtensions: [{ ...extension, placement: 'panel' as 'tab' }] }),
+    /unknown profile extension placement/
+  );
+  assert.throws(
+    () => defineAdminApp({ ...base, profileExtensions: [{ ...extension, component: null as never }] }),
+    /invalid profile extension component/
+  );
+  assert.throws(
+    () => defineAdminApp({ ...base, profileExtensions: [{ ...extension, label: '' }] }),
+    /requires label or labelKey/
   );
 });
 
@@ -67,7 +137,13 @@ test('fails closed before generated router transformation', () => {
   const pages = { example_orders: component };
   assert.doesNotThrow(() =>
     assertRegisteredRouteComponents(
-      [{ name: 'example', component: 'layout.base', children: [{ name: 'example_orders', component: 'view.example_orders' }] }],
+      [
+        {
+          name: 'example',
+          component: 'layout.base',
+          children: [{ name: 'example_orders', component: 'view.example_orders' }]
+        }
+      ],
       pages,
       layouts
     )
