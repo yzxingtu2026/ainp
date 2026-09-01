@@ -355,6 +355,8 @@ declare namespace App {
         reset: string;
         search: string;
         switch: string;
+        businessContext: string;
+        shellExtensionUnavailable: string;
         tip: string;
         trigger: string;
         update: string;

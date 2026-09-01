@@ -23,8 +23,69 @@ test('resolves a deterministic application registry', () => {
   const app = defineAdminApp(definition);
   assert.deepEqual(app.modules, ['core', 'system']);
   assert.deepEqual(app.profileExtensions, []);
+  assert.deepEqual(app.shellExtensions, []);
   assert.equal(app.pageMap.example_orders, component);
   assert.equal(app.pageMap['403'], component);
+});
+
+test('resolves deterministic frozen shell extensions', () => {
+  const componentA = () => Promise.resolve({});
+  const componentB = () => Promise.resolve({});
+  const app = defineAdminApp({
+    ...validDefinition(),
+    shellExtensions: [
+      { id: 'other.second', owner: 'other', placement: 'header.context', order: 20, component: componentB },
+      { id: 'example.second', owner: 'example', placement: 'header.context', order: 20, component: componentA },
+      { id: 'example.first', owner: 'example', placement: 'header.context', order: 10, component: componentA }
+    ]
+  });
+  assert.deepEqual(
+    app.shellExtensions.map(item => item.id),
+    ['example.first', 'example.second', 'other.second']
+  );
+  assert.ok(Object.isFrozen(app.shellExtensions));
+  assert.ok(app.shellExtensions.every(Object.isFrozen));
+});
+
+test('fails closed for invalid shell extensions', () => {
+  const base = validDefinition();
+  const extension = {
+    id: 'example.context',
+    owner: 'example',
+    placement: 'header.context' as const,
+    order: 10,
+    component
+  };
+  assert.throws(
+    () => defineAdminApp({ ...base, shellExtensions: [extension, extension] }),
+    /duplicate shell extension/
+  );
+  assert.throws(
+    () => defineAdminApp({ ...base, shellExtensions: [{ ...extension, id: 'other.context' }] }),
+    /owner namespace/
+  );
+  assert.throws(
+    () => defineAdminApp({ ...base, shellExtensions: [{ ...extension, owner: 'Bad Owner' }] }),
+    /invalid shell extension owner/
+  );
+  assert.throws(
+    () =>
+      defineAdminApp({
+        ...base,
+        shellExtensions: [{ ...extension, placement: 'header.tools' as 'header.context' }]
+      }),
+    /unknown shell extension placement/
+  );
+  for (const order of [-1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+    assert.throws(
+      () => defineAdminApp({ ...base, shellExtensions: [{ ...extension, order }] }),
+      /invalid shell extension order/
+    );
+  }
+  assert.throws(
+    () => defineAdminApp({ ...base, shellExtensions: [{ ...extension, component: null as never }] }),
+    /invalid shell extension component/
+  );
 });
 
 test('rejects duplicate registrations with both owners', () => {

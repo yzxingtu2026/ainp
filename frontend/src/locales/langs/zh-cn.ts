@@ -43,6 +43,8 @@ const local: App.I18n.Schema = {
     reset: '重置',
     search: '搜索',
     switch: '切换',
+    businessContext: '业务上下文',
+    shellExtensionUnavailable: '上下文扩展不可用',
     tip: '提示',
     trigger: '触发',
     update: '更新',

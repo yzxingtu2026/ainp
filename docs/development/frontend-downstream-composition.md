@@ -12,6 +12,14 @@ AINP Vue 管理后台使用编译期静态装配。`frontend/src/composition/con
 
 扩展组件拥有自己的业务状态，只能从下游自有目录导入已注册 service、统一请求客户端和公开组件契约；它不会收到个人中心资料、密码、Session、MCP 状态，也不得深层导入平台 Store 或内部页面实现。合法 `?tab=<extension-id>` 可直接恢复；未知 query 会替换为 `basic`，异步组件加载失败只在该 Tab 内显示受控错误边界。
 
+Application Shell 首期只开放 `shellExtensions` 的 `header.context` placement，位置固定在平台菜单/面包屑与右侧工具区之间。注册项必须提供 owner namespace ID、非负安全整数 `order` 和编译期可解析的 lazy component；相同 order 按 ID 排序。重复 ID、非法 owner/namespace、未知 placement、非法 order/component 在 `defineAdminApp` 阶段 fail-closed，解析后的数组与注册项冻结。契约不接受组件名字符串、URL、HTML、selector、DOM path 或整个 Header/Layout 替换。
+
+平台 Header 只把已校验注册项交给隔离宿主，不向扩展传入 Auth Store、Router、Theme Store 或其他私有实例。扩展通过下游自有 Store、已注册 service 和公开组件工作；选择的公司、项目、门店等值只是业务请求候选上下文，后端必须按当前 actor/tenant 重新校验，不能改变平台认证或服务端授权。initializer 继续只负责状态初始化，不承担组件渲染。
+
+桌面端扩展按确定顺序内联，并在受限区域内横向滚动，平台右侧搜索、通知、语言、主题和用户菜单固定不收缩。视口不大于 960px 时，扩展进入带可访问名称的“业务上下文”弹出入口，所有注册项仍可键盘到达，不得无替代地隐藏。扩展自行提供可访问名称、加载/空/错误状态和适配两种容器的宽度；平台分别隔离 lazy load 与 render 错误，单项失败不得破坏 Header、导航、用户菜单或登出。响应式容器切换会重新挂载扩展，跨布局状态应由下游 Store 管理。
+
+Shell 扩展只随已登录 Base Layout 挂载，登出、账号/租户变化或离开壳层时正常卸载。没有注册项时不渲染额外入口，现有 Header 行为保持兼容。新增 placement 必须另行定义产品语义、布局、生命周期和安全边界，不能复用 `header.context` 绕过治理。
+
 下游 service 必须复用基线的统一请求客户端及其错误展示契约，不得另建 Axios 拦截器或在业务页面补第二个全局 toast。默认 `errorMode=global` 时，页面只处理成功数据或在 `error` 时终止流程；静默降级、表单内联和页面自定义提示分别显式使用 `silent`、`inline`、`custom`，并由调用方独占展示。接管展示时只通过 `getRequestErrorMessage(error, fallback)` 读取后端信封安全文案；原生 `fetch`、下载、SSE 等独立链路使用 `getStandaloneErrorMessage`，任何 UI 都不得直接消费 Axios `error.message`。升级基线时必须运行 `pnpm test:request-error-boundary`。
 
 认证登录属于平台固定外壳，不开放整页替换或动态组件注册。下游 redirect Provider 只需在后端注册 Authenticator，并通过受信任 `Capabilities` 提供 label/label_key、Iconify 固定 icon 与 order；Admin 会动态渲染入口并统一使用 `/auth-callback`。下游不得深层导入登录页、路由或 Auth Store，也不得让后端字符串触发动态 import。
@@ -39,4 +47,4 @@ node scripts/admin-baseline.mjs preflight
 
 通用改进优先回提 AINP。上游包含修复后删除临时补丁。失败回滚恢复旧 Tag、旧清单和旧锁文件，不修改已发布清单。
 
-`frontend/examples/downstream-admin` 展示自定义品牌、页面/路由、i18n namespace、Store initializer、AINP 信封 service、个人中心 lazy Tab 和可选 AI 模块，默认不包含 Demo。升级到包含个人中心扩展契约的基线时，应将新增 `profile-extension.ts` 纳入清单，并重新执行 `pnpm test:composition`、`pnpm typecheck`、`pnpm lint`、生产构建和 `pnpm baseline:verify`。
+`frontend/examples/downstream-admin` 展示自定义品牌、页面/路由、i18n namespace、Store initializer、AINP 信封 service、个人中心 lazy Tab、通用业务上下文 Shell 扩展和可选 AI 模块，默认不包含 Demo。升级到包含扩展契约的基线时，应将 `profile-extension.ts`、`shell-extension.ts` 纳入清单，并重新执行 `pnpm test:composition`、`pnpm typecheck`、`pnpm lint`、生产/下游示例构建和 `pnpm baseline:verify`。

@@ -14,17 +14,18 @@
   ],
   "files": {
     "src/composition/application.ts": "3dcbf186bbfd4448b115155245046c147bbc9fe7b60ef42ec3ec3fa9f8869afd",
-    "src/composition/contract.ts": "fb98cffbc5c9c52a4ea8ab42b75f88aa75f10bed55dec597dbe593a0ae96a0ab",
-    "src/composition/define-app.ts": "97fc054bc8fcd0773cffc149b12af08a068ba91f0dd97e59d12a6e891288dbed",
-    "src/composition/index.ts": "3ef9f17b759c7e1b1916909e81f82d5d6780cd24c53855688a2061c1507da68a",
+    "src/composition/contract.ts": "e456db216f109c06beece8e81ac2f35dfa5d42a0a9261117cbce096d449e0dc3",
+    "src/composition/define-app.ts": "d119c0445509f795700ad9a7503468a609942f8a07c019cf2c1be1e905720b4c",
+    "src/composition/index.ts": "cfd44f6fc1a64db6c16da30ed98d324985a01975b63accfff0448cc5738b45c3",
     "src/composition/page.ts": "98cd700e6e19cda19d91da9087eebb3f92fc25f92b1f63b04864fd3121061132",
     "src/composition/profile-extension.ts": "90c448c63fdbda5bd88d3cc0a9b96c291495ae8649b57f547e01d5c533d621f9",
+    "src/composition/shell-extension.ts": "73c500eaf24808439d9ef5a255c31b41f7c0c73b73a03bf4578f52eb2569eed2",
     "src/composition/core-pages.ts": "a0af6ccbef95d5af8f50185ddbd4379aa880b9aa81d5a12cd05b9cd4e2177bc9",
     "src/composition/system-pages.ts": "1c5720d86f18984abab912dee4011567810d797e397932c1768cf38e78d8c06e",
     "src/composition/operations-pages.ts": "3b0c6990dae7ee67501e36ef88036aa44c552f896b94a5ec0fd657fa3a4df264",
     "src/composition/ai-pages.ts": "6f43d70c00d6c88ac07316a338ee52c41ce09130400f12153c3da47056da4668",
     "src/composition/demo-pages.ts": "54f82ee3f247b153d0e131f63f5e37180fdf4fca3928bc01bbc4a6e92a47e69c",
-    "src/composition/platform-layouts.ts": "a11652a4669e93b4ebd479783762c9f5c211af5bb28c23901a52605d2e5c40b8",
+    "src/composition/platform-layouts.ts": "ab66c7cacf6375a660bdbc94ad967e69a01a09a0f7b7796f46d79a41450edd77",
     "src/composition/runtime.ts": "af76d0cf5ce1acaac37ffbcad616af899f64e0c27ffc06f83f7bbde3d80e7e9c"
   }
 }

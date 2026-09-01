@@ -51,6 +51,15 @@ export interface ProfileExtensionRegistration extends OwnedRegistration {
   component: ProfileExtensionComponent;
 }
 
+export type ShellExtensionPlacement = 'header.context';
+export type ShellExtensionComponent = () => Promise<RouteComponent | { default: RouteComponent }>;
+
+export interface ShellExtensionRegistration extends OwnedRegistration {
+  placement: ShellExtensionPlacement;
+  order: number;
+  component: ShellExtensionComponent;
+}
+
 export interface AdminInitializerContext {
   app: VueApp;
   services: ReadonlyMap<string, unknown>;
@@ -69,12 +78,13 @@ export interface AdminAppDefinition {
   initializers?: readonly InitializerRegistration[];
   services?: readonly ServiceRegistration[];
   profileExtensions?: readonly ProfileExtensionRegistration[];
+  shellExtensions?: readonly ShellExtensionRegistration[];
   homePageKey?: string;
 }
 
 export interface ResolvedAdminApp extends Omit<
   AdminAppDefinition,
-  'modules' | 'pages' | 'routes' | 'i18n' | 'initializers' | 'services' | 'profileExtensions'
+  'modules' | 'pages' | 'routes' | 'i18n' | 'initializers' | 'services' | 'profileExtensions' | 'shellExtensions'
 > {
   modules: readonly AdminModule[];
   pages: readonly PageRegistration[];
@@ -83,6 +93,7 @@ export interface ResolvedAdminApp extends Omit<
   initializers: readonly InitializerRegistration[];
   services: readonly ServiceRegistration[];
   profileExtensions: readonly Readonly<ProfileExtensionRegistration>[];
+  shellExtensions: readonly Readonly<ShellExtensionRegistration>[];
   pageMap: Readonly<Record<string, PageRegistration['component']>>;
   servicesMap: ReadonlyMap<string, unknown>;
 }
