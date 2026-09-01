@@ -39,6 +39,15 @@ func TestTerminalDecisionMatrixIsDeterministicAndFailClosed(t *testing.T) {
 	}
 }
 
+func TestInvalidModelContextBudgetIsNotReportedAsRunBudgetExhaustion(t *testing.T) {
+	decision := aiagentruntime.DecideTerminal(aiagentruntime.TerminalDecisionInput{
+		Status: aiagentruntime.RunFailed, ErrorCategory: "model.context_budget_invalid",
+	})
+	if decision.TerminalReason != "model_unavailable" || decision.UserMessageKey != "ai.run.terminal.model_unavailable" || decision.SafeSummary != "model_or_capability_unavailable" {
+		t.Fatalf("invalid model limits were misclassified: %#v", decision)
+	}
+}
+
 func TestAgentRunTerminalFinalizationMigrationContract(t *testing.T) {
 	body, err := os.ReadFile("../migrations/0065_agent_run_terminal_finalization.sql")
 	if err != nil {

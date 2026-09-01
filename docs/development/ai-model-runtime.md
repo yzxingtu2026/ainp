@@ -7,6 +7,7 @@
 - 当前生成协议支持 OpenAI Responses、Anthropic Messages 与 OpenAI-Compatible Chat Completions。
 - Embedding 协议支持 OpenAI 与 OpenAI-Compatible `/v1/embeddings`；详见 `ai-embedding-runtime.md`。
 - 自定义 Endpoint 配置为服务根地址，不带 `/v1`；Adapter 统一追加资源路径。官方 Endpoint 可留空。
+- Chat 调用前必须由 Resolver 使用公共预算函数验证 Deployment `context_window` 与 `max_output_tokens`；非法历史数据以 `model.context_budget_invalid` fail-closed，不得调用 Provider，也不得回退默认输出额度。
 
 ## Generate 与 Stream
 

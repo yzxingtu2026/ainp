@@ -672,6 +672,7 @@ declare namespace App {
           unavailableGeneric: string;
           reconnectFallback: string;
           diagnosticContextWindow: string;
+          diagnosticContextBudgetInvalid: string;
           runFailure: string;
           runFailureSimple: string;
           runBudgetFailure: string;
@@ -1259,6 +1260,13 @@ declare namespace App {
         outputModalities: string;
         capabilities: string;
         visionNeedsImage: string;
+        contextWindow: string;
+        maxOutputTokens: string;
+        availableInputTokens: string;
+        tokenBudgetHelp: string;
+        discoveryLimitsRequired: string;
+        contextBudgetInvalid: string;
+        contextBudgetErrors: Record<'positiveInteger' | 'outputWithinWindow' | 'inputCapacity', string>;
         modalities: Record<(typeof import('@/constants/ai').MODEL_MODALITIES)[number], string>;
         features: Record<(typeof import('@/constants/ai').MODEL_FEATURES)[number], string>;
         structuredOutputStrategies: Record<

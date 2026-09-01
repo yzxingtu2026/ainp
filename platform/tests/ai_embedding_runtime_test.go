@@ -19,6 +19,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/config"
 	"github.com/yzxingtu2026/ainp/platform/framework/database"
+	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
 	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"github.com/yzxingtu2026/ainp/platform/modules/ai"
@@ -320,7 +321,7 @@ func TestEmbeddingCosineNormalizeIsExplicit(t *testing.T) {
 	}
 }
 
-func TestEmbeddingRuntimePostgresInvocationAndTenantIsolation(t *testing.T) {
+func TestModelCatalogAndEmbeddingRuntimePostgresInvocationAndTenantIsolation(t *testing.T) {
 	dsn := os.Getenv("AINP_TEST_DATABASE_DSN")
 	if dsn == "" {
 		t.Skip("AINP_TEST_DATABASE_DSN not set")
@@ -373,6 +374,41 @@ func TestEmbeddingRuntimePostgresInvocationAndTenantIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	provider := createdProvider.(ai.Provider)
+	invalidChat := ai.DeploymentCreateRequest{
+		ProviderID: provider.ID, Code: "chat-invalid", RemoteModelID: "chat-invalid", DisplayName: "Invalid Chat",
+		ModelType: aimodel.ModelTypeChat, Limits: aimodel.Limits{ContextWindow: 128000, MaxOutputTokens: 1000000}, Status: "enabled",
+	}
+	if _, err = svc.CreateDeployment(ctx1, invalidChat); errs.StableCategory(err) != aimodel.ContextBudgetInvalid {
+		t.Fatalf("create accepted invalid chat limits: %#v", err)
+	}
+	if _, err = svc.ImportDeployments(ctx1, ai.ImportRequest{Items: []ai.DeploymentCreateRequest{invalidChat}}); errs.StableCategory(err) != aimodel.ContextBudgetInvalid {
+		t.Fatalf("import accepted invalid chat limits: %#v", err)
+	}
+	disabledChatRequest := invalidChat
+	disabledChatRequest.Code = "chat-disabled-invalid"
+	disabledChatRequest.RemoteModelID = "chat-disabled-invalid"
+	disabledChatRequest.Status = "disabled"
+	disabledChatValue, err := svc.CreateDeployment(ctx1, disabledChatRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	disabledChat := disabledChatValue.(ai.Deployment)
+	if _, err = svc.UpdateDeploymentStatus(ctx1, ai.StatusRequest{ID: disabledChat.ID, Status: "enabled"}); errs.StableCategory(err) != aimodel.ContextBudgetInvalid {
+		t.Fatalf("enable accepted invalid chat limits: %#v", err)
+	}
+	validChatValue, err := svc.CreateDeployment(ctx1, ai.DeploymentCreateRequest{
+		ProviderID: provider.ID, Code: "chat-valid", RemoteModelID: "chat-valid", DisplayName: "Valid Chat",
+		ModelType: aimodel.ModelTypeChat, Limits: aimodel.Limits{ContextWindow: 128000, MaxOutputTokens: 8192}, Status: "enabled",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	validChat := validChatValue.(ai.Deployment)
+	if _, err = svc.UpdateDeployment(ctx1, ai.DeploymentUpdateRequest{
+		ID: validChat.ID, DisplayName: validChat.DisplayName, ModelType: aimodel.ModelTypeChat, Limits: invalidChat.Limits,
+	}); errs.StableCategory(err) != aimodel.ContextBudgetInvalid {
+		t.Fatalf("update accepted invalid chat limits: %#v", err)
+	}
 	if _, err = svc.CreateDeployment(ctx1, ai.DeploymentCreateRequest{
 		ProviderID: provider.ID, Code: "embed-invalid", RemoteModelID: "embedding-invalid", DisplayName: "Invalid Embed",
 		ModelType: aimodel.ModelTypeEmbedding, Capabilities: aimodel.Capabilities{InputModalities: []aimodel.Modality{aimodel.ModalityText}, Features: []aimodel.Feature{aimodel.FeatureStreaming}}, Status: "enabled",

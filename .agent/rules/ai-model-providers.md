@@ -9,6 +9,8 @@
 - 远端模型仅是候选，管理员确认类型、能力、限制并保存为 enabled Deployment 后才可解析。
 - 有效能力不得超过 Adapter 与 Deployment 声明的交集；Resolver 不满足要求时禁止静默降级。
 - Enabled Embedding Deployment 的创建、Discovery 导入、更新、启用及 Alias 绑定必须复用统一能力契约；disabled 存量错误配置只允许诊断和修正，不得重新启用。
+- Enabled Chat Deployment 的 `context_window` 与 `max_output_tokens` 必须是正整数，且扣除最大输出和 10% 安全余量后仍有正的输入预算；创建、更新、Discovery 导入、启用、Alias 与 Resolver 复用 `framework/aimodel` 公共预算函数。
+- Discovery 缮信任 Limits 时不得猜测或填超大默认值；补齐前保持 disabled。历史非法 Enabled Chat 必须以 `model.context_budget_invalid` fail-closed，不得误报 Run 预算耗尽。
 - Alias 在模型目录内联管理，不建立独立菜单；fallback/权重需新增策略模型。
 - Discovery 必须限制 HTTPS 公网 Endpoint、重定向、超时、分页/数量和响应体，并脱敏错误。
 - 详规见 `docs/development/ai-model-providers.md`。

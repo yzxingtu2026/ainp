@@ -3,6 +3,7 @@
 - Run 必须固定 actor/session/auth version、Conversation/trigger Message、不可变 Agent Version、预算与 ContextSnapshot。
 - Run 预算只由类型化租户设置 Provider 解析并在创建时固化；客户端不得提交或放大预算。新快照使用版本化 snake_case，历史 PascalCase 仅兼容读取。
 - `run_token_budget` 只限制 Run 累计 input + output Token；单次上下文容量必须按 Deployment context window、输出预留和安全余量统一计算，禁止混用两种 Token 语义。
+- Enabled Chat 的 `context_window` 与 `max_output_tokens` 都必须存在且有效；历史非法 Limits 以 `model.context_budget_invalid` 归为模型配置错误，不得展示为 Run 预算耗尽或建议用户缩小范围。
 - 每次模型调用必须在最终请求装配后经统一 Turn Budget Planner；正常 ReAct 只能消费扣除最终输入/输出和安全余量后的软预算，预计侵占预留时必须持久化进入 `completion_only`。
 - `completion_only` 只能在实际发起无工具收尾模型请求前持久化，且在 confirmation/lease/retry 后不可回退；正常轮已返回的 Tool Call 必须先执行/确认，确认恢复的 Tool Result 必须允许模型消费。收尾调用最多一次，临时指令不得写 canonical Message，协议层必须清空工具并设置 `tool_choice=none`，且不得伪报工具不可用。
 - 预算收尾成功必须提交 canonical assistant Message，Run 保持 completed 并写稳定 `completion_reason=budget_limit`；已有可用无工具文本不得因调用后 Usage 超估而丢弃。

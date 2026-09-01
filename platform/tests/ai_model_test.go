@@ -4,12 +4,59 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/yzxingtu2026/ainp/platform/framework/aimodel"
 	"github.com/yzxingtu2026/ainp/platform/modules/ai"
 )
+
+func TestChatDeploymentLimitsUseAuthoritativeContextBudget(t *testing.T) {
+	tests := []struct {
+		name      string
+		limits    aimodel.Limits
+		wantField string
+	}{
+		{name: "missing context", limits: aimodel.Limits{}, wantField: "limits.context_window"},
+		{name: "negative context", limits: aimodel.Limits{ContextWindow: -1, MaxOutputTokens: 1}, wantField: "limits.context_window"},
+		{name: "missing output", limits: aimodel.Limits{ContextWindow: 128000}, wantField: "limits.max_output_tokens"},
+		{name: "negative output", limits: aimodel.Limits{ContextWindow: 128000, MaxOutputTokens: -1}, wantField: "limits.max_output_tokens"},
+		{name: "equal", limits: aimodel.Limits{ContextWindow: 128000, MaxOutputTokens: 128000}, wantField: "limits.max_output_tokens"},
+		{name: "output exceeds window", limits: aimodel.Limits{ContextWindow: 128000, MaxOutputTokens: 1000000}, wantField: "limits.max_output_tokens"},
+		{name: "safety margin consumes input", limits: aimodel.Limits{ContextWindow: 10, MaxOutputTokens: 9}, wantField: "limits.max_output_tokens"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := aimodel.ValidateDeploymentLimits(aimodel.ModelTypeChat, "enabled", tt.limits)
+			var validationErr *aimodel.LimitsValidationError
+			if !errors.As(err, &validationErr) || validationErr.Code != aimodel.ContextBudgetInvalid || validationErr.Field != tt.wantField {
+				t.Fatalf("unexpected validation error: %#v", err)
+			}
+		})
+	}
+
+	budget, err := aimodel.ResolveContextBudget(aimodel.Limits{ContextWindow: 128000, MaxOutputTokens: 8192})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if budget.SafetyMarginTokens != 12800 || budget.AvailableTokens != 107008 {
+		t.Fatalf("unexpected budget: %+v", budget)
+	}
+	if err = aimodel.ValidateDeploymentLimits(aimodel.ModelTypeEmbedding, "enabled", aimodel.Limits{}); err != nil {
+		t.Fatalf("chat limits applied to embedding: %v", err)
+	}
+	if err = aimodel.ValidateDeploymentLimits(aimodel.ModelTypeChat, "disabled", aimodel.Limits{}); err != nil {
+		t.Fatalf("disabled chat model cannot remain pending: %v", err)
+	}
+}
+
+func TestChatDeploymentLimitsRejectFractionalJSON(t *testing.T) {
+	var limits aimodel.Limits
+	if err := json.Unmarshal([]byte(`{"context_window":128000.5,"max_output_tokens":8192}`), &limits); err == nil {
+		t.Fatal("fractional limits were accepted")
+	}
+}
 
 func TestProviderTypeRegistryRejectsInvalidAndDuplicateValues(t *testing.T) {
 	r := aimodel.NewProviderTypeRegistry()

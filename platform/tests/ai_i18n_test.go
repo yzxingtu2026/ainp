@@ -27,6 +27,7 @@ func TestAIRegistrationTranslationKeysExist(t *testing.T) {
 		"action.ai.agent_slot_preference_reset.name", "action.ai.agent_slot_preference_reset.description",
 		"action.ai.conversation_create_for_slot.name", "action.ai.conversation_create_for_slot.description",
 		"ai.model.streaming_not_supported", "ai.model.vision_not_supported", "ai.model.capability_not_supported",
+		"model.context_budget_invalid",
 	}
 	actions := []string{
 		"provider_type_list", "provider_list", "provider_get", "provider_create", "provider_update",

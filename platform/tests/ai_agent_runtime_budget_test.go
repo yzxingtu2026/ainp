@@ -140,11 +140,7 @@ func TestModelContextBudgetIsIndependentFromRunTokenBudget(t *testing.T) {
 	if budget.ReservedOutputTokens != 4000 || budget.SafetyMarginTokens != 3200 || budget.AvailableTokens != 24800 {
 		t.Fatalf("unexpected context budget: %+v", budget)
 	}
-	withDefaultOutput, err := ai.ResolveModelContextBudget(aimodel.Limits{ContextWindow: 10000})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if withDefaultOutput.AvailableTokens != 6952 {
-		t.Fatalf("unexpected default-output context budget: %+v", withDefaultOutput)
+	if _, err = ai.ResolveModelContextBudget(aimodel.Limits{ContextWindow: 10000}); err == nil {
+		t.Fatal("missing deployment max_output_tokens was accepted")
 	}
 }

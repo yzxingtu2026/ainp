@@ -59,4 +59,5 @@ test('keeps historical terminal runs readable without backend terminal fields', 
   assert.equal(runTerminalNotice(run({ error_category: 'model_not_found' })), 'modelUnavailable');
   assert.equal(runTerminalNotice(run({ status: 'cancelled', error_category: 'cancelled' })), 'cancelled');
   assert.equal(runTerminalNotice(run({ error_category: 'document_too_large' })), 'contextUnavailable');
+  assert.equal(runTerminalNotice(run({ error_category: 'model.context_budget_invalid' })), 'modelUnavailable');
 });

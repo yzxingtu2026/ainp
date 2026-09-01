@@ -32,7 +32,9 @@ Run 状态为 queued/running/waiting_confirmation/paused/completed/failed/cancel
 
 Run 固化的版本化预算使用 `schema_version=1` 与 snake_case 字段：`max_steps`、`max_model_calls`、`max_tool_calls`、`max_compactions`、`max_duration_seconds`、`run_token_budget`。历史 PascalCase `BudgetJSON`（含 `MaxTokens`）仅做兼容读取，新 Run 禁止继续写旧格式。设置读取或类型转换失败必须 fail-closed；已经创建的 Run 始终读取自身快照，不受后续设置修改影响。
 
-`run_token_budget` 是整个 Run 的累计 input + output Token 上限，不是单次模型上下文容量。单次上下文容量统一按目标 Deployment 的 `context_window - reserved_output_tokens - safety_margin_tokens` 计算，默认输出预留为 Deployment `max_output_tokens`（缺失时 2048），安全余量为上下文窗口的 10%；ContextAssembler 与 ContextCompactor 必须复用同一算法，后者再扣除 instructions、工具 Schema 和附件预算。
+`run_token_budget` 是整个 Run 的累计 input + output Token 上限，不是单次模型上下文容量。单次上下文容量统一按目标 Deployment 的 `context_window - max_output_tokens - floor(context_window / 10)` 计算；`context_window` 与 `max_output_tokens` 都是 Enabled Chat Deployment 的必填正整数，不存在缺失回退。ContextAssembler 与 ContextCompactor 必须复用 `framework/aimodel` 的同一算法，后者再扣除 instructions、工具 Schema 和附件预算。
+
+Runtime 遇到历史非法 Limits 继续 fail-closed，但终态必须保留 `model.context_budget_invalid` 并展示模型配置不可用提示；不得归入 `run_token_budget` 耗尽，也不得提示用户缩小任务范围。提高 Run 预算不能修复 Deployment 单次上下文关系。
 
 每次模型调用必须在最终请求装配完成后经过统一 Turn Budget Planner。估算范围包含 instructions、消息、动态 Tool Schema、附件、Page Context 与 Memory Recall。Planner 将累计硬预算拆为两层：
 

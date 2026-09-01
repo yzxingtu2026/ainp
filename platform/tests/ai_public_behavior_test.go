@@ -6,6 +6,7 @@ import (
 
 	"github.com/yzxingtu2026/ainp/platform/framework/aimodel"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
+	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 	"github.com/yzxingtu2026/ainp/platform/framework/setting"
 	"github.com/yzxingtu2026/ainp/platform/modules/ai"
 )
@@ -14,6 +15,22 @@ type emptySettingStore struct{}
 
 func (emptySettingStore) Get(context.Context, string, string) (*setting.StoredValue, error) {
 	return nil, nil
+}
+
+func TestEnabledChatDeploymentRejectsInvalidContextBudgetThroughService(t *testing.T) {
+	service := ai.NewService(nil, aimodel.NewProviderTypeRegistry(), nil)
+	ctx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "tenant-a", Realm: auth.RealmTenant})
+	_, err := service.CreateDeployment(ctx, ai.DeploymentCreateRequest{
+		ProviderID: "provider-a", Code: "chat", RemoteModelID: "chat", DisplayName: "Chat",
+		ModelType: aimodel.ModelTypeChat, Limits: aimodel.Limits{ContextWindow: 128000, MaxOutputTokens: 1000000}, Status: "enabled",
+	})
+	if errs.StableCategory(err) != aimodel.ContextBudgetInvalid {
+		t.Fatalf("missing stable context budget category: %#v", err)
+	}
+	appErr, ok := errs.AsAppError(err)
+	if !ok || appErr.Key() != aimodel.ContextBudgetInvalid || len(appErr.Fields) != 1 || appErr.Fields[0].Field != "limits.max_output_tokens" {
+		t.Fatalf("missing field-level validation contract: %#v", err)
+	}
 }
 
 func (emptySettingStore) Put(context.Context, string, string, int64, int, map[string]any, string) (*setting.StoredValue, error) {

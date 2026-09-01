@@ -24,6 +24,7 @@ import {
   upsertAIAlias
 } from '@/service/api';
 import { useAuthStore } from '@/store/modules/auth';
+import { resolveModelContextBudget, type ContextBudgetFieldError } from './model-context-budget';
 defineOptions({ name: 'AIModels' });
 const auth = useAuthStore();
 const rows = ref<Api.AI.Deployment[]>([]);
@@ -62,6 +63,17 @@ const importInputModalities = ref<string[]>(['text']);
 const importOutputModalities = ref<string[]>(['text']);
 const importFeatures = ref<string[]>([]);
 const importStructuredOutputStrategies = ref<string[]>([]);
+const importContextWindow = ref<number | null>(null);
+const importMaxOutputTokens = ref<number | null>(null);
+const formContextBudget = computed(() =>
+  resolveModelContextBudget(form.model_type, form.context_window, form.max_output_tokens)
+);
+const importContextBudget = computed(() =>
+  resolveModelContextBudget(importType.value, importContextWindow.value, importMaxOutputTokens.value)
+);
+function contextBudgetError(error?: ContextBudgetFieldError) {
+  return error ? $t(`aiModel.contextBudgetErrors.${error}`) : undefined;
+}
 watch(
   () => form.features.includes('structured_output'),
   enabled => {
@@ -153,6 +165,10 @@ function openEditor(row?: Api.AI.Deployment) {
   visible.value = true;
 }
 async function save() {
+  if (!formContextBudget.value.valid) {
+    window.$message?.warning($t('aiModel.contextBudgetInvalid'));
+    return;
+  }
   if (invalidVisionConfig(form.input_modalities, form.features)) {
     window.$message?.warning($t('aiModel.visionNeedsImage'));
     return;
@@ -223,6 +239,10 @@ function deploymentCode(id: string) {
   return (normalized || 'model').slice(0, 64);
 }
 async function importSelected() {
+  if (!importContextBudget.value.valid) {
+    window.$message?.warning($t('aiModel.contextBudgetInvalid'));
+    return;
+  }
   if (invalidVisionConfig(importInputModalities.value, importFeatures.value)) {
     window.$message?.warning($t('aiModel.visionNeedsImage'));
     return;
@@ -246,7 +266,7 @@ async function importSelected() {
         features: importFeatures.value,
         structured_output_strategies: importStructuredOutputStrategies.value
       },
-      limits: { context_window: 0, max_output_tokens: 0 },
+      limits: { context_window: importContextWindow.value || 0, max_output_tokens: importMaxOutputTokens.value || 0 },
       status: 'enabled',
       config: {}
     }));
@@ -440,13 +460,33 @@ onMounted(load);
           class="mb-12px"
           :title="$t('aiModel.visionNeedsImage')"
         />
-        <NFormItem label="上下文窗口"><NInputNumber v-model:value="form.context_window" :min="0" /></NFormItem>
-        <NFormItem label="最大输出"><NInputNumber v-model:value="form.max_output_tokens" :min="0" /></NFormItem>
+        <NAlert v-if="form.model_type === 'chat'" type="info" class="mb-12px" :bordered="false">
+          {{ $t('aiModel.tokenBudgetHelp') }}
+        </NAlert>
+        <NFormItem
+          :label="$t('aiModel.contextWindow')"
+          :required="form.model_type === 'chat'"
+          :validation-status="formContextBudget.contextWindowError ? 'error' : undefined"
+          :feedback="contextBudgetError(formContextBudget.contextWindowError)"
+        >
+          <NInputNumber v-model:value="form.context_window" :min="1" :precision="0" />
+        </NFormItem>
+        <NFormItem
+          :label="$t('aiModel.maxOutputTokens')"
+          :required="form.model_type === 'chat'"
+          :validation-status="formContextBudget.maxOutputTokensError ? 'error' : undefined"
+          :feedback="contextBudgetError(formContextBudget.maxOutputTokensError)"
+        >
+          <NInputNumber v-model:value="form.max_output_tokens" :min="1" :precision="0" />
+        </NFormItem>
+        <NFormItem v-if="form.model_type === 'chat'" :label="$t('aiModel.availableInputTokens')">
+          <NText>{{ formContextBudget.availableInputTokens?.toLocaleString() ?? '-' }}</NText>
+        </NFormItem>
       </NForm>
       <template #footer>
         <NSpace justify="end">
           <NButton @click="visible = false">取消</NButton>
-          <NButton type="primary" @click="save">保存</NButton>
+          <NButton type="primary" :disabled="!formContextBudget.valid" @click="save">保存</NButton>
         </NSpace>
       </template>
     </NModal>
@@ -488,6 +528,30 @@ onMounted(load);
         class="mb-12px"
         :title="$t('aiModel.visionNeedsImage')"
       />
+      <NAlert v-if="importType === 'chat'" type="info" class="mb-12px" :bordered="false">
+        {{ $t('aiModel.discoveryLimitsRequired') }}
+      </NAlert>
+      <NSpace v-if="importType === 'chat'" class="mb-12px" align="start">
+        <NFormItem
+          :label="$t('aiModel.contextWindow')"
+          required
+          :validation-status="importContextBudget.contextWindowError ? 'error' : undefined"
+          :feedback="contextBudgetError(importContextBudget.contextWindowError)"
+        >
+          <NInputNumber v-model:value="importContextWindow" :min="1" :precision="0" />
+        </NFormItem>
+        <NFormItem
+          :label="$t('aiModel.maxOutputTokens')"
+          required
+          :validation-status="importContextBudget.maxOutputTokensError ? 'error' : undefined"
+          :feedback="contextBudgetError(importContextBudget.maxOutputTokensError)"
+        >
+          <NInputNumber v-model:value="importMaxOutputTokens" :min="1" :precision="0" />
+        </NFormItem>
+        <NFormItem :label="$t('aiModel.availableInputTokens')">
+          <NText>{{ importContextBudget.availableInputTokens?.toLocaleString() ?? '-' }}</NText>
+        </NFormItem>
+      </NSpace>
       <NDataTable
         v-model:checked-row-keys="selectedRemote"
         :loading="discoveryLoading"
@@ -500,7 +564,11 @@ onMounted(load);
       <template #footer>
         <NSpace justify="end">
           <NButton @click="discoveryVisible = false">取消</NButton>
-          <NButton type="primary" :disabled="discoveryLoading || selectedRemote.length === 0" @click="importSelected">
+          <NButton
+            type="primary"
+            :disabled="discoveryLoading || selectedRemote.length === 0 || !importContextBudget.valid"
+            @click="importSelected"
+          >
             导入所选
           </NButton>
         </NSpace>

@@ -130,7 +130,7 @@ func DecideTerminal(in TerminalDecisionInput) TerminalDecision {
 		decision.SafeSummary = "authorization_or_security_changed"
 		return decision
 	}
-	if category == "authentication_failed" || category == "model_not_found" || category == "capability_not_supported" {
+	if category == "authentication_failed" || category == "model_not_found" || category == "capability_not_supported" || category == "model.context_budget_invalid" {
 		decision.TerminalReason = "model_unavailable"
 		decision.UserMessageKey = "ai.run.terminal.model_unavailable"
 		decision.SafeSummary = "model_or_capability_unavailable"

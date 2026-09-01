@@ -37,6 +37,17 @@ Deployment 是管理员确认后的本地模型资产。远端发现结果只是
 
 Resolver 再验证调用方 `CapabilityRequirements` 是否为有效能力的子集。非法 modality、feature 或负数 limit 拒绝保存。Embedding Deployment 可通过 `limits.dimensions` / `limits.max_dimensions` 声明默认维度与可覆盖上限；Runtime 在调用前强制校验。
 
+Chat Deployment 的三个 Token 概念不可混用：`context_window` 是供应商声明的单次请求总容量，`max_output_tokens` 是单次响应上限且属于该窗口，`run_token_budget` 是 Agent Run 跨多轮调用累计的 input + output 上限。Enabled Chat Deployment 必须满足：
+
+```text
+context_window > 0
+max_output_tokens > 0
+max_output_tokens < context_window
+context_window - max_output_tokens - floor(context_window / 10) > 0
+```
+
+创建、更新、Discovery 批量导入、重新启用、Alias 绑定和 Resolver 必须复用 `framework/aimodel` 的同一预算函数。校验失败使用稳定分类 `model.context_budget_invalid` 和 `limits.context_window` / `limits.max_output_tokens` 字段路径。Disabled 存量非法 Chat 声明可保留用于补充和诊断，但不得启用或绑定；Discovery 未返回可信 Limits 时不得猜测、交换字段或填入超大默认值，管理员补齐前只能保持 disabled。
+
 Enabled Embedding Deployment 在创建、Discovery 导入、更新和重新启用时必须复用统一能力契约：`model_type=embedding`、text input、`embeddings` feature、合法 dimensions/limits，且协议已注册 Embedding Adapter。Disabled 的存量错误声明可保留用于诊断，但不得重新启用；Alias 只能绑定 enabled 且通过该契约的 Deployment。禁止根据远端模型名推断或补造能力。
 
 结构化输出能力独立于传输协议。Deployment 勾选 `structured_output` 时必须同时提供有序 `structured_output_strategies`，取消 feature 时策略必须为空。Runtime 再与所选 Adapter 的策略声明求交集；例如同样使用 OpenAI 线协议的 Deployment 可以分别声明 `openai_json_schema` 或 `response_only_function`。新增供应商复用现有协议时只新增 Provider 和 Deployment 能力；只有线协议、认证或消息格式不同才新增 Adapter。
@@ -44,6 +55,8 @@ Enabled Embedding Deployment 在创建、Discovery 导入、更新和重新启�
 ## Alias 与解析
 
 Alias 是租户内唯一的一对一映射，同一个 Deployment 可被多个 Alias 引用。Alias 在模型目录内联管理，不注册独立菜单。`Resolve(ctx, alias, requirements)` 依次检查租户、Alias、Deployment 状态、Provider 状态、model type、能力、Provider Type 与加密凭证，任一失败都不降级、不跨租户查找。
+
+Resolver 对历史非法 Enabled Chat Deployment 继续 fail-closed，并保留 `model.context_budget_invalid`，使 Agent/Alias 诊断指向管理员配置问题，而不是把它归为用户 Run 预算耗尽。
 
 未来 fallback、权重和容灾应新增目标/策略模型，禁止把逗号列表或路由 JSON 塞进 Alias。
 

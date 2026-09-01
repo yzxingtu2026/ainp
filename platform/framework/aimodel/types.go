@@ -75,6 +75,23 @@ type Limits struct {
 	MaxDimensions int64 `json:"max_dimensions,omitempty"`
 }
 
+const ContextBudgetInvalid = "model.context_budget_invalid"
+
+type LimitsValidationError struct {
+	Code    string
+	Field   string
+	Message string
+}
+
+func (e *LimitsValidationError) Error() string { return e.Message }
+
+type ContextBudget struct {
+	ContextWindow        int
+	ReservedOutputTokens int
+	SafetyMarginTokens   int
+	AvailableTokens      int
+}
+
 func (c Capabilities) Validate() error {
 	for _, v := range c.InputModalities {
 		if !v.Valid() {
@@ -108,6 +125,35 @@ func (l Limits) Validate() error {
 		return fmt.Errorf("dimensions cannot exceed max_dimensions")
 	}
 	return nil
+}
+
+// ResolveContextBudget is the authoritative per-request Chat token budget.
+// max_output_tokens is part of context_window and both values are required.
+func ResolveContextBudget(l Limits) (ContextBudget, error) {
+	if l.ContextWindow <= 0 {
+		return ContextBudget{}, &LimitsValidationError{Code: ContextBudgetInvalid, Field: "limits.context_window", Message: "context_window must be a positive integer for enabled chat models"}
+	}
+	if l.MaxOutputTokens <= 0 {
+		return ContextBudget{}, &LimitsValidationError{Code: ContextBudgetInvalid, Field: "limits.max_output_tokens", Message: "max_output_tokens must be a positive integer for enabled chat models"}
+	}
+	if l.MaxOutputTokens >= l.ContextWindow {
+		return ContextBudget{}, &LimitsValidationError{Code: ContextBudgetInvalid, Field: "limits.max_output_tokens", Message: "max_output_tokens must be less than context_window"}
+	}
+	margin := l.ContextWindow / 10
+	available := l.ContextWindow - l.MaxOutputTokens - margin
+	if available <= 0 {
+		return ContextBudget{}, &LimitsValidationError{Code: ContextBudgetInvalid, Field: "limits.max_output_tokens", Message: "context_window must leave positive input capacity after output reservation and safety margin"}
+	}
+	return ContextBudget{ContextWindow: int(l.ContextWindow), ReservedOutputTokens: int(l.MaxOutputTokens), SafetyMarginTokens: int(margin), AvailableTokens: int(available)}, nil
+}
+
+func ValidateDeploymentLimits(modelType ModelType, status string, limits Limits) error {
+	if modelType == ModelTypeChat && status == "enabled" {
+		if _, err := ResolveContextBudget(limits); err != nil {
+			return err
+		}
+	}
+	return limits.Validate()
 }
 
 type CapabilityRequirements struct {

@@ -2,6 +2,7 @@
 
 - 压缩只创建不可变 ContextSnapshot，禁止覆盖、删除或改写 canonical Message。
 - 预算必须来自目标模型窗口并扣除输出、固定指令、工具 Schema、附件与安全余量；未知时 fail-closed。
+- 基础输入预算统一为 `context_window - max_output_tokens - floor(context_window/10)`；Chat Limits 缺失或关系非法时返回 `model.context_budget_invalid`，禁止默认输出额度。
 - 即时文档按完整派生正文计入预算；所有 `document_parse` 段必须完整保留，不能压缩时 fail-closed。Snapshot 只保留 canonical `input_file` 引用，不落解析正文。
 - Run 剩余预算接近收尾预留时可用 `run_budget_pressure` 提前压缩；目标必须受剩余 Run 预算约束，不得等待 context window 超限后才处理。
 - 先确定性缩减，再结构化摘要；近期消息、完整 tool interaction 和安全事实不得被切断或交给摘要改写。

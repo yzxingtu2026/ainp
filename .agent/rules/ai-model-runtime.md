@@ -1,6 +1,7 @@
 # AI 模型统一调用硬约束
 
 - 业务只能通过 `model_alias` 调用 `aimodelruntime`，禁止绕过 Resolver 或直接调用供应商 SDK/HTTP。
+- Chat Provider 调用前必须验证 Deployment 单次上下文预算；非法 Limits 保留 `model.context_budget_invalid`，禁止默认输出额度或继续请求 Provider。
 - 结构化响应只声明 `StructuredOutput`；response-only function 仅由 Adapter 私有映射，禁止业务写入 `Tools/ToolChoice`，且不得进入 Tool Runtime 或产生执行事实。
 - response-only function 固定覆盖关闭模型思考模式，由 Runtime 私有约束并由 Adapter 映射，禁止业务或模型名称分支。
 - 传输协议只选择 Adapter；结构化输出策略只取 Deployment 有序声明与 Adapter 实现能力的交集，禁止按协议、供应商、Alias 或模型名称猜测，空交集 fail-closed。
