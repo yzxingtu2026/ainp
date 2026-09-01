@@ -16,6 +16,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/aiagentruntime"
 	"github.com/yzxingtu2026/ainp/platform/framework/aiconversation"
 	"github.com/yzxingtu2026/ainp/platform/framework/aimemory"
+	"github.com/yzxingtu2026/ainp/platform/framework/aimodel"
 	"github.com/yzxingtu2026/ainp/platform/framework/aimodelruntime"
 	"github.com/yzxingtu2026/ainp/platform/framework/aitool"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
@@ -713,6 +714,9 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 	}
 	modelBudget, err := s.contextBudget.ModelTurnBudget(ctx, version.ModelAlias)
 	if err != nil {
+		if errs.StableCategory(err) == aimodel.ContextBudgetInvalid {
+			return s.fail(ctx, run, aimodel.ContextBudgetInvalid)
+		}
 		return s.fail(ctx, run, "model_context_budget_unavailable")
 	}
 	tdb, scopeErr := s.db.Tenant(ctx)

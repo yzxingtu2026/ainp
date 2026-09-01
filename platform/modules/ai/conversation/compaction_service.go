@@ -37,32 +37,10 @@ func (s *ContextCompactionService) SetMemoryFlushHook(h aiconversation.DurableMe
 	}
 }
 
-type ModelContextBudget struct {
-	ContextWindow        int
-	ReservedOutputTokens int
-	SafetyMarginTokens   int
-	AvailableTokens      int
-}
+type ModelContextBudget = aimodel.ContextBudget
 
 func ResolveModelContextBudget(limits aimodel.Limits) (ModelContextBudget, error) {
-	if limits.ContextWindow <= 0 {
-		return ModelContextBudget{}, fmt.Errorf("model context window unavailable")
-	}
-	reserved := int(limits.MaxOutputTokens)
-	if reserved <= 0 {
-		reserved = 2048
-	}
-	margin := int(limits.ContextWindow / 10)
-	budget := ModelContextBudget{
-		ContextWindow:        int(limits.ContextWindow),
-		ReservedOutputTokens: reserved,
-		SafetyMarginTokens:   margin,
-		AvailableTokens:      int(limits.ContextWindow) - reserved - margin,
-	}
-	if budget.AvailableTokens <= 0 {
-		return ModelContextBudget{}, fmt.Errorf("fixed context exceeds model window")
-	}
-	return budget, nil
+	return aimodel.ResolveContextBudget(limits)
 }
 
 func (s *ContextCompactionService) ContextTokenLimit(ctx context.Context, modelAlias string) (int, error) {

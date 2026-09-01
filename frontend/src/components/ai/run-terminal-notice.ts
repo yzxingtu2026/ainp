@@ -40,7 +40,11 @@ export function runTerminalNotice(run: Api.AI.AgentRun): TerminalNotice | null {
   const category = run.error_category || '';
   if (run.status === 'cancelled' || category === 'cancelled') return 'cancelled';
   if (providerCategories.has(category)) return 'providerUnavailable';
-  if (['authentication_failed', 'model_not_found', 'capability_not_supported'].includes(category)) {
+  if (
+    ['authentication_failed', 'model_not_found', 'capability_not_supported', 'model.context_budget_invalid'].includes(
+      category
+    )
+  ) {
     return 'modelUnavailable';
   }
   if (category === 'content_filtered') return 'safetyRefusal';

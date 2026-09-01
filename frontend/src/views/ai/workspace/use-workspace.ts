@@ -54,6 +54,7 @@ function isRunTerminal(status: Api.AI.AgentRunStatus) {
 
 function diagnosticMessage(issue: Api.AI.AgentDiagnosticIssue) {
   if (issue.code === 'model.context_window_missing') return $t('page.aiWorkspace.diagnosticContextWindow');
+  if (issue.code === 'model.context_budget_invalid') return $t('page.aiWorkspace.diagnosticContextBudgetInvalid');
   return issue.message;
 }
 

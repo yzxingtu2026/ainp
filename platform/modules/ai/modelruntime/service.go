@@ -3,6 +3,7 @@ package modelruntime
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -288,12 +289,12 @@ func (s *Service) validateDeployment(ctx context.Context, r DeploymentCreateRequ
 	if hasStructuredOutput != (len(r.Capabilities.StructuredOutputStrategies) > 0) {
 		return errs.Validation("structured_output feature and structured_output_strategies must be declared together")
 	}
-	if err := r.Limits.Validate(); err != nil {
-		return errs.Validation(err.Error())
-	}
 	status := r.Status
 	if status == "" {
 		status = enabled
+	}
+	if err := aimodel.ValidateDeploymentLimits(r.ModelType, status, r.Limits); err != nil {
+		return deploymentLimitsError(err)
 	}
 	if r.ModelType == aimodel.ModelTypeEmbedding && status == enabled {
 		var provider Provider
@@ -312,6 +313,17 @@ func (s *Service) validateDeployment(ctx context.Context, r DeploymentCreateRequ
 		return errs.Validation("invalid status")
 	}
 	return nil
+}
+
+func deploymentLimitsError(err error) error {
+	var limitErr *aimodel.LimitsValidationError
+	if errors.As(err, &limitErr) {
+		return errs.WithStableCategory(
+			errs.ValidationKey(limitErr.Code, limitErr.Message, errs.FieldError{Field: limitErr.Field, Message: limitErr.Message, MessageKey: limitErr.Code}),
+			limitErr.Code,
+		)
+	}
+	return errs.Validation(err.Error())
 }
 func (s *Service) createDeployment(ctx context.Context, tid string, r DeploymentCreateRequest) (Deployment, error) {
 	if e := s.validateDeployment(ctx, r); e != nil {
@@ -420,13 +432,13 @@ func (s *Service) UpdateDeploymentStatus(ctx context.Context, r StatusRequest) (
 		if e = s.db.WithContext(ctx).Where("id=?", r.ID).First(&deployment).Error; e != nil {
 			return nil, errs.New(errs.CodeNotFound, "deployment not found")
 		}
-		if aimodel.ModelType(deployment.ModelType) == aimodel.ModelTypeEmbedding {
+		if aimodel.ModelType(deployment.ModelType) == aimodel.ModelTypeEmbedding || aimodel.ModelType(deployment.ModelType) == aimodel.ModelTypeChat {
 			var capabilities aimodel.Capabilities
 			var limits aimodel.Limits
 			if json.Unmarshal(deployment.CapabilitiesJSON, &capabilities) != nil || json.Unmarshal(deployment.LimitsJSON, &limits) != nil {
 				return nil, errs.Validation("deployment metadata is invalid")
 			}
-			if e = s.validateDeployment(ctx, DeploymentCreateRequest{ProviderID: deployment.ProviderID, Code: "valid", ModelType: aimodel.ModelTypeEmbedding, Capabilities: capabilities, Limits: limits, Status: enabled}); e != nil {
+			if e = s.validateDeployment(ctx, DeploymentCreateRequest{ProviderID: deployment.ProviderID, Code: "valid", ModelType: aimodel.ModelType(deployment.ModelType), Capabilities: capabilities, Limits: limits, Status: enabled}); e != nil {
 				return nil, e
 			}
 		}
@@ -506,13 +518,13 @@ func (s *Service) UpsertAlias(ctx context.Context, r AliasUpsertRequest) (any, e
 	if e == gorm.ErrRecordNotFound {
 		return nil, errs.Validation("enabled deployment not found")
 	}
-	if aimodel.ModelType(deployment.ModelType) == aimodel.ModelTypeEmbedding {
+	if aimodel.ModelType(deployment.ModelType) == aimodel.ModelTypeEmbedding || aimodel.ModelType(deployment.ModelType) == aimodel.ModelTypeChat {
 		var capabilities aimodel.Capabilities
 		var limits aimodel.Limits
 		if json.Unmarshal(deployment.CapabilitiesJSON, &capabilities) != nil || json.Unmarshal(deployment.LimitsJSON, &limits) != nil {
 			return nil, errs.Validation("deployment metadata is invalid")
 		}
-		if e = s.validateDeployment(ctx, DeploymentCreateRequest{ProviderID: deployment.ProviderID, Code: "valid", ModelType: aimodel.ModelTypeEmbedding, Capabilities: capabilities, Limits: limits, Status: enabled}); e != nil {
+		if e = s.validateDeployment(ctx, DeploymentCreateRequest{ProviderID: deployment.ProviderID, Code: "valid", ModelType: aimodel.ModelType(deployment.ModelType), Capabilities: capabilities, Limits: limits, Status: enabled}); e != nil {
 			return nil, e
 		}
 	}
@@ -570,6 +582,9 @@ func (s *Service) Resolve(ctx context.Context, code string, req aimodel.Capabili
 	var config map[string]any
 	if json.Unmarshal(d.CapabilitiesJSON, &declared) != nil || json.Unmarshal(d.LimitsJSON, &limits) != nil {
 		return nil, errs.New(errs.CodeValidation, "deployment metadata is invalid")
+	}
+	if e = aimodel.ValidateDeploymentLimits(aimodel.ModelType(d.ModelType), d.Status, limits); e != nil {
+		return nil, deploymentLimitsError(e)
 	}
 	effective := aimodel.Intersect(pt.Capabilities, declared)
 	if !aimodel.Satisfies(effective, req) {

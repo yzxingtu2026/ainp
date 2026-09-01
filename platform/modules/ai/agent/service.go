@@ -969,7 +969,11 @@ func (s *AgentService) agentDiagnostics(ctx context.Context, row *Agent) AgentDi
 		} else if s.models == nil {
 			issues = append(issues, AgentDiagnosticIssue{Code: "model.unavailable", Message: "model resolver unavailable"})
 		} else if resolved, resolveErr := s.models.Resolve(ctx, v.ModelAlias, agentRuntimeModelRequirements()); resolveErr != nil {
-			issues = append(issues, AgentDiagnosticIssue{Code: "model.unavailable", Message: resolveErr.Error()})
+			code := "model.unavailable"
+			if errs.StableCategory(resolveErr) == aimodel.ContextBudgetInvalid {
+				code = aimodel.ContextBudgetInvalid
+			}
+			issues = append(issues, AgentDiagnosticIssue{Code: code, Message: resolveErr.Error()})
 		} else if issue := runtimeModelLimitsIssue(resolved); issue != nil {
 			issues = append(issues, *issue)
 		} else {
@@ -1001,12 +1005,15 @@ func (s *AgentService) agentDiagnostics(ctx context.Context, row *Agent) AgentDi
 }
 
 func runtimeModelLimitsIssue(resolved *aimodel.ResolvedModel) *AgentDiagnosticIssue {
-	if resolved == nil || resolved.Limits.ContextWindow <= 0 {
+	if resolved == nil {
 		return &AgentDiagnosticIssue{
 			Code:     "model.context_window_missing",
 			Resource: resolvedDeploymentID(resolved),
 			Message:  "model context window is not configured",
 		}
+	}
+	if _, err := aimodel.ResolveContextBudget(resolved.Limits); err != nil {
+		return &AgentDiagnosticIssue{Code: aimodel.ContextBudgetInvalid, Resource: resolvedDeploymentID(resolved), Message: err.Error()}
 	}
 	return nil
 }

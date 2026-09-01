@@ -531,6 +531,8 @@ const local: App.I18n.Schema = {
       reconnectFallback: 'Connection interrupted, recovering',
       diagnosticContextWindow:
         'The current model has no context window configured. Enter the provider value in AI Center > Model Catalog.',
+      diagnosticContextBudgetInvalid:
+        'The current model has invalid context-window and maximum-output limits. Ask an administrator to correct the model catalog.',
       runFailure: 'Run failed: {category} ({reason})',
       runFailureSimple: 'Run failed: {category}',
       runBudgetFailure: 'The run budget was insufficient to produce a reliable final response',
@@ -1116,6 +1118,19 @@ const local: App.I18n.Schema = {
     outputModalities: 'Output modalities',
     capabilities: 'Capabilities',
     visionNeedsImage: 'Vision requires the Image input modality to be selected',
+    contextWindow: 'Context window',
+    maxOutputTokens: 'Maximum output',
+    availableInputTokens: 'Estimated maximum input',
+    tokenBudgetHelp:
+      'The context window is the provider-declared total capacity of one request. Maximum output is one response limit within that window. Agent Run Token Budget is the cumulative budget across all calls in a Run.',
+    discoveryLimitsRequired:
+      'Discovery did not return trusted limits. Enter the provider-documented context window and maximum output before importing enabled Chat models.',
+    contextBudgetInvalid: 'Correct the Chat model context-window and maximum-output limits',
+    contextBudgetErrors: {
+      positiveInteger: 'Enter a positive integer',
+      outputWithinWindow: 'Maximum output must be less than the context window',
+      inputCapacity: 'Input capacity must remain after maximum output and the 10% safety margin'
+    },
     modalities: { text: 'Text', image: 'Image', audio: 'Audio', file: 'File' },
     features: {
       streaming: 'Streaming',

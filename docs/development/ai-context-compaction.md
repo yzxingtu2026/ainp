@@ -6,7 +6,7 @@ Token 预算与媒体预算必须独立收敛。即使 Token 估算为 `within_b
 
 ## 预算
 
-可用输入预算从目标 Deployment 的 `context_window` 扣除输出预留、安全余量、固定 Agent 指令、Tool Schema、Attachment Reference Manifest 和附件展开预算。原生图片按受控估算计入；当前触发文档按完整派生文本的 UTF-8 字节/Tokenizer 结果计入，历史文档只计 Manifest 引用且不得在压缩时重复解析。模型窗口未知或固定内容已经超窗时 fail-closed。`JSONTokenizer` 是确定性默认实现；供应商 Tokenizer 可通过接口替换。
+可用输入预算先由公共模型预算函数计算 `context_window - max_output_tokens - floor(context_window / 10)`，再扣除固定 Agent 指令、Tool Schema、Attachment Reference Manifest 和附件展开预算。两项 Deployment Limits 都必须是正整数；缺失、输出不小于窗口或基础可用输入不为正时以 `model.context_budget_invalid` fail-closed，Compactor 不提供默认输出额度。原生图片按受控估算计入；当前触发文档按完整派生文本的 UTF-8 字节/Tokenizer 结果计入，历史文档只计 Manifest 引用且不得在压缩时重复解析。固定内容已经超窗时 fail-closed。`JSONTokenizer` 是确定性默认实现；供应商 Tokenizer 可通过接口替换。
 
 Agent Run 还可用 `run_budget_pressure` 提供更小的目标输入预算。该目标来自“剩余 Run 预算 - 最终输出预留 - 安全余量”，正常 ReAct 还需为下一次最终输入保留额度，因此即使当前请求尚未达到模型 context window，也允许提前压缩。`run_budget_pressure` 只改变压缩目标和 Snapshot reason，不改变 canonical Conversation，也不能放宽模型窗口或 Run 硬预算。
 

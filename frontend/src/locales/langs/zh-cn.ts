@@ -523,6 +523,7 @@ const local: App.I18n.Schema = {
       unavailableGeneric: 'AI 工作台暂时不可用',
       reconnectFallback: '连接中断，正在恢复',
       diagnosticContextWindow: '当前模型未配置上下文窗口，请先在 AI 中心的模型目录中填写供应商提供的实际值。',
+      diagnosticContextBudgetInvalid: '当前模型的上下文窗口与最大输出配置无效，请联系管理员在 AI 中心修正模型限制。',
       runFailure: '运行失败：{category}（{reason}）',
       runFailureSimple: '运行失败：{category}',
       runBudgetFailure: '本次运行预算不足，无法生成可靠的最终答复',
@@ -1097,6 +1098,19 @@ const local: App.I18n.Schema = {
     outputModalities: '输出模态',
     capabilities: '能力',
     visionNeedsImage: '启用视觉理解时必须同时勾选“图片”输入模态',
+    contextWindow: '上下文窗口',
+    maxOutputTokens: '最大输出',
+    availableInputTokens: '预计最大可用输入',
+    tokenBudgetHelp:
+      '上下文窗口是供应商声明的单次请求总 Token 容量；最大输出是单次响应上限，属于上下文窗口的一部分；Agent Run Token Budget 是整次 Run 多轮调用的累计预算。',
+    discoveryLimitsRequired:
+      '供应商发现结果不包含可信限制。启用导入的 Chat 模型前，必须按供应商文档填写上下文窗口和最大输出。',
+    contextBudgetInvalid: '请修正 Chat 模型的上下文窗口与最大输出配置',
+    contextBudgetErrors: {
+      positiveInteger: '必须填写正整数',
+      outputWithinWindow: '最大输出必须小于上下文窗口',
+      inputCapacity: '扣除最大输出和 10% 安全余量后，必须保留可用输入 Token'
+    },
     modalities: { text: '文本', image: '图片', audio: '音频', file: '文件' },
     features: {
       streaming: '流式输出',
