@@ -1,8 +1,10 @@
 # 管理后台下游装配
 
 - 本规则只适用于 AINP Vue 管理后台，不覆盖 Taro、React Native 等客户端。
-- 下游只通过 `src/composition` 稳定入口注册品牌、页面、路由、i18n、initializer、service、模块和个人中心 `tab` 扩展；禁止修改 Elegant Router 生成文件或平台 Store。
+- 下游只通过 `src/composition` 稳定入口注册品牌、页面、路由、i18n、initializer、service、模块、个人中心 `tab` 和 Shell `header.context` 扩展；禁止修改 Elegant Router 生成文件、GlobalHeader 或平台 Store。
 - 个人中心扩展必须使用 owner namespace、lazy component 和平台声明的 placement；保留 ID、重复 ID、未知 placement 或整页/DOM 注入必须 fail-closed，扩展不得获取个人中心私有状态。
+- Shell 扩展只允许 `header.context`，必须使用 owner namespace、非负安全整数 order 和编译期 lazy component；禁止 URL/HTML/selector/DOM 注入或替换 Header/Layout，加载与 render 失败必须局部隔离。
+- Shell 扩展不接收 Auth/Router/Theme 等平台私有实例；桌面受限区与窄屏“业务上下文”入口都必须可访问，状态由下游 Store 管理，业务上下文仍由后端重验授权。
 - 下游 service 必须复用 AINP 请求错误边界：默认请求层全局提示，接管展示时显式声明 `errorMode`，禁止页面展示 Axios 原始 `error.message`。
 - redirect 登录由后端 Authenticator 静态元数据驱动并使用平台 `/auth-callback`；禁止下游替换登录页、深层导入 Auth Store/路由或用字符串动态加载组件。
 - 后端 Metadata 决定授权，前端 registry 决定产物内容；未知/重复 key、非法 path、远程代码和非法模块组合必须 fail-closed。

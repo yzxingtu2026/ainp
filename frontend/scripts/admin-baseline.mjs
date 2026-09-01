@@ -12,6 +12,7 @@ const baselineFiles = [
   'src/composition/index.ts',
   'src/composition/page.ts',
   'src/composition/profile-extension.ts',
+  'src/composition/shell-extension.ts',
   'src/composition/core-pages.ts',
   'src/composition/system-pages.ts',
   'src/composition/operations-pages.ts',

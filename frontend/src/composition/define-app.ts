@@ -3,7 +3,8 @@ import type {
   AdminModule,
   OwnedRegistration,
   ProfileExtensionRegistration,
-  ResolvedAdminApp
+  ResolvedAdminApp,
+  ShellExtensionRegistration
 } from './contract';
 
 const ID_PATTERN = /^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/;
@@ -71,6 +72,29 @@ function resolveProfileExtensions(
   return Object.freeze(extensions);
 }
 
+function resolveShellExtensions(
+  registrations: readonly ShellExtensionRegistration[]
+): readonly Readonly<ShellExtensionRegistration>[] {
+  assertUnique('shell extension', registrations);
+  const extensions = registrations.map(item => {
+    if (!item.id.startsWith(`${item.owner}.`)) {
+      throw new Error(`[admin-composition] shell extension "${item.id}" must use owner namespace "${item.owner}."`);
+    }
+    if (item.placement !== 'header.context') {
+      throw new Error(`[admin-composition] unknown shell extension placement "${String(item.placement)}"`);
+    }
+    if (!Number.isSafeInteger(item.order) || item.order < 0) {
+      throw new Error(`[admin-composition] invalid shell extension order for "${item.id}"`);
+    }
+    if (typeof item.component !== 'function') {
+      throw new Error(`[admin-composition] invalid shell extension component for "${item.id}"`);
+    }
+    return Object.freeze({ ...item });
+  });
+  extensions.sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
+  return Object.freeze(extensions);
+}
+
 export function defineAdminApp(definition: AdminAppDefinition): ResolvedAdminApp {
   assertId('application id', definition.id);
   if (!definition.name.trim()) throw new Error('[admin-composition] application name is required');
@@ -95,6 +119,7 @@ export function defineAdminApp(definition: AdminAppDefinition): ResolvedAdminApp
   const initializers = [...(definition.initializers || [])].sort((a, b) => a.id.localeCompare(b.id));
   const services = [...(definition.services || [])].sort((a, b) => a.id.localeCompare(b.id));
   const profileExtensions = resolveProfileExtensions(definition.profileExtensions || []);
+  const shellExtensions = resolveShellExtensions(definition.shellExtensions || []);
 
   assertUnique('page', pages, PAGE_KEY_PATTERN);
   assertUnique('route', routes);
@@ -121,6 +146,7 @@ export function defineAdminApp(definition: AdminAppDefinition): ResolvedAdminApp
     initializers: Object.freeze(initializers),
     services: Object.freeze(services),
     profileExtensions,
+    shellExtensions,
     pageMap: Object.freeze(pageMap),
     servicesMap: new Map(services.map(item => [item.id, item.service]))
   });

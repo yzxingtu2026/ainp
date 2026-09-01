@@ -39,5 +39,14 @@ export const adminApplication = defineAdminApp({
       component: () => import('./src/profile-extension.vue')
     }
   ],
+  shellExtensions: [
+    {
+      id: 'example.orders.business-context',
+      owner: 'example.orders',
+      placement: 'header.context',
+      order: 100,
+      component: () => import('./src/business-context-switcher.vue')
+    }
+  ],
   homePageKey: 'example_orders'
 });

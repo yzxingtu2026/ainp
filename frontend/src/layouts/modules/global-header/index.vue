@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { useFullscreen } from '@vueuse/core';
+import { useFullscreen, useMediaQuery } from '@vueuse/core';
+import { getAdminApplication } from '@/composition';
 import { GLOBAL_HEADER_MENU_ID } from '@/constants/app';
 import { useAppStore } from '@/store/modules/app';
 import { useThemeStore } from '@/store/modules/theme';
@@ -10,6 +11,7 @@ import ThemeButton from './components/theme-button.vue';
 import UserAvatar from './components/user-avatar.vue';
 import NotificationBell from './components/notification-bell.vue';
 import AiWorkspaceLauncher from '../ai-workspace-launcher/index.vue';
+import ShellExtensionRegion from './components/shell-extension-region.vue';
 
 defineOptions({
   name: 'GlobalHeader'
@@ -29,6 +31,8 @@ defineProps<Props>();
 const appStore = useAppStore();
 const themeStore = useThemeStore();
 const { isFullscreen, toggle } = useFullscreen();
+const shellExtensions = getAdminApplication().shellExtensions;
+const compactShellExtensions = useMediaQuery('(max-width: 960px)');
 </script>
 
 <template>
@@ -39,7 +43,12 @@ const { isFullscreen, toggle } = useFullscreen();
     <div v-else class="h-full flex-y-center flex-1-hidden">
       <GlobalBreadcrumb v-if="!appStore.isMobile" class="ml-12px" />
     </div>
-    <div class="h-full flex-y-center justify-end">
+    <ShellExtensionRegion
+      v-if="shellExtensions.length"
+      :extensions="shellExtensions"
+      :compact="compactShellExtensions"
+    />
+    <div class="h-full flex flex-none items-center justify-end">
       <AiWorkspaceLauncher location="header" />
       <GlobalSearch v-if="themeStore.header.globalSearch.visible" />
       <NotificationBell />

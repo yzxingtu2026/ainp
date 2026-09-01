@@ -43,6 +43,8 @@ const local: App.I18n.Schema = {
     reset: 'Reset',
     search: 'Search',
     switch: 'Switch',
+    businessContext: 'Business context',
+    shellExtensionUnavailable: 'Context extension unavailable',
     tip: 'Tip',
     trigger: 'Trigger',
     update: 'Update',
