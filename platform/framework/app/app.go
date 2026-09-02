@@ -103,6 +103,9 @@ type App struct {
 	OnHTTP                   func(engine *gin.Engine)
 	Auditor                  audit.Recorder
 	Installed                bool
+
+	WebSocketHandshakeTargets *auth.WebSocketHandshakeTargetRegistry
+	WebSocketHandshakeGrants  auth.WebSocketHandshakeGrantService
 }
 
 func New(cfg *config.Config, db *gorm.DB, auditor audit.Recorder, tokens *auth.TokenService) *App {
@@ -154,6 +157,8 @@ func New(cfg *config.Config, db *gorm.DB, auditor audit.Recorder, tokens *auth.T
 		NotificationRenderer: notification.NewRenderer(),
 		Auditor:              auditor,
 		Installed:            true,
+
+		WebSocketHandshakeTargets: auth.NewWebSocketHandshakeTargetRegistry(),
 	}
 }
 
@@ -187,6 +192,9 @@ func (a *App) RegisterPrincipalProvider(provider auth.PrincipalProvider) error {
 func (a *App) RegisterClientSurface(surface auth.ClientSurface) error {
 	return a.ClientSurfaces.Register(surface)
 }
+func (a *App) RegisterWebSocketHandshakeTarget(target auth.WebSocketHandshakeTarget) error {
+	return a.WebSocketHandshakeTargets.Register(target)
+}
 func (a *App) RegisterAuthenticator(provider authentication.Authenticator) error {
 	return a.Authenticators.Register(provider)
 }
@@ -196,6 +204,12 @@ func (a *App) SealAuthentication() error {
 		return fmt.Errorf("authentication registries are required")
 	}
 	if err := a.ClientSurfaces.Validate(a.Principals); err != nil {
+		return err
+	}
+	if a.WebSocketHandshakeTargets == nil {
+		return fmt.Errorf("websocket handshake target registry is required")
+	}
+	if err := a.WebSocketHandshakeTargets.Validate(a.ClientSurfaces); err != nil {
 		return err
 	}
 	for _, surface := range a.ClientSurfaces.List() {
@@ -219,6 +233,7 @@ func (a *App) SealAuthentication() error {
 	}
 	a.Principals.Seal()
 	a.ClientSurfaces.Seal()
+	a.WebSocketHandshakeTargets.Seal()
 	return nil
 }
 

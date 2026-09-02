@@ -63,6 +63,8 @@ func Register(a *app.App) error {
 		}
 	}
 	a.Authorization = a.Principals
+	websocketGrants := NewWebSocketHandshakeService(a.DB, a.Authorization, a.ClientSurfaces, a.WebSocketHandshakeTargets)
+	a.WebSocketHandshakeGrants = websocketGrants
 	sessionSvc := NewSessionService(a.DB, a.Tokens, svc, a.Config.Auth.RefreshDuration())
 	sessionSvc.Configure(a.Principals, a.ClientSurfaces)
 	unifiedAuth := NewUnifiedAuthService(a.DB, a.Authenticators, svc, sessionSvc, a.AuthRateLimiter)
@@ -216,7 +218,7 @@ func Register(a *app.App) error {
 		return err
 	}
 
-	if err := registerAuthenticationActions(a, unifiedAuth, auditOn, auditOff); err != nil {
+	if err := registerAuthenticationActions(a, unifiedAuth, websocketGrants, auditOn, auditOff); err != nil {
 		return err
 	}
 

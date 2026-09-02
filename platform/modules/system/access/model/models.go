@@ -87,6 +87,27 @@ type AuthChallenge struct {
 
 func (AuthChallenge) TableName() string { return "auth_challenges" }
 
+type WebSocketHandshakeGrant struct {
+	ID            string      `gorm:"primaryKey;size:64"`
+	SecretHash    string      `gorm:"size:64;not null;uniqueIndex"`
+	TenantID      string      `gorm:"size:64;not null;index:idx_ws_handshake_grants_principal"`
+	PrincipalKind string      `gorm:"size:128;not null;index:idx_ws_handshake_grants_principal"`
+	PrincipalID   string      `gorm:"size:255;not null;index:idx_ws_handshake_grants_principal"`
+	SessionID     string      `gorm:"size:64;not null;index"`
+	Session       AuthSession `gorm:"foreignKey:SessionID;references:ID;constraint:OnDelete:CASCADE" json:"-"`
+	Realm         string      `gorm:"size:32;not null;check:ck_ws_handshake_grants_realm,realm = 'tenant'"`
+	ClientSurface string      `gorm:"size:128;not null"`
+	Audience      string      `gorm:"size:255;not null"`
+	TargetID      string      `gorm:"size:128;not null"`
+	TargetPath    string      `gorm:"size:512;not null"`
+	AuthVersion   uint64      `gorm:"not null;check:ck_ws_handshake_grants_auth_version,auth_version > 0"`
+	ExpiresAt     time.Time   `gorm:"not null;index"`
+	ConsumedAt    *time.Time  `gorm:"index"`
+	CreatedAt     time.Time   `gorm:"autoCreateTime"`
+}
+
+func (WebSocketHandshakeGrant) TableName() string { return "auth_websocket_handshake_grants" }
+
 type Role struct {
 	ID          string                  `gorm:"primaryKey;size:64"`
 	TenantID    string                  `gorm:"size:64;uniqueIndex:ux_roles_tenant_code;not null"`

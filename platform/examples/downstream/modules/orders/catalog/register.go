@@ -25,9 +25,14 @@ func Prepare(application *app.App) error {
 	if err := application.RegisterPrincipalProvider(customerProvider{}); err != nil {
 		return err
 	}
-	return application.RegisterClientSurface(auth.ClientSurface{
+	if err := application.RegisterClientSurface(auth.ClientSurface{
 		ID: CustomerSurface, Audience: CustomerAudience, PathPrefix: "/api/v1/customer/",
 		PrincipalKinds: []auth.PrincipalKind{CustomerKind}, Methods: []string{"example-sso"},
+	}); err != nil {
+		return err
+	}
+	return application.RegisterWebSocketHandshakeTarget(auth.WebSocketHandshakeTarget{
+		ID: "orders.customer-events", Path: "/api/v1/customer/events",
 	})
 }
 

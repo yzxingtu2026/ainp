@@ -16,6 +16,8 @@ type (
 	RolePermission      = accessmodel.RolePermission
 	AccountRole         = accessmodel.AccountRole
 
+	WebSocketHandshakeGrant = accessmodel.WebSocketHandshakeGrant
+
 	// Deprecated: use TenantAccount.
 	User = TenantAccount
 	// Deprecated: use AccountRole.

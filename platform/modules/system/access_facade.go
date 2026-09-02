@@ -36,6 +36,7 @@ type (
 	AccountView                    = access.AccountView
 	PrincipalResourceService       = access.PrincipalResourceService
 	AccountIdentityResourceService = access.AccountIdentityResourceService
+	WebSocketHandshakeService      = access.WebSocketHandshakeService
 
 	// Deprecated: use AccountProfile.
 	UserProfile = AccountProfile
@@ -65,6 +66,10 @@ func NewUnifiedAuthService(db *gorm.DB, registry *authentication.Registry, authS
 	return access.NewUnifiedAuthService(db, registry, authService, sessions, limiter)
 }
 
+func NewWebSocketHandshakeService(db *gorm.DB, authorization auth.AuthorizationProvider, surfaces *auth.ClientSurfaceRegistry, targets *auth.WebSocketHandshakeTargetRegistry) *WebSocketHandshakeService {
+	return access.NewWebSocketHandshakeService(db, authorization, surfaces, targets)
+}
+
 func NewRoleService(db *gorm.DB, authService *AuthService, actions *action.Registry, capabilities *capability.Registry) *RoleService {
 	return access.NewRoleService(db, authService, actions, capabilities)
 }
@@ -92,8 +97,8 @@ func AssignablePermissions(actions *action.Registry) []string {
 	return access.AssignablePermissions(actions)
 }
 
-func registerAuthenticationActions(a *app.App, service *UnifiedAuthService, auditOn, auditOff bool) error {
-	return access.RegisterAuthenticationActions(a, service, auditOn, auditOff)
+func registerAuthenticationActions(a *app.App, service *UnifiedAuthService, websocketGrants auth.WebSocketHandshakeGrantService, auditOn, auditOff bool) error {
+	return access.RegisterAuthenticationActions(a, service, websocketGrants, auditOn, auditOff)
 }
 
 func registerReferenceResolvers(a *app.App) error { return access.RegisterReferenceResolvers(a) }

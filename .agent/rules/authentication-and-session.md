@@ -20,6 +20,7 @@
 - 后台 Account RBAC 事实源仍是 `TenantAccount/tenant_accounts`；业务主体由下游 Provider 持有，不得继承 Account RBAC。
 - 本人修改密码必须校验当前密码、复用统一强度规则并递增 `auth_version`，使全部旧会话失效；不得复用管理员重置密码权限接口。
 - challenge 短 TTL、单次消费、限制失败次数；入口经统一 `RateLimiter`，多实例部署替换共享实现。
+- 浏览器 WebSocket 只使用已认证 Bearer 请求签发的短时 opaque grant；目标路径须在 Host 显式注册并绑定原 Principal/Session/Surface/Audience/AuthVersion。grant 通过 `Sec-WebSocket-Protocol` 携带，禁止 Query Token；Origin 校验先于原子单次消费，消费后必须经 AuthorizationProvider 实时复核并恢复 AuthContext。
 - 密码、验证码、Token、challenge secret 禁止进入日志、审计、响应或普通租户设置。
 - 生物认证只允许 Passkey/WebAuthn；禁止采集、上传、存储原始指纹或人脸。
 - 新具体渠道单开 Issue，复用统一认证/身份/会话主链。

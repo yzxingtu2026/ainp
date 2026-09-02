@@ -62,6 +62,7 @@ func AutoMigrate(db *gorm.DB) error {
 		&model.AuthSession{},
 		&model.AuthRefreshTokenUse{},
 		&model.AuthChallenge{},
+		&model.WebSocketHandshakeGrant{},
 		&model.Role{},
 		&model.RolePermission{},
 		&model.AccountRole{},
