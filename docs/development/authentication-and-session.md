@@ -66,6 +66,41 @@ Provider secret 使用启动安全配置或 Secret 管理，不进入普通租�
 
 MCP 使用独立的 OAuth Grant、Token family 和 `ainp:mcp` audience，不复用网页 Session Token。其 Refresh 重放检测沿用本节原则，但撤销 MCP Grant 不影响网页会话，详见 `mcp-oauth.md`。
 
+## 浏览器 WebSocket 握手
+
+浏览器原生 `WebSocket` 不能设置 `Authorization`。宿主需要长连接时，必须在模块 `Prepare` 阶段通过 `App.RegisterWebSocketHandshakeTarget` 注册静态精确路径；动态参数、通配符、Query 和未命中 Client Surface 的路径会阻止启动或注册。注册目标只授权认证握手，不注册业务路由、Hub、订阅或 Origin allowlist。
+
+已认证页面向当前 Surface 的 `POST .../auth/websocket-grants` 提交 `{"target_path":"/api/v1/customer/events"}`。服务端签发 30 秒有效的高熵 opaque grant，数据库只保存 SHA-256 摘要以及 tenant、Principal、Session、Surface、audience、auth version 和目标路径。浏览器只通过响应的 `protocols` 建立连接，不把 access token 或 grant 放入 URL：
+
+```js
+const issued = await api.post('/api/v1/customer/auth/websocket-grants', {
+  target_path: '/api/v1/customer/events',
+})
+const socket = new WebSocket('wss://example.test/api/v1/customer/events', issued.protocols)
+```
+
+宿主必须先使用自己的生产 allowlist 校验 `Origin`，再调用 `auth.AuthenticateWebSocketHandshake`；校验成功后用返回请求中的可信 `auth.Context` 执行业务授权并 Upgrade。服务端只选择并回显稳定协议 `ainp.ws.v1`，不得回显凭据协议。以下示例省略业务 Hub：
+
+```go
+func websocketHandler(c *gin.Context) {
+    if !allowedOrigin(c.Request.Header.Get("Origin")) {
+        c.AbortWithStatus(http.StatusForbidden)
+        return
+    }
+    request, err := auth.AuthenticateWebSocketHandshake(c.Request, application.WebSocketHandshakeGrants)
+    if err != nil {
+        c.AbortWithStatus(http.StatusUnauthorized)
+        return
+    }
+    c.Request = request
+    upgrader.Subprotocols = []string{auth.WebSocketHandshakeProtocol}
+    conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+    // Hub、订阅、保活、断线恢复和连接期 AuthorizationProvider 复核均由宿主持有。
+}
+```
+
+消费以数据库条件更新原子完成；过期、篡改、重放、并发第二次消费、跨目标路径、跨 Surface 或 audience 均 fail-closed。消费成功后仍调用 `AuthorizationProvider`，因此已撤销 Session、AuthVersion 变化和主体停用不会恢复 AuthContext。`Sec-WebSocket-Protocol`、grant 和 access token 均属于敏感凭据，日志与审计不得记录原值。
+
 ## API
 
 | API | Access | 说明 |
@@ -78,9 +113,10 @@ MCP 使用独立的 OAuth Grant、Token family 和 `ainp:mcp` audience，不复�
 | `GET /api/v1/system/auth/sessions` | authenticated | 当前用户有效会话 |
 | `POST /api/v1/system/auth/sessions/revoke` | authenticated | 撤销自己的指定会话 |
 | `POST /api/v1/system/auth/sessions/revoke-all` | authenticated | 撤销自己的全部会话 |
+| `POST /api/v1/system/auth/websocket-grants` | authenticated | 为已注册目标签发短时单次 WebSocket 握手凭据 |
 | `POST /api/v1/system/profile/password/update` | authenticated | 校验当前密码后修改本人密码，并使全部旧会话失效 |
 
-每个下游 Client Surface 还会在其 `PathPrefix + /auth/...` 自动投影 methods、challenge、authenticate、refresh、logout 和 session 路由。公共认证请求的 `client` 必须等于请求路径解析出的 Surface；refresh token 也只能从原 Surface 路径轮换。
+每个下游 Client Surface 还会在其 `PathPrefix + /auth/...` 自动投影 methods、challenge、authenticate、refresh、logout、session 和 websocket-grants 路由。公共认证请求的 `client` 必须等于请求路径解析出的 Surface；refresh token 也只能从原 Surface 路径轮换，WebSocket grant 只能签发给同一 Surface 已注册的精确目标路径。
 
 Admin 登录页只消费 `/auth/methods` 中通过校验且 `redirect=true + challenge=true` 的条目。点击后调用统一 challenge 获取 `authorize_url`，不拼 Provider URL。Provider callback 固定进入平台 `/auth-callback` 页面，由页面调用统一 authenticate 保存 Session/Token；成功后只恢复登录前的单斜杠站内路径，协议相对、跨域与带凭据 URL 一律拒绝。callback 在成功或失败后都 replace 清理 code、state、error 等 query；刷新或重复提交因一次性临时上下文和下游 state 消费规则安全失败并返回密码登录。
 
@@ -114,6 +150,7 @@ Challenge 只保存摘要，必须具备短 TTL、单次消费、失败次数上
 - [ ] methods / challenge / authenticate 复用同一 Available 边界
 - [ ] redirect callback 使用平台固定路由并清理敏感 query
 - [ ] challenge 有 TTL、单次消费和次数上限
+- [ ] WebSocket 目标显式注册；Origin 先校验；grant 不进 Query/日志并且并发只能消费一次
 - [ ] 敏感凭据未进入日志、审计、响应或普通设置
 
 变更协议时同步本文、`auth-context.md` 与 Agent 规则，并运行 `agent-rules sync`。

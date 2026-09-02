@@ -98,7 +98,7 @@ func TestDownstreamHostLoadsEmbeddedRuntimeAssetsFromArbitraryWorkingDirectory(t
 		_ = platform.Close()
 	})
 	routes := platform.App.Actions.HTTPRoutes()
-	for _, want := range []string{"/api/v1/customer/auth/authenticate", "/api/v1/customer/auth/refresh", "/api/v1/customer/auth/logout", "/api/v1/customer/auth/sessions"} {
+	for _, want := range []string{"/api/v1/customer/auth/authenticate", "/api/v1/customer/auth/refresh", "/api/v1/customer/auth/logout", "/api/v1/customer/auth/sessions", "/api/v1/customer/auth/websocket-grants"} {
 		found := false
 		for _, route := range routes {
 			if route.HTTP != nil && route.HTTP.Path == want {
@@ -109,6 +109,9 @@ func TestDownstreamHostLoadsEmbeddedRuntimeAssetsFromArbitraryWorkingDirectory(t
 		if !found {
 			t.Fatalf("custom client surface auth route missing: %s", want)
 		}
+	}
+	if target, ok := platform.App.WebSocketHandshakeTargets.ResolvePath("/api/v1/customer/events"); !ok || target.ID != "orders.customer-events" || platform.App.WebSocketHandshakeGrants == nil {
+		t.Fatalf("websocket handshake composition is incomplete: target=%#v service=%T", target, platform.App.WebSocketHandshakeGrants)
 	}
 	sessionAction, ok := platform.App.Actions.Get("system.auth_session_list")
 	if !ok || !slices.Contains(sessionAction.Meta.PrincipalKinds, "example.customer") || !slices.Contains(sessionAction.Meta.ClientSurfaces, "example.customer-client") {

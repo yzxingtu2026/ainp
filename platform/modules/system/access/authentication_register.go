@@ -14,7 +14,11 @@ type RevokeSessionRequest struct {
 	SessionID string `json:"session_id" validate:"required,max=64"`
 }
 
-func RegisterAuthenticationActions(a *app.App, service *UnifiedAuthService, auditOn, auditOff bool) error {
+type IssueWebSocketHandshakeGrantRequest struct {
+	TargetPath string `json:"target_path" validate:"required,max=512"`
+}
+
+func RegisterAuthenticationActions(a *app.App, service *UnifiedAuthService, websocketGrants auth.WebSocketHandshakeGrantService, auditOn, auditOff bool) error {
 	actions := []action.Action{
 		{ID: "system.auth_methods", Handler: func(ctx context.Context, _ json.RawMessage) (any, error) { return service.Methods(ctx), nil }, Meta: authMeta(action.AccessPublic, "认证方式", "action.system.auth_methods", &auditOff, "GET", "/api/v1/system/auth/methods")},
 		{ID: "system.auth_challenge", Handler: action.JSON(func(ctx context.Context, req ChallengeRequest) (any, error) { return service.Begin(ctx, req) }), Meta: authMeta(action.AccessPublic, "创建认证挑战", "action.system.auth_challenge", &auditOn, "POST", "/api/v1/system/auth/challenges")},
@@ -26,6 +30,9 @@ func RegisterAuthenticationActions(a *app.App, service *UnifiedAuthService, audi
 			return service.RevokeSession(ctx, req.SessionID)
 		}), Meta: authMeta(action.AccessAuthenticated, "撤销会话", "action.system.auth_session_revoke", &auditOn, "POST", "/api/v1/system/auth/sessions/revoke")},
 		{ID: "system.auth_session_revoke_all", Handler: func(ctx context.Context, _ json.RawMessage) (any, error) { return service.RevokeAll(ctx) }, Meta: authMeta(action.AccessAuthenticated, "撤销全部会话", "action.system.auth_session_revoke_all", &auditOn, "POST", "/api/v1/system/auth/sessions/revoke-all")},
+		{ID: "system.auth_websocket_grant_issue", Handler: action.JSON(func(ctx context.Context, req IssueWebSocketHandshakeGrantRequest) (any, error) {
+			return websocketGrants.Issue(ctx, req.TargetPath)
+		}), Meta: authMeta(action.AccessAuthenticated, "签发 WebSocket 握手凭据", "action.system.auth_websocket_grant_issue", &auditOn, "POST", "/api/v1/system/auth/websocket-grants")},
 	}
 	kinds := a.Principals.Kinds()
 	surfaceIDs := make([]string, 0, len(a.ClientSurfaces.List()))
@@ -52,6 +59,7 @@ func RegisterAuthenticationActions(a *app.App, service *UnifiedAuthService, audi
 		{"system.auth_session_list", "GET", "auth/sessions"},
 		{"system.auth_session_revoke", "POST", "auth/sessions/revoke"},
 		{"system.auth_session_revoke_all", "POST", "auth/sessions/revoke-all"},
+		{"system.auth_websocket_grant_issue", "POST", "auth/websocket-grants"},
 	}
 	for _, surface := range a.ClientSurfaces.List() {
 		if surface.ID == auth.TenantConsoleSurface {
