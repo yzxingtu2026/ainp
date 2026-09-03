@@ -27,6 +27,7 @@
 - `0057_job_error_classification.sql` 为 JobRun、Tool Catalog 与 Navigation 索引文档增加受控错误分类和阶段字段，不保存供应商原始错误或敏感输入。
 - `0065_agent_run_terminal_finalization.sql` 为 Agent Run 增加版本化安全终态、模型/模板收尾、重试语义、terminal Message 引用与持久化 Tool 操作计数字段。
 - `0066_account_identity_binding.sql` 为公开 Account Identity Binding 契约增加租户、账号、Provider 唯一约束；历史重复绑定会 fail-closed，需先审查数据再重试迁移。
+- `0068_fix_websocket_handshake_grant_unique_index.sql` 将 `0067` 的自动命名 `secret_hash` UNIQUE 约束收敛为与 GORM 模型一致的显式唯一索引，保证版本化迁移后启动 AutoMigrate 幂等。
 - `0005_attachments.sql` 创建 `attachments` / `attachment_links` 与状态 CHECK；附件策略与 AccessPolicy 由代码注册。
 - `0011_audit_log_indexes.sql` 为租户审计时间线、Action 与资源筛选增加复合索引。
 - `0012_authentication_sessions.sql` 创建统一认证身份、challenge 与轮换会话表；旧 JWT 缺少 `sid`，升级后需重新登录。

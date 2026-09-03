@@ -89,7 +89,7 @@ func (AuthChallenge) TableName() string { return "auth_challenges" }
 
 type WebSocketHandshakeGrant struct {
 	ID            string      `gorm:"primaryKey;size:64"`
-	SecretHash    string      `gorm:"size:64;not null;uniqueIndex"`
+	SecretHash    string      `gorm:"size:64;not null;uniqueIndex:uni_auth_websocket_handshake_grants_secret_hash"`
 	TenantID      string      `gorm:"size:64;not null;index:idx_ws_handshake_grants_principal"`
 	PrincipalKind string      `gorm:"size:128;not null;index:idx_ws_handshake_grants_principal"`
 	PrincipalID   string      `gorm:"size:255;not null;index:idx_ws_handshake_grants_principal"`
