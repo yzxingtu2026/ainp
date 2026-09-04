@@ -3,10 +3,13 @@ package tests
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
 
+	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/yzxingtu2026/ainp/platform/framework/action"
 	"github.com/yzxingtu2026/ainp/platform/framework/audit"
@@ -88,6 +91,9 @@ func TestMCPActionProjectionUsesRegistryMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if result.NextCursor != "" {
+		t.Fatalf("a single-page directory must not return a cursor: %q", result.NextCursor)
+	}
 	if len(result.Tools) != 4 || result.Tools[0].Name != "ainp_confirmation_execute" {
 		t.Fatalf("expected confirmation executor plus read, write and sensitive tools, got %#v", result.Tools)
 	}
@@ -100,6 +106,122 @@ func TestMCPActionProjectionUsesRegistryMetadata(t *testing.T) {
 	result, err = session.ListTools(ctx, nil)
 	if err != nil || len(result.Tools) != 3 || result.Tools[0].Name != "ainp_confirmation_execute" || result.Tools[1].Name != mcpserver.MCPToolName("demo.read") || result.Tools[2].Name != mcpserver.MCPToolName("demo.sensitive") {
 		t.Fatalf("scope removal must hide write tools: result=%#v err=%v", result, err)
+	}
+}
+
+func TestMCPActionProjectionPaginatesCompleteAuthorizedDirectory(t *testing.T) {
+	registry := action.NewRegistry(permission.NewChecker(), nil)
+	for index := 0; index < 140; index++ {
+		registerMCPTestAction(t, registry, fmt.Sprintf("demo.page.%03d", index), action.AccessPermission, "demo.read", "read", "low", nil)
+	}
+
+	server := mcpserver.NewActionServer(registry, mcpserver.NewService(nil, nil, "test-secret", "ainp-test", "https://api.ainp.example"))
+	authContext := &auth.Context{TenantID: "tenant-a", PrincipalID: "user-a", Realm: auth.RealmTenant, Authenticated: true, Permissions: []string{"demo.read"}, Client: "mcp", MCPClientID: "client-a", MCPGrantID: "grant-a", AuthVersion: 1}
+	scopes := map[string]bool{mcpserver.ScopeRead: true, mcpserver.ScopeSensitive: true}
+	ctx := mcpserver.ContextWithPrincipalForTest(auth.WithContext(context.Background(), authContext), scopes)
+	serverTransport, clientTransport := mcp.NewInMemoryTransports()
+	serverSession, err := server.Connect(ctx, serverTransport, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer serverSession.Close()
+	session, err := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "1"}, nil).Connect(ctx, clientTransport, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+
+	first, err := session.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first.Tools) != 100 || first.NextCursor == "" || first.Tools[0].Name != "ainp_confirmation_execute" {
+		t.Fatalf("unexpected first page: tools=%d nextCursor=%q first=%q", len(first.Tools), first.NextCursor, first.Tools[0].Name)
+	}
+	second, err := session.ListTools(ctx, &mcp.ListToolsParams{Cursor: first.NextCursor})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(second.Tools) != 41 || second.NextCursor != "" {
+		t.Fatalf("unexpected final page: tools=%d nextCursor=%q", len(second.Tools), second.NextCursor)
+	}
+
+	want := make([]string, 0, 141)
+	want = append(want, "ainp_confirmation_execute")
+	for index := 0; index < 140; index++ {
+		want = append(want, mcpserver.MCPToolName(fmt.Sprintf("demo.page.%03d", index)))
+	}
+	got := make([]string, 0, 141)
+	for _, page := range [][]*mcp.Tool{first.Tools, second.Tools} {
+		for _, tool := range page {
+			got = append(got, tool.Name)
+		}
+	}
+	if len(got) != len(want) {
+		t.Fatalf("paginated directory length=%d want=%d", len(got), len(want))
+	}
+	for index := range want {
+		if got[index] != want[index] {
+			t.Fatalf("paginated directory[%d]=%q want=%q", index, got[index], want[index])
+		}
+	}
+
+	var iterated []string
+	for tool, iterateErr := range session.Tools(ctx, nil) {
+		if iterateErr != nil {
+			t.Fatal(iterateErr)
+		}
+		iterated = append(iterated, tool.Name)
+	}
+	if len(iterated) != len(want) {
+		t.Fatalf("SDK automatic pagination discovered %d tools, want %d", len(iterated), len(want))
+	}
+	for index := range want {
+		if iterated[index] != want[index] {
+			t.Fatalf("automatic pagination[%d]=%q want=%q", index, iterated[index], want[index])
+		}
+	}
+
+	assertInvalidMCPToolCursor(t, session, ctx, "not-a-valid-cursor")
+
+	freshCursor := func() string {
+		page, listErr := session.ListTools(ctx, nil)
+		if listErr != nil || page.NextCursor == "" {
+			t.Fatalf("load fresh cursor: result=%#v err=%v", page, listErr)
+		}
+		return page.NextCursor
+	}
+
+	cursor := freshCursor()
+	authContext.Permissions = nil
+	assertInvalidMCPToolCursor(t, session, ctx, cursor)
+	authContext.Permissions = []string{"demo.read"}
+
+	cursor = freshCursor()
+	delete(scopes, mcpserver.ScopeSensitive)
+	assertInvalidMCPToolCursor(t, session, ctx, cursor)
+	scopes[mcpserver.ScopeSensitive] = true
+
+	cursor = freshCursor()
+	authContext.MCPGrantID = "grant-b"
+	assertInvalidMCPToolCursor(t, session, ctx, cursor)
+	authContext.MCPGrantID = "grant-a"
+
+	cursor = freshCursor()
+	disabled, exists := registry.Get("demo.page.139")
+	if !exists {
+		t.Fatal("test action is missing")
+	}
+	disabled.Meta.AI.ExposeTool = false
+	assertInvalidMCPToolCursor(t, session, ctx, cursor)
+}
+
+func assertInvalidMCPToolCursor(t *testing.T, session *mcp.ClientSession, ctx context.Context, cursor string) {
+	t.Helper()
+	_, err := session.ListTools(ctx, &mcp.ListToolsParams{Cursor: cursor})
+	var protocolError *jsonrpc.Error
+	if !errors.As(err, &protocolError) || protocolError.Code != jsonrpc.CodeInvalidParams || protocolError.Message != "invalid cursor" {
+		t.Fatalf("cursor must fail with safe Invalid params: %T %v", err, err)
 	}
 }
 
