@@ -26,8 +26,8 @@ jobs:
           cp .agent/templates/AGENTS.md.tpl AGENTS.md
           npx -y @yz-xingtu/agent-rules@latest sync --target=qoder,cursor
           npx -y @yz-xingtu/agent-rules@latest doctor
-      - name: Test release entrypoint
-        run: python3 -m unittest scripts/test_release.py scripts/test_generate_release_notes.py
+      - name: Test release entrypoint and Web Nginx routes
+        run: python3 -m unittest scripts/test_release.py scripts/test_generate_release_notes.py scripts/test_web_nginx_routes.py
 
   backend:
     runs-on: ubuntu-latest

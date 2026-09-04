@@ -52,7 +52,24 @@ Scope 只缩小能力。任何阶段都不得绕过 realm、tenant、实时 perm
 
 - `mcp.base_url` / `MCP_BASE_URL` 是 OAuth/MCP 后端规范公网地址；`mcp.web_base_url` / `MCP_WEB_BASE_URL` 是浏览器授权页地址。生产同域部署时两者可相同，本地前后端分端口时必须分别配置。
 - `/mcp` 拒绝未知 Origin，并限制请求体为 1 MiB。反向代理必须覆盖 Host、Origin、连接和读取超时门禁。
+- Web 镜像 Nginx 必须按精确路径分流，禁止宽泛 `/oauth/` 或整段 `/.well-known/` 代理：
+
+  | 路径 | 归属 |
+  | --- | --- |
+  | `/.well-known/oauth-protected-resource` | API |
+  | `/.well-known/oauth-authorization-server` | API |
+  | `POST /oauth/register` | API |
+  | `POST /oauth/token` | API |
+  | `POST /oauth/revoke` | API |
+  | 精确 `/mcp` | API，Streamable HTTP |
+  | `/api/` | API |
+  | `GET /oauth/authorize` | Admin SPA，保留完整 query string |
+  | `GET /mcp/confirm` | Admin SPA |
+  | `GET /setup` | Admin SPA |
+
+- 宿主机/TLS 反向代理必须原样透传上述协议端点；不得把 `/.well-known/` 当隐藏文件拒绝，也不得把 `/oauth/authorize` 转给 API。
 - Code、Access/Refresh Token、PKCE verifier、Cookie 和完整授权 Body 禁止进入日志、审计或错误响应。
+- 部署核对与 `curl` 清单见 [容器部署基线](../deployment/containers.md)。
 
 个人中心的“MCP 连接”页签通过 authenticated API 读取规范 MCP URL，并提供桌面 Agent 配置指南。指南只展示名称、`streamable_http` 类型和 URL；OAuth 客户端的 Bearer 环境变量及自定义 Header 必须留空，禁止引导用户复制 Token。
 
