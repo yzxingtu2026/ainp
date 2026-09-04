@@ -20,7 +20,8 @@ AINP 的远程 MCP 入口使用官方 Go MCP SDK 提供 Streamable HTTP。业务
 ## Action 自动投影与执行
 
 - Action Registry 是唯一工具事实源。MCP 只投影 `source=action`、tenant realm、`AIMeta.ExposeTool=true` 且 enabled 的 Action；禁止 MCP 专用业务清单、DTO 或 Action ID switch。
-- 每个新 MCP session 从已完成注册的 Action Registry 构建协议目录；`tools/list` 每次请求再按 Action 状态、tenant realm、实时 permission、OAuth scope 的顺序求交集。不可见项不返回，目录单页最多 100 项。
+- 每个新 MCP session 从已完成注册的 Action Registry 构建协议目录；`tools/list` 每次请求再按 Action 状态、tenant realm、实时 permission、OAuth scope 的顺序求交集。不可见项不返回；目录采用“有界单页 + 标准游标分页”，单页最多 100 项，存在后页时必须返回 `nextCursor`，禁止无游标截断。
+- 分页目录的稳定顺序为 `ainp_confirmation_execute`（启用时固定首位），其余工具按 Action RuntimeRef 升序。游标必须 opaque、短期有效，并绑定 Principal、Grant、scope 与当前完整可见目录；后续请求仍实时重算授权交集。游标无效、过期、跨授权复用、锚点消失或目录变化时统一按协议 `Invalid params` fail-closed，客户端必须从第一页重新遍历。
 - MCP tool name 由原 Action ID 的可读归一化片段和 SHA-256 稳定摘要组成。原 Action ID 只保留在服务端 `RuntimeRef`，名称冲突启动时 fail-closed。
 - 输入 Schema、LLM/Human 描述和只读/破坏性/开放世界/幂等提示来自 Action Tool Definition。MCP 要求输出 Schema 顶层为 object；非 object 的 Action 输出 Schema 不声明为 MCP `outputSchema`，结果仍安全返回。
 - `none/read` 需要 `actions:read`；普通 `write` 需要 `actions:write`。`external/paid/destructive/critical` 需要 `actions:sensitive` 才进入目录，并在每次执行前进入逐次确认链；scope 只允许发起确认，不能替代批准。

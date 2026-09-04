@@ -2,14 +2,19 @@ package mcpserver
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/yzxingtu2026/ainp/platform/framework/action"
 	"github.com/yzxingtu2026/ainp/platform/framework/aitool"
@@ -20,6 +25,8 @@ import (
 const (
 	maxProjectedTools      = 100
 	confirmationResumeTool = "ainp_confirmation_execute"
+	toolCursorVersion      = 1
+	toolCursorLifetime     = 10 * time.Minute
 )
 
 type principalContextKey struct{}
@@ -44,6 +51,18 @@ type projectedAction struct {
 	tool       *mcp.Tool
 }
 
+type toolCursorPayload struct {
+	Version   int    `json:"v"`
+	IssuedAt  int64  `json:"iat"`
+	Directory string `json:"directory"`
+	After     string `json:"after"`
+}
+
+type toolCursorCodec struct {
+	key []byte
+	now func() time.Time
+}
+
 // NewActionServer projects the Action Registry into MCP without introducing a
 // second business registration source.
 func NewActionServer(actions *action.Registry, confirmations *Service) *mcp.Server {
@@ -64,6 +83,7 @@ func NewActionServer(actions *action.Registry, confirmations *Service) *mcp.Serv
 		})
 	}
 	resumeTool := confirmationExecutionTool()
+	cursors := newToolCursorCodec()
 	server.AddTool(resumeTool, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		return executeConfirmedAction(ctx, actions, confirmations, byActionID, req)
 	})
@@ -76,24 +96,152 @@ func NewActionServer(actions *action.Registry, confirmations *Service) *mcp.Serv
 			if !ok {
 				return &mcp.ListToolsResult{Tools: []*mcp.Tool{}}, nil
 			}
-			tools := make([]*mcp.Tool, 0, len(projected)+1)
-			if confirmations != nil && principal.Scopes[ScopeSensitive] {
-				tools = append(tools, resumeTool)
+			params, _ := req.GetParams().(*mcp.ListToolsParams)
+			cursor := ""
+			if params != nil {
+				cursor = params.Cursor
 			}
-			for _, item := range projected {
-				if visibleToPrincipal(principal, item.definition) {
-					tools = append(tools, item.tool)
-				}
-			}
-			// The registry is bounded here; pagination is intentionally delegated
-			// to a capped directory until projected Action counts exceed this guard.
-			if len(tools) > maxProjectedTools {
-				tools = tools[:maxProjectedTools]
-			}
-			return &mcp.ListToolsResult{Tools: tools}, nil
+			tools := visibleToolDirectory(actions, confirmations, principal, projected, resumeTool)
+			return paginateToolDirectory(tools, principal, cursor, cursors)
 		}
 	})
 	return server
+}
+
+func visibleToolDirectory(actions *action.Registry, confirmations *Service, principal *Principal, projected []projectedAction, resumeTool *mcp.Tool) []*mcp.Tool {
+	tools := make([]*mcp.Tool, 0, len(projected)+1)
+	if confirmations != nil && principal.Scopes[ScopeSensitive] {
+		tools = append(tools, resumeTool)
+	}
+	for _, item := range projected {
+		current, exists := actions.Get(item.definition.RuntimeRef)
+		if !exists || current.Meta.AI == nil || !current.Meta.AI.ExposeTool || auth.NormalizeRealm(current.Meta.Surface) != auth.RealmTenant {
+			continue
+		}
+		if visibleToPrincipal(principal, item.definition) {
+			tools = append(tools, item.tool)
+		}
+	}
+	return tools
+}
+
+func paginateToolDirectory(tools []*mcp.Tool, principal *Principal, cursor string, cursors toolCursorCodec) (*mcp.ListToolsResult, error) {
+	start := 0
+	directory := toolDirectoryFingerprint(principal, tools)
+	if cursor != "" {
+		payload, err := cursors.decode(cursor)
+		if err != nil || payload.Directory != directory {
+			return nil, invalidToolCursorError()
+		}
+		start = toolIndex(tools, payload.After)
+		if start < 0 {
+			return nil, invalidToolCursorError()
+		}
+		start++
+	}
+	end := min(start+maxProjectedTools, len(tools))
+	page := append([]*mcp.Tool(nil), tools[start:end]...)
+	result := &mcp.ListToolsResult{Tools: page}
+	if end < len(tools) {
+		nextCursor, err := cursors.encode(toolCursorPayload{
+			Version: toolCursorVersion, IssuedAt: cursors.now().Unix(), Directory: directory, After: tools[end-1].Name,
+		})
+		if err != nil {
+			return nil, err
+		}
+		result.NextCursor = nextCursor
+	}
+	return result, nil
+}
+
+func newToolCursorCodec() toolCursorCodec {
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		panic(fmt.Errorf("create MCP tool cursor key: %w", err))
+	}
+	return toolCursorCodec{key: key, now: time.Now}
+}
+
+func (c toolCursorCodec) encode(payload toolCursorPayload) (string, error) {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("encode MCP tool cursor: %w", err)
+	}
+	mac := hmac.New(sha256.New, c.key)
+	_, _ = mac.Write(body)
+	return base64.RawURLEncoding.EncodeToString(body) + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil)), nil
+}
+
+func (c toolCursorCodec) decode(cursor string) (toolCursorPayload, error) {
+	var payload toolCursorPayload
+	parts := strings.Split(cursor, ".")
+	if len(parts) != 2 || len(cursor) > 2048 {
+		return payload, fmt.Errorf("invalid cursor encoding")
+	}
+	body, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil {
+		return payload, err
+	}
+	signature, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return payload, err
+	}
+	mac := hmac.New(sha256.New, c.key)
+	_, _ = mac.Write(body)
+	if !hmac.Equal(signature, mac.Sum(nil)) {
+		return payload, fmt.Errorf("invalid cursor signature")
+	}
+	if err = json.Unmarshal(body, &payload); err != nil {
+		return payload, err
+	}
+	now := c.now()
+	issuedAt := time.Unix(payload.IssuedAt, 0)
+	if payload.Version != toolCursorVersion || payload.Directory == "" || payload.After == "" || issuedAt.After(now) || now.Sub(issuedAt) > toolCursorLifetime {
+		return toolCursorPayload{}, fmt.Errorf("invalid or expired cursor")
+	}
+	return payload, nil
+}
+
+func toolDirectoryFingerprint(principal *Principal, tools []*mcp.Tool) string {
+	type directoryBinding struct {
+		TenantID      string   `json:"tenant_id"`
+		PrincipalKind string   `json:"principal_kind"`
+		PrincipalID   string   `json:"principal_id"`
+		AuthVersion   uint64   `json:"auth_version"`
+		ClientID      string   `json:"client_id"`
+		GrantID       string   `json:"grant_id"`
+		Scopes        []string `json:"scopes"`
+		Tools         []string `json:"tools"`
+	}
+	binding := directoryBinding{
+		TenantID: principal.Auth.TenantID, PrincipalKind: string(principal.Auth.Principal.Kind), PrincipalID: principal.Auth.PrincipalID,
+		AuthVersion: principal.Auth.AuthVersion, ClientID: principal.Auth.MCPClientID, GrantID: principal.Auth.MCPGrantID,
+	}
+	for scope, enabled := range principal.Scopes {
+		if enabled {
+			binding.Scopes = append(binding.Scopes, scope)
+		}
+	}
+	sort.Strings(binding.Scopes)
+	for _, tool := range tools {
+		binding.Tools = append(binding.Tools, tool.Name)
+	}
+	body, _ := json.Marshal(binding)
+	digest := sha256.Sum256(body)
+	return hex.EncodeToString(digest[:])
+}
+
+func toolIndex(tools []*mcp.Tool, name string) int {
+	for index, tool := range tools {
+		if tool.Name == name {
+			return index
+		}
+	}
+	return -1
+}
+
+func invalidToolCursorError() error {
+	return &jsonrpc.Error{Code: jsonrpc.CodeInvalidParams, Message: "invalid cursor"}
 }
 
 func confirmationExecutionTool() *mcp.Tool {
