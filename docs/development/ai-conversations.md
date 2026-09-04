@@ -13,7 +13,9 @@ Conversation 是租户内、供应商无关的会话事实边界。它固定一�
 ## 权限与可见性
 
 - Conversation、Message 与 Agent Run 是所有 tenant 已登录用户的自助能力，不要求额外角色 permission；管理 Agent、Slot、模型或知识库不属于本层。
-- `tenant_id`、owner 和当前 actor 只来自 `AuthContext`。
+- `tenant_id`、owner 和当前 actor 只来自 `AuthContext`。Conversation / Run owner 使用 `AuthContext.PrincipalID`；社区等非 Account 主体不写独立 `user_id` 也能建立 private 会话。
+- 已注册 Client Surface 上的已登录主体通过 Host 投影路径使用同一套运行面 Action，例如 `{PathPrefix}ai/conversations/create-for-slot`、`messages/create`、`agent-runs/start|get|events|cancel` 与 `tool-confirmations/list|approve|reject`。第一期官方出口是 `events` cursor 轮询，不要求 SSE/WebSocket。
+- `create-for-slot` 只解析当前 Surface/Principal 允许的 Slot；社区主体不得解析 `workspace.default`。
 - 默认 `private`，只有 owner 可见；`tenant` 会话可供同租户授权用户读取。
 - 跨租户、无权 private 会话、消息和 Snapshot 统一按不存在处理。
 - 客户端只能提交 `user` 消息，不能伪造 `assistant`、`system` 或 `tool`。

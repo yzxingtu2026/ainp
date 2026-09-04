@@ -145,7 +145,7 @@ func (s *AgentSlotService) Resolve(ctx context.Context, r AgentSlotGetRequest) (
 		return nil, err
 	}
 	slot, ok := s.slots.Current(strings.TrimSpace(r.SlotKey))
-	if !ok {
+	if !ok || !slot.AllowsActor(ac) {
 		return nil, errs.New(errs.CodeNotFound, "agent slot not found")
 	}
 	tdb, err := s.tenantDB(ctx)
@@ -200,7 +200,11 @@ func (s *AgentSlotService) List(ctx context.Context, r AgentSlotListRequest) (an
 	}
 	r.Normalize()
 	items := []AgentSlotResolution{}
+	ac := auth.MustFromContext(ctx)
 	for _, slot := range s.slots.List() {
+		if !slot.AllowsActor(ac) {
+			continue
+		}
 		if r.Keyword != "" && !strings.Contains(strings.ToLower(slot.Title+" "+slot.Key), strings.ToLower(r.Keyword)) {
 			continue
 		}
@@ -318,16 +322,19 @@ func (s *AgentSlotService) UpdatePreference(ctx context.Context, r AgentSlotMuta
 	return s.mutatePreference(ctx, r, false)
 }
 func (s *AgentSlotService) ResetPreference(ctx context.Context, r AgentSlotResetRequest) (any, error) {
-	_, err := slotActor(ctx)
+	ac, err := slotActor(ctx)
 	if err != nil {
 		return nil, err
+	}
+	slot, ok := s.slots.Current(r.SlotKey)
+	if !ok || !slot.AllowsActor(ac) {
+		return nil, errs.New(errs.CodeNotFound, "agent slot not found")
 	}
 	tdb, err := s.tenantDB(ctx)
 	if err != nil {
 		return nil, err
 	}
 	repo, _ := tenantdata.NewTenantRepository[AgentSlotPreference](tdb)
-	ac := auth.MustFromContext(ctx)
 	res := repo.DeleteWhere("user_id=? AND slot_key=? AND revision=?", ac.PrincipalID, r.SlotKey, r.Revision)
 	if res.Error != nil {
 		return nil, res.Error
@@ -346,7 +353,7 @@ func (s *AgentSlotService) mutatePreference(ctx context.Context, r AgentSlotMuta
 		return nil, err
 	}
 	slot, ok := s.slots.Current(r.SlotKey)
-	if !ok {
+	if !ok || !slot.AllowsActor(ac) {
 		return nil, errs.New(errs.CodeNotFound, "agent slot not found")
 	}
 	if !slot.UserOverride {

@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/yzxingtu2026/ainp/platform/framework/aiagent"
+	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 )
 
 type FallbackPolicy string
@@ -20,18 +21,20 @@ const (
 )
 
 type Slot struct {
-	Key                    string         `json:"key"`
-	Version                string         `json:"version"`
-	Module                 string         `json:"module"`
-	Title                  string         `json:"title"`
-	Description            string         `json:"description"`
-	DefaultContractKey     string         `json:"default_contract_key"`
-	DefaultContractVersion string         `json:"default_contract_version"`
-	RequiredCapabilities   []string       `json:"required_capabilities"`
-	TenantOverride         bool           `json:"tenant_override"`
-	UserOverride           bool           `json:"user_override"`
-	FallbackPolicy         FallbackPolicy `json:"fallback_policy"`
-	UpgradePolicy          UpgradePolicy  `json:"upgrade_policy"`
+	Key                    string               `json:"key"`
+	Version                string               `json:"version"`
+	Module                 string               `json:"module"`
+	Title                  string               `json:"title"`
+	Description            string               `json:"description"`
+	DefaultContractKey     string               `json:"default_contract_key"`
+	DefaultContractVersion string               `json:"default_contract_version"`
+	RequiredCapabilities   []string             `json:"required_capabilities"`
+	TenantOverride         bool                 `json:"tenant_override"`
+	UserOverride           bool                 `json:"user_override"`
+	FallbackPolicy         FallbackPolicy       `json:"fallback_policy"`
+	UpgradePolicy          UpgradePolicy        `json:"upgrade_policy"`
+	PrincipalKinds         []auth.PrincipalKind `json:"principal_kinds,omitempty"`
+	ClientSurfaces         []string             `json:"client_surfaces,omitempty"`
 }
 
 var keyPattern = regexp.MustCompile(`^[a-z][a-z0-9]*(\.[a-z][a-z0-9_-]*)+$`)
@@ -70,7 +73,57 @@ func (s Slot) Validate(contracts *aiagent.Registry) error {
 	if s.UpgradePolicy != UpgradePinned && s.UpgradePolicy != UpgradeCompatible {
 		return fmt.Errorf("unsafe upgrade policy")
 	}
+	for _, kind := range s.PrincipalKinds {
+		if !kind.Valid() {
+			return fmt.Errorf("invalid agent slot principal kind %q", kind)
+		}
+	}
+	for _, surface := range s.ClientSurfaces {
+		if strings.TrimSpace(surface) == "" {
+			return fmt.Errorf("agent slot client surface is required")
+		}
+	}
 	return nil
+}
+
+func normalizeSlotAccess(slot Slot) Slot {
+	if len(slot.PrincipalKinds) == 0 {
+		slot.PrincipalKinds = []auth.PrincipalKind{auth.PrincipalKindAccount}
+	}
+	if len(slot.ClientSurfaces) == 0 {
+		slot.ClientSurfaces = []string{auth.TenantConsoleSurface}
+	}
+	return slot
+}
+
+// AllowsActor reports whether the current Surface/Principal may resolve this Slot.
+func (s Slot) AllowsActor(ac *auth.Context) bool {
+	if ac == nil || !ac.Authenticated {
+		return false
+	}
+	kind := ac.Principal.Kind
+	if kind == "" {
+		kind = auth.PrincipalKindAccount
+	}
+	surface := ac.ClientSurface
+	if surface == "" && kind == auth.PrincipalKindAccount {
+		surface = auth.TenantConsoleSurface
+	}
+	kindAllowed := false
+	for _, allowed := range s.PrincipalKinds {
+		if kind == allowed {
+			kindAllowed = true
+			break
+		}
+	}
+	surfaceAllowed := false
+	for _, allowed := range s.ClientSurfaces {
+		if surface == allowed {
+			surfaceAllowed = true
+			break
+		}
+	}
+	return kindAllowed && surfaceAllowed
 }
 
 type Registry struct {
@@ -83,6 +136,7 @@ func NewRegistry(contracts *aiagent.Registry) *Registry {
 	return &Registry{slots: map[string]map[string]Slot{}, contracts: contracts}
 }
 func (r *Registry) Register(slot Slot) error {
+	slot = normalizeSlotAccess(slot)
 	if err := slot.Validate(r.contracts); err != nil {
 		return err
 	}

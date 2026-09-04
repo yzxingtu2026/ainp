@@ -231,6 +231,20 @@ func (a *App) SealAuthentication() error {
 			}
 		}
 	}
+	if a.AgentSlots != nil {
+		for _, slot := range a.AgentSlots.List() {
+			for _, kind := range slot.PrincipalKinds {
+				if _, ok := a.Principals.Get(kind); !ok {
+					return fmt.Errorf("agent slot %s references unregistered principal kind %s", slot.Key, kind)
+				}
+			}
+			for _, surface := range slot.ClientSurfaces {
+				if _, ok := a.ClientSurfaces.Get(surface); !ok {
+					return fmt.Errorf("agent slot %s references unregistered client surface %s", slot.Key, surface)
+				}
+			}
+		}
+	}
 	a.Principals.Seal()
 	a.ClientSurfaces.Seal()
 	a.WebSocketHandshakeTargets.Seal()

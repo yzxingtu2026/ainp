@@ -1127,12 +1127,7 @@ func toolPrincipal(ac *auth.Context) auth.PrincipalRef {
 	return auth.PrincipalRef{Kind: auth.PrincipalKindAccount, ID: ac.PrincipalID}
 }
 func toolVisible(ac *auth.Context, d aitool.Definition) bool {
-	for _, p := range d.PermissionRefs {
-		if !ac.HasPermission(p) {
-			return false
-		}
-	}
-	return true
+	return d.VisibleToActor(ac)
 }
 func scopeAllows(s *ToolScope, d aitool.Definition) bool {
 	sources := decodeStrings(s.AllowedSourcesJSON)

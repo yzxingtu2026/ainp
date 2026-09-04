@@ -118,6 +118,8 @@ func websocketHandler(c *gin.Context) {
 
 每个下游 Client Surface 还会在其 `PathPrefix + /auth/...` 自动投影 methods、challenge、authenticate、refresh、logout、session 和 websocket-grants 路由。公共认证请求的 `client` 必须等于请求路径解析出的 Surface；refresh token 也只能从原 Surface 路径轮换，WebSocket grant 只能签发给同一 Surface 已注册的精确目标路径。
 
+对话运行面由 Host 把白名单 Action 的 `/api/v1/...` 路径投影到同一 Surface `PathPrefix`，例如 `/api/v1/community/ai/conversations/create-for-slot`。Token audience 必须匹配请求路径解析出的 Surface；社区 Token 调用未投影的 `/api/v1/ai/*`、后台 Token 调用社区投影路径均 fail-closed，且不得泄露内部路由。MCP 公共入口仍只允许 `ainp.account + ainp.tenant-console`。
+
 Admin 登录页只消费 `/auth/methods` 中通过校验且 `redirect=true + challenge=true` 的条目。点击后调用统一 challenge 获取 `authorize_url`，不拼 Provider URL。Provider callback 固定进入平台 `/auth-callback` 页面，由页面调用统一 authenticate 保存 Session/Token；成功后只恢复登录前的单斜杠站内路径，协议相对、跨域与带凭据 URL 一律拒绝。callback 在成功或失败后都 replace 清理 code、state、error 等 query；刷新或重复提交因一次性临时上下文和下游 state 消费规则安全失败并返回密码登录。
 
 异步 Outbox Event 与 JobRun 同样持久化 `principal_kind + actor/created_by + client_surface + audience`。Dispatcher/Worker 恢复 AuthContext 时必须使用这些字段；旧事件/任务仅有 Account actor 时按 `ainp.account` 兼容，禁止默认切换到其他主体或 tenant-console Surface。

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/yzxingtu2026/ainp/platform/framework/action"
+	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 )
 
@@ -51,31 +52,34 @@ var toolIDPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]*:[a-z][a-z0-9_.-]*$`)
 var observationFieldPattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 
 type Definition struct {
-	ID                   string              `json:"id"`
-	Source               Source              `json:"source"`
-	Name                 string              `json:"name"`
-	TitleForHuman        string              `json:"title_for_human"`
-	DescriptionForLLM    string              `json:"description_for_llm"`
-	DescriptionForHuman  string              `json:"description_for_human"`
-	ResultSummary        string              `json:"result_summary"`
-	Capability           string              `json:"capability"`
-	Tags                 []string            `json:"tags,omitempty"`
-	InputSchema          json.RawMessage     `json:"input_schema"`
-	OutputSchema         json.RawMessage     `json:"output_schema,omitempty"`
-	Operation            action.AIOperation  `json:"operation,omitempty"`
-	Batch                *action.AIBatchMeta `json:"batch,omitempty"`
-	Risk                 Risk                `json:"risk"`
-	SideEffect           SideEffect          `json:"side_effect"`
-	RequiresConfirmation bool                `json:"requires_confirmation"`
-	BindingMode          BindingMode         `json:"binding_mode"`
-	LoadingMode          LoadingMode         `json:"loading_mode"`
-	BindingGroup         string              `json:"binding_group,omitempty"`
-	PermissionRefs       []string            `json:"permission_refs,omitempty"`
-	RuntimeRef           string              `json:"-"`
-	SchemaVersion        int                 `json:"schema_version"`
-	SchemaHash           string              `json:"schema_hash"`
-	Status               string              `json:"status"`
-	DynamicReferences    []DynamicReference  `json:"dynamic_references,omitempty"`
+	ID                   string               `json:"id"`
+	Source               Source               `json:"source"`
+	Name                 string               `json:"name"`
+	TitleForHuman        string               `json:"title_for_human"`
+	DescriptionForLLM    string               `json:"description_for_llm"`
+	DescriptionForHuman  string               `json:"description_for_human"`
+	ResultSummary        string               `json:"result_summary"`
+	Capability           string               `json:"capability"`
+	Tags                 []string             `json:"tags,omitempty"`
+	InputSchema          json.RawMessage      `json:"input_schema"`
+	OutputSchema         json.RawMessage      `json:"output_schema,omitempty"`
+	Operation            action.AIOperation   `json:"operation,omitempty"`
+	Batch                *action.AIBatchMeta  `json:"batch,omitempty"`
+	Risk                 Risk                 `json:"risk"`
+	SideEffect           SideEffect           `json:"side_effect"`
+	RequiresConfirmation bool                 `json:"requires_confirmation"`
+	BindingMode          BindingMode          `json:"binding_mode"`
+	LoadingMode          LoadingMode          `json:"loading_mode"`
+	BindingGroup         string               `json:"binding_group,omitempty"`
+	PermissionRefs       []string             `json:"permission_refs,omitempty"`
+	Realm                auth.Realm           `json:"-"`
+	PrincipalKinds       []auth.PrincipalKind `json:"-"`
+	ClientSurfaces       []string             `json:"-"`
+	RuntimeRef           string               `json:"-"`
+	SchemaVersion        int                  `json:"schema_version"`
+	SchemaHash           string               `json:"schema_hash"`
+	Status               string               `json:"status"`
+	DynamicReferences    []DynamicReference   `json:"dynamic_references,omitempty"`
 }
 
 type DynamicReference struct {
@@ -113,6 +117,52 @@ func (d Definition) Validate() error {
 		return fmt.Errorf("invalid schema version or status")
 	}
 	return nil
+}
+
+// VisibleToActor applies the same PrincipalKind + ClientSurface + realm +
+// permission gate as ActionRegistry.Invoke. Empty access-surface fields mean
+// the tool is not surface-restricted (meta/builtin slots).
+func (d Definition) VisibleToActor(ac *auth.Context) bool {
+	ac = action.NormalizeActor(ac)
+	if ac == nil || !ac.Authenticated {
+		return false
+	}
+	if d.Status != "" && d.Status != "enabled" {
+		return false
+	}
+	if d.Realm != "" && auth.NormalizeRealm(ac.Realm) != d.Realm {
+		return false
+	}
+	if len(d.PrincipalKinds) > 0 {
+		kindAllowed := false
+		for _, kind := range d.PrincipalKinds {
+			if ac.Principal.Kind == kind {
+				kindAllowed = true
+				break
+			}
+		}
+		if !kindAllowed {
+			return false
+		}
+	}
+	if len(d.ClientSurfaces) > 0 {
+		surfaceAllowed := false
+		for _, surface := range d.ClientSurfaces {
+			if ac.ClientSurface == surface {
+				surfaceAllowed = true
+				break
+			}
+		}
+		if !surfaceAllowed {
+			return false
+		}
+	}
+	for _, permission := range d.PermissionRefs {
+		if !ac.HasPermission(permission) {
+			return false
+		}
+	}
+	return true
 }
 
 type Candidate struct {

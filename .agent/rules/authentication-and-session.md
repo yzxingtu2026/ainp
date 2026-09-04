@@ -6,6 +6,7 @@
 - 未验签 Token 的协议分流只能用 `session_id/auth_version` 等会话独占 claim；`principal_kind/surface` 是跨协议事实，不得单独判定为 Session Token。分流不产生 AuthContext，专用 Handler 仍须完整验签授权。
 - Provider 只做主体/状态/授权复核，不签 Token、不写可信 AuthContext、不借用 Account RBAC。
 - 新认证型 Action 显式声明 `PrincipalKinds` 与 `ClientSurfaces`；Account 默认仅用于历史兼容。
+- 对话运行面白名单由 Host 按 Surface `PathPrefix` 投影 `/api/v1/...`；交叉 audience/path fail-closed，不泄露未投影内部路由。
 
 - 新登录方式注册 `Authenticator`；Provider 只验证凭据并返回 `VerifiedIdentity`，禁止自行签 Token、加载权限或写 AuthContext。
 - Authenticator 只产出凭据身份/主体候选；Principal Provider 实时复核主体、状态与版本，Session Service 复核后才可签 Token。
