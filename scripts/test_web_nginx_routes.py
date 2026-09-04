@@ -183,14 +183,18 @@ class TestWebNginxRoutingContract(unittest.TestCase):
         cls.mock_thread = threading.Thread(target=cls.mock.serve_forever, daemon=True)
         cls.mock_thread.start()
         mock_port = cls.mock.server_address[1]
-        rewritten = read_nginx_conf().replace("http://api:8080", f"http://host.docker.internal:{mock_port}")
-        (cls.work / "nginx.conf").write_text(rewritten, encoding="utf-8")
+        shutil.copyfile(NGINX_CONF, cls.work / "nginx.conf")
+        (cls.work / "nginx.runtime.conf").write_text(
+            read_nginx_conf().replace("http://api:8080", f"http://api:{mock_port}"),
+            encoding="utf-8",
+        )
         cls.web_port = unused_port()
         cls.container = f"ainp-nginx-routes-{os.getpid()}-{cls.web_port}"
         try:
             check = subprocess.run(
                 [
                     "docker", "run", "--rm",
+                    "--add-host", "api:127.0.0.1",
                     "-v", f"{cls.work / 'nginx.conf'}:/etc/nginx/conf.d/default.conf:ro",
                     "-v", f"{cls.work / 'proxy_params'}:/etc/nginx/proxy_params:ro",
                     NGINX_IMAGE, "nginx", "-t",
@@ -206,8 +210,8 @@ class TestWebNginxRoutingContract(unittest.TestCase):
                     "docker", "run", "-d", "--rm",
                     "--name", cls.container,
                     "-p", f"127.0.0.1:{cls.web_port}:8080",
-                    "--add-host", "host.docker.internal:host-gateway",
-                    "-v", f"{cls.work / 'nginx.conf'}:/etc/nginx/conf.d/default.conf:ro",
+                    "--add-host", "api:host-gateway",
+                    "-v", f"{cls.work / 'nginx.runtime.conf'}:/etc/nginx/conf.d/default.conf:ro",
                     "-v", f"{cls.work / 'proxy_params'}:/etc/nginx/proxy_params:ro",
                     "-v", f"{cls.html}:/usr/share/nginx/html:ro",
                     NGINX_IMAGE,
