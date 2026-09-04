@@ -31,6 +31,17 @@ const (
 	testCommunityPrefix                      = "/api/v1/community/"
 )
 
+func TestNormalizeActorDoesNotMutateCallerContext(t *testing.T) {
+	original := &auth.Context{Authenticated: true, TenantID: "t1", PrincipalID: "u1", Realm: auth.RealmTenant}
+	normalized := action.NormalizeActor(original)
+	if normalized.Principal.Kind != auth.PrincipalKindAccount || normalized.ClientSurface != auth.TenantConsoleSurface {
+		t.Fatalf("expected account defaults: %#v", normalized)
+	}
+	if original.Principal.Kind != "" || original.ClientSurface != "" {
+		t.Fatalf("NormalizeActor mutated caller context: %#v", original)
+	}
+}
+
 func TestAllowsActorRequiresAccessSurfaceEvenWithoutPermission(t *testing.T) {
 	meta := action.Metadata{
 		Surface:        auth.RealmTenant,

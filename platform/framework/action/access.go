@@ -4,21 +4,24 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 )
 
-// NormalizeActor fills historical Account defaults on a trusted AuthContext.
+// NormalizeActor fills historical Account defaults on a copy of the trusted
+// AuthContext. It must not mutate the caller's context; Tool Scope compares
+// the original PrincipalKind/ClientSurface across search/load/execute.
 func NormalizeActor(ac *auth.Context) *auth.Context {
 	if ac == nil {
 		return &auth.Context{}
 	}
-	if !ac.Principal.Valid() && ac.PrincipalID != "" {
-		ac.Principal = auth.PrincipalRef{Kind: auth.PrincipalKindAccount, ID: ac.PrincipalID}
+	normalized := *ac
+	if !normalized.Principal.Valid() && normalized.PrincipalID != "" {
+		normalized.Principal = auth.PrincipalRef{Kind: auth.PrincipalKindAccount, ID: normalized.PrincipalID}
 	}
-	if ac.Authenticated && ac.Principal.Kind == "" {
-		ac.Principal.Kind = auth.PrincipalKindAccount
+	if normalized.Authenticated && normalized.Principal.Kind == "" {
+		normalized.Principal.Kind = auth.PrincipalKindAccount
 	}
-	if ac.ClientSurface == "" && ac.Principal.Kind == auth.PrincipalKindAccount {
-		ac.ClientSurface = auth.TenantConsoleSurface
+	if normalized.ClientSurface == "" && normalized.Principal.Kind == auth.PrincipalKindAccount {
+		normalized.ClientSurface = auth.TenantConsoleSurface
 	}
-	return ac
+	return &normalized
 }
 
 // AllowsAccessSurface reports whether the current actor may see or invoke the
