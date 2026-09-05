@@ -7,6 +7,7 @@ import (
 	"slices"
 	"sync"
 
+	"github.com/yzxingtu2026/ainp/platform/framework/action"
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
 	"github.com/yzxingtu2026/ainp/platform/framework/asynqadapter"
 	"github.com/yzxingtu2026/ainp/platform/framework/attachment"
@@ -354,6 +355,14 @@ func (c *Composition) OpenInstalled(ctx context.Context, cfg *config.Config) (*P
 	}
 	if err := c.register(application); err != nil {
 		return nil, err
+	}
+	if err := action.ProjectRuntimeSurfaces(application.Actions, application.ClientSurfaces); err != nil {
+		return nil, fmt.Errorf("project runtime surfaces: %w", err)
+	}
+	if application.ToolRegistry != nil {
+		if err := application.ToolRegistry.Refresh(ctx); err != nil {
+			return nil, fmt.Errorf("refresh tools after runtime surface projection: %w", err)
+		}
 	}
 	if err := application.SealAuthentication(); err != nil {
 		return nil, fmt.Errorf("validate authentication composition: %w", err)

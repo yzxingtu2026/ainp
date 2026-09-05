@@ -372,12 +372,7 @@ func visibleToPrincipal(principal *Principal, definition aitool.Definition) bool
 	if !principal.Scopes[requiredScope(definition)] {
 		return false
 	}
-	for _, permission := range definition.PermissionRefs {
-		if !principal.Auth.HasPermission(permission) {
-			return false
-		}
-	}
-	return true
+	return definition.VisibleToActor(principal.Auth)
 }
 
 func callProjectedAction(ctx context.Context, actions *action.Registry, confirmations *Service, projected projectedAction, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -389,7 +384,7 @@ func callProjectedAction(ctx context.Context, actions *action.Registry, confirma
 		return toolError("tool is unavailable"), nil
 	}
 	current, exists := actions.Get(projected.definition.RuntimeRef)
-	if !exists || current.Meta.AI == nil || !current.Meta.AI.ExposeTool || auth.NormalizeRealm(current.Meta.Surface) != auth.RealmTenant {
+	if !exists || current.Meta.AI == nil || !current.Meta.AI.ExposeTool || auth.NormalizeRealm(current.Meta.Surface) != auth.RealmTenant || !action.AllowsActor(principal.Auth, current.Meta, current.ID) {
 		return toolError("tool is unavailable"), nil
 	}
 	input := req.Params.Arguments

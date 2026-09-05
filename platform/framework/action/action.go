@@ -441,43 +441,18 @@ func (r *Registry) Invoke(ctx context.Context, actionID string, input json.RawMe
 		logActionFailure(ctx, actionID, "", false, start, "action.lookup", err)
 		return nil, err
 	}
-	ac := auth.MustFromContext(ctx)
-	if !ac.Principal.Valid() && ac.PrincipalID != "" {
-		ac.Principal = auth.PrincipalRef{Kind: auth.PrincipalKindAccount, ID: ac.PrincipalID}
-	}
-	if ac.Authenticated && ac.Principal.Kind == "" {
-		ac.Principal.Kind = auth.PrincipalKindAccount
-	}
-	if ac.ClientSurface == "" && ac.Principal.Kind == auth.PrincipalKindAccount {
-		ac.ClientSurface = auth.TenantConsoleSurface
-	}
+	ac := NormalizeActor(auth.MustFromContext(ctx))
 	if auth.NormalizeRealm(ac.Realm) != a.Meta.Surface {
 		err := errs.New(errs.CodeForbidden, "action is not available in current realm")
 		r.writeAudit(ctx, a, a.Meta.PermissionCode(a.ID), "failure", err)
 		logActionFailure(ctx, a.ID, a.Meta.Capability, false, start, "action.realm", err)
 		return nil, err
 	}
-	if a.Meta.AccessMode() != AccessPublic && ac.Authenticated {
-		kindAllowed := false
-		for _, kind := range a.Meta.PrincipalKinds {
-			if ac.Principal.Kind == kind {
-				kindAllowed = true
-				break
-			}
-		}
-		surfaceAllowed := false
-		for _, surface := range a.Meta.ClientSurfaces {
-			if ac.ClientSurface == surface {
-				surfaceAllowed = true
-				break
-			}
-		}
-		if !kindAllowed || !surfaceAllowed {
-			err := errs.New(errs.CodeForbidden, "action is not available for current principal or client surface")
-			r.writeAudit(ctx, a, a.Meta.PermissionCode(a.ID), "failure", err)
-			logActionFailure(ctx, a.ID, a.Meta.Capability, false, start, "action.client_surface", err)
-			return nil, err
-		}
+	if a.Meta.AccessMode() != AccessPublic && ac.Authenticated && !AllowsAccessSurface(ac, a.Meta) {
+		err := errs.New(errs.CodeForbidden, "action is not available for current principal or client surface")
+		r.writeAudit(ctx, a, a.Meta.PermissionCode(a.ID), "failure", err)
+		logActionFailure(ctx, a.ID, a.Meta.Capability, false, start, "action.client_surface", err)
+		return nil, err
 	}
 	perm := a.Meta.PermissionCode(a.ID)
 	if a.Meta.AccessMode() != AccessPublic {

@@ -38,7 +38,7 @@ Dynamic Reference 随 `tool.search` 候选 prerequisite 和 `tool.load` Definiti
 
 `require_evidence=true` 的写调用在 confirmation 前执行通用批量预检：缺证据返回 `reference_required`，目录外值返回 `invalid_reference`，均不创建 confirmation。批准后、Executor 前重新解析当前 Resolver；版本变化返回 `reference_stale`，值失效返回 `invalid_reference`，并按统一 confirmation=`consumed`、invocation=`failed`、配对失败 Result 收口。纠正只能重新读取目录并创建新 Tool Call/confirmation。
 
-搜索顺序为安全过滤、精确 ID/名称、关键词/FTS、可选 Embedding 融合。Embedding 不可用时必须退化；向量和搜索文档不是权限事实源。`ProjectModelTools`、`tool.search`、`tool.load`、Handle 执行和确认后执行统一调用 Registry 的动态投影协议，并重新应用 tenant、realm、user permission、Scope 白名单、启用状态和实时资源条件。动态投影只能收紧静态结果，不能把 Scope 外工具扩权加入候选。
+搜索顺序为安全过滤、精确 ID/名称、关键词/FTS、可选 Embedding 融合。Embedding 不可用时必须退化；向量和搜索文档不是权限事实源。`ProjectModelTools`、`tool.search`、`tool.load`、Handle 执行和确认后执行统一调用 Registry 的动态投影协议，并重新应用 tenant、realm、PrincipalKind、ClientSurface、user permission、Scope 白名单、启用状态和实时资源条件。`authenticated` 且无 permission refs 的 Action 仍必须通过与 `ActionRegistry.Invoke` 相同的访问面门禁；不可达工具不得出现在 search/load 候选中，禁止「先搜到再 Invoke 失败」。Catalog 仍可索引全部 `ExposeTool` 定义，可见性在请求路径按当前 actor 过滤。动态投影只能收紧静态结果，不能把 Scope 外工具扩权加入候选。
 
 模型侧 `tool.search` 的 `source` / `capability` 是可选的稳定代码精确过滤器，不是自然语言检索词；不确定时必须省略并只填写 `query`。Meta Tool Schema 必须暴露 source 枚举和字段说明，`ToolService.Search` 必须在所有入口自行校验，非法过滤不得静默返回空结果。
 
@@ -50,7 +50,7 @@ ToolScope 的授权由两类白名单组成：精确 `allowed_tools` 用于 meta
 
 同一 Conversation 已合法激活或完成执行的工具维护为最多 32 项的有界工作集。新 ToolScope 按最近使用、频率、最近激活与 Tool ID 的确定性顺序恢复最多 4 项；工作集只表示投影偏好，不保存 Handle、Schema、参数或结果，也不构成授权凭证。显式 Load、跨 Run 恢复与运行中 rehydrate 必须复用同一激活原语并实时重验 Registry、Scope、actor 权限、动态投影和 Schema 预算。未投影调用只有在当前 Conversation 工作集命中后才可恢复；Schema hash 变化时必须返回配对的中性 `rehydrated` 结果，让现有主循环在正式 Schema 投影后重新生成调用，禁止执行旧参数。
 
-因此新增 Action Tool 必须同时完成三层验证：Action Registry 中 `ExposeTool=true` 且契约完整；目标 Agent Contract 明确允许其 source/capability；当前 actor 拥有 Action permission。缺少任一层都应从 `tool.search` 候选中消失。模块新增 Capability 或扩大 AI 暴露范围时必须同步更新目标 Contract，并增加基于真实 ToolScope 的可达性与无权限不可见测试；只验证全局 Registry 投影会漏掉 Contract Scope 回归。
+因此新增 Action Tool 必须同时完成验证：Action Registry 中 `ExposeTool=true` 且契约完整；目标 Agent Contract 明确允许其 source/capability；当前 actor 通过同一套 PrincipalKind + ClientSurface + realm + permission 门禁。缺少任一层都应从 `tool.search` 候选中消失。运营助手 Scope 不得搜到仅社区主体可达的 Action；社区 Contract Scope 不得搜到 staff permission Action。模块新增 Capability 或扩大 AI 暴露范围时必须同步更新目标 Contract，并增加基于真实 ToolScope 的可达性与无权限/跨访问面不可见测试；只验证全局 Registry 投影会漏掉 Contract Scope 回归。
 
 Handle 使用服务端签名并绑定 tenant、user、realm、session/auth version、scope、tool、runtime ref、schema hash 和 TTL。任何绑定变化、过期或 Schema 变化均拒绝。
 

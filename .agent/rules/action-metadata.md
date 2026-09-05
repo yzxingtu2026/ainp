@@ -7,6 +7,7 @@
 - Phase 1 必填核心字段；`input_schema` / `ui` / 细粒度 MCP 等预留不强制。按钮级权限 Phase 1 就要做。
 - permission Action 按钮必须声明 permission；authenticated 基础按钮不得伪造 permission，必须绑定对应 Action。
 - Action/Menu 的 `surface` 仅 `tenant` / `platform`，省略默认 tenant；执行和菜单返回均先匹配当前 realm，禁止用 `module == system` 推断域。
+- 对话运行面只经 Host `ProjectRuntimeSurfaces` 投影已注册 Client Surface；禁止投影管理面；社区主体不得使用 `permission` Access。同一 Action 多 Surface path 用 `RegisterActionHTTPRoute`，不得用 Alias 冒充。
 - 可分配权限树只包含 `access=permission` Action，固定为 `Capability → PermissionGroup → Permission/Action`；功能组由 Action Metadata 稳定声明。
 - 菜单按工作场景组织，PermissionGroup 按授权边界组织；配置与运行运维必须分组，Job、Outbox、通知投递不得合并为单一宽泛运维组。
 - 目录不制造额外 permission，由可见子菜单决定显示；无可见子菜单时隐藏目录，`HideInMenu` 子路由不得单独撑起父目录，前端必须递归裁剪仅含隐藏子路由的空目录；侧栏最多两级。

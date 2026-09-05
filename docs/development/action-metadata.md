@@ -10,6 +10,8 @@ Agent 只读要点：`.agent/rules/action-metadata.md`。本文档为 Phase 1 �
 
 同一 canonical Action 需要投影到多个 Client Surface path 时使用 `RegisterActionHTTPRoute`。HTTP Route 不创建第二个 Action ID、permission、目录项或兼容告警；`ActionAlias` 只保留给真正的历史兼容入口，不得用于首等多 Surface 路由。
 
+对话运行面由 Host 在全部模块注册完成后调用 `action.ProjectRuntimeSurfaces`：只投影显式白名单（Conversation / Message / Run 控制面 / 确认 / Slot 自助 get 与 preference / 本人附件自助），按 Surface `PathPrefix` 把 `/api/v1/...` 改写为 `{prefix}/...`，并合并该 Surface 声明的 `PrincipalKinds`。禁止投影 Agent、模型、知识库、Slot 管理、索引重建与 SSE `subscribe`。白名单 Action 必须是 `authenticated`，社区主体不得使用 `permission` Access。原 `/api/v1/ai/*` 对 `ainp.account + ainp.tenant-console` 保持不变；交叉 audience/path fail-closed，且不泄露未投影的内部路由。
+
 ## 目标
 
 - Capability、Action、Menu 职责分离，后端代码定义导航与权限。
