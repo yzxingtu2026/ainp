@@ -4,6 +4,8 @@ AINP 正式版本只使用 Git Tag 对应的两个 GHCR 镜像：`ainp-backend` 
 
 backend 二进制已内嵌与 `platform` 版本一致的 Prompt 和基础 i18n，运行镜像不复制也不挂载 AINP `prompts/`、`i18n/` 目录。正式容器禁止传 `-dev-runtime-assets`；下游业务资源必须由其 Go Module 以 owner-scoped `fs.FS` 编译装配。
 
+backend 镜像在构建期用 `docker/build-mupdf-cjk.sh` 编译固定版本的完整 MuPDF（当前 1.28.2，含 CJK 字体），并以 `extlib,static` 链接 API/Worker/Migrate。头文件与库必须来自同一 MuPDF 版本，禁止混用 go-fitz 捆绑的 1.28.0 头文件。构建会运行未嵌字中文 PDF 合成样本自检；失败则镜像不可发布。下游若自行构建后端，必须遵循 `docs/development/downstream-composition.md` 的同一契约。
+
 ## 本地验证镜像
 
 在仓库根目录执行：

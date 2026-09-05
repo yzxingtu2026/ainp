@@ -128,7 +128,7 @@ Local Provider 返回本服务流式 URL；未来 S3/OSS 可换预签名 URL，�
 | `system.attachment_list` | 分页列表（mine/all）；补充 `uploader_name`、`thumb_status` | false |
 | `system.attachment_mine_list` | authenticated 本人附件列表（Picker / 对话自助） | false |
 | `system.attachment_get` | 详情与 links；补充 `uploader_name`、`thumb_status` | false |
-| `system.attachment_content_inspect` | AI 按需查看文档片段或图片观察；每次重验授权/revision，结果为有界不可信文本 | false |
+| `system.attachment_content_inspect` | AI 按需查看文档片段或图片观察；每次重验授权/revision，结果为有界不可信文本。`status` 区分 `ready` / `empty` / `low_quality` / `partial_failure`；低质量或空文本不得当作可用 observations | false |
 | `system.attachment_policy_get` | 有效上传策略 | false |
 | `system.attachment_delete` | 删除（级联派生对象） | true |
 

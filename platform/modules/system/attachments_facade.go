@@ -21,9 +21,19 @@ type (
 	AttachmentDetailToolView        = attachments.AttachmentDetailToolView
 	AttachmentContentInspectRequest = attachments.AttachmentContentInspectRequest
 	AttachmentContentInspectResult  = attachments.AttachmentContentInspectResult
+	AttachmentContentPageStatus     = attachments.AttachmentContentPageStatus
+	AttachmentContentObservation    = attachments.AttachmentContentObservation
 	UploadPolicyView                = attachments.UploadPolicyView
 	AttachmentResourceReader        = attachments.ResourceReader
 	KnowledgeSourceResolver         = attachments.KnowledgeSourceResolver
+)
+
+const (
+	InspectStatusReady          = attachments.InspectStatusReady
+	InspectStatusEmpty          = attachments.InspectStatusEmpty
+	InspectStatusLowQuality     = attachments.InspectStatusLowQuality
+	InspectStatusPartialFailure = attachments.InspectStatusPartialFailure
+	InspectStatusFailed         = attachments.InspectStatusFailed
 )
 
 func NewSettingUploadPolicyProvider(p *setting.Provider) attachment.PolicyProvider {

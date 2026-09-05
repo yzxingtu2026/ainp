@@ -154,6 +154,7 @@ type ParsedSection struct {
 	PositionEnd    *int
 	HeadingPath    string
 	ParserVersion  string
+	ExtractStatus  string
 }
 
 type SourceOpenRequest struct {

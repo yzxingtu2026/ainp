@@ -43,7 +43,7 @@ Knowledge Runtime 管理租户知识库、附件来源、不可变索引版本�
 - DOCX 普通 HTTP/HTTPS `hyperlink` Relationship 仅允许读取正文显示文字，不读取到派生正文、不访问目标 URL；外部模板、外部文档、链接对象及其他 External Relationship 默认 fail-closed。
 - DOCX 复杂字段与 `w:fldSimple` 仅允许读取文件中已保存的显示结果，字段指令不进入派生正文且绝不更新或执行。首期白名单为 `PAGE`、`NUMPAGES`、`SECTION`、`SECTIONPAGES`、`DATE/TIME`、`CREATEDATE/SAVEDATE/PRINTDATE`、`AUTHOR/TITLE/SUBJECT/FILENAME`、`REF/PAGEREF/NOTEREF`、`TOC`；缺少缓存、未知字段、畸形/未闭合字段及 `INCLUDETEXT`、`INCLUDEPICTURE`、`LINK`、`DDE/DDEAUTO`、`DATABASE` 必须 fail-closed。缓存可能过期，始终按不可信派生事实处理。
 - XLSX 普通公式仅允许读取文件中已保存的缓存值，禁止求值或刷新；缺少缓存值、外部工作簿引用、URL/DDE 或外部数据函数必须 fail-closed。
-- PDF 文本提取必须解析嵌入字体及字符映射，禁止直接把内容流字形码作为正文；解析器版本变化后，历史文档必须重新摄取才能生成新索引。
+- PDF 文本提取必须解析嵌入字体及字符映射，禁止直接把内容流字形码作为正文；未嵌字 CJK / UniGB 等缺字文档必须由完整 MuPDF CJK 能力解码，禁止把 U+FFFD 乱码当作可用正文。提取后必须做质量检查：空文本、低质量或页面失败要留下可诊断状态，低质量页不得进入 Chunk。解析器版本变化后，历史文档必须重新摄取才能生成新索引。
 - XLSX 必须解析工作表顺序、名称、共享字符串与单元格显示值；公式单元格只使用已保存缓存值并视为可能过期的不可信派生事实，不执行公式；按非空行生成带工作表、行号和表头映射的独立 Section，禁止直接向量化 worksheet XML 中的共享字符串索引。
 - 文件字节、页数/工作表/幻灯片数、字符数、压缩条目和展开字节都必须受限；读取与解析过程必须传播 context 取消和超时。
 - 规范化和固定 token 切块使用稳定版本号；每个 Chunk 必须携带 source revision、页码或位置、token count、内容摘要及 parser/chunking/preprocessing version。

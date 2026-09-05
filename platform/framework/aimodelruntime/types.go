@@ -183,11 +183,14 @@ const (
 	DocumentUnsafeXLSXContent DocumentErrorCategory = "document_unsafe_xlsx_content"
 	DocumentCorrupt           DocumentErrorCategory = "document_corrupt"
 	DocumentEmpty             DocumentErrorCategory = "document_empty"
+	DocumentLowQuality        DocumentErrorCategory = "document_low_quality"
 )
 
 type DocumentError struct {
-	Category DocumentErrorCategory
-	Cause    error
+	Category      DocumentErrorCategory
+	Cause         error
+	ExtractStatus string
+	PageStatuses  []DocumentPageStatus
 }
 
 func (e *DocumentError) Error() string { return string(e.Category) }
@@ -200,12 +203,20 @@ type ResolvedDocument struct {
 	MIME          string
 	Size          int64
 	ParserVersion string
+	ExtractStatus string
 	Sections      []DocumentSection
+	PageStatuses  []DocumentPageStatus
 }
 
 type DocumentSection struct {
 	Text     string
 	Location string
+	Status   string
+}
+
+type DocumentPageStatus struct {
+	Location string
+	Status   string
 }
 
 type DocumentResolver interface {
