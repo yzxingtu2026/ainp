@@ -34,6 +34,54 @@ docker compose --env-file deploy/demo/.env -f deploy/demo/compose.yaml up -d
 
 部署后的基础校验必须读取 `PUBLIC_BASE_URL/healthz`，同时确认 `data.status == "ok"` 且 `data.version == AINP_IMAGE_TAG`。仅 HTTP 200 不代表版本部署成功。
 
+## Web 同源代理与外层 TLS
+
+公网入口应终止 TLS 后把完整请求转给 Web 容器（`WEB_BIND_ADDR:WEB_PORT`）。Web 镜像内的 Nginx 再按精确路径分流 API 与 Admin SPA，禁止再套一层宽泛 `/oauth/` 代理。
+
+外层 Nginx、Caddy、BaoTa 或 Ingress 必须原样透传以下路径，不得被“隐藏文件”、静态站点 fallback 或伪静态规则截获：
+
+| 路径 | 必须到达 |
+| --- | --- |
+| `/.well-known/oauth-protected-resource` | API |
+| `/.well-known/oauth-authorization-server` | API |
+| `/oauth/register`、`/oauth/token`、`/oauth/revoke` | API |
+| 精确 `/mcp` | API；保留 HTTP/1.1、关闭 buffering/cache，读取超时不少于 3600s |
+| `/api/` | API |
+| `/oauth/authorize`、`/mcp/confirm`、`/setup` | Admin SPA，保留完整 query string |
+
+常见误配：
+
+- `location ~ /\. { deny all; }` 或等价隐藏文件规则会让 Codex 等客户端显示 `Auth: Unsupported`。
+- `location /oauth/ { proxy_pass http://api; }` 会把 `GET /oauth/authorize` 转给没有该页面的 API，返回纯文本 `404 page not found`。
+- 把 `/mcp` 写成前缀 `/mcp/` 会破坏 Streamable HTTP，也会与确认页 `/mcp/confirm` 冲突。
+
+部署后用公网 `PUBLIC_BASE_URL` 执行：
+
+```bash
+BASE="$PUBLIC_BASE_URL"
+
+curl -fsS "$BASE/healthz"
+curl -fsS "$BASE/.well-known/oauth-protected-resource"
+curl -fsS "$BASE/.well-known/oauth-authorization-server"
+curl -fsSI "$BASE/oauth/authorize?response_type=code&client_id=probe"
+curl -fsSI "$BASE/mcp/confirm?token=probe"
+curl -fsSI "$BASE/setup"
+curl -fsS -D- -o /dev/null "$BASE/mcp"
+```
+
+核对要点：
+
+- 两个 `/.well-known/` 端点返回 JSON；`resource` 指向 `$BASE/mcp`，authorization server 包含 `/oauth/authorize`、`/oauth/token`、`/oauth/register`、`/oauth/revoke` 与 `S256`。
+- `/oauth/authorize`、`/mcp/confirm`、`/setup` 的 `Content-Type` 是 HTML，不是 API 的纯文本 404。
+- 未授权 `GET /mcp` 返回 `401`，且 `WWW-Authenticate` 含 `resource_metadata`。
+
+标准 MCP 客户端（如 Codex）验收：
+
+1. 配置 `type=streamable-http`，URL 为 `$PUBLIC_BASE_URL/mcp`，不要填写 Bearer Token 或自定义 Header。
+2. 客户端应打开 `/oauth/authorize` 浏览器页；使用已登录的租户后台账号完成授权。
+3. 全新会话应能发现工具目录，并成功调用一个只读、无副作用工具。
+4. 若客户端显示 `Auth: Unsupported`，先复查外层是否透传 `/.well-known/`；若授权页是纯文本 404，复查是否仍有宽泛 `/oauth/` 代理。
+
 ## 数据库迁移与自动更新
 
 正式 Compose 已关闭启动时 GORM AutoMigrate。backend 镜像内置 `ainp-migrate status|up|baseline`，迁移状态保存在 `schema_migrations`，每个 SQL 文件通过编号、名称和 SHA-256 校验和锁定。新安装由安装向导在完整建表后自动 baseline；从旧版升级且尚无迁移账本时，维护者必须先核对 Schema，再执行一次：

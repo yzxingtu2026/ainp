@@ -7,6 +7,7 @@
 - MCP `_meta` 幂等键只写入可信 AuthContext；审计记录 `actor_type/client=mcp`、client/grant、Action、permission、result/replay，禁止记录参数、Token 或原始结果。
 - MCP 必须使用独立 `ainp:mcp` audience、Grant 和 Refresh family；不得复用网页 Token。
 - `/mcp` 必须按精确路径跳过 Web Session Auth，再由 MCP Handler 完整校验 Grant、Token、Principal、来源 Surface 与实时授权；禁止放行 `/mcp/` 前缀或其他未知路径。
+- Web Nginx 只精确代理 OAuth metadata、`/oauth/register|token|revoke` 与 `/mcp`；`/oauth/authorize`、`/mcp/confirm`、`/setup` 必须走 Admin SPA。外层反向代理不得截获 `/.well-known` 或把授权页转给 API。
 - OAuth 只允许 Authorization Code + PKCE S256；redirect URI 精确匹配，授权码单次短 TTL。
 - Grant 固定 tenant/user/client/scope/auth_version；每次请求通过 AuthorizationProvider 实时校验。
 - `actions:read` 默认选中；write/sensitive 默认关闭；sensitive scope 永不替代逐次确认。
