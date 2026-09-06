@@ -11,7 +11,7 @@
 - 上传策略经设置 `attachment.upload_policy` + PolicyProvider；业务入口用选择器，附件中心为管理页。
 - Picker / 对话只调用 authenticated `system.attachment_mine_list` 查询本人附件；租户附件中心继续使用权限型 `system.attachment_list`，禁止为自助选择器开放管理列表。
 - upload/download prepare 返回 transfer token/URL，只供客户端 HTTP 流程，禁止暴露为 AI Tool；模型不得获取凭据后自行访问对象。
-- AI 内容查看只经只读 Action `system.attachment_content_inspect`；每次重验 tenant/actor/Client Surface、AccessPolicy、ready、revision 与预算。文档复用 SafeParser，图片复用 AIAssetResolver + 统一 Model Runtime；结果为有界 `untrusted=true` 文本，禁止返回原始字节、Key、URL、token 或 Provider 字段。
+- AI 内容查看只经只读 Action `system.attachment_content_inspect`；每次重验 tenant/actor/Client Surface、AccessPolicy、ready、revision 与预算。文档复用 SafeParser，图片复用 AIAssetResolver + 统一 Model Runtime；结果为有界 `untrusted=true` 文本，禁止返回原始字节、Key、URL、token 或 Provider 字段。文档 `status` 必须区分 ready/empty/low_quality/partial_failure；乱码或空提取不得作为 ready observations。
 - `system.attachment_get` 的 AI Tool Result 使用独立安全投影，不得暴露 HTTP 管理端可能需要的 Provider/Object Key。
 - 派生：`thumb` 为标准变体（约 200²）；状态走独立 CodeSet `system.attachment_thumb_status`；原图 ready 不依赖派生。
 - 生成经 Outbox `attachment.ready.v1` → Job `attachment.generate_thumb`；下载 `variant=thumb` 须鉴权；禁止暴露 OSS 处理 URL。

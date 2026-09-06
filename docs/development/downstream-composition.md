@@ -63,6 +63,19 @@ worker, err := host.OpenWorker(ctx, cfg, profile, options...)
 
 公开 Host 同时统一内嵌 Go `time/tzdata`。下游通过 `host.OpenAPI`、`host.OpenWorker` 和 `host.New` 构建的 API、Worker 与 migration runner 自动获得相同的 IANA timezone 数据，不应在各 `main` 包重复添加空白导入，也不应要求 Windows 服务器安装 Go SDK、复制 `zoneinfo.zip` 或长期设置 `ZONEINFO`。Migrate 当前不直接执行 Runtime Context，但因其正式入口使用 `host.New`，仍纳入相同的产物契约和发布门禁，防止未来迁移路径增加时区依赖后产生漂移。
 
+## PDF 中文解析构建契约
+
+`github.com/gen2brain/go-fitz` 捆绑库不含 CJK 字体。未嵌字中文 PDF（如 STSong-Light / UniGB-UCS2-H）在默认捆绑库上会提取出大量 U+FFFD，但 `doc.Text` 仍返回 nil error。正式 Linux/musl 镜像和自行构建后端的下游必须使用外部完整 MuPDF，而不是 `go build -tags musl` 链接捆绑库。
+
+固定契约：
+
+- MuPDF 版本必须与头文件、静态库配套。当前官方镜像固定 **MuPDF 1.28.2**；go-fitz v1.28.2 包内头文件是 1.28.0，禁止把完整版 1.28.2 库和捆绑 1.28.0 头文件混用。
+- 构建标签为 `extlib,static`，`CGO_ENABLED=1`，`CGO_CFLAGS` / `CGO_LDFLAGS` 指向同一 prefix 的 include 与 `libmupdf.a`。Alpine/musl 目标直接在 musl 工具链上编译该外部库，不要再依赖 go-fitz 的 `musl` 捆绑产物。
+- 必须保留 CJK 字体，禁止 `TOFU` / `TOFU_CJK`。
+- 可复用脚本：`docker/build-mupdf-cjk.sh`。官方 `docker/backend.Dockerfile` 在编译 API/Worker/Migrate 前会用合成样本 `platform/testdata/pdf/synthetic-unigb-receipt.pdf` 做 CJK 自检；下游 Dockerfile 必须做同等检查，覆盖实际发布的 API/Worker/AI Worker 架构。
+- 本地 `go test` 在捆绑库上应 fail-closed（低质量提取，不返回乱码正文）。只有完整 MuPDF 才要求字段完全正确、零 U+FFFD。
+- ERP 等下游使用自己的 Dockerfile 时，必须同步本契约后再升级 platform 基线。
+
 ## 严格模块包架构
 
 官方示例使用同一 `composition.Modules` 装配 API 与 Worker，模块实现采用以下生产结构：

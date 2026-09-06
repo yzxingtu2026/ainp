@@ -257,7 +257,7 @@ func TestAttachmentUploadBindDownloadRangeAndIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	inspection := inspected.(system.AttachmentContentInspectResult)
-	if inspection.ContentKind != "document" || !inspection.Untrusted || inspection.AttachmentRevision != downPrep.Attachment.SHA256 || len(inspection.Observations) != 1 || !strings.Contains(inspection.Observations[0].Text, "hello-attachment-range") {
+	if inspection.ContentKind != "document" || inspection.Status != system.InspectStatusReady || !inspection.Untrusted || inspection.AttachmentRevision != downPrep.Attachment.SHA256 || len(inspection.Observations) != 1 || !strings.Contains(inspection.Observations[0].Text, "hello-attachment-range") {
 		t.Fatalf("unexpected document inspection: %#v", inspection)
 	}
 	if _, err = svc.ContentInspect(ctxB, system.AttachmentContentInspectRequest{AttachmentID: prep.Attachment.ID, AttachmentRevision: downPrep.Attachment.SHA256}); inspectErrorCategory(err) != "attachment_unavailable" {

@@ -19,6 +19,12 @@ import (
 const (
 	attachmentInspectMaxObservations = 8
 	attachmentInspectMaxCharacters   = 12_000
+
+	InspectStatusReady          = "ready"
+	InspectStatusEmpty          = "empty"
+	InspectStatusLowQuality     = "low_quality"
+	InspectStatusPartialFailure = "partial_failure"
+	InspectStatusFailed         = "failed"
 )
 
 type AttachmentContentLocation struct {
@@ -37,6 +43,12 @@ type AttachmentContentInspectRequest struct {
 type AttachmentContentObservation struct {
 	Location string `json:"location"`
 	Text     string `json:"text"`
+	Status   string `json:"status,omitempty"`
+}
+
+type AttachmentContentPageStatus struct {
+	Location string `json:"location"`
+	Status   string `json:"status"`
 }
 
 type AttachmentContentInspectResult struct {
@@ -47,6 +59,7 @@ type AttachmentContentInspectResult struct {
 	ContentKind        string                         `json:"content_kind"`
 	Status             string                         `json:"status"`
 	Observations       []AttachmentContentObservation `json:"observations"`
+	PageStatuses       []AttachmentContentPageStatus  `json:"page_statuses,omitempty"`
 	Truncated          bool                           `json:"truncated"`
 	Untrusted          bool                           `json:"untrusted"`
 }
@@ -91,7 +104,18 @@ func (s *AttachmentService) inspectDocument(ctx context.Context, request Attachm
 		AttachmentID: request.AttachmentID, Revision: request.AttachmentRevision, Purpose: "model_input",
 	})
 	if err != nil {
+		var documentErr *aimodelruntime.DocumentError
+		if errors.As(err, &documentErr) && (documentErr.Category == aimodelruntime.DocumentEmpty || documentErr.Category == aimodelruntime.DocumentLowQuality) {
+			result.Status = documentInspectStatus(documentErr.ExtractStatus, documentErr.Category)
+			result.PageStatuses = inspectPageStatuses(documentErr.PageStatuses)
+			return result, nil
+		}
 		return nil, mapDocumentInspectError(err)
+	}
+	result.Status = documentInspectStatus(document.ExtractStatus, "")
+	result.PageStatuses = inspectPageStatuses(document.PageStatuses)
+	if result.Status != InspectStatusReady && result.Status != InspectStatusPartialFailure {
+		return result, nil
 	}
 	sections := selectDocumentSections(document.Sections, strings.TrimSpace(request.Question), request.Location)
 	remaining := attachmentInspectMaxCharacters
@@ -101,7 +125,7 @@ func (s *AttachmentService) inspectDocument(ctx context.Context, request Attachm
 			break
 		}
 		text := strings.TrimSpace(section.Text)
-		if text == "" {
+		if text == "" || (section.Status != "" && section.Status != InspectStatusReady) {
 			continue
 		}
 		if utf8.RuneCountInString(text) > remaining {
@@ -112,13 +136,49 @@ func (s *AttachmentService) inspectDocument(ctx context.Context, request Attachm
 		if location == "" {
 			location = "document"
 		}
-		result.Observations = append(result.Observations, AttachmentContentObservation{Location: location, Text: text})
+		result.Observations = append(result.Observations, AttachmentContentObservation{Location: location, Text: text, Status: InspectStatusReady})
 		remaining -= utf8.RuneCountInString(text)
 	}
 	if len(result.Observations) < len(sections) {
 		result.Truncated = true
 	}
+	if result.Status == InspectStatusReady && len(result.Observations) == 0 {
+		result.Status = InspectStatusEmpty
+	}
 	return result, nil
+}
+
+func documentInspectStatus(extractStatus string, category aimodelruntime.DocumentErrorCategory) string {
+	switch extractStatus {
+	case InspectStatusReady, InspectStatusEmpty, InspectStatusLowQuality, InspectStatusPartialFailure, InspectStatusFailed:
+		return extractStatus
+	}
+	if category == aimodelruntime.DocumentLowQuality {
+		return InspectStatusLowQuality
+	}
+	if category == aimodelruntime.DocumentEmpty {
+		return InspectStatusEmpty
+	}
+	return InspectStatusReady
+}
+
+func inspectPageStatuses(pages []aimodelruntime.DocumentPageStatus) []AttachmentContentPageStatus {
+	if len(pages) == 0 {
+		return nil
+	}
+	out := make([]AttachmentContentPageStatus, 0, len(pages))
+	for _, page := range pages {
+		location := strings.TrimSpace(page.Location)
+		if location == "" {
+			location = "document"
+		}
+		status := strings.TrimSpace(page.Status)
+		if status == "" {
+			status = InspectStatusReady
+		}
+		out = append(out, AttachmentContentPageStatus{Location: location, Status: status})
+	}
+	return out
 }
 
 func (s *AttachmentService) inspectImage(ctx context.Context, request AttachmentContentInspectRequest, result AttachmentContentInspectResult) (any, error) {
@@ -282,6 +342,10 @@ func mapDocumentInspectError(err error) error {
 		return attachmentInspectError(errs.CodeValidation, "attachment_budget_exceeded", "attachment exceeds the inspection budget")
 	case aimodelruntime.DocumentUnsupportedFormat:
 		return attachmentInspectError(errs.CodeValidation, "attachment_format_unsupported", "attachment format is unsupported")
+	case aimodelruntime.DocumentEmpty:
+		return attachmentInspectError(errs.CodeValidation, "attachment_extract_empty", "document text is empty")
+	case aimodelruntime.DocumentLowQuality:
+		return attachmentInspectError(errs.CodeValidation, "attachment_extract_low_quality", "document text extraction is unusable")
 	default:
 		return attachmentInspectError(errs.CodeValidation, "attachment_inspection_failed", "document inspection failed")
 	}

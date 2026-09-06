@@ -27,9 +27,17 @@ import (
 )
 
 const (
-	ParserVersion        = "safe-parser-v6"
+	ParserVersion        = "safe-parser-v7"
 	ChunkingVersion      = "fixed-tokens-v1"
 	PreprocessingVersion = "normalize-text-v2"
+
+	ExtractStatusOK         = "ok"
+	ExtractStatusEmpty      = "empty"
+	ExtractStatusLowQuality = "low_quality"
+	ExtractStatusFailed     = "failed"
+
+	maxReplacementRuneRatio = 0.08
+	minReplacementRunes     = 3
 )
 
 var (
@@ -38,6 +46,8 @@ var (
 	ErrLimitExceeded     = errors.New("knowledge parsing: resource limit exceeded")
 	ErrUnsafeContent     = errors.New("knowledge parsing: unsafe active content")
 	ErrCorruptDocument   = errors.New("knowledge parsing: corrupt document")
+	ErrLowQualityText    = errors.New("knowledge parsing: low quality text extraction")
+	ErrEmptyText         = errors.New("knowledge parsing: empty extracted text")
 )
 
 type ParseLimits struct {
@@ -155,6 +165,14 @@ func (p *SafeParser) Parse(ctx context.Context, doc DocumentRef, reader io.Reade
 		sections[i].Ordinal = i
 		sections[i].SourceRevision = doc.SourceRevision
 		sections[i].ParserVersion = ParserVersion
+		if sections[i].ExtractStatus == "" {
+			sections[i].ExtractStatus = assessExtractedText(sections[i].Text)
+		} else if sections[i].ExtractStatus == ExtractStatusOK {
+			sections[i].ExtractStatus = assessExtractedText(sections[i].Text)
+		}
+		if sections[i].ExtractStatus == ExtractStatusLowQuality {
+			sections[i].Text = ""
+		}
 		total += utf8.RuneCountInString(sections[i].Text)
 		if total > p.Limits.MaxCharacters {
 			return nil, ErrLimitExceeded
@@ -248,13 +266,42 @@ func (p *SafeParser) parsePDF(ctx context.Context, data []byte, revision string)
 			return nil, err
 		}
 		text, textErr := doc.Text(page)
-		if textErr != nil {
-			return nil, ErrCorruptDocument
-		}
 		n := page + 1
-		out = append(out, ParsedSection{Text: text, PageNumber: &n, SourceRevision: revision})
+		if textErr != nil {
+			out = append(out, ParsedSection{PageNumber: &n, SourceRevision: revision, ExtractStatus: ExtractStatusFailed})
+			continue
+		}
+		out = append(out, ParsedSection{Text: text, PageNumber: &n, SourceRevision: revision, ExtractStatus: ExtractStatusOK})
 	}
 	return out, nil
+}
+
+func assessExtractedText(text string) string {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		return ExtractStatusEmpty
+	}
+	total := utf8.RuneCountInString(trimmed)
+	if total == 0 {
+		return ExtractStatusEmpty
+	}
+	replacements := strings.Count(trimmed, "\uFFFD")
+	if replacements == 0 {
+		return ExtractStatusOK
+	}
+	if replacements >= minReplacementRunes && float64(replacements)/float64(total) >= maxReplacementRuneRatio {
+		return ExtractStatusLowQuality
+	}
+	return ExtractStatusOK
+}
+
+func hasUnusableExtract(sections []ParsedSection) bool {
+	for _, section := range sections {
+		if section.ExtractStatus == ExtractStatusLowQuality || section.ExtractStatus == ExtractStatusFailed {
+			return true
+		}
+	}
+	return false
 }
 
 func (p *SafeParser) parseOpenXML(ctx context.Context, data []byte, contentType, revision string) ([]ParsedSection, error) {
@@ -934,7 +981,23 @@ func (p *Processor) Process(ctx context.Context, document DocumentRef, config Ch
 	if err != nil {
 		return nil, err
 	}
-	return p.Chunker.Chunk(ctx, ChunkInput{Document: document, Sections: sections, Config: config})
+	usable := make([]ParsedSection, 0, len(sections))
+	for _, section := range sections {
+		if section.ExtractStatus == ExtractStatusLowQuality || section.ExtractStatus == ExtractStatusFailed {
+			continue
+		}
+		if strings.TrimSpace(section.Text) == "" {
+			continue
+		}
+		usable = append(usable, section)
+	}
+	if len(usable) == 0 {
+		if hasUnusableExtract(sections) {
+			return nil, ErrLowQualityText
+		}
+		return nil, ErrEmptyText
+	}
+	return p.Chunker.Chunk(ctx, ChunkInput{Document: document, Sections: usable, Config: config})
 }
 
 var _ DocumentParser = (*ParserRegistry)(nil)

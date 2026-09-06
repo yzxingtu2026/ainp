@@ -85,6 +85,10 @@ func (s *AttachmentService) ResolveDocument(ctx context.Context, req aimodelrunt
 			category = aimodelruntime.DocumentTooLarge
 		case errors.Is(err, aiknowledge.ErrUnsupportedFormat), errors.Is(err, aiknowledge.ErrMIMEMismatch):
 			category = aimodelruntime.DocumentUnsupportedFormat
+		case errors.Is(err, aiknowledge.ErrLowQualityText):
+			category = aimodelruntime.DocumentLowQuality
+		case errors.Is(err, aiknowledge.ErrEmptyText):
+			category = aimodelruntime.DocumentEmpty
 		case errors.Is(err, aiknowledge.ErrUnsafeContent):
 			switch mime {
 			case "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
@@ -97,20 +101,31 @@ func (s *AttachmentService) ResolveDocument(ctx context.Context, req aimodelrunt
 		}
 		return nil, &aimodelruntime.DocumentError{Category: category, Cause: err}
 	}
+	pageStatuses, extractStatus := documentExtractOutcome(sections)
+	resolved.PageStatuses = pageStatuses
+	resolved.ExtractStatus = extractStatus
 	total := 0
 	for _, section := range sections {
+		location := documentSectionLocation(section)
+		status := inspectStatusFromExtract(section.ExtractStatus)
 		text := strings.TrimSpace(section.Text)
-		if text == "" {
+		if status != InspectStatusReady || text == "" {
 			continue
 		}
 		total += utf8.RuneCountInString(text)
 		if total > aiDocumentMaxCharacters {
 			return nil, &aimodelruntime.DocumentError{Category: aimodelruntime.DocumentTooLarge, Cause: aiknowledge.ErrLimitExceeded}
 		}
-		resolved.Sections = append(resolved.Sections, aimodelruntime.DocumentSection{Text: text, Location: documentSectionLocation(section)})
+		resolved.Sections = append(resolved.Sections, aimodelruntime.DocumentSection{Text: text, Location: location, Status: status})
 	}
 	if len(resolved.Sections) == 0 {
-		return nil, &aimodelruntime.DocumentError{Category: aimodelruntime.DocumentEmpty}
+		category := aimodelruntime.DocumentEmpty
+		cause := aiknowledge.ErrEmptyText
+		if extractStatus == InspectStatusLowQuality || extractStatus == InspectStatusPartialFailure {
+			category = aimodelruntime.DocumentLowQuality
+			cause = aiknowledge.ErrLowQualityText
+		}
+		return nil, &aimodelruntime.DocumentError{Category: category, Cause: cause, ExtractStatus: extractStatus, PageStatuses: pageStatuses}
 	}
 	return resolved, nil
 }
@@ -141,6 +156,49 @@ func safeDocumentName(name string) string {
 		name = string(runes[:255])
 	}
 	return name
+}
+
+func documentExtractOutcome(sections []aiknowledge.ParsedSection) ([]aimodelruntime.DocumentPageStatus, string) {
+	pages := make([]aimodelruntime.DocumentPageStatus, 0, len(sections))
+	usable, lowQuality, failed := 0, 0, 0
+	for _, section := range sections {
+		status := inspectStatusFromExtract(section.ExtractStatus)
+		if status == InspectStatusReady && strings.TrimSpace(section.Text) == "" {
+			status = InspectStatusEmpty
+		}
+		pages = append(pages, aimodelruntime.DocumentPageStatus{Location: documentSectionLocation(section), Status: status})
+		switch status {
+		case InspectStatusReady:
+			usable++
+		case InspectStatusLowQuality:
+			lowQuality++
+		case InspectStatusFailed:
+			failed++
+		}
+	}
+	switch {
+	case usable > 0 && (lowQuality > 0 || failed > 0):
+		return pages, InspectStatusPartialFailure
+	case usable > 0:
+		return pages, InspectStatusReady
+	case lowQuality > 0 || failed > 0:
+		return pages, InspectStatusLowQuality
+	default:
+		return pages, InspectStatusEmpty
+	}
+}
+
+func inspectStatusFromExtract(status string) string {
+	switch status {
+	case aiknowledge.ExtractStatusLowQuality:
+		return InspectStatusLowQuality
+	case aiknowledge.ExtractStatusFailed:
+		return InspectStatusFailed
+	case aiknowledge.ExtractStatusEmpty:
+		return InspectStatusEmpty
+	default:
+		return InspectStatusReady
+	}
 }
 
 func documentSectionLocation(section aiknowledge.ParsedSection) string {

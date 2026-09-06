@@ -355,7 +355,7 @@ func classifyIngestionError(err error) error {
 	switch {
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		return job.Cancelled(errors.New("knowledge ingestion cancelled"))
-	case errors.Is(err, aiknowledge.ErrUnsupportedFormat), errors.Is(err, aiknowledge.ErrMIMEMismatch), errors.Is(err, aiknowledge.ErrUnsafeContent), errors.Is(err, aiknowledge.ErrCorruptDocument), errors.Is(err, aiknowledge.ErrLimitExceeded):
+	case errors.Is(err, aiknowledge.ErrUnsupportedFormat), errors.Is(err, aiknowledge.ErrMIMEMismatch), errors.Is(err, aiknowledge.ErrUnsafeContent), errors.Is(err, aiknowledge.ErrCorruptDocument), errors.Is(err, aiknowledge.ErrLimitExceeded), errors.Is(err, aiknowledge.ErrLowQualityText), errors.Is(err, aiknowledge.ErrEmptyText):
 		return job.Permanent(errors.New("knowledge document rejected"))
 	default:
 		return job.Retryable(errors.New("knowledge parsing failed"))

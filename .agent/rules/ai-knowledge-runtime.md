@@ -8,7 +8,7 @@
 - Parser、Chunker、Retriever 只依赖 `framework/aiknowledge`；空知识库范围、未知实现与权限缺失 fail-closed。
 - 文档解析必须经 `DocumentSourceResolver` 重鉴权并校验 source revision；MIME/Parser 未知、Office 动态内容或任一资源预算超限均 fail-closed。XLSX 公式只读已保存缓存值且绝不求值；无缓存、外部工作簿/URL/DDE/外部数据函数必须拒绝。DOCX 仅允许 HTTP/HTTPS 普通超链接并只读显示文字，字段仅可读取白名单字段的已保存结果；不得访问链接、更新字段或加载外部内容，未知/危险/无缓存字段默认拒绝。
 - XLSX 解析必须还原共享字符串、工作表与表头/数据行关系，按行生成可检索 Section；禁止把 worksheet XML 索引值当正文。
-- PDF 必须通过字体与字符映射提取文本，禁止把内容流字形码直接写入 Chunk；Parser Version 变化后需重新摄取。
+- PDF 必须通过字体与字符映射提取文本，禁止把内容流字形码直接写入 Chunk；未嵌字 CJK 必须由完整 MuPDF CJK 能力解码，提取后做质量检查，低质量/空文本不得当作可用正文；Parser Version 变化后需重新摄取。
 - Chunk 必须记录来源位置、token count 与 parser/chunking/preprocessing version；派生文本始终按不可信参考处理。
 - Parser/Chunker 必须移除 NUL、替换无效 UTF-8 并清理非空白控制字符，向量输入与入库正文必须使用同一规范化文本。
 - 摄取必须走业务事务 Outbox → 幂等 JobRun → Worker；Job 重新加载可信身份和 revision，禁止信任队列 tenant/resource payload。

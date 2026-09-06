@@ -234,6 +234,8 @@ attachment.format_unsupported: "attachment format does not support content inspe
 attachment.budget_exceeded: "attachment content inspection exceeded its budget"
 attachment.capability_not_supported: "the current model does not support vision"
 attachment.inspection_failed: "attachment content inspection failed"
+attachment.extract_empty: "document has no extractable text"
+attachment.extract_low_quality: "document text extraction is unusable"
 role.not_found: "role not found"
 role.code_conflict: "role code already exists"
 role.permission_invalid: "a permission is not assignable"

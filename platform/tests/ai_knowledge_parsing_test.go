@@ -9,6 +9,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -16,6 +18,24 @@ import (
 
 	"github.com/yzxingtu2026/ainp/platform/framework/aiknowledge"
 )
+
+const syntheticUniGBReceiptText = "测试银行客户回单 户名：测试公司 交易金额：人民币 123.45 交易渠道：超级网银2.0"
+
+func testdataFile(t *testing.T, name string) []byte {
+	t.Helper()
+	candidates := []string{
+		filepath.Join("testdata", name),
+		filepath.Join("..", "testdata", name),
+	}
+	for _, candidate := range candidates {
+		data, err := os.ReadFile(candidate)
+		if err == nil {
+			return data
+		}
+	}
+	t.Fatalf("testdata %s not found", name)
+	return nil
+}
 
 func zipFixture(t *testing.T, files map[string]string) []byte {
 	t.Helper()
@@ -81,9 +101,92 @@ func TestKnowledgeSafeParserDecodesPDFToUnicodeMapping(t *testing.T) {
 	)
 
 	sections, err := aiknowledge.NewSafeParser(aiknowledge.DefaultParseLimits()).Parse(context.Background(), parsingDoc("application/pdf", "knowledge.pdf"), bytes.NewReader(pdfData))
-	if err != nil || len(sections) != 1 || sections[0].Text != "知识库" || sections[0].ParserVersion != "safe-parser-v6" {
+	if err != nil || len(sections) != 1 || sections[0].Text != "知识库" || sections[0].ParserVersion != aiknowledge.ParserVersion {
 		t.Fatalf("unexpected PDF text extraction: %#v %v", sections, err)
 	}
+}
+
+func TestKnowledgeSafeParserExtractsEnglishPDF(t *testing.T) {
+	content := "BT /F1 12 Tf 72 720 Td (Hello PDF) Tj ET"
+	pdfData := pdfFixture(
+		"<< /Type /Catalog /Pages 2 0 R >>",
+		"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 6 0 R >>",
+		"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>",
+		"<< /Type /FontDescriptor /FontName /Helvetica /Flags 32 /FontBBox [0 -200 1000 900] /ItalicAngle 0 /Ascent 880 /Descent -120 /CapHeight 700 /StemV 80 >>",
+		fmt.Sprintf("<< /Length %d >>\nstream\n%s\nendstream", len(content), content),
+	)
+	sections, err := aiknowledge.NewSafeParser(aiknowledge.DefaultParseLimits()).Parse(context.Background(), parsingDoc("application/pdf", "hello.pdf"), bytes.NewReader(pdfData))
+	if err != nil || len(sections) != 1 || sections[0].Text != "Hello PDF" || strings.ContainsRune(sections[0].Text, '\ufffd') {
+		t.Fatalf("english PDF extraction: %#v %v", sections, err)
+	}
+}
+
+func TestKnowledgeSafeParserHandlesUniGBReceipt(t *testing.T) {
+	pdfData := testdataFile(t, "pdf/synthetic-unigb-receipt.pdf")
+	parser := aiknowledge.NewSafeParser(aiknowledge.DefaultParseLimits())
+	sections, err := parser.Parse(context.Background(), parsingDoc("application/pdf", "receipt.pdf"), bytes.NewReader(pdfData))
+	if err != nil {
+		t.Fatalf("synthetic UniGB parse failed: %v", err)
+	}
+	if len(sections) != 1 {
+		t.Fatalf("expected 1 section, got %#v", sections)
+	}
+	if strings.ContainsRune(sections[0].Text, '\ufffd') {
+		t.Fatalf("usable PDF text must not contain U+FFFD: %q", sections[0].Text)
+	}
+	if os.Getenv("AINP_REQUIRE_PDF_CJK") == "1" {
+		if sections[0].ExtractStatus != aiknowledge.ExtractStatusOK || sections[0].Text != syntheticUniGBReceiptText {
+			t.Fatalf("CJK-capable MuPDF must extract the synthetic receipt exactly: %#v", sections)
+		}
+		return
+	}
+	if sections[0].ExtractStatus == aiknowledge.ExtractStatusOK {
+		if sections[0].Text != syntheticUniGBReceiptText {
+			t.Fatalf("OK extract must match the synthetic receipt: %q", sections[0].Text)
+		}
+		return
+	}
+	if sections[0].ExtractStatus != aiknowledge.ExtractStatusLowQuality || sections[0].Text != "" {
+		t.Fatalf("bundled MuPDF must fail closed on UniGB garbage, got %#v", sections[0])
+	}
+	processor := aiknowledge.Processor{Parser: parser, Chunker: aiknowledge.NewFixedTokenChunker(), Limits: aiknowledge.DefaultParseLimits(), Sources: staticDocumentSource{data: pdfData}}
+	if _, err = processor.Process(context.Background(), parsingDoc("application/pdf", "receipt.pdf"), aiknowledge.ChunkingConfig{Strategy: aiknowledge.ChunkingFixedTokens, ChunkSize: 100}); !errors.Is(err, aiknowledge.ErrLowQualityText) {
+		t.Fatalf("knowledge processor must reject low-quality PDF extract: %v", err)
+	}
+}
+
+func TestKnowledgeSafeParserRejectsEmptyAndLowQualityText(t *testing.T) {
+	parser := aiknowledge.NewSafeParser(aiknowledge.DefaultParseLimits())
+	emptySections, err := parser.Parse(context.Background(), parsingDoc("text/plain", "empty.txt"), strings.NewReader("   \n\t  "))
+	if err != nil || len(emptySections) != 1 || emptySections[0].ExtractStatus != aiknowledge.ExtractStatusEmpty || emptySections[0].Text != "" {
+		t.Fatalf("empty text must be marked empty: %#v %v", emptySections, err)
+	}
+	emptyProcessor := aiknowledge.Processor{Parser: parser, Chunker: aiknowledge.NewFixedTokenChunker(), Limits: aiknowledge.DefaultParseLimits(), Sources: staticDocumentSource{data: []byte("   \n")}}
+	if _, err = emptyProcessor.Process(context.Background(), parsingDoc("text/plain", "empty.txt"), aiknowledge.ChunkingConfig{Strategy: aiknowledge.ChunkingFixedTokens, ChunkSize: 100}); !errors.Is(err, aiknowledge.ErrEmptyText) {
+		t.Fatalf("knowledge processor must reject empty extract: %v", err)
+	}
+
+	garbage := strings.Repeat("\uFFFD", 8) + "ab"
+	lowSections, err := parser.Parse(context.Background(), parsingDoc("text/plain", "garbage.txt"), strings.NewReader(garbage))
+	if err != nil || len(lowSections) != 1 || lowSections[0].ExtractStatus != aiknowledge.ExtractStatusLowQuality || lowSections[0].Text != "" {
+		t.Fatalf("replacement-heavy text must fail closed: %#v %v", lowSections, err)
+	}
+	lowProcessor := aiknowledge.Processor{Parser: parser, Chunker: aiknowledge.NewFixedTokenChunker(), Limits: aiknowledge.DefaultParseLimits(), Sources: staticDocumentSource{data: []byte(garbage)}}
+	if _, err = lowProcessor.Process(context.Background(), parsingDoc("text/plain", "garbage.txt"), aiknowledge.ChunkingConfig{Strategy: aiknowledge.ChunkingFixedTokens, ChunkSize: 100}); !errors.Is(err, aiknowledge.ErrLowQualityText) {
+		t.Fatalf("knowledge processor must reject low-quality extract: %v", err)
+	}
+
+	okSections, err := parser.Parse(context.Background(), parsingDoc("text/plain", "ok.txt"), strings.NewReader("hello \uFFFD world"))
+	if err != nil || len(okSections) != 1 || okSections[0].ExtractStatus != aiknowledge.ExtractStatusOK || !strings.Contains(okSections[0].Text, "hello") {
+		t.Fatalf("sparse replacement must remain usable: %#v %v", okSections, err)
+	}
+}
+
+type staticDocumentSource struct{ data []byte }
+
+func (s staticDocumentSource) OpenSource(context.Context, aiknowledge.SourceOpenRequest) (aiknowledge.DocumentSource, error) {
+	return aiknowledge.DocumentSource{Reader: io.NopCloser(bytes.NewReader(s.data)), Size: int64(len(s.data))}, nil
 }
 
 func TestKnowledgeSafeParserParsesSpreadsheetRowsWithSharedStrings(t *testing.T) {
