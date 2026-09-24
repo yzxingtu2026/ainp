@@ -23,9 +23,8 @@ jobs:
         run: git diff --check
       - name: Check Agent rules
         run: |
-          cp .agent/templates/AGENTS.md.tpl AGENTS.md
           npx -y @yz-xingtu/agent-rules@latest sync --target=qoder,cursor
-          npx -y @yz-xingtu/agent-rules@latest doctor
+          npx -y @yz-xingtu/agent-rules@latest doctor --target=qoder,cursor
       - name: Test release entrypoint and Web Nginx routes
         run: python3 -m unittest scripts/test_release.py scripts/test_generate_release_notes.py scripts/test_web_nginx_routes.py scripts/test_deployment.py
 
