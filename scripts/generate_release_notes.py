@@ -147,7 +147,7 @@ def render(notes: dict[str, Any], tag: str, commit: str, build_time: str, reposi
     for title, field in sections:
         lines.extend(["", f"## {title}", ""])
         lines.extend([f"- {item}" for item in notes[field]] or ["- 无"])
-    lines.extend(["", "## 镜像", ""] + [f"- `{item}`" for item in digests])
+    lines.extend(["", "## 发布产物", ""] + [f"- `{item}`" for item in digests])
     lines.extend(["", "## 构建信息", "", f"- Commit: `{commit}`", f"- Build time: `{build_time}`", f"- Compare: {compare}", ""])
     return "\n".join(lines)
 
@@ -158,7 +158,9 @@ def main() -> int:
     parser.add_argument("--tag", required=True)
     parser.add_argument("--commit", required=True)
     parser.add_argument("--build-time", required=True)
-    parser.add_argument("--digests-dir", type=Path, required=True)
+    sources = parser.add_mutually_exclusive_group(required=True)
+    sources.add_argument("--digests-dir", type=Path, help="legacy image metadata")
+    sources.add_argument("--artifact-reference", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--summary-output", type=Path, required=True)
     args = parser.parse_args()
@@ -170,7 +172,13 @@ def main() -> int:
         notes = model_notes(facts, prompt, schema)
     except ValueError as error:
         mode, reason, notes = "fallback", str(error), fallback_notes(facts)
-    digests = [path.read_text().strip().split(" ", 1)[-1] for path in sorted(args.digests_dir.glob("*.digest"))]
+    if args.artifact_reference:
+        ref = json.loads(args.artifact_reference.read_text())
+        if ref["version"] != args.tag or ref["commit"] != args.commit:
+            raise ValueError("release artifact identity mismatch")
+        digests = [f"{ref['project']} / {ref['platform']}", f"SHA256: {ref['sha256']}", "Private OSS; reference.json is the immutable deployment input. Production is not auto-deployed."]
+    else:
+        digests = [path.read_text().strip().split(" ", 1)[-1] for path in sorted(args.digests_dir.glob("*.digest"))]
     args.output.write_text(render(notes, args.tag, args.commit, args.build_time, args.repository, previous, digests))
     args.summary_output.write_text(f"release_notes_mode={mode}\nreason={reason[:500]}\ncommits={len(facts['commits'])}\nprs={len(facts['pull_requests'])}\n")
     return 0

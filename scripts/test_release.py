@@ -50,7 +50,7 @@ class ReleaseValidationTest(unittest.TestCase):
             ("git", "tag", "--list", "platform/v1.2.3"): "",
             ("git", "ls-remote", "--tags", "origin", "refs/tags/platform/v1.2.3"): "",
             ("gh", "api", "repos/yzxingtu2026/ainp/commits/abc/check-runs?per_page=100"): json.dumps(successes),
-            ("gh", "variable", "get", "DEMO_URL", "--env", "demo"): "https://demo.example.com",
+            ("gh", "variable", "get", "OSS_BUCKET", "--env", "release"): "ainp-test-artifacts",
         }
         responses.update(overrides)
 
@@ -62,7 +62,7 @@ class ReleaseValidationTest(unittest.TestCase):
 
     def test_preflight_accepts_only_fully_synchronized_main(self):
         with mock.patch.object(release, "run", side_effect=self.successful_preflight_run()):
-            self.assertEqual(release.preflight("v1.2.3"), ("abc", "https://demo.example.com"))
+            self.assertEqual(release.preflight("v1.2.3"), ("abc", "ainp-test-artifacts"))
 
     def test_preflight_rejects_dirty_diverged_duplicate_and_missing_ci(self):
         cases = [
@@ -71,7 +71,7 @@ class ReleaseValidationTest(unittest.TestCase):
             ({("git", "rev-parse", "origin/main"): "def"}, "exactly match"),
             ({("git", "tag", "--list", "v1.2.3"): "v1.2.3"}, "already exists"),
             ({("gh", "api", "repos/yzxingtu2026/ainp/commits/abc/check-runs?per_page=100"): '{"check_runs":[]}'}, "CI is not successful"),
-            ({("gh", "variable", "get", "DEMO_URL", "--env", "demo"): ""}, "DEMO_URL is not configured"),
+            ({("gh", "variable", "get", "OSS_BUCKET", "--env", "release"): ""}, "OSS_BUCKET is not configured"),
         ]
         for overrides, message in cases:
             with self.subTest(message=message), mock.patch.object(release, "run", side_effect=self.successful_preflight_run(overrides)):

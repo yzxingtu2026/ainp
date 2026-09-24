@@ -44,3 +44,9 @@ deploy/demo/runtime/
 # Python tooling cache
 __pycache__/
 *.pyc
+
+# Native release output, cloud deployment state, private environment configuration
+/dist-release/
+/.deploy-state/
+/deploy/linux/*.local.json
+/.cache/mupdf/

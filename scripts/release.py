@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 
 REPOSITORY = "yzxingtu2026/ainp"
-REQUIRED_CHECKS = {"backend", "containers", "frontend", "repository-gates"}
+REQUIRED_CHECKS = {"backend", "linux-release", "frontend", "repository-gates"}
 VERSION_PATTERN = re.compile(r"^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 EXPECTED_REMOTES = {
     "https://github.com/yzxingtu2026/ainp.git",
@@ -82,10 +82,10 @@ def preflight(version: str) -> tuple[str, str]:
     missing = REQUIRED_CHECKS - successful_checks(payload)
     if missing:
         raise ReleaseError(f"main CI is not successful for {head}: missing {', '.join(sorted(missing))}")
-    demo_url = run("gh", "variable", "get", "DEMO_URL", "--env", "demo", check=False)
-    if not demo_url:
-        raise ReleaseError("demo environment variable DEMO_URL is not configured")
-    return head, demo_url
+    oss_bucket = run("gh", "variable", "get", "OSS_BUCKET", "--env", "release", check=False)
+    if not oss_bucket:
+        raise ReleaseError("release environment variable OSS_BUCKET is not configured")
+    return head, oss_bucket
 
 
 def main() -> int:
@@ -94,17 +94,17 @@ def main() -> int:
     parser.add_argument("--yes", action="store_true", help="skip interactive confirmation")
     args = parser.parse_args()
     try:
-        commit, demo_url = preflight(args.version)
-        print(f"Version: {args.version}\nCommit: {commit}\nRepository: {REPOSITORY}\nEnvironment: demo ({demo_url})")
+        commit, oss_bucket = preflight(args.version)
+        print(f"Version: {args.version}\nCommit: {commit}\nRepository: {REPOSITORY}\nArtifact bucket: {oss_bucket}")
         if not args.yes and input("Push immutable annotated tag? [y/N] ").strip().lower() not in {"y", "yes"}:
             raise ReleaseError("release cancelled")
         run("git", "tag", "--annotate", args.version, "--message", f"Release {args.version}")
         module_version = platform_tag(args.version)
         run("git", "tag", "--annotate", module_version, "--message", f"Platform module {args.version}")
         run("git", "push", "origin", f"refs/tags/{args.version}", f"refs/tags/{module_version}")
-        print(f"Actions: https://github.com/{REPOSITORY}/actions/workflows/release-images.yml")
+        print(f"Actions: https://github.com/{REPOSITORY}/actions/workflows/release-binaries.yml")
         print(f"Release: https://github.com/{REPOSITORY}/releases/tag/{args.version}")
-        print(f"Demo: {demo_url}")
+        print("Production deployment is a separate explicit operation.")
         return 0
     except (ReleaseError, json.JSONDecodeError) as error:
         print(f"release aborted: {error}", file=sys.stderr)
