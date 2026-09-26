@@ -154,6 +154,14 @@ def get_json(url, data=None):
         return json.load(r)["data"]
 
 
+def https_json(c, path):
+    # Reload is asynchronous: a retiring maintenance worker can still return 503.
+    # Retry only curl's transient errors, retaining TLS and release identity checks.
+    return json.loads(command(["curl", "--fail", "--silent", "--show-error", "--max-time", "20",
+                               "--retry", "5", "--retry-delay", "1", "--retry-max-time", "30",
+                               "--resolve", f"{c['domain']}:443:127.0.0.1", f"https://{c['domain']}{path}"]))
+
+
 def wait_api(c, manifest):
     for _ in range(60):
         try:
@@ -370,9 +378,9 @@ def perform(r, root, home):
             pid = int(command(["systemctl", "show", service, "-p", "MainPID", "--value"]).strip())
             require(Path(f"/proc/{pid}/exe").resolve().parent == release / "bin", "service not running target binary")
         install_nginx(c, root, False)
-        health = json.loads(command(["curl", "--fail", "--silent", "--show-error", "--max-time", "20", "--resolve", f"{c['domain']}:443:127.0.0.1", f"https://{c['domain']}/healthz"]))["data"]
+        health = https_json(c, "/healthz")["data"]
         require(health.get("status") == "ok" and health.get("version") == manifest["version"] and health.get("commit") == manifest["commit"], "HTTPS health check failed")
-        web = json.loads(command(["curl", "--fail", "--silent", "--max-time", "20", "--resolve", f"{c['domain']}:443:127.0.0.1", f"https://{c['domain']}/build.json"]))
+        web = https_json(c, "/build.json")
         require(web.get("commit") == manifest["commit"] and web.get("version") == manifest["version"], "Web release mismatch")
         command(["systemctl", "enable", *units])
         if str(release) not in history:

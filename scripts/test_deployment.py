@@ -626,6 +626,50 @@ echo 'Could not get lock /var/lib/dpkg/lock-frontend'; exit 100
                     self.assertIn("AINP_APT_LOCK_TIMEOUT", result.stderr)
 
 
+class HTTPSProbeTest(unittest.TestCase):
+    def test_real_curl_retries_transient_maintenance_but_not_permanent_errors(self):
+        import http.server
+        import threading
+        import subprocess
+        import shutil
+        if not shutil.which("curl"):
+            self.skipTest("curl unavailable")
+        for scenario, expected_requests in (("recover", 2), ("unavailable", 6), ("missing", 1)):
+            with self.subTest(scenario=scenario):
+                requests = []
+                class Handler(http.server.BaseHTTPRequestHandler):
+                    def do_GET(self):
+                        requests.append(self.path)
+                        status = 404 if scenario == "missing" else (200 if scenario == "recover" and len(requests) > 1 else 503)
+                        self.send_response(status)
+                        self.end_headers()
+                        self.wfile.write(b'{"data":{"status":"ok"}}' if status == 200 else b'maintenance')
+                    def log_message(self, *args):
+                        pass
+                server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+                thread = threading.Thread(target=server.serve_forever, daemon=True)
+                thread.start()
+                def run(argv):
+                    # Exercise actual curl retry semantics with a local HTTP fixture.
+                    # Production retains HTTPS certificate validation and --resolve.
+                    argv = [*argv[:-1], f"http://127.0.0.1:{server.server_port}/healthz"]
+                    result = subprocess.run(argv, capture_output=True, timeout=20)
+                    common.require(result.returncode == 0, "probe failed")
+                    return result.stdout
+                try:
+                    with mock.patch.object(host, "command", side_effect=run):
+                        if scenario == "recover":
+                            self.assertEqual(host.https_json({"domain": "fixture.invalid"}, "/healthz")["data"]["status"], "ok")
+                        else:
+                            with self.assertRaises(common.DeployError):
+                                host.https_json({"domain": "fixture.invalid"}, "/healthz")
+                    self.assertEqual(len(requests), expected_requests)
+                finally:
+                    server.shutdown()
+                    server.server_close()
+                    thread.join()
+
+
 class NativeNginxSyntaxTest(unittest.TestCase):
     def test_generated_live_and_maintenance_config_with_real_nginx(self):
         import shutil

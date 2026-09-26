@@ -178,6 +178,8 @@ python3 scripts/deployment/cloud.py status --target deploy/linux/target.local.js
 - Worker 的自动门禁是 Redis 能力、systemd 稳定性与 `/proc/PID/exe` 路径，不是“已完成真实任务”的证明。验收要实际执行通用任务、AI 任务、SSE、MCP/OAuth 和附件上传。
 - 临时维护是计划内行为；已有执行中的长任务按框架重试/幂等处理，不承诺不重试或不丢失业务外部副作用。
 
+HTTPS 验收在 Nginx reload 后对瞬时错误进行有限重试（最多 5 次重试，1 秒间隔，重试窗口 30 秒），避免旧维护页进程短暂返回 503 导致误判；证书校验、API/Web 版本与 commit 校验仍必须通过。
+
 ## 7. 故障与恢复
 
 1. **控制台请求超时**：看本地账本，拿 InvokeId 到云助手查看；`status` 只轮询。`creating`/`dispatching` 无返回 ID 时必须根据 ECS/ActionTrail 审计与项目标签人工核对；确认准确 InstanceId/InvokeId 后才允许修复账本。禁止直接删除账本重试。
