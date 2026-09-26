@@ -51,6 +51,8 @@ AINP_PAYLOAD
 '''
 
 TEST_ENVIRONMENT = "test"
+CLI_ERROR_JSON_LIMIT = 64 * 1024
+CLI_ERROR_TEXT_LIMIT = 500
 
 
 def validate_release_for_environment(target, reference):
@@ -80,6 +82,49 @@ def validate_target(c):
     return c
 
 
+def _diagnostic_text(value, limit=CLI_ERROR_TEXT_LIMIT):
+    if not isinstance(value, (str, int)):
+        return None
+    text = re.sub(r"[\x00-\x1f\x7f]+", " ", str(value)).strip()
+    if not text:
+        return None
+    return text[:limit]
+
+
+def alibaba_failure(action, result):
+    """Expose only bounded Alibaba error fields; never echo argv or raw output."""
+    payload = None
+    for raw in (result.stderr, result.stdout):
+        if not raw or len(raw.encode()) > CLI_ERROR_JSON_LIMIT:
+            continue
+        try:
+            candidate = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if isinstance(candidate, dict):
+            payload = candidate
+            break
+
+    fallback = f"Alibaba {action} failed (CLI exit {result.returncode}); response unavailable or unrecognized; inspect cloud audit"
+    if payload is None:
+        return fallback
+
+    fields = (
+        ("code", ("error_code", "Code", "code")),
+        ("status", ("status_code", "HttpStatus", "statusCode")),
+        ("message", ("message", "Message")),
+        ("request_id", ("request_id", "RequestId", "requestId")),
+    )
+    diagnostics = []
+    for label, keys in fields:
+        value = next((_diagnostic_text(payload.get(key)) for key in keys if payload.get(key) is not None), None)
+        if value:
+            diagnostics.append(f"{label}={value}")
+    if not diagnostics:
+        return fallback
+    return f"Alibaba {action} failed (CLI exit {result.returncode}): " + "; ".join(diagnostics)
+
+
 class Alibaba:
     def __init__(self, target):
         self.target = target
@@ -92,7 +137,7 @@ class Alibaba:
             result = subprocess.run(argv, capture_output=True, text=True, timeout=120)
         except (OSError, subprocess.TimeoutExpired) as e:
             raise DeployError(f"Alibaba CLI {action} unavailable/timeout; inspect persisted state before retry") from e
-        require(result.returncode == 0, f"Alibaba {action} failed; inspect CLI authentication and cloud audit (output withheld)")
+        require(result.returncode == 0, alibaba_failure(action, result))
         return json.loads(result.stdout)
 
 

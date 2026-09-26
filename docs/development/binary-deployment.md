@@ -143,6 +143,8 @@ python3 scripts/deployment/cloud.py status --target deploy/linux/target.local.js
 
 创建请求发出前落盘 ClientToken；云助手请求前记 `dispatching`，传入独立 ClientToken 并使用 ProcessTree 超时终止模式，拿到 InvokeId 后记 `running`。不保存可再次执行的云助手命令。不确定请求结果时拒绝自动重试，避免重复购买或同时更新。资源已创建但尚未下发命令时，重跑可继续同一实例；已开始 init 失败不能盲目重初始化。
 
+阿里云 CLI 调用失败时，控制器只从 JSON 响应中输出经过长度限制和单行化处理的 `error_code`、HTTP 状态、`message`、`RequestId`。命令参数、完整 stdout/stderr、恢复命令和未知字段不会回显；非 JSON、空响应、超大响应、CLI 缺失或超时仍使用通用错误，并要求结合已持久化状态与云审计核对后再重试。
+
 ## 6. 主机执行顺序与失败语义
 
 主机目录：
