@@ -750,6 +750,16 @@ class HostTransactionTest(unittest.TestCase):
         self.assertIn(("backup",), self.events)
         self.assertEqual(common.read_json(self.root / "deployment.json")["release"]["version"], "v1.0.0")
 
+    def test_fresh_init_does_not_reset_unloaded_systemd_units(self):
+        original = host.command
+        def reject_unloaded_reset(argv, **kwargs):
+            if argv[:2] == ["systemctl", "reset-failed"]:
+                raise common.DeployError("Unit not loaded")
+            return original(argv, **kwargs)
+        with mock.patch.object(host, "command", side_effect=reject_unloaded_reset):
+            host.perform(self.request("v1.0.0", "init"), self.root, self.home)
+        self.assertEqual(common.read_json(self.root / "deployment.json")["status"], "healthy")
+
     def test_migration_failure_never_opens_traffic_or_switches_to_bad_release(self):
         host.perform(self.request("v1.0.0", "init"), self.root, self.home)
         previous = (self.root / "current").resolve()

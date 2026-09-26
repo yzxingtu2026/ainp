@@ -335,8 +335,9 @@ def perform(r, root, home):
         install_nginx(c, root, True)
         command(["systemctl", "disable", *units])
         command(["systemctl", "stop", *units])
-        command(["systemctl", "reset-failed", *units])
+        # Never-started units may be unloaded; reset-failed rejects those on init.
         if not fresh:
+            command(["systemctl", "reset-failed", *units])
             with stage("database-backup"):
                 state["backup"] = backup(c, root, role)
             atomic_json(statepath, state)
