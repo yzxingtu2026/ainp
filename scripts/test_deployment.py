@@ -1,6 +1,7 @@
 """Offline release/controller/security contracts; never calls a cloud or production host."""
 import base64
 import contextlib
+import hashlib
 import importlib.util
 import io
 import json
@@ -281,6 +282,51 @@ class CloudTest(unittest.TestCase):
         self.assertNotIn("DATABASE_DSN=", command)
         self.assertLessEqual(len(base64.b64encode(command.encode())), 24576)
         self.assertIn("chmod 644 /usr/share/postgresql-common/pgdg", command)
+
+    def test_bootstrap_retries_only_apt_lock_failures_with_bounded_timeout(self):
+        command = cloud.bootstrap(dict(project="ainp", ram_role="ainp-production-runtime", action="init", operation_id="a" * 36, release=self.reference(), config_oss=self.target()["config_oss"], config_key=self.target()["config_key"], config_sha256="a" * 64))
+        self.assertIn("AINP_APT_LOCK_TIMEOUT: waited %s seconds", command)
+        self.assertIn("apt_get update -qq", command)
+        self.assertIn("AINP_APT_LOCK_TIMEOUT", command)
+        self.assertIn("lock files were not removed and holder processes were not terminated", command)
+        self.assertNotIn("rm -f /var/lib/dpkg/lock", command)
+        self.assertNotIn("kill ", command)
+
+    def test_failed_init_recovers_same_instance_and_preserves_attempt_audit(self):
+        target = self.target()
+        reference = self.reference()
+        target_sha256 = hashlib.sha256(json.dumps(target, sort_keys=True).encode()).hexdigest()
+        def call(action, **kwargs):
+            self.assertNotEqual(action, "RunInstances")
+            if action == "DescribeInstances":
+                return {"Instances": {"Instance": [{"InstanceId": "i-existing", "Status": "Running", "InstanceChargeType": "PostPaid", "Tags": {"Tag": [{"TagKey": "ainp-project", "TagValue": "ainp"}, {"TagKey": "ainp-environment", "TagValue": "production"}]}}]}}
+            if action == "DescribeCloudAssistantStatus":
+                return {"InstanceCloudAssistantStatusSet": {"InstanceCloudAssistantStatus": [{"InstanceId": "i-existing", "CloudAssistantStatus": "true"}]}}
+            self.assertEqual(action, "RunCommand")
+            return {"InvokeId": "t-recovery"}
+        with tempfile.TemporaryDirectory() as d:
+            statepath = Path(d) / "state.json"
+            common.atomic_json(statepath, {
+                "target_sha256": target_sha256,
+                "client_token": "create-token",
+                "operation_id": "failed-operation",
+                "invoke_id": "t-failed",
+                "command_sha256": "d" * 64,
+                "action": "init",
+                "status": "failed",
+                "instance_id": "i-existing",
+                "release": reference,
+                "config_sha256": target["config_sha256"],
+            })
+            with mock.patch.object(cloud.Alibaba, "call", side_effect=call), mock.patch.object(cloud, "poll"), mock.patch.object(cloud, "bootstrap", return_value="echo safe"), contextlib.redirect_stdout(io.StringIO()):
+                cloud.execute(target, reference, "init", statepath)
+            state = common.read_json(statepath)
+            self.assertEqual(state["instance_id"], "i-existing")
+            self.assertEqual(state["client_token"], "create-token")
+            self.assertEqual(state["invoke_id"], "t-recovery")
+            self.assertEqual(state["config_sha256"], target["config_sha256"])
+            self.assertEqual(state["attempts"][0]["invoke_id"], "t-failed")
+            self.assertEqual(state["attempts"][0]["status"], "failed")
 
     def test_invocation_fail_closed(self):
         def payload(**kw):

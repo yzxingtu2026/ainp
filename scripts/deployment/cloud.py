@@ -19,20 +19,41 @@ umask 077
 test "$ID" = ubuntu && test "$VERSION_ID" = 22.04
 test "$(uname -m)" = x86_64
 export DEBIAN_FRONTEND=noninteractive
-# Apt and venv bootstrap are serialized across projects as well.
 exec 9>/var/lock/ainp-bootstrap.lock
 flock -w 120 9
+apt_get() {
+  i=0
+  while :; do
+    if output=$(apt-get "$@" 2>&1); then
+      printf '%s\n' "$output"
+      return 0
+    else
+      status=$?
+    fi
+    case "$output" in
+      *"Could not get lock"*|*"Unable to acquire "*lock*|*"Could not open lock file"*) ;;
+      *) printf '%s\n' "$output" >&2; return "$status" ;;
+    esac
+    if [ "$i" -ge 120 ]; then
+      printf '%s\n' "$output" >&2
+      printf 'AINP_APT_LOCK_TIMEOUT: waited %s seconds for apt/dpkg locks; lock files were not removed and holder processes were not terminated. Reconcile unattended-upgrades and retry init.\n' 600 >&2
+      return 75
+    fi
+    i=$((i + 1))
+    sleep 5
+  done
+}
 runtime=/opt/ainp-deploy-runtime-v1
 if [ ! -f "$runtime/ready" ]; then
-apt-get update -qq
-apt-get install -y -qq python3-venv nginx curl ca-certificates gnupg tzdata libstdc++6
+apt_get update -qq
+apt_get install -y -qq python3-venv nginx curl ca-certificates gnupg tzdata libstdc++6
 install -d -m 755 /usr/share/postgresql-common/pgdg
 curl --fail --silent --show-error https://www.postgresql.org/media/keys/ACCC4CF8.asc -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
 gpg --show-keys --with-colons /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc | grep -q 'B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8'
 echo 'deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt jammy-pgdg main' >/etc/apt/sources.list.d/ainp-pgdg.list
 chmod 644 /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc /etc/apt/sources.list.d/ainp-pgdg.list
-apt-get update -qq
-apt-get install -y -qq postgresql-client-17
+apt_get update -qq
+apt_get install -y -qq postgresql-client-17
 python3 -m venv "$runtime"
 "$runtime/bin/pip" --disable-pip-version-check install --quiet oss2==2.19.1 'psycopg[binary]==3.2.10' PyYAML==6.0.2 redis==6.4.0
 touch "$runtime/ready"
@@ -229,6 +250,30 @@ def poll(api, state, statepath, timeout=2100):
     raise DeployError("remote command still pending/unknown; run status, never assume cancellation or dispatch another update")
 
 
+def _release_identity(reference):
+    """Fields that must remain identical when recovering a failed init."""
+    return {field: reference.get(field) for field in ("project", "version", "commit", "platform", "sha256", "key")}
+
+
+def _attempt_snapshot(state):
+    fields = ("action", "status", "operation_id", "invoke_id", "command_sha256", "release")
+    return {field: state[field] for field in fields if field in state}
+
+
+def _validate_recovery_state(state, target, reference, action):
+    """Fail closed before dispatching a recovery command to an existing ECS."""
+    if action != "init" or state.get("status") != "failed":
+        return
+    require(state.get("action") == "init" and state.get("instance_id"), "failed init recovery requires the persisted ECS instance; do not create another instance")
+    require(state.get("invoke_id"), "failed init recovery requires the prior Cloud Assistant invocation audit")
+    previous = state.get("release")
+    require(isinstance(previous, dict), "failed init recovery is missing the persisted release identity")
+    require(_release_identity(previous) == _release_identity(reference), "recovery release differs from the persisted failed init; use the exact same release SHA256")
+    saved_config_sha256 = state.get("config_sha256")
+    if saved_config_sha256 is not None:
+        require(saved_config_sha256 == target.get("config_sha256"), "recovery configuration SHA256 differs from the persisted failed init")
+
+
 def execute(target, reference, action, statepath, confirm=False, status_only=False):
     fingerprint = hashlib.sha256(json.dumps(target, sort_keys=True).encode()).hexdigest()
     with lock(str(statepath) + ".lock"):
@@ -243,10 +288,26 @@ def execute(target, reference, action, statepath, confirm=False, status_only=Fal
             raise DeployError("previous request outcome unknown; reconcile cloud audit and saved client token before any retry")
         if state.get("status") == "running":
             raise DeployError("invocation still running; use status instead of resubmitting")
+        _validate_recovery_state(state, target, reference, action)
         require(action == "init" or state.get("instance_id") or target.get("instance_id"), "update/rollback needs an existing instance")
-        require(not (action == "init" and state.get("status") in ("success", "failed")), "init already attempted; inspect instance and recovery SOP")
+        require(not (action == "init" and state.get("status") == "success"), "init already succeeded; use update or inspect the host")
+        if action == "init" and state.get("status") == "failed":
+            require(state.get("instance_id"), "failed init recovery requires a persisted ECS instance; do not create another instance")
         instance_id = state.get("instance_id") or target.get("instance_id")
-        state = {"target_sha256": fingerprint, "client_token": str(uuid.uuid4()), "operation_id": str(uuid.uuid4()), "action": action, "status": "preparing", "instance_id": instance_id}
+        attempts = list(state.get("attempts", []))
+        if state.get("status") == "failed":
+            attempts.append(_attempt_snapshot(state))
+        state = {
+            "target_sha256": fingerprint,
+            "client_token": state.get("client_token") or str(uuid.uuid4()),
+            "operation_id": str(uuid.uuid4()),
+            "action": action,
+            "status": "preparing",
+            "instance_id": instance_id,
+            "attempts": attempts,
+        }
+        if action == "init":
+            state["config_sha256"] = target["config_sha256"]
         request = dict(project=target["project"], ram_role=target["ram_role"], action=action, operation_id=state["operation_id"], release=reference, confirm_schema_compatible=confirm)
         if target.get("release_oss_endpoint"):
             request["release"] = {**reference, "oss": {**reference["oss"], "endpoint": target["release_oss_endpoint"]}}

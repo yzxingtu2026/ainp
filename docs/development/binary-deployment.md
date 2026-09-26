@@ -177,11 +177,12 @@ python3 scripts/deployment/cloud.py status --target deploy/linux/target.local.js
 ## 7. 故障与恢复
 
 1. **控制台请求超时**：看本地账本，拿 InvokeId 到云助手查看；`status` 只轮询。`creating`/`dispatching` 无返回 ID 时必须根据 ECS/ActionTrail 审计与项目标签人工核对；确认准确 InstanceId/InvokeId 后才允许修复账本。禁止直接删除账本重试。
-2. **迁移失败**：查 `/opt/<project>/deployment.json`、root-only `/var/log/ainp-deployment-errors.log`、对应服务 journal，评估迁移事务及备份。可兼容则显式回滚；不可兼容则制作前向修复包或按专项恢复方案恢复数据库。不要自动 drop 数据库。
-3. **首次 setup 失败**：可能已有部分表/管理员/state，先审计，不能自动再建租户/覆盖 state。确定是一次性测试库才人工重建并重新 provision；已有数据必须走专项恢复。
-4. **备份验证**：定期在隔离 PG17 上运行 `pg_restore --list` 和完整恢复演练。脚本只验证 dump 命令/非空/OSS 上传，不能替代恢复测试。
-5. **整机故障**：应用包可重建，不等于完整灾备。`state`、附件目录及本机 PG/Redis 数据盘另用 ECS 快照/应用备份；远端数据库使用其备份/PITR。不要只备份二进制或 PG 而忽略附件。
-6. **磁盘/日志**：发布包保留不自动删；定期审计容量，保留当前及回滚候选，维护备份与日志生命周期。应用有日志轮转，部署失败诊断日志含潜在敏感信息，root-only，管理员另设 logrotate/保留策略。
+2. **首次 init 的 apt/dpkg 锁失败**：bootstrap 对 apt/dpkg 锁失败最多等待 600 秒，只重试锁错误；超时返回 `AINP_APT_LOCK_TIMEOUT`，不删除 lock 文件、不终止 `unattended-upgrades`。如果本地账本为 `status=failed` 且已经保存 `instance_id`/`invoke_id`，确认系统更新已结束后，用**同一 target、同一 release reference（包括 release SHA256）**再次执行原 `init --apply`。控制器会先校验本地 target SHA256、发布包身份、配置 SHA256，然后重新 Describe ECS，强制校验项目/环境标签和 `PostPaid`，只在原实例上重新派发 Cloud Assistant，不会再次 `RunInstances`；历史尝试保存在 `attempts` 中。若账本为 `creating`/`dispatching` 或缺少实例/调用 ID，先查 ECS/ActionTrail，禁止删除 `.deploy-state` 或盲目重试。
+3. **迁移失败**：查 `/opt/<project>/deployment.json`、root-only `/var/log/ainp-deployment-errors.log`、对应服务 journal，评估迁移事务及备份。可兼容则显式回滚；不可兼容则制作前向修复包或按专项恢复方案恢复数据库。不要自动 drop 数据库。
+4. **首次 setup 失败**：可能已有部分表/管理员/state，先审计，不能自动再建租户/覆盖 state。确定是一次性测试库才人工重建并重新 provision；已有数据必须走专项恢复。
+5. **备份验证**：定期在隔离 PG17 上运行 `pg_restore --list` 和完整恢复演练。脚本只验证 dump 命令/非空/OSS 上传，不能替代恢复测试。
+6. **整机故障**：应用包可重建，不等于完整灾备。`state`、附件目录及本机 PG/Redis 数据盘另用 ECS 快照/应用备份；远端数据库使用其备份/PITR。不要只备份二进制或 PG 而忽略附件。
+7. **磁盘/日志**：发布包保留不自动删；定期审计容量，保留当前及回滚候选，维护备份与日志生命周期。应用有日志轮转，部署失败诊断日志含潜在敏感信息，root-only，管理员另设 logrotate/保留策略。
 
 ## 8. HTTPS 与证书生命周期
 
