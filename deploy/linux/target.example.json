@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "project": "ainp",
+  "environment": "production",
+  "region": "cn-hangzhou",
+  "profile": "company-deploy",
+  "release_oss_endpoint": "https://oss-cn-hangzhou-internal.aliyuncs.com",
+  "ram_role": "ainp-production-runtime",
+  "launch_template": {"id": "lt-replace", "version": 1},
+  "config_oss": {"endpoint": "https://oss-cn-hangzhou-internal.aliyuncs.com", "bucket": "replace-private-config"},
+  "config_key": "ainp/production/config-v1.json",
+  "config_sha256": "REPLACE_WITH_CONFIG_SHA256"
+}

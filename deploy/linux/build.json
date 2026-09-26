@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "project": "ainp",
+  "go_dir": "platform",
+  "frontend_dir": "frontend",
+  "commands": {"api": "./cmd/ainp", "worker": "./cmd/ainp-worker", "migrate": "./cmd/ainp-migrate"},
+  "buildinfo_package": "github.com/yzxingtu2026/ainp/platform/framework/buildinfo",
+  "cjk_test_package": "./tests"
+}

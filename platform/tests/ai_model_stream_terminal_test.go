@@ -185,9 +185,9 @@ func TestModelStreamTerminalPersistsInvocationPostgres(t *testing.T) {
 		wantCategory aimodelruntime.ErrorCategory
 		wantFirst    bool
 	}{
-		{name: "timeout before first token", steps: []runtimeStreamStep{{waitContext: true}}, timeout: 20 * time.Millisecond, wantStatus: "failed", wantFinish: aimodelruntime.FinishCancelled, wantCategory: aimodelruntime.ErrorTimeout},
-		{name: "timeout after text delta", steps: []runtimeStreamStep{{event: startedEvent(1)}, {event: textStartEvent(2)}, {event: textDeltaEvent(3, "partial")}, {waitContext: true}}, timeout: 20 * time.Millisecond, wantStatus: "failed", wantFinish: aimodelruntime.FinishCancelled, wantCategory: aimodelruntime.ErrorTimeout, wantFirst: true},
-		{name: "timeout during tool arguments", steps: []runtimeStreamStep{{event: startedEvent(1)}, {event: toolStartEvent(2)}, {event: aimodelruntime.StreamEvent{Type: aimodelruntime.EventToolArgumentsDelta, Sequence: 3, ItemID: "tool-1", Delta: `{"id":`}}, {waitContext: true}}, timeout: 20 * time.Millisecond, wantStatus: "failed", wantFinish: aimodelruntime.FinishCancelled, wantCategory: aimodelruntime.ErrorTimeout, wantFirst: true},
+		{name: "timeout before first token", steps: []runtimeStreamStep{{waitContext: true}}, timeout: time.Second, wantStatus: "failed", wantFinish: aimodelruntime.FinishCancelled, wantCategory: aimodelruntime.ErrorTimeout},
+		{name: "timeout after text delta", steps: []runtimeStreamStep{{event: startedEvent(1)}, {event: textStartEvent(2)}, {event: textDeltaEvent(3, "partial")}, {waitContext: true}}, timeout: time.Second, wantStatus: "failed", wantFinish: aimodelruntime.FinishCancelled, wantCategory: aimodelruntime.ErrorTimeout, wantFirst: true},
+		{name: "timeout during tool arguments", steps: []runtimeStreamStep{{event: startedEvent(1)}, {event: toolStartEvent(2)}, {event: aimodelruntime.StreamEvent{Type: aimodelruntime.EventToolArgumentsDelta, Sequence: 3, ItemID: "tool-1", Delta: `{"id":`}}, {waitContext: true}}, timeout: time.Second, wantStatus: "failed", wantFinish: aimodelruntime.FinishCancelled, wantCategory: aimodelruntime.ErrorTimeout, wantFirst: true},
 		{name: "categorized provider error", steps: []runtimeStreamStep{{event: startedEvent(1)}, {err: &aimodelruntime.RuntimeError{Category: aimodelruntime.ErrorProviderUnavailable, Message: "fixture provider unavailable"}}}, wantStatus: "failed", wantFinish: aimodelruntime.FinishError, wantCategory: aimodelruntime.ErrorProviderUnavailable},
 		{name: "user cancellation", steps: []runtimeStreamStep{{waitContext: true}}, cancel: true, wantStatus: "cancelled", wantFinish: aimodelruntime.FinishCancelled, wantCategory: aimodelruntime.ErrorCancelled},
 		{name: "missing terminal EOF", steps: []runtimeStreamStep{{event: startedEvent(1)}}, wantStatus: "failed", wantFinish: aimodelruntime.FinishError, wantCategory: aimodelruntime.ErrorStreamProtocol},
@@ -204,18 +204,19 @@ func TestModelStreamTerminalPersistsInvocationPostgres(t *testing.T) {
 			}
 			service := ai.NewInvocationService(db, streamFixtureResolver{}, registry, nil)
 			baseCtx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, TenantID: "tenant-a", PrincipalID: "user-a", SessionID: "session-a", Realm: auth.RealmTenant})
-			var ctx context.Context
-			var cancel context.CancelFunc
-			if tt.timeout > 0 {
-				ctx, cancel = context.WithTimeout(baseCtx, tt.timeout)
-			} else {
-				ctx, cancel = context.WithCancel(baseCtx)
-			}
+			ctx, cancel := context.WithCancel(baseCtx)
 			defer cancel()
+			// The runtime starts TimeoutMS after persisting the running invocation.
+			// A short parent deadline also times out database preparation under CI
+			// load, before the stream behavior this test exercises can begin.
+			timeoutMS := int64(10000)
+			if tt.timeout > 0 {
+				timeoutMS = tt.timeout.Milliseconds()
+			}
 			value, streamErr := service.Stream(ctx, aimodelruntime.GenerateRequest{
 				ModelAlias: "fixture-chat",
 				Messages:   []aimodelruntime.Message{{Role: aimodelruntime.RoleUser, Content: []aimodelruntime.ContentPart{{Type: aimodelruntime.PartInputText, Text: "hello"}}}},
-				TimeoutMS:  1000,
+				TimeoutMS:  timeoutMS,
 				Metadata:   map[string]string{"agent_run_id": "run-terminal"},
 			})
 			if streamErr != nil {

@@ -1,3 +1,5 @@
+> **存量兼容文档：** 新项目默认采用 [二进制 + OSS + ECS SOP](../development/binary-deployment.md)。应用镜像发布/自动演示部署工作流已退出主路径；本文保留已有 Compose 运维参考。
+
 # 容器部署基线
 
 AINP 正式版本只使用 Git Tag 对应的两个 GHCR 镜像：`ainp-backend` 同时提供 API 与 Worker 二进制，`ainp-web` 提供静态页面和同源反向代理。部署不得引用 `latest`。

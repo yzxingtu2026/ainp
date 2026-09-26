@@ -1,0 +1,110 @@
+name: Release Binaries to OSS
+on:
+  push:
+    tags: ["v*.*.*"]
+permissions:
+  contents: read
+concurrency:
+  group: release-binaries-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    permissions:
+      checks: read
+      contents: read
+    outputs:
+      published: ${{ steps.validate.outputs.published }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: validate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import json, os, subprocess
+          from scripts.release import validate_version, successful_checks, REQUIRED_CHECKS
+          tag = validate_version(os.environ["GITHUB_REF_NAME"])
+          sha = os.environ["GITHUB_SHA"]
+          assert subprocess.check_output(["git", "rev-list", "-n", "1", "platform/" + tag], text=True).strip() == sha
+          payload = json.loads(subprocess.check_output(["gh", "api", f"repos/{os.environ['GITHUB_REPOSITORY']}/commits/{sha}/check-runs?per_page=100"]))
+          assert REQUIRED_CHECKS <= successful_checks(payload), "required CI checks did not pass"
+          PY
+          published=false
+          if state="$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft 2>/dev/null)" && [ "$state" = false ]; then published=true; fi
+          echo "published=$published" >> "$GITHUB_OUTPUT"
+  build:
+    needs: validate
+    if: needs.validate.outputs.published != 'true'
+    uses: ./.github/workflows/native-build.yml
+    with:
+      version: ${{ github.ref_name }}
+  publish:
+    needs: [validate, build]
+    if: needs.validate.outputs.published != 'true'
+    runs-on: ubuntu-22.04
+    environment: release
+    permissions:
+      contents: write
+      pull-requests: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-release
+          path: dist-release
+      - name: Validate release configuration
+        env:
+          OSS_BUCKET: ${{ vars.OSS_BUCKET }}
+          OSS_ENDPOINT: ${{ vars.OSS_ENDPOINT }}
+          OSS_PREFIX: ${{ vars.OSS_PREFIX }}
+          ROLE: ${{ vars.ALIBABA_CLOUD_RELEASE_ROLE_ARN }}
+          PROVIDER: ${{ vars.ALIBABA_CLOUD_OIDC_PROVIDER_ARN }}
+        run: test -n "$OSS_BUCKET" && test -n "$OSS_ENDPOINT" && test -n "$OSS_PREFIX" && test -n "$ROLE" && test -n "$PROVIDER"
+      - uses: aliyun/configure-aliyun-credentials-action@1e5248c8d5d93a8781ac344a68e19a43341e79e6
+        id: credentials
+        with:
+          oidc-provider-arn: ${{ vars.ALIBABA_CLOUD_OIDC_PROVIDER_ARN }}
+          role-to-assume: ${{ vars.ALIBABA_CLOUD_RELEASE_ROLE_ARN }}
+          audience: sts.aliyuncs.com
+      - name: Publish immutable private OSS release
+        env:
+          ALIBABA_CLOUD_ACCESS_KEY_ID: ${{ steps.credentials.outputs.aliyun-access-key-id }}
+          ALIBABA_CLOUD_ACCESS_KEY_SECRET: ${{ steps.credentials.outputs.aliyun-access-key-secret }}
+          ALIBABA_CLOUD_SECURITY_TOKEN: ${{ steps.credentials.outputs.aliyun-security-token }}
+          OSS_BUCKET: ${{ vars.OSS_BUCKET }}
+          OSS_ENDPOINT: ${{ vars.OSS_ENDPOINT }}
+          OSS_PREFIX: ${{ vars.OSS_PREFIX }}
+        run: |
+          python3 -m pip install oss2==2.19.1
+          python3 scripts/deployment/publish.py
+      - name: Generate factual Chinese release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_NOTES_API_KEY: ${{ secrets.RELEASE_NOTES_API_KEY }}
+          RELEASE_NOTES_BASE_URL: ${{ vars.RELEASE_NOTES_BASE_URL }}
+          RELEASE_NOTES_MODEL: ${{ vars.RELEASE_NOTES_MODEL }}
+        run: |
+          build_time="$(python3 -c 'import json; print(json.load(open("dist-release/reference.json"))["build_time"])')"
+          python3 scripts/generate_release_notes.py --repository "$GITHUB_REPOSITORY" \
+            --tag "$GITHUB_REF_NAME" --commit "$GITHUB_SHA" --build-time "$build_time" \
+            --artifact-reference dist-release/reference.json \
+            --output release-notes.md --summary-output release-notes-summary.txt
+          cat release-notes-summary.txt >> "$GITHUB_STEP_SUMMARY"
+      - name: Publish release metadata (never deploy production)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if state="$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft 2>/dev/null)"; then
+            test "$state" = true
+            gh release edit "$GITHUB_REF_NAME" --draft --notes-file release-notes.md
+          else
+            gh release create "$GITHUB_REF_NAME" --verify-tag --draft --title "$GITHUB_REF_NAME" --notes-file release-notes.md
+          fi
+          gh release upload "$GITHUB_REF_NAME" dist-release/reference.json dist-release/release.json dist-release/SHA256SUMS --clobber
+          gh release edit "$GITHUB_REF_NAME" --draft=false --latest=false

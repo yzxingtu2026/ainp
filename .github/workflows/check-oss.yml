@@ -1,0 +1,57 @@
+name: Check OSS Release Access
+on:
+  workflow_dispatch:
+    inputs:
+      project:
+        description: Project name matching the RAM-authorized OSS prefix
+        default: ainp
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: check-oss-release
+  cancel-in-progress: false
+jobs:
+  check:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate configuration
+        env:
+          OSS_BUCKET: ${{ vars.OSS_BUCKET }}
+          OSS_ENDPOINT: ${{ vars.OSS_ENDPOINT }}
+          OSS_PREFIX: ${{ vars.OSS_PREFIX }}
+          ROLE: ${{ vars.ALIBABA_CLOUD_RELEASE_ROLE_ARN }}
+          PROVIDER: ${{ vars.ALIBABA_CLOUD_OIDC_PROVIDER_ARN }}
+        run: |
+          for variable in OSS_BUCKET OSS_ENDPOINT OSS_PREFIX ROLE PROVIDER; do
+            if [ -z "${!variable}" ]; then
+              echo "::error::Missing release environment variable: $variable"
+              exit 1
+            fi
+          done
+      - uses: aliyun/configure-aliyun-credentials-action@1e5248c8d5d93a8781ac344a68e19a43341e79e6
+        id: credentials
+        with:
+          oidc-provider-arn: ${{ vars.ALIBABA_CLOUD_OIDC_PROVIDER_ARN }}
+          role-to-assume: ${{ vars.ALIBABA_CLOUD_RELEASE_ROLE_ARN }}
+          audience: sts.aliyuncs.com
+      - name: Test private OSS release access
+        env:
+          ALIBABA_CLOUD_ACCESS_KEY_ID: ${{ steps.credentials.outputs.aliyun-access-key-id }}
+          ALIBABA_CLOUD_ACCESS_KEY_SECRET: ${{ steps.credentials.outputs.aliyun-access-key-secret }}
+          ALIBABA_CLOUD_SECURITY_TOKEN: ${{ steps.credentials.outputs.aliyun-security-token }}
+          OSS_BUCKET: ${{ vars.OSS_BUCKET }}
+          OSS_ENDPOINT: ${{ vars.OSS_ENDPOINT }}
+          OSS_PREFIX: ${{ vars.OSS_PREFIX }}
+          PROJECT: ${{ inputs.project }}
+        run: |
+          python3 -m pip install oss2==2.19.1
+          python3 scripts/deployment/check_oss.py --project "$PROJECT" --apply
+          echo 'OSS preflight passed. No release or ECS deployment created.' >> "$GITHUB_STEP_SUMMARY"
