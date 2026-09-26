@@ -30,6 +30,36 @@ package = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(package)
 
 
+class WebBuildTest(unittest.TestCase):
+    def test_release_build_overrides_inherited_api_origin_and_keeps_identity(self):
+        identity = dict(version="v1.2.3", commit="a" * 40, build_time="2026-09-26T00:00:00Z")
+        inherited = dict(PATH="/tools", VITE_SERVICE_BASE_URL="http://127.0.0.1:8080",
+                         VITE_OTHER_SERVICE_BASE_URL='{"demo":"https://wrong.example"}',
+                         VITE_BUILD_COMMIT="stale")
+        original = inherited.copy()
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            web_dir = root / "frontend"
+            (web_dir / "dist").mkdir(parents=True)
+            (web_dir / "dist/index.html").write_text("built web")
+            with mock.patch.object(package, "run") as run:
+                package.build_web(web_dir, root / "stage", inherited, identity)
+            self.assertEqual([call.args[0] for call in run.call_args_list],
+                             [["pnpm", "install", "--frozen-lockfile"], ["pnpm", "build"]])
+            for call in run.call_args_list:
+                self.assertEqual(call.args[1], web_dir)
+                env = call.args[2]
+                self.assertEqual(env["VITE_SERVICE_BASE_URL"], "/")
+                self.assertEqual(json.loads(env["VITE_OTHER_SERVICE_BASE_URL"]), {"demo": "/"})
+                for key, variable in (("version", "VITE_BUILD_VERSION"), ("commit", "VITE_BUILD_COMMIT"),
+                                      ("build_time", "VITE_BUILD_TIME")):
+                    self.assertEqual(env[variable], identity[key])
+                self.assertEqual(env["PATH"], "/tools")
+            self.assertEqual(json.loads((root / "stage/web/build.json").read_text()), identity)
+            self.assertEqual((root / "stage/web/index.html").read_text(), "built web")
+        self.assertEqual(inherited, original)
+
+
 class ArchiveTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

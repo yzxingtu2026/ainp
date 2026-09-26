@@ -61,6 +61,12 @@ gh workflow run check-oss.yml --ref main -f project=ainp
 
 Actions → **Test Native Release** → **Run workflow**，分支选择 `main`，版本保持默认 `v0.0.0-ci`。测试发包通过后才进入测试 ECS；通过不等于真实 ECS、数据库、Worker、Nginx/SSL 验收。
 
+### Web API 地址与构建约束
+
+生产 Web 使用当前页面同源地址：`VITE_SERVICE_BASE_URL=/`、`VITE_OTHER_SERVICE_BASE_URL={"demo":"/"}`，由 Nginx 转发 API、附件、OAuth 和 SSE 请求。`frontend/.env.prod` 默认同源；原生 `package.py` 打包时还会显式覆盖构建机同名环境变量，与存量 Docker 构建保持一致。本地 `pnpm dev` 继续使用 `.env.test` 的 loopback 后端和开发代理。
+
+这些 Vite 变量会编译进静态 JS；修改 ECS 环境变量、target/private 配置或重启服务不会改变已发布 Web 的请求地址。若旧包误编入 `127.0.0.1:8080`，必须从修复后的提交重新构建完整包，以新的 commit/reference 执行现有 ECS 的 `update`，不要重新 `init`，也不要覆盖原有不可变 OSS 包或单独替换 Web 破坏版本与校验和一致性。测试环境可继续使用 `v0.0.0-ci`（新 commit 路径），无需创建正式版本 Tag。
+
 ### 2.4 ECS 启动模板
 
 使用**数字版本**，禁止 `Latest`/`Default`。模板应固定并评审：

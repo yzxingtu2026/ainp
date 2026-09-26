@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict';
-import { readdirSync, readFileSync } from 'node:fs';
+import { copyFileSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import test from 'node:test';
 import { extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildServiceURL } from './service';
+import axios from 'axios';
+import { loadEnv } from 'vite';
+import { buildServiceURL, getServiceBaseURL } from './service';
 
 const subscribePath = '/api/v1/ai/agent-runs/subscribe';
 
@@ -48,4 +51,42 @@ test('native fetch calls do not interpolate a service base URL with an API path'
   const violations = sourceFiles.filter(file => unsafeInterpolation.test(readFileSync(file, 'utf8')));
 
   assert.deepEqual(violations, []);
+});
+
+test('production config keeps Axios and native requests same-origin while development keeps its proxy', () => {
+  const envDir = mkdtempSync(join(tmpdir(), 'ainp-service-env-'));
+  const keys = ['VITE_SERVICE_BASE_URL', 'VITE_OTHER_SERVICE_BASE_URL'] as const;
+  const inherited = keys.map(key => process.env[key]);
+
+  try {
+    // Test the committed defaults, independent of developer .env.local / shell overrides.
+    for (const filename of ['.env', '.env.prod', '.env.test']) {
+      copyFileSync(fileURLToPath(new URL(`../../${filename}`, import.meta.url)), join(envDir, filename));
+    }
+    for (const key of keys) delete process.env[key];
+
+    const prod = loadEnv('prod', envDir) as Env.ImportMeta;
+    const { baseURL, otherBaseURL } = getServiceBaseURL(prod, false);
+    assert.equal(baseURL, '/');
+    assert.equal(otherBaseURL.demo, '/');
+    const origin = 'https://deployed.example.com';
+    const loginPath = '/api/v1/system/auth/login';
+    const loginURL = axios.getUri({ baseURL, url: loginPath });
+    assert.equal(new URL(loginURL, origin).href, `${origin}${loginPath}`);
+    for (const path of [subscribePath, '/api/v1/attachments/transfer', '/api/v1/mcp/oauth/authorize']) {
+      assert.equal(new URL(buildServiceURL(baseURL, path), origin).href, `${origin}${path}`);
+    }
+    const dev = loadEnv('test', envDir) as Env.ImportMeta;
+    assert.equal(getServiceBaseURL(dev, false).baseURL, 'http://127.0.0.1:8080');
+    assert.deepEqual(getServiceBaseURL(dev, true), {
+      baseURL: '/proxy-default',
+      otherBaseURL: { demo: '/proxy-demo' }
+    });
+  } finally {
+    keys.forEach((key, index) => {
+      if (inherited[index] === undefined) delete process.env[key];
+      else process.env[key] = inherited[index];
+    });
+    rmSync(envDir, { recursive: true, force: true });
+  }
 });

@@ -6,6 +6,7 @@
 - 首次云发布前运行手动 OSS 预检（专用 `_checks/` 对象）；上传成功不等于覆盖保护成立，版本控制不能替代禁止覆盖。
 - 测试发包仅从 `main` 手动运行固定 `v0.0.0-ci`，必须本地包校验与 OSS 四对象读回；`-ci` 包禁止进入 ECS 生产部署。
 - 发布包不可变，验证项目/版本/commit/平台/SHA256，安全解包；私有配置/证书/附件/state 不入包。
+- 发布 Web 必须使用同源 API（`VITE_SERVICE_BASE_URL=/`，其他服务同源）；原生打包显式覆盖构建机环境，禁止把本地 loopback 地址编译进发布包。
 - 专用非 root systemd 进程，API loopback；精确 Nginx OAuth/MCP/SSE 路由，应用更新不能覆盖 TLS 资产。
 - 首装必须使用 Host setup 初始化与 baseline，重启并确认 installed；仅 healthz 成功不足以判断安装完成。
 - 更新/回滚有维护窗口：停应用、持久化 DB 备份、forward-only 迁移、切包、版本及进程校验。失败关闭流量，不自动数据库降级。
