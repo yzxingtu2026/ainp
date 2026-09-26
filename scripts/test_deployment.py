@@ -20,6 +20,7 @@ import host
 import launcher
 import storage
 import check_oss
+import verify_release
 spec = importlib.util.spec_from_file_location("native_package", DEPLOY / "package.py")
 package = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(package)
@@ -445,6 +446,41 @@ class StorageTest(unittest.TestCase):
         with mock.patch.object(storage.urllib.request, "build_opener", return_value=opener), self.assertRaises(OSError):
             storage.metadata_credentials("runtime-role")
         self.assertEqual(opener.open.call_count, 1)
+
+
+class ReleaseVerificationTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.directory = Path(self.tmp.name) / "dist-release"
+        self.directory.mkdir()
+        stage = Path(self.tmp.name) / "stage"
+        stage.mkdir()
+        for filename in ("bin/api", "bin/worker", "bin/migrate", "web/index.html", "web/build.json"):
+            path = stage / filename
+            path.parent.mkdir(exist_ok=True)
+            path.write_text("fixture")
+        identity = dict(schema=1, project="ainp", version="v0.0.0-ci", commit="a" * 40, build_time="2026-09-26T00:00:00Z", platform="ubuntu-22.04-amd64")
+        archive = self.directory / "release.tar.gz"
+        manifest = package.pack(stage, archive, identity, 1)
+        common.atomic_json(self.directory / "release.json", manifest, 0o644)
+        common.atomic_json(self.directory / "reference.json", {**identity, "sha256": common.sha256(archive)}, 0o644)
+        (self.directory / "SHA256SUMS").write_text(f"{common.sha256(archive)}  release.tar.gz\n")
+        self.identity = identity
+
+    def test_verifies_ci_package_and_safe_extraction(self):
+        reference = verify_release.verify_local(self.directory, "v0.0.0-ci", self.identity["commit"])
+        self.assertEqual(reference["project"], "ainp")
+
+    def test_rejects_unexpected_commit(self):
+        with self.assertRaisesRegex(common.DeployError, "commit"):
+            verify_release.verify_local(self.directory, "v0.0.0-ci", "b" * 40)
+
+    def test_rejects_archive_checksum_mismatch(self):
+        archive = self.directory / "release.tar.gz"
+        archive.write_bytes(archive.read_bytes() + b"tampered")
+        with self.assertRaisesRegex(common.DeployError, "checksum"):
+            verify_release.verify_local(self.directory)
 
 
 class OSSPreflightTest(unittest.TestCase):

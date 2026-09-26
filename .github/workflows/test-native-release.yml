@@ -1,0 +1,94 @@
+name: Test Native Release
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Immutable CI version; keep the -ci suffix so production deployment rejects it
+        default: v0.0.0-ci
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: test-native-release-${{ github.ref }}-${{ inputs.version }}
+  cancel-in-progress: false
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Restrict test release to main and CI versions
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          test "$REF_NAME" = main
+          test "$REF_TYPE" = branch
+          test "$VERSION" = v0.0.0-ci
+  build:
+    needs: guard
+    uses: ./.github/workflows/native-build.yml
+    with:
+      version: ${{ inputs.version }}
+      artifact-name: test-native-release
+  publish:
+    needs: build
+    runs-on: ubuntu-22.04
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: test-native-release
+          path: dist-release
+      - name: Validate release configuration
+        env:
+          OSS_BUCKET: ${{ vars.OSS_BUCKET }}
+          OSS_ENDPOINT: ${{ vars.OSS_ENDPOINT }}
+          OSS_PREFIX: ${{ vars.OSS_PREFIX }}
+          ROLE: ${{ vars.ALIBABA_CLOUD_RELEASE_ROLE_ARN }}
+          PROVIDER: ${{ vars.ALIBABA_CLOUD_OIDC_PROVIDER_ARN }}
+        run: |
+          for variable in OSS_BUCKET OSS_ENDPOINT OSS_PREFIX ROLE PROVIDER; do
+            if [ -z "${!variable}" ]; then
+              echo "::error::Missing release environment variable: $variable"
+              exit 1
+            fi
+          done
+      - name: Verify package before upload
+        env:
+          VERSION: ${{ inputs.version }}
+        run: python3 scripts/deployment/verify_release.py --expected-version "$VERSION" --expected-commit "$GITHUB_SHA"
+      - uses: aliyun/configure-aliyun-credentials-action@1e5248c8d5d93a8781ac344a68e19a43341e79e6
+        id: credentials
+        with:
+          oidc-provider-arn: ${{ vars.ALIBABA_CLOUD_OIDC_PROVIDER_ARN }}
+          role-to-assume: ${{ vars.ALIBABA_CLOUD_RELEASE_ROLE_ARN }}
+          audience: sts.aliyuncs.com
+      - name: Publish immutable CI release to private OSS
+        env:
+          ALIBABA_CLOUD_ACCESS_KEY_ID: ${{ steps.credentials.outputs.aliyun-access-key-id }}
+          ALIBABA_CLOUD_ACCESS_KEY_SECRET: ${{ steps.credentials.outputs.aliyun-access-key-secret }}
+          ALIBABA_CLOUD_SECURITY_TOKEN: ${{ steps.credentials.outputs.aliyun-security-token }}
+          OSS_BUCKET: ${{ vars.OSS_BUCKET }}
+          OSS_ENDPOINT: ${{ vars.OSS_ENDPOINT }}
+          OSS_PREFIX: ${{ vars.OSS_PREFIX }}
+        run: |
+          python3 -m pip install oss2==2.19.1
+          python3 scripts/deployment/publish.py
+      - name: Verify uploaded CI release
+        env:
+          ALIBABA_CLOUD_ACCESS_KEY_ID: ${{ steps.credentials.outputs.aliyun-access-key-id }}
+          ALIBABA_CLOUD_ACCESS_KEY_SECRET: ${{ steps.credentials.outputs.aliyun-access-key-secret }}
+          ALIBABA_CLOUD_SECURITY_TOKEN: ${{ steps.credentials.outputs.aliyun-security-token }}
+          OSS_BUCKET: ${{ vars.OSS_BUCKET }}
+          OSS_ENDPOINT: ${{ vars.OSS_ENDPOINT }}
+          OSS_PREFIX: ${{ vars.OSS_PREFIX }}
+        run: |
+          python3 scripts/deployment/verify_release.py --expected-version '${{ inputs.version }}' --expected-commit "$GITHUB_SHA" --remote
+          echo 'Test release verified in private OSS. No GitHub Release or ECS deployment created.' >> "$GITHUB_STEP_SUMMARY"

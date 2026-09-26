@@ -53,7 +53,15 @@ gh workflow run check-oss.yml --ref main -f project=ainp
 
 连接通过仅证明发布身份和 OSS 路径可用。应用构建、真实测试 ECS、数据库和 Worker、更新回滚仍需独立验收；本入口不会创建 ECS、发布正式 Tag 或放宽生产对 `-ci` 包的限制。
 
-### 2.3 ECS 启动模板
+### 2.3 测试原生发包
+
+合入默认分支后，使用 `Test Native Release` 手动验证完整的“Linux 构建 → 私有 OSS”链路。工作流只允许从 `main` 运行，版本固定为 `v0.0.0-ci`，先验证本地包的 manifest、归档、SHA256 和安全解包，再通过同一 OIDC 角色上传并逐对象读回验证四个文件。它不会创建 GitHub Release、ECS 或生产变更。
+
+测试对象路径为 `releases/ainp/v0.0.0-ci/<commit>/`。重复运行同一提交必须命中不可变对象的同内容重试；不同内容或覆盖保护失败必须失败。`cloud.py` 明确拒绝所有 `-ci` 包，因此测试包不能进入生产初始化、更新或回滚。
+
+Actions → **Test Native Release** → **Run workflow**，分支选择 `main`，版本保持默认 `v0.0.0-ci`。测试发包通过后才进入测试 ECS；通过不等于真实 ECS、数据库、Worker、Nginx/SSL 验收。
+
+### 2.4 ECS 启动模板
 
 使用**数字版本**，禁止 `Latest`/`Default`。模板应固定并评审：
 
@@ -84,6 +92,7 @@ GitHub environment **release** 配置变量：
 - `.github/workflows/native-build.yml`：可复用构建（不持有云权限）。Go/Node/pnpm、固定 MuPDF，CJK 测试、CLI 启动 smoke、动态库检查、前端构建、SHA256 清单。
 - `.github/workflows/ci.yml`：保留 backend/frontend/windows/repository gates，替换 `containers` 为 **`linux-release`** 聚合门禁。合入时管理员须同步分支保护的 required checks，不能仅删除旧 job 而不更新规则。
 - `.github/workflows/release-binaries.yml`：要求同提交 CI 成功，根 Tag 与 `platform/` Tag 同提交；私有 OSS 发布成功后发布 GitHub Release。已发布 Release 重跑跳过，不重新生成或覆盖包。
+- `.github/workflows/test-native-release.yml`：仅允许 `main` 手动运行固定 `v0.0.0-ci`，验证完整包上传和 OSS 读回；不创建 Release/ECS，`-ci` 包不能用于生产部署。
 - 不再有 GHCR 推送/SSH 自动演示部署。旧 Docker/Compose 文件仅为存量兼容，不属于新发布主路径。
 - 发布入口仍为仓库根目录 `python3 scripts/release.py vX.Y.Z`；需干净、同步 main。
 
@@ -199,7 +208,8 @@ python3 scripts/deployment/cloud.py status --target deploy/linux/target.local.js
 ## 10. 验收清单（交付前逐项记录结果）
 
 - [x] Ubuntu 原生 MuPDF/CJK 三项测试、三个可执行程序加载、Web 构建与产物清单（实现基线 CI run `35998721922` 通过；后续提交继续以各自 CI 为准）。
-- [ ] OIDC 最小权限上传私有 OSS、重复发布相同内容成功/不同内容拒绝、无生产自动部署。
+- [x] OIDC 最小权限上传私有 OSS、重复发布相同内容成功/不同内容拒绝、无生产自动部署（OSS preflight run 36222217392）。
+- [ ] Test Native Release 完整 Linux 包上传、逐对象读回和重复运行验收。
 - [ ] 固定模板新建一台 ECS，云助手在线、安全组正确、初始化后无公开 setup。
 - [ ] external PG 与 loopback local-container PG 分别安装并验证；失败预检无业务变更。
 - [ ] 通用 Worker 与 AI Worker 各完成真实任务；OAuth、MCP、SSE、附件正常。
