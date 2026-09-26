@@ -17,6 +17,7 @@ import uuid
 
 from common import DeployError, atomic_json, extract_verified, key, lock, name, oss_config, read_json, require, sha256, version
 from storage import bucket, download, upload_immutable
+from reporting import stage
 
 ENV_KEYS = {"DATABASE_DSN", "JWT_SECRET", "CREDENTIAL_ENCRYPTION_KEY", "REDIS_ADDR", "REDIS_PASSWORD", "REDIS_USERNAME", "MCP_BASE_URL", "MCP_WEB_BASE_URL"}
 
@@ -173,7 +174,7 @@ def db_preflight(c, fresh):
     if c["database_mode"] == "local-container":
         require(params.get("host") in ("127.0.0.1", "localhost", "::1"), "host process must use loopback-published PG container port")
     else:
-        require(params.get("sslmode") == "verify-full" and params.get("sslrootcert"), "external PG requires verify-full and CA file")
+        require(params.get("sslmode") == "disable" or (params.get("sslmode") == "verify-full" and params.get("sslrootcert")), "external PG requires explicit disable for private networking or verify-full with CA file")
     with psycopg.connect(c["env"]["DATABASE_DSN"], connect_timeout=10) as conn:
         require(conn.info.server_version >= 170000 and conn.info.server_version < 180000, "baseline requires PG17 (including matching pg_dump17)")
         require(conn.execute("select 1 from pg_available_extensions where name='vector'").fetchone(), "pgvector must be available on server")
@@ -260,7 +261,8 @@ def perform(r, root, home):
     etc.chmod(0o750)
     if fresh:
         require(not cfgpath.exists(), "private configuration already exists; inspect incomplete bootstrap")
-        download(r["config_oss"], r["config_key"], cfgpath, r["config_sha256"], role)
+        with stage("private-config-download"):
+            download(r["config_oss"], r["config_key"], cfgpath, r["config_sha256"], role)
         cfgpath.chmod(0o600)
     c = validate_config(read_json(cfgpath), project)
     manifest_ref = r["release"]
@@ -272,8 +274,10 @@ def perform(r, root, home):
     with tempfile.TemporaryDirectory(prefix="stage-", dir=root) as temp:
         temp = Path(temp)
         archive = temp / "release.tar.gz"
-        download(manifest_ref["oss"], manifest_ref["key"], archive, manifest_ref["sha256"], role)
-        manifest = extract_verified(archive, temp / "payload", manifest_ref["sha256"])
+        with stage("release-download"):
+            download(manifest_ref["oss"], manifest_ref["key"], archive, manifest_ref["sha256"], role)
+        with stage("release-verify"):
+            manifest = extract_verified(archive, temp / "payload", manifest_ref["sha256"])
         require(all(manifest[k] == manifest_ref[k] for k in ("project", "version", "commit", "platform")), "release reference mismatch")
         if release.exists():
             require(read_json(release / "release.json") == manifest, "existing release identity mismatch")
@@ -283,8 +287,10 @@ def perform(r, root, home):
     if action == "rollback":
         require(r.get("confirm_schema_compatible") is True, "application rollback needs explicit DB compatibility confirmation")
         require(str(release) in existing.get("history", []), "rollback target was not previously deployed on this host")
-    db_preflight(c, fresh)
-    redis_preflight(c)
+    with stage("postgresql-preflight"):
+        db_preflight(c, fresh)
+    with stage("redis-preflight"):
+        redis_preflight(c)
     if fresh:
         try:
             pwd.getpwnam(project)
@@ -298,7 +304,8 @@ def perform(r, root, home):
             path = tls / filename
             path.write_text(c["tls"][k])
             path.chmod(0o600)
-        command(["openssl", "x509", "-in", str(tls / "fullchain.pem"), "-noout", "-checkend", "604800", "-checkhost", c["domain"]])
+        with stage("https-certificate"):
+            command(["openssl", "x509", "-in", str(tls / "fullchain.pem"), "-noout", "-checkend", "604800", "-checkhost", c["domain"]])
     user = pwd.getpwnam(project)
     require(user.pw_uid != 0 and user.pw_dir == str(home) and user.pw_shell == "/usr/sbin/nologin", "unexpected service user identity")
     os.chown(etc, 0, user.pw_gid)
@@ -330,21 +337,26 @@ def perform(r, root, home):
         command(["systemctl", "stop", *units])
         command(["systemctl", "reset-failed", *units])
         if not fresh:
-            state["backup"] = backup(c, root, role)
+            with stage("database-backup"):
+                state["backup"] = backup(c, root, role)
             atomic_json(statepath, state)
             if action != "rollback":
-                command(["runuser", "-u", project, "--", "/usr/bin/python3", str(root / "launcher.py"), str(etc / "runtime.json"), "migrate", str(release), "up"])
+                with stage("database-migration"):
+                    command(["runuser", "-u", project, "--", "/usr/bin/python3", str(root / "launcher.py"), str(etc / "runtime.json"), "migrate", str(release), "up"])
         switch(root, release)
         command(["systemctl", "start", units[0]])
-        wait_api(c, manifest)
+        with stage("api-readiness"):
+            wait_api(c, manifest)
         if fresh:
             setup = get_json(f"http://127.0.0.1:{c['api_port']}/api/v1/setup/status")
             require(setup.get("installed") is False, "unexpected setup status")
             payload = {**c["bootstrap"], "dsn": "", "redis_addr": c["env"]["REDIS_ADDR"], "redis_db": 0, "jobs_enabled": True, "embedded_worker": False}
-            result = get_json(f"http://127.0.0.1:{c['api_port']}/api/v1/setup/initialize", payload)
+            with stage("application-initialize"):
+                result = get_json(f"http://127.0.0.1:{c['api_port']}/api/v1/setup/initialize", payload)
             require(result.get("installed") is True, "setup failed")
             command(["systemctl", "restart", units[0]])
-            wait_api(c, manifest)
+            with stage("api-readiness"):
+                wait_api(c, manifest)
         import yaml
         require(yaml.safe_load((home / "state/state.yaml").read_text()).get("installed") is True, "healthz alone is not installation readiness")
         # The config check probes Asynq capabilities during setup; on updates migration/health
@@ -383,7 +395,8 @@ def main():
     p.add_argument("request")
     args = p.parse_args()
     try:
-        deploy(read_json(args.request))
+        with stage("host-deployment"):
+            deploy(read_json(args.request))
     except Exception as error:
         # Never serialize library exceptions that may contain credentials/HTTP body.
         print(str(error) if isinstance(error, DeployError) else f"deployment failed ({type(error).__name__}); inspect protected host state")

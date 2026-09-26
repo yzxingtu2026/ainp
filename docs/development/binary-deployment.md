@@ -104,8 +104,8 @@ GitHub environment **release** 配置变量：
 
 - `JWT_SECRET`：至少 32 字符随机秘密。
 - `CREDENTIAL_ENCRYPTION_KEY`：**32 随机字节的标准 Base64 编码**（例如 `openssl rand -base64 32`）。不能随应用升级更换，否则既有加密凭证无法解密。
-- 外部 PG：`database_mode=external`，`DATABASE_DSN` 指向 VPC/RDS/外部地址，`sslmode=verify-full sslrootcert=...`。基础框架本身用同一个 DSN 接口；部署基线额外要求 TLS 验证。
-- 本机容器 PG：`database_mode=local-container`，DSN 用 `host=127.0.0.1 port=<映射端口> ... sslmode=disable`。**不能沿用 Compose 内的 `host=postgres`**。同网络另一 ECS 上的容器 PG 使用 external 模式和 TLS。
+- 外部 PG：`database_mode=external`。示例默认用于专用网络 RDS，显式设置 `sslmode=disable`，无需 CA；部署者负责确认使用内网地址及 VPC/安全组隔离。公网或需要 TLS 的连接使用 `sslmode=verify-full sslrootcert=<已安装的 CA 文件>`。预检只接受这两种明确选择，不自动降级 TLS；应用与 pg_dump 复用同一 DSN。
+- 本机容器 PG：`database_mode=local-container`，DSN 用 `host=127.0.0.1 port=<映射端口> ... sslmode=disable`。**不能沿用 Compose 内的 `host=postgres`**。同网络另一 ECS 上的容器 PG 使用 external 模式，并按上述网络边界显式选择 SSL 模式。
 - 两种模式都不自动删除/创建数据库，必须先准备空数据库（首次）或已安装的同项目数据库（更新），并提供 migrations/pgvector 必要权限。预检 PG17、vector 可用、Redis 认证/Lua。
 - 本版 Redis DB 固定为 0，独立 Redis 或经隔离评估的实例；不要把未隔离的多个项目任务混进同一 DB。
 - `backup_oss` / `backup_prefix` 是迁移前 PG custom-format 逻辑备份目的地。备份上传并校验后才迁移。
@@ -142,6 +142,10 @@ python3 scripts/deployment/cloud.py status --target deploy/linux/target.local.js
 `.deploy-state/<project>-<environment>.json` 是控制端操作账本，含 ClientToken、InstanceId、InvokeId、目标绑定哈希，必须持久保存/限制权限/备份。团队使用**一个受控部署工作站/执行器及共享串行审批**，不要各自删账本执行 init。不同工作站的本地锁不构成跨工作站互斥，主机锁负责远程部署互斥，但不能阻止从丢失账本的工作站另买实例。
 
 创建请求发出前落盘 ClientToken；云助手请求前记 `dispatching`，传入独立 ClientToken 并使用 ProcessTree 超时终止模式，拿到 InvokeId 后记 `running`。不保存可再次执行的云助手命令。不确定请求结果时拒绝自动重试，避免重复购买或同时更新。资源已创建但尚未下发命令时，重跑可继续同一实例；已开始 init 失败不能盲目重初始化。
+
+部署日志：`bootstrap.sh`、`apt.sh`、`reporting.py` 与主机 Python 文件一起压缩进命令，在 ECS 临时目录解包执行，仍受原始 16 KiB/API 编码上限约束。安装依赖、OSS 下载、PG/Redis 预检、迁移、初始化和健康检查输出 `AINP_PROGRESS` 时间戳记录；长步骤每 15 秒输出心跳，完成/失败立即刷新。Python 使用无缓冲模式，`cloud.py` 每 5 秒读取云助手 `Output`，只增量打印完整、安全的进度记录并去重，控制台显示仍受云助手上报/刷新周期影响。apt 锁重试保持最多 600 秒，bootstrap 子命令原始 stdout/stderr 写入 `/var/log/ainp-bootstrap.log`（0600），主机迁移等原始失败输出仍在 `/var/log/ainp-deployment-errors.log`，不为实时日志暴露 DSN、请求体或密码。
+
+修改本地 `private.*.json` 不会更新 OSS 或现有 ECS：需另行上传新的不可变私有配置对象并更新目标中的 key/SHA256。已落盘 `/etc/<project>/private.json` 的失败 init 必须先核对主机状态后恢复；不要删除本地账本或以修改哈希绕过恢复保护。此流程不能与 apt 阶段（尚未写入私有配置）的安全重试混淆。
 
 阿里云 CLI 调用失败时，控制器只从 JSON 响应中输出经过长度限制和单行化处理的 `error_code`、HTTP 状态、`message`、`RequestId`。命令参数、完整 stdout/stderr、恢复命令和未知字段不会回显；非 JSON、空响应、超大响应、CLI 缺失或超时仍使用通用错误。云助手命令失败时输出状态、退出码、错误码及最多 4000 字符的日志尾部；日志会移除控制序列并脱敏常见 password/secret/token/authorization 和 URL 密码，但仍应仅在受控部署终端查看。任何失败都必须结合已持久化状态与云审计核对后再重试。
 

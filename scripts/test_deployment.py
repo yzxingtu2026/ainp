@@ -22,6 +22,7 @@ import cloud
 import host
 import launcher
 import storage
+import reporting
 import check_oss
 import verify_release
 spec = importlib.util.spec_from_file_location("native_package", DEPLOY / "package.py")
@@ -102,6 +103,28 @@ class ContractTest(unittest.TestCase):
         c["env"].update(DATABASE_DSN="host=db sslmode=verify-full", JWT_SECRET="x" * 32, CREDENTIAL_ENCRYPTION_KEY=base64.b64encode(b"y" * 32).decode(), REDIS_PASSWORD="safe-password")
         c["bootstrap"]["password"] = "StrongTestPassword123!"
         return c
+
+    def test_external_database_requires_explicit_ssl_choice(self):
+        for mode, ca, allowed in (("disable", None, True), ("verify-full", "/ca.pem", True), ("verify-full", None, False), ("prefer", None, False), (None, None, False)):
+            with self.subTest(mode=mode, ca=ca):
+                params = {"host": "db.internal"}
+                if mode:
+                    params["sslmode"] = mode
+                if ca:
+                    params["sslrootcert"] = ca
+                conninfo = mock.Mock(conninfo_to_dict=mock.Mock(return_value=params))
+                driver = mock.MagicMock()
+                conn = driver.connect.return_value.__enter__.return_value
+                conn.info.server_version = 170005
+                conn.execute.return_value.fetchone.side_effect = [(1,), (0,)]
+                with mock.patch.dict(sys.modules, {"psycopg": driver, "psycopg.conninfo": conninfo}):
+                    if allowed:
+                        host.db_preflight(self.config(), True)
+                        driver.connect.assert_called_once_with(self.config()["env"]["DATABASE_DSN"], connect_timeout=10)
+                    else:
+                        with self.assertRaisesRegex(common.DeployError, "explicit disable"):
+                            host.db_preflight(self.config(), True)
+                        driver.connect.assert_not_called()
 
     def test_backup_maps_conninfo_to_environment_without_argv_secrets(self):
         params = {"host": "db.internal", "port": "5432", "dbname": "app", "user": "app", "password": "secret' $value", "sslmode": "verify-full", "sslrootcert": "/etc/ca.pem"}
@@ -188,6 +211,10 @@ class ContractTest(unittest.TestCase):
 
 
 class CloudTest(unittest.TestCase):
+    def unpack_bootstrap(self, command):
+        literal = command.split("base64.b85decode(", 1)[1].splitlines()[0].removesuffix(")))")
+        return json.loads(bz2.decompress(base64.b85decode(ast.literal_eval(literal))))
+
     def target(self):
         c = common.read_json("deploy/linux/target.example.json")
         c["config_sha256"] = "a" * 64
@@ -283,9 +310,46 @@ class CloudTest(unittest.TestCase):
         self.assertNotIn("PAYLOAD_LITERAL", command)
         self.assertNotIn("DATABASE_DSN=", command)
         self.assertLessEqual(len(base64.b64encode(command.encode())), 24576)
-        self.assertIn("chmod 644 /usr/share/postgresql-common/pgdg", command)
-        self.assertIn("mirrors.cloud.aliyuncs.com", command)
-        self.assertIn("/etc/apt/sources.list", command)
+        shell = self.unpack_bootstrap(command)["bootstrap.sh"]
+        self.assertIn("chmod 644 /usr/share/postgresql-common/pgdg", shell)
+        self.assertIn("mirrors.cloud.aliyuncs.com", shell)
+        self.assertIn("/etc/apt/sources.list", shell)
+
+    def test_poll_streams_only_complete_progress_records_once(self):
+        first = "AINP_PROGRESS 2026-09-26T12:00:00Z postgresql-preflight: started\n"
+        last = "AINP_PROGRESS 2026-09-26T12:00:05Z postgresql-preflight: done (5s)\n"
+        def payload(output, status="Running"):
+            return {"Invocation": {"InvocationResults": {"InvocationResult": [{
+                "InstanceId": "i-one", "InvocationStatus": status,
+                "InvokeRecordStatus": "Finished" if status == "Success" else "Running",
+                "ExitCode": 0, "Output": output,
+            }]}}}
+        api = mock.Mock()
+        api.call.side_effect = [payload(first + "PASSWORD=secret-value\n" + last[:40]), payload(first + last), payload(first + last, "Success")]
+        state = {"invoke_id": "t-one", "instance_id": "i-one", "status": "running"}
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(cloud.time, "sleep"), contextlib.redirect_stdout(io.StringIO()) as output:
+            cloud.poll(api, state, Path(d) / "state", timeout=10)
+        self.assertEqual(output.getvalue().count(first), 1)
+        self.assertEqual(output.getvalue().count(last), 1)
+        self.assertNotIn("secret-value", output.getvalue())
+        self.assertEqual(state["status"], "success")
+
+    def test_bootstrap_loader_roundtrip_and_shell_syntax(self):
+        import subprocess
+        command = cloud.bootstrap(dict(project="ainp", ram_role="role", action="init", operation_id="a" * 36, release=self.reference()))
+        files = self.unpack_bootstrap(command)
+        self.assertEqual(files["host.py"], (DEPLOY / "host.py").read_text())
+        self.assertEqual(files["reporting.py"], (DEPLOY / "reporting.py").read_text())
+        for script in (command, files["bootstrap.sh"], files["apt.sh"]):
+            subprocess.run(["sh", "-n"], input=script, text=True, capture_output=True, check=True)
+        with tempfile.TemporaryDirectory() as d:
+            # Execute the actual loader with a harmless replacement inner bootstrap.
+            files["bootstrap.sh"] = 'set -eu\ntest -f "$1/host.py"\ntest -f "$1/reporting.py"\nprintf "unpacked successfully\\n"\n'
+            payload = base64.b85encode(bz2.compress(json.dumps(files).encode())).decode()
+            safe = cloud.BOOTSTRAP.replace("PAYLOAD_LITERAL", repr(payload)).replace("/var/tmp/ainp-deploy.XXXXXXXX", d + "/payload.XXXXXXXX")
+            result = subprocess.run(["sh"], input=safe, capture_output=True, text=True, check=True)
+            self.assertIn("unpacked successfully", result.stdout)
+            self.assertEqual(list(Path(d).iterdir()), [])
 
     def test_progress_is_timestamped_and_flushed(self):
         with mock.patch.object(cloud.time, "strftime", return_value="2026-09-26 20:00:00"), mock.patch("builtins.print") as output:
@@ -313,10 +377,12 @@ class CloudTest(unittest.TestCase):
 
     def test_bootstrap_retries_only_apt_lock_failures_with_bounded_timeout(self):
         command = cloud.bootstrap(dict(project="ainp", ram_role="ainp-production-runtime", action="init", operation_id="a" * 36, release=self.reference(), config_oss=self.target()["config_oss"], config_key=self.target()["config_key"], config_sha256="a" * 64))
+        files = self.unpack_bootstrap(command)
+        command = files["apt.sh"]
         self.assertIn("else status=$?", command)
         self.assertIn('return "$status"', command)
         self.assertNotIn("return 100", command)
-        self.assertIn("apt_get update -qq", command)
+        self.assertIn('sh "$work/apt.sh" update -qq', files["bootstrap.sh"])
         self.assertIn("AINP_APT_LOCK_TIMEOUT", command)
         self.assertIn("reconcile unattended-upgrades", command)
         self.assertNotIn("rm -f /var/lib/dpkg/lock", command)
@@ -342,8 +408,8 @@ class CloudTest(unittest.TestCase):
         command = cloud.bootstrap(request)
         self.assertLess(len(command.encode()), 16384)
         self.assertLessEqual(len(base64.b64encode(command.encode())), 24576)
-        literal = command.split("base64.b64decode(", 1)[1].split(")", 1)[0]
-        files = json.loads(bz2.decompress(base64.b64decode(ast.literal_eval(literal))))
+        literal = command.split("base64.b85decode(", 1)[1].splitlines()[0].removesuffix(")))")
+        files = json.loads(bz2.decompress(base64.b85decode(ast.literal_eval(literal))))
         remote_request = json.loads(files["request.json"])
         self.assertEqual(set(remote_request["release"]), {"project", "version", "commit", "platform", "sha256", "key", "oss"})
         self.assertEqual(remote_request["release"]["oss"]["endpoint"], target["release_oss_endpoint"])
@@ -486,6 +552,78 @@ class CloudTest(unittest.TestCase):
             cloud.poll(api, state, Path("unused"), timeout=0)
         self.assertEqual(state["status"], "running")
         api.call.assert_not_called()
+
+
+
+class ReportingTest(unittest.TestCase):
+    def test_progress_arrives_before_process_exits_and_has_heartbeat(self):
+        import subprocess
+        import selectors
+        code = f"import sys,time; sys.path.insert(0, {str(DEPLOY.resolve())!r}); import reporting; reporting.INTERVAL=0.05\nwith reporting.stage('fixture'):\n time.sleep(0.4)\n"
+        with subprocess.Popen([sys.executable, "-c", code], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) as proc:
+            try:
+                with selectors.DefaultSelector() as selector:
+                    selector.register(proc.stdout, selectors.EVENT_READ)
+                    self.assertTrue(selector.select(timeout=5), "no flushed start record")
+                first = proc.stdout.readline()
+                self.assertIn("fixture: started", first)
+                self.assertIsNone(proc.poll(), "output must arrive while running")
+                output, error = proc.communicate(timeout=5)
+                self.assertEqual(proc.returncode, 0, error)
+                self.assertIn("fixture: running", output)
+                self.assertIn("fixture: done", output)
+            finally:
+                if proc.poll() is None:
+                    proc.kill()
+                    proc.communicate()
+
+    def test_failed_command_preserves_exit_code_and_protects_output(self):
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(reporting, "LOG_PATH", str(Path(d) / "log")), contextlib.redirect_stdout(io.StringIO()) as output:
+            with self.assertRaises(SystemExit) as raised:
+                reporting.run("fixture", [sys.executable, "-c", "import sys; print('sensitive-raw-output'); sys.exit(7)"])
+            self.assertEqual(raised.exception.code, 7)
+            self.assertIn("fixture: failed", output.getvalue())
+            self.assertNotIn("sensitive-raw-output", output.getvalue())
+            log = Path(d) / "log"
+            self.assertIn("sensitive-raw-output", log.read_text())
+            self.assertEqual(log.stat().st_mode & 0o777, 0o600)
+
+    def test_stage_failure_does_not_print_exception_secrets(self):
+        with contextlib.redirect_stdout(io.StringIO()) as output:
+            with self.assertRaises(ValueError):
+                with reporting.stage("postgresql-preflight"):
+                    raise ValueError("password=hidden-value")
+        self.assertIn("postgresql-preflight: failed (ValueError)", output.getvalue())
+        self.assertNotIn("hidden-value", output.getvalue())
+
+    def test_bootstrap_lock_descriptor_is_inherited(self):
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(reporting, "LOG_PATH", str(Path(d) / "log")), mock.patch.object(reporting.subprocess, "run", return_value=mock.Mock(returncode=0)) as run, contextlib.redirect_stdout(io.StringIO()):
+            reporting.run("bootstrap-lock", ["flock", "-w", "120", "9"])
+        self.assertEqual(run.call_args.kwargs["pass_fds"], (9,))
+
+    def test_apt_retries_locks_only_and_preserves_exit_status(self):
+        import subprocess
+        for scenario, expected, count in (("recover", 0, 3), ("locked", 75, 121), ("error", 42, 1)):
+            with self.subTest(scenario=scenario), tempfile.TemporaryDirectory() as d:
+                tmp = Path(d)
+                (tmp / "count").write_text("0")
+                apt = tmp / "apt-get"
+                apt.write_text('''#!/bin/sh
+i=$(cat "$COUNT"); i=$((i+1)); echo "$i" >"$COUNT"
+if [ "$SCENARIO" = error ]; then echo fatal; exit 42; fi
+if [ "$SCENARIO" = recover ] && [ "$i" -ge 3 ]; then echo ready; exit 0; fi
+echo 'Could not get lock /var/lib/dpkg/lock-frontend'; exit 100
+''')
+                apt.chmod(0o755)
+                sleep = tmp / "sleep"
+                sleep.write_text("#!/bin/sh\nexit 0\n")
+                sleep.chmod(0o755)
+                env = {**os.environ, "COUNT": str(tmp / "count"), "SCENARIO": scenario, "PATH": d + os.pathsep + os.environ.get("PATH", "/usr/bin:/bin")}
+                result = subprocess.run(["sh", str(DEPLOY / "apt.sh"), "update", "-qq"], env=env, capture_output=True, text=True, timeout=10)
+                self.assertEqual(result.returncode, expected, result.stderr)
+                self.assertEqual(int((tmp / "count").read_text()), count)
+                if scenario == "locked":
+                    self.assertIn("AINP_APT_LOCK_TIMEOUT", result.stderr)
 
 
 class NativeNginxSyntaxTest(unittest.TestCase):

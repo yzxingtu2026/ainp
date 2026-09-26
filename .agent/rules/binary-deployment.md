@@ -10,4 +10,6 @@
 - 首装必须使用 Host setup 初始化与 baseline，重启并确认 installed；仅 healthz 成功不足以判断安装完成。
 - 更新/回滚有维护窗口：停应用、持久化 DB 备份、forward-only 迁移、切包、版本及进程校验。失败关闭流量，不自动数据库降级。
 - 回滚只接受该主机已成功部署的版本及显式 schema 兼容确认；真实 Worker 任务/SSL 自动续期/灾备需独立验收，不以离线测试冒充。
+- 外部 PG 显式选择专用网络 `sslmode=disable` 或 `verify-full` + CA，不做静默 TLS 降级；示例默认前者。
+- 部署实时输出仅使用固定标签的 `AINP_PROGRESS` 阶段/心跳，禁止输出私有配置、argv 或原始异常；底层输出保留 root-only 主机日志，本地增量读取并去重。
 - 详规见 docs/development/binary-deployment.md。

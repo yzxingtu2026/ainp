@@ -15,55 +15,15 @@ from common import DeployError, atomic_json, digest, key, lock, name, oss_config
 
 BOOTSTRAP = r'''set -eu
 umask 077
-. /etc/os-release
-test "$ID" = ubuntu && test "$VERSION_ID" = 22.04
-test "$(uname -m)" = x86_64
-export DEBIAN_FRONTEND=noninteractive
-exec 9>/var/lock/ainp-bootstrap.lock
-flock -w 120 9
-apt_get() {
-  i=0
-  while :; do
-    if output=$(apt-get "$@" 2>&1); then return 0; else status=$?; fi
-    case "$output" in
-      *"Could not get lock"*|*"Unable to acquire "*lock*|*"Could not open lock file"*) ;;
-      *) printf '%s\n' "$output" >&2; return "$status" ;;
-    esac
-    if [ "$i" -ge 120 ]; then
-      printf '%s\n' "$output" >&2
-      printf 'AINP_APT_LOCK_TIMEOUT: reconcile unattended-upgrades; retry 600s\n' >&2
-      return 75
-    fi
-    i=$((i+1));sleep 5
-  done
-}
-sed -i 's#\(archive\|security\)\.ubuntu\.com#mirrors.cloud.aliyuncs.com#g' /etc/apt/sources.list
-
-runtime=/opt/ainp-deploy-runtime-v1
-if [ ! -f "$runtime/ready" ]; then
-apt_get update -qq
-apt_get install -y -qq python3-venv nginx curl ca-certificates gnupg tzdata libstdc++6
-install -d -m 755 /usr/share/postgresql-common/pgdg
-curl --fail --silent --show-error https://www.postgresql.org/media/keys/ACCC4CF8.asc -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
-gpg --show-keys --with-colons /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc | grep -q 'B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8'
-echo 'deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt jammy-pgdg main' >/etc/apt/sources.list.d/ainp-pgdg.list
-chmod 644 /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc /etc/apt/sources.list.d/ainp-pgdg.list
-apt_get update -qq
-apt_get install -y -qq postgresql-client-17
-python3 -m venv "$runtime"
-"$runtime/bin/pip" install --quiet oss2==2.19.1 'psycopg[binary]==3.2.10' PyYAML==6.0.2 redis==6.4.0
-touch "$runtime/ready"
-fi
-systemctl enable --now nginx
 work=$(mktemp -d /var/tmp/ainp-deploy.XXXXXXXX)
 trap 'rm -rf "$work"' EXIT
 python3 - "$work" <<'AINP_PAYLOAD'
 import base64,bz2,json,pathlib,sys
-files=json.loads(bz2.decompress(base64.b64decode(PAYLOAD_LITERAL)))
+files=json.loads(bz2.decompress(base64.b85decode(PAYLOAD_LITERAL)))
 for filename,body in files.items():
     pathlib.Path(sys.argv[1],filename).write_text(body)
 AINP_PAYLOAD
-"$runtime/bin/python" "$work/host.py" "$work/request.json"
+sh "$work/bootstrap.sh" "$work"
 '''
 
 TEST_ENVIRONMENT = "test"
@@ -189,9 +149,9 @@ def _host_release(reference, endpoint=None):
 
 
 def bootstrap(request):
-    files = {p: Path(__file__).with_name(p).read_text() for p in ("common.py", "storage.py", "host.py", "launcher.py")}
+    files = {p: Path(__file__).with_name(p).read_text() for p in ("common.py", "storage.py", "host.py", "launcher.py", "reporting.py", "bootstrap.sh", "apt.sh")}
     files["request.json"] = json.dumps(request, sort_keys=True, separators=(",", ":"))
-    payload = base64.b64encode(bz2.compress(json.dumps(files, separators=(",", ":")).encode(), compresslevel=9)).decode()
+    payload = base64.b85encode(bz2.compress(json.dumps(files, separators=(",", ":")).encode(), compresslevel=9)).decode()
     command = BOOTSTRAP.replace("PAYLOAD_LITERAL", repr(payload)).rstrip("\n")
     require(len(command.encode()) <= 16384 and len(base64.b64encode(command.encode())) <= 24576, "bootstrap exceeds conservative 16KiB budget / API encoded limit; use a versioned bootstrap object")
     return command
@@ -250,8 +210,16 @@ def poll(api, state, statepath, timeout=2100):
     started = time.monotonic()
     until = started + timeout
     next_report = 0
+    seen_progress = set()
     while time.monotonic() < until:
         payload = api.call("DescribeInvocationResults", InvokeId=state["invoke_id"], InstanceId=state["instance_id"], ContentEncoding="PlainText")
+        row = invocation_row(payload, state["instance_id"])
+        # Only explicit safe progress records, never arbitrary subprocess output/config.
+        output = row.get("Output", "") if row else ""
+        for line in output.splitlines(keepends=True) if isinstance(output, str) else []:
+            if line.endswith("\n") and re.fullmatch(r"AINP_PROGRESS [0-9TZ:.-]+ [A-Za-z0-9 ()_.:-]+\n", line) and line not in seen_progress:
+                print(line.rstrip(), flush=True)
+                seen_progress.add(line)
         status = invocation_result(payload, state["instance_id"])
         elapsed = int(time.monotonic() - started)
         if status != "pending":
@@ -348,9 +316,9 @@ def execute(target, reference, action, statepath, confirm=False, status_only=Fal
             ids = result["InstanceIdSets"]["InstanceIdSet"]
             require(len(ids) == 1, "unexpected instance creation result; inspect cloud audit")
             instance_id = state["instance_id"] = ids[0]
-            progress(f"ECS created: {instance_id}; state persisted; waiting for Running")
             state["status"] = "preparing"
             atomic_json(statepath, state)
+            progress(f"ECS created: {instance_id}; state persisted; waiting for Running")
         else:
             progress(f"using existing ECS: {instance_id}; waiting for Running")
         instance_started = time.monotonic()
