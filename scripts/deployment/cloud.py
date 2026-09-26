@@ -9,7 +9,7 @@ import re
 import subprocess
 import time
 import uuid
-import zlib
+import bz2
 
 from common import DeployError, atomic_json, digest, key, lock, name, oss_config, read_json, require, version
 
@@ -58,8 +58,8 @@ systemctl enable --now nginx
 work=$(mktemp -d /var/tmp/ainp-deploy.XXXXXXXX)
 trap 'rm -rf "$work"' EXIT
 python3 - "$work" <<'AINP_PAYLOAD'
-import base64,json,pathlib,sys,zlib
-files=json.loads(zlib.decompress(base64.b64decode(PAYLOAD_LITERAL)))
+import base64,bz2,json,pathlib,sys
+files=json.loads(bz2.decompress(base64.b64decode(PAYLOAD_LITERAL)))
 for filename,body in files.items():
     pathlib.Path(sys.argv[1],filename).write_text(body)
 AINP_PAYLOAD
@@ -184,7 +184,7 @@ def _host_release(reference, endpoint=None):
 def bootstrap(request):
     files = {p: Path(__file__).with_name(p).read_text() for p in ("common.py", "storage.py", "host.py", "launcher.py")}
     files["request.json"] = json.dumps(request, sort_keys=True, separators=(",", ":"))
-    payload = base64.b64encode(zlib.compress(json.dumps(files, separators=(",", ":")).encode(), 9)).decode()
+    payload = base64.b64encode(bz2.compress(json.dumps(files, separators=(",", ":")).encode(), compresslevel=9)).decode()
     command = BOOTSTRAP.replace("PAYLOAD_LITERAL", repr(payload)).rstrip("\n")
     require(len(command.encode()) <= 16384 and len(base64.b64encode(command.encode())) <= 24576, "bootstrap exceeds conservative 16KiB budget / API encoded limit; use a versioned bootstrap object")
     return command

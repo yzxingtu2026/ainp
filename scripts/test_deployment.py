@@ -12,7 +12,7 @@ import sys
 import tarfile
 import tempfile
 import unittest
-import zlib
+import bz2
 from unittest import mock
 
 DEPLOY = Path(__file__).parent / "deployment"
@@ -316,10 +316,10 @@ class CloudTest(unittest.TestCase):
             config_sha256=target["config_sha256"],
         )
         command = cloud.bootstrap(request)
-        self.assertLessEqual(len(command.encode()), 16384)
+        self.assertLess(len(command.encode()), 16384)
         self.assertLessEqual(len(base64.b64encode(command.encode())), 24576)
         literal = command.split("base64.b64decode(", 1)[1].split(")", 1)[0]
-        files = json.loads(zlib.decompress(base64.b64decode(ast.literal_eval(literal))))
+        files = json.loads(bz2.decompress(base64.b64decode(ast.literal_eval(literal))))
         remote_request = json.loads(files["request.json"])
         self.assertEqual(set(remote_request["release"]), {"project", "version", "commit", "platform", "sha256", "key", "oss"})
         self.assertEqual(remote_request["release"]["oss"]["endpoint"], target["release_oss_endpoint"])
