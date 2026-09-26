@@ -50,6 +50,18 @@ AINP_PAYLOAD
 "$runtime/bin/python" "$work/host.py" "$work/request.json"
 '''
 
+TEST_ENVIRONMENT = "test"
+
+
+def validate_release_for_environment(target, reference):
+    """Allow CI artifacts only in the explicitly isolated test environment."""
+    version(reference["version"])
+    if reference["version"].endswith("-ci"):
+        require(
+            target["environment"] == TEST_ENVIRONMENT,
+            "CI artifacts are allowed only in the test environment; production requires a stable release",
+        )
+
 
 def validate_target(c):
     require(c.get("schema") == 1, "unsupported target schema")
@@ -204,7 +216,7 @@ def main():
     parser.add_argument("--target", required=True, type=Path)
     parser.add_argument("--release", type=Path, help="verified reference.json from successful OSS release CI")
     parser.add_argument("--state-dir", type=Path, default=Path(".deploy-state"))
-    parser.add_argument("--apply", action="store_true", help="allow billable ECS creation and production modification")
+    parser.add_argument("--apply", action="store_true", help="allow billable ECS creation and remote environment modification")
     parser.add_argument("--confirm-schema-compatible", action="store_true")
     args = parser.parse_args()
     try:
@@ -212,8 +224,7 @@ def main():
         reference = read_json(args.release) if args.release else None
         if args.action != "status":
             require(reference and reference["project"] == target["project"], "matching --release required")
-            version(reference["version"])
-            require(not reference["version"].endswith("-ci"), "production requires a stable release, not a CI artifact")
+            validate_release_for_environment(target, reference)
             digest(reference["sha256"])
             key(reference["key"])
             oss_config(reference["oss"])

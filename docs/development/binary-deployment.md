@@ -57,7 +57,7 @@ gh workflow run check-oss.yml --ref main -f project=ainp
 
 合入默认分支后，使用 `Test Native Release` 手动验证完整的“Linux 构建 → 私有 OSS”链路。工作流只允许从 `main` 运行，版本固定为 `v0.0.0-ci`，先验证本地包的 manifest、归档、SHA256 和安全解包，再通过同一 OIDC 角色上传并逐对象读回验证四个文件。它不会创建 GitHub Release、ECS 或生产变更。
 
-测试对象路径为 `releases/ainp/v0.0.0-ci/<commit>/`。重复运行同一提交必须命中不可变对象的同内容重试；不同内容或覆盖保护失败必须失败。`cloud.py` 明确拒绝所有 `-ci` 包，因此测试包不能进入生产初始化、更新或回滚。
+测试对象路径为 `releases/ainp/v0.0.0-ci/<commit>/`。重复运行同一提交必须命中不可变对象的同内容重试；不同内容或覆盖保护失败必须失败。`cloud.py` 仅允许 `-ci` 包进入明确标记为 `environment=test` 的测试环境；生产初始化、更新和回滚仍必须使用稳定版本。
 
 Actions → **Test Native Release** → **Run workflow**，分支选择 `main`，版本保持默认 `v0.0.0-ci`。测试发包通过后才进入测试 ECS；通过不等于真实 ECS、数据库、Worker、Nginx/SSL 验收。
 
@@ -92,7 +92,7 @@ GitHub environment **release** 配置变量：
 - `.github/workflows/native-build.yml`：可复用构建（不持有云权限）。Go/Node/pnpm、固定 MuPDF，CJK 测试、CLI 启动 smoke、动态库检查、前端构建、SHA256 清单。
 - `.github/workflows/ci.yml`：只监听 Pull Request，保留 backend/frontend/windows/repository gates，替换 `containers` 为 **`linux-release`** 聚合门禁。合入 `main` 不再重复运行完整构建；分支保护仍须要求这些 PR checks，不能仅删除旧 job 而不更新规则。
 - `.github/workflows/release-binaries.yml`：根 Tag 与 `platform/` Tag 同提交，并通过 GitHub API 找到产生该 `main` 提交的已合并 PR，再校验该 PR head 的完整 CI 成功；私有 OSS 发布成功后发布 GitHub Release。已发布 Release 重跑跳过，不重新生成或覆盖包。
-- `.github/workflows/test-native-release.yml`：仅允许 `main` 手动运行固定 `v0.0.0-ci`，验证完整包上传和 OSS 读回；不创建 Release/ECS，`-ci` 包不能用于生产部署。
+- `.github/workflows/test-native-release.yml`：仅允许 `main` 手动运行固定 `v0.0.0-ci`，验证完整包上传和 OSS 读回；不创建 Release/ECS。该包只能用于 `environment=test` 的真实 ECS 验收，不能用于生产部署。
 - 不再有 GHCR 推送/SSH 自动演示部署。旧 Docker/Compose 文件仅为存量兼容，不属于新发布主路径。
 - 发布入口仍为仓库根目录 `python3 scripts/release.py vX.Y.Z`；需干净、同步 main。
 
