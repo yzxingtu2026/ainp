@@ -70,6 +70,13 @@ TEST_ENVIRONMENT = "test"
 CLI_ERROR_JSON_LIMIT = 64 * 1024
 CLI_ERROR_TEXT_LIMIT = 500
 REMOTE_OUTPUT_TAIL_LIMIT = 4000
+PROGRESS_INTERVAL_SECONDS = 15
+
+
+def progress(message):
+    """Emit a timestamped, flushed progress line without secrets or raw API payloads."""
+    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+    print(f"[{timestamp}] {message}", flush=True)
 
 
 def validate_release_for_environment(target, reference):
@@ -240,15 +247,22 @@ def invocation_failure(payload, instance_id):
 
 
 def poll(api, state, statepath, timeout=2100):
-    until = time.monotonic() + timeout
+    started = time.monotonic()
+    until = started + timeout
+    next_report = 0
     while time.monotonic() < until:
         payload = api.call("DescribeInvocationResults", InvokeId=state["invoke_id"], InstanceId=state["instance_id"], ContentEncoding="PlainText")
         status = invocation_result(payload, state["instance_id"])
+        elapsed = int(time.monotonic() - started)
         if status != "pending":
+            progress(f"Cloud Assistant invocation {state['invoke_id']}: {status} after {elapsed}s")
             state["status"] = status
             atomic_json(statepath, state)
             require(status == "success", invocation_failure(payload, state["instance_id"]))
             return
+        if elapsed >= next_report:
+            progress(f"Cloud Assistant invocation {state['invoke_id']} still running ({elapsed}s elapsed)")
+            next_report = elapsed + PROGRESS_INTERVAL_SECONDS
         time.sleep(5)
     raise DeployError("remote command still pending/unknown; run status, never assume cancellation or dispatch another update")
 
@@ -322,38 +336,56 @@ def execute(target, reference, action, statepath, confirm=False, status_only=Fal
             digest(request["config_sha256"])
         oss_config(reference["oss"])
         script = bootstrap(request)
+        progress(f"bootstrap prepared: {len(script.encode())} bytes; persisting deployment state")
         atomic_json(statepath, state)
         if not instance_id:
             require(action == "init", "only init can create an instance")
             template = target["launch_template"]
+            progress(f"creating ECS from launch template {template['id']} version {template['version']}")
             state["status"] = "creating"
             atomic_json(statepath, state)
             result = api.call("RunInstances", LaunchTemplateId=template["id"], LaunchTemplateVersion=template["version"], InstanceChargeType="PostPaid", Amount=1, ClientToken=state["client_token"], RamRoleName=target["ram_role"], HttpTokens="required", HttpEndpoint="enabled", **{"Tag.1.Key": "ainp-project", "Tag.1.Value": target["project"], "Tag.2.Key": "ainp-environment", "Tag.2.Value": target["environment"]})
             ids = result["InstanceIdSets"]["InstanceIdSet"]
             require(len(ids) == 1, "unexpected instance creation result; inspect cloud audit")
             instance_id = state["instance_id"] = ids[0]
+            progress(f"ECS created: {instance_id}; state persisted; waiting for Running")
             state["status"] = "preparing"
             atomic_json(statepath, state)
-        for _ in range(120):
+        else:
+            progress(f"using existing ECS: {instance_id}; waiting for Running")
+        instance_started = time.monotonic()
+        last_instance_status = None
+        for attempt in range(120):
             instance = describe_instance(api, instance_id, target)
-            if instance.get("Status") == "Running":
+            instance_status = instance.get("Status", "unknown")
+            if attempt == 0 or instance_status != last_instance_status or attempt % 3 == 0:
+                progress(f"ECS {instance_id}: status={instance_status}; waited {int(time.monotonic() - instance_started)}s")
+            last_instance_status = instance_status
+            if instance_status == "Running":
                 break
             time.sleep(5)
         else:
             raise DeployError("ECS did not reach Running; existing instance retained in state")
-        for _ in range(60):
+        assistant_started = time.monotonic()
+        for attempt in range(60):
             assistants = api.call("DescribeCloudAssistantStatus", **{"InstanceId.1": instance_id})
             entries = assistants.get("InstanceCloudAssistantStatusSet", {}).get("InstanceCloudAssistantStatus", [])
-            if any(e.get("InstanceId") == instance_id and e.get("CloudAssistantStatus") == "true" for e in entries):
+            assistant_online = any(e.get("InstanceId") == instance_id and e.get("CloudAssistantStatus") == "true" for e in entries)
+            if assistant_online:
+                progress(f"Cloud Assistant online for {instance_id} after {int(time.monotonic() - assistant_started)}s")
                 break
+            if attempt == 0 or attempt % 3 == 0:
+                progress(f"waiting for Cloud Assistant on {instance_id} ({int(time.monotonic() - assistant_started)}s elapsed)")
             time.sleep(5)
         else:
             raise DeployError("Cloud Assistant not online; install/repair agent in the launch template; no command dispatched")
         state.update(status="dispatching", release=reference, command_sha256=hashlib.sha256(script.encode()).hexdigest())
         atomic_json(statepath, state)
+        progress(f"dispatching deployment command to {instance_id}")
         result = api.call("RunCommand", Type="RunShellScript", ContentEncoding="PlainText", CommandContent=script, Timeout=1800, ClientToken=state["operation_id"], KeepCommand="false", TerminationMode="ProcessTree", **{"InstanceId.1": instance_id})
         state.update(invoke_id=result["InvokeId"], status="running")
         atomic_json(statepath, state)
+        progress(f"Cloud Assistant invocation started: {result['InvokeId']}; polling every 5s")
         poll(api, state, statepath)
         print(f"{action} succeeded on {instance_id}; version {reference['version']}")
 

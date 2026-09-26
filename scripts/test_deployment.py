@@ -287,6 +287,30 @@ class CloudTest(unittest.TestCase):
         self.assertIn("mirrors.cloud.aliyuncs.com", command)
         self.assertIn("/etc/apt/sources.list", command)
 
+    def test_progress_is_timestamped_and_flushed(self):
+        with mock.patch.object(cloud.time, "strftime", return_value="2026-09-26 20:00:00"), mock.patch("builtins.print") as output:
+            cloud.progress("waiting for ECS")
+        output.assert_called_once_with("[2026-09-26 20:00:00] waiting for ECS", flush=True)
+
+    def test_poll_reports_pending_heartbeat_and_terminal_status(self):
+        pending = {"Invocation": {"InvocationResults": {"InvocationResult": []}}}
+        success = {"Invocation": {"InvocationResults": {"InvocationResult": [{
+            "InstanceId": "i-one",
+            "InvocationStatus": "Success",
+            "InvokeRecordStatus": "Finished",
+            "ExitCode": 0,
+        }]}}}
+        api = mock.Mock()
+        api.call.side_effect = [pending, success]
+        state = {"invoke_id": "t-one", "instance_id": "i-one", "status": "running"}
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(cloud.time, "sleep"), contextlib.redirect_stdout(io.StringIO()) as output:
+            cloud.poll(api, state, Path(d) / "state.json", timeout=1)
+        text = output.getvalue()
+        self.assertIn("Cloud Assistant invocation t-one still running", text)
+        self.assertIn("Cloud Assistant invocation t-one: success", text)
+        self.assertIn("after", text)
+        self.assertNotIn("CommandContent", text)
+
     def test_bootstrap_retries_only_apt_lock_failures_with_bounded_timeout(self):
         command = cloud.bootstrap(dict(project="ainp", ram_role="ainp-production-runtime", action="init", operation_id="a" * 36, release=self.reference(), config_oss=self.target()["config_oss"], config_key=self.target()["config_key"], config_sha256="a" * 64))
         self.assertIn("else status=$?", command)
