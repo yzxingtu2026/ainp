@@ -13,6 +13,7 @@ jobs:
     permissions:
       checks: read
       contents: read
+      pull-requests: read
     outputs:
       published: ${{ steps.validate.outputs.published }}
     steps:
@@ -25,11 +26,17 @@ jobs:
         run: |
           python3 - <<'PY'
           import json, os, subprocess
-          from scripts.release import validate_version, successful_checks, REQUIRED_CHECKS
+          from scripts.release import (
+              validate_version,
+              successful_checks,
+              merged_pull_request_head_sha,
+              REQUIRED_CHECKS,
+          )
           tag = validate_version(os.environ["GITHUB_REF_NAME"])
           sha = os.environ["GITHUB_SHA"]
           assert subprocess.check_output(["git", "rev-list", "-n", "1", "platform/" + tag], text=True).strip() == sha
-          payload = json.loads(subprocess.check_output(["gh", "api", f"repos/{os.environ['GITHUB_REPOSITORY']}/commits/{sha}/check-runs?per_page=100"]))
+          ci_sha = merged_pull_request_head_sha(sha)
+          payload = json.loads(subprocess.check_output(["gh", "api", f"repos/{os.environ['GITHUB_REPOSITORY']}/commits/{ci_sha}/check-runs?per_page=100"]))
           assert REQUIRED_CHECKS <= successful_checks(payload), "required CI checks did not pass"
           PY
           published=false

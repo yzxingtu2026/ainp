@@ -12,6 +12,7 @@ from pathlib import Path
 
 REPOSITORY = "yzxingtu2026/ainp"
 REQUIRED_CHECKS = {"backend", "linux-release", "frontend", "repository-gates"}
+DEFAULT_BRANCH = "main"
 VERSION_PATTERN = re.compile(r"^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 EXPECTED_REMOTES = {
     "https://github.com/yzxingtu2026/ainp.git",
@@ -56,14 +57,45 @@ def successful_checks(payload: dict) -> set[str]:
     }
 
 
+def merged_pull_request_head_sha(merge_sha: str) -> str:
+    """Resolve the merged PR head whose result produced ``merge_sha``.
+
+    Full CI runs on pull requests only. A squash merge creates a new ``main``
+    commit, so the merge commit itself has no duplicate PR check runs. Release
+    validation must follow that merge commit back to the exact PR head and
+    inspect the checks that authorized the merge.
+    """
+
+    payload = json.loads(
+        run(
+            "gh",
+            "api",
+            f"repos/{REPOSITORY}/commits/{merge_sha}/pulls?per_page=100",
+        )
+    )
+    candidates = [
+        item
+        for item in payload
+        if item.get("base", {}).get("ref") == DEFAULT_BRANCH
+        and item.get("merged_at")
+        and item.get("merge_commit_sha") == merge_sha
+        and item.get("head", {}).get("sha")
+    ]
+    if len(candidates) != 1:
+        raise ReleaseError(
+            f"could not resolve exactly one merged {DEFAULT_BRANCH} PR for {merge_sha}"
+        )
+    return candidates[0]["head"]["sha"]
+
+
 def preflight(version: str) -> tuple[str, str]:
     validate_version(version)
     module_version = platform_tag(version)
     root = run("git", "rev-parse", "--show-toplevel")
     if Path.cwd().resolve() != Path(root).resolve():
         raise ReleaseError("run the release command from the repository root")
-    if run("git", "branch", "--show-current") != "main":
-        raise ReleaseError("release must run from main")
+    if run("git", "branch", "--show-current") != DEFAULT_BRANCH:
+        raise ReleaseError(f"release must run from {DEFAULT_BRANCH}")
     if run("git", "status", "--porcelain=v1", "--untracked-files=all"):
         raise ReleaseError("working tree, index, or untracked files are not clean")
     remote = run("git", "remote", "get-url", "origin")
@@ -71,17 +103,18 @@ def preflight(version: str) -> tuple[str, str]:
     run("gh", "auth", "status", "--hostname", "github.com")
     run("git", "fetch", "origin", "main", "--tags", "--prune")
     head = run("git", "rev-parse", "HEAD")
-    if head != run("git", "rev-parse", "origin/main"):
+    if head != run("git", "rev-parse", f"origin/{DEFAULT_BRANCH}"):
         raise ReleaseError("HEAD must exactly match origin/main")
     for tag in (version, module_version):
         if run("git", "tag", "--list", tag):
             raise ReleaseError(f"local tag already exists: {tag}")
         if run("git", "ls-remote", "--tags", "origin", f"refs/tags/{tag}"):
             raise ReleaseError(f"remote tag already exists: {tag}")
-    payload = json.loads(run("gh", "api", f"repos/{REPOSITORY}/commits/{head}/check-runs?per_page=100"))
+    ci_head = merged_pull_request_head_sha(head)
+    payload = json.loads(run("gh", "api", f"repos/{REPOSITORY}/commits/{ci_head}/check-runs?per_page=100"))
     missing = REQUIRED_CHECKS - successful_checks(payload)
     if missing:
-        raise ReleaseError(f"main CI is not successful for {head}: missing {', '.join(sorted(missing))}")
+        raise ReleaseError(f"PR CI is not successful for {ci_head}: missing {', '.join(sorted(missing))}")
     oss_bucket = run("gh", "variable", "get", "OSS_BUCKET", "--env", "release", check=False)
     if not oss_bucket:
         raise ReleaseError("release environment variable OSS_BUCKET is not configured")

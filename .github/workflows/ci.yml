@@ -1,9 +1,9 @@
 name: CI
 
 on:
+  # Pull requests are the single full-CI gate. The release workflow validates
+  # the merged PR checks instead of rebuilding the same commit on main.
   pull_request:
-  push:
-    branches: [main]
 
 permissions:
   contents: read
