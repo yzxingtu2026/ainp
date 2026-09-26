@@ -294,6 +294,45 @@ class CloudTest(unittest.TestCase):
         with self.assertRaises(common.DeployError):
             cloud.invocation_result(payload(InvocationStatus="Success", InvokeRecordStatus="Finished", ExitCode=1), "i-one")
 
+    def test_invocation_failure_includes_bounded_redacted_output_tail(self):
+        output = "old output\n" + "x" * 5000 + "\nPASSWORD=database-secret\nhttps://user:url-secret@example.com\nE: dpkg lock busy"
+        payload = {"Invocation": {"InvocationResults": {"InvocationResult": [{
+            "InstanceId": "i-one",
+            "InvocationStatus": "Failed",
+            "InvokeRecordStatus": "Finished",
+            "ExitCode": 100,
+            "ErrorCode": "ExitCodeNonzero",
+            "ErrorInfo": "The command execution exit code is not zero.",
+            "Output": output,
+        }]}}}
+        message = cloud.invocation_failure(payload, "i-one")
+        self.assertIn("status=Failed", message)
+        self.assertIn("exit_code=100", message)
+        self.assertIn("error_code=ExitCodeNonzero", message)
+        self.assertIn("[output tail]", message)
+        self.assertIn("E: dpkg lock busy", message)
+        self.assertNotIn("database-secret", message)
+        self.assertNotIn("url-secret", message)
+        self.assertNotIn("old output", message)
+
+    def test_poll_failure_surfaces_invocation_diagnostics(self):
+        payload = {"Invocation": {"InvocationResults": {"InvocationResult": [{
+            "InstanceId": "i-one",
+            "InvocationStatus": "Failed",
+            "InvokeRecordStatus": "Finished",
+            "ExitCode": 100,
+            "ErrorCode": "ExitCodeNonzero",
+            "Output": "E: Unable to acquire the dpkg frontend lock",
+        }]}}}
+        state = {"invoke_id": "t-one", "instance_id": "i-one", "status": "running"}
+        api = mock.Mock()
+        api.call.return_value = payload
+        with tempfile.TemporaryDirectory() as d:
+            statepath = Path(d) / "state.json"
+            with self.assertRaisesRegex(common.DeployError, "dpkg frontend lock"):
+                cloud.poll(api, state, statepath, timeout=1)
+            self.assertEqual(common.read_json(statepath)["status"], "failed")
+
     def test_ownership_required_before_remote_command(self):
         api = mock.Mock()
         api.call.return_value = {"Instances": {"Instance": [{"InstanceId": "i-one", "InstanceChargeType": "PostPaid", "Tags": {"Tag": []}}]}}
