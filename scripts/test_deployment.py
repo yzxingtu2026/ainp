@@ -1,4 +1,5 @@
 """Offline release/controller/security contracts; never calls a cloud or production host."""
+import ast
 import base64
 import contextlib
 import hashlib
@@ -11,6 +12,7 @@ import sys
 import tarfile
 import tempfile
 import unittest
+import zlib
 from unittest import mock
 
 DEPLOY = Path(__file__).parent / "deployment"
@@ -287,12 +289,42 @@ class CloudTest(unittest.TestCase):
 
     def test_bootstrap_retries_only_apt_lock_failures_with_bounded_timeout(self):
         command = cloud.bootstrap(dict(project="ainp", ram_role="ainp-production-runtime", action="init", operation_id="a" * 36, release=self.reference(), config_oss=self.target()["config_oss"], config_key=self.target()["config_key"], config_sha256="a" * 64))
-        self.assertIn("AINP_APT_LOCK_TIMEOUT: waited %s seconds", command)
+        self.assertIn("else status=$?", command)
+        self.assertIn('return "$status"', command)
+        self.assertNotIn("return 100", command)
         self.assertIn("apt_get update -qq", command)
         self.assertIn("AINP_APT_LOCK_TIMEOUT", command)
-        self.assertIn("locks remain; reconcile unattended-upgrades", command)
+        self.assertIn("reconcile unattended-upgrades", command)
         self.assertNotIn("rm -f /var/lib/dpkg/lock", command)
         self.assertNotIn("kill ", command)
+
+    def test_bootstrap_uses_compact_host_release_for_real_reference_metadata(self):
+        reference = {
+            **self.reference(),
+            "schema": 1,
+            "build_time": "2026-09-26T07:24:59Z",
+        }
+        target = self.target()
+        request = dict(
+            project=target["project"],
+            ram_role=target["ram_role"],
+            action="init",
+            operation_id="a" * 36,
+            release=cloud._host_release(reference, target["release_oss_endpoint"]),
+            config_oss=target["config_oss"],
+            config_key=target["config_key"],
+            config_sha256=target["config_sha256"],
+        )
+        command = cloud.bootstrap(request)
+        self.assertLessEqual(len(command.encode()), 16384)
+        self.assertLessEqual(len(base64.b64encode(command.encode())), 24576)
+        literal = command.split("base64.b64decode(", 1)[1].split(")", 1)[0]
+        files = json.loads(zlib.decompress(base64.b64decode(ast.literal_eval(literal))))
+        remote_request = json.loads(files["request.json"])
+        self.assertEqual(set(remote_request["release"]), {"project", "version", "commit", "platform", "sha256", "key", "oss"})
+        self.assertEqual(remote_request["release"]["oss"]["endpoint"], target["release_oss_endpoint"])
+        self.assertNotIn("schema", remote_request["release"])
+        self.assertNotIn("build_time", remote_request["release"])
 
     def test_failed_init_recovers_same_instance_and_preserves_attempt_audit(self):
         target = self.target()

@@ -24,23 +24,17 @@ flock -w 120 9
 apt_get() {
   i=0
   while :; do
-    if output=$(apt-get "$@" 2>&1); then
-      printf '%s\n' "$output"
-      return 0
-    else
-      status=$?
-    fi
+    if output=$(apt-get "$@" 2>&1); then return 0; else status=$?; fi
     case "$output" in
       *"Could not get lock"*|*"Unable to acquire "*lock*|*"Could not open lock file"*) ;;
       *) printf '%s\n' "$output" >&2; return "$status" ;;
     esac
     if [ "$i" -ge 120 ]; then
       printf '%s\n' "$output" >&2
-      printf 'AINP_APT_LOCK_TIMEOUT: waited %s seconds; locks remain; reconcile unattended-upgrades and retry.\n' 600 >&2
+      printf 'AINP_APT_LOCK_TIMEOUT: reconcile unattended-upgrades; retry 600s\n' >&2
       return 75
     fi
-    i=$((i + 1))
-    sleep 5
+    i=$((i+1));sleep 5
   done
 }
 sed -i 's#\(archive\|security\)\.ubuntu\.com#mirrors.cloud.aliyuncs.com#g' /etc/apt/sources.list
@@ -57,18 +51,17 @@ chmod 644 /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc /etc/apt/sour
 apt_get update -qq
 apt_get install -y -qq postgresql-client-17
 python3 -m venv "$runtime"
-"$runtime/bin/pip" --disable-pip-version-check install --quiet oss2==2.19.1 'psycopg[binary]==3.2.10' PyYAML==6.0.2 redis==6.4.0
+"$runtime/bin/pip" install --quiet oss2==2.19.1 'psycopg[binary]==3.2.10' PyYAML==6.0.2 redis==6.4.0
 touch "$runtime/ready"
 fi
 systemctl enable --now nginx
-flock -u 9
 work=$(mktemp -d /var/tmp/ainp-deploy.XXXXXXXX)
 trap 'rm -rf "$work"' EXIT
 python3 - "$work" <<'AINP_PAYLOAD'
 import base64,json,pathlib,sys,zlib
 files=json.loads(zlib.decompress(base64.b64decode(PAYLOAD_LITERAL)))
-for filename, body in files.items():
-    pathlib.Path(sys.argv[1], filename).write_text(body)
+for filename,body in files.items():
+    pathlib.Path(sys.argv[1],filename).write_text(body)
 AINP_PAYLOAD
 "$runtime/bin/python" "$work/host.py" "$work/request.json"
 '''
@@ -180,11 +173,19 @@ class Alibaba:
         return json.loads(result.stdout)
 
 
+def _host_release(reference, endpoint=None):
+    """Keep the Cloud Assistant request to the fields consumed by host.py."""
+    release = {field: reference[field] for field in ("project", "version", "commit", "platform", "sha256", "key", "oss")}
+    if endpoint:
+        release["oss"] = {**release["oss"], "endpoint": endpoint}
+    return release
+
+
 def bootstrap(request):
     files = {p: Path(__file__).with_name(p).read_text() for p in ("common.py", "storage.py", "host.py", "launcher.py")}
-    files["request.json"] = json.dumps(request, sort_keys=True)
-    payload = base64.b64encode(zlib.compress(json.dumps(files).encode(), 9)).decode()
-    command = BOOTSTRAP.replace("PAYLOAD_LITERAL", repr(payload))
+    files["request.json"] = json.dumps(request, sort_keys=True, separators=(",", ":"))
+    payload = base64.b64encode(zlib.compress(json.dumps(files, separators=(",", ":")).encode(), 9)).decode()
+    command = BOOTSTRAP.replace("PAYLOAD_LITERAL", repr(payload)).rstrip("\n")
     require(len(command.encode()) <= 16384 and len(base64.b64encode(command.encode())) <= 24576, "bootstrap exceeds conservative 16KiB budget / API encoded limit; use a versioned bootstrap object")
     return command
 
@@ -310,9 +311,9 @@ def execute(target, reference, action, statepath, confirm=False, status_only=Fal
         }
         if action == "init":
             state["config_sha256"] = target["config_sha256"]
-        request = dict(project=target["project"], ram_role=target["ram_role"], action=action, operation_id=state["operation_id"], release=reference, confirm_schema_compatible=confirm)
-        if target.get("release_oss_endpoint"):
-            request["release"] = {**reference, "oss": {**reference["oss"], "endpoint": target["release_oss_endpoint"]}}
+        request = dict(project=target["project"], ram_role=target["ram_role"], action=action, operation_id=state["operation_id"], release=_host_release(reference, target.get("release_oss_endpoint")))
+        if action == "rollback":
+            request["confirm_schema_compatible"] = confirm
         if action == "init":
             for field in ("config_oss", "config_key", "config_sha256"):
                 request[field] = target[field]
