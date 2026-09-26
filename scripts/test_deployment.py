@@ -230,6 +230,49 @@ class CloudTest(unittest.TestCase):
             with self.subTest(change=change), self.assertRaises(common.DeployError):
                 cloud.validate_target({**self.target(), **change})
 
+    def test_alibaba_json_error_exposes_only_bounded_safe_fields(self):
+        response = {
+            "schemaVersion": "v1",
+            "message": "Balance too low\nrecharge first",
+            "error_code": "InvalidAccountStatus.NotEnoughBalance",
+            "status_code": 403,
+            "request_id": "REQUEST-123",
+            "recovery": {"command": "aliyun command --AccessKeySecret leaked-secret"},
+            "AccessKeySecret": "leaked-secret",
+        }
+        result = cloud.subprocess.CompletedProcess([], 2, stdout="", stderr=json.dumps(response))
+        with mock.patch.object(cloud.subprocess, "run", return_value=result):
+            with self.assertRaises(common.DeployError) as raised:
+                cloud.Alibaba(self.target()).call("RunInstances", CommandContent="private-command")
+        message = str(raised.exception)
+        self.assertIn("code=InvalidAccountStatus.NotEnoughBalance", message)
+        self.assertIn("status=403", message)
+        self.assertIn("message=Balance too low recharge first", message)
+        self.assertIn("request_id=REQUEST-123", message)
+        self.assertNotIn("leaked-secret", message)
+        self.assertNotIn("private-command", message)
+        self.assertNotIn("recovery", message)
+
+    def test_alibaba_non_json_or_oversized_error_does_not_echo_raw_output(self):
+        cases = ("raw secret output", "x" * (cloud.CLI_ERROR_JSON_LIMIT + 1))
+        for raw in cases:
+            with self.subTest(size=len(raw)):
+                result = cloud.subprocess.CompletedProcess([], 2, stdout="", stderr=raw)
+                with mock.patch.object(cloud.subprocess, "run", return_value=result):
+                    with self.assertRaisesRegex(common.DeployError, "response unavailable or unrecognized") as raised:
+                        cloud.Alibaba(self.target()).call("RunInstances")
+                self.assertNotIn(raw[:20], str(raised.exception))
+
+    def test_alibaba_timeout_does_not_echo_command_or_exception_output(self):
+        error = cloud.subprocess.TimeoutExpired(["aliyun", "--secret", "leaked-secret"], 120, output="leaked-output")
+        with mock.patch.object(cloud.subprocess, "run", side_effect=error):
+            with self.assertRaisesRegex(common.DeployError, "unavailable/timeout") as raised:
+                cloud.Alibaba(self.target()).call("RunInstances", CommandContent="private-command")
+        message = str(raised.exception)
+        self.assertNotIn("leaked-secret", message)
+        self.assertNotIn("leaked-output", message)
+        self.assertNotIn("private-command", message)
+
     def test_bootstrap_with_real_request_fits_and_has_no_credentials(self):
         request = dict(project="ainp", ram_role="ainp-production-runtime", action="init", operation_id="a" * 36, release=self.reference(), config_oss=self.target()["config_oss"], config_key=self.target()["config_key"], config_sha256="a" * 64)
         command = cloud.bootstrap(request)
@@ -250,6 +293,45 @@ class CloudTest(unittest.TestCase):
             self.assertEqual(cloud.invocation_result(payload(InvocationStatus=status), "i-one"), "failed")
         with self.assertRaises(common.DeployError):
             cloud.invocation_result(payload(InvocationStatus="Success", InvokeRecordStatus="Finished", ExitCode=1), "i-one")
+
+    def test_invocation_failure_includes_bounded_redacted_output_tail(self):
+        output = "old output\n" + "x" * 5000 + "\nPASSWORD=database-secret\nhttps://user:url-secret@example.com\nE: dpkg lock busy"
+        payload = {"Invocation": {"InvocationResults": {"InvocationResult": [{
+            "InstanceId": "i-one",
+            "InvocationStatus": "Failed",
+            "InvokeRecordStatus": "Finished",
+            "ExitCode": 100,
+            "ErrorCode": "ExitCodeNonzero",
+            "ErrorInfo": "The command execution exit code is not zero.",
+            "Output": output,
+        }]}}}
+        message = cloud.invocation_failure(payload, "i-one")
+        self.assertIn("status=Failed", message)
+        self.assertIn("exit_code=100", message)
+        self.assertIn("error_code=ExitCodeNonzero", message)
+        self.assertIn("[output tail]", message)
+        self.assertIn("E: dpkg lock busy", message)
+        self.assertNotIn("database-secret", message)
+        self.assertNotIn("url-secret", message)
+        self.assertNotIn("old output", message)
+
+    def test_poll_failure_surfaces_invocation_diagnostics(self):
+        payload = {"Invocation": {"InvocationResults": {"InvocationResult": [{
+            "InstanceId": "i-one",
+            "InvocationStatus": "Failed",
+            "InvokeRecordStatus": "Finished",
+            "ExitCode": 100,
+            "ErrorCode": "ExitCodeNonzero",
+            "Output": "E: Unable to acquire the dpkg frontend lock",
+        }]}}}
+        state = {"invoke_id": "t-one", "instance_id": "i-one", "status": "running"}
+        api = mock.Mock()
+        api.call.return_value = payload
+        with tempfile.TemporaryDirectory() as d:
+            statepath = Path(d) / "state.json"
+            with self.assertRaisesRegex(common.DeployError, "dpkg frontend lock"):
+                cloud.poll(api, state, statepath, timeout=1)
+            self.assertEqual(common.read_json(statepath)["status"], "failed")
 
     def test_ownership_required_before_remote_command(self):
         api = mock.Mock()
