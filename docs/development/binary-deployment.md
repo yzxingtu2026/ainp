@@ -69,7 +69,7 @@ Actions → **Test Native Release** → **Run workflow**，分支选择 `main`�
 - 仅开放公网 80/443，SSH 按管理员来源限制或不开放；API 仅监听 127.0.0.1；数据库/Redis 不能暴露公网。
 - 公网 IP/EIP、出口/NAT/带宽计费策略由模板/平台预先规划。控制器不自动申请 EIP 或修改 DNS。
 - 云助手 Agent 已装且可连通；实例 RAM 角色正确；控制器创建时强制 PostPaid、IMDSv2 required。已有 ECS 也必须按模板设置这两项及正确角色。
-- 可访问 Ubuntu/PGDG apt、PyPI、OSS 与元数据服务。首次装 Nginx、Python venv、PG17 client 等；依赖准备成功后复用，不在每次更新重复 apt 安装。
+- 可访问 Ubuntu/PGDG apt、PyPI、OSS 与元数据服务。首次装 Nginx、Python venv、PG17 client 等；依赖准备成功后复用，不在每次更新重复 apt 安装。bootstrap 在首次 apt 操作前，仅将 Ubuntu 官方 `archive.ubuntu.com`/`security.ubuntu.com` 源切换到阿里云 ECS VPC 内网镜像 `http://mirrors.cloud.aliyuncs.com/ubuntu`；不会改写 PGDG 或其他第三方源。
 - 配置需要的数据库 CA 证书已存在且服务用户可读。ECS 启动模板不应该硬编码数据库密码、JWT 或管理员密码。
 - 如果使用本机 PG/Redis 容器：模板/独立基础设施脚本启动固定版本、持久化目录与认证，端口发布到 **127.0.0.1**；Docker 引擎/数据库生命周期不由应用脚本维护。数据库容器需随开机启动且应用服务启动前可用。
 

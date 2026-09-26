@@ -282,13 +282,15 @@ class CloudTest(unittest.TestCase):
         self.assertNotIn("DATABASE_DSN=", command)
         self.assertLessEqual(len(base64.b64encode(command.encode())), 24576)
         self.assertIn("chmod 644 /usr/share/postgresql-common/pgdg", command)
+        self.assertIn("mirrors.cloud.aliyuncs.com", command)
+        self.assertIn("/etc/apt/sources.list", command)
 
     def test_bootstrap_retries_only_apt_lock_failures_with_bounded_timeout(self):
         command = cloud.bootstrap(dict(project="ainp", ram_role="ainp-production-runtime", action="init", operation_id="a" * 36, release=self.reference(), config_oss=self.target()["config_oss"], config_key=self.target()["config_key"], config_sha256="a" * 64))
         self.assertIn("AINP_APT_LOCK_TIMEOUT: waited %s seconds", command)
         self.assertIn("apt_get update -qq", command)
         self.assertIn("AINP_APT_LOCK_TIMEOUT", command)
-        self.assertIn("lock files were not removed and holder processes were not terminated", command)
+        self.assertIn("locks remain; reconcile unattended-upgrades", command)
         self.assertNotIn("rm -f /var/lib/dpkg/lock", command)
         self.assertNotIn("kill ", command)
 

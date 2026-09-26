@@ -13,7 +13,7 @@ import zlib
 
 from common import DeployError, atomic_json, digest, key, lock, name, oss_config, read_json, require, version
 
-BOOTSTRAP = '''set -eu
+BOOTSTRAP = r'''set -eu
 umask 077
 . /etc/os-release
 test "$ID" = ubuntu && test "$VERSION_ID" = 22.04
@@ -36,13 +36,15 @@ apt_get() {
     esac
     if [ "$i" -ge 120 ]; then
       printf '%s\n' "$output" >&2
-      printf 'AINP_APT_LOCK_TIMEOUT: waited %s seconds for apt/dpkg locks; lock files were not removed and holder processes were not terminated. Reconcile unattended-upgrades and retry init.\n' 600 >&2
+      printf 'AINP_APT_LOCK_TIMEOUT: waited %s seconds; locks remain; reconcile unattended-upgrades and retry.\n' 600 >&2
       return 75
     fi
     i=$((i + 1))
     sleep 5
   done
 }
+sed -i 's#\(archive\|security\)\.ubuntu\.com#mirrors.cloud.aliyuncs.com#g' /etc/apt/sources.list
+
 runtime=/opt/ainp-deploy-runtime-v1
 if [ ! -f "$runtime/ready" ]; then
 apt_get update -qq
