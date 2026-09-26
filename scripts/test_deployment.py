@@ -19,6 +19,7 @@ import cloud
 import host
 import launcher
 import storage
+import check_oss
 spec = importlib.util.spec_from_file_location("native_package", DEPLOY / "package.py")
 package = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(package)
@@ -444,6 +445,86 @@ class StorageTest(unittest.TestCase):
         with mock.patch.object(storage.urllib.request, "build_opener", return_value=opener), self.assertRaises(OSError):
             storage.metadata_credentials("runtime-role")
         self.assertEqual(opener.open.call_count, 1)
+
+
+class OSSPreflightTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.directory = Path(self.tmp.name)
+        self.objects = {}
+        self.headers = {}
+        self.allow_overwrite = False
+        self.version_id = None
+        self.denied = False
+
+        class ServerError(Exception):
+            def __init__(self, status):
+                self.status = status
+
+        self.ServerError = ServerError
+        fake_sdk = mock.Mock()
+        fake_sdk.exceptions.ServerError = ServerError
+        patcher = mock.patch.dict(sys.modules, {"oss2": fake_sdk})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.b = mock.Mock()
+        self.b.put_object_from_file.side_effect = self.put
+        self.b.head_object.side_effect = self.head
+        self.b.get_object.side_effect = lambda key: io.BytesIO(self.objects[key])
+
+    def put(self, key, path, headers):
+        if self.denied:
+            raise self.ServerError(403)
+        if key in self.objects and not self.allow_overwrite:
+            raise self.ServerError(409)
+        self.objects[key] = Path(path).read_bytes()
+        self.headers[key] = headers
+
+    def head(self, key):
+        headers = dict(self.headers[key])
+        if self.version_id:
+            headers["x-oss-version-id"] = self.version_id
+        return mock.Mock(headers=headers)
+
+    def test_private_object_roundtrip_retry_and_conflict(self):
+        check_oss.check(self.b, "releases/ainp/_checks/test/probe.txt", self.directory)
+        self.assertEqual(len(self.objects), 1)
+        self.assertIn(b"not a release artifact", next(iter(self.objects.values())))
+        self.assertEqual(self.b.put_object_from_file.call_count, 3)
+
+    def test_bucket_ignoring_forbid_overwrite_fails(self):
+        self.allow_overwrite = True
+        with self.assertRaisesRegex(common.DeployError, "allowed an overwrite"):
+            check_oss.check(self.b, "probe", self.directory)
+
+    def test_versioned_bucket_stops_before_overwrite(self):
+        self.version_id = "actual-version-id"
+        with self.assertRaisesRegex(common.DeployError, "versioned bucket"):
+            check_oss.check(self.b, "probe", self.directory)
+        self.assertEqual(self.b.put_object_from_file.call_count, 1)
+
+    def test_readback_corruption_fails(self):
+        self.b.get_object.side_effect = lambda key: io.BytesIO(b"corrupt")
+        with self.assertRaisesRegex(common.DeployError, "read-back mismatch"):
+            check_oss.check(self.b, "probe", self.directory)
+
+    def test_permission_error_is_not_overwrite_protection(self):
+        self.denied = True
+        with self.assertRaises(self.ServerError) as raised:
+            check_oss.check(self.b, "probe", self.directory)
+        self.assertEqual(raised.exception.status, 403)
+
+    def test_default_plan_never_connects(self):
+        with mock.patch.dict(os.environ, {"OSS_PREFIX": "releases"}), mock.patch.object(sys, "argv", ["check_oss.py"]), mock.patch.object(check_oss, "bucket") as connect, contextlib.redirect_stdout(io.StringIO()):
+            check_oss.main()
+        connect.assert_not_called()
+
+    def test_project_traversal_rejected_before_connecting(self):
+        with mock.patch.dict(os.environ, {"OSS_PREFIX": "releases"}), mock.patch.object(sys, "argv", ["check_oss.py", "--project", "../other", "--apply"]), mock.patch.object(check_oss, "bucket") as connect:
+            with self.assertRaises(common.DeployError):
+                check_oss.main()
+        connect.assert_not_called()
 
 
 if __name__ == "__main__":

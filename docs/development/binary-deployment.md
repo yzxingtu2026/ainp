@@ -2,7 +2,7 @@
 
 关联：Issue #352。此协议适用于 AINP 及遵守公开 Host/配置/迁移契约的下游项目。
 
-> **验收状态：实现基线，待 Linux CI 和真实测试 ECS 验收。** 离线测试不等于生产验收；不能直接把已有 Windows/Compose 生产环境交给 `init`。
+> **验收状态：实现基线，Linux CI 已通过，待 OIDC/OSS 和真实测试 ECS 验收。** 离线测试不等于生产验收；不能直接把已有 Windows/Compose 生产环境交给 `init`。
 > v1 是**单项目、单 ECS、有维护窗口**部署，不承诺零停机或任务无中断。不创建 ACR，不构建应用容器镜像，不部署运维面板。
 
 ## 1. 组成与边界
@@ -32,11 +32,28 @@ PR/main CI → Linux/CJK 门禁
 
 OIDC 信任策略必须约束公司 GitHub 组织、仓库及 `release` environment 的 subject/audience；GitHub `release` environment 设置允许正式 Tag、保护规则/审批。仅配置 action 输入不等于已经建立信任关系。
 
-OSS：私有桶、禁止公共 ACL、启用服务端加密；release 与配置/备份最好分桶。按项目分前缀。对象默认禁止覆盖；发布先上传包，最后上传 `reference.json` 完成标记。建议启用 OSS 版本控制/保留策略，避免有删除权限的人绕过不可变约束。实例通过 target 的 `release_oss_endpoint` 指定同地域 HTTPS 内网 endpoint（只改访问端点，不改变桶、对象或校验和）；GitHub Runner 使用发布用公网 endpoint，Release reference 保留发布端点。
+OSS：私有桶、禁止公共 ACL、启用服务端加密；release 与配置/备份最好分桶。按项目分前缀。对象默认禁止覆盖；发布先上传包，最后上传 `reference.json` 完成标记。当前发布协议依赖 `x-oss-forbid-overwrite`；OSS 开启或暂停版本控制时该请求头不生效，不能用版本控制替代禁止覆盖。优先使用未开启过版本控制的发布桶；已有版本控制桶需另行验证服务端禁止覆盖策略，连接测试通过后再发布。备份桶的版本控制/保留策略单独配置。实例通过 target 的 `release_oss_endpoint` 指定同地域 HTTPS 内网 endpoint（只改访问端点，不改变桶、对象或校验和）；GitHub Runner 使用发布用公网 endpoint，Release reference 保留发布端点。
 
 > 实例上的进程可接触实例身份，IMDSv2 不是 UID 隔离。业务进程/任意插件不应被视为不可信租户；需要更严格隔离时增加主机 IMDS 访问控制/专用身份代理，不把多个互不信任项目放在同一 ECS。
 
-### 2.2 ECS 启动模板
+### 2.2 首次配置后的 OSS 连接测试
+
+先运行 `Check OSS Release Access`，无需构建应用或创建正式 Tag。工作流复用 `release` environment 的五个变量和 OIDC 角色，手动执行，PR CI 不访问云资源。
+
+- 工作流文件必须先通过 PR 进入默认分支，GitHub 才开放 `workflow_dispatch`。合入前只能做离线测试，不能把它记录成真实云端通过。
+- 在 `release` environment 设置允许 `main`（手动预检）及正式版本 Tag 的部署规则，并按团队权限配置审批；不要为方便测试向所有分支开放发布角色。
+- Actions → **Check OSS Release Access** → **Run workflow** → 选择 `main`，project 填 `ainp`。下游使用与其 RAM 目录授权一致的项目名。
+- 检查 OIDC 换证、Put/Get/Head、同内容重试与不同内容禁止覆盖。测试对象为 `releases/ainp/_checks/<随机ID>/probe.txt`（前缀/项目可配置），无发布 manifest/reference，无法作为部署包使用。
+- 测试只留一份几十字节的对象，不申请删除权限。可由管理员定期清理 `_checks/`，不会触碰正式版本。
+- STS 步骤失败时检查 issuer/audience/subject/角色信任；OSS 403 时检查角色策略与 Bucket 策略；覆盖保护失败时检查 Bucket 版本控制及服务端保护配置。失败不得继续正式发布。
+
+```bash
+gh workflow run check-oss.yml --ref main -f project=ainp
+```
+
+连接通过仅证明发布身份和 OSS 路径可用。应用构建、真实测试 ECS、数据库和 Worker、更新回滚仍需独立验收；本入口不会创建 ECS、发布正式 Tag 或放宽生产对 `-ci` 包的限制。
+
+### 2.3 ECS 启动模板
 
 使用**数字版本**，禁止 `Latest`/`Default`。模板应固定并评审：
 
@@ -181,7 +198,7 @@ python3 scripts/deployment/cloud.py status --target deploy/linux/target.local.js
 
 ## 10. 验收清单（交付前逐项记录结果）
 
-- [ ] Ubuntu 原生 MuPDF/CJK 三项测试、三个可执行程序加载、Web 构建与产物清单。
+- [x] Ubuntu 原生 MuPDF/CJK 三项测试、三个可执行程序加载、Web 构建与产物清单（实现基线 CI run `35998721922` 通过；后续提交继续以各自 CI 为准）。
 - [ ] OIDC 最小权限上传私有 OSS、重复发布相同内容成功/不同内容拒绝、无生产自动部署。
 - [ ] 固定模板新建一台 ECS，云助手在线、安全组正确、初始化后无公开 setup。
 - [ ] external PG 与 loopback local-container PG 分别安装并验证；失败预检无业务变更。
