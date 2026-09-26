@@ -203,6 +203,28 @@ class CloudTest(unittest.TestCase):
             execute.assert_not_called()
             self.assertIn("PLAN ONLY", output.getvalue())
 
+    def test_ci_release_is_only_allowed_in_test_environment(self):
+        ci_reference = {**self.reference(), "version": "v0.0.0-ci"}
+        with self.assertRaisesRegex(common.DeployError, "only in the test environment"):
+            cloud.validate_release_for_environment(self.target(), ci_reference)
+
+        test_target = {**self.target(), "environment": "test"}
+        cloud.validate_release_for_environment(test_target, ci_reference)
+
+    def test_test_environment_ci_plan_still_makes_no_cloud_calls(self):
+        with tempfile.TemporaryDirectory() as d:
+            target, release = Path(d) / "target.json", Path(d) / "release.json"
+            common.atomic_json(target, {**self.target(), "environment": "test"})
+            common.atomic_json(release, {**self.reference(), "version": "v0.0.0-ci"})
+            with mock.patch.object(
+                sys,
+                "argv",
+                ["cloud", "init", "--target", str(target), "--release", str(release)],
+            ), mock.patch.object(cloud, "execute") as execute, contextlib.redirect_stdout(io.StringIO()) as output:
+                cloud.main()
+            execute.assert_not_called()
+            self.assertIn("PLAN ONLY", output.getvalue())
+
     def test_fixed_template_and_no_arbitrary_cli_profile(self):
         for change in ({"launch_template": {"id": "lt-demo", "version": "Latest"}}, {"profile": "profile;evil"}, {"environment": "../production"}, {"release_oss_endpoint": "https://attacker.example.com"}):
             with self.subTest(change=change), self.assertRaises(common.DeployError):
