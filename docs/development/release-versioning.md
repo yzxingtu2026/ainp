@@ -22,7 +22,7 @@ Go 构建通过 `-ldflags -X` 注入 `framework/buildinfo` 的私有变量；`ai
 
 ## CI 与发布阶段
 
-`.github/workflows/ci.yml` 是 PR/main 测试事实源。正式 Tag 工作流要求同提交 backend、frontend、repository-gates、linux-release 全部成功；linux-release 聚合原生 Ubuntu/CJK/打包门禁。Windows timezone 门禁保留。发布任务 `cancel-in-progress: false`，不能中途取消已开始的上传。
+`.github/workflows/ci.yml` 是 Pull Request 测试事实源，不在合入 `main` 后重复运行完整构建。正式 Tag 工作流从对应的已合并 PR head 读取 backend、frontend、repository-gates、linux-release 的成功检查；linux-release 聚合原生 Ubuntu/CJK/打包门禁。Windows timezone 门禁保留。发布任务 `cancel-in-progress: false`，不能中途取消已开始的上传。
 
 正式 Linux 产物为同一包内的 API/Worker/migrate 二进制 + 静态 Web，私有 OSS 保存不可变版本对象。通用/AI Worker 共用同一可执行文件。`release-binaries.yml` 替换旧镜像发布工作流；不依赖 ACR/GHCR，不再自动 SSH 部署演示/生产。
 
@@ -30,6 +30,6 @@ Go 构建通过 `-ldflags -X` 注入 `framework/buildinfo` 的私有变量；`ai
 
 GitHub Release 只附元数据，不公开应用包或环境秘密。中文发布说明基于受限 commit/PR 事实，模型不可编辑发布元数据；异常降级不阻塞发布。
 
-`scripts/release.py` 仍从干净、同步 main 推送配对 Tag，但检查 OSS 发布配置而非 DEMO_URL。生产更新/回滚是管理员单独显式动作，与创建 Release 解耦。
+`scripts/release.py` 仍从干净、同步 main 推送配对 Tag，但会先将 `main` 合并提交追溯到唯一的已合并 PR，并检查该 PR head 的必需 CI；同时检查 OSS 发布配置而非 DEMO_URL。生产更新/回滚是管理员单独显式动作，与创建 Release 解耦。
 
 部署命令、RAM/OIDC、基础设施准备、SSL 生命周期与下游接入见 [原生部署 SOP](binary-deployment.md)。分支保护须将旧 `containers` required check 改为 `linux-release`；旧 [容器部署基线](../deployment/containers.md) 仅用于存量兼容，不是新项目主路径。

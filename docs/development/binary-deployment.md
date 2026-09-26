@@ -8,7 +8,7 @@
 ## 1. 组成与边界
 
 ```text
-PR/main CI → Linux/CJK 门禁
+PR CI → Linux/CJK 门禁（不在合入 main 后重复运行）
 正式 SemVer Tag → 原生构建 → 私有 OSS 不可变发布包 → GitHub Release 元数据
 管理员部署命令 → 阿里云 CLI → 固定版本 ECS 启动模板（仅首次）→ 云助手
   → 校验发布包 → systemd API + Worker + AI Worker / Nginx 静态 Web
@@ -90,8 +90,8 @@ GitHub environment **release** 配置变量：
 既有 `RELEASE_NOTES_*` 可选变量/Secret 保留，模型失败降级确定性发布说明。
 
 - `.github/workflows/native-build.yml`：可复用构建（不持有云权限）。Go/Node/pnpm、固定 MuPDF，CJK 测试、CLI 启动 smoke、动态库检查、前端构建、SHA256 清单。
-- `.github/workflows/ci.yml`：保留 backend/frontend/windows/repository gates，替换 `containers` 为 **`linux-release`** 聚合门禁。合入时管理员须同步分支保护的 required checks，不能仅删除旧 job 而不更新规则。
-- `.github/workflows/release-binaries.yml`：要求同提交 CI 成功，根 Tag 与 `platform/` Tag 同提交；私有 OSS 发布成功后发布 GitHub Release。已发布 Release 重跑跳过，不重新生成或覆盖包。
+- `.github/workflows/ci.yml`：只监听 Pull Request，保留 backend/frontend/windows/repository gates，替换 `containers` 为 **`linux-release`** 聚合门禁。合入 `main` 不再重复运行完整构建；分支保护仍须要求这些 PR checks，不能仅删除旧 job 而不更新规则。
+- `.github/workflows/release-binaries.yml`：根 Tag 与 `platform/` Tag 同提交，并通过 GitHub API 找到产生该 `main` 提交的已合并 PR，再校验该 PR head 的完整 CI 成功；私有 OSS 发布成功后发布 GitHub Release。已发布 Release 重跑跳过，不重新生成或覆盖包。
 - `.github/workflows/test-native-release.yml`：仅允许 `main` 手动运行固定 `v0.0.0-ci`，验证完整包上传和 OSS 读回；不创建 Release/ECS，`-ci` 包不能用于生产部署。
 - 不再有 GHCR 推送/SSH 自动演示部署。旧 Docker/Compose 文件仅为存量兼容，不属于新发布主路径。
 - 发布入口仍为仓库根目录 `python3 scripts/release.py vX.Y.Z`；需干净、同步 main。

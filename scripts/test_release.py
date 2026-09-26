@@ -32,6 +32,38 @@ class ReleaseValidationTest(unittest.TestCase):
         ]}
         self.assertEqual(release.successful_checks(payload), {"backend", "frontend"})
 
+    def test_merged_pull_request_head_sha_resolves_squash_merge(self):
+        payload = [{
+            "number": 354,
+            "base": {"ref": "main"},
+            "head": {"sha": "pr-head"},
+            "merge_commit_sha": "merge-sha",
+            "merged_at": "2026-09-26T06:23:01Z",
+        }]
+        with mock.patch.object(
+            release,
+            "run",
+            return_value=json.dumps(payload),
+        ) as run:
+            self.assertEqual(release.merged_pull_request_head_sha("merge-sha"), "pr-head")
+        run.assert_called_once_with(
+            "gh",
+            "api",
+            "repos/yzxingtu2026/ainp/commits/merge-sha/pulls?per_page=100",
+        )
+
+    def test_merged_pull_request_head_sha_fails_closed(self):
+        payload = [{
+            "number": 354,
+            "base": {"ref": "develop"},
+            "head": {"sha": "pr-head"},
+            "merge_commit_sha": "merge-sha",
+            "merged_at": "2026-09-26T06:23:01Z",
+        }]
+        with mock.patch.object(release, "run", return_value=json.dumps(payload)):
+            with self.assertRaisesRegex(release.ReleaseError, "exactly one merged main PR"):
+                release.merged_pull_request_head_sha("merge-sha")
+
     def successful_preflight_run(self, overrides=None):
         overrides = overrides or {}
         root = str(Path.cwd().resolve())
@@ -49,7 +81,13 @@ class ReleaseValidationTest(unittest.TestCase):
             ("git", "ls-remote", "--tags", "origin", "refs/tags/v1.2.3"): "",
             ("git", "tag", "--list", "platform/v1.2.3"): "",
             ("git", "ls-remote", "--tags", "origin", "refs/tags/platform/v1.2.3"): "",
-            ("gh", "api", "repos/yzxingtu2026/ainp/commits/abc/check-runs?per_page=100"): json.dumps(successes),
+            ("gh", "api", "repos/yzxingtu2026/ainp/commits/abc/pulls?per_page=100"): json.dumps([{
+                "base": {"ref": "main"},
+                "head": {"sha": "pr-head"},
+                "merge_commit_sha": "abc",
+                "merged_at": "2026-09-26T06:23:01Z",
+            }]),
+            ("gh", "api", "repos/yzxingtu2026/ainp/commits/pr-head/check-runs?per_page=100"): json.dumps(successes),
             ("gh", "variable", "get", "OSS_BUCKET", "--env", "release"): "ainp-test-artifacts",
         }
         responses.update(overrides)
@@ -70,7 +108,7 @@ class ReleaseValidationTest(unittest.TestCase):
             ({("git", "status", "--porcelain=v1", "--untracked-files=all"): "?? secret.env"}, "not clean"),
             ({("git", "rev-parse", "origin/main"): "def"}, "exactly match"),
             ({("git", "tag", "--list", "v1.2.3"): "v1.2.3"}, "already exists"),
-            ({("gh", "api", "repos/yzxingtu2026/ainp/commits/abc/check-runs?per_page=100"): '{"check_runs":[]}'}, "CI is not successful"),
+            ({("gh", "api", "repos/yzxingtu2026/ainp/commits/pr-head/check-runs?per_page=100"): '{"check_runs":[]}'}, "CI is not successful"),
             ({("gh", "variable", "get", "OSS_BUCKET", "--env", "release"): ""}, "OSS_BUCKET is not configured"),
         ]
         for overrides, message in cases:
