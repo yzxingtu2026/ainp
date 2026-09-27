@@ -109,7 +109,7 @@ class BaselineTest(unittest.TestCase):
             self.assertEqual(self.snapshot(), before)
 
     def test_unsafe_and_symlink_paths_and_project_takeover(self):
-        for name in ("../escape", "/tmp/escape", "scripts//bad", "scripts/deployment/../../bad", ".deploy-state/ledger.json"):
+        for name in ("../escape", "/tmp/escape", "scripts//bad", "scripts/deployment/../../bad", ".deploy-state/ledger.json", "scripts/deployment/.env", "deploy/baseline/examples/prod.local.json", "scripts/deployment/credentials/token.py"):
             manifest = copy.deepcopy(self.manifest)
             manifest["files"][name] = next(iter(manifest["files"].values())).copy()
             with self.subTest(name=name), self.assertRaises((DeployError, ValueError)):
@@ -142,6 +142,15 @@ class BaselineTest(unittest.TestCase):
         self.assertFalse((self.root / b.LOCK).exists())
         self.assertFalse(any(p.is_file() for p in (self.root / "scripts").rglob("*")))
         self.install()
+
+    def test_symlink_journal_temp_cannot_overwrite_private_file(self):
+        private = self.root / "secret.txt"
+        private.write_text("private")
+        (self.root / (b.TRANSACTION + ".tmp")).symlink_to(private)
+        with self.assertRaisesRegex(DeployError, "symlink"):
+            self.install()
+        self.assertEqual(private.read_text(), "private")
+        self.assertFalse((self.root / b.LOCK).exists())
 
     def test_failed_upgrade_recovery_preserves_old_lock(self):
         self.install()

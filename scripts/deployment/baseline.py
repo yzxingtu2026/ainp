@@ -13,6 +13,8 @@ import sys
 import tarfile
 import tempfile
 
+sys.dont_write_bytecode = True
+
 from common import DeployError, atomic_json, digest, lock, read_json, require, sha256
 import project
 from release_reference import github, json_object
@@ -57,9 +59,13 @@ def safe_path(root, value):
 
 def allowed(path):
     project.relative_path(path)
-    return (path.startswith(("scripts/deployment/", "deploy/baseline/", ".github/prompts/"))
-            or path in REQUIRED or path in {".github/workflows/deployment-baseline.yml",
-                "docs/development/release-versioning.md", ".agent/rules/release-versioning.md"})
+    parts = path.split("/")
+    if any(part.startswith(".env") or ".local." in part or part in ("credentials", "secrets", ".deploy-state", "dist-release", "__pycache__") for part in parts):
+        return False
+    return (path.startswith("scripts/deployment/") and path.endswith((".py", ".sh"))
+            or path.startswith("deploy/baseline/examples/") and path.endswith(".json")
+            or path.startswith("deploy/baseline/templates/") and path.endswith(".txt")
+            or path in REQUIRED or path in {"docs/development/release-versioning.md", ".agent/rules/release-versioning.md"})
 
 
 def fingerprint(path):
@@ -126,7 +132,8 @@ def fetch_source(version, commit, destination):
     for tag in (version, "platform/" + version):
         resolved = github(f"{prefix}/commits/refs/tags/{tag}", query=".sha").decode().strip()
         require(resolved == commit, f"source Tag/commit mismatch: {tag}")
-    assets = [a for a in release.get("assets", []) if a.get("name") == ASSET]
+    require(isinstance(release.get("assets"), list) and all(isinstance(a, dict) for a in release["assets"]), "invalid release assets")
+    assets = [a for a in release["assets"] if a.get("name") == ASSET]
     require(len(assets) == 1, "deployment manifest release asset missing or ambiguous")
     asset = assets[0]
     require(type(asset.get("id")) is int and asset["id"] > 0 and asset.get("state") == "uploaded" and type(asset.get("size")) is int and 0 < asset["size"] < 1024 * 1024, "invalid deployment manifest asset")
@@ -272,6 +279,7 @@ def apply(root, source, manifest, adopt=()):
             backups.append({"path": action["path"], "before": before, "after": action["after"], "content": base64.b64encode(path.read_bytes()).decode() if before else None})
         lock_body = (json.dumps(new_lock, sort_keys=True, indent=2) + "\n").encode()
         backups[-1]["after"] = {"sha256": hashlib.sha256(lock_body).hexdigest(), "mode": "0644"}
+        safe_path(root, TRANSACTION + ".tmp")
         atomic_json(safe_path(root, TRANSACTION), {"schema": 1, "backups": backups})
         for action in actions:
             path = safe_path(root, action["path"])
@@ -365,7 +373,7 @@ def main():
                 print(json.dumps({"mode": args.action, "version": args.version, "commit": args.commit, "actions": actions}, ensure_ascii=False, indent=2))
                 if args.action == "apply":
                     apply(args.root, source, manifest, args.adopt)
-    except (DeployError, project.ProjectError, ValueError, KeyError, TypeError, OSError, subprocess.SubprocessError) as error:
+    except (DeployError, project.ProjectError, ValueError, KeyError, TypeError, OSError, tarfile.TarError, subprocess.SubprocessError) as error:
         print(f"baseline aborted: {error}", file=sys.stderr)
         return 1
     return 0
