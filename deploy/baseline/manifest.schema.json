@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Published deployment baseline manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "repository", "version", "commit", "hash_policy", "files"],
+  "properties": {
+    "schema": {"const": 1},
+    "repository": {"const": "yzxingtu2026/ainp"},
+    "version": {"type": "string", "pattern": "^v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"},
+    "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "hash_policy": {"const": "raw-bytes"},
+    "files": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {"pattern": "^[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*$"},
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["source", "sha256", "mode", "owner"],
+        "properties": {
+          "source": {"type": "string"},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "mode": {"enum": ["0644", "0755"]},
+          "owner": {"enum": ["upstream", "project", "integration"]}
+        }
+      }
+    }
+  }
+}

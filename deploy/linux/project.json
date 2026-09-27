@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "project": "ainp",
+  "repository": "yzxingtu2026/ainp",
+  "default_branch": "main",
+  "required_checks": [
+    "backend",
+    "linux-release",
+    "frontend",
+    "repository-gates"
+  ],
+  "tag_strategy": "platform-pair",
+  "build_config": "deploy/linux/build.json",
+  "platform_version": "self",
+  "retired_workflows": [],
+  "admin_baseline": {
+    "path": "frontend/admin-baseline.json",
+    "commit_field": "commit"
+  }
+}

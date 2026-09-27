@@ -4,8 +4,8 @@ on:
     inputs:
       project:
         description: Project name matching the RAM-authorized OSS prefix
-        default: ainp
-        required: true
+        default: ""
+        required: false
         type: string
 permissions:
   contents: read
@@ -52,6 +52,10 @@ jobs:
           OSS_PREFIX: ${{ vars.OSS_PREFIX }}
           PROJECT: ${{ inputs.project }}
         run: |
+          python3 scripts/deployment/project.py
+          configured_project="$(python3 -c 'import json; print(json.load(open("deploy/linux/project.json"))["project"])')"
+          test -z "$PROJECT" || test "$PROJECT" = "$configured_project"
+          PROJECT="$configured_project"
           python3 -m pip install oss2==2.19.1
           python3 scripts/deployment/check_oss.py --project "$PROJECT" --apply
           echo 'OSS preflight passed. No release or ECS deployment created.' >> "$GITHUB_STEP_SUMMARY"

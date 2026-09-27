@@ -7,7 +7,6 @@ import subprocess
 
 from common import DeployError, atomic_json, digest, key, lock, oss_config, read_json, require, version
 
-DEFAULT_REPOSITORY = "yzxingtu2026/ainp"
 REFERENCE_LIMIT = 64 * 1024
 
 

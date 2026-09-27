@@ -56,7 +56,11 @@ def main():
     args = p.parse_args()
     require(platform.system() == "Linux" and platform.machine() == "x86_64", "build on Ubuntu 22.04 amd64")
     require('VERSION_ID="22.04"' in Path("/etc/os-release").read_text(), "Ubuntu 22.04 build baseline required")
-    cfg = json.loads(Path(args.config).read_text())
+    import project
+    project_cfg = project.load()
+    project.validate_repository(project_cfg, subprocess.check_output(["git", "remote", "get-url", "origin"], text=True).strip(), os.environ.get("GITHUB_REPOSITORY"))
+    require(Path(args.config).resolve() == (Path.cwd() / project_cfg["build_config"]).resolve(), "build config must match project configuration")
+    cfg = project.build_config(project_cfg, Path.cwd())
     name(cfg["project"])
     version(args.version)
     require(cfg["schema"] == 1, "unsupported build contract")

@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "project": "example-app",
+  "go_dir": "backend",
+  "frontend_dir": "admin",
+  "commands": {"api": "./cmd/api", "worker": "./cmd/worker", "migrate": "./cmd/migrate"},
+  "buildinfo_package": "github.com/yzxingtu2026/ainp/platform/framework/buildinfo",
+  "cjk_test_package": "github.com/yzxingtu2026/ainp/platform/contracts/pdfcjk"
+}

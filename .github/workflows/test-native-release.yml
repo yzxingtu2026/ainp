@@ -16,13 +16,15 @@ jobs:
   guard:
     runs-on: ubuntu-latest
     steps:
-      - name: Restrict test release to main and CI versions
+      - uses: actions/checkout@v4
+      - name: Restrict test release to project default branch and CI versions
         env:
           REF_NAME: ${{ github.ref_name }}
           REF_TYPE: ${{ github.ref_type }}
           VERSION: ${{ inputs.version }}
         run: |
-          test "$REF_NAME" = main
+          python3 scripts/deployment/project.py
+          test "$REF_NAME" = "$(python3 -c 'import json; print(json.load(open("deploy/linux/project.json"))["default_branch"])')"
           test "$REF_TYPE" = branch
           test "$VERSION" = v0.0.0-ci
   build:

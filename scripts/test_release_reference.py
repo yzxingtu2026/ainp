@@ -127,15 +127,23 @@ class ReleaseReferenceTest(unittest.TestCase):
         target["config_sha256"] = "c" * 64
         common.atomic_json(root / "target.json", target)
         argv = ["cloud", action, "--target", str(root / "target.json"), "--state-dir", str(root / "state"), *options]
+        if "--repository" in options:
+            repo = options[options.index("--repository") + 1]
+            cfg = common.read_json("deploy/linux/project.json")
+            cfg["repository"] = repo
+            common.atomic_json(root / "project.json", cfg)
+            argv += ["--project-config", str(root / "project.json")]
+        else:
+            repo = "yzxingtu2026/ainp"
         output = io.StringIO()
-        with mock.patch.object(sys, "argv", argv), mock.patch.object(rr, "resolve", return_value=self.reference) as resolve, \
+        with mock.patch.dict(cloud.os.environ, {"GITHUB_REPOSITORY": repo}), mock.patch.object(cloud.subprocess, "check_output", return_value=f"https://github.com/{repo}.git"), mock.patch.object(sys, "argv", argv), mock.patch.object(rr, "resolve", return_value=self.reference) as resolve, \
                 mock.patch.object(cloud, "execute") as execute, contextlib.redirect_stdout(output):
             cloud.main()
         return root, resolve, execute, output.getvalue()
 
     def test_version_plan_reads_github_but_never_dispatches_or_writes(self):
         root, resolve, execute, output = self.run_cli("init", ["--version", "v1.2.3"])
-        resolve.assert_called_once_with(rr.DEFAULT_REPOSITORY, "v1.2.3", "ainp")
+        resolve.assert_called_once_with("yzxingtu2026/ainp", "v1.2.3", "ainp")
         execute.assert_not_called()
         self.assertFalse((root / "state").exists())
         plan = json.loads(output)
@@ -153,6 +161,16 @@ class ReleaseReferenceTest(unittest.TestCase):
                 self.assertEqual(execute.call_args.args[1], self.reference)
                 self.assertEqual(execute.call_args.args[2], action)
                 self.assertTrue((root / "state/releases" / self.repo / "v1.2.3/reference.json").is_file())
+
+    def test_repository_override_cannot_query_another_projects_release(self):
+        with tempfile.TemporaryDirectory() as temp:
+            target = Path(temp) / "target.json"
+            common.atomic_json(target, common.read_json("deploy/linux/target.example.json"))
+            argv = ["cloud", "update", "--target", str(target), "--version", "v1.2.3", "--repository", "wrong/project"]
+            with mock.patch.object(sys, "argv", argv), mock.patch.object(rr, "resolve") as resolve, mock.patch.object(cloud, "execute") as execute, contextlib.redirect_stdout(io.StringIO()), self.assertRaises(SystemExit):
+                cloud.main()
+            resolve.assert_not_called()
+            execute.assert_not_called()
 
     def test_lookup_failure_never_writes_state_or_dispatches(self):
         with tempfile.TemporaryDirectory() as d:

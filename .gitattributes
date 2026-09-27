@@ -1,0 +1,2 @@
+# Preserve the public CJK contract fixture byte-for-byte (including PDF xref offsets).
+platform/contracts/pdfcjk/*.pdf binary

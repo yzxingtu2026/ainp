@@ -1,0 +1,99 @@
+"""Public, credential-free project identity used by local tools and Actions."""
+import argparse
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+
+DEFAULT_CONFIG = Path(__file__).resolve().parents[2] / "deploy/linux/project.json"
+
+
+class ProjectError(ValueError):
+    pass
+
+
+def require(ok, message):
+    if not ok:
+        raise ProjectError(message)
+
+
+def relative_path(value):
+    require(isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9_./-]+", value)
+            and not value.startswith("/") and all(p not in ("", ".", "..") for p in value.split("/")),
+            f"unsafe project path: {value!r}")
+    return value
+
+
+def load(path=DEFAULT_CONFIG):
+    cfg = json.loads(Path(path).read_text())
+    require(set(cfg) == {"schema", "project", "repository", "default_branch", "required_checks", "tag_strategy", "build_config", "platform_version", "retired_workflows", "admin_baseline"}, "invalid project configuration fields")
+    require(cfg["schema"] == 1, "unsupported project configuration")
+    require(isinstance(cfg["project"], str) and re.fullmatch(r"[a-z][a-z0-9-]{1,30}", cfg["project"]), "invalid project name")
+    require(isinstance(cfg["repository"], str) and re.fullmatch(r"[A-Za-z0-9_-]+/[A-Za-z0-9_.-]+", cfg["repository"]) and cfg["repository"].split("/")[1] not in (".", ".."), "invalid project repository")
+    relative_path(cfg["default_branch"])
+    require(isinstance(cfg["required_checks"], list) and cfg["required_checks"] and all(isinstance(c, str) and c.strip() == c and c for c in cfg["required_checks"]) and len(set(cfg["required_checks"])) == len(cfg["required_checks"]), "required_checks must contain unique check names")
+    require(cfg["tag_strategy"] in ("application", "platform-pair"), "invalid tag strategy")
+    require(cfg["platform_version"] == "self" and cfg["tag_strategy"] == "platform-pair" or isinstance(cfg["platform_version"], str) and re.fullmatch(r"v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)", cfg["platform_version"]), "platform_version must pin a stable platform version (self only for platform-pair)")
+    require(isinstance(cfg["retired_workflows"], list), "retired_workflows must be a list")
+    for workflow in cfg["retired_workflows"]:
+        relative_path(workflow)
+        require(workflow.startswith(".github/workflows/") and workflow.endswith((".yml", ".yaml")), "retired workflow must name an old workflow")
+    admin = cfg["admin_baseline"]
+    require(isinstance(admin, dict) and set(admin) == {"path", "commit_field"}, "admin_baseline requires path and commit_field")
+    relative_path(admin["path"])
+    require(isinstance(admin["commit_field"], str) and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*", admin["commit_field"]), "invalid Admin source commit field")
+    relative_path(cfg["build_config"])
+    return cfg
+
+
+def validate_repository(cfg, remote=None, workflow_repository=None):
+    repo = cfg["repository"]
+    if remote is not None:
+        require(remote in {f"https://github.com/{repo}", f"https://github.com/{repo}.git", f"git@github.com:{repo}.git", f"ssh://git@github.com/{repo}.git"}, "origin does not match project repository")
+    if workflow_repository is not None:
+        require(workflow_repository == repo, "workflow repository does not match project repository")
+
+
+def tags(cfg, version):
+    return [version, f"platform/{version}"] if cfg["tag_strategy"] == "platform-pair" else [version]
+
+
+def build_config(cfg, root):
+    root = Path(root).resolve()
+    path = root / cfg["build_config"]
+    build = json.loads(path.read_text())
+    require(build.get("schema") == 1 and build.get("project") == cfg["project"], "build/project identity mismatch")
+    for field in ("go_dir", "frontend_dir"):
+        relative_path(build[field])
+        require((root / build[field]).resolve().is_relative_to(root), f"{field} escapes repository")
+    require(set(build["commands"]) == {"api", "worker", "migrate"}, "three composition commands required")
+    for command in build["commands"].values():
+        require(isinstance(command, str) and command.startswith("./"), "composition command must be local")
+        relative_path(command[2:])
+        entry = root / build["go_dir"] / command[2:]
+        require(entry.resolve().is_relative_to(root) and entry.is_dir(), f"composition command missing: {command}")
+    require(build["buildinfo_package"] == "github.com/yzxingtu2026/ainp/platform/framework/buildinfo", "unsupported build identity package")
+    package = build["cjk_test_package"]
+    require(package == "github.com/yzxingtu2026/ainp/platform/contracts/pdfcjk" or cfg["tag_strategy"] == "platform-pair" and package == "./tests", "use the platform public PDF/CJK contract tests")
+    for suffix in ("go.mod", "go.sum"):
+        require((root / build["go_dir"] / suffix).is_file(), f"missing {suffix}")
+    return build
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
+    args = parser.parse_args()
+    cfg = load(args.config)
+    validate_repository(cfg, subprocess.check_output(["git", "remote", "get-url", "origin"], text=True).strip(), os.environ.get("GITHUB_REPOSITORY"))
+    build = build_config(cfg, Path.cwd())
+    print(json.dumps(cfg, sort_keys=True))
+    if os.environ.get("GITHUB_OUTPUT"):
+        with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+            for key, value in {"build-config": cfg["build_config"], "go-version-file": build["go_dir"] + "/go.mod", "go-sum-file": build["go_dir"] + "/go.sum"}.items():
+                output.write(f"{key}={value}\n")
+
+
+if __name__ == "__main__":
+    main()
