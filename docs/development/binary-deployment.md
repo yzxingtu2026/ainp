@@ -17,7 +17,7 @@ PR CI → Linux/CJK 门禁（不在合入 main 后重复运行）
 - 三个可执行文件：`api`、`worker`、`migrate`。通用 Worker 与 AI Worker 共用同一个 `worker`，队列/并发不同。Web 是静态文件，没有 Node 常驻进程。
 - 初始支持 Ubuntu **22.04 / amd64**、PostgreSQL **17 + pgvector**、兼容 Asynq 的 Redis（需认证与 Lua）。不是任意 Linux 通用包。
 - MuPDF 1.28.2 必须保留完整 CJK 字库，复用已校验源码构建脚本；使用 `extlib,static`，不等于所有 glibc 依赖都静态链接。原生包仍可能较大，不能用格式转换承诺体积降到某个数值。
-- 发布只传包，不自动更新生产。管理员显式执行 `--apply` 才会创建付费资源或改生产；默认仅打印计划，无云 API 调用。
+- 发布只传包，不自动更新生产。管理员显式执行 `--apply` 才会创建付费资源或改生产；默认仅打印计划；`--version` 会只读查询 GitHub，不调用阿里云 API，`--release` 计划完全离线。
 - 基础设施容器可以保留：**不构建应用镜像不代表必须去掉 PostgreSQL/Redis 容器**。
 - 本版不创建数据库、Redis、VPC、安全组、RAM/OIDC、OSS、域名记录或签发证书。这些是可复用的公司基础设施/启动模板前置条件，不在每次应用发布中重新创建。
 - 不自动清理 ECS、磁盘、旧版本或备份；避免意外销毁。费用预算、保留周期与磁盘告警需平台管理员设置。
@@ -125,29 +125,35 @@ GitHub environment **release** 配置变量：
 
 ## 5. 一键操作
 
-前置：安装 Python 3.10+、支持 RunCommand ClientToken/TerminationMode 参数的阿里云 CLI 并配置相应 profile；从已审核的当前框架基线工作目录运行。以下 `reference.json` 是发布成功后取得的文件，不是自己填写的版本号。
+前置：安装 Python 3.10+、支持 RunCommand ClientToken/TerminationMode 参数的阿里云 CLI 并配置相应 profile；从已审核的当前框架基线工作目录运行。按正式版本部署还需安装 GitHub CLI，并以具备仓库读取权限的账号执行 `gh auth login --hostname github.com`。
 
 ```bash
 # 在仓库根目录：默认只看计划，不创建/更新资源
 python3 scripts/deployment/cloud.py init \
-  --target deploy/linux/target.local.json --release /secure/releases/vX.Y.Z/reference.json
+  --target deploy/linux/target.local.json --version vX.Y.Z
 
 # 首次购买按量 ECS 并安装（加 --apply 才执行）
 python3 scripts/deployment/cloud.py init \
-  --target deploy/linux/target.local.json --release /secure/releases/vX.Y.Z/reference.json --apply
+  --target deploy/linux/target.local.json --version vX.Y.Z --apply
 
 # 更新同一目标，先不加 --apply 看计划，然后在维护窗口执行
 python3 scripts/deployment/cloud.py update \
-  --target deploy/linux/target.local.json --release /secure/releases/vX.Y.Z/reference.json --apply
+  --target deploy/linux/target.local.json --version vX.Y.Z --apply
 
 # 回滚到该主机实际成功运行过的旧包：先评审数据库向后兼容，再显式确认
 python3 scripts/deployment/cloud.py rollback \
-  --target deploy/linux/target.local.json --release /secure/releases/OLD/reference.json \
+  --target deploy/linux/target.local.json --version vOLD \
   --confirm-schema-compatible --apply
 
 # 查询已下发的命令；不重新下发，也不要求 --apply
 python3 scripts/deployment/cloud.py status --target deploy/linux/target.local.json
 ```
+
+`--version vX.Y.Z` 自动读取对应 **Published、非 Draft、非 prerelease** 的 GitHub Release 附件 `reference.json`，验证 project/version/platform、包 SHA256 格式、OSS 路径与 Tag commit 一致；大包仍由 ECS 从 OSS 下载并校验。默认仓库为 `yzxingtu2026/ainp`，下游显式传 `--repository OWNER/REPO`，不会根据当前 Git remote 猜测仓库。
+
+执行 `--apply` 时自动将验证后的引用保存在 `.deploy-state/releases/OWNER/REPO/vX.Y.Z/reference.json`，与环境账本一起备份。每次按版本运行仍会重新读取 GitHub；同版本引用与本地留存不一致时拒绝执行，不能删除留存来绕过检查。plan 会校验已有留存，但不写文件。GitHub 暂不可用时可显式改用已审核、留存的引用：`--release <reference.json路径>`；两个入口互斥。旧容器时代 Release 如果没有原生包引用，不能用版本号生成一个不存在的原生包。
+
+测试包 `v0.0.0-ci` 的版本号不能唯一确定 commit，继续使用 `--release <发布后的reference.json路径>`；`--version` 不接受 CI 版本或 `latest`。团队操作记录应同时保留 version、commit、SHA256，计划会显示这三项。
 
 `.deploy-state/<project>-<environment>.json` 是控制端操作账本，含 ClientToken、InstanceId、InvokeId、目标绑定哈希，必须持久保存/限制权限/备份。团队使用**一个受控部署工作站/执行器及共享串行审批**，不要各自删账本执行 init。不同工作站的本地锁不构成跨工作站互斥，主机锁负责远程部署互斥，但不能阻止从丢失账本的工作站另买实例。
 
@@ -171,16 +177,9 @@ python3 scripts/release.py vX.Y.Z
 
 脚本预检同步 main、对应已合并 PR 的 CI、发布配置和 Tag 唯一性，确认后推送同 commit 的 `vX.Y.Z` 与 `platform/vX.Y.Z` annotated Tag。此命令会真实发版，**没有 dry-run 参数**；`--yes` 仅跳过交互确认。不要直接手建单个 Tag，不要使用 Test Native Release 作为正式发版。
 
-等待 **Release Binaries to OSS** 工作流成功且 GitHub Release 已 Published，再下载其发布后元数据（不是构建附件）：
+等待 **Release Binaries to OSS** 工作流成功且 GitHub Release 已 Published，再执行下面的 `--version` 部署命令。脚本会自动取得发布后附加的 `reference.json`（包含 `oss`/`key`），无需手动从 OSS 或 GitHub 下载到 Downloads 目录。正式发布成功不会自动部署任何环境。
 
-```bash
-mkdir -p "$HOME/Downloads/ainp-releases/vX.Y.Z"
-gh release download vX.Y.Z --repo yzxingtu2026/ainp \
-  --pattern reference.json --pattern release.json --pattern SHA256SUMS \
-  --dir "$HOME/Downloads/ainp-releases/vX.Y.Z"
-```
-
-正式 Release 的 `reference.json` 在 OSS 发布后附加，包含 `oss`/`key`，可以直接部署。核对 version、commit、project、platform、SHA256 和 OSS 路径；按版本目录永久保留。无需下载大体积应用归档到 Mac，ECS 会自行下载并校验。正式发布成功不会自动部署任何环境。
+需要独立存档元数据时，仍可选用 `gh release download vX.Y.Z --repo yzxingtu2026/ainp --pattern reference.json --pattern release.json --pattern SHA256SUMS --dir <存档目录>`；这不再是每次部署的前置步骤。
 
 准备生产环境：
 
@@ -191,26 +190,26 @@ gh release download vX.Y.Z --repo yzxingtu2026/ainp \
 ```bash
 python3 scripts/deployment/cloud.py init \
   --target deploy/linux/target.production.local.json \
-  --release "$HOME/Downloads/ainp-releases/vX.Y.Z/reference.json"
+  --version vX.Y.Z
 # 核对计划后显式创建/部署
 python3 scripts/deployment/cloud.py init \
   --target deploy/linux/target.production.local.json \
-  --release "$HOME/Downloads/ainp-releases/vX.Y.Z/reference.json" --apply
+  --version vX.Y.Z --apply
 ```
 
 脚本不会创建 DNS 记录；公网 IP 变化时需将域名正确指向新 ECS，或使用已规划的固定入口。完成后保存 `.deploy-state/ainp-production.json`，核对公网首页、installed、API/Web 身份和真实业务功能。主机 HTTPS 检查使用 loopback 地址指定域名，不能单独证明公网 DNS 正确。
 
 ### 5.2 正式更新
 
-新代码经 PR/CI 合入 `main` 后，用上述流程发布新的稳定版本并下载 `vNEW/reference.json`。保留旧引用和主机旧包；审核迁移兼容性，在维护窗口使用同一 target、同一账本：
+新代码经 PR/CI 合入 `main` 后，用上述流程发布新的稳定版本，等待 Release Published。保留旧引用和主机旧包；审核迁移兼容性，在维护窗口使用同一 target、同一账本：
 
 ```bash
 python3 scripts/deployment/cloud.py update \
   --target deploy/linux/target.production.local.json \
-  --release "$HOME/Downloads/ainp-releases/vNEW/reference.json"
+  --version vNEW
 python3 scripts/deployment/cloud.py update \
   --target deploy/linux/target.production.local.json \
-  --release "$HOME/Downloads/ainp-releases/vNEW/reference.json" --apply
+  --version vNEW --apply
 ```
 
 核对维护/停服务 → 数据库备份 → 前向迁移 → 切包 → 服务与 HTTPS 检查成功。检查 API/Web 为新 version/commit，登录、更新前数据、附件、AI 调用和后台任务正常。更新复用主机私有配置；修改本地配置文件不等于远程配置已更新。
@@ -222,11 +221,11 @@ python3 scripts/deployment/cloud.py update \
 ```bash
 python3 scripts/deployment/cloud.py rollback \
   --target deploy/linux/target.production.local.json \
-  --release "$HOME/Downloads/ainp-releases/vOLD/reference.json" \
+  --version vOLD \
   --confirm-schema-compatible
 python3 scripts/deployment/cloud.py rollback \
   --target deploy/linux/target.production.local.json \
-  --release "$HOME/Downloads/ainp-releases/vOLD/reference.json" \
+  --version vOLD \
   --confirm-schema-compatible --apply
 ```
 
@@ -238,7 +237,7 @@ python3 scripts/deployment/cloud.py rollback \
 python3 scripts/deployment/cloud.py status --target deploy/linux/target.production.local.json
 ```
 
-`status` 查询账本关联的云助手命令，不是实时应用健康监控。plan 不调用云 API，也不能证明网络/主机就绪；其通用模板提示不代表 update/rollback 会新建 ECS，执行时必须绑定已有实例。
+`status` 查询账本关联的云助手命令，不是实时应用健康监控。`--version` 的 plan 仅只读查询 GitHub，`--release` 的 plan 完全离线，两者都不调用阿里云 API，也不能证明网络/主机就绪；其通用模板提示不代表 update/rollback 会新建 ECS，执行时必须绑定已有实例。
 
 失败、超时或结果未知时保留账本、InvokeId 和主机状态，按第 7 节审计；不能删账本、伪造 healthy 或直接重试 setup。已处于 `failed-maintenance` 的更新需先确认是否执行了备份/迁移、是否切包：仅在证据确认迁移未开始且旧包未切换时，才可按审核后的恢复步骤启动旧服务、核对 installed/身份/HTTPS，再同步主机和本地账本。后续正常 update 可以继续，恢复不属于自动重试能力。
 
@@ -307,6 +306,7 @@ HTTPS 验收在 Nginx reload 后对瞬时错误进行有限重试（最多 5 次
 - Worker 支持 `WORKER_QUEUES` / `WORKER_CONCURRENCY`，应用与迁移入口来自同一业务 composition。
 - 前端构建为 dist 静态资源；保留精确 OAuth/MCP 路由，不使用宽泛 `/oauth/` 代理覆盖 SPA 授权页面。
 - 正式 Tag 协议如果下游不发布 `platform/` 子模块 Tag，应替换 release validate 的配对规则及 `scripts/release.py` 的仓库身份/remote/Tag 逻辑；不得误向 ainp 发 Tag。原生构建/部署契约不要求下游伪造 platform Tag。
+- 按版本部署时显式传 `--repository <下游OWNER/REPO>`，下游正式 Release 必须附带同协议的发布后 `reference.json`。
 - 各环境私有配置不随基线传播。数据库密码/备份/域名/端口/租户管理员各项目独立。
 
 基线更新后每个下游先跑 CI + 临时环境验收；**不是拉最新框架就立刻自动更新生产**。

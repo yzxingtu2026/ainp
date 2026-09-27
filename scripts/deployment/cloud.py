@@ -11,6 +11,8 @@ import time
 import uuid
 import bz2
 
+import release_reference
+
 from common import DeployError, atomic_json, digest, key, lock, name, oss_config, read_json, require, version
 
 BOOTSTRAP = r'''set -eu
@@ -362,16 +364,24 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("action", choices=("init", "update", "rollback", "status"))
     parser.add_argument("--target", required=True, type=Path)
-    parser.add_argument("--release", type=Path, help="verified reference.json from successful OSS release CI")
+    source = parser.add_mutually_exclusive_group()
+    source.add_argument("--release", type=Path, help="verified reference.json from successful OSS release CI")
+    source.add_argument("--version", help="published stable version; resolve reference automatically via gh")
+    parser.add_argument("--repository", help="GitHub OWNER/REPO for --version (default: yzxingtu2026/ainp)")
     parser.add_argument("--state-dir", type=Path, default=Path(".deploy-state"))
     parser.add_argument("--apply", action="store_true", help="allow billable ECS creation and remote environment modification")
     parser.add_argument("--confirm-schema-compatible", action="store_true")
     args = parser.parse_args()
     try:
         target = validate_target(read_json(args.target))
-        reference = read_json(args.release) if args.release else None
+        require(not args.repository or args.version, "--repository requires --version")
+        require(args.action != "status" or not (args.release or args.version), "status does not accept a release/version")
+        require(args.action != "rollback" or args.confirm_schema_compatible, "rollback requires --confirm-schema-compatible after reviewing migration compatibility")
+        repository = args.repository or release_reference.DEFAULT_REPOSITORY
+        reference = (release_reference.resolve(repository, args.version, target["project"]) if args.version
+                     else read_json(args.release) if args.release else None)
         if args.action != "status":
-            require(reference and reference["project"] == target["project"], "matching --release required")
+            require(reference and reference["project"] == target["project"], "matching --release or --version required")
             validate_release_for_environment(target, reference)
             digest(reference["sha256"])
             key(reference["key"])
@@ -381,13 +391,14 @@ def main():
                 key(target["config_key"])
                 digest(target["config_sha256"])
             require(reference.get("platform") == "ubuntu-22.04-amd64", "unsupported platform")
-            require(args.action != "rollback" or args.confirm_schema_compatible, "rollback requires --confirm-schema-compatible after reviewing migration compatibility")
         statepath = args.state_dir / f"{target['project']}-{target['environment']}.json"
+        if args.version:
+            release_reference.pin_reference(args.state_dir, repository, reference, write=args.apply)
         if args.action != "status" and not args.apply:
-            print(json.dumps({"mode": "PLAN ONLY; no cloud calls", "action": args.action, "project": target["project"], "environment": target["environment"], "region": target["region"], "instance": target.get("instance_id", "create POSTPAID using pinned launch template, unless state already has instance"), "release": reference["version"], "state": str(statepath), "maintenance_window": True}, ensure_ascii=False, indent=2))
+            print(json.dumps({"mode": "PLAN ONLY; read-only GitHub lookup; no Alibaba calls" if args.version else "PLAN ONLY; no cloud calls", "action": args.action, "project": target["project"], "environment": target["environment"], "region": target["region"], "instance": target.get("instance_id", "create POSTPAID using pinned launch template, unless state already has instance"), "release": reference["version"], "commit": reference["commit"], "sha256": reference["sha256"], "state": str(statepath), "maintenance_window": True}, ensure_ascii=False, indent=2))
             return
         execute(target, reference, args.action, statepath, args.confirm_schema_compatible, args.action == "status")
-    except (DeployError, KeyError, ValueError) as e:
+    except (DeployError, KeyError, ValueError, OSError) as e:
         print(str(e) if isinstance(e, DeployError) else "invalid input/schema; review example configuration")
         raise SystemExit(1)
 
