@@ -41,6 +41,10 @@ def prepare(root):
     package.write_text(json.dumps(data, indent=2) + "\n")
     run(["git", "init", "-b", "main"], root)
     run(["git", "remote", "add", "origin", "https://github.com/example/application.git"], root)
+    # Model the optional private-module authentication without a real credential.
+    run(["git", "config", "--local", "url.https://x-access-token:FAKE_TOKEN@github.com/.insteadOf", "https://github.com/"], root)
+    rewritten = subprocess.check_output(["git", "remote", "get-url", "origin"], cwd=root, text=True).strip()
+    common.require(rewritten.startswith("https://x-access-token:FAKE_TOKEN@github.com/"), "fixture did not activate Git URL rewriting")
     run(["git", "add", "."], root)
     run(["git", "-c", "user.name=Deployment fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "Independent application composition"], root)
 

@@ -1,5 +1,6 @@
 """Project identity / release contract tests, including an application-only downstream."""
 import json
+import subprocess
 from pathlib import Path
 import sys
 import tempfile
@@ -21,6 +22,29 @@ class ProjectTest(unittest.TestCase):
         for remote, workflow in (("https://github.com/yzxingtu2026/ainp.git", None), (None, "yzxingtu2026/ainp")):
             with self.assertRaises(project.ProjectError):
                 project.validate_repository(cfg, remote, workflow)
+
+    def test_origin_validation_uses_raw_remote_with_private_module_rewrite(self):
+        cfg = self.config()
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            subprocess.run(["git", "init", "-q", str(root)], check=True)
+            subprocess.run(["git", "-C", str(root), "remote", "add", "origin",
+                            f"https://github.com/{cfg['repository']}.git"], check=True)
+            rewrite = "url.https://x-access-token:FAKE_TOKEN@github.com/.insteadOf=https://github.com/"
+            expanded = subprocess.check_output(
+                ["git", "-C", str(root), "-c", rewrite, "remote", "get-url", "origin"], text=True).strip()
+            self.assertIn("FAKE_TOKEN", expanded)
+            remote = project.configured_origin(root)
+            self.assertEqual(remote, f"https://github.com/{cfg['repository']}.git")
+            project.validate_repository(cfg, remote, cfg["repository"])
+            with self.assertRaises(project.ProjectError):
+                project.validate_repository(cfg, expanded, cfg["repository"])
+            with self.assertRaises(project.ProjectError):
+                project.validate_repository(cfg, remote, "wrong/project")
+            subprocess.run(["git", "-C", str(root), "remote", "set-url", "origin",
+                            "https://github.com/wrong/project.git"], check=True)
+            with self.assertRaises(project.ProjectError):
+                project.validate_repository(cfg, project.configured_origin(root), cfg["repository"])
 
     def test_invalid_config_is_rejected(self):
         for field, value in (("platform_version", "latest"), ("tag_strategy", "guess"), ("required_checks", []), ("build_config", "../secrets.json"), ("repository", "example/.."), ("default_branch", "main\nvalue=bad")):
@@ -99,7 +123,7 @@ class ProjectTest(unittest.TestCase):
             responses = {
                 ("git", "rev-parse", "--show-toplevel"): str(Path.cwd()),
                 ("git", "branch", "--show-current"): "trunk",
-                ("git", "remote", "get-url", "origin"): "https://github.com/example/application.git",
+                ("git", "config", "--get", "remote.origin.url"): "https://github.com/example/application.git",
                 ("git", "rev-parse", "HEAD"): "abc",
                 ("git", "rev-parse", "origin/trunk"): "abc",
                 ("gh", "api", "repos/example/application/commits/abc/pulls?per_page=100"): json.dumps([dict(base={"ref": "trunk"}, merged_at="now", merge_commit_sha="abc", head={"sha": "head"})]),

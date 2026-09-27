@@ -320,7 +320,7 @@ def verify(root):
     require(not plan(root, state["manifest"]), "deployment baseline is incomplete")
     cfg = project.load(safe_path(root, "deploy/linux/project.json"))
     build = project.build_config(cfg, root)
-    remote = subprocess.check_output(["git", "-C", str(root), "remote", "get-url", "origin"], text=True).strip()
+    remote = project.configured_origin(root)
     project.validate_repository(cfg, remote, os.environ.get("GITHUB_REPOSITORY"))
     require(cfg["platform_version"] == state["manifest"]["version"], "Go/Admin intended platform version differs from deployment baseline")
     go_mod = safe_path(root, build["go_dir"] + "/go.mod").read_text()

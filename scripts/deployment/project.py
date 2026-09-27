@@ -47,6 +47,15 @@ def load(path=DEFAULT_CONFIG):
     return cfg
 
 
+
+def configured_origin(root=None):
+    """Read the stored origin, before Git's insteadOf authentication rewriting."""
+    args = ["git"]
+    if root is not None:
+        args.extend(["-C", str(root)])
+    return subprocess.check_output(args + ["config", "--get", "remote.origin.url"], text=True).strip()
+
+
 def validate_repository(cfg, remote=None, workflow_repository=None):
     repo = cfg["repository"]
     if remote is not None:
@@ -94,7 +103,7 @@ def main():
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     args = parser.parse_args()
     cfg = load(args.config)
-    validate_repository(cfg, subprocess.check_output(["git", "remote", "get-url", "origin"], text=True).strip(), os.environ.get("GITHUB_REPOSITORY"))
+    validate_repository(cfg, configured_origin(), os.environ.get("GITHUB_REPOSITORY"))
     build = build_config(cfg, Path.cwd())
     print(json.dumps(cfg, sort_keys=True))
     if os.environ.get("GITHUB_OUTPUT"):

@@ -32,7 +32,7 @@ AINP 使用 `deploy/linux/project.json`，保持 `main`、原 required checks �
 
 下游调用该 reusable workflow 时，只有确实声明了 `go_private` 才传递仓库 Secret，例如 `secrets: { private-module-token: ${{ secrets.PRIVATE_MODULE_TOKEN }}}`；不使用 `secrets: inherit`，避免把无关凭据扩散到构建 Job。
 
-native-build 工作流从配置解析 Go version/sum、Node/pnpm 版本、Admin application/modules 和私有 Go 模块模式；可选 workflow inputs 必须与配置一致。构建继续注入同一 version/commit/build_time，并强制 Web 同源 API。`deploy/linux/build.json` 的 `node_version`、`pnpm_version`、`admin_application`、`admin_modules` 和 `go_private` 均为非敏感项目契约；私有模块凭据只能通过 reusable workflow 的可选 `private-module-token` secret 传入，禁止写入 JSON、日志、Artifact 或镜像。构建前仅在 `go_private` 非空时配置临时 Git URL 凭据和 `GOPRIVATE`，构建后清理凭据。
+native-build 工作流从配置解析 Go version/sum、Node/pnpm 版本、Admin application/modules 和私有 Go 模块模式；可选 workflow inputs 必须与配置一致。构建继续注入同一 version/commit/build_time，并强制 Web 同源 API。`deploy/linux/build.json` 的 `node_version`、`pnpm_version`、`admin_application`、`admin_modules` 和 `go_private` 均为非敏感项目契约；私有模块凭据只能通过 reusable workflow 的可选 `private-module-token` secret 传入，禁止写入 JSON、日志、Artifact 或镜像。构建前仅在 `go_private` 非空时配置临时 Git URL 凭据和 `GOPRIVATE`，构建后清理凭据。 仓库身份预检统一读取 Git 配置中原始的 `remote.origin.url`，避免 `insteadOf` 展开出含凭据的 URL；仍须与 `project.json` 和 `GITHUB_REPOSITORY` 严格一致，任何不匹配都拒绝。
 
 `cloud.py update --target ... --version vX.Y.Z` 默认查询项目配置中的仓库；显式 `--repository` 必须一致。`--release` 仍支持离线/CI 精确引用，账本、apply 和 schema 兼容确认保持原契约。项目配置不放任何云或业务密钥。
 

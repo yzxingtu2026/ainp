@@ -383,7 +383,7 @@ def main():
         if args.version:
             import project
             cfg = project.load(args.project_config)
-            project.validate_repository(cfg, subprocess.check_output(["git", "remote", "get-url", "origin"], text=True).strip(), os.environ.get("GITHUB_REPOSITORY"))
+            project.validate_repository(cfg, project.configured_origin(), os.environ.get("GITHUB_REPOSITORY"))
             require(cfg["project"] == target["project"], "target/project identity mismatch")
             repository = args.repository or cfg["repository"]
             require(repository == cfg["repository"], "--repository does not match project configuration")
