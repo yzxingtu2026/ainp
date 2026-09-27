@@ -73,6 +73,38 @@ class WebBuildTest(unittest.TestCase):
             self.assertEqual((root / "stage/web/index.html").read_text(), "built web")
         self.assertEqual(inherited, original)
 
+    def test_multiple_web_apps_are_isolated_and_use_configured_command(self):
+        identity = dict(version="v1.2.3", commit="a" * 40, build_time="2026-09-26T00:00:00Z")
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            admin = root / "admin"
+            screen = root / "screen"
+            (admin / "dist").mkdir(parents=True)
+            (screen / "dist").mkdir(parents=True)
+            (admin / "dist/index.html").write_text("admin")
+            (screen / "dist/index.html").write_text("screen")
+            with mock.patch.object(package, "run") as run:
+                package.build_web(admin, root / "stage", {}, identity, "web", ["pnpm", "build:admin"], {"VITE_SCREEN": "no"})
+                package.build_web(screen, root / "stage", {}, identity, "web/bigscreen", ["pnpm", "build:screen"], {"VITE_SCREEN": "yes"})
+            self.assertEqual([call.args[0] for call in run.call_args_list], [
+                ["pnpm", "install", "--frozen-lockfile"], ["pnpm", "build:admin"],
+                ["pnpm", "install", "--frozen-lockfile"], ["pnpm", "build:screen"],
+            ])
+            self.assertEqual((root / "stage/web/index.html").read_text(), "admin")
+            self.assertEqual((root / "stage/web/bigscreen/index.html").read_text(), "screen")
+            self.assertEqual(json.loads((root / "stage/web/bigscreen/build.json").read_text()), identity)
+
+    def test_web_health_path_is_written_inside_non_root_mount(self):
+        identity = dict(version="v1.2.3", commit="a" * 40, build_time="2026-09-26T00:00:00Z")
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            web_dir = root / "screen"
+            (web_dir / "dist").mkdir(parents=True)
+            (web_dir / "dist/index.html").write_text("screen")
+            with mock.patch.object(package, "run"):
+                package.build_web(web_dir, root / "stage", {}, identity, "web/bigscreen", ["pnpm", "build"], {}, "/bigscreen/build.json")
+            self.assertEqual(json.loads((root / "stage/web/bigscreen/build.json").read_text()), identity)
+
 
 class ArchiveTest(unittest.TestCase):
     def setUp(self):
@@ -102,6 +134,18 @@ class ArchiveTest(unittest.TestCase):
         for p in ("out", "out/bin", "out/web", "out/bin/api"):
             self.assertEqual((self.root / p).stat().st_mode & 0o777, 0o755)
         self.assertEqual((self.root / "out/web/index.html").stat().st_mode & 0o777, 0o644)
+
+    def test_multi_web_manifest_round_trip(self):
+        (self.stage / "web/bigscreen/index.html").parent.mkdir(parents=True)
+        (self.stage / "web/bigscreen/index.html").write_text("screen")
+        (self.stage / "web/bigscreen/build.json").write_text("fixture")
+        self.stage.joinpath("release.json").unlink(missing_ok=True)
+        identity = {**self.identity, "web_apps": [{"name": "admin", "mount": "/", "health_path": "/build.json", "output_dir": "web"}, {"name": "screen", "mount": "/bigscreen/", "health_path": "/bigscreen/build.json", "output_dir": "web/bigscreen"}]}
+        archive = self.root / "multi.tar.gz"
+        manifest = package.pack(self.stage, archive, identity, 1)
+        self.assertEqual(len(common.web_apps(manifest)), 2)
+        common.extract_verified(archive, self.root / "multi-out", common.sha256(archive))
+        self.assertTrue((self.root / "multi-out/web/bigscreen/index.html").exists())
 
     def test_reproducible_archive(self):
         (self.stage / "release.json").unlink()
@@ -748,6 +792,16 @@ class HTTPSProbeTest(unittest.TestCase):
 
 
 class NativeNginxSyntaxTest(unittest.TestCase):
+    def test_generated_multi_web_routes_are_isolated(self):
+        apps = [
+            {"name": "admin", "mount": "/", "health_path": "/build.json", "output_dir": "web"},
+            {"name": "screen", "mount": "/bigscreen/", "health_path": "/bigscreen/build.json", "output_dir": "web/bigscreen"},
+        ]
+        conf = host.nginx(ContractTest().config(), Path("/opt/ainp"), manifest_apps=apps)
+        self.assertIn("location = /bigscreen { return 301 /bigscreen/; }", conf)
+        self.assertIn("location ^~ /bigscreen/ { try_files $uri $uri/ /bigscreen/index.html; }", conf)
+        self.assertIn("location / { try_files $uri $uri/ /index.html; }", conf)
+
     def test_generated_live_and_maintenance_config_with_real_nginx(self):
         import shutil
         import subprocess

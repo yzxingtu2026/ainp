@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
 import shutil
 import subprocess
 import tarfile
@@ -18,7 +19,10 @@ def run(args, cwd, env):
     subprocess.run(args, cwd=cwd, env=env, check=True)
 
 
-def build_web(web_dir, stage, env, identity, cfg=None):
+def build_web(web_dir, stage, env, identity, cfg=None, output_dir=None, build_command=None, build_env=None, health_path=None):
+    # Keep the pre-multi-app positional helper contract usable by offline callers/tests.
+    if not isinstance(cfg, dict):
+        cfg, output_dir, build_command, build_env = None, cfg, output_dir, build_command
     # Release Web is served behind the same Nginx origin in every environment.
     # Override inherited shell values as well as Vite's .env files.
     if cfg is None:
@@ -29,10 +33,27 @@ def build_web(web_dir, stage, env, identity, cfg=None):
                    VITE_SERVICE_BASE_URL="/", VITE_OTHER_SERVICE_BASE_URL='{"demo":"/"}',
                    AINP_ADMIN_APPLICATION=cfg["admin_application"],
                    AINP_ADMIN_MODULES=','.join(cfg["admin_modules"]))
+    web_env.update(build_env or {})
+    web_env.update(VITE_BUILD_VERSION=identity["version"], VITE_BUILD_COMMIT=identity["commit"], VITE_BUILD_TIME=identity["build_time"])
     run(["pnpm", "install", "--frozen-lockfile"], web_dir, web_env)
-    run(["pnpm", "build"], web_dir, web_env)
-    shutil.copytree(web_dir / "dist", stage / "web")
-    atomic_json(stage / "web/build.json", identity, 0o644)
+    run(build_command or ["pnpm", "build"], web_dir, web_env)
+    effective_output_dir = output_dir or "web"
+    destination = stage / effective_output_dir
+    require(not destination.exists(), f"duplicate web output: {destination}")
+    shutil.copytree(web_dir / "dist", destination)
+    if health_path is None:
+        manifest_path = destination / "build.json"
+    else:
+        # Convert the public URL path back to a path inside this app's output.
+        # The release stores every app below web/, while health_path includes
+        # the app mount (for example /bigscreen/build.json).
+        mount = "/" if effective_output_dir == "web" else "/" + effective_output_dir.removeprefix("web/").rstrip("/") + "/"
+        require(health_path == "/build.json" if mount == "/" else health_path.startswith(mount),
+                "web application health_path must be inside its mounted output")
+        relative_path = health_path.lstrip("/") if mount == "/" else health_path[len(mount):]
+        manifest_path = destination / relative_path
+    require(manifest_path.is_relative_to(destination), "web application health_path must be inside its mounted output")
+    atomic_json(manifest_path, identity, 0o644)
 
 
 def pack(stage, output, identity, epoch):
@@ -70,6 +91,31 @@ def main():
     version(args.version)
     require(cfg["schema"] == 1, "unsupported build contract")
     root = Path.cwd()
+    web_apps = cfg.get("web_apps")
+    if web_apps is None:
+        require(isinstance(cfg.get("frontend_dir"), str), "frontend_dir required when web_apps is absent")
+        web_apps = [{"name": "admin", "source_dir": cfg["frontend_dir"], "mount": "/", "build_command": ["pnpm", "build"], "health_path": "/build.json"}]
+    require(isinstance(web_apps, list) and web_apps, "at least one web application required")
+    normalized_apps = []
+    mounts = set(); names = set()
+    for app in web_apps:
+        require(isinstance(app, dict), "invalid web application")
+        app_name, source_dir = app.get("name"), app.get("source_dir")
+        mount = app.get("mount", "/")
+        health_path = app.get("health_path")
+        require(isinstance(app_name, str) and re.fullmatch(r"[a-z][a-z0-9-]{0,63}", app_name) and app_name not in names, "invalid or duplicate web application name")
+        require(isinstance(source_dir, str) and source_dir and not Path(source_dir).is_absolute(), "invalid web application source_dir")
+        require(isinstance(mount, str) and (mount == "/" or re.fullmatch(r"/[A-Za-z0-9._~-]+(?:/[A-Za-z0-9._~-]+)*/", mount)) and mount not in mounts, "invalid or duplicate web application mount")
+        if health_path is None: health_path = "/build.json" if mount == "/" else mount + "build.json"
+        require(isinstance(health_path, str) and re.fullmatch(r"/[A-Za-z0-9._~/-]+", health_path) and not health_path.endswith("/"), "invalid web application health_path")
+        require(health_path == "/build.json" if mount == "/" else health_path.startswith(mount), "web application health_path must be inside its mount")
+        command = app.get("build_command", ["pnpm", "build"])
+        require(isinstance(command, list) and command and all(isinstance(x, str) and x for x in command), "invalid web application build_command")
+        build_env = app.get("build_env", {})
+        require(isinstance(build_env, dict) and all(isinstance(k, str) and isinstance(v, str) for k, v in build_env.items()), "invalid web application build_env")
+        output_dir = "web" if mount == "/" else "web/" + mount.strip("/")
+        normalized_apps.append({"name": app_name, "source_dir": source_dir, "mount": mount, "health_path": health_path, "build_command": command, "build_env": build_env, "output_dir": output_dir})
+        names.add(app_name); mounts.add(mount)
     commit = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
     epoch = int(subprocess.check_output(["git", "show", "-s", "--format=%ct", "HEAD"], text=True))
     from datetime import datetime, timezone
@@ -96,7 +142,9 @@ def main():
             libraries = subprocess.check_output(["ldd", str(binary)], text=True)
             print(libraries)
             require("not found" not in libraries, "unresolved shared library in native binary")
-        build_web(root / cfg["frontend_dir"], stage, env, identity, cfg)
+        for app in normalized_apps:
+            build_web(root / app["source_dir"], stage, env, identity, cfg, app["output_dir"], app["build_command"], app["build_env"], app["health_path"])
+        identity["web_apps"] = [{k: app[k] for k in ("name", "mount", "health_path", "output_dir")} for app in normalized_apps]
         archive = output / "release.tar.gz"
         manifest = pack(stage, archive, identity, epoch)
         atomic_json(output / "release.json", manifest, 0o644)
