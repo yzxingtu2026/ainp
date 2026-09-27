@@ -177,6 +177,8 @@ python3 scripts/deployment/cloud.py status --target deploy/linux/target.local.js
 
 更新：校验/预检 → 维护页 → 关闭开机启动并停止所有应用进程（给 Worker 90 秒退出）→ `pg_dump17` + 私有 OSS 备份 → 非 root migration runner forward-only → 切软链 → 启动/验收 → 开放流量/恢复开机启动。
 
+更新/回滚停止服务后，以精确 glob（例如 `[a]inp-api.service`）对本项目三个服务执行 `systemctl reset-failed`：已从 systemd 内存卸载的服务安全跳过，仍加载的服务重置失败状态与重启计数。不得不带服务参数全局重置，也不得忽略命令错误；实际重置失败仍保留维护状态并中止备份/迁移。该修复不绕过已有失败部署的恢复检查，`failed-maintenance` 现场仍需审计后恢复。
+
 回滚：同样停止应用并备份，**不执行 down/up migration**，切换到已知成功的旧包；必须人工确认旧代码兼容现有 schema。存储附件、state、JWT/key、证书不回退。框架无法自动证明任意业务迁移可回滚，`--confirm-schema-compatible` 不是自动校验证明。
 
 - 迁移/健康检查失败：保留维护页、停止应用、不自动恢复旧代码或数据库，保留备份 key 与状态。否则旧 Worker 可能运行在不兼容 schema 上造成二次损害。

@@ -343,9 +343,10 @@ def perform(r, root, home):
         install_nginx(c, root, True)
         command(["systemctl", "disable", *units])
         command(["systemctl", "stop", *units])
-        # Never-started units may be unloaded; reset-failed rejects those on init.
+        # Stopped units may be garbage-collected. Exact globs skip unloaded units
+        # without resetting other projects or hiding real systemctl errors.
         if not fresh:
-            command(["systemctl", "reset-failed", *units])
+            command(["systemctl", "reset-failed", *[f"[{u[0]}]{u[1:]}" for u in units]])
             with stage("database-backup"):
                 state["backup"] = backup(c, root, role)
             atomic_json(statepath, state)
