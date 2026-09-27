@@ -15,7 +15,7 @@ import time
 import urllib.request
 import uuid
 
-from common import DeployError, atomic_json, extract_verified, key, lock, name, oss_config, read_json, require, sha256, version
+from common import DeployError, atomic_json, extract_verified, key, lock, name, oss_config, read_json, require, sha256, version, web_apps
 from storage import bucket, download, upload_immutable
 from reporting import stage
 
@@ -110,7 +110,7 @@ WantedBy=multi-user.target
 """
 
 
-def nginx(c, root, maintenance=False):
+def nginx(c, root, maintenance=False, manifest_apps=None):
     proxy = f"http://127.0.0.1:{c['api_port']}"
     # Dedicated proxy headers: never overwrite Ubuntu's global proxy_params.
     headers = "\n".join("        " + line for line in (
@@ -121,7 +121,17 @@ def nginx(c, root, maintenance=False):
     for route, streaming in (("= /healthz", False), ("= /.well-known/oauth-protected-resource", False), ("= /.well-known/oauth-authorization-server", False), ("= /oauth/register", False), ("= /oauth/token", False), ("= /oauth/revoke", False), ("= /mcp", True), ("~ ^/api/v1/ai/", True), ("/api/", False)):
         options = "proxy_buffering off; proxy_cache off; proxy_read_timeout 3600s;" if streaming else "proxy_read_timeout 300s;"
         routes += f"    location {route} {{\n        proxy_pass {proxy};\n        proxy_http_version 1.1;\n        {options}\n{headers}\n    }}\n"
-    body = "    return 503;\n" if maintenance else routes + "    location / { try_files $uri $uri/ /index.html; }\n"
+    apps = manifest_apps or [{"name": "admin", "mount": "/", "health_path": "/build.json", "output_dir": "web"}]
+    if not maintenance:
+        for app in sorted(apps, key=lambda item: len(item["mount"]), reverse=True):
+            if app["mount"] == "/":
+                continue
+            mount = app["mount"]
+            mount_root = mount.rstrip("/")
+            routes += f"    location = {mount_root} {{ return 301 {mount}; }}\n"
+            routes += f"    location ^~ {mount} {{ try_files $uri $uri/ {mount}index.html; }}\n"
+        routes += "    location / { try_files $uri $uri/ /index.html; }\n"
+    body = "    return 503;\n" if maintenance else routes
     return f"""# Generated application routes. TLS assets are managed separately, never by app updates.
 server {{
     listen 80;
@@ -141,10 +151,10 @@ server {{
 """
 
 
-def install_nginx(c, root, maintenance):
+def install_nginx(c, root, maintenance, manifest_apps=None):
     path = Path(f"/etc/nginx/conf.d/{c['project']}.conf")
     old = path.read_bytes() if path.exists() else None
-    path.write_text(nginx(c, root, maintenance))
+    path.write_text(nginx(c, root, maintenance, manifest_apps))
     try:
         command(["nginx", "-t"])
         command(["systemctl", "reload", "nginx"])
@@ -392,15 +402,18 @@ def perform(r, root, home):
             require(command(["systemctl", "show", service, "-p", "NRestarts", "--value"]).strip() == b"0", "service restarted during readiness window")
             pid = int(command(["systemctl", "show", service, "-p", "MainPID", "--value"]).strip())
             require(Path(f"/proc/{pid}/exe").resolve().parent == release / "bin", "service not running target binary")
-        install_nginx(c, root, False)
+        install_nginx(c, root, False, manifest.get("web_apps"))
         health = https_json(c, "/healthz")["data"]
         require(health.get("status") == "ok" and health.get("version") == manifest["version"] and health.get("commit") == manifest["commit"], "HTTPS health check failed")
-        web = https_json(c, "/build.json")
-        require(web.get("commit") == manifest["commit"] and web.get("version") == manifest["version"], "Web release mismatch")
+        verified_web_apps = []
+        for app in web_apps(manifest):
+            web = https_json(c, app["health_path"])
+            require(web.get("commit") == manifest["commit"] and web.get("version") == manifest["version"], f"Web release mismatch: {app['name']}")
+            verified_web_apps.append({"name": app["name"], "mount": app["mount"], "health_path": app["health_path"], "version": web["version"], "commit": web["commit"], "build_time": web.get("build_time")})
         command(["systemctl", "enable", *units])
         if str(release) not in history:
             history.append(str(release))
-        state.update(status="healthy", current=str(release), history=history)
+        state.update(status="healthy", current=str(release), history=history, web_apps=verified_web_apps)
         atomic_json(statepath, state)
         print(f"Healthy: {project} {manifest['version']} {manifest['commit']}")
     except Exception:

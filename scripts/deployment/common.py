@@ -89,6 +89,28 @@ def lock(path):
         yield
 
 
+def web_apps(manifest):
+    apps = manifest.get("web_apps")
+    if apps is None:
+        return [{"name": "admin", "mount": "/", "health_path": "/build.json", "output_dir": "web"}]
+    require(isinstance(apps, list) and apps, "release must declare at least one web application")
+    names, mounts, health_paths = set(), set(), set()
+    for app in apps:
+        require(isinstance(app, dict), "invalid web application metadata")
+        app_name, mount, health_path, output_dir = (app.get(k) for k in ("name", "mount", "health_path", "output_dir"))
+        require(isinstance(app_name, str) and re.fullmatch(r"[a-z][a-z0-9-]{0,63}", app_name) and app_name not in names, "invalid or duplicate web application name")
+        require(isinstance(mount, str) and (mount == "/" or re.fullmatch(r"/[A-Za-z0-9._~-]+(?:/[A-Za-z0-9._~-]+)*/", mount)) and mount not in mounts, "invalid or duplicate web application mount")
+        require(isinstance(health_path, str) and re.fullmatch(r"/[A-Za-z0-9._~/-]+", health_path) and not health_path.endswith("/") and health_path not in health_paths, "invalid or duplicate web application health_path")
+        require(health_path == "/build.json" if mount == "/" else health_path.startswith(mount), "web application health_path must be inside its mount")
+        expected_dir = "web" if mount == "/" else "web/" + mount.strip("/")
+        require(output_dir == expected_dir, "web application output_dir does not match mount")
+        require((output_dir + "/index.html") in manifest.get("files", {}), "web application index is missing")
+        require((output_dir + "/build.json") in manifest.get("files", {}) or health_path.lstrip("/") in manifest.get("files", {}), "web application build manifest is missing")
+        names.add(app_name); mounts.add(mount); health_paths.add(health_path)
+    require("/" in mounts, "release must contain a root web application")
+    return apps
+
+
 def validate_manifest(m):
     require(m.get("schema") == 1 and m.get("platform") == "ubuntu-22.04-amd64", "unsupported release contract")
     name(m["project"])
@@ -100,6 +122,7 @@ def validate_manifest(m):
         key(p)
         digest(h)
     require({"bin/api", "bin/worker", "bin/migrate", "web/index.html", "web/build.json"} <= m["files"].keys(), "incomplete release")
+    web_apps(m)
     return m
 
 

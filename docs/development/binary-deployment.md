@@ -341,3 +341,28 @@ HTTPS 验收在 Nginx reload 后对瞬时错误进行有限重试（最多 5 次
 ## 下游部署基线
 
 公共部署工具、统一项目配置、来源 manifest/lock、三方同步和 CI 漂移校验遵循 [下游部署基线同步](deployment-baseline.md)。`cloud.py --version` 默认使用 `deploy/linux/project.json` 的项目仓库，显式 `--repository` 必须与配置一致；AINP 双 Tag 与下游应用单 Tag 使用同一公共入口。
+
+## 多 Web 应用发布（Issue #374）
+
+原生 release 支持在同一包内声明多个独立的静态 Web 应用。现有只配置 `frontend_dir` 的项目继续按 `admin` 根应用构建；新项目可使用 `web_apps`：
+
+```json
+{
+  "schema": 1,
+  "project": "ainp",
+  "go_dir": "platform",
+  "commands": {"api": "./cmd/ainp", "worker": "./cmd/ainp-worker", "migrate": "./cmd/ainp-migrate"},
+  "buildinfo_package": "github.com/yzxingtu2026/ainp/platform/framework/buildinfo",
+  "cjk_test_package": "./tests",
+  "web_apps": [
+    {"name": "admin", "source_dir": "frontend", "mount": "/", "build_command": ["pnpm", "build"], "health_path": "/build.json"},
+    {"name": "screen", "source_dir": "apps/bigscreen", "mount": "/bigscreen/", "build_command": ["pnpm", "build"], "health_path": "/bigscreen/build.json"}
+  ]
+}
+```
+
+每个应用可额外提供 `build_env` 字符串键值。构建器会为每个应用执行锁文件安装和配置的 build command，并将产物隔离到 `web/` 与 `web/<mount>/`；每个应用的 `build.json` 都包含同一 release 的 version、commit、build time。release manifest 同时记录应用名称、挂载路径、健康检查路径和产物目录，文件校验仍由统一的 release manifest 覆盖。
+
+当前公共部署基线实际支持的是**同域名、路径挂载**模式：根应用使用 `/`，其他应用使用以 `/` 开头并以 `/` 结尾的路径，例如 `/bigscreen/`。Nginx 为每个子路径生成独立的 SPA fallback，并为无尾斜杠入口生成重定向；`/api`、AI 流式接口、MCP 和 OAuth 精确路由仍统一反代到 API。多域名字段尚未纳入受管配置，不应通过复制脚本或手工修改 Nginx 实现。
+
+部署完成后，主机依次校验 API `/healthz` 和每个 `health_path`，并将已生效的 Web 应用版本、commit、build time 写入 `deployment.json`。Web 校验失败会保持维护页和失败状态；应用与静态产物都位于同一个 immutable release 目录，ECS 的原子 `current` 切换、历史保留和回滚模型不变。
