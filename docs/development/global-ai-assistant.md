@@ -14,6 +14,14 @@
 - `ai-assistant` Pinia Store 只管理面板 visible 与 conversation/history/run 二级视图，不复制协议状态。
 - Workspace、全局侧边栏只负责布局。禁止在任一容器新增第二套 send/watch/reconnect/message merge。
 
+## Composer 极光胶囊
+
+Workspace 与 Sidebar 使用同一个 `WorkspaceComposer`，仅通过 `density` 缩减侧边栏光晕强度、范围与文本高度上限。装饰限定在两个不接收指针事件的 CSS 伪元素；输入区保持不透明，禁止为光效增加无语义 DOM 或复制 Composer。
+
+- 主色为 AINP `#646CFF`，辅以青色和少量薄荷色；默认慢呼吸，焦点增强边框和焦点环，有文字或附件时加快渐变流动，Run 执行时显示方向性扫描，停止按钮始终为危险色。
+- 上传反馈来自现有队列，失败来自队列失败项或 Surface 的 `failed` 标记；`offline` 与 `failed` 只用于视觉，不能成为第二套发送或网络状态判定。不可用状态按离线、禁用、失败的顺序覆盖活动光效，并停止持续动画。错误文案、重试按钮与原有禁用语义继续保留。
+- `prefers-reduced-motion: reduce` 关闭光效与上传旋转动画，保留静态边框、状态颜色和键盘焦点。新增效果必须验证浅深主题、两种密度、窄屏以及文本达到高度上限后的内部滚动。
+
 ## 应用壳与入口
 
 Header launcher 在所有 layout mode 中显示，并以动态路由中的 `shellPlacement=global_ai_launcher` 为入口事实；该路由与默认 Slot 解析、本人会话/消息/Run、工具运行时确认及“我的附件”对话上传链路均为 authenticated 自助能力，不要求角色额外分配 AI 权限。点击只开关面板，不修改当前业务路由。Sider launcher 始终跳转 Workspace。

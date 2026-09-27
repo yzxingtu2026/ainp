@@ -22,4 +22,6 @@
 - greeting body 可复用旧快照，但时段前缀必须使用本次读取的 Trusted Runtime Context；首页加载态只用中性文案，不得读取浏览器时钟。
 - 桌面宽度、移动全屏、长内容 overflow、焦点返回、Escape、ARIA、Tooltip 与 reduced-motion 必须验证。
 
+- Composer 极光效果只在共享 `WorkspaceComposer` 内实现，按 density 调整强度；离线/失败仅投影视觉状态，禁止新增协议逻辑；reduced-motion 必须关闭持续光效和上传旋转并保留键盘焦点。
+
 详规：`docs/development/global-ai-assistant.md`

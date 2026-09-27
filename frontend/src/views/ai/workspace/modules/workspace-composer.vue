@@ -13,6 +13,8 @@ defineOptions({ name: 'WorkspaceComposer' });
 
 const props = defineProps<{
   disabled?: boolean;
+  offline?: boolean;
+  failed?: boolean;
   canSend?: boolean;
   active?: boolean;
   draftKey?: string;
@@ -44,6 +46,17 @@ const uploadQueue = useAttachmentUploadQueue({
     uploadQueue.remove(item.localId);
   }
 });
+
+// Visual state only: interaction guards remain owned by the existing controller/queue.
+const composerClasses = computed(() => ({
+  [`workspace-composer--${props.density || 'workspace'}`]: true,
+  'workspace-composer--has-content': Boolean(text.value.trim() || attachments.value.length),
+  'workspace-composer--active': props.active,
+  'workspace-composer--uploading': uploadQueue.busy.value,
+  'workspace-composer--failed': props.failed || uploadQueue.items.value.some(item => item.status === 'failed'),
+  'workspace-composer--disabled': props.disabled,
+  'workspace-composer--offline': props.offline
+}));
 
 watch(
   () => props.draftKey,
@@ -97,7 +110,7 @@ function selectAttachments(items: Api.Attachment.Item[]) {
 </script>
 
 <template>
-  <div class="workspace-composer" :class="`workspace-composer--${density || 'workspace'}`" :style="composerStyle">
+  <div class="workspace-composer" :class="composerClasses" :style="composerStyle">
     <div v-if="attachments.length || uploadQueue.items.value.length" class="workspace-composer__attachments">
       <div v-for="item in attachments" :key="item.id" class="workspace-composer__attachment">
         <img v-if="thumbs.urls[item.id]" :src="thumbs.urls[item.id]" :alt="item.original_name" />
@@ -117,6 +130,7 @@ function selectAttachments(items: Api.Attachment.Item[]) {
         v-for="item in uploadQueue.items.value"
         :key="item.localId"
         class="workspace-composer__attachment workspace-composer__attachment--upload"
+        :class="{ 'workspace-composer__attachment--failed': item.status === 'failed' }"
         :title="item.error || $t('page.aiWorkspace.imageUploading')"
       >
         <NSpin v-if="item.status !== 'failed'" :size="18" />
@@ -185,7 +199,17 @@ function selectAttachments(items: Api.Attachment.Item[]) {
 <style scoped>
 .workspace-composer {
   --workspace-composer-textarea-max-height: min(238px, 38dvh);
+  --aurora-indigo: 100, 108, 255;
+  --aurora-cyan: 8, 145, 178;
+  --aurora-mint: 52, 211, 153;
+  --aurora-glow: 0.12;
+  --aurora-blur: 7px;
+  --aurora-outset: -3px;
+  --aurora-speed: 12s;
+  --aurora-border-opacity: 0.65;
   width: min(820px, 100%);
+  min-width: 0;
+  isolation: isolate;
   margin: 0 auto;
 }
 
@@ -204,7 +228,7 @@ function selectAttachments(items: Api.Attachment.Item[]) {
   overflow: hidden;
   border: 1px solid rgba(127, 127, 127, 0.2);
   border-radius: 6px;
-  background: var(--n-color, white);
+  background: rgb(var(--container-bg-color));
   font-size: 10px;
 }
 
@@ -275,26 +299,146 @@ function selectAttachments(items: Api.Attachment.Item[]) {
   color: white;
 }
 
+.workspace-composer--sidebar {
+  --aurora-glow: 0.07;
+  --aurora-blur: 4px;
+  --aurora-outset: -2px;
+  --aurora-border-opacity: 0.5;
+}
+
+:where(.dark) .workspace-composer {
+  --aurora-cyan: 34, 211, 238;
+}
+
 .workspace-composer__capsule {
+  position: relative;
+  isolation: isolate;
   min-height: 56px;
   display: flex;
   align-items: flex-end;
   gap: 8px;
-  border: 1px solid rgba(127, 127, 127, 0.22);
+  border: 1px solid rgba(var(--aurora-indigo), 0.3);
   border-radius: 28px;
   background: rgb(var(--container-bg-color));
   padding: 7px;
-  box-shadow: 0 8px 28px rgba(25, 31, 46, 0.1);
+  box-shadow: 0 8px 28px rgba(25, 31, 46, 0.08);
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease;
+}
+
+/* Both decorative layers are hollow, so text and controls never sit under a gradient. */
+.workspace-composer__capsule::before,
+.workspace-composer__capsule::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  pointer-events: none;
+  border-radius: inherit;
+  background: linear-gradient(
+    110deg,
+    rgb(var(--aurora-indigo)) 0%,
+    rgb(var(--aurora-cyan)) 30%,
+    rgb(var(--aurora-mint)) 42%,
+    rgb(var(--aurora-indigo)) 60%,
+    rgb(var(--aurora-cyan)) 80%,
+    rgb(var(--aurora-indigo)) 100%
+  );
+  background-size: 250% 100%;
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+}
+
+.workspace-composer__capsule::before {
+  inset: var(--aurora-outset);
+  padding: 4px;
+  filter: blur(var(--aurora-blur));
+  opacity: var(--aurora-glow);
+  animation: aurora-breathe 6s ease-in-out infinite;
+}
+
+.workspace-composer__capsule::after {
+  inset: -1px;
+  padding: 1px;
+  opacity: var(--aurora-border-opacity);
+  animation: aurora-flow var(--aurora-speed) ease-in-out infinite alternate;
+}
+
+.workspace-composer--has-content {
+  --aurora-speed: 8s;
 }
 
 .workspace-composer__capsule:focus-within {
-  border-color: rgba(var(--primary-color), 0.55);
+  --aurora-glow: 0.28;
+  --aurora-border-opacity: 1;
+  border-color: rgba(var(--aurora-indigo), 0.65);
   box-shadow:
-    0 0 0 3px rgba(var(--primary-color), 0.1),
-    0 8px 28px rgba(25, 31, 46, 0.1);
+    0 0 0 3px rgba(var(--aurora-indigo), 0.12),
+    0 8px 28px rgba(25, 31, 46, 0.08);
+}
+
+.workspace-composer--sidebar .workspace-composer__capsule:focus-within {
+  --aurora-glow: 0.16;
+}
+
+.workspace-composer--uploading {
+  --aurora-indigo: var(--aurora-cyan);
+  --aurora-speed: 4s;
+}
+
+.workspace-composer--active .workspace-composer__capsule::after {
+  background-image: linear-gradient(
+    90deg,
+    rgba(var(--aurora-indigo), 0.35) 0%,
+    rgb(var(--aurora-indigo)) 30%,
+    rgb(var(--aurora-cyan)) 45%,
+    rgb(var(--aurora-mint)) 50%,
+    rgb(var(--aurora-indigo)) 65%,
+    rgba(var(--aurora-indigo), 0.35) 100%
+  );
+  animation: aurora-flow 3s linear infinite;
+}
+
+/* Terminal/unavailable states take precedence over the decorative activity states. */
+.workspace-composer--failed {
+  --aurora-indigo: 220, 64, 80;
+  --aurora-cyan: 220, 64, 80;
+  --aurora-mint: 220, 64, 80;
+}
+
+.workspace-composer--disabled {
+  --aurora-indigo: 127, 127, 127;
+  --aurora-cyan: 127, 127, 127;
+  --aurora-mint: 127, 127, 127;
+}
+
+.workspace-composer--offline {
+  --aurora-indigo: 180, 119, 28;
+  --aurora-cyan: 180, 119, 28;
+  --aurora-mint: 180, 119, 28;
+}
+
+.workspace-composer--failed .workspace-composer__capsule::before,
+.workspace-composer--disabled .workspace-composer__capsule::before,
+.workspace-composer--offline .workspace-composer__capsule::before {
+  animation: none;
+  opacity: 0;
+}
+
+.workspace-composer--failed .workspace-composer__capsule::after,
+.workspace-composer--disabled .workspace-composer__capsule::after,
+.workspace-composer--offline .workspace-composer__capsule::after {
+  animation: none;
+}
+
+.workspace-composer__attachment--failed {
+  border-color: #dc4050;
 }
 
 .workspace-composer textarea {
+  min-width: 0;
   min-height: 62px;
   max-height: var(--workspace-composer-textarea-max-height);
   flex: 1;
@@ -326,19 +470,62 @@ function selectAttachments(items: Api.Attachment.Item[]) {
   color: rgba(127, 127, 127, 0.95);
 }
 
-.workspace-composer__icon:hover {
+.workspace-composer__icon:hover:not(:disabled) {
   background: rgba(127, 127, 127, 0.1);
 }
 .workspace-composer__primary {
-  background: rgb(var(--primary-color));
+  background: #646cff;
   color: white;
 }
 .workspace-composer__primary--stop {
-  background: #ef4444;
+  background: #dc3545;
 }
 .workspace-composer button:disabled {
   cursor: not-allowed;
   opacity: 0.42;
+}
+
+.workspace-composer button:focus-visible {
+  outline: 2px solid #646cff;
+  outline-offset: 3px;
+}
+
+.workspace-composer textarea::placeholder {
+  color: rgba(127, 127, 127, 0.95);
+}
+
+@keyframes aurora-breathe {
+  0%,
+  100% {
+    opacity: var(--aurora-glow);
+  }
+  50% {
+    opacity: calc(var(--aurora-glow) * 0.5);
+  }
+}
+
+@keyframes aurora-flow {
+  from {
+    background-position: 0% 50%;
+  }
+  to {
+    background-position: 100% 50%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workspace-composer__capsule {
+    transition: none;
+  }
+
+  .workspace-composer .workspace-composer__capsule::before,
+  .workspace-composer .workspace-composer__capsule::after {
+    animation: none;
+  }
+
+  .workspace-composer :deep(.n-base-loading .n-base-loading__container) {
+    animation: none;
+  }
 }
 
 @media (max-width: 640px) {
