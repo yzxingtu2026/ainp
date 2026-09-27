@@ -202,6 +202,39 @@ class ContractTest(unittest.TestCase):
         self.assertFalse(app["database"]["auto_migrate"])
         self.assertFalse(app["jobs"]["embedded_worker"])
 
+    def test_redis_db_defaults_to_zero_and_validates_integer(self):
+        c = self.config()
+        c.pop("redis_db", None)
+        self.assertEqual(host.app_config(host.validate_config(c, "ainp"), Path("/var/lib/ainp"))["redis"]["db"], 0)
+        for value in (0, 1, 42):
+            with self.subTest(valid=value):
+                c["redis_db"] = value
+                self.assertEqual(host.app_config(host.validate_config(c, "ainp"), Path("/var/lib/ainp"))["redis"]["db"], value)
+        for value in (True, False, -1, "1", None, 1.5, [], {}):
+            with self.subTest(invalid=value), self.assertRaisesRegex(common.DeployError, "redis_db must be a non-negative integer"):
+                host.validate_config({**c, "redis_db": value}, "ainp")
+
+    def test_redis_preflight_selects_configured_db_and_fails_closed(self):
+        import types
+        c = self.config()
+        c["redis_db"] = 3
+        client = mock.Mock()
+        client.ping.return_value = True
+        client.eval.return_value = b"ok"
+        redis = types.SimpleNamespace(Redis=mock.Mock(return_value=client), RedisError=RuntimeError)
+        with mock.patch.dict(sys.modules, {"redis": redis}):
+            host.redis_preflight(c)
+            self.assertEqual(redis.Redis.call_args.kwargs["db"], 3)
+            client.ping.assert_called_once()
+            client.eval.assert_called_once()
+            client.close.assert_called_once()
+            client.reset_mock()
+            client.ping.side_effect = RuntimeError("ERR DB index is out of range; private details")
+            with self.assertRaisesRegex(common.DeployError, "redis_db=3") as error:
+                host.redis_preflight(c)
+            self.assertNotIn("private details", str(error.exception))
+            client.close.assert_called_once()
+
     def test_config_rejects_injection_and_wrong_project(self):
         for change in ({"project": "other"}, {"domain": "example.com; include /etc/passwd;"}, {"api_port": "80;touch /tmp/x"}, {"database_mode": "unknown"}):
             with self.subTest(change=change), self.assertRaises(common.DeployError):
@@ -837,6 +870,26 @@ class HostTransactionTest(unittest.TestCase):
         self.assertFalse(any(e[0] == "runuser" for e in self.events))
         self.assertIn(("backup",), self.events)
         self.assertEqual(common.read_json(self.root / "deployment.json")["release"]["version"], "v1.0.0")
+
+    def test_fresh_init_uses_same_nonzero_db_in_setup_and_app_config(self):
+        self.config["redis_db"] = 3
+        self.config_source.write_text(json.dumps(self.config))
+        request = self.request("v1.0.0", "init")
+        captured = []
+        original = host.get_json
+        def initialize(url, data=None):
+            if url.endswith("/initialize"):
+                captured.append(data["redis_db"])
+            return original(url, data)
+        with mock.patch.object(host, "get_json", side_effect=initialize):
+            host.perform(request, self.root, self.home)
+        self.assertEqual(captured, [3])
+        app = common.read_json(self.fs / "etc/ainp/app.json")
+        self.assertEqual(app["redis"]["db"], 3)
+        runtime = common.read_json(self.fs / "etc/ainp/runtime.json")
+        self.assertNotIn("REDIS_DB", runtime["env"])
+        host.perform(self.request("v1.1.0", "update"), self.root, self.home)
+        self.assertEqual(common.read_json(self.fs / "etc/ainp/app.json")["redis"]["db"], 3)
 
     def test_fresh_init_does_not_reset_unloaded_systemd_units(self):
         original = host.command

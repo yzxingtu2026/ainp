@@ -35,8 +35,16 @@ def command(argv, **kwargs):
     return result.stdout
 
 
+def redis_db(c):
+    """Resolve the single deployment DB setting; old private configs remain DB 0."""
+    value = c.get("redis_db", 0)
+    require(type(value) is int and value >= 0, "redis_db must be a non-negative integer")
+    return value
+
+
 def validate_config(c, project):
     require(c.get("schema") == 1 and c.get("project") == project, "wrong private configuration")
+    redis_db(c)
     require(c.get("database_mode") in ("external", "local-container"), "database mode required")
     require(isinstance(c.get("env"), dict) and set(c["env"]) <= ENV_KEYS, "unsupported runtime environment key")
     for k in ("DATABASE_DSN", "JWT_SECRET", "CREDENTIAL_ENCRYPTION_KEY", "REDIS_ADDR", "REDIS_PASSWORD", "MCP_BASE_URL", "MCP_WEB_BASE_URL"):
@@ -68,7 +76,7 @@ def app_config(c, home):
         "database": {"auto_migrate": False},
         "logging": {"level": "info", "format": "json", "outputs": ["stdout", "file"], "file": {"path": str(home / "logs/{service}.jsonl"), "max_size_mb": 100, "max_backups": 14, "max_age_days": 14, "compress": True}},
         "auth": {"refresh_ttl": "720h", "dev_token_enabled": False, "jwt": {"issuer": c["project"], "ttl": "15m"}},
-        "redis": {"db": 0}, "i18n": {"default_language": "zh-CN"},
+        "redis": {"db": redis_db(c)}, "i18n": {"default_language": "zh-CN"},
         "storage": {"provider": "local", "local": {"root_dir": str(home / "objects")}},
         "outbox": {"enabled": True, "transport": "postgres"},
         "jobs": {"enabled": True, "embedded_worker": False},
@@ -194,17 +202,23 @@ def redis_preflight(c):
     import redis
     addr = c["env"]["REDIS_ADDR"]
     host, port = addr.rsplit(":", 1)
-    client = redis.Redis(host=host.strip("[]"), port=int(port), db=0,
+    db = redis_db(c)
+    client = redis.Redis(host=host.strip("[]"), port=int(port), db=db,
                          username=c["env"].get("REDIS_USERNAME") or None,
                          password=c["env"]["REDIS_PASSWORD"], socket_timeout=10,
                          socket_connect_timeout=10)
     probe = "ainp:deploy:probe:" + uuid.uuid4().hex
     try:
-        require(client.ping(), "Redis ping failed")
-        require(client.eval("redis.call('SET', KEYS[1], 'ok', 'EX', 60); return redis.call('GET', KEYS[1])", 1, probe) == b"ok", "Redis Lua capability missing")
-    finally:
-        client.delete(probe)
-        client.close()
+        try:
+            require(client.ping(), "Redis ping failed")
+            require(client.eval("redis.call('SET', KEYS[1], 'ok', 'EX', 60); return redis.call('GET', KEYS[1])", 1, probe) == b"ok", "Redis Lua capability missing")
+        finally:
+            try:
+                client.delete(probe)
+            finally:
+                client.close()
+    except redis.RedisError:
+        raise DeployError(f"Redis preflight failed for redis_db={db}; check database availability, authentication and Lua support") from None
 
 
 def backup_environment(dsn):
@@ -360,7 +374,7 @@ def perform(r, root, home):
         if fresh:
             setup = get_json(f"http://127.0.0.1:{c['api_port']}/api/v1/setup/status")
             require(setup.get("installed") is False, "unexpected setup status")
-            payload = {**c["bootstrap"], "dsn": "", "redis_addr": c["env"]["REDIS_ADDR"], "redis_db": 0, "jobs_enabled": True, "embedded_worker": False}
+            payload = {**c["bootstrap"], "dsn": "", "redis_addr": c["env"]["REDIS_ADDR"], "redis_db": redis_db(c), "jobs_enabled": True, "embedded_worker": False}
             with stage("application-initialize"):
                 result = get_json(f"http://127.0.0.1:{c['api_port']}/api/v1/setup/initialize", payload)
             require(result.get("installed") is True, "setup failed")

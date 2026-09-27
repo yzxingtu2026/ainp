@@ -117,7 +117,10 @@ GitHub environment **release** 配置变量：
 - 两种模式都不自动删除/创建数据库，必须先准备空数据库（首次）或已安装的同项目数据库（更新），并提供 migrations/pgvector 必要权限。预检 PG17、vector 可用、Redis 认证/Lua。
 - `vector` 必须在 **DATABASE_DSN 指向的目标数据库**中已安装；RDS 支持/提供插件不等于该库已安装。由有权限的数据库管理员在该库执行 `CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;`，再查询 `pg_extension` 确认 `vector` 的 schema 为 `public`。重建数据库后需要重新安装，不能沿用旧库的安装结论。当前自动预检只查 `pg_available_extensions`，不能替代安装和权限检查；应用账号无创建扩展权限时，遗漏此准备会在 setup 中返回 HTTP 500 并留下部分基础表。
 - 新 ECS 的内网 IP 会变化。部署前验证启动模板的 VPC/vSwitch 与 RDS/Tair 连通，以及数据库访问控制是否覆盖新实例；按实例实际支持的关联安全组或受限专用网段配置，不依赖已销毁 ECS 的单个 IP。TCP 端口可达后仍需验证应用凭证、数据库和 Redis 队列能力。
-- 本版 Redis DB 固定为 0，独立 Redis 或经隔离评估的实例；不要把未隔离的多个项目任务混进同一 DB。
+- 私有配置顶层 `redis_db` 为可选非负整数，省略时为 **0**，例如 `"redis_db": 1`。不要写入 `env.REDIS_DB` 或在 `REDIS_ADDR` 后附 `/1`；地址仍为 `host:port`。同一个值用于主机 Redis 预检、API/两个 Worker 共用的 `app.json` 及首次 setup 请求；安装 state 保存选定 DB，重启继续读取同一配置。
+- 多个独立应用/环境共用 Redis 实例时，各自分配不同逻辑 DB。AINP 默认队列没有项目命名空间，同地址、同 DB、同队列的 Worker 会竞争消费任务；不同 project/域名/PostgreSQL 库不能提供队列隔离。逻辑 DB 仅隔离键空间，不隔离内存、性能、故障或管理权限；生产按需求使用独立实例。
+- DB 编号是否可用以目标服务为准，不假设所有实例都有 16 个 DB。Redis Cluster 仅支持 DB 0，其他托管规格需确认 SELECT/Lua/Asynq 能力；预检连接指定 DB，服务拒绝该 DB 时明确失败，不回退到 0。
+- 在**首次部署前**选定 `redis_db`，将完整 private JSON 上传私有配置桶并更新 target 的 key/SHA256。更新/回滚继续使用主机现有 private 配置，升级工具不会从 OSS 刷新配置、自动换 DB 或迁移队列。已安装应用改 DB 需独立维护方案：停 API/两个 Worker、审计旧队列及重试/定时任务、协调 app 配置与安装 state 并验证恢复，不能仅修改本地 JSON 后运行 update。
 - `backup_oss` / `backup_prefix` 是迁移前 PG custom-format 逻辑备份目的地。备份上传并校验后才迁移。
 - 私有配置首次写入 `/etc/<project>/private.json`，root-only；服务仅能读取受限 runtime/app 配置。更新复用主机配置，不自动从 OSS 刷新，也不旋转凭证。
 
