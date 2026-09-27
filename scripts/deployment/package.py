@@ -41,7 +41,17 @@ def build_web(web_dir, stage, env, identity, cfg=None, output_dir=None, build_co
     destination = stage / effective_output_dir
     require(not destination.exists(), f"duplicate web output: {destination}")
     shutil.copytree(web_dir / "dist", destination)
-    manifest_path = destination / "build.json" if health_path is None else stage / health_path.lstrip("/")
+    if health_path is None:
+        manifest_path = destination / "build.json"
+    else:
+        # Convert the public URL path back to a path inside this app's output.
+        # The release stores every app below web/, while health_path includes
+        # the app mount (for example /bigscreen/build.json).
+        mount = "/" if effective_output_dir == "web" else "/" + effective_output_dir.removeprefix("web/").rstrip("/") + "/"
+        require(health_path == "/build.json" if mount == "/" else health_path.startswith(mount),
+                "web application health_path must be inside its mounted output")
+        relative_path = health_path.lstrip("/") if mount == "/" else health_path[len(mount):]
+        manifest_path = destination / relative_path
     require(manifest_path.is_relative_to(destination), "web application health_path must be inside its mounted output")
     atomic_json(manifest_path, identity, 0o644)
 

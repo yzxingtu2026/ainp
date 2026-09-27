@@ -94,6 +94,17 @@ class WebBuildTest(unittest.TestCase):
             self.assertEqual((root / "stage/web/bigscreen/index.html").read_text(), "screen")
             self.assertEqual(json.loads((root / "stage/web/bigscreen/build.json").read_text()), identity)
 
+    def test_web_health_path_is_written_inside_non_root_mount(self):
+        identity = dict(version="v1.2.3", commit="a" * 40, build_time="2026-09-26T00:00:00Z")
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            web_dir = root / "screen"
+            (web_dir / "dist").mkdir(parents=True)
+            (web_dir / "dist/index.html").write_text("screen")
+            with mock.patch.object(package, "run"):
+                package.build_web(web_dir, root / "stage", {}, identity, "web/bigscreen", ["pnpm", "build"], {}, "/bigscreen/build.json")
+            self.assertEqual(json.loads((root / "stage/web/bigscreen/build.json").read_text()), identity)
+
 
 class ArchiveTest(unittest.TestCase):
     def setUp(self):
