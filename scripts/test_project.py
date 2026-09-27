@@ -50,7 +50,7 @@ class ProjectTest(unittest.TestCase):
                 ("gh", "variable", "get", "OSS_BUCKET", "--env", "release"): "private-bucket",
             }
             return responses.get(args, "")
-        with mock.patch.multiple(release, PROJECT=cfg, REPOSITORY=cfg["repository"], DEFAULT_BRANCH="trunk", REQUIRED_CHECKS={"application-ci"}), mock.patch.object(release, "run", side_effect=run):
+        with mock.patch.dict(release.os.environ, {"GITHUB_REPOSITORY": cfg["repository"]}), mock.patch.multiple(release, PROJECT=cfg, REPOSITORY=cfg["repository"], DEFAULT_BRANCH="trunk", REQUIRED_CHECKS={"application-ci"}), mock.patch.object(release, "run", side_effect=run):
             self.assertEqual(release.preflight("v1.2.3"), ("abc", "private-bucket"))
         flattened = " ".join(" ".join(args) for args in calls)
         self.assertNotIn("yzxingtu2026", flattened)

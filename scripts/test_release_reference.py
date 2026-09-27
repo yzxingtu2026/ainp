@@ -136,7 +136,7 @@ class ReleaseReferenceTest(unittest.TestCase):
         else:
             repo = "yzxingtu2026/ainp"
         output = io.StringIO()
-        with mock.patch.object(cloud.subprocess, "check_output", return_value=f"https://github.com/{repo}.git"), mock.patch.object(sys, "argv", argv), mock.patch.object(rr, "resolve", return_value=self.reference) as resolve, \
+        with mock.patch.dict(cloud.os.environ, {"GITHUB_REPOSITORY": repo}), mock.patch.object(cloud.subprocess, "check_output", return_value=f"https://github.com/{repo}.git"), mock.patch.object(sys, "argv", argv), mock.patch.object(rr, "resolve", return_value=self.reference) as resolve, \
                 mock.patch.object(cloud, "execute") as execute, contextlib.redirect_stdout(output):
             cloud.main()
         return root, resolve, execute, output.getvalue()
