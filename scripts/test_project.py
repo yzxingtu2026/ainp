@@ -32,6 +32,36 @@ class ProjectTest(unittest.TestCase):
                 with self.assertRaises(project.ProjectError):
                     project.load(path)
 
+    def test_build_contract_exposes_downstream_toolchain_and_composition(self):
+        cfg = self.config()
+        cfg["project"] = "ainp"
+        cfg["tag_strategy"] = "platform-pair"
+        build = project.build_config(cfg, Path.cwd())
+        self.assertEqual(build["node_version"], "20.19.0")
+        self.assertEqual(build["pnpm_version"], "10.5.0")
+        self.assertEqual(build["admin_application"], "./src/composition/application.ts")
+        self.assertEqual(build["admin_modules"], ["core", "system", "operations", "ai", "demo"])
+        self.assertEqual(build["go_private"], [])
+
+    def test_build_contract_rejects_admin_entry_outside_frontend(self):
+        cfg = self.config()
+        path = Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: __import__("shutil").rmtree(path, ignore_errors=True))
+        (path / "deploy/linux").mkdir(parents=True)
+        (path / "admin/src").mkdir(parents=True)
+        (path / "backend/cmd/api").mkdir(parents=True)
+        (path / "backend/cmd/worker").mkdir(parents=True)
+        (path / "backend/cmd/migrate").mkdir(parents=True)
+        for name in ("go.mod", "go.sum"):
+            (path / "backend" / name).write_text("")
+        (path / "admin/src/application.ts").write_text("")
+        (path / "backend/go.mod").write_text("module example\n")
+        bad = dict(cfg, build_config="deploy/linux/build.json")
+        config = {"schema": 1, "project": cfg["project"], "go_dir": "backend", "frontend_dir": "admin", "commands": {"api": "./cmd/api", "worker": "./cmd/worker", "migrate": "./cmd/migrate"}, "buildinfo_package": "github.com/yzxingtu2026/ainp/platform/framework/buildinfo", "cjk_test_package": "github.com/yzxingtu2026/ainp/platform/contracts/pdfcjk", "node_version": "22.22.0", "pnpm_version": "10.26.2", "admin_application": "../outside.ts", "admin_modules": ["core"], "go_private": []}
+        (path / "deploy/linux/build.json").write_text(json.dumps(config))
+        with self.assertRaises(project.ProjectError):
+            project.build_config(bad, path)
+
     def test_downstream_preflight_queries_only_its_own_repository(self):
         cfg = self.config()
         cfg["default_branch"] = "trunk"

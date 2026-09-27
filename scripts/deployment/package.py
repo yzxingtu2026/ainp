@@ -18,12 +18,17 @@ def run(args, cwd, env):
     subprocess.run(args, cwd=cwd, env=env, check=True)
 
 
-def build_web(web_dir, stage, env, identity):
+def build_web(web_dir, stage, env, identity, cfg=None):
     # Release Web is served behind the same Nginx origin in every environment.
     # Override inherited shell values as well as Vite's .env files.
+    if cfg is None:
+        cfg = {"admin_application": os.environ.get("AINP_ADMIN_APPLICATION", "./src/composition/application.ts"),
+               "admin_modules": os.environ.get("AINP_ADMIN_MODULES", "core,system,operations,ai,demo").split(",")}
     web_env = dict(env, VITE_BUILD_VERSION=identity["version"],
                    VITE_BUILD_COMMIT=identity["commit"], VITE_BUILD_TIME=identity["build_time"],
-                   VITE_SERVICE_BASE_URL="/", VITE_OTHER_SERVICE_BASE_URL='{"demo":"/"}')
+                   VITE_SERVICE_BASE_URL="/", VITE_OTHER_SERVICE_BASE_URL='{"demo":"/"}',
+                   AINP_ADMIN_APPLICATION=cfg["admin_application"],
+                   AINP_ADMIN_MODULES=','.join(cfg["admin_modules"]))
     run(["pnpm", "install", "--frozen-lockfile"], web_dir, web_env)
     run(["pnpm", "build"], web_dir, web_env)
     shutil.copytree(web_dir / "dist", stage / "web")
@@ -91,7 +96,7 @@ def main():
             libraries = subprocess.check_output(["ldd", str(binary)], text=True)
             print(libraries)
             require("not found" not in libraries, "unresolved shared library in native binary")
-        build_web(root / cfg["frontend_dir"], stage, env, identity)
+        build_web(root / cfg["frontend_dir"], stage, env, identity, cfg)
         archive = output / "release.tar.gz"
         manifest = pack(stage, archive, identity, epoch)
         atomic_json(output / "release.json", manifest, 0o644)

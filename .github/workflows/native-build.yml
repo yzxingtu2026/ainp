@@ -17,6 +17,9 @@ on:
       artifact-name:
         type: string
         default: native-release
+    secrets:
+      private-module-token:
+        required: false
 permissions:
   contents: read
 jobs:
@@ -39,17 +42,30 @@ jobs:
           for field, expected in (("REQUESTED_CONFIG", cfg["build_config"]), ("REQUESTED_GO_VERSION", build["go_dir"] + "/go.mod"), ("REQUESTED_GO_SUM", build["go_dir"] + "/go.sum")):
               assert not os.environ[field] or os.environ[field] == expected, field + " conflicts with project config"
           PY
+      - name: Configure private Go module access
+        env:
+          GOPRIVATE: ${{ steps.project.outputs.go-private }}
+          PRIVATE_MODULE_TOKEN: ${{ secrets.private-module-token }}
+        run: |
+          if [ -n "$GOPRIVATE" ] && [ -z "$PRIVATE_MODULE_TOKEN" ]; then
+            echo "::error::project declares private Go modules but private-module-token was not provided"
+            exit 1
+          fi
+          if [ -n "$GOPRIVATE" ]; then
+            echo "GOPRIVATE=$GOPRIVATE" >> "$GITHUB_ENV"
+            git config --global url."https://x-access-token:${PRIVATE_MODULE_TOKEN}@github.com/".insteadOf "https://github.com/"
+          fi
       - uses: actions/setup-go@v5
         with:
           go-version-file: ${{ steps.project.outputs.go-version-file }}
           cache-dependency-path: ${{ steps.project.outputs.go-sum-file }}
       - uses: pnpm/action-setup@v4
         with:
-          version: 10.5.0
+          version: ${{ steps.project.outputs.pnpm-version }}
           run_install: false
       - uses: actions/setup-node@v4
         with:
-          node-version: 20.19.0
+          node-version: ${{ steps.project.outputs.node-version }}
       - name: Install native build tools
         run: sudo apt-get update -qq && sudo apt-get install -y build-essential curl
       - uses: actions/cache@v4
@@ -69,6 +85,15 @@ jobs:
           export CGO_CFLAGS="-I$GITHUB_WORKSPACE/.cache/mupdf/include"
           export CGO_LDFLAGS="-L$GITHUB_WORKSPACE/.cache/mupdf/lib -lmupdf -lmupdf-third -lm"
           python3 scripts/deployment/package.py --config "$BUILD_CONFIG" --version "$RELEASE_VERSION"
+      - name: Remove private module credentials
+        if: always()
+        env:
+          GOPRIVATE: ${{ steps.project.outputs.go-private }}
+          PRIVATE_MODULE_TOKEN: ${{ secrets.private-module-token }}
+        run: |
+          if [ -n "$GOPRIVATE" ]; then
+            git config --global --unset-all "url.https://x-access-token:${PRIVATE_MODULE_TOKEN}@github.com/.insteadOf" || true
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.artifact-name }}

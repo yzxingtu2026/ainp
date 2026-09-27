@@ -3,7 +3,22 @@
   "project": "ainp",
   "go_dir": "platform",
   "frontend_dir": "frontend",
-  "commands": {"api": "./cmd/ainp", "worker": "./cmd/ainp-worker", "migrate": "./cmd/ainp-migrate"},
+  "commands": {
+    "api": "./cmd/ainp",
+    "worker": "./cmd/ainp-worker",
+    "migrate": "./cmd/ainp-migrate"
+  },
   "buildinfo_package": "github.com/yzxingtu2026/ainp/platform/framework/buildinfo",
-  "cjk_test_package": "./tests"
+  "cjk_test_package": "./tests",
+  "node_version": "20.19.0",
+  "pnpm_version": "10.5.0",
+  "admin_application": "./src/composition/application.ts",
+  "admin_modules": [
+    "core",
+    "system",
+    "operations",
+    "ai",
+    "demo"
+  ],
+  "go_private": []
 }
