@@ -33,3 +33,11 @@ GitHub Release 只附元数据，不公开应用包或环境秘密。中文发�
 `scripts/release.py` 仍从干净、同步 main 推送配对 Tag，但会先将 `main` 合并提交追溯到唯一的已合并 PR，并检查该 PR head 的必需 CI；同时检查 OSS 发布配置而非 DEMO_URL。生产更新/回滚是管理员单独显式动作，与创建 Release 解耦。
 
 部署命令、RAM/OIDC、基础设施准备、SSL 生命周期与下游接入见 [原生部署 SOP](binary-deployment.md)。分支保护须将旧 `containers` required check 改为 `linux-release`；旧 [容器部署基线](../deployment/containers.md) 仅用于存量兼容，不是新项目主路径。
+
+## 操作入口
+
+正式首发和后续发版均从干净、同步的 `main` 运行 `python3 scripts/release.py vX.Y.Z`（替换为未使用的稳定版本）；该命令会在确认后推送两个 Tag，并非 dry-run。工作流完成且 Release Published 后，直接用 `python3 scripts/deployment/cloud.py init --target deploy/linux/target.production.local.json --version vX.Y.Z` 查看计划，确认后加 `--apply`。更新/回滚分别换成 `update`/`rollback`，回滚仍需 `--confirm-schema-compatible`。
+
+`--version` 通过已认证的 GitHub CLI 自动取得发布后的 `reference.json`，验证 Tag commit 并在 apply 时留存到 `.deploy-state/releases/OWNER/REPO/vX.Y.Z/reference.json`，不用手动下载；默认仓库 `yzxingtu2026/ainp`，下游使用 `--repository OWNER/REPO`。`gh release download` 仅作为可选存档方式。测试工作流的构建附件不是发布后的引用，测试包应从 OSS 获取发布后的引用并继续使用 `--release`，因为 `v0.0.0-ci` 不能唯一标识 commit。
+
+完整的生产环境准备、plan/apply、更新、兼容回滚、失败恢复边界及实际验收记录见 [原生部署 SOP 第 5 节](binary-deployment.md#5-一键操作)。发布只生成不可变产物；只有管理员另行运行 `cloud.py ... --apply` 才修改环境。

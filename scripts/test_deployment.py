@@ -834,6 +834,59 @@ class HostTransactionTest(unittest.TestCase):
             host.perform(self.request("v1.0.0", "init"), self.root, self.home)
         self.assertEqual(common.read_json(self.root / "deployment.json")["status"], "healthy")
 
+    def test_update_and_rollback_reset_only_loaded_project_units(self):
+        import fnmatch
+        initial = self.request("v1.0.0", "init")
+        host.perform(initial, self.root, self.home)
+        update = self.request("v1.1.0", "update")
+        rollback = {**initial, "action": "rollback", "operation_id": "rollback-reset"}
+        original = host.command
+        own = {"ainp-api.service", "ainp-worker.service", "ainp-ai-worker.service"}
+        unrelated = {"other-api.service", "ainp-api-helper.service", "ainp-extra.service"}
+        # Exercise fully unloaded, partially retained and fully retained services.
+        for retained in (set(), {"ainp-worker.service"}, own):
+            loaded = retained | unrelated
+            reset = set()
+            def systemctl(argv, **kwargs):
+                if argv[:2] == ["systemctl", "reset-failed"]:
+                    for pattern in argv[2:]:
+                        if not any(c in pattern for c in "*?[") and pattern not in loaded:
+                            raise common.DeployError("Unit not loaded")
+                        reset.update(u for u in loaded if fnmatch.fnmatchcase(u, pattern))
+                return original(argv, **kwargs)
+            for request in (update, rollback):
+                with self.subTest(retained=sorted(retained), action=request["action"]):
+                    reset.clear()
+                    self.events.clear()
+                    with mock.patch.object(host, "command", side_effect=systemctl):
+                        host.perform(request, self.root, self.home)
+                    self.assertEqual(reset, retained)
+                    self.assertIn(("backup",), self.events)
+                    self.assertEqual(common.read_json(self.root / "deployment.json")["status"], "healthy")
+
+    def test_reset_failure_retains_maintenance_before_backup_and_migration(self):
+        initial = self.request("v1.0.0", "init")
+        host.perform(initial, self.root, self.home)
+        previous = (self.root / "current").resolve()
+        original = host.command
+        def failed_reset(argv, **kwargs):
+            if argv[:2] == ["systemctl", "reset-failed"]:
+                raise common.DeployError("systemd bus unavailable")
+            return original(argv, **kwargs)
+        update = self.request("v1.1.0", "update")
+        rollback = {**initial, "action": "rollback", "operation_id": "rollback-reset-failure"}
+        for request in (update, rollback):
+            with self.subTest(action=request["action"]):
+                self.events.clear()
+                with mock.patch.object(host, "command", side_effect=failed_reset):
+                    with self.assertRaisesRegex(common.DeployError, "maintenance retained"):
+                        host.perform(request, self.root, self.home)
+                self.assertEqual(common.read_json(self.root / "deployment.json")["status"], "failed-maintenance")
+                self.assertEqual((self.root / "current").resolve(), previous)
+                self.assertNotIn(("backup",), self.events)
+                self.assertNotIn(("nginx-live",), self.events)
+                self.assertFalse(any(e[0] == "runuser" or e[:2] == ("systemctl", "start") for e in self.events))
+
     def test_migration_failure_never_opens_traffic_or_switches_to_bad_release(self):
         host.perform(self.request("v1.0.0", "init"), self.root, self.home)
         previous = (self.root / "current").resolve()

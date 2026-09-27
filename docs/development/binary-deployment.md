@@ -2,7 +2,7 @@
 
 关联：Issue #352。此协议适用于 AINP 及遵守公开 Host/配置/迁移契约的下游项目。
 
-> **验收状态：实现基线，Linux CI 已通过，待 OIDC/OSS 和真实测试 ECS 验收。** 离线测试不等于生产验收；不能直接把已有 Windows/Compose 生产环境交给 `init`。
+> **验收状态（2026-09-27）：Linux CI、OIDC/OSS、测试 ECS 外部 RDS/Tair 场景，以及 A → B → A → B 更新/兼容回滚正常路径已验证。** 具体证据和未验收项见第 10 节；不等同于生产、高可用、灾备或证书自动续期验收。不能直接把已有 Windows/Compose 生产环境交给 `init`。
 > v1 是**单项目、单 ECS、有维护窗口**部署，不承诺零停机或任务无中断。不创建 ACR，不构建应用容器镜像，不部署运维面板。
 
 ## 1. 组成与边界
@@ -17,7 +17,7 @@ PR CI → Linux/CJK 门禁（不在合入 main 后重复运行）
 - 三个可执行文件：`api`、`worker`、`migrate`。通用 Worker 与 AI Worker 共用同一个 `worker`，队列/并发不同。Web 是静态文件，没有 Node 常驻进程。
 - 初始支持 Ubuntu **22.04 / amd64**、PostgreSQL **17 + pgvector**、兼容 Asynq 的 Redis（需认证与 Lua）。不是任意 Linux 通用包。
 - MuPDF 1.28.2 必须保留完整 CJK 字库，复用已校验源码构建脚本；使用 `extlib,static`，不等于所有 glibc 依赖都静态链接。原生包仍可能较大，不能用格式转换承诺体积降到某个数值。
-- 发布只传包，不自动更新生产。管理员显式执行 `--apply` 才会创建付费资源或改生产；默认仅打印计划，无云 API 调用。
+- 发布只传包，不自动更新生产。管理员显式执行 `--apply` 才会创建付费资源或改生产；默认仅打印计划；`--version` 会只读查询 GitHub，不调用阿里云 API，`--release` 计划完全离线。
 - 基础设施容器可以保留：**不构建应用镜像不代表必须去掉 PostgreSQL/Redis 容器**。
 - 本版不创建数据库、Redis、VPC、安全组、RAM/OIDC、OSS、域名记录或签发证书。这些是可复用的公司基础设施/启动模板前置条件，不在每次应用发布中重新创建。
 - 不自动清理 ECS、磁盘、旧版本或备份；避免意外销毁。费用预算、保留周期与磁盘告警需平台管理员设置。
@@ -60,6 +60,8 @@ gh workflow run check-oss.yml --ref main -f project=ainp
 测试对象路径为 `releases/ainp/v0.0.0-ci/<commit>/`。重复运行同一提交必须命中不可变对象的同内容重试；不同内容或覆盖保护失败必须失败。`cloud.py` 仅允许 `-ci` 包进入明确标记为 `environment=test` 的测试环境；生产初始化、更新和回滚仍必须使用稳定版本。
 
 Actions → **Test Native Release** → **Run workflow**，分支选择 `main`，版本保持默认 `v0.0.0-ci`。测试发包通过后才进入测试 ECS；通过不等于真实 ECS、数据库、Worker、Nginx/SSL 验收。
+
+测试包使用 OSS 发布完成后的 `reference.json`。Actions 的 `test-native-release` 构建附件在发布前上传，其中的引用可能没有 `oss`、`key`，不能直接用于 `cloud.py`。按工作流 commit 从 `releases/ainp/v0.0.0-ci/<commit>/reference.json` 获取，分别保存 A/B；同为 `v0.0.0-ci` 时用 commit 和 SHA256 区分。每个发布引用下载一次后可以重复用于 plan、apply 和回滚，不必每次运行都重新下载。
 
 ### Web API 地址与构建约束
 
@@ -113,6 +115,8 @@ GitHub environment **release** 配置变量：
 - 外部 PG：`database_mode=external`。示例默认用于专用网络 RDS，显式设置 `sslmode=disable`，无需 CA；部署者负责确认使用内网地址及 VPC/安全组隔离。公网或需要 TLS 的连接使用 `sslmode=verify-full sslrootcert=<已安装的 CA 文件>`。预检只接受这两种明确选择，不自动降级 TLS；应用与 pg_dump 复用同一 DSN。
 - 本机容器 PG：`database_mode=local-container`，DSN 用 `host=127.0.0.1 port=<映射端口> ... sslmode=disable`。**不能沿用 Compose 内的 `host=postgres`**。同网络另一 ECS 上的容器 PG 使用 external 模式，并按上述网络边界显式选择 SSL 模式。
 - 两种模式都不自动删除/创建数据库，必须先准备空数据库（首次）或已安装的同项目数据库（更新），并提供 migrations/pgvector 必要权限。预检 PG17、vector 可用、Redis 认证/Lua。
+- `vector` 必须在 **DATABASE_DSN 指向的目标数据库**中已安装；RDS 支持/提供插件不等于该库已安装。由有权限的数据库管理员在该库执行 `CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;`，再查询 `pg_extension` 确认 `vector` 的 schema 为 `public`。重建数据库后需要重新安装，不能沿用旧库的安装结论。当前自动预检只查 `pg_available_extensions`，不能替代安装和权限检查；应用账号无创建扩展权限时，遗漏此准备会在 setup 中返回 HTTP 500 并留下部分基础表。
+- 新 ECS 的内网 IP 会变化。部署前验证启动模板的 VPC/vSwitch 与 RDS/Tair 连通，以及数据库访问控制是否覆盖新实例；按实例实际支持的关联安全组或受限专用网段配置，不依赖已销毁 ECS 的单个 IP。TCP 端口可达后仍需验证应用凭证、数据库和 Redis 队列能力。
 - 本版 Redis DB 固定为 0，独立 Redis 或经隔离评估的实例；不要把未隔离的多个项目任务混进同一 DB。
 - `backup_oss` / `backup_prefix` 是迁移前 PG custom-format 逻辑备份目的地。备份上传并校验后才迁移。
 - 私有配置首次写入 `/etc/<project>/private.json`，root-only；服务仅能读取受限 runtime/app 配置。更新复用主机配置，不自动从 OSS 刷新，也不旋转凭证。
@@ -121,29 +125,35 @@ GitHub environment **release** 配置变量：
 
 ## 5. 一键操作
 
-前置：安装 Python 3.10+、支持 RunCommand ClientToken/TerminationMode 参数的阿里云 CLI 并配置相应 profile；从已审核的当前框架基线工作目录运行。以下 `reference.json` 是发布成功后取得的文件，不是自己填写的版本号。
+前置：安装 Python 3.10+、支持 RunCommand ClientToken/TerminationMode 参数的阿里云 CLI 并配置相应 profile；从已审核的当前框架基线工作目录运行。按正式版本部署还需安装 GitHub CLI，并以具备仓库读取权限的账号执行 `gh auth login --hostname github.com`。
 
 ```bash
 # 在仓库根目录：默认只看计划，不创建/更新资源
 python3 scripts/deployment/cloud.py init \
-  --target deploy/linux/target.local.json --release /secure/releases/vX.Y.Z/reference.json
+  --target deploy/linux/target.local.json --version vX.Y.Z
 
 # 首次购买按量 ECS 并安装（加 --apply 才执行）
 python3 scripts/deployment/cloud.py init \
-  --target deploy/linux/target.local.json --release /secure/releases/vX.Y.Z/reference.json --apply
+  --target deploy/linux/target.local.json --version vX.Y.Z --apply
 
 # 更新同一目标，先不加 --apply 看计划，然后在维护窗口执行
 python3 scripts/deployment/cloud.py update \
-  --target deploy/linux/target.local.json --release /secure/releases/vX.Y.Z/reference.json --apply
+  --target deploy/linux/target.local.json --version vX.Y.Z --apply
 
 # 回滚到该主机实际成功运行过的旧包：先评审数据库向后兼容，再显式确认
 python3 scripts/deployment/cloud.py rollback \
-  --target deploy/linux/target.local.json --release /secure/releases/OLD/reference.json \
+  --target deploy/linux/target.local.json --version vOLD \
   --confirm-schema-compatible --apply
 
 # 查询已下发的命令；不重新下发，也不要求 --apply
 python3 scripts/deployment/cloud.py status --target deploy/linux/target.local.json
 ```
+
+`--version vX.Y.Z` 自动读取对应 **Published、非 Draft、非 prerelease** 的 GitHub Release 附件 `reference.json`，验证 project/version/platform、包 SHA256 格式、OSS 路径与 Tag commit 一致；大包仍由 ECS 从 OSS 下载并校验。默认仓库为 `yzxingtu2026/ainp`，下游显式传 `--repository OWNER/REPO`，不会根据当前 Git remote 猜测仓库。
+
+执行 `--apply` 时自动将验证后的引用保存在 `.deploy-state/releases/OWNER/REPO/vX.Y.Z/reference.json`，与环境账本一起备份。每次按版本运行仍会重新读取 GitHub；同版本引用与本地留存不一致时拒绝执行，不能删除留存来绕过检查。plan 会校验已有留存，但不写文件。GitHub 暂不可用时可显式改用已审核、留存的引用：`--release <reference.json路径>`；两个入口互斥。旧容器时代 Release 如果没有原生包引用，不能用版本号生成一个不存在的原生包。
+
+测试包 `v0.0.0-ci` 的版本号不能唯一确定 commit，继续使用 `--release <发布后的reference.json路径>`；`--version` 不接受 CI 版本或 `latest`。团队操作记录应同时保留 version、commit、SHA256，计划会显示这三项。
 
 `.deploy-state/<project>-<environment>.json` 是控制端操作账本，含 ClientToken、InstanceId、InvokeId、目标绑定哈希，必须持久保存/限制权限/备份。团队使用**一个受控部署工作站/执行器及共享串行审批**，不要各自删账本执行 init。不同工作站的本地锁不构成跨工作站互斥，主机锁负责远程部署互斥，但不能阻止从丢失账本的工作站另买实例。
 
@@ -154,6 +164,84 @@ python3 scripts/deployment/cloud.py status --target deploy/linux/target.local.js
 修改本地 `private.*.json` 不会更新 OSS 或现有 ECS：需另行上传新的不可变私有配置对象并更新目标中的 key/SHA256。已落盘 `/etc/<project>/private.json` 的失败 init 必须先核对主机状态后恢复；不要删除本地账本或以修改哈希绕过恢复保护。此流程不能与 apt 阶段（尚未写入私有配置）的安全重试混淆。
 
 阿里云 CLI 调用失败时，控制器只从 JSON 响应中输出经过长度限制和单行化处理的 `error_code`、HTTP 状态、`message`、`RequestId`。命令参数、完整 stdout/stderr、恢复命令和未知字段不会回显；非 JSON、空响应、超大响应、CLI 缺失或超时仍使用通用错误。云助手命令失败时输出状态、退出码、错误码及最多 4000 字符的日志尾部；日志会移除控制序列并脱敏常见 password/secret/token/authorization 和 URL 密码，但仍应仅在受控部署终端查看。任何失败都必须结合已持久化状态与云审计核对后再重试。
+
+### 5.1 正式首发：发布包与创建环境分开执行
+
+前提：部署修复已通过 PR 合入 `main`，必需 CI 通过；本地工作树干净。以下 `vX.Y.Z`、`vOLD`、`vNEW` 是占位符，执行前换成真实、未使用的稳定 SemVer（例如 `v1.0.0`，不表示该版本目前可用）。不要为每次测试创建正式 Tag。
+
+```bash
+git switch main
+git pull --ff-only origin main
+python3 scripts/release.py vX.Y.Z
+```
+
+脚本预检同步 main、对应已合并 PR 的 CI、发布配置和 Tag 唯一性，确认后推送同 commit 的 `vX.Y.Z` 与 `platform/vX.Y.Z` annotated Tag。此命令会真实发版，**没有 dry-run 参数**；`--yes` 仅跳过交互确认。不要直接手建单个 Tag，不要使用 Test Native Release 作为正式发版。
+
+等待 **Release Binaries to OSS** 工作流成功且 GitHub Release 已 Published，再执行下面的 `--version` 部署命令。脚本会自动取得发布后附加的 `reference.json`（包含 `oss`/`key`），无需手动从 OSS 或 GitHub 下载到 Downloads 目录。正式发布成功不会自动部署任何环境。
+
+需要独立存档元数据时，仍可选用 `gh release download vX.Y.Z --repo yzxingtu2026/ainp --pattern reference.json --pattern release.json --pattern SHA256SUMS --dir <存档目录>`；这不再是每次部署的前置步骤。
+
+准备生产环境：
+
+1. 按第 2–4 节准备专用数据库（空业务库 + 已安装 `public.vector`）、Redis、网络访问控制、数字版本 ECS 模板、RAM、私有 OSS、证书和 DNS。将实际证书/数据库凭证填入本地私有配置，上传新的不可变私有 OSS 对象，并填写其 key/SHA256。
+2. 从 `deploy/linux/{target,private}.example.json` 创建本地 `target.production.local.json`、`private.production.local.json`，设置 `environment=production` 和生产资源，不能直接复用测试库、队列、密钥或账本。这些 `*.local.json` 文件已由仓库 `.gitignore` 排除，仍需限制本地读取权限；首次执行前核对所有占位值。
+3. 对全新生产环境使用 `init`；如果是在已经成功安装的测试 ECS 上替换 CI 包为正式包，应在原 target/账本下使用 `update`，不要再初始化，也不要直接修改已绑定 target 的 environment。正式生产环境建议独立创建。
+
+```bash
+python3 scripts/deployment/cloud.py init \
+  --target deploy/linux/target.production.local.json \
+  --version vX.Y.Z
+# 核对计划后显式创建/部署
+python3 scripts/deployment/cloud.py init \
+  --target deploy/linux/target.production.local.json \
+  --version vX.Y.Z --apply
+```
+
+脚本不会创建 DNS 记录；公网 IP 变化时需将域名正确指向新 ECS，或使用已规划的固定入口。完成后保存 `.deploy-state/ainp-production.json`，核对公网首页、installed、API/Web 身份和真实业务功能。主机 HTTPS 检查使用 loopback 地址指定域名，不能单独证明公网 DNS 正确。
+
+### 5.2 正式更新
+
+新代码经 PR/CI 合入 `main` 后，用上述流程发布新的稳定版本，等待 Release Published。保留旧引用和主机旧包；审核迁移兼容性，在维护窗口使用同一 target、同一账本：
+
+```bash
+python3 scripts/deployment/cloud.py update \
+  --target deploy/linux/target.production.local.json \
+  --version vNEW
+python3 scripts/deployment/cloud.py update \
+  --target deploy/linux/target.production.local.json \
+  --version vNEW --apply
+```
+
+核对维护/停服务 → 数据库备份 → 前向迁移 → 切包 → 服务与 HTTPS 检查成功。检查 API/Web 为新 version/commit，登录、更新前数据、附件、AI 调用和后台任务正常。更新复用主机私有配置；修改本地配置文件不等于远程配置已更新。
+
+### 5.3 正式回滚
+
+选择**该主机曾成功运行过**的旧稳定包；先审查新迁移是否允许旧代码读取/写入现有 schema。兼容才使用下列命令，不兼容则前向修复或专项数据库恢复：
+
+```bash
+python3 scripts/deployment/cloud.py rollback \
+  --target deploy/linux/target.production.local.json \
+  --version vOLD \
+  --confirm-schema-compatible
+python3 scripts/deployment/cloud.py rollback \
+  --target deploy/linux/target.production.local.json \
+  --version vOLD \
+  --confirm-schema-compatible --apply
+```
+
+回滚同样停服务并备份，仅切换应用包，不执行 up/down migration，也不自动恢复备份。核对 API/Web 回到旧身份，新版本期间产生的数据仍可用；必要时再次更新新包完成往返测试。正式生产 target 禁止回滚到 `-ci` 包。
+
+### 5.4 状态与失败处理
+
+```bash
+python3 scripts/deployment/cloud.py status --target deploy/linux/target.production.local.json
+```
+
+`status` 查询账本关联的云助手命令，不是实时应用健康监控。`--version` 的 plan 仅只读查询 GitHub，`--release` 的 plan 完全离线，两者都不调用阿里云 API，也不能证明网络/主机就绪；其通用模板提示不代表 update/rollback 会新建 ECS，执行时必须绑定已有实例。
+
+失败、超时或结果未知时保留账本、InvokeId 和主机状态，按第 7 节审计；不能删账本、伪造 healthy 或直接重试 setup。已处于 `failed-maintenance` 的更新需先确认是否执行了备份/迁移、是否切包：仅在证据确认迁移未开始且旧包未切换时，才可按审核后的恢复步骤启动旧服务、核对 installed/身份/HTTPS，再同步主机和本地账本。后续正常 update 可以继续，恢复不属于自动重试能力。
+
+部署脚本由当前本地工作树压缩下发，与 OSS 应用包分离。仅修复部署脚本无需重建已有应用包；应使用已审核的修复代码，正式操作默认从已合入并同步的 main 执行。
 
 ## 6. 主机执行顺序与失败语义
 
@@ -176,6 +264,8 @@ python3 scripts/deployment/cloud.py status --target deploy/linux/target.local.js
 5. 从本机经域名 SNI/系统 CA 验证 HTTPS API 与 Web `build.json`，成功后开启服务开机启动。真实公网 DNS/安全组可达性另行验收。
 
 更新：校验/预检 → 维护页 → 关闭开机启动并停止所有应用进程（给 Worker 90 秒退出）→ `pg_dump17` + 私有 OSS 备份 → 非 root migration runner forward-only → 切软链 → 启动/验收 → 开放流量/恢复开机启动。
+
+更新/回滚停止服务后，以精确 glob（例如 `[a]inp-api.service`）对本项目三个服务执行 `systemctl reset-failed`：已从 systemd 内存卸载的服务安全跳过，仍加载的服务重置失败状态与重启计数。不得不带服务参数全局重置，也不得忽略命令错误；实际重置失败仍保留维护状态并中止备份/迁移。该修复不绕过已有失败部署的恢复检查，`failed-maintenance` 现场仍需审计后恢复。
 
 回滚：同样停止应用并备份，**不执行 down/up migration**，切换到已知成功的旧包；必须人工确认旧代码兼容现有 schema。存储附件、state、JWT/key、证书不回退。框架无法自动证明任意业务迁移可回滚，`--confirm-schema-compatible` 不是自动校验证明。
 
@@ -216,6 +306,7 @@ HTTPS 验收在 Nginx reload 后对瞬时错误进行有限重试（最多 5 次
 - Worker 支持 `WORKER_QUEUES` / `WORKER_CONCURRENCY`，应用与迁移入口来自同一业务 composition。
 - 前端构建为 dist 静态资源；保留精确 OAuth/MCP 路由，不使用宽泛 `/oauth/` 代理覆盖 SPA 授权页面。
 - 正式 Tag 协议如果下游不发布 `platform/` 子模块 Tag，应替换 release validate 的配对规则及 `scripts/release.py` 的仓库身份/remote/Tag 逻辑；不得误向 ainp 发 Tag。原生构建/部署契约不要求下游伪造 platform Tag。
+- 按版本部署时显式传 `--repository <下游OWNER/REPO>`，下游正式 Release 必须附带同协议的发布后 `reference.json`。
 - 各环境私有配置不随基线传播。数据库密码/备份/域名/端口/租户管理员各项目独立。
 
 基线更新后每个下游先跑 CI + 临时环境验收；**不是拉最新框架就立刻自动更新生产**。
@@ -228,8 +319,18 @@ HTTPS 验收在 Nginx reload 后对瞬时错误进行有限重试（最多 5 次
 - [ ] 固定模板新建一台 ECS，云助手在线、安全组正确、初始化后无公开 setup。
 - [ ] external PG 与 loopback local-container PG 分别安装并验证；失败预检无业务变更。
 - [ ] 通用 Worker 与 AI Worker 各完成真实任务；OAuth、MCP、SSE、附件正常。
-- [ ] 更新前停进程/备份、迁移顺序正确，API/Web/Worker 同一版本。
+- [x] 外部 RDS/Tair 测试环境更新正常路径：停进程/备份/迁移顺序、API/Web/Worker 身份检查通过（2026-09-27）。
 - [ ] 包篡改、备份失败、迁移失败、健康失败时 fail-closed；不中断其他项目、不降级证书。
-- [ ] 回滚到已知兼容旧包；数据库不自动回退；断电/超时/重试不重复买 ECS/重复初始化。
+- [x] 已知 schema 兼容包的 A → B → A → B 往返测试通过，回滚不执行迁移；用户确认期间访问与功能正常（2026-09-27）。
+- [ ] 断电/超时/重试不重复买 ECS/重复初始化的故障专项演练。
 - [ ] 自动证书续期部署 + 临期告警成功；公网 DNS/HTTPS 正常。
 - [ ] DB restore、state/附件/数据盘恢复演练；容量与按量资源预算告警已配置。
+
+### 2026-09-27 实测记录与范围
+
+- A：commit `84bfc0ff7e0c7096a0ab119f0267a39eb083094e`，包 SHA256 `8a00312e709e8c376b23b0ed4efde146327d15cbd2ec4a0f594a052989b63824`。
+- B：commit `869747b29a96941ecb6851fcec7bb55336c33717`，包 SHA256 `7739c5d0432e20ce40bdfbe44e86af900ff8ab6a0616311ab49a4f336a637b7a`。两包均为 `v0.0.0-ci`。
+- 测试首装曾因重建数据库后未安装 vector 失败，安装插件并审计恢复后服务/功能通过；不能把恢复通过记作该次首装无干预成功。
+- 首次更新因停服后 `systemctl reset-failed` 精确名称遇到未加载服务失败；审计确认备份/迁移未开始、旧包未切换，恢复 A 后以修复脚本重新更新成功。
+- 用户提供的日志：B → A 回滚北京时间 11:57:23–11:58:03，云助手 `t-hz06yampyozn8xs` 成功；A → B 再更新 11:59:18–12:00:03，云助手 `t-hz06yamw3btrncw` 成功。回滚有备份且无迁移阶段，再更新有备份与迁移阶段；用户确认访问/功能正常。
+- 本轮 A/B 差异为前端和文档，无后端 schema 变更，只证明兼容回滚正常路径；真实 schema 变更/不兼容回滚、故障注入、数据库恢复、证书续期和多实例高可用未在本轮验收。上方组合验收项未全部有证据时仍保留未勾选。
