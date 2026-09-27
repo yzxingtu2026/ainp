@@ -93,7 +93,7 @@ def preflight(version: str) -> tuple[str, str]:
         raise ReleaseError(f"release must run from {DEFAULT_BRANCH}")
     if run("git", "status", "--porcelain=v1", "--untracked-files=all"):
         raise ReleaseError("working tree, index, or untracked files are not clean")
-    remote = run("git", "remote", "get-url", "origin")
+    remote = run("git", "config", "--get", "remote.origin.url")
     validate_remote(remote)
     run("gh", "auth", "status", "--hostname", "github.com")
     run("git", "fetch", "origin", DEFAULT_BRANCH, "--tags", "--prune")

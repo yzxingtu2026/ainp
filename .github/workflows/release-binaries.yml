@@ -34,7 +34,7 @@ jobs:
           )
           tag = validate_version(os.environ["GITHUB_REF_NAME"])
           sha = os.environ["GITHUB_SHA"]
-          validate_remote(subprocess.check_output(["git", "remote", "get-url", "origin"], text=True).strip())
+          validate_remote(project.configured_origin())
           for release_tag in project.tags(PROJECT, tag):
               assert subprocess.check_output(["git", "rev-list", "-n", "1", release_tag], text=True).strip() == sha
           ci_sha = merged_pull_request_head_sha(sha)

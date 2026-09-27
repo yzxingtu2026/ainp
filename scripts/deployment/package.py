@@ -63,7 +63,7 @@ def main():
     require('VERSION_ID="22.04"' in Path("/etc/os-release").read_text(), "Ubuntu 22.04 build baseline required")
     import project
     project_cfg = project.load()
-    project.validate_repository(project_cfg, subprocess.check_output(["git", "remote", "get-url", "origin"], text=True).strip(), os.environ.get("GITHUB_REPOSITORY"))
+    project.validate_repository(project_cfg, project.configured_origin(), os.environ.get("GITHUB_REPOSITORY"))
     require(Path(args.config).resolve() == (Path.cwd() / project_cfg["build_config"]).resolve(), "build config must match project configuration")
     cfg = project.build_config(project_cfg, Path.cwd())
     name(cfg["project"])

@@ -98,7 +98,7 @@ class ReleaseValidationTest(unittest.TestCase):
             ("git", "rev-parse", "--show-toplevel"): root,
             ("git", "branch", "--show-current"): "main",
             ("git", "status", "--porcelain=v1", "--untracked-files=all"): "",
-            ("git", "remote", "get-url", "origin"): f"https://github.com/{repository}.git",
+            ("git", "config", "--get", "remote.origin.url"): f"https://github.com/{repository}.git",
             ("gh", "auth", "status", "--hostname", "github.com"): "",
             ("git", "fetch", "origin", default_branch, "--tags", "--prune"): "",
             ("git", "rev-parse", "HEAD"): "abc",
