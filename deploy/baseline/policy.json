@@ -1,0 +1,40 @@
+{
+  "schema": 1,
+  "public": [
+    "scripts/deployment/*.py",
+    "scripts/deployment/*.sh",
+    "scripts/release.py",
+    "scripts/generate_release_notes.py",
+    "scripts/test_release.py",
+    "scripts/test_generate_release_notes.py",
+    "scripts/test_deployment.py",
+    "scripts/test_release_reference.py",
+    "scripts/test_deployment_baseline.py",
+    "scripts/test_project.py",
+    "docker/build-mupdf-cjk.sh",
+    ".github/prompts/release-notes.zh-CN.md",
+    ".github/prompts/release-notes.schema.json",
+    "deploy/linux/target.example.json",
+    "deploy/linux/private.example.json",
+    "deploy/baseline/policy.json",
+    "deploy/baseline/manifest.schema.json",
+    "deploy/baseline/examples/*.json",
+    "deploy/baseline/templates/*.txt",
+    "docs/development/deployment-baseline.md",
+    "docs/development/binary-deployment.md",
+    "docs/development/release-versioning.md",
+    ".agent/rules/binary-deployment.md",
+    ".agent/rules/release-versioning.md"
+  ],
+  "project": {
+    "deploy/linux/project.json": "deploy/linux/project.json",
+    "deploy/linux/build.json": "deploy/linux/build.json"
+  },
+  "integration": {
+    ".github/workflows/native-build.yml": ".github/workflows/native-build.yml",
+    ".github/workflows/release-binaries.yml": ".github/workflows/release-binaries.yml",
+    ".github/workflows/test-native-release.yml": ".github/workflows/test-native-release.yml",
+    ".github/workflows/check-oss.yml": ".github/workflows/check-oss.yml",
+    ".github/workflows/deployment-baseline.yml": ".github/workflows/deployment-baseline.yml"
+  }
+}

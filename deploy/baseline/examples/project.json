@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "project": "example-app",
+  "repository": "example/application",
+  "default_branch": "main",
+  "required_checks": [
+    "backend",
+    "frontend",
+    "deployment-baseline",
+    "linux-release"
+  ],
+  "tag_strategy": "application",
+  "build_config": "deploy/linux/build.json",
+  "platform_version": "v0.4.0",
+  "retired_workflows": []
+}

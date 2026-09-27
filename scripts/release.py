@@ -5,24 +5,21 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
 from pathlib import Path
 
-REPOSITORY = "yzxingtu2026/ainp"
-REQUIRED_CHECKS = {"backend", "linux-release", "frontend", "repository-gates"}
-DEFAULT_BRANCH = "main"
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from scripts.deployment import project
+
+PROJECT = project.load()
+REPOSITORY = PROJECT["repository"]
+REQUIRED_CHECKS = set(PROJECT["required_checks"])
+DEFAULT_BRANCH = PROJECT["default_branch"]
 VERSION_PATTERN = re.compile(r"^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
-EXPECTED_REMOTES = {
-    "https://github.com/yzxingtu2026/ainp.git",
-    "git@github.com:yzxingtu2026/ainp.git",
-    "ssh://git@github.com/yzxingtu2026/ainp.git",
-}
-
-
-class ReleaseError(RuntimeError):
-    pass
+ReleaseError = project.ProjectError
 
 
 def run(*args: str, check: bool = True) -> str:
@@ -45,8 +42,7 @@ def platform_tag(version: str) -> str:
 
 
 def validate_remote(value: str) -> None:
-    if value not in EXPECTED_REMOTES:
-        raise ReleaseError(f"origin does not point to https://github.com/{REPOSITORY}: {value}")
+    project.validate_repository(PROJECT, value, os.environ.get("GITHUB_REPOSITORY"))
 
 
 def successful_checks(payload: dict) -> set[str]:
@@ -90,7 +86,6 @@ def merged_pull_request_head_sha(merge_sha: str) -> str:
 
 def preflight(version: str) -> tuple[str, str]:
     validate_version(version)
-    module_version = platform_tag(version)
     root = run("git", "rev-parse", "--show-toplevel")
     if Path.cwd().resolve() != Path(root).resolve():
         raise ReleaseError("run the release command from the repository root")
@@ -101,11 +96,11 @@ def preflight(version: str) -> tuple[str, str]:
     remote = run("git", "remote", "get-url", "origin")
     validate_remote(remote)
     run("gh", "auth", "status", "--hostname", "github.com")
-    run("git", "fetch", "origin", "main", "--tags", "--prune")
+    run("git", "fetch", "origin", DEFAULT_BRANCH, "--tags", "--prune")
     head = run("git", "rev-parse", "HEAD")
     if head != run("git", "rev-parse", f"origin/{DEFAULT_BRANCH}"):
-        raise ReleaseError("HEAD must exactly match origin/main")
-    for tag in (version, module_version):
+        raise ReleaseError(f"HEAD must exactly match origin/{DEFAULT_BRANCH}")
+    for tag in project.tags(PROJECT, version):
         if run("git", "tag", "--list", tag):
             raise ReleaseError(f"local tag already exists: {tag}")
         if run("git", "ls-remote", "--tags", "origin", f"refs/tags/{tag}"):
@@ -131,10 +126,10 @@ def main() -> int:
         print(f"Version: {args.version}\nCommit: {commit}\nRepository: {REPOSITORY}\nArtifact bucket: {oss_bucket}")
         if not args.yes and input("Push immutable annotated tag? [y/N] ").strip().lower() not in {"y", "yes"}:
             raise ReleaseError("release cancelled")
-        run("git", "tag", "--annotate", args.version, "--message", f"Release {args.version}")
-        module_version = platform_tag(args.version)
-        run("git", "tag", "--annotate", module_version, "--message", f"Platform module {args.version}")
-        run("git", "push", "origin", f"refs/tags/{args.version}", f"refs/tags/{module_version}")
+        release_tags = project.tags(PROJECT, args.version)
+        for tag in release_tags:
+            run("git", "tag", "--annotate", tag, "--message", f"Release {args.version}")
+        run("git", "push", "--atomic", "origin", *(f"refs/tags/{tag}" for tag in release_tags))
         print(f"Actions: https://github.com/{REPOSITORY}/actions/workflows/release-binaries.yml")
         print(f"Release: https://github.com/{REPOSITORY}/releases/tag/{args.version}")
         print("Production deployment is a separate explicit operation.")

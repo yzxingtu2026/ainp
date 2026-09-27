@@ -1,0 +1,3 @@
+在 .agent/rules/main.md 登记 binary-deployment（部署基线同步与原生部署）。
+在 .agent/adapters/rules.json 的 rules 中合并本条，再运行项目既有 sync/doctor：
+{"id":"binary-deployment","source":".agent/rules/binary-deployment.md","qoder":{"path":".qoder/rules/binary-deployment.md","frontmatter":{"trigger":"model_decision","description":"部署基线与原生部署"}},"cursor":{"path":".cursor/rules/binary-deployment.mdc","frontmatter":{"description":"部署基线与原生部署","alwaysApply":false}}}

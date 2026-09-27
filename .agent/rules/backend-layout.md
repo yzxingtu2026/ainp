@@ -12,6 +12,7 @@
 - 通用请求结构校验在 `framework/validation`；领域、数据库、权限与租户规则保留在 `modules/*` Service。
 - 通用分页 Request/Result 在 `framework/pagination`；领域筛选 DTO 留在 `modules/*`，禁止万能查询 DSL。
 - Job / Outbox / 通知投递管理 Action、API、菜单统一归 `modules/operations` 与 `operations.*` 语义；领域服务通过接口注入，`operations` 禁止反向依赖 `system`。
+- 可分发给固定 Go 依赖消费者的 PDF/CJK 原生构建契约位于 `platform/contracts/pdfcjk`，仅通过公开 API 验证合成样例，必须使用 extlib/static；此专用包不承载业务测试。
 - 后端 `_test.go` 统一放在 `platform/tests/`，使用外部测试包通过公开 API 测试；禁止散落到 `framework/*`、`modules/*`，由架构门禁扫描防回流。
 - `modules/<module>` 根包只保留 `register.go`、命名明确的稳定 Facade、contracts 与必要常量；实现进入按能力域或技术角色组织的按需子包，禁止空目录和 `common`/`utils`/`misc` 等兜底包。
 - `modules/A` 禁止 import `modules/B`，不再接受迁移基线或依赖白名单；跨模块协作必须通过 `framework` contract 和 composition root 注入。

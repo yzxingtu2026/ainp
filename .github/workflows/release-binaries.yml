@@ -30,11 +30,13 @@ jobs:
               validate_version,
               successful_checks,
               merged_pull_request_head_sha,
-              REQUIRED_CHECKS,
+              REQUIRED_CHECKS, PROJECT, project, validate_remote,
           )
           tag = validate_version(os.environ["GITHUB_REF_NAME"])
           sha = os.environ["GITHUB_SHA"]
-          assert subprocess.check_output(["git", "rev-list", "-n", "1", "platform/" + tag], text=True).strip() == sha
+          validate_remote(subprocess.check_output(["git", "remote", "get-url", "origin"], text=True).strip())
+          for release_tag in project.tags(PROJECT, tag):
+              assert subprocess.check_output(["git", "rev-list", "-n", "1", release_tag], text=True).strip() == sha
           ci_sha = merged_pull_request_head_sha(sha)
           payload = json.loads(subprocess.check_output(["gh", "api", f"repos/{os.environ['GITHUB_REPOSITORY']}/commits/{ci_sha}/check-runs?per_page=100"]))
           assert REQUIRED_CHECKS <= successful_checks(payload), "required CI checks did not pass"
@@ -103,6 +105,9 @@ jobs:
             --artifact-reference dist-release/reference.json \
             --output release-notes.md --summary-output release-notes-summary.txt
           cat release-notes-summary.txt >> "$GITHUB_STEP_SUMMARY"
+      - name: Generate deployment baseline release manifest
+        if: github.repository == 'yzxingtu2026/ainp'
+        run: python3 scripts/deployment/baseline.py manifest --version "$GITHUB_REF_NAME" --commit "$GITHUB_SHA" --output dist-release/deployment-baseline.json
       - name: Publish release metadata (never deploy production)
         env:
           GH_TOKEN: ${{ github.token }}
@@ -114,4 +119,7 @@ jobs:
             gh release create "$GITHUB_REF_NAME" --verify-tag --draft --title "$GITHUB_REF_NAME" --notes-file release-notes.md
           fi
           gh release upload "$GITHUB_REF_NAME" dist-release/reference.json dist-release/release.json dist-release/SHA256SUMS --clobber
+          if [ -f dist-release/deployment-baseline.json ]; then
+            gh release upload "$GITHUB_REF_NAME" dist-release/deployment-baseline.json --clobber
+          fi
           gh release edit "$GITHUB_REF_NAME" --draft=false --latest=false

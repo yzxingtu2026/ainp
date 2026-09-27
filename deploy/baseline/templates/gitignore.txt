@@ -1,0 +1,6 @@
+# Merge these lines into the downstream .gitignore; never replace it.
+/.deploy-state/
+/dist-release/
+/deploy/linux/*.local.json
+/.cache/mupdf/
+/.deployment-baseline*

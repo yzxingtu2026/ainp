@@ -227,3 +227,7 @@ go run ./cmd/ainp-archcheck \
 ## 变更
 
 调整目录或依赖规则时，同步更新本文档、`.agent/rules/backend-layout.md` 与 `README.md` 规划目录，并 `agent-rules sync`。
+
+### 发布给下游的构建契约测试
+
+`platform/contracts/pdfcjk` 是可从固定 Go 依赖直接运行的公开原生构建契约测试包，区别于仓库业务回归测试。只经公开 parser API 校验三个合成 PDF/CJK 样例，使用 `extlib,static`；不包含 internal 依赖、运行时 API 或业务 composition。下游原生构建必须实际运行三项测试。

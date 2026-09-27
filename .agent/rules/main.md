@@ -14,7 +14,7 @@
 
 ## 开发硬约束
 
-- 原生二进制/OSS/ECS 发布部署见 `binary-deployment`；默认 plan、显式 apply，维护窗口与应用/数据库回滚边界不可省略。
+- 原生二进制/OSS/ECS 发布部署见 `binary-deployment`；默认 plan、显式 apply，维护窗口与应用/数据库回滚边界不可省略；下游部署文件同步/锁定/漂移门禁见 `docs/development/deployment-baseline.md`。
 
 - 公共能力优先扩展，禁止业务内重复实现；新约定写入 `docs/development/`，Agent 要点写入 `.agent/rules/`。
 - 业务逻辑下沉到服务/领域/公共模块，不堆在路由或 UI 事件里。

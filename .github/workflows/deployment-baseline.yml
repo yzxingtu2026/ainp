@@ -1,0 +1,14 @@
+name: Deployment Baseline
+on:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  deployment-baseline:
+    if: github.repository != 'yzxingtu2026/ainp'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify actual deployment files and integration
+        run: |
+          python3 scripts/deployment/baseline.py verify

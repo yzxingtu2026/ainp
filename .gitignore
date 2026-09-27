@@ -50,3 +50,6 @@ __pycache__/
 /.deploy-state/
 /deploy/linux/*.local.json
 /.cache/mupdf/
+
+# Recoverable deployment baseline transactions (local only)
+/.deployment-baseline*

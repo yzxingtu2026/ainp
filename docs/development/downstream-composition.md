@@ -163,3 +163,7 @@ AINP 已发布历史继续保存在 `schema_migrations`，不得插入、重排�
 下游通过 `deploy/linux/build.json` 声明自身 API/Worker/migrate composition 入口，不能误用框架 demo 入口；
 保留公开 Host setup/baseline、版本注入、配置、队列与迁移协议。
 工作流目录、配对 Tag 规则和仓库 remote 校验须按下游仓库适配，环境秘密不得随框架基线更新传播。
+
+## 原生部署工具同步
+
+Go/Admin 依赖升级必须同时检查部署工具基线；按 [下游部署基线同步](deployment-baseline.md) 接入 project/build 配置、固定版本 manifest/lock 与 verify 门禁。PDF/CJK 原生打包使用固定依赖的公开 `platform/contracts/pdfcjk` 测试包，三个测试必须实际执行且通过，不复制 internal 实现。

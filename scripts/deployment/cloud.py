@@ -4,6 +4,7 @@ import argparse
 import base64
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -367,7 +368,8 @@ def main():
     source = parser.add_mutually_exclusive_group()
     source.add_argument("--release", type=Path, help="verified reference.json from successful OSS release CI")
     source.add_argument("--version", help="published stable version; resolve reference automatically via gh")
-    parser.add_argument("--repository", help="GitHub OWNER/REPO for --version (default: yzxingtu2026/ainp)")
+    parser.add_argument("--repository", help="GitHub OWNER/REPO; must match project configuration")
+    parser.add_argument("--project-config", type=Path, default=Path("deploy/linux/project.json"))
     parser.add_argument("--state-dir", type=Path, default=Path(".deploy-state"))
     parser.add_argument("--apply", action="store_true", help="allow billable ECS creation and remote environment modification")
     parser.add_argument("--confirm-schema-compatible", action="store_true")
@@ -377,7 +379,14 @@ def main():
         require(not args.repository or args.version, "--repository requires --version")
         require(args.action != "status" or not (args.release or args.version), "status does not accept a release/version")
         require(args.action != "rollback" or args.confirm_schema_compatible, "rollback requires --confirm-schema-compatible after reviewing migration compatibility")
-        repository = args.repository or release_reference.DEFAULT_REPOSITORY
+        repository = None
+        if args.version:
+            import project
+            cfg = project.load(args.project_config)
+            project.validate_repository(cfg, subprocess.check_output(["git", "remote", "get-url", "origin"], text=True).strip(), os.environ.get("GITHUB_REPOSITORY"))
+            require(cfg["project"] == target["project"], "target/project identity mismatch")
+            repository = args.repository or cfg["repository"]
+            require(repository == cfg["repository"], "--repository does not match project configuration")
         reference = (release_reference.resolve(repository, args.version, target["project"]) if args.version
                      else read_json(args.release) if args.release else None)
         if args.action != "status":

@@ -7,13 +7,13 @@ on:
         type: string
       config:
         type: string
-        default: deploy/linux/build.json
+        default: ""
       go-version-file:
         type: string
-        default: platform/go.mod
+        default: ""
       go-sum-file:
         type: string
-        default: platform/go.sum
+        default: ""
       artifact-name:
         type: string
         default: native-release
@@ -24,10 +24,25 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
+      - name: Resolve project build contract
+        id: project
+        env:
+          REQUESTED_CONFIG: ${{ inputs.config }}
+          REQUESTED_GO_VERSION: ${{ inputs.go-version-file }}
+          REQUESTED_GO_SUM: ${{ inputs.go-sum-file }}
+        run: |
+          python3 scripts/deployment/project.py
+          python3 - <<'PY'
+          import json, os
+          cfg = json.load(open("deploy/linux/project.json"))
+          build = json.load(open(cfg["build_config"]))
+          for field, expected in (("REQUESTED_CONFIG", cfg["build_config"]), ("REQUESTED_GO_VERSION", build["go_dir"] + "/go.mod"), ("REQUESTED_GO_SUM", build["go_dir"] + "/go.sum")):
+              assert not os.environ[field] or os.environ[field] == expected, field + " conflicts with project config"
+          PY
       - uses: actions/setup-go@v5
         with:
-          go-version-file: ${{ inputs.go-version-file }}
-          cache-dependency-path: ${{ inputs.go-sum-file }}
+          go-version-file: ${{ steps.project.outputs.go-version-file }}
+          cache-dependency-path: ${{ steps.project.outputs.go-sum-file }}
       - uses: pnpm/action-setup@v4
         with:
           version: 10.5.0
@@ -48,7 +63,7 @@ jobs:
       - name: Build verified native package
         env:
           RELEASE_VERSION: ${{ inputs.version }}
-          BUILD_CONFIG: ${{ inputs.config }}
+          BUILD_CONFIG: ${{ steps.project.outputs.build-config }}
         run: |
           export CGO_ENABLED=1
           export CGO_CFLAGS="-I$GITHUB_WORKSPACE/.cache/mupdf/include"
