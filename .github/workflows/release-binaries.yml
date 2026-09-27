@@ -48,6 +48,8 @@ jobs:
     needs: validate
     if: needs.validate.outputs.published != 'true'
     uses: ./.github/workflows/native-build.yml
+    secrets:
+      private-module-token: ${{ secrets.PRIVATE_MODULE_TOKEN }}
     with:
       version: ${{ github.ref_name }}
   publish:

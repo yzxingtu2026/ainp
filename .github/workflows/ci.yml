@@ -168,6 +168,8 @@ jobs:
   linux-build:
     needs: [repository-gates, backend, frontend, windows-timezone]
     uses: ./.github/workflows/native-build.yml
+    secrets:
+      private-module-token: ${{ secrets.PRIVATE_MODULE_TOKEN }}
     with:
       version: v0.0.0-ci
 

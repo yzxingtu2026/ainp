@@ -67,7 +67,15 @@ def build_config(cfg, root):
     for field in ("go_dir", "frontend_dir"):
         relative_path(build[field])
         require((root / build[field]).resolve().is_relative_to(root), f"{field} escapes repository")
+    require(set(build) == {"schema", "project", "go_dir", "frontend_dir", "commands", "buildinfo_package", "cjk_test_package", "node_version", "pnpm_version", "admin_application", "admin_modules", "go_private"}, "invalid build configuration fields")
     require(set(build["commands"]) == {"api", "worker", "migrate"}, "three composition commands required")
+    require(isinstance(build["node_version"], str) and re.fullmatch(r"\d+\.\d+\.\d+", build["node_version"]), "invalid Node version")
+    require(isinstance(build["pnpm_version"], str) and re.fullmatch(r"\d+\.\d+\.\d+", build["pnpm_version"]), "invalid pnpm version")
+    admin_application = build["admin_application"][2:] if build["admin_application"].startswith("./") else build["admin_application"]
+    relative_path(admin_application)
+    require(build["admin_application"].endswith((".ts", ".tsx", ".js", ".jsx")), "invalid Admin application entry")
+    require(isinstance(build["admin_modules"], list) and build["admin_modules"] and all(isinstance(module, str) and re.fullmatch(r"[a-z][a-z0-9-]*", module) for module in build["admin_modules"]) and len(set(build["admin_modules"])) == len(build["admin_modules"]), "admin_modules must contain unique module names")
+    require(isinstance(build["go_private"], list) and all(isinstance(pattern, str) and re.fullmatch(r"[A-Za-z0-9*?._/-]+", pattern) and not pattern.startswith("-") for pattern in build["go_private"]), "invalid private Go module patterns")
     for command in build["commands"].values():
         require(isinstance(command, str) and command.startswith("./"), "composition command must be local")
         relative_path(command[2:])
@@ -91,7 +99,16 @@ def main():
     print(json.dumps(cfg, sort_keys=True))
     if os.environ.get("GITHUB_OUTPUT"):
         with open(os.environ["GITHUB_OUTPUT"], "a") as output:
-            for key, value in {"build-config": cfg["build_config"], "go-version-file": build["go_dir"] + "/go.mod", "go-sum-file": build["go_dir"] + "/go.sum"}.items():
+            for key, value in {
+                "build-config": cfg["build_config"],
+                "go-version-file": build["go_dir"] + "/go.mod",
+                "go-sum-file": build["go_dir"] + "/go.sum",
+                "node-version": build["node_version"],
+                "pnpm-version": build["pnpm_version"],
+                "admin-application": build["admin_application"],
+                "admin-modules": ",".join(build["admin_modules"]),
+                "go-private": ",".join(build["go_private"]),
+            }.items():
                 output.write(f"{key}={value}\n")
 
 

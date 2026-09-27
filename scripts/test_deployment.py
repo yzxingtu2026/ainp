@@ -31,6 +31,20 @@ spec.loader.exec_module(package)
 
 
 class WebBuildTest(unittest.TestCase):
+    def test_release_build_uses_declared_admin_composition(self):
+        identity = dict(version="v1.2.3", commit="a" * 40, build_time="2026-09-26T00:00:00Z")
+        cfg = {"admin_application": "./business/application.ts", "admin_modules": ["core", "system", "ai"]}
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            web_dir = root / "frontend"
+            (web_dir / "dist").mkdir(parents=True)
+            (web_dir / "dist/index.html").write_text("built web")
+            with mock.patch.object(package, "run") as run:
+                package.build_web(web_dir, root / "stage", {}, identity, cfg)
+            env = run.call_args_list[-1].args[2]
+            self.assertEqual(env["AINP_ADMIN_APPLICATION"], "./business/application.ts")
+            self.assertEqual(env["AINP_ADMIN_MODULES"], "core,system,ai")
+
     def test_release_build_overrides_inherited_api_origin_and_keeps_identity(self):
         identity = dict(version="v1.2.3", commit="a" * 40, build_time="2026-09-26T00:00:00Z")
         inherited = dict(PATH="/tools", VITE_SERVICE_BASE_URL="http://127.0.0.1:8080",

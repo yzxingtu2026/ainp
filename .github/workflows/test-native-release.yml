@@ -30,6 +30,8 @@ jobs:
   build:
     needs: guard
     uses: ./.github/workflows/native-build.yml
+    secrets:
+      private-module-token: ${{ secrets.PRIVATE_MODULE_TOKEN }}
     with:
       version: ${{ inputs.version }}
       artifact-name: test-native-release
