@@ -18,11 +18,12 @@ import release_reference as rr
 
 class ReleaseReferenceTest(unittest.TestCase):
     def setUp(self):
-        self.reference = dict(schema=1, project="ainp", version="v1.2.3", commit="a" * 40,
+        self.project = "example-app"
+        self.repo = "example/application"
+        self.reference = dict(schema=1, project=self.project, version="v1.2.3", commit="a" * 40,
                               platform="ubuntu-22.04-amd64", sha256="b" * 64,
                               oss={"bucket": "private-release", "endpoint": "https://oss-cn-hangzhou.aliyuncs.com"},
-                              key=f"releases/ainp/v1.2.3/{'a' * 40}/release.tar.gz")
-        self.repo = "example/ainp"
+                              key=f"releases/{self.project}/v1.2.3/{'a' * 40}/release.tar.gz")
 
     def resolve(self, *, reference=None, change_release=None, tag=None, raw=None):
         raw = raw if raw is not None else json.dumps(reference or self.reference).encode()
@@ -41,7 +42,7 @@ class ReleaseReferenceTest(unittest.TestCase):
             self.assertEqual(kwargs, {"query": ".sha"})
             return ((tag if tag is not None else self.reference["commit"]) + "\n").encode()
         with mock.patch.object(rr, "github", side_effect=github):
-            return rr.resolve(self.repo, "v1.2.3", "ainp")
+            return rr.resolve(self.repo, "v1.2.3", self.project)
 
     def test_resolves_published_asset_by_id_and_checks_tag_commit(self):
         self.assertEqual(self.resolve(), self.reference)
@@ -83,22 +84,22 @@ class ReleaseReferenceTest(unittest.TestCase):
             for repo, version in [("../../evil", "v1.2.3"), ("owner/..", "v1.2.3"),
                                   ("owner/repo", "latest"), ("owner/repo", "v0.0.0-ci")]:
                 with self.subTest(repo=repo, version=version), self.assertRaises(common.DeployError):
-                    rr.resolve(repo, version, "ainp")
+                    rr.resolve(repo, version, self.project)
             github.assert_not_called()
 
     def test_github_errors_are_bounded_and_do_not_leak_output(self):
         with mock.patch.object(rr.subprocess, "run", return_value=subprocess.CompletedProcess([], 1, b"secret", b"token")):
             with self.assertRaisesRegex(common.DeployError, "check gh auth") as raised:
-                rr.github("repos/example/ainp/releases/tags/v1.2.3")
+                rr.github("repos/example/application/releases/tags/v1.2.3")
             self.assertNotIn("secret", str(raised.exception))
             self.assertNotIn("token", str(raised.exception))
         for error in (FileNotFoundError(), subprocess.TimeoutExpired("gh", 60)):
             with mock.patch.object(rr.subprocess, "run", side_effect=error), self.assertRaisesRegex(common.DeployError, "unavailable"):
-                rr.github("repos/example/ainp/releases/tags/v1.2.3")
+                rr.github("repos/example/application/releases/tags/v1.2.3")
 
     def test_github_uses_explicit_host_and_no_shell(self):
         with mock.patch.object(rr.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, b"{}", b"")) as run:
-            rr.github("repos/example/ainp/releases/tags/v1.2.3")
+            rr.github("repos/example/application/releases/tags/v1.2.3")
         self.assertEqual(run.call_args.args[0][:4], ["gh", "api", "--hostname", "github.com"])
         self.assertNotIn("shell", run.call_args.kwargs)
 
@@ -117,24 +118,24 @@ class ReleaseReferenceTest(unittest.TestCase):
                     rr.pin_reference(state, self.repo, changed, write=write)
             self.assertEqual(common.read_json(path), self.reference)
             # Same version in another repository is a separate identity.
-            rr.pin_reference(state, "other/ainp", changed, write=True)
+            rr.pin_reference(state, "other/application", changed, write=True)
 
     def run_cli(self, action, options):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         root = Path(tmp.name)
         target = common.read_json("deploy/linux/target.example.json")
+        target["project"] = self.project
         target["config_sha256"] = "c" * 64
         common.atomic_json(root / "target.json", target)
         argv = ["cloud", action, "--target", str(root / "target.json"), "--state-dir", str(root / "state"), *options]
+        repo = self.repo
+        cfg = common.read_json("deploy/baseline/examples/project.json")
         if "--repository" in options:
             repo = options[options.index("--repository") + 1]
-            cfg = common.read_json("deploy/linux/project.json")
             cfg["repository"] = repo
-            common.atomic_json(root / "project.json", cfg)
-            argv += ["--project-config", str(root / "project.json")]
-        else:
-            repo = "yzxingtu2026/ainp"
+        common.atomic_json(root / "project.json", cfg)
+        argv += ["--project-config", str(root / "project.json")]
         output = io.StringIO()
         with mock.patch.dict(cloud.os.environ, {"GITHUB_REPOSITORY": repo}), mock.patch.object(cloud.subprocess, "check_output", return_value=f"https://github.com/{repo}.git"), mock.patch.object(sys, "argv", argv), mock.patch.object(rr, "resolve", return_value=self.reference) as resolve, \
                 mock.patch.object(cloud, "execute") as execute, contextlib.redirect_stdout(output):
@@ -143,7 +144,7 @@ class ReleaseReferenceTest(unittest.TestCase):
 
     def test_version_plan_reads_github_but_never_dispatches_or_writes(self):
         root, resolve, execute, output = self.run_cli("init", ["--version", "v1.2.3"])
-        resolve.assert_called_once_with("yzxingtu2026/ainp", "v1.2.3", "ainp")
+        resolve.assert_called_once_with(self.repo, "v1.2.3", self.project)
         execute.assert_not_called()
         self.assertFalse((root / "state").exists())
         plan = json.loads(output)
