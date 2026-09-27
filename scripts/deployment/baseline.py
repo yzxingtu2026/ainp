@@ -318,11 +318,14 @@ def verify(root):
     go_mod = safe_path(root, build["go_dir"] + "/go.mod").read_text()
     require(re.search(r"(?m)^\s*(?:require\s+)?github\.com/yzxingtu2026/ainp/platform\s+" + re.escape(cfg["platform_version"]) + r"(?:\s|$)", go_mod), "Go dependency differs from deployment baseline")
     require(not re.search(r"(?m)^\s*(?:replace\s+)?github\.com/yzxingtu2026/ainp/platform[^\n]*=>", go_mod), "release baseline forbids platform replacement")
-    # Check actual consumed frontend baseline metadata when its source version is recorded.
-    admin = safe_path(root, build["frontend_dir"] + "/admin-baseline.json")
+    # Consume the existing Admin gate metadata; do not replace its private format.
+    admin = safe_path(root, cfg["admin_baseline"]["path"])
     require(admin.is_file(), "Admin baseline source metadata missing; integrate the project Admin gate first")
     recorded = read_json(admin)
-    require(recorded.get("commit") == state["manifest"]["commit"], "Admin baseline source commit differs from deployment baseline")
+    for field in cfg["admin_baseline"]["commit_field"].split("."):
+        require(isinstance(recorded, dict) and field in recorded, "Admin baseline source commit field missing")
+        recorded = recorded[field]
+    require(recorded == state["manifest"]["commit"], "Admin baseline source commit differs from deployment baseline")
     workflow = safe_path(root, ".github/workflows/deployment-baseline.yml")
     require("scripts/deployment/baseline.py verify" in workflow.read_text(), "deployment verification CI missing")
     ignore = safe_path(root, ".gitignore").read_text()

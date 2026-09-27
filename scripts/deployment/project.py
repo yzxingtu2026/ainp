@@ -27,7 +27,7 @@ def relative_path(value):
 
 def load(path=DEFAULT_CONFIG):
     cfg = json.loads(Path(path).read_text())
-    require(set(cfg) == {"schema", "project", "repository", "default_branch", "required_checks", "tag_strategy", "build_config", "platform_version", "retired_workflows"}, "invalid project configuration fields")
+    require(set(cfg) == {"schema", "project", "repository", "default_branch", "required_checks", "tag_strategy", "build_config", "platform_version", "retired_workflows", "admin_baseline"}, "invalid project configuration fields")
     require(cfg["schema"] == 1, "unsupported project configuration")
     require(isinstance(cfg["project"], str) and re.fullmatch(r"[a-z][a-z0-9-]{1,30}", cfg["project"]), "invalid project name")
     require(isinstance(cfg["repository"], str) and re.fullmatch(r"[A-Za-z0-9_-]+/[A-Za-z0-9_.-]+", cfg["repository"]) and cfg["repository"].split("/")[1] not in (".", ".."), "invalid project repository")
@@ -39,6 +39,10 @@ def load(path=DEFAULT_CONFIG):
     for workflow in cfg["retired_workflows"]:
         relative_path(workflow)
         require(workflow.startswith(".github/workflows/") and workflow.endswith((".yml", ".yaml")), "retired workflow must name an old workflow")
+    admin = cfg["admin_baseline"]
+    require(isinstance(admin, dict) and set(admin) == {"path", "commit_field"}, "admin_baseline requires path and commit_field")
+    relative_path(admin["path"])
+    require(isinstance(admin["commit_field"], str) and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*", admin["commit_field"]), "invalid Admin source commit field")
     relative_path(cfg["build_config"])
     return cfg
 

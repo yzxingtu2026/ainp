@@ -12,5 +12,9 @@
   "tag_strategy": "platform-pair",
   "build_config": "deploy/linux/build.json",
   "platform_version": "self",
-  "retired_workflows": []
+  "retired_workflows": [],
+  "admin_baseline": {
+    "path": "frontend/admin-baseline.json",
+    "commit_field": "commit"
+  }
 }

@@ -27,7 +27,7 @@ AINP 使用 `deploy/linux/project.json`，保持 `main`、原 required checks �
 - `required_checks` 指向自己 PR 的门禁名称；发布追溯自身默认分支合并 PR 的精确 head，不能借用 AINP CI。
 - `go_dir=backend`、`frontend_dir=admin`，三个 commands 指向业务 composition；Host 默认不装配 Demo，禁止用官方演示入口代替业务入口。
 - `cjk_test_package=github.com/yzxingtu2026/ainp/platform/contracts/pdfcjk` 在项目固定的 Go 依赖中执行三个公开 PDF 测试。使用完整 MuPDF 1.28.2 与 `extlib,static`，三项必须实际 PASS，不接受 skip 或 `[no tests to run]`。该包仅使用公开解析 API，不复制 internal 实现。
-- `platform_version` 记录项目期望的统一基线。verify 对照 Go 依赖、部署 lock；同时要求 admin-baseline.json 的 source commit 一致。已有其它 Admin 门禁应继续执行，按项目既有元数据方式提供同一来源 commit，不能以规则快照代替文件校验。
+- `platform_version` 记录项目期望的统一基线。verify 对照 Go 依赖、部署 lock；通过 `admin_baseline.path` 与 `commit_field`（支持 `source.commit` 等嵌套路径）读取项目既有 Admin 门禁元数据，要求 source commit 一致。已有其它 Admin 门禁继续执行，保留其文件格式并配置同一来源 commit 的位置，不能以规则快照代替文件校验。
 
 native-build 工作流从配置解析 Go version/sum；可选 workflow inputs 必须与配置一致。构建继续注入同一 version/commit/build_time，并强制 Web 同源 API。
 

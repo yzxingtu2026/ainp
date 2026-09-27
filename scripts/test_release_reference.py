@@ -143,7 +143,7 @@ class ReleaseReferenceTest(unittest.TestCase):
 
     def test_version_plan_reads_github_but_never_dispatches_or_writes(self):
         root, resolve, execute, output = self.run_cli("init", ["--version", "v1.2.3"])
-        resolve.assert_called_once_with(rr.DEFAULT_REPOSITORY, "v1.2.3", "ainp")
+        resolve.assert_called_once_with("yzxingtu2026/ainp", "v1.2.3", "ainp")
         execute.assert_not_called()
         self.assertFalse((root / "state").exists())
         plan = json.loads(output)

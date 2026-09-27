@@ -207,6 +207,19 @@ class BaselineTest(unittest.TestCase):
                 self.assertEqual(changed, self.snapshot())
                 path.write_bytes(original)
 
+    def test_existing_admin_metadata_format_is_configurable(self):
+        self.configured_install()
+        cfg_path = self.root / "deploy/linux/project.json"
+        cfg = json.loads(cfg_path.read_text())
+        cfg["admin_baseline"] = {"path": "admin/custom-baseline.json", "commit_field": "source.commit"}
+        cfg_path.write_text(json.dumps(cfg))
+        (self.root / "admin/custom-baseline.json").write_text(json.dumps({"source": {"commit": "a" * 40}}))
+        with mock.patch.object(b.subprocess, "check_output", return_value="https://github.com/example/application.git"), mock.patch.dict(b.os.environ, {}, clear=True):
+            b.verify(self.root)
+            (self.root / "admin/custom-baseline.json").write_text('{"source":{}}')
+            with self.assertRaisesRegex(DeployError, "commit field missing"):
+                b.verify(self.root)
+
     def test_legacy_image_publisher_blocks_apply_before_any_write(self):
         workflow = self.root / ".github/workflows/images.yml"
         workflow.parent.mkdir(parents=True)

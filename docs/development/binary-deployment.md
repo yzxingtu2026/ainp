@@ -55,7 +55,7 @@ gh workflow run check-oss.yml --ref main -f project=ainp
 
 ### 2.3 测试原生发包
 
-合入默认分支后，使用 `Test Native Release` 手动验证完整的“Linux 构建 → 私有 OSS”链路。工作流只允许从 `main` 运行，版本固定为 `v0.0.0-ci`，先验证本地包的 manifest、归档、SHA256 和安全解包，再通过同一 OIDC 角色上传并逐对象读回验证四个文件。它不会创建 GitHub Release、ECS 或生产变更。
+合入默认分支后，使用 `Test Native Release` 手动验证完整的“Linux 构建 → 私有 OSS”链路。工作流只允许从项目配置的默认分支运行（AINP 为 `main`），版本固定为 `v0.0.0-ci`，先验证本地包的 manifest、归档、SHA256 和安全解包，再通过同一 OIDC 角色上传并逐对象读回验证四个文件。它不会创建 GitHub Release、ECS 或生产变更。
 
 测试对象路径为 `releases/ainp/v0.0.0-ci/<commit>/`。重复运行同一提交必须命中不可变对象的同内容重试；不同内容或覆盖保护失败必须失败。`cloud.py` 仅允许 `-ci` 包进入明确标记为 `environment=test` 的测试环境；生产初始化、更新和回滚仍必须使用稳定版本。
 
@@ -100,9 +100,9 @@ GitHub environment **release** 配置变量：
 - `.github/workflows/native-build.yml`：可复用构建（不持有云权限）。Go/Node/pnpm、固定 MuPDF，CJK 测试、CLI 启动 smoke、动态库检查、前端构建、SHA256 清单。
 - `.github/workflows/ci.yml`：只监听 Pull Request，保留 backend/frontend/windows/repository gates，替换 `containers` 为 **`linux-release`** 聚合门禁。合入 `main` 不再重复运行完整构建；分支保护仍须要求这些 PR checks，不能仅删除旧 job 而不更新规则。
 - `.github/workflows/release-binaries.yml`：根 Tag 与 `platform/` Tag 同提交，并通过 GitHub API 找到产生该 `main` 提交的已合并 PR，再校验该 PR head 的完整 CI 成功；私有 OSS 发布成功后发布 GitHub Release。已发布 Release 重跑跳过，不重新生成或覆盖包。
-- `.github/workflows/test-native-release.yml`：仅允许 `main` 手动运行固定 `v0.0.0-ci`，验证完整包上传和 OSS 读回；不创建 Release/ECS。该包只能用于 `environment=test` 的真实 ECS 验收，不能用于生产部署。
+- `.github/workflows/test-native-release.yml`：仅允许项目默认分支手动运行固定 `v0.0.0-ci`，验证完整包上传和 OSS 读回；不创建 Release/ECS。该包只能用于 `environment=test` 的真实 ECS 验收，不能用于生产部署。
 - 不再有 GHCR 推送/SSH 自动演示部署。旧 Docker/Compose 文件仅为存量兼容，不属于新发布主路径。
-- 发布入口仍为仓库根目录 `python3 scripts/release.py vX.Y.Z`；需干净、同步 main。
+- 发布入口仍为仓库根目录 `python3 scripts/release.py vX.Y.Z`；需干净且同步项目默认分支。
 
 发布包只有 `bin/*`、`web/*` 和 `release.json`；源码、私有配置、数据库密码、证书私钥、state、附件不得混入。`reference.json` 记录项目/版本/commit/平台/OSS key/包 SHA256，从**可信 CI Release**取得，不从用户提交或未经审核消息复制；SHA256 是完整性校验，不替代来源信任或签名。
 
@@ -149,7 +149,7 @@ python3 scripts/deployment/cloud.py rollback \
 python3 scripts/deployment/cloud.py status --target deploy/linux/target.local.json
 ```
 
-`--version vX.Y.Z` 自动读取对应 **Published、非 Draft、非 prerelease** 的 GitHub Release 附件 `reference.json`，验证 project/version/platform、包 SHA256 格式、OSS 路径与 Tag commit 一致；大包仍由 ECS 从 OSS 下载并校验。默认仓库为 `yzxingtu2026/ainp`，下游显式传 `--repository OWNER/REPO`，不会根据当前 Git remote 猜测仓库。
+`--version vX.Y.Z` 自动读取对应 **Published、非 Draft、非 prerelease** 的 GitHub Release 附件 `reference.json`，验证 project/version/platform、包 SHA256 格式、OSS 路径与 Tag commit 一致；大包仍由 ECS 从 OSS 下载并校验。默认仓库读取 `deploy/linux/project.json`，并核对实际 Git remote；显式 `--repository OWNER/REPO` 必须与项目配置一致，不会回退查询 AINP。
 
 执行 `--apply` 时自动将验证后的引用保存在 `.deploy-state/releases/OWNER/REPO/vX.Y.Z/reference.json`，与环境账本一起备份。每次按版本运行仍会重新读取 GitHub；同版本引用与本地留存不一致时拒绝执行，不能删除留存来绕过检查。plan 会校验已有留存，但不写文件。GitHub 暂不可用时可显式改用已审核、留存的引用：`--release <reference.json路径>`；两个入口互斥。旧容器时代 Release 如果没有原生包引用，不能用版本号生成一个不存在的原生包。
 
