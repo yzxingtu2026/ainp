@@ -30,6 +30,9 @@ class ReleaseValidationTest(unittest.TestCase):
             REQUIRED_CHECKS=set(self.project["required_checks"]),
         )
         self.patcher.start()
+        self.env_patcher = mock.patch.dict(release.os.environ, {"GITHUB_REPOSITORY": self.repository})
+        self.env_patcher.start()
+        self.addCleanup(self.env_patcher.stop)
         self.addCleanup(self.patcher.stop)
 
     def test_version_is_strict_stable_semver(self):
