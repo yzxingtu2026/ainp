@@ -1,6 +1,8 @@
 """Offline release/controller/security contracts; never calls a cloud or production host."""
+import ast
 import base64
 import contextlib
+import hashlib
 import importlib.util
 import io
 import json
@@ -10,6 +12,7 @@ import sys
 import tarfile
 import tempfile
 import unittest
+import bz2
 from unittest import mock
 
 DEPLOY = Path(__file__).parent / "deployment"
@@ -19,11 +22,42 @@ import cloud
 import host
 import launcher
 import storage
+import reporting
 import check_oss
 import verify_release
 spec = importlib.util.spec_from_file_location("native_package", DEPLOY / "package.py")
 package = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(package)
+
+
+class WebBuildTest(unittest.TestCase):
+    def test_release_build_overrides_inherited_api_origin_and_keeps_identity(self):
+        identity = dict(version="v1.2.3", commit="a" * 40, build_time="2026-09-26T00:00:00Z")
+        inherited = dict(PATH="/tools", VITE_SERVICE_BASE_URL="http://127.0.0.1:8080",
+                         VITE_OTHER_SERVICE_BASE_URL='{"demo":"https://wrong.example"}',
+                         VITE_BUILD_COMMIT="stale")
+        original = inherited.copy()
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            web_dir = root / "frontend"
+            (web_dir / "dist").mkdir(parents=True)
+            (web_dir / "dist/index.html").write_text("built web")
+            with mock.patch.object(package, "run") as run:
+                package.build_web(web_dir, root / "stage", inherited, identity)
+            self.assertEqual([call.args[0] for call in run.call_args_list],
+                             [["pnpm", "install", "--frozen-lockfile"], ["pnpm", "build"]])
+            for call in run.call_args_list:
+                self.assertEqual(call.args[1], web_dir)
+                env = call.args[2]
+                self.assertEqual(env["VITE_SERVICE_BASE_URL"], "/")
+                self.assertEqual(json.loads(env["VITE_OTHER_SERVICE_BASE_URL"]), {"demo": "/"})
+                for key, variable in (("version", "VITE_BUILD_VERSION"), ("commit", "VITE_BUILD_COMMIT"),
+                                      ("build_time", "VITE_BUILD_TIME")):
+                    self.assertEqual(env[variable], identity[key])
+                self.assertEqual(env["PATH"], "/tools")
+            self.assertEqual(json.loads((root / "stage/web/build.json").read_text()), identity)
+            self.assertEqual((root / "stage/web/index.html").read_text(), "built web")
+        self.assertEqual(inherited, original)
 
 
 class ArchiveTest(unittest.TestCase):
@@ -99,6 +133,28 @@ class ContractTest(unittest.TestCase):
         c["env"].update(DATABASE_DSN="host=db sslmode=verify-full", JWT_SECRET="x" * 32, CREDENTIAL_ENCRYPTION_KEY=base64.b64encode(b"y" * 32).decode(), REDIS_PASSWORD="safe-password")
         c["bootstrap"]["password"] = "StrongTestPassword123!"
         return c
+
+    def test_external_database_requires_explicit_ssl_choice(self):
+        for mode, ca, allowed in (("disable", None, True), ("verify-full", "/ca.pem", True), ("verify-full", None, False), ("prefer", None, False), (None, None, False)):
+            with self.subTest(mode=mode, ca=ca):
+                params = {"host": "db.internal"}
+                if mode:
+                    params["sslmode"] = mode
+                if ca:
+                    params["sslrootcert"] = ca
+                conninfo = mock.Mock(conninfo_to_dict=mock.Mock(return_value=params))
+                driver = mock.MagicMock()
+                conn = driver.connect.return_value.__enter__.return_value
+                conn.info.server_version = 170005
+                conn.execute.return_value.fetchone.side_effect = [(1,), (0,)]
+                with mock.patch.dict(sys.modules, {"psycopg": driver, "psycopg.conninfo": conninfo}):
+                    if allowed:
+                        host.db_preflight(self.config(), True)
+                        driver.connect.assert_called_once_with(self.config()["env"]["DATABASE_DSN"], connect_timeout=10)
+                    else:
+                        with self.assertRaisesRegex(common.DeployError, "explicit disable"):
+                            host.db_preflight(self.config(), True)
+                        driver.connect.assert_not_called()
 
     def test_backup_maps_conninfo_to_environment_without_argv_secrets(self):
         params = {"host": "db.internal", "port": "5432", "dbname": "app", "user": "app", "password": "secret' $value", "sslmode": "verify-full", "sslrootcert": "/etc/ca.pem"}
@@ -185,6 +241,10 @@ class ContractTest(unittest.TestCase):
 
 
 class CloudTest(unittest.TestCase):
+    def unpack_bootstrap(self, command):
+        literal = command.split("base64.b85decode(", 1)[1].splitlines()[0].removesuffix(")))")
+        return json.loads(bz2.decompress(base64.b85decode(ast.literal_eval(literal))))
+
     def target(self):
         c = common.read_json("deploy/linux/target.example.json")
         c["config_sha256"] = "a" * 64
@@ -280,7 +340,147 @@ class CloudTest(unittest.TestCase):
         self.assertNotIn("PAYLOAD_LITERAL", command)
         self.assertNotIn("DATABASE_DSN=", command)
         self.assertLessEqual(len(base64.b64encode(command.encode())), 24576)
-        self.assertIn("chmod 644 /usr/share/postgresql-common/pgdg", command)
+        shell = self.unpack_bootstrap(command)["bootstrap.sh"]
+        self.assertIn("chmod 644 /usr/share/postgresql-common/pgdg", shell)
+        self.assertIn("mirrors.cloud.aliyuncs.com", shell)
+        self.assertIn("/etc/apt/sources.list", shell)
+
+    def test_poll_streams_only_complete_progress_records_once(self):
+        first = "AINP_PROGRESS 2026-09-26T12:00:00Z postgresql-preflight: started\n"
+        last = "AINP_PROGRESS 2026-09-26T12:00:05Z postgresql-preflight: done (5s)\n"
+        def payload(output, status="Running"):
+            return {"Invocation": {"InvocationResults": {"InvocationResult": [{
+                "InstanceId": "i-one", "InvocationStatus": status,
+                "InvokeRecordStatus": "Finished" if status == "Success" else "Running",
+                "ExitCode": 0, "Output": output,
+            }]}}}
+        api = mock.Mock()
+        api.call.side_effect = [payload(first + "PASSWORD=secret-value\n" + last[:40]), payload(first + last), payload(first + last, "Success")]
+        state = {"invoke_id": "t-one", "instance_id": "i-one", "status": "running"}
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(cloud.time, "sleep"), contextlib.redirect_stdout(io.StringIO()) as output:
+            cloud.poll(api, state, Path(d) / "state", timeout=10)
+        self.assertEqual(output.getvalue().count(first), 1)
+        self.assertEqual(output.getvalue().count(last), 1)
+        self.assertNotIn("secret-value", output.getvalue())
+        self.assertEqual(state["status"], "success")
+
+    def test_bootstrap_loader_roundtrip_and_shell_syntax(self):
+        import subprocess
+        command = cloud.bootstrap(dict(project="ainp", ram_role="role", action="init", operation_id="a" * 36, release=self.reference()))
+        files = self.unpack_bootstrap(command)
+        self.assertEqual(files["host.py"], (DEPLOY / "host.py").read_text())
+        self.assertEqual(files["reporting.py"], (DEPLOY / "reporting.py").read_text())
+        for script in (command, files["bootstrap.sh"], files["apt.sh"]):
+            subprocess.run(["sh", "-n"], input=script, text=True, capture_output=True, check=True)
+        with tempfile.TemporaryDirectory() as d:
+            # Execute the actual loader with a harmless replacement inner bootstrap.
+            files["bootstrap.sh"] = 'set -eu\ntest -f "$1/host.py"\ntest -f "$1/reporting.py"\nprintf "unpacked successfully\\n"\n'
+            payload = base64.b85encode(bz2.compress(json.dumps(files).encode())).decode()
+            safe = cloud.BOOTSTRAP.replace("PAYLOAD_LITERAL", repr(payload)).replace("/var/tmp/ainp-deploy.XXXXXXXX", d + "/payload.XXXXXXXX")
+            result = subprocess.run(["sh"], input=safe, capture_output=True, text=True, check=True)
+            self.assertIn("unpacked successfully", result.stdout)
+            self.assertEqual(list(Path(d).iterdir()), [])
+
+    def test_progress_is_timestamped_and_flushed(self):
+        with mock.patch.object(cloud.time, "strftime", return_value="2026-09-26 20:00:00"), mock.patch("builtins.print") as output:
+            cloud.progress("waiting for ECS")
+        output.assert_called_once_with("[2026-09-26 20:00:00] waiting for ECS", flush=True)
+
+    def test_poll_reports_pending_heartbeat_and_terminal_status(self):
+        pending = {"Invocation": {"InvocationResults": {"InvocationResult": []}}}
+        success = {"Invocation": {"InvocationResults": {"InvocationResult": [{
+            "InstanceId": "i-one",
+            "InvocationStatus": "Success",
+            "InvokeRecordStatus": "Finished",
+            "ExitCode": 0,
+        }]}}}
+        api = mock.Mock()
+        api.call.side_effect = [pending, success]
+        state = {"invoke_id": "t-one", "instance_id": "i-one", "status": "running"}
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(cloud.time, "sleep"), contextlib.redirect_stdout(io.StringIO()) as output:
+            cloud.poll(api, state, Path(d) / "state.json", timeout=1)
+        text = output.getvalue()
+        self.assertIn("Cloud Assistant invocation t-one still running", text)
+        self.assertIn("Cloud Assistant invocation t-one: success", text)
+        self.assertIn("after", text)
+        self.assertNotIn("CommandContent", text)
+
+    def test_bootstrap_retries_only_apt_lock_failures_with_bounded_timeout(self):
+        command = cloud.bootstrap(dict(project="ainp", ram_role="ainp-production-runtime", action="init", operation_id="a" * 36, release=self.reference(), config_oss=self.target()["config_oss"], config_key=self.target()["config_key"], config_sha256="a" * 64))
+        files = self.unpack_bootstrap(command)
+        command = files["apt.sh"]
+        self.assertIn("else status=$?", command)
+        self.assertIn('return "$status"', command)
+        self.assertNotIn("return 100", command)
+        self.assertIn('sh "$work/apt.sh" update -qq', files["bootstrap.sh"])
+        self.assertIn("AINP_APT_LOCK_TIMEOUT", command)
+        self.assertIn("reconcile unattended-upgrades", command)
+        self.assertNotIn("rm -f /var/lib/dpkg/lock", command)
+        self.assertNotIn("kill ", command)
+
+    def test_bootstrap_uses_compact_host_release_for_real_reference_metadata(self):
+        reference = {
+            **self.reference(),
+            "schema": 1,
+            "build_time": "2026-09-26T07:24:59Z",
+        }
+        target = self.target()
+        request = dict(
+            project=target["project"],
+            ram_role=target["ram_role"],
+            action="init",
+            operation_id="a" * 36,
+            release=cloud._host_release(reference, target["release_oss_endpoint"]),
+            config_oss=target["config_oss"],
+            config_key=target["config_key"],
+            config_sha256=target["config_sha256"],
+        )
+        command = cloud.bootstrap(request)
+        self.assertLess(len(command.encode()), 16384)
+        self.assertLessEqual(len(base64.b64encode(command.encode())), 24576)
+        literal = command.split("base64.b85decode(", 1)[1].splitlines()[0].removesuffix(")))")
+        files = json.loads(bz2.decompress(base64.b85decode(ast.literal_eval(literal))))
+        remote_request = json.loads(files["request.json"])
+        self.assertEqual(set(remote_request["release"]), {"project", "version", "commit", "platform", "sha256", "key", "oss"})
+        self.assertEqual(remote_request["release"]["oss"]["endpoint"], target["release_oss_endpoint"])
+        self.assertNotIn("schema", remote_request["release"])
+        self.assertNotIn("build_time", remote_request["release"])
+
+    def test_failed_init_recovers_same_instance_and_preserves_attempt_audit(self):
+        target = self.target()
+        reference = self.reference()
+        target_sha256 = hashlib.sha256(json.dumps(target, sort_keys=True).encode()).hexdigest()
+        def call(action, **kwargs):
+            self.assertNotEqual(action, "RunInstances")
+            if action == "DescribeInstances":
+                return {"Instances": {"Instance": [{"InstanceId": "i-existing", "Status": "Running", "InstanceChargeType": "PostPaid", "Tags": {"Tag": [{"TagKey": "ainp-project", "TagValue": "ainp"}, {"TagKey": "ainp-environment", "TagValue": "production"}]}}]}}
+            if action == "DescribeCloudAssistantStatus":
+                return {"InstanceCloudAssistantStatusSet": {"InstanceCloudAssistantStatus": [{"InstanceId": "i-existing", "CloudAssistantStatus": "true"}]}}
+            self.assertEqual(action, "RunCommand")
+            return {"InvokeId": "t-recovery"}
+        with tempfile.TemporaryDirectory() as d:
+            statepath = Path(d) / "state.json"
+            common.atomic_json(statepath, {
+                "target_sha256": target_sha256,
+                "client_token": "create-token",
+                "operation_id": "failed-operation",
+                "invoke_id": "t-failed",
+                "command_sha256": "d" * 64,
+                "action": "init",
+                "status": "failed",
+                "instance_id": "i-existing",
+                "release": reference,
+                "config_sha256": target["config_sha256"],
+            })
+            with mock.patch.object(cloud.Alibaba, "call", side_effect=call), mock.patch.object(cloud, "poll"), mock.patch.object(cloud, "bootstrap", return_value="echo safe"), contextlib.redirect_stdout(io.StringIO()):
+                cloud.execute(target, reference, "init", statepath)
+            state = common.read_json(statepath)
+            self.assertEqual(state["instance_id"], "i-existing")
+            self.assertEqual(state["client_token"], "create-token")
+            self.assertEqual(state["invoke_id"], "t-recovery")
+            self.assertEqual(state["config_sha256"], target["config_sha256"])
+            self.assertEqual(state["attempts"][0]["invoke_id"], "t-failed")
+            self.assertEqual(state["attempts"][0]["status"], "failed")
 
     def test_invocation_fail_closed(self):
         def payload(**kw):
@@ -382,6 +582,122 @@ class CloudTest(unittest.TestCase):
             cloud.poll(api, state, Path("unused"), timeout=0)
         self.assertEqual(state["status"], "running")
         api.call.assert_not_called()
+
+
+
+class ReportingTest(unittest.TestCase):
+    def test_progress_arrives_before_process_exits_and_has_heartbeat(self):
+        import subprocess
+        import selectors
+        code = f"import sys,time; sys.path.insert(0, {str(DEPLOY.resolve())!r}); import reporting; reporting.INTERVAL=0.05\nwith reporting.stage('fixture'):\n time.sleep(0.4)\n"
+        with subprocess.Popen([sys.executable, "-c", code], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) as proc:
+            try:
+                with selectors.DefaultSelector() as selector:
+                    selector.register(proc.stdout, selectors.EVENT_READ)
+                    self.assertTrue(selector.select(timeout=5), "no flushed start record")
+                first = proc.stdout.readline()
+                self.assertIn("fixture: started", first)
+                self.assertIsNone(proc.poll(), "output must arrive while running")
+                output, error = proc.communicate(timeout=5)
+                self.assertEqual(proc.returncode, 0, error)
+                self.assertIn("fixture: running", output)
+                self.assertIn("fixture: done", output)
+            finally:
+                if proc.poll() is None:
+                    proc.kill()
+                    proc.communicate()
+
+    def test_failed_command_preserves_exit_code_and_protects_output(self):
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(reporting, "LOG_PATH", str(Path(d) / "log")), contextlib.redirect_stdout(io.StringIO()) as output:
+            with self.assertRaises(SystemExit) as raised:
+                reporting.run("fixture", [sys.executable, "-c", "import sys; print('sensitive-raw-output'); sys.exit(7)"])
+            self.assertEqual(raised.exception.code, 7)
+            self.assertIn("fixture: failed", output.getvalue())
+            self.assertNotIn("sensitive-raw-output", output.getvalue())
+            log = Path(d) / "log"
+            self.assertIn("sensitive-raw-output", log.read_text())
+            self.assertEqual(log.stat().st_mode & 0o777, 0o600)
+
+    def test_stage_failure_does_not_print_exception_secrets(self):
+        with contextlib.redirect_stdout(io.StringIO()) as output:
+            with self.assertRaises(ValueError):
+                with reporting.stage("postgresql-preflight"):
+                    raise ValueError("password=hidden-value")
+        self.assertIn("postgresql-preflight: failed (ValueError)", output.getvalue())
+        self.assertNotIn("hidden-value", output.getvalue())
+
+    def test_bootstrap_lock_descriptor_is_inherited(self):
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(reporting, "LOG_PATH", str(Path(d) / "log")), mock.patch.object(reporting.subprocess, "run", return_value=mock.Mock(returncode=0)) as run, contextlib.redirect_stdout(io.StringIO()):
+            reporting.run("bootstrap-lock", ["flock", "-w", "120", "9"])
+        self.assertEqual(run.call_args.kwargs["pass_fds"], (9,))
+
+    def test_apt_retries_locks_only_and_preserves_exit_status(self):
+        import subprocess
+        for scenario, expected, count in (("recover", 0, 3), ("locked", 75, 121), ("error", 42, 1)):
+            with self.subTest(scenario=scenario), tempfile.TemporaryDirectory() as d:
+                tmp = Path(d)
+                (tmp / "count").write_text("0")
+                apt = tmp / "apt-get"
+                apt.write_text('''#!/bin/sh
+i=$(cat "$COUNT"); i=$((i+1)); echo "$i" >"$COUNT"
+if [ "$SCENARIO" = error ]; then echo fatal; exit 42; fi
+if [ "$SCENARIO" = recover ] && [ "$i" -ge 3 ]; then echo ready; exit 0; fi
+echo 'Could not get lock /var/lib/dpkg/lock-frontend'; exit 100
+''')
+                apt.chmod(0o755)
+                sleep = tmp / "sleep"
+                sleep.write_text("#!/bin/sh\nexit 0\n")
+                sleep.chmod(0o755)
+                env = {**os.environ, "COUNT": str(tmp / "count"), "SCENARIO": scenario, "PATH": d + os.pathsep + os.environ.get("PATH", "/usr/bin:/bin")}
+                result = subprocess.run(["sh", str(DEPLOY / "apt.sh"), "update", "-qq"], env=env, capture_output=True, text=True, timeout=10)
+                self.assertEqual(result.returncode, expected, result.stderr)
+                self.assertEqual(int((tmp / "count").read_text()), count)
+                if scenario == "locked":
+                    self.assertIn("AINP_APT_LOCK_TIMEOUT", result.stderr)
+
+
+class HTTPSProbeTest(unittest.TestCase):
+    def test_real_curl_retries_transient_maintenance_but_not_permanent_errors(self):
+        import http.server
+        import threading
+        import subprocess
+        import shutil
+        if not shutil.which("curl"):
+            self.skipTest("curl unavailable")
+        for scenario, expected_requests in (("recover", 2), ("unavailable", 6), ("missing", 1)):
+            with self.subTest(scenario=scenario):
+                requests = []
+                class Handler(http.server.BaseHTTPRequestHandler):
+                    def do_GET(self):
+                        requests.append(self.path)
+                        status = 404 if scenario == "missing" else (200 if scenario == "recover" and len(requests) > 1 else 503)
+                        self.send_response(status)
+                        self.end_headers()
+                        self.wfile.write(b'{"data":{"status":"ok"}}' if status == 200 else b'maintenance')
+                    def log_message(self, *args):
+                        pass
+                server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+                thread = threading.Thread(target=server.serve_forever, daemon=True)
+                thread.start()
+                def run(argv):
+                    # Exercise actual curl retry semantics with a local HTTP fixture.
+                    # Production retains HTTPS certificate validation and --resolve.
+                    argv = [*argv[:-1], f"http://127.0.0.1:{server.server_port}/healthz"]
+                    result = subprocess.run(argv, capture_output=True, timeout=20)
+                    common.require(result.returncode == 0, "probe failed")
+                    return result.stdout
+                try:
+                    with mock.patch.object(host, "command", side_effect=run):
+                        if scenario == "recover":
+                            self.assertEqual(host.https_json({"domain": "fixture.invalid"}, "/healthz")["data"]["status"], "ok")
+                        else:
+                            with self.assertRaises(common.DeployError):
+                                host.https_json({"domain": "fixture.invalid"}, "/healthz")
+                    self.assertEqual(len(requests), expected_requests)
+                finally:
+                    server.shutdown()
+                    server.server_close()
+                    thread.join()
 
 
 class NativeNginxSyntaxTest(unittest.TestCase):
@@ -507,6 +823,16 @@ class HostTransactionTest(unittest.TestCase):
         self.assertFalse(any(e[0] == "runuser" for e in self.events))
         self.assertIn(("backup",), self.events)
         self.assertEqual(common.read_json(self.root / "deployment.json")["release"]["version"], "v1.0.0")
+
+    def test_fresh_init_does_not_reset_unloaded_systemd_units(self):
+        original = host.command
+        def reject_unloaded_reset(argv, **kwargs):
+            if argv[:2] == ["systemctl", "reset-failed"]:
+                raise common.DeployError("Unit not loaded")
+            return original(argv, **kwargs)
+        with mock.patch.object(host, "command", side_effect=reject_unloaded_reset):
+            host.perform(self.request("v1.0.0", "init"), self.root, self.home)
+        self.assertEqual(common.read_json(self.root / "deployment.json")["status"], "healthy")
 
     def test_migration_failure_never_opens_traffic_or_switches_to_bad_release(self):
         host.perform(self.request("v1.0.0", "init"), self.root, self.home)

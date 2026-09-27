@@ -18,6 +18,18 @@ def run(args, cwd, env):
     subprocess.run(args, cwd=cwd, env=env, check=True)
 
 
+def build_web(web_dir, stage, env, identity):
+    # Release Web is served behind the same Nginx origin in every environment.
+    # Override inherited shell values as well as Vite's .env files.
+    web_env = dict(env, VITE_BUILD_VERSION=identity["version"],
+                   VITE_BUILD_COMMIT=identity["commit"], VITE_BUILD_TIME=identity["build_time"],
+                   VITE_SERVICE_BASE_URL="/", VITE_OTHER_SERVICE_BASE_URL='{"demo":"/"}')
+    run(["pnpm", "install", "--frozen-lockfile"], web_dir, web_env)
+    run(["pnpm", "build"], web_dir, web_env)
+    shutil.copytree(web_dir / "dist", stage / "web")
+    atomic_json(stage / "web/build.json", identity, 0o644)
+
+
 def pack(stage, output, identity, epoch):
     require(not (stage / "release.json").exists(), "staging already contains release manifest")
     files = sorted(p for p in stage.rglob("*") if p.is_file())
@@ -75,12 +87,7 @@ def main():
             libraries = subprocess.check_output(["ldd", str(binary)], text=True)
             print(libraries)
             require("not found" not in libraries, "unresolved shared library in native binary")
-        web_dir = root / cfg["frontend_dir"]
-        web_env = dict(env, VITE_BUILD_VERSION=args.version, VITE_BUILD_COMMIT=commit, VITE_BUILD_TIME=build_time)
-        run(["pnpm", "install", "--frozen-lockfile"], web_dir, web_env)
-        run(["pnpm", "build"], web_dir, web_env)
-        shutil.copytree(web_dir / "dist", stage / "web")
-        atomic_json(stage / "web/build.json", identity, 0o644)
+        build_web(root / cfg["frontend_dir"], stage, env, identity)
         archive = output / "release.tar.gz"
         manifest = pack(stage, archive, identity, epoch)
         atomic_json(output / "release.json", manifest, 0o644)

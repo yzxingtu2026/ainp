@@ -7,7 +7,7 @@
   "worker_concurrency": 4,
   "ai_concurrency": 1,
   "env": {
-    "DATABASE_DSN": "host=pg.example.internal port=5432 user=ainp dbname=ainp password=REPLACE sslmode=verify-full sslrootcert=/etc/ssl/certs/company-pg-ca.pem",
+    "DATABASE_DSN": "host=pg.example.internal port=5432 user=ainp dbname=ainp password=REPLACE sslmode=disable",
     "JWT_SECRET": "REPLACE_WITH_RANDOM_SECRET_AT_LEAST_32_CHARACTERS",
     "CREDENTIAL_ENCRYPTION_KEY": "REPLACE_WITH_BASE64_ENCODED_32_RANDOM_BYTES",
     "REDIS_ADDR": "redis.example.internal:6379",

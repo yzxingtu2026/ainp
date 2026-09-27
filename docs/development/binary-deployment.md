@@ -61,6 +61,12 @@ gh workflow run check-oss.yml --ref main -f project=ainp
 
 Actions → **Test Native Release** → **Run workflow**，分支选择 `main`，版本保持默认 `v0.0.0-ci`。测试发包通过后才进入测试 ECS；通过不等于真实 ECS、数据库、Worker、Nginx/SSL 验收。
 
+### Web API 地址与构建约束
+
+生产 Web 使用当前页面同源地址：`VITE_SERVICE_BASE_URL=/`、`VITE_OTHER_SERVICE_BASE_URL={"demo":"/"}`，由 Nginx 转发 API、附件、OAuth 和 SSE 请求。`frontend/.env.prod` 默认同源；原生 `package.py` 打包时还会显式覆盖构建机同名环境变量，与存量 Docker 构建保持一致。本地 `pnpm dev` 继续使用 `.env.test` 的 loopback 后端和开发代理。
+
+这些 Vite 变量会编译进静态 JS；修改 ECS 环境变量、target/private 配置或重启服务不会改变已发布 Web 的请求地址。若旧包误编入 `127.0.0.1:8080`，必须从修复后的提交重新构建完整包，以新的 commit/reference 执行现有 ECS 的 `update`，不要重新 `init`，也不要覆盖原有不可变 OSS 包或单独替换 Web 破坏版本与校验和一致性。测试环境可继续使用 `v0.0.0-ci`（新 commit 路径），无需创建正式版本 Tag。
+
 ### 2.4 ECS 启动模板
 
 使用**数字版本**，禁止 `Latest`/`Default`。模板应固定并评审：
@@ -69,7 +75,7 @@ Actions → **Test Native Release** → **Run workflow**，分支选择 `main`�
 - 仅开放公网 80/443，SSH 按管理员来源限制或不开放；API 仅监听 127.0.0.1；数据库/Redis 不能暴露公网。
 - 公网 IP/EIP、出口/NAT/带宽计费策略由模板/平台预先规划。控制器不自动申请 EIP 或修改 DNS。
 - 云助手 Agent 已装且可连通；实例 RAM 角色正确；控制器创建时强制 PostPaid、IMDSv2 required。已有 ECS 也必须按模板设置这两项及正确角色。
-- 可访问 Ubuntu/PGDG apt、PyPI、OSS 与元数据服务。首次装 Nginx、Python venv、PG17 client 等；依赖准备成功后复用，不在每次更新重复 apt 安装。
+- 可访问 Ubuntu/PGDG apt、PyPI、OSS 与元数据服务。首次装 Nginx、Python venv、PG17 client 等；依赖准备成功后复用，不在每次更新重复 apt 安装。bootstrap 在首次 apt 操作前，仅将 Ubuntu 官方 `archive.ubuntu.com`/`security.ubuntu.com` 源切换到阿里云 ECS VPC 内网镜像 `http://mirrors.cloud.aliyuncs.com/ubuntu`；不会改写 PGDG 或其他第三方源。
 - 配置需要的数据库 CA 证书已存在且服务用户可读。ECS 启动模板不应该硬编码数据库密码、JWT 或管理员密码。
 - 如果使用本机 PG/Redis 容器：模板/独立基础设施脚本启动固定版本、持久化目录与认证，端口发布到 **127.0.0.1**；Docker 引擎/数据库生命周期不由应用脚本维护。数据库容器需随开机启动且应用服务启动前可用。
 
@@ -104,8 +110,8 @@ GitHub environment **release** 配置变量：
 
 - `JWT_SECRET`：至少 32 字符随机秘密。
 - `CREDENTIAL_ENCRYPTION_KEY`：**32 随机字节的标准 Base64 编码**（例如 `openssl rand -base64 32`）。不能随应用升级更换，否则既有加密凭证无法解密。
-- 外部 PG：`database_mode=external`，`DATABASE_DSN` 指向 VPC/RDS/外部地址，`sslmode=verify-full sslrootcert=...`。基础框架本身用同一个 DSN 接口；部署基线额外要求 TLS 验证。
-- 本机容器 PG：`database_mode=local-container`，DSN 用 `host=127.0.0.1 port=<映射端口> ... sslmode=disable`。**不能沿用 Compose 内的 `host=postgres`**。同网络另一 ECS 上的容器 PG 使用 external 模式和 TLS。
+- 外部 PG：`database_mode=external`。示例默认用于专用网络 RDS，显式设置 `sslmode=disable`，无需 CA；部署者负责确认使用内网地址及 VPC/安全组隔离。公网或需要 TLS 的连接使用 `sslmode=verify-full sslrootcert=<已安装的 CA 文件>`。预检只接受这两种明确选择，不自动降级 TLS；应用与 pg_dump 复用同一 DSN。
+- 本机容器 PG：`database_mode=local-container`，DSN 用 `host=127.0.0.1 port=<映射端口> ... sslmode=disable`。**不能沿用 Compose 内的 `host=postgres`**。同网络另一 ECS 上的容器 PG 使用 external 模式，并按上述网络边界显式选择 SSL 模式。
 - 两种模式都不自动删除/创建数据库，必须先准备空数据库（首次）或已安装的同项目数据库（更新），并提供 migrations/pgvector 必要权限。预检 PG17、vector 可用、Redis 认证/Lua。
 - 本版 Redis DB 固定为 0，独立 Redis 或经隔离评估的实例；不要把未隔离的多个项目任务混进同一 DB。
 - `backup_oss` / `backup_prefix` 是迁移前 PG custom-format 逻辑备份目的地。备份上传并校验后才迁移。
@@ -143,6 +149,10 @@ python3 scripts/deployment/cloud.py status --target deploy/linux/target.local.js
 
 创建请求发出前落盘 ClientToken；云助手请求前记 `dispatching`，传入独立 ClientToken 并使用 ProcessTree 超时终止模式，拿到 InvokeId 后记 `running`。不保存可再次执行的云助手命令。不确定请求结果时拒绝自动重试，避免重复购买或同时更新。资源已创建但尚未下发命令时，重跑可继续同一实例；已开始 init 失败不能盲目重初始化。
 
+部署日志：`bootstrap.sh`、`apt.sh`、`reporting.py` 与主机 Python 文件一起压缩进命令，在 ECS 临时目录解包执行，仍受原始 16 KiB/API 编码上限约束。安装依赖、OSS 下载、PG/Redis 预检、迁移、初始化和健康检查输出 `AINP_PROGRESS` 时间戳记录；长步骤每 15 秒输出心跳，完成/失败立即刷新。Python 使用无缓冲模式，`cloud.py` 每 5 秒读取云助手 `Output`，只增量打印完整、安全的进度记录并去重，控制台显示仍受云助手上报/刷新周期影响。apt 锁重试保持最多 600 秒，bootstrap 子命令原始 stdout/stderr 写入 `/var/log/ainp-bootstrap.log`（0600），主机迁移等原始失败输出仍在 `/var/log/ainp-deployment-errors.log`，不为实时日志暴露 DSN、请求体或密码。
+
+修改本地 `private.*.json` 不会更新 OSS 或现有 ECS：需另行上传新的不可变私有配置对象并更新目标中的 key/SHA256。已落盘 `/etc/<project>/private.json` 的失败 init 必须先核对主机状态后恢复；不要删除本地账本或以修改哈希绕过恢复保护。此流程不能与 apt 阶段（尚未写入私有配置）的安全重试混淆。
+
 阿里云 CLI 调用失败时，控制器只从 JSON 响应中输出经过长度限制和单行化处理的 `error_code`、HTTP 状态、`message`、`RequestId`。命令参数、完整 stdout/stderr、恢复命令和未知字段不会回显；非 JSON、空响应、超大响应、CLI 缺失或超时仍使用通用错误。云助手命令失败时输出状态、退出码、错误码及最多 4000 字符的日志尾部；日志会移除控制序列并脱敏常见 password/secret/token/authorization 和 URL 密码，但仍应仅在受控部署终端查看。任何失败都必须结合已持久化状态与云审计核对后再重试。
 
 ## 6. 主机执行顺序与失败语义
@@ -174,14 +184,17 @@ python3 scripts/deployment/cloud.py status --target deploy/linux/target.local.js
 - Worker 的自动门禁是 Redis 能力、systemd 稳定性与 `/proc/PID/exe` 路径，不是“已完成真实任务”的证明。验收要实际执行通用任务、AI 任务、SSE、MCP/OAuth 和附件上传。
 - 临时维护是计划内行为；已有执行中的长任务按框架重试/幂等处理，不承诺不重试或不丢失业务外部副作用。
 
+HTTPS 验收在 Nginx reload 后对瞬时错误进行有限重试（最多 5 次重试，1 秒间隔，重试窗口 30 秒），避免旧维护页进程短暂返回 503 导致误判；证书校验、API/Web 版本与 commit 校验仍必须通过。
+
 ## 7. 故障与恢复
 
 1. **控制台请求超时**：看本地账本，拿 InvokeId 到云助手查看；`status` 只轮询。`creating`/`dispatching` 无返回 ID 时必须根据 ECS/ActionTrail 审计与项目标签人工核对；确认准确 InstanceId/InvokeId 后才允许修复账本。禁止直接删除账本重试。
-2. **迁移失败**：查 `/opt/<project>/deployment.json`、root-only `/var/log/ainp-deployment-errors.log`、对应服务 journal，评估迁移事务及备份。可兼容则显式回滚；不可兼容则制作前向修复包或按专项恢复方案恢复数据库。不要自动 drop 数据库。
-3. **首次 setup 失败**：可能已有部分表/管理员/state，先审计，不能自动再建租户/覆盖 state。确定是一次性测试库才人工重建并重新 provision；已有数据必须走专项恢复。
-4. **备份验证**：定期在隔离 PG17 上运行 `pg_restore --list` 和完整恢复演练。脚本只验证 dump 命令/非空/OSS 上传，不能替代恢复测试。
-5. **整机故障**：应用包可重建，不等于完整灾备。`state`、附件目录及本机 PG/Redis 数据盘另用 ECS 快照/应用备份；远端数据库使用其备份/PITR。不要只备份二进制或 PG 而忽略附件。
-6. **磁盘/日志**：发布包保留不自动删；定期审计容量，保留当前及回滚候选，维护备份与日志生命周期。应用有日志轮转，部署失败诊断日志含潜在敏感信息，root-only，管理员另设 logrotate/保留策略。
+2. **首次 init 的 apt/dpkg 锁失败**：bootstrap 对 apt/dpkg 锁失败最多等待 600 秒，只重试锁错误；超时返回 `AINP_APT_LOCK_TIMEOUT`，不删除 lock 文件、不终止 `unattended-upgrades`。如果本地账本为 `status=failed` 且已经保存 `instance_id`/`invoke_id`，确认系统更新已结束后，用**同一 target、同一 release reference（包括 release SHA256）**再次执行原 `init --apply`。控制器会先校验本地 target SHA256、发布包身份、配置 SHA256，然后重新 Describe ECS，强制校验项目/环境标签和 `PostPaid`，只在原实例上重新派发 Cloud Assistant，不会再次 `RunInstances`；历史尝试保存在 `attempts` 中。若账本为 `creating`/`dispatching` 或缺少实例/调用 ID，先查 ECS/ActionTrail，禁止删除 `.deploy-state` 或盲目重试。
+3. **迁移失败**：查 `/opt/<project>/deployment.json`、root-only `/var/log/ainp-deployment-errors.log`、对应服务 journal，评估迁移事务及备份。可兼容则显式回滚；不可兼容则制作前向修复包或按专项恢复方案恢复数据库。不要自动 drop 数据库。
+4. **首次 setup 失败**：可能已有部分表/管理员/state，先审计，不能自动再建租户/覆盖 state。确定是一次性测试库才人工重建并重新 provision；已有数据必须走专项恢复。
+5. **备份验证**：定期在隔离 PG17 上运行 `pg_restore --list` 和完整恢复演练。脚本只验证 dump 命令/非空/OSS 上传，不能替代恢复测试。
+6. **整机故障**：应用包可重建，不等于完整灾备。`state`、附件目录及本机 PG/Redis 数据盘另用 ECS 快照/应用备份；远端数据库使用其备份/PITR。不要只备份二进制或 PG 而忽略附件。
+7. **磁盘/日志**：发布包保留不自动删；定期审计容量，保留当前及回滚候选，维护备份与日志生命周期。应用有日志轮转，部署失败诊断日志含潜在敏感信息，root-only，管理员另设 logrotate/保留策略。
 
 ## 8. HTTPS 与证书生命周期
 

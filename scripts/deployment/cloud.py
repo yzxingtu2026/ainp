@@ -9,51 +9,34 @@ import re
 import subprocess
 import time
 import uuid
-import zlib
+import bz2
 
 from common import DeployError, atomic_json, digest, key, lock, name, oss_config, read_json, require, version
 
-BOOTSTRAP = '''set -eu
+BOOTSTRAP = r'''set -eu
 umask 077
-. /etc/os-release
-test "$ID" = ubuntu && test "$VERSION_ID" = 22.04
-test "$(uname -m)" = x86_64
-export DEBIAN_FRONTEND=noninteractive
-# Apt and venv bootstrap are serialized across projects as well.
-exec 9>/var/lock/ainp-bootstrap.lock
-flock -w 120 9
-runtime=/opt/ainp-deploy-runtime-v1
-if [ ! -f "$runtime/ready" ]; then
-apt-get update -qq
-apt-get install -y -qq python3-venv nginx curl ca-certificates gnupg tzdata libstdc++6
-install -d -m 755 /usr/share/postgresql-common/pgdg
-curl --fail --silent --show-error https://www.postgresql.org/media/keys/ACCC4CF8.asc -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
-gpg --show-keys --with-colons /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc | grep -q 'B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8'
-echo 'deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt jammy-pgdg main' >/etc/apt/sources.list.d/ainp-pgdg.list
-chmod 644 /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc /etc/apt/sources.list.d/ainp-pgdg.list
-apt-get update -qq
-apt-get install -y -qq postgresql-client-17
-python3 -m venv "$runtime"
-"$runtime/bin/pip" --disable-pip-version-check install --quiet oss2==2.19.1 'psycopg[binary]==3.2.10' PyYAML==6.0.2 redis==6.4.0
-touch "$runtime/ready"
-fi
-systemctl enable --now nginx
-flock -u 9
 work=$(mktemp -d /var/tmp/ainp-deploy.XXXXXXXX)
 trap 'rm -rf "$work"' EXIT
 python3 - "$work" <<'AINP_PAYLOAD'
-import base64,json,pathlib,sys,zlib
-files=json.loads(zlib.decompress(base64.b64decode(PAYLOAD_LITERAL)))
-for filename, body in files.items():
-    pathlib.Path(sys.argv[1], filename).write_text(body)
+import base64,bz2,json,pathlib,sys
+files=json.loads(bz2.decompress(base64.b85decode(PAYLOAD_LITERAL)))
+for filename,body in files.items():
+    pathlib.Path(sys.argv[1],filename).write_text(body)
 AINP_PAYLOAD
-"$runtime/bin/python" "$work/host.py" "$work/request.json"
+sh "$work/bootstrap.sh" "$work"
 '''
 
 TEST_ENVIRONMENT = "test"
 CLI_ERROR_JSON_LIMIT = 64 * 1024
 CLI_ERROR_TEXT_LIMIT = 500
 REMOTE_OUTPUT_TAIL_LIMIT = 4000
+PROGRESS_INTERVAL_SECONDS = 15
+
+
+def progress(message):
+    """Emit a timestamped, flushed progress line without secrets or raw API payloads."""
+    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+    print(f"[{timestamp}] {message}", flush=True)
 
 
 def validate_release_for_environment(target, reference):
@@ -157,11 +140,19 @@ class Alibaba:
         return json.loads(result.stdout)
 
 
+def _host_release(reference, endpoint=None):
+    """Keep the Cloud Assistant request to the fields consumed by host.py."""
+    release = {field: reference[field] for field in ("project", "version", "commit", "platform", "sha256", "key", "oss")}
+    if endpoint:
+        release["oss"] = {**release["oss"], "endpoint": endpoint}
+    return release
+
+
 def bootstrap(request):
-    files = {p: Path(__file__).with_name(p).read_text() for p in ("common.py", "storage.py", "host.py", "launcher.py")}
-    files["request.json"] = json.dumps(request, sort_keys=True)
-    payload = base64.b64encode(zlib.compress(json.dumps(files).encode(), 9)).decode()
-    command = BOOTSTRAP.replace("PAYLOAD_LITERAL", repr(payload))
+    files = {p: Path(__file__).with_name(p).read_text() for p in ("common.py", "storage.py", "host.py", "launcher.py", "reporting.py", "bootstrap.sh", "apt.sh")}
+    files["request.json"] = json.dumps(request, sort_keys=True, separators=(",", ":"))
+    payload = base64.b85encode(bz2.compress(json.dumps(files, separators=(",", ":")).encode(), compresslevel=9)).decode()
+    command = BOOTSTRAP.replace("PAYLOAD_LITERAL", repr(payload)).rstrip("\n")
     require(len(command.encode()) <= 16384 and len(base64.b64encode(command.encode())) <= 24576, "bootstrap exceeds conservative 16KiB budget / API encoded limit; use a versioned bootstrap object")
     return command
 
@@ -216,17 +207,56 @@ def invocation_failure(payload, instance_id):
 
 
 def poll(api, state, statepath, timeout=2100):
-    until = time.monotonic() + timeout
+    started = time.monotonic()
+    until = started + timeout
+    next_report = 0
+    seen_progress = set()
     while time.monotonic() < until:
         payload = api.call("DescribeInvocationResults", InvokeId=state["invoke_id"], InstanceId=state["instance_id"], ContentEncoding="PlainText")
+        row = invocation_row(payload, state["instance_id"])
+        # Only explicit safe progress records, never arbitrary subprocess output/config.
+        output = row.get("Output", "") if row else ""
+        for line in output.splitlines(keepends=True) if isinstance(output, str) else []:
+            if line.endswith("\n") and re.fullmatch(r"AINP_PROGRESS [0-9TZ:.-]+ [A-Za-z0-9 ()_.:-]+\n", line) and line not in seen_progress:
+                print(line.rstrip(), flush=True)
+                seen_progress.add(line)
         status = invocation_result(payload, state["instance_id"])
+        elapsed = int(time.monotonic() - started)
         if status != "pending":
+            progress(f"Cloud Assistant invocation {state['invoke_id']}: {status} after {elapsed}s")
             state["status"] = status
             atomic_json(statepath, state)
             require(status == "success", invocation_failure(payload, state["instance_id"]))
             return
+        if elapsed >= next_report:
+            progress(f"Cloud Assistant invocation {state['invoke_id']} still running ({elapsed}s elapsed)")
+            next_report = elapsed + PROGRESS_INTERVAL_SECONDS
         time.sleep(5)
     raise DeployError("remote command still pending/unknown; run status, never assume cancellation or dispatch another update")
+
+
+def _release_identity(reference):
+    """Fields that must remain identical when recovering a failed init."""
+    return {field: reference.get(field) for field in ("project", "version", "commit", "platform", "sha256", "key")}
+
+
+def _attempt_snapshot(state):
+    fields = ("action", "status", "operation_id", "invoke_id", "command_sha256", "release")
+    return {field: state[field] for field in fields if field in state}
+
+
+def _validate_recovery_state(state, target, reference, action):
+    """Fail closed before dispatching a recovery command to an existing ECS."""
+    if action != "init" or state.get("status") != "failed":
+        return
+    require(state.get("action") == "init" and state.get("instance_id"), "failed init recovery requires the persisted ECS instance; do not create another instance")
+    require(state.get("invoke_id"), "failed init recovery requires the prior Cloud Assistant invocation audit")
+    previous = state.get("release")
+    require(isinstance(previous, dict), "failed init recovery is missing the persisted release identity")
+    require(_release_identity(previous) == _release_identity(reference), "recovery release differs from the persisted failed init; use the exact same release SHA256")
+    saved_config_sha256 = state.get("config_sha256")
+    if saved_config_sha256 is not None:
+        require(saved_config_sha256 == target.get("config_sha256"), "recovery configuration SHA256 differs from the persisted failed init")
 
 
 def execute(target, reference, action, statepath, confirm=False, status_only=False):
@@ -243,13 +273,29 @@ def execute(target, reference, action, statepath, confirm=False, status_only=Fal
             raise DeployError("previous request outcome unknown; reconcile cloud audit and saved client token before any retry")
         if state.get("status") == "running":
             raise DeployError("invocation still running; use status instead of resubmitting")
+        _validate_recovery_state(state, target, reference, action)
         require(action == "init" or state.get("instance_id") or target.get("instance_id"), "update/rollback needs an existing instance")
-        require(not (action == "init" and state.get("status") in ("success", "failed")), "init already attempted; inspect instance and recovery SOP")
+        require(not (action == "init" and state.get("status") == "success"), "init already succeeded; use update or inspect the host")
+        if action == "init" and state.get("status") == "failed":
+            require(state.get("instance_id"), "failed init recovery requires a persisted ECS instance; do not create another instance")
         instance_id = state.get("instance_id") or target.get("instance_id")
-        state = {"target_sha256": fingerprint, "client_token": str(uuid.uuid4()), "operation_id": str(uuid.uuid4()), "action": action, "status": "preparing", "instance_id": instance_id}
-        request = dict(project=target["project"], ram_role=target["ram_role"], action=action, operation_id=state["operation_id"], release=reference, confirm_schema_compatible=confirm)
-        if target.get("release_oss_endpoint"):
-            request["release"] = {**reference, "oss": {**reference["oss"], "endpoint": target["release_oss_endpoint"]}}
+        attempts = list(state.get("attempts", []))
+        if state.get("status") == "failed":
+            attempts.append(_attempt_snapshot(state))
+        state = {
+            "target_sha256": fingerprint,
+            "client_token": state.get("client_token") or str(uuid.uuid4()),
+            "operation_id": str(uuid.uuid4()),
+            "action": action,
+            "status": "preparing",
+            "instance_id": instance_id,
+            "attempts": attempts,
+        }
+        if action == "init":
+            state["config_sha256"] = target["config_sha256"]
+        request = dict(project=target["project"], ram_role=target["ram_role"], action=action, operation_id=state["operation_id"], release=_host_release(reference, target.get("release_oss_endpoint")))
+        if action == "rollback":
+            request["confirm_schema_compatible"] = confirm
         if action == "init":
             for field in ("config_oss", "config_key", "config_sha256"):
                 request[field] = target[field]
@@ -258,10 +304,12 @@ def execute(target, reference, action, statepath, confirm=False, status_only=Fal
             digest(request["config_sha256"])
         oss_config(reference["oss"])
         script = bootstrap(request)
+        progress(f"bootstrap prepared: {len(script.encode())} bytes; persisting deployment state")
         atomic_json(statepath, state)
         if not instance_id:
             require(action == "init", "only init can create an instance")
             template = target["launch_template"]
+            progress(f"creating ECS from launch template {template['id']} version {template['version']}")
             state["status"] = "creating"
             atomic_json(statepath, state)
             result = api.call("RunInstances", LaunchTemplateId=template["id"], LaunchTemplateVersion=template["version"], InstanceChargeType="PostPaid", Amount=1, ClientToken=state["client_token"], RamRoleName=target["ram_role"], HttpTokens="required", HttpEndpoint="enabled", **{"Tag.1.Key": "ainp-project", "Tag.1.Value": target["project"], "Tag.2.Key": "ainp-environment", "Tag.2.Value": target["environment"]})
@@ -270,26 +318,42 @@ def execute(target, reference, action, statepath, confirm=False, status_only=Fal
             instance_id = state["instance_id"] = ids[0]
             state["status"] = "preparing"
             atomic_json(statepath, state)
-        for _ in range(120):
+            progress(f"ECS created: {instance_id}; state persisted; waiting for Running")
+        else:
+            progress(f"using existing ECS: {instance_id}; waiting for Running")
+        instance_started = time.monotonic()
+        last_instance_status = None
+        for attempt in range(120):
             instance = describe_instance(api, instance_id, target)
-            if instance.get("Status") == "Running":
+            instance_status = instance.get("Status", "unknown")
+            if attempt == 0 or instance_status != last_instance_status or attempt % 3 == 0:
+                progress(f"ECS {instance_id}: status={instance_status}; waited {int(time.monotonic() - instance_started)}s")
+            last_instance_status = instance_status
+            if instance_status == "Running":
                 break
             time.sleep(5)
         else:
             raise DeployError("ECS did not reach Running; existing instance retained in state")
-        for _ in range(60):
+        assistant_started = time.monotonic()
+        for attempt in range(60):
             assistants = api.call("DescribeCloudAssistantStatus", **{"InstanceId.1": instance_id})
             entries = assistants.get("InstanceCloudAssistantStatusSet", {}).get("InstanceCloudAssistantStatus", [])
-            if any(e.get("InstanceId") == instance_id and e.get("CloudAssistantStatus") == "true" for e in entries):
+            assistant_online = any(e.get("InstanceId") == instance_id and e.get("CloudAssistantStatus") == "true" for e in entries)
+            if assistant_online:
+                progress(f"Cloud Assistant online for {instance_id} after {int(time.monotonic() - assistant_started)}s")
                 break
+            if attempt == 0 or attempt % 3 == 0:
+                progress(f"waiting for Cloud Assistant on {instance_id} ({int(time.monotonic() - assistant_started)}s elapsed)")
             time.sleep(5)
         else:
             raise DeployError("Cloud Assistant not online; install/repair agent in the launch template; no command dispatched")
         state.update(status="dispatching", release=reference, command_sha256=hashlib.sha256(script.encode()).hexdigest())
         atomic_json(statepath, state)
+        progress(f"dispatching deployment command to {instance_id}")
         result = api.call("RunCommand", Type="RunShellScript", ContentEncoding="PlainText", CommandContent=script, Timeout=1800, ClientToken=state["operation_id"], KeepCommand="false", TerminationMode="ProcessTree", **{"InstanceId.1": instance_id})
         state.update(invoke_id=result["InvokeId"], status="running")
         atomic_json(statepath, state)
+        progress(f"Cloud Assistant invocation started: {result['InvokeId']}; polling every 5s")
         poll(api, state, statepath)
         print(f"{action} succeeded on {instance_id}; version {reference['version']}")
 
