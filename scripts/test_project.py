@@ -34,11 +34,38 @@ class ProjectTest(unittest.TestCase):
 
     def test_build_contract_exposes_downstream_toolchain_and_composition(self):
         cfg = self.config()
-        cfg["project"] = "ainp"
-        cfg["tag_strategy"] = "platform-pair"
-        build = project.build_config(cfg, Path.cwd())
-        self.assertEqual(build["node_version"], "20.19.0")
-        self.assertEqual(build["pnpm_version"], "10.5.0")
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "deploy/linux").mkdir(parents=True)
+            (root / "backend/cmd/api").mkdir(parents=True)
+            (root / "backend/cmd/worker").mkdir(parents=True)
+            (root / "backend/cmd/migrate").mkdir(parents=True)
+            (root / "admin/src/composition").mkdir(parents=True)
+            (root / "backend/go.mod").write_text("module example/application\n")
+            (root / "backend/go.sum").write_text("")
+            (root / "admin/src/composition/application.ts").write_text("")
+            build_fixture = {
+                "schema": 1,
+                "project": cfg["project"],
+                "go_dir": "backend",
+                "frontend_dir": "admin",
+                "commands": {
+                    "api": "./cmd/api",
+                    "worker": "./cmd/worker",
+                    "migrate": "./cmd/migrate",
+                },
+                "buildinfo_package": "github.com/yzxingtu2026/ainp/platform/framework/buildinfo",
+                "cjk_test_package": "github.com/yzxingtu2026/ainp/platform/contracts/pdfcjk",
+                "node_version": "22.22.0",
+                "pnpm_version": "10.26.2",
+                "admin_application": "./src/composition/application.ts",
+                "admin_modules": ["core", "system", "operations", "ai", "demo"],
+                "go_private": [],
+            }
+            (root / cfg["build_config"]).write_text(json.dumps(build_fixture))
+            build = project.build_config(cfg, root)
+        self.assertEqual(build["node_version"], "22.22.0")
+        self.assertEqual(build["pnpm_version"], "10.26.2")
         self.assertEqual(build["admin_application"], "./src/composition/application.ts")
         self.assertEqual(build["admin_modules"], ["core", "system", "operations", "ai", "demo"])
         self.assertEqual(build["go_private"], [])
