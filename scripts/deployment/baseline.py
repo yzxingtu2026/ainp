@@ -43,6 +43,7 @@ REQUIRED = {
     ".agent/rules/binary-deployment.md",
     ".github/workflows/deployment-baseline.yml",
     "deploy/baseline/examples/project.json", "deploy/baseline/examples/build.json",
+    "deploy/baseline/examples/build-web-apps.json",
     "deploy/baseline/templates/gitignore.txt", "deploy/baseline/templates/agent-registration.txt",
 }
 

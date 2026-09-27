@@ -68,15 +68,65 @@ def tags(cfg, version):
     return [version, f"platform/{version}"] if cfg["tag_strategy"] == "platform-pair" else [version]
 
 
+def build_web_apps(build, root):
+    """Validate and normalize the shared preflight/package Web build contract."""
+    root = Path(root).resolve()
+    apps = build.get("web_apps")
+    if "web_apps" not in build:
+        require("frontend_dir" in build, "frontend_dir required when web_apps is absent")
+        apps = [{"name": "admin", "source_dir": build["frontend_dir"]}]
+    require(isinstance(apps, list) and apps, "at least one web application required")
+    normalized = []
+    names, mounts = set(), set()
+    for app in apps:
+        require(isinstance(app, dict) and {"name", "source_dir"} <= set(app)
+                and set(app) <= {"name", "source_dir", "mount", "build_command", "build_env", "health_path"},
+                "invalid web application fields")
+        name, source = app["name"], app["source_dir"]
+        require(isinstance(name, str) and re.fullmatch(r"[a-z][a-z0-9-]{0,63}", name)
+                and name not in names, "invalid or duplicate web application name")
+        relative_path(source)
+        require((root / source).resolve().is_relative_to(root), "web application source_dir escapes repository")
+        require((root / source).is_dir(), "web application source_dir must be a directory")
+        mount = app.get("mount", "/")
+        require(isinstance(mount, str) and (mount == "/" or re.fullmatch(r"/[A-Za-z0-9._~-]+(?:/[A-Za-z0-9._~-]+)*/", mount))
+                and all(part not in (".", "..") for part in mount.strip("/").split("/"))
+                and mount not in mounts, "invalid or duplicate web application mount")
+        health = app.get("health_path", mount + "build.json")
+        require(isinstance(health, str) and re.fullmatch(r"/[A-Za-z0-9._~/-]+", health)
+                and all(part not in ("", ".", "..") for part in health[1:].split("/")),
+                "invalid web application health_path")
+        require(health == "/build.json" if mount == "/" else health.startswith(mount),
+                "web application health_path must be inside its mount")
+        command = app.get("build_command", ["pnpm", "build"])
+        require(isinstance(command, list) and command and all(isinstance(arg, str) and arg and "\x00" not in arg for arg in command),
+                "invalid web application build_command")
+        env = app.get("build_env", {})
+        require(isinstance(env, dict) and all(isinstance(key, str) and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key)
+                and isinstance(value, str) and "\x00" not in value for key, value in env.items()),
+                "invalid web application build_env")
+        normalized.append(dict(name=name, source_dir=source, mount=mount, health_path=health,
+                               build_command=command, build_env=env,
+                               output_dir="web" if mount == "/" else "web/" + mount.strip("/")))
+        names.add(name)
+        mounts.add(mount)
+    require("/" in mounts, "web applications require a root mount")
+    return normalized
+
+
 def build_config(cfg, root):
     root = Path(root).resolve()
     path = root / cfg["build_config"]
     build = json.loads(path.read_text())
     require(build.get("schema") == 1 and build.get("project") == cfg["project"], "build/project identity mismatch")
+    required = {"schema", "project", "go_dir", "commands", "buildinfo_package", "cjk_test_package", "node_version", "pnpm_version", "admin_application", "admin_modules", "go_private"}
+    require(required <= set(build) <= required | {"frontend_dir", "web_apps"}, "invalid build configuration fields")
     for field in ("go_dir", "frontend_dir"):
+        if field not in build:
+            continue
         relative_path(build[field])
         require((root / build[field]).resolve().is_relative_to(root), f"{field} escapes repository")
-    require(set(build) == {"schema", "project", "go_dir", "frontend_dir", "commands", "buildinfo_package", "cjk_test_package", "node_version", "pnpm_version", "admin_application", "admin_modules", "go_private"}, "invalid build configuration fields")
+    build_web_apps(build, root)
     require(set(build["commands"]) == {"api", "worker", "migrate"}, "three composition commands required")
     require(isinstance(build["node_version"], str) and re.fullmatch(r"\d+\.\d+\.\d+", build["node_version"]), "invalid Node version")
     require(isinstance(build["pnpm_version"], str) and re.fullmatch(r"\d+\.\d+\.\d+", build["pnpm_version"]), "invalid pnpm version")
