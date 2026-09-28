@@ -112,17 +112,14 @@ WantedBy=multi-user.target
 
 def nginx(c, root, maintenance=False, manifest_apps=None):
     proxy = f"http://127.0.0.1:{c['api_port']}"
-    # Dedicated proxy headers: never overwrite Ubuntu's global proxy_params.
     headers = "\n".join("        " + line for line in (
         "proxy_set_header Host $host;", "proxy_set_header X-Real-IP $remote_addr;",
         "proxy_set_header X-Forwarded-For $remote_addr;", "proxy_set_header X-Forwarded-Host $host;",
         "proxy_set_header X-Forwarded-Proto $scheme;"))
     routes = ""
-    # conf.d is included in the http context; an empty value omits Connection on REST/SSE.
-    websocket_headers = "        proxy_set_header Upgrade $http_upgrade;\n        proxy_set_header Connection $ainp_websocket_connection;\n"
     for route, streaming in (("= /healthz", False), ("= /.well-known/oauth-protected-resource", False), ("= /.well-known/oauth-authorization-server", False), ("= /oauth/register", False), ("= /oauth/token", False), ("= /oauth/revoke", False), ("= /mcp", True), ("~ ^/api/v1/ai/", True), ("/api/", False)):
         options = "proxy_buffering off; proxy_cache off; proxy_read_timeout 3600s;" if streaming else "proxy_read_timeout 300s;"
-        upgrade = websocket_headers if route in ("~ ^/api/v1/ai/", "/api/") else ""
+        upgrade = "        proxy_set_header Upgrade $http_upgrade;\n        proxy_set_header Connection $ainp_websocket_connection;\n" if route in ("~ ^/api/v1/ai/", "/api/") else ""
         routes += f"    location {route} {{\n        proxy_pass {proxy};\n        proxy_http_version 1.1;\n        {options}\n{headers}\n{upgrade}    }}\n"
     apps = manifest_apps or [{"name": "admin", "mount": "/", "health_path": "/build.json", "output_dir": "web"}]
     if not maintenance:
