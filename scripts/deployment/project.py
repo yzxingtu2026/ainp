@@ -120,13 +120,24 @@ def build_config(cfg, root):
     build = json.loads(path.read_text())
     require(build.get("schema") == 1 and build.get("project") == cfg["project"], "build/project identity mismatch")
     required = {"schema", "project", "go_dir", "commands", "buildinfo_package", "cjk_test_package", "node_version", "pnpm_version", "admin_application", "admin_modules", "go_private"}
-    require(required <= set(build) <= required | {"frontend_dir", "web_apps"}, "invalid build configuration fields")
+    require(required <= set(build) <= required | {"frontend_dir", "web_apps", "pre_build_hook"}, "invalid build configuration fields")
     for field in ("go_dir", "frontend_dir"):
         if field not in build:
             continue
         relative_path(build[field])
         require((root / build[field]).resolve().is_relative_to(root), f"{field} escapes repository")
-    build_web_apps(build, root)
+    apps = build_web_apps(build, root)
+    hook = build.get("pre_build_hook")
+    if hook is not None:
+        require(isinstance(hook, dict) and set(hook) == {"type", "config"} and hook["type"] == "runtime-assets", "invalid pre_build_hook")
+        relative_path(hook["config"])
+        require(hook["config"].startswith("deploy/linux/") and hook["config"].endswith(".json"), "pre_build_hook config must be project owned")
+        require((root / hook["config"]).is_file() and (root / hook["config"]).resolve().is_relative_to(root), "missing or unsafe pre_build_hook config")
+        try:
+            from .fetch_runtime_assets import load_contract
+        except ImportError:
+            from fetch_runtime_assets import load_contract
+        load_contract(root, hook["config"], apps)
     require(set(build["commands"]) == {"api", "worker", "migrate"}, "three composition commands required")
     require(isinstance(build["node_version"], str) and re.fullmatch(r"\d+\.\d+\.\d+", build["node_version"]), "invalid Node version")
     require(isinstance(build["pnpm_version"], str) and re.fullmatch(r"\d+\.\d+\.\d+", build["pnpm_version"]), "invalid pnpm version")
@@ -167,6 +178,7 @@ def main():
                 "admin-application": build["admin_application"],
                 "admin-modules": ",".join(build["admin_modules"]),
                 "go-private": ",".join(build["go_private"]),
+                "pre-build-hook-config": build.get("pre_build_hook", {}).get("config", ""),
             }.items():
                 output.write(f"{key}={value}\n")
 

@@ -22,6 +22,37 @@ PR CI → Linux/CJK 门禁（不在合入 main 后重复运行）
 - 本版不创建数据库、Redis、VPC、安全组、RAM/OIDC、OSS、域名记录或签发证书。这些是可复用的公司基础设施/启动模板前置条件，不在每次应用发布中重新创建。
 - 不自动清理 ECS、磁盘、旧版本或备份；避免意外销毁。费用预算、保留周期与磁盘告警需平台管理员设置。
 
+
+### 构建前运行时资产钩子（Issue #382）
+
+项目仅在 `deploy/linux/build.json` 显式加入以下字段时启用。未声明时原生构建不会安装 DVC，也不会读取资产配置或要求凭据：
+
+```json
+"pre_build_hook": {"type": "runtime-assets", "config": "deploy/linux/runtime-assets.json"}
+```
+
+`runtime-assets.json` 属于项目文件，不在公共基线哈希清单中。示例结构如下，所有值均为占位，摘要与字节数需对应真实文件；`pointer` 必须只声明一个 DVC 输出（单文件或目录），`source` 是输出文件或目录下的明确文件；`destination` 必须位于 `web_apps` 某个 `source_dir/public/` 下（单 Web 可使用 `frontend_dir`）。以下目录指针结构对应下游 #412，大小与摘要取自该资产验收记录：
+
+```json
+{
+  "schema": 1,
+  "remote": "modelstore",
+  "assets": [{
+    "pointer": "assets/blender-ip/xiezai-3d/v0.1.4/exports.dvc",
+    "source": "assets/blender-ip/xiezai-3d/v0.1.4/exports/xiezai-ip-v0.1.4-validation.glb",
+    "destination": "apps/bigscreen/public/ip/xiezai-ip-v0.1.4-validation.glb",
+    "size": 55262872,
+    "sha256": "f68cfb32da90de98520e8a8cbf906ee4647314e2fb85ba21a447a4aff65f72419"
+  }]
+}
+```
+
+先在项目 `.dvc/config` 声明 `oss://` 远端，并提交资产 `.dvc` 指针；远端本身不含凭据。`release-binaries.yml` 和 `test-native-release.yml` 可将仓库 Secrets `AINP_ASSET_STORE_KEY_ID`、`AINP_ASSET_STORE_KEY_SECRET`、`AINP_ASSET_STORE_ENDPOINT` 分别传至 reusable workflow 的 `asset-store-key-id`、`asset-store-key-secret`、`asset-store-endpoint`。三者缺一则 fail-closed；给这个身份仅授予相应 DVC OSS 前缀的读取/列举权限，禁止写入、删除与跨项目读取。构建 Job 将三者映射到钩子进程；DVC 的输出被抑制，不生成 `.dvc/config.local`，脚本只打印非敏感摘要。DVC 只拉取配置中的明确指针，不使用无目标的 `dvc pull` 或目录递归拉取。
+
+本地离线校验：先通过安全渠道准备与指针一致的 `source` 文件，再执行 `python3 scripts/deployment/fetch_runtime_assets.py --config deploy/linux/runtime-assets.json --offline`。联网本地构建从 shell 环境传入上述三个 `AINP_*` 变量，去掉 `--offline`；不要将凭据写进 JSON、Git 或 shell 调试日志。CI 在 `package.py` 前验证原文件与复制后的目标文件的正数大小和 SHA-256，任何失败都阻止打包；打包后仅清理声明的工作区源文件及 CI Job 的 DVC 缓存；目录输出中的其他文件不复制进发行包。若需本地清理，显式运行同命令并传 `--cleanup`。发布包的 `release.json` 逐文件校验 Web 资源，回滚必须选用上一完整发布包。
+
+验收逐层进行：本地离线测试验证配置和字节；CI 验证真实 DVC 远端读取与发布包中的 Web 资源；测试 ECS 验证安装/回滚发布包；浏览器实际请求当前版本 GLB 并加载成功仍需单独验收。离线测试通过不代表云端身份、ECS 或浏览器通过。
+
 ## 2. 公司级一次性准备
 
 ### 2.1 三种权限分离

@@ -30,10 +30,11 @@ REQUIRED = {
     *("scripts/deployment/" + name for name in (
         "apt.sh", "baseline.py", "bootstrap.sh", "check_oss.py", "cloud.py", "common.py",
         "host.py", "launcher.py", "package.py", "project.py", "publish.py", "release_reference.py",
+        "fetch_runtime_assets.py",
         "reporting.py", "storage.py", "verify_release.py")),
     "scripts/release.py", "scripts/generate_release_notes.py", "scripts/test_release.py",
     "scripts/test_generate_release_notes.py", "scripts/test_deployment.py", "scripts/test_release_reference.py",
-    "scripts/test_deployment_baseline.py", "scripts/test_project.py", "docker/build-mupdf-cjk.sh",
+    "scripts/test_deployment_baseline.py", "scripts/test_project.py", "scripts/test_runtime_assets.py", "docker/build-mupdf-cjk.sh",
     ".github/workflows/native-build.yml", ".github/workflows/release-binaries.yml",
     ".github/workflows/test-native-release.yml", ".github/workflows/check-oss.yml",
     ".github/prompts/release-notes.zh-CN.md", ".github/prompts/release-notes.schema.json",

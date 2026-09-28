@@ -50,6 +50,9 @@ jobs:
     uses: ./.github/workflows/native-build.yml
     secrets:
       private-module-token: ${{ secrets.PRIVATE_MODULE_TOKEN }}
+      asset-store-key-id: ${{ secrets.AINP_ASSET_STORE_KEY_ID }}
+      asset-store-key-secret: ${{ secrets.AINP_ASSET_STORE_KEY_SECRET }}
+      asset-store-endpoint: ${{ secrets.AINP_ASSET_STORE_ENDPOINT }}
     with:
       version: ${{ github.ref_name }}
   publish:
