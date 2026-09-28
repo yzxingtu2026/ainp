@@ -4,7 +4,7 @@ import { resolveWebEntry } from './web-entry';
 
 test('current and pinned Admin entries keep independent route bases', () => {
   const assets = '/__web/v1.2.3/';
-  assert.deepEqual(resolveWebEntry('/system/users', assets, '/'), { base: '/', versioned: false });
+  assert.deepEqual(resolveWebEntry('/dashboard/reports', assets, '/'), { base: '/', versioned: false });
   assert.deepEqual(resolveWebEntry('/__web/v1.2.3/', assets, '/'), { base: assets, versioned: true });
   assert.deepEqual(resolveWebEntry('/__web/v1.2.4/', assets, '/'), { base: '/', versioned: false });
 });
