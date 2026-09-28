@@ -387,11 +387,32 @@ def _validate_recovery_state(state, target, reference, action):
         require(saved_config_sha256 == target.get("config_sha256"), "recovery configuration SHA256 differs from the persisted failed init")
 
 
+CONFIG_FIELDS = ("config_key", "config_sha256")
+
+
+def target_binding(target):
+    """Resource identity excludes the two immutable private config selectors."""
+    return {field: value for field, value in target.items() if field not in CONFIG_FIELDS}
+
+
+def validate_target_binding(state, target, fingerprint, action):
+    if not state or state["target_sha256"] == fingerprint:
+        return
+    require(action == "update", "target differs from persisted binding; only update can rotate private configuration")
+    require(state.get("target_binding") == target_binding(target), "target resource binding differs from persisted state")
+    require(state.get("config_key") != target["config_key"] and
+            state.get("config_sha256") != target["config_sha256"],
+            "private configuration rotation requires a new OSS key and SHA256")
+
+
 def execute(target, reference, action, statepath, confirm=False, status_only=False):
     fingerprint = hashlib.sha256(json.dumps(target, sort_keys=True).encode()).hexdigest()
     with lock(str(statepath) + ".lock"):
         state = read_json(statepath) if statepath.exists() else {}
-        require(not state or state["target_sha256"] == fingerprint, "target differs from persisted binding; use reviewed new environment state")
+        validate_target_binding(state, target, fingerprint, action)
+        if state and "target_binding" not in state and state["target_sha256"] == fingerprint:
+            state.update(target_binding=target_binding(target), config_key=target.get("config_key"), config_sha256=target.get("config_sha256"))
+            atomic_json(statepath, state)
         api = Alibaba(target)
         if status_only:
             require(state.get("invoke_id"), "no recorded invocation; inspect creation/dispatch audit, do not create again")
@@ -412,6 +433,9 @@ def execute(target, reference, action, statepath, confirm=False, status_only=Fal
             attempts.append(_attempt_snapshot(state))
         state = {
             "target_sha256": fingerprint,
+            "target_binding": target_binding(target),
+            "config_key": target.get("config_key"),
+            "config_sha256": target.get("config_sha256"),
             "client_token": state.get("client_token") or str(uuid.uuid4()),
             "operation_id": str(uuid.uuid4()),
             "action": action,
@@ -424,7 +448,7 @@ def execute(target, reference, action, statepath, confirm=False, status_only=Fal
         request = dict(project=target["project"], ram_role=target["ram_role"], action=action, operation_id=state["operation_id"], release=_host_release(reference, target.get("release_oss_endpoint")))
         if action == "rollback":
             request["confirm_schema_compatible"] = confirm
-        if action == "init":
+        if action in ("init", "update"):
             for field in ("config_oss", "config_key", "config_sha256"):
                 request[field] = target[field]
             oss_config(request["config_oss"])
@@ -525,7 +549,7 @@ def main():
             digest(reference["sha256"])
             key(reference["key"])
             oss_config(reference["oss"])
-            if args.action == "init":
+            if args.action in ("init", "update"):
                 oss_config(target["config_oss"])
                 key(target["config_key"])
                 digest(target["config_sha256"])
@@ -534,6 +558,10 @@ def main():
         if args.version:
             release_reference.pin_reference(args.state_dir, repository, reference, write=args.apply)
         if args.action != "status" and not args.apply:
+            if statepath.exists():
+                target_state = read_json(statepath)
+                fingerprint = hashlib.sha256(json.dumps(target, sort_keys=True).encode()).hexdigest()
+                validate_target_binding(target_state, target, fingerprint, args.action)
             print(json.dumps({"mode": "PLAN ONLY; read-only GitHub lookup; no Alibaba calls" if args.version else "PLAN ONLY; no cloud calls", "action": args.action, "project": target["project"], "environment": target["environment"], "region": target["region"], "instance": target.get("instance_id", "create POSTPAID using pinned launch template, unless state already has instance"), "release": reference["version"], "commit": reference["commit"], "sha256": reference["sha256"], "state": str(statepath), "maintenance_window": True}, ensure_ascii=False, indent=2))
             return
         execute(target, reference, args.action, statepath, args.confirm_schema_compatible, args.action == "status")

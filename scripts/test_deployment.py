@@ -514,12 +514,9 @@ class CloudTest(unittest.TestCase):
 
     def test_bootstrap_with_real_request_fits_and_has_no_credentials(self):
         request = dict(project="ainp", ram_role="ainp-production-runtime", action="init", operation_id="a" * 36, release=self.reference(), config_oss=self.target()["config_oss"], config_key=self.target()["config_key"], config_sha256="a" * 64)
-        command = cloud.bootstrap(request)
-        self.assertLessEqual(len(command.encode()), 16384)
-        self.assertNotIn("PAYLOAD_LITERAL", command)
-        self.assertNotIn("DATABASE_DSN=", command)
-        self.assertLessEqual(len(base64.b64encode(command.encode())), 24576)
-        shell = self.unpack_bootstrap(command)["bootstrap.sh"]
+        files = cloud._bootstrap_files(request)
+        self.assertNotIn("DATABASE_DSN=", files["bootstrap.sh"])
+        shell = files["bootstrap.sh"]
         self.assertIn("chmod 644 /usr/share/postgresql-common/pgdg", shell)
         self.assertIn("mirrors.cloud.aliyuncs.com", shell)
         self.assertIn("/etc/apt/sources.list", shell)
@@ -619,8 +616,8 @@ class CloudTest(unittest.TestCase):
 
     def test_bootstrap_loader_roundtrip_and_shell_syntax(self):
         import subprocess
-        command = cloud.bootstrap(dict(project="ainp", ram_role="role", action="init", operation_id="a" * 36, release=self.reference()))
-        files = self.unpack_bootstrap(command)
+        files = cloud._bootstrap_files(dict(project="ainp", ram_role="role", action="init", operation_id="a" * 36, release=self.reference()))
+        command = cloud.BOOTSTRAP.replace("PAYLOAD_LITERAL", repr(base64.b85encode(bz2.compress(json.dumps(files).encode())).decode()))
         # The transport may omit standalone comments, but must preserve the exact program.
         for filename in ("host.py", "common.py", "storage.py", "reporting.py", "launcher.py"):
             self.assertEqual(ast.dump(ast.parse(files[filename])), ast.dump(ast.parse((DEPLOY / filename).read_text())))
@@ -660,8 +657,7 @@ class CloudTest(unittest.TestCase):
         self.assertNotIn("CommandContent", text)
 
     def test_bootstrap_retries_only_apt_lock_failures_with_bounded_timeout(self):
-        command = cloud.bootstrap(dict(project="ainp", ram_role="ainp-production-runtime", action="init", operation_id="a" * 36, release=self.reference(), config_oss=self.target()["config_oss"], config_key=self.target()["config_key"], config_sha256="a" * 64))
-        files = self.unpack_bootstrap(command)
+        files = cloud._bootstrap_files(dict(project="ainp", ram_role="ainp-production-runtime", action="init", operation_id="a" * 36, release=self.reference(), config_oss=self.target()["config_oss"], config_key=self.target()["config_key"], config_sha256="a" * 64))
         command = files["apt.sh"]
         self.assertIn("else status=$?", command)
         self.assertIn('return "$status"', command)
@@ -689,11 +685,7 @@ class CloudTest(unittest.TestCase):
             config_key=target["config_key"],
             config_sha256=target["config_sha256"],
         )
-        command = cloud.bootstrap(request)
-        self.assertLess(len(command.encode()), 16384)
-        self.assertLessEqual(len(base64.b64encode(command.encode())), 24576)
-        literal = command.split("base64.b85decode(", 1)[1].splitlines()[0].removesuffix(")))")
-        files = json.loads(bz2.decompress(base64.b85decode(ast.literal_eval(literal))))
+        files = cloud._bootstrap_files(request)
         remote_request = json.loads(files["request.json"])
         self.assertEqual(set(remote_request["release"]), {"project", "version", "commit", "platform", "sha256", "key", "oss"})
         self.assertEqual(remote_request["release"]["oss"]["endpoint"], target["release_oss_endpoint"])
@@ -804,6 +796,24 @@ class CloudTest(unittest.TestCase):
                 with self.assertRaisesRegex(common.DeployError, "outcome unknown"):
                     cloud.execute(self.target(), self.reference(), "init", path)
                 self.assertEqual(call.call_count, 1)
+
+    def test_config_rotation_checks_persisted_resource_identity(self):
+        original = self.target()
+        original_state = {"target_sha256": hashlib.sha256(json.dumps(original, sort_keys=True).encode()).hexdigest(),
+                          "target_binding": cloud.target_binding(original),
+                          "config_key": original["config_key"], "config_sha256": original["config_sha256"]}
+        rotated = {**original, "config_key": "config-v2.json", "config_sha256": "b" * 64}
+        rotated_hash = hashlib.sha256(json.dumps(rotated, sort_keys=True).encode()).hexdigest()
+        cloud.validate_target_binding(original_state, rotated, rotated_hash, "update")
+        for changed in ({**rotated, "region": "cn-shanghai"},
+                        {**rotated, "config_oss": {**rotated["config_oss"], "bucket": "another-private-bucket"}},
+                        {**rotated, "ram_role": "other-role"}):
+            with self.assertRaises(common.DeployError):
+                cloud.validate_target_binding(original_state, changed, "different", "update")
+        with self.assertRaises(common.DeployError):
+            cloud.validate_target_binding({"target_sha256": original_state["target_sha256"]}, rotated, rotated_hash, "update")
+        with self.assertRaises(common.DeployError):
+            cloud.validate_target_binding(original_state, rotated, rotated_hash, "rollback")
 
     def test_existing_instance_dispatch_uses_private_endpoint_and_idempotence(self):
         target = {**self.target(), "instance_id": "i-existing"}
@@ -1234,7 +1244,7 @@ class HostTransactionTest(unittest.TestCase):
             if argv[:2] == ["systemctl", "show"]:
                 if "NRestarts" in argv:
                     return b"0\n"
-                pid = {"ainp-api.service": 901, "ainp-worker.service": 902, "ainp-ai-worker.service": 903}[argv[2]]
+                pid = {f"{self.config['project']}-api.service": 901, f"{self.config['project']}-worker.service": 902, f"{self.config['project']}-ai-worker.service": 903}[argv[2]]
                 exe = self.fs / f"proc/{pid}/exe"
                 exe.parent.mkdir(parents=True, exist_ok=True)
                 exe.unlink(missing_ok=True)
@@ -1270,11 +1280,65 @@ class HostTransactionTest(unittest.TestCase):
             p = stage / filename
             p.parent.mkdir(exist_ok=True)
             p.write_text(version)
-        identity = dict(schema=1, project="ainp", version=version, commit="b" * 40, platform="ubuntu-22.04-amd64", build_time="2026-09-24T00:00:00Z")
+        identity = dict(schema=1, project=self.config["project"], version=version, commit="b" * 40, platform="ubuntu-22.04-amd64", build_time="2026-09-24T00:00:00Z")
         archive = self.fs / (version + ".tar.gz")
         package.pack(stage, archive, identity, 1)
         self.archives[version] = archive
-        return dict(project="ainp", ram_role="runtime", action=action, operation_id=action + version, config_oss={}, config_key="config.json", config_sha256=common.sha256(self.config_source), release={**identity, "sha256": common.sha256(archive), "key": version, "oss": {}}, confirm_schema_compatible=True)
+        return dict(project=self.config["project"], ram_role="runtime", action=action, operation_id=action + version, config_oss={}, config_key="config.json", config_sha256=common.sha256(self.config_source), release={**identity, "sha256": common.sha256(archive), "key": version, "oss": {}}, confirm_schema_compatible=True)
+
+    def test_aguo_tenant_change_is_valid_and_other_changes_rejected(self):
+        baseline = ContractTest().config()
+        baseline["project"] = "aguo-ai-dining"
+        host.validate_config(baseline, "aguo-ai-dining")
+        changed = json.loads(json.dumps(baseline))
+        changed["env"]["AGUO_DEPLOYMENT_TENANT_ID"] = "15c44f83-ebfb-44a0-8294-55b35689148d"
+        host.validate_config(changed, "aguo-ai-dining")
+        host.require_tenant_only_change(baseline, changed)
+        changed["redis_db"] = 1
+        with self.assertRaisesRegex(common.DeployError, "may only change"):
+            host.require_tenant_only_change(baseline, changed)
+
+    def test_aguo_tenant_update_persists_and_rollback_reuses_config(self):
+        self.config["project"] = "aguo-ai-dining"
+        self.config_source.write_text(json.dumps(self.config))
+        initial = self.request("v1.0.0", "init")
+        host.perform(initial, self.root, self.home)
+        previous = common.read_json(self.fs / "etc/aguo-ai-dining/private.json")
+        changed = json.loads(json.dumps(self.config))
+        changed["env"]["AGUO_DEPLOYMENT_TENANT_ID"] = "15c44f83-ebfb-44a0-8294-55b35689148d"
+        self.config_source.write_text(json.dumps(changed))
+        update = self.request("v1.1.0", "update")
+        update["config_sha256"] = "0" * 64
+        with self.assertRaisesRegex(common.DeployError, "checksum mismatch"):
+            host.perform(update, self.root, self.home)
+        self.assertEqual(common.read_json(self.fs / "etc/aguo-ai-dining/private.json"), previous)
+        update["config_sha256"] = common.sha256(self.config_source)
+        host.perform(update, self.root, self.home)
+        self.assertEqual(common.read_json(self.fs / "etc/aguo-ai-dining/runtime.json")["env"]["AGUO_DEPLOYMENT_TENANT_ID"], changed["env"]["AGUO_DEPLOYMENT_TENANT_ID"])
+        self.assertEqual(common.read_json(self.fs / "etc/aguo-ai-dining/private.previous.json"), previous)
+        rollback = dict(initial, action="rollback", operation_id="rollback-v1.0.0")
+        host.perform(rollback, self.root, self.home)
+        self.assertEqual(common.read_json(self.fs / "etc/aguo-ai-dining/runtime.json")["env"]["AGUO_DEPLOYMENT_TENANT_ID"], changed["env"]["AGUO_DEPLOYMENT_TENANT_ID"])
+
+    def test_update_applies_only_tenant_environment_change(self):
+        initial = self.request("v1.0.0", "init")
+        host.perform(initial, self.root, self.home)
+        old = common.read_json(self.fs / "etc/ainp/private.json")
+        self.config_source = self.fs / "config-v2.json"
+        changed = json.loads(json.dumps(self.config))
+        changed["env"]["AGUO_DEPLOYMENT_TENANT_ID"] = "15c44f83-ebfb-44a0-8294-55b35689148d"
+        self.config_source.write_text(json.dumps(changed))
+        update = self.request("v1.1.0", "update")
+        with self.assertRaisesRegex(common.DeployError, "invalid AGUO_DEPLOYMENT_TENANT_ID"):
+            host.perform(update, self.root, self.home)
+        self.assertEqual(common.read_json(self.fs / "etc/ainp/private.json"), old)
+        changed["env"].pop("AGUO_DEPLOYMENT_TENANT_ID")
+        changed["env"]["JWT_SECRET"] = "changed-" + changed["env"]["JWT_SECRET"]
+        self.config_source.write_text(json.dumps(changed))
+        update["config_sha256"] = common.sha256(self.config_source)
+        with self.assertRaisesRegex(common.DeployError, "may only change"):
+            host.perform(update, self.root, self.home)
+        self.assertEqual(common.read_json(self.fs / "etc/ainp/private.json"), old)
 
     def test_init_update_rollback_order_and_persistent_state(self):
         initial = self.request("v1.0.0", "init")

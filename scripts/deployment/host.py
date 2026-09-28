@@ -19,7 +19,7 @@ from common import DeployError, atomic_json, extract_verified, key, lock, name, 
 from storage import bucket, download, upload_immutable
 from reporting import stage
 
-ENV_KEYS = {"DATABASE_DSN", "JWT_SECRET", "CREDENTIAL_ENCRYPTION_KEY", "REDIS_ADDR", "REDIS_PASSWORD", "REDIS_USERNAME", "MCP_BASE_URL", "MCP_WEB_BASE_URL"}
+ENV_KEYS = {"DATABASE_DSN", "JWT_SECRET", "CREDENTIAL_ENCRYPTION_KEY", "REDIS_ADDR", "REDIS_PASSWORD", "REDIS_USERNAME", "MCP_BASE_URL", "MCP_WEB_BASE_URL", "AGUO_DEPLOYMENT_TENANT_ID"}
 
 
 def command(argv, **kwargs):
@@ -50,6 +50,8 @@ def validate_config(c, project):
     for k in ("DATABASE_DSN", "JWT_SECRET", "CREDENTIAL_ENCRYPTION_KEY", "REDIS_ADDR", "REDIS_PASSWORD", "MCP_BASE_URL", "MCP_WEB_BASE_URL"):
         require(isinstance(c["env"].get(k), str) and c["env"][k] and "\x00" not in c["env"][k], f"missing/invalid {k}")
     require(all(isinstance(v, str) and "\x00" not in v for v in c["env"].values()), "invalid environment value")
+    if "AGUO_DEPLOYMENT_TENANT_ID" in c["env"]:
+        require(c["project"] == "aguo-ai-dining" and re.fullmatch(r"[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}", c["env"]["AGUO_DEPLOYMENT_TENANT_ID"]), "invalid AGUO_DEPLOYMENT_TENANT_ID")
     require(not any("REPLACE" in v for v in c["env"].values()), "replace example secret placeholders")
     require(len(c["env"]["JWT_SECRET"]) >= 32, "production JWT secret too short")
     try:
@@ -74,6 +76,15 @@ def validate_config(c, project):
     oss_config(c["backup_oss"])
     key(c["backup_prefix"])
     return c
+
+
+def require_tenant_only_change(current, replacement):
+    before, after = dict(current), dict(replacement)
+    before_env, after_env = dict(before.pop("env")), dict(after.pop("env"))
+    before_env.pop("AGUO_DEPLOYMENT_TENANT_ID", None)
+    after_env.pop("AGUO_DEPLOYMENT_TENANT_ID", None)
+    require(before == after and before_env == after_env,
+            "private configuration update may only change AGUO_DEPLOYMENT_TENANT_ID")
 
 
 def app_config(c, home):
@@ -311,6 +322,15 @@ def perform(r, root, home):
             download(r["config_oss"], r["config_key"], cfgpath, r["config_sha256"], role)
         cfgpath.chmod(0o600)
     c = validate_config(read_json(cfgpath), project)
+    replacement = None
+    if action == "update":
+        require(all(field in r for field in ("config_oss", "config_key", "config_sha256")), "update requires pinned private configuration")
+        with tempfile.TemporaryDirectory(prefix="private-config-", dir=etc) as directory:
+            candidate = Path(directory) / "private.json"
+            with stage("private-config-download"):
+                download(r["config_oss"], r["config_key"], candidate, r["config_sha256"], role)
+            replacement = validate_config(read_json(candidate), project)
+        require_tenant_only_change(c, replacement)
     manifest_ref = r["release"]
     require(manifest_ref["project"] == project, "release belongs to another project")
     version(manifest_ref["version"])
@@ -337,6 +357,10 @@ def perform(r, root, home):
         db_preflight(c, fresh)
     with stage("redis-preflight"):
         redis_preflight(c)
+    if replacement is not None and replacement != c:
+        atomic_json(etc / "private.previous.json", c, 0o600)
+        atomic_json(cfgpath, replacement, 0o600)
+        c = replacement
     if fresh:
         try:
             pwd.getpwnam(project)

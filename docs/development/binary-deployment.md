@@ -120,9 +120,9 @@ GitHub environment **release** 配置变量：
 - 私有配置顶层 `redis_db` 为可选非负整数，省略时为 **0**，例如 `"redis_db": 1`。不要写入 `env.REDIS_DB` 或在 `REDIS_ADDR` 后附 `/1`；地址仍为 `host:port`。同一个值用于主机 Redis 预检、API/两个 Worker 共用的 `app.json` 及首次 setup 请求；安装 state 保存选定 DB，重启继续读取同一配置。
 - 多个独立应用/环境共用 Redis 实例时，各自分配不同逻辑 DB。AINP 默认队列没有项目命名空间，同地址、同 DB、同队列的 Worker 会竞争消费任务；不同 project/域名/PostgreSQL 库不能提供队列隔离。逻辑 DB 仅隔离键空间，不隔离内存、性能、故障或管理权限；生产按需求使用独立实例。
 - DB 编号是否可用以目标服务为准，不假设所有实例都有 16 个 DB。Redis Cluster 仅支持 DB 0，其他托管规格需确认 SELECT/Lua/Asynq 能力；预检连接指定 DB，服务拒绝该 DB 时明确失败，不回退到 0。
-- 在**首次部署前**选定 `redis_db`，将完整 private JSON 上传私有配置桶并更新 target 的 key/SHA256。更新/回滚继续使用主机现有 private 配置，升级工具不会从 OSS 刷新配置、自动换 DB 或迁移队列。已安装应用改 DB 需独立维护方案：停 API/两个 Worker、审计旧队列及重试/定时任务、协调 app 配置与安装 state 并验证恢复，不能仅修改本地 JSON 后运行 update。
+- 在**首次部署前**选定 `redis_db`，将完整 private JSON 上传私有配置桶并更新 target 的 key/SHA256。回滚继续使用主机现有 private 配置。更新会从 target 指定的 OSS 对象下载并校验私有配置，目前只允许 `AGUO_DEPLOYMENT_TENANT_ID` 改变；不会自动换 DB 或迁移队列。已安装应用改 DB 需独立维护方案：停 API/两个 Worker、审计旧队列及重试/定时任务、协调 app 配置与安装 state 并验证恢复，不能仅修改本地 JSON 后运行 update。
 - `backup_oss` / `backup_prefix` 是迁移前 PG custom-format 逻辑备份目的地。备份上传并校验后才迁移。
-- 私有配置首次写入 `/etc/<project>/private.json`，root-only；服务仅能读取受限 runtime/app 配置。更新复用主机配置，不自动从 OSS 刷新，也不旋转凭证。
+- 私有配置首次写入 `/etc/<project>/private.json`，root-only；服务仅能读取受限 runtime/app 配置。更新按 target 的 OSS key/SHA256 下载校验，仅允许为 aguо 项目设置或修改租户 ID；回滚复用主机配置，不旋转凭证。
 
 生产配置是 JSON **数据**，不 `source`、不拼 shell。生成的 `app.json` 是 YAML 可接受的 JSON 子集；launcher 用 `execve` 注入精确环境，避免密码中 `$`、`%`、换行被 shell/systemd 解释。
 
@@ -162,9 +162,9 @@ python3 scripts/deployment/cloud.py status --target deploy/linux/target.local.js
 
 创建请求发出前落盘 ClientToken；云助手请求前记 `dispatching`，传入独立 ClientToken 并使用 ProcessTree 超时终止模式，拿到 InvokeId 后记 `running`。不保存可再次执行的云助手命令。不确定请求结果时拒绝自动重试，避免重复购买或同时更新。资源已创建但尚未下发命令时，重跑可继续同一实例；已开始 init 失败不能盲目重初始化。
 
-部署日志：`bootstrap.sh`、`apt.sh`、`reporting.py` 与主机 Python 文件一起压缩进命令，在 ECS 临时目录解包执行，仍受原始 16 KiB/API 编码上限约束。安装依赖、OSS 下载、PG/Redis 预检、迁移、初始化和健康检查输出 `AINP_PROGRESS` 时间戳记录；长步骤每 15 秒输出心跳，完成/失败立即刷新。Python 使用无缓冲模式，`cloud.py` 每 5 秒读取云助手 `Output`，只增量打印完整、安全的进度记录并去重，控制台显示仍受云助手上报/刷新周期影响。apt 锁重试保持最多 600 秒，bootstrap 子命令原始 stdout/stderr 写入 `/var/log/ainp-bootstrap.log`（0600），主机迁移等原始失败输出仍在 `/var/log/ainp-deployment-errors.log`，不为实时日志暴露 DSN、请求体或密码。
+部署日志：`bootstrap.sh`、`apt.sh`、`reporting.py` 与主机 Python 文件打包上传至不可变 OSS 对象；云助手命令只承载从 RAM Role 获取凭据、校验并下载对象的短引导器，仍受 16 KiB/API 编码上限约束。安装依赖、OSS 下载、PG/Redis 预检、迁移、初始化和健康检查输出 `AINP_PROGRESS` 时间戳记录；长步骤每 15 秒输出心跳，完成/失败立即刷新。Python 使用无缓冲模式，`cloud.py` 每 5 秒读取云助手 `Output`，只增量打印完整、安全的进度记录并去重，控制台显示仍受云助手上报/刷新周期影响。apt 锁重试保持最多 600 秒，bootstrap 子命令原始 stdout/stderr 写入 `/var/log/ainp-bootstrap.log`（0600），主机迁移等原始失败输出仍在 `/var/log/ainp-deployment-errors.log`，不为实时日志暴露 DSN、请求体或密码。
 
-修改本地 `private.*.json` 不会更新 OSS 或现有 ECS：需另行上传新的不可变私有配置对象并更新目标中的 key/SHA256。已落盘 `/etc/<project>/private.json` 的失败 init 必须先核对主机状态后恢复；不要删除本地账本或以修改哈希绕过恢复保护。此流程不能与 apt 阶段（尚未写入私有配置）的安全重试混淆。
+修改本地 `private.*.json` 不会更新 OSS 或现有 ECS：需另行上传新的不可变私有配置对象并更新目标中的 key/SHA256。aguо 项目可在 `env` 添加 `AGUO_DEPLOYMENT_TENANT_ID`（租户 UUID）；用全新 OSS key 上传完整 JSON，计算上传文件原始字节的 SHA256，保持 target 其余字段不变。运行 `cloud.py update --target ... --version ...` 先检查计划，再用相同参数加 `--apply`。主机先校验 OSS 校验和和完整配置，且只接受租户 ID 变化；成功后将旧私有配置保存在主机 root-only 的 `private.previous.json`。旧账本只保存 target 哈希时，必须在修改旧 target 文件前使用当前 target 的 `status --apply` 或一次受控状态迁移记录资源绑定；不要清空账本或放宽资源校验。已落盘 `/etc/<project>/private.json` 的失败 init 必须先核对主机状态后恢复；不要删除本地账本或以修改哈希绕过恢复保护。此流程不能与 apt 阶段（尚未写入私有配置）的安全重试混淆。
 
 阿里云 CLI 调用失败时，控制器只从 JSON 响应中输出经过长度限制和单行化处理的 `error_code`、HTTP 状态、`message`、`RequestId`。命令参数、完整 stdout/stderr、恢复命令和未知字段不会回显；非 JSON、空响应、超大响应、CLI 缺失或超时仍使用通用错误。云助手命令失败时输出状态、退出码、错误码及最多 4000 字符的日志尾部；日志会移除控制序列并脱敏常见 password/secret/token/authorization 和 URL 密码，但仍应仅在受控部署终端查看。任何失败都必须结合已持久化状态与云审计核对后再重试。
 
