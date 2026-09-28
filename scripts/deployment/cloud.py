@@ -3,12 +3,14 @@
 import argparse
 import base64
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
 import re
 import subprocess
 import time
+import tokenize
 import uuid
 import bz2
 
@@ -153,6 +155,15 @@ def _host_release(reference, endpoint=None):
 
 def bootstrap(request):
     files = {p: Path(__file__).with_name(p).read_text() for p in ("common.py", "storage.py", "host.py", "launcher.py", "reporting.py", "bootstrap.sh", "apt.sh")}
+    # Preserve Python semantics while staying below Cloud Assistant's 16 KiB command limit.
+    for filename, body in files.items():
+        if filename.endswith(".py"):
+            lines = body.splitlines(keepends=True)
+            comments = (token for token in tokenize.generate_tokens(io.StringIO(body).readline)
+                        if token.type == tokenize.COMMENT and not lines[token.start[0] - 1][:token.start[1]].strip())
+            for token in comments:
+                lines[token.start[0] - 1] = ""
+            files[filename] = "".join(lines)
     files["request.json"] = json.dumps(request, sort_keys=True, separators=(",", ":"))
     payload = base64.b85encode(bz2.compress(json.dumps(files, separators=(",", ":")).encode(), compresslevel=9)).decode()
     command = BOOTSTRAP.replace("PAYLOAD_LITERAL", repr(payload)).rstrip("\n")

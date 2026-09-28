@@ -12,6 +12,8 @@ declare namespace Env {
   interface ImportMeta extends ImportMetaEnv {
     /** The base url of the application */
     readonly VITE_BASE_URL: string;
+    /** Stable current Web entry (independent of versioned assets). */
+    readonly VITE_APP_MOUNT?: string;
     /** The title of the application */
     readonly VITE_APP_TITLE: string;
     /** The description of the application */

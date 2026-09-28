@@ -34,7 +34,9 @@ def build_web(web_dir, stage, env, identity, cfg=None, output_dir=None, build_co
                    AINP_ADMIN_APPLICATION=cfg["admin_application"],
                    AINP_ADMIN_MODULES=','.join(cfg["admin_modules"]))
     web_env.update(build_env or {})
-    web_env.update(VITE_BUILD_VERSION=identity["version"], VITE_BUILD_COMMIT=identity["commit"], VITE_BUILD_TIME=identity["build_time"])
+    mount = "/" if not output_dir or output_dir == "web" else "/" + output_dir.removeprefix("web/").rstrip("/") + "/"
+    web_env.update(VITE_BUILD_VERSION=identity["version"], VITE_BUILD_COMMIT=identity["commit"], VITE_BUILD_TIME=identity["build_time"],
+                   VITE_BASE_URL=f"/__web/{identity['version']}{mount}", VITE_APP_MOUNT=mount)
     run(["pnpm", "install", "--frozen-lockfile"], web_dir, web_env)
     run(build_command or ["pnpm", "build"], web_dir, web_env)
     effective_output_dir = output_dir or "web"

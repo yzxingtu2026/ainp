@@ -14,7 +14,10 @@ export function setupAppVersionNotification() {
   // Update check interval in milliseconds
   const UPDATE_CHECK_INTERVAL = 3 * 60 * 1000;
 
-  const canAutoUpdateApp = import.meta.env.VITE_AUTOMATICALLY_DETECT_UPDATE === 'Y' && import.meta.env.PROD;
+  // Device operators choose when a pinned Web version may switch.
+  const versionedEntry = import.meta.env.VITE_BASE_URL.startsWith('/__web/') &&
+    window.location.pathname.startsWith(import.meta.env.VITE_BASE_URL);
+  const canAutoUpdateApp = import.meta.env.VITE_AUTOMATICALLY_DETECT_UPDATE === 'Y' && import.meta.env.PROD && !versionedEntry;
   if (!canAutoUpdateApp) return;
 
   let isShow = false;
@@ -89,7 +92,7 @@ export function setupAppVersionNotification() {
 }
 
 async function getHtmlBuildTime(): Promise<string | null> {
-  const baseUrl = import.meta.env.VITE_BASE_URL || '/';
+  const baseUrl = import.meta.env.VITE_APP_MOUNT || '/';
 
   try {
     const res = await fetch(`${baseUrl}index.html?time=${Date.now()}`);

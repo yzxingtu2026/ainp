@@ -380,4 +380,14 @@ HTTPS 验收在 Nginx reload 后对瞬时错误进行有限重试（最多 5 次
 
 发布含该修复的正式 Tag、下游按部署基线升级并在测试环境部署后，必须从 HTTPS 同源入口实际验证业务 WebSocket：用有效握手 grant 发起 `/api/v1/bigscreen/events`（或实际业务路径），确认 HTTP 101、双向收发、断开后重新申请 grant 并重连；再验证普通 API、AI SSE、Admin 与大屏静态入口以及更新/回滚。配置单测及本地 Nginx HTTPS 代理回显测试不能代替业务授权与测试环境验收。
 
+### 多版本静态 Web 与终端灰度（Issue #379）
+
+正式包内各 Web 应用构建时强制使用不可变静态基路径：根应用 `/__web/<完整 Tag>/`，子应用 `/__web/<完整 Tag>/<mount>/`。入口示例分别为 `/__web/v0.4.7/` 和 `/__web/v0.4.7/bigscreen/`；HTML 引用的动态 chunk、CSS 和静态资源必须使用同版本基路径，API 仍走同源 `/api/`。Nginx 从已校验且曾部署成功的 `releases/<版本>-<摘要>/web` 只读提供上述 URL；根 `/` 和 `/bigscreen/` 继续指向 `current` 的最新入口，整包回滚只切换 `current`，不移动旧版入口。未部署版本返回 404，不回退 SPA HTML。此契约不为设备赋予独立 API/数据库版本：设备选择旧版前，业务方必须确认 API 和 schema 兼容性。
+
+设备灰度由下游的门店/设备配置决定：先发布整包，再由设备仅在空闲且无点菜会话时导航到所选版本的入口；进行中会话维持原页面。下游保存每台设备**已生效 Web 版本、门店、切版时间与在线状态**，并记录服务器目标版本；`deployment.json.web_apps` 只描述服务器当前已验证 release，不能推断设备切版成功。版本入口不绕过 API 的授权/租户边界，浏览器仍用 HTTPS 同源访问。前端必须将静态资源 base 与浏览器路由 base 分开：打包器强制 `VITE_BASE_URL=/__web/<Tag>/<mount>/`（用于 Vite chunk/CSS），同时注入 `VITE_APP_MOUNT=/<mount>/`（根应用为 `/`）。普通 `/`、`/bigscreen/` 及其 history 子路由继续用 mount 作为路由 base；版本入口使用同版本 base 与 hash 路由（例如 `/__web/v0.4.7/bigscreen/#/orders`），刷新后仍读取该版 HTML，且资源缺失必须返回 404。AINP Admin 已按这套约定处理；下游独立 Web 需按上述变量实现等效路由选择，并确保动态 import、CSS、public 资源全部使用版本化 URL。版本入口不自动提示切换到 current，新版本由设备空闲决策触发；灰度验收至少覆盖上述版本入口与 chunk。
+
+私有配置可设置 `web_keep_releases`（2..50，默认 5）与 `web_pinned_versions`（完整 Tag 数组，最多 50 项，默认空）。成功更新后保留最新 N 次部署记录、当前版本、所有仍由设备使用或处于灰度/回滚窗口的固定版本，并清理更早且未固定的 release 与对应版本链接。**清理前**下游须根据设备生效版本与明确的回滚窗口更新固定列表；需要长期保留的版本不得仅依赖默认窗口。刚从旧受管基线升级时，旧 HTML 的 `/assets/` 与 `/bigscreen/assets/` 引用只通过 `legacy-web` 保留首次旧版资源，持续由该版固定到所有旧设备刷新；新版资源优先从当前包加载。多个旧式无版本 HTML 不能同时按同一路径独立灰度，应先将设备升级到版本化入口。存量 release 内容须保持不可变；一旦清理不再是该主机的回滚候选。
+
+离线回归验证真实 Nginx HTTPS 下新旧 HTML、动态 chunk、单 Web、多 Web 与整包回滚；测试环境还须结合业务设备实际空闲切版、WebSocket 握手授权、Admin/大屏联合发布、固定列表更新及回滚完成验收。发布正式 Tag 后由下游通过受管 baseline 同步，不得直接修改 `host.py`。
+
 部署完成后，主机依次校验 API `/healthz` 和每个 `health_path`，并将已生效的 Web 应用版本、commit、build time 写入 `deployment.json`。Web 校验失败会保持维护页和失败状态；应用与静态产物都位于同一个 immutable release 目录，ECS 的原子 `current` 切换、历史保留和回滚模型不变。
