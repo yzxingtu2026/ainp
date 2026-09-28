@@ -26,7 +26,7 @@ jobs:
           npx -y @yz-xingtu/agent-rules@latest sync --target=qoder,cursor
           npx -y @yz-xingtu/agent-rules@latest doctor --target=qoder,cursor
       - name: Test release entrypoint and Web Nginx routes
-        run: python3 -m unittest scripts/test_release.py scripts/test_generate_release_notes.py scripts/test_web_nginx_routes.py scripts/test_deployment.py scripts/test_release_reference.py scripts/test_project.py scripts/test_deployment_baseline.py
+        run: python3 -m unittest scripts/test_release.py scripts/test_generate_release_notes.py scripts/test_web_nginx_routes.py scripts/test_deployment.py scripts/test_release_reference.py scripts/test_project.py scripts/test_runtime_assets.py scripts/test_deployment_baseline.py
 
   backend:
     runs-on: ubuntu-latest

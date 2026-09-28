@@ -89,6 +89,30 @@ class ProjectTest(unittest.TestCase):
             }
             (root / cfg["build_config"]).write_text(json.dumps(build_fixture))
             build = project.build_config(cfg, root)
+            self.assertNotIn("pre_build_hook", build)
+            (root / "assets/runtime").mkdir(parents=True)
+            (root / "assets/runtime/model.glb.dvc").write_text("outs:\n- md5: " + "a" * 32 + "\n  size: 1\n  path: model.glb\n")
+            contract = {"schema": 1, "remote": "modelstore", "assets": [{
+                "pointer": "assets/runtime/model.glb.dvc", "source": "assets/runtime/model.glb",
+                "destination": "admin/public/ip/model.glb", "size": 1, "sha256": "0" * 64}]}
+            (root / "deploy/linux/runtime-assets.json").write_text(json.dumps(contract))
+            build_fixture["pre_build_hook"] = {"type": "runtime-assets", "config": "deploy/linux/runtime-assets.json"}
+            (root / cfg["build_config"]).write_text(json.dumps(build_fixture))
+            self.assertEqual(project.build_config(cfg, root)["pre_build_hook"], build_fixture["pre_build_hook"])
+            # Hook targets the second Web app even without legacy frontend_dir.
+            (root / "apps/bigscreen").mkdir(parents=True)
+            multi = dict(build_fixture)
+            multi.pop("frontend_dir")
+            multi["web_apps"] = [{"name": "admin", "source_dir": "admin", "mount": "/"},
+                                 {"name": "bigscreen", "source_dir": "apps/bigscreen", "mount": "/bigscreen/"}]
+            contract["assets"][0]["destination"] = "apps/bigscreen/public/ip/model.glb"
+            (root / "deploy/linux/runtime-assets.json").write_text(json.dumps(contract))
+            (root / cfg["build_config"]).write_text(json.dumps(multi))
+            self.assertEqual(project.build_config(cfg, root)["web_apps"][1]["name"], "bigscreen")
+            build_fixture["pre_build_hook"]["config"] = "../private.json"
+            (root / cfg["build_config"]).write_text(json.dumps(build_fixture))
+            with self.assertRaises(project.ProjectError):
+                project.build_config(cfg, root)
         self.assertEqual(build["node_version"], "22.22.0")
         self.assertEqual(build["pnpm_version"], "10.26.2")
         self.assertEqual(build["admin_application"], "./src/composition/application.ts")

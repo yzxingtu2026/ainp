@@ -20,6 +20,12 @@ on:
     secrets:
       private-module-token:
         required: false
+      asset-store-key-id:
+        required: false
+      asset-store-key-secret:
+        required: false
+      asset-store-endpoint:
+        required: false
 permissions:
   contents: read
 jobs:
@@ -76,6 +82,18 @@ jobs:
       - name: Build pinned MuPDF with CJK
         if: steps.mupdf.outputs.cache-hit != 'true'
         run: sh docker/build-mupdf-cjk.sh "$GITHUB_WORKSPACE/.cache/mupdf"
+      - name: Install DVC OSS support for declared runtime assets
+        if: steps.project.outputs.pre-build-hook-config != ''
+        run: python3 -m pip install 'dvc[oss]==3.63.0'
+      - name: Fetch and verify declared runtime assets
+        if: steps.project.outputs.pre-build-hook-config != ''
+        env:
+          AINP_ASSET_STORE_KEY_ID: ${{ secrets.asset-store-key-id }}
+          AINP_ASSET_STORE_KEY_SECRET: ${{ secrets.asset-store-key-secret }}
+          AINP_ASSET_STORE_ENDPOINT: ${{ secrets.asset-store-endpoint }}
+          ASSET_CONFIG: ${{ steps.project.outputs.pre-build-hook-config }}
+        run: |
+          python3 scripts/deployment/fetch_runtime_assets.py --config "$ASSET_CONFIG"
       - name: Build verified native package
         env:
           RELEASE_VERSION: ${{ inputs.version }}
@@ -85,6 +103,11 @@ jobs:
           export CGO_CFLAGS="-I$GITHUB_WORKSPACE/.cache/mupdf/include"
           export CGO_LDFLAGS="-L$GITHUB_WORKSPACE/.cache/mupdf/lib -lmupdf -lmupdf-third -lm"
           python3 scripts/deployment/package.py --config "$BUILD_CONFIG" --version "$RELEASE_VERSION"
+      - name: Clean DVC workspace assets
+        if: always() && steps.project.outputs.pre-build-hook-config != ''
+        env:
+          ASSET_CONFIG: ${{ steps.project.outputs.pre-build-hook-config }}
+        run: python3 scripts/deployment/fetch_runtime_assets.py --config "$ASSET_CONFIG" --cleanup
       - name: Remove private module credentials
         if: always()
         env:

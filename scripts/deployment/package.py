@@ -89,6 +89,9 @@ def main():
     project.validate_repository(project_cfg, project.configured_origin(), os.environ.get("GITHUB_REPOSITORY"))
     require(Path(args.config).resolve() == (Path.cwd() / project_cfg["build_config"]).resolve(), "build config must match project configuration")
     cfg = project.build_config(project_cfg, Path.cwd())
+    if cfg.get("pre_build_hook"):
+        from fetch_runtime_assets import verify_destinations
+        verify_destinations(Path.cwd(), cfg["pre_build_hook"]["config"], project.build_web_apps(cfg, Path.cwd()))
     name(cfg["project"])
     version(args.version)
     require(cfg["schema"] == 1, "unsupported build contract")
@@ -122,6 +125,9 @@ def main():
             require("not found" not in libraries, "unresolved shared library in native binary")
         for app in normalized_apps:
             build_web(root / app["source_dir"], stage, env, identity, cfg, app["output_dir"], app["build_command"], app["build_env"], app["health_path"])
+        if cfg.get("pre_build_hook"):
+            from fetch_runtime_assets import verify_staged
+            verify_staged(root, cfg["pre_build_hook"]["config"], normalized_apps, stage)
         identity["web_apps"] = [{k: app[k] for k in ("name", "mount", "health_path", "output_dir")} for app in normalized_apps]
         archive = output / "release.tar.gz"
         manifest = pack(stage, archive, identity, epoch)

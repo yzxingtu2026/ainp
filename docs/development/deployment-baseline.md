@@ -34,6 +34,8 @@ AINP 使用 `deploy/linux/project.json`，保持 `main`、原 required checks �
 
 native-build 工作流从配置解析 Go version/sum、Node/pnpm 版本、Admin application/modules 和私有 Go 模块模式；可选 workflow inputs 必须与配置一致。构建继续注入同一 version/commit/build_time，并强制 Web 同源 API。`deploy/linux/build.json` 的 `node_version`、`pnpm_version`、`admin_application`、`admin_modules` 和 `go_private` 均为非敏感项目契约；私有模块凭据只能通过 reusable workflow 的可选 `private-module-token` secret 传入，禁止写入 JSON、日志、Artifact 或镜像。构建前仅在 `go_private` 非空时配置临时 Git URL 凭据和 `GOPRIVATE`，构建后清理凭据。 仓库身份预检统一读取 Git 配置中原始的 `remote.origin.url`，避免 `insteadOf` 展开出含凭据的 URL；仍须与 `project.json` 和 `GITHUB_REPOSITORY` 严格一致，任何不匹配都拒绝。
 
+项目可在 `build.json` 增加可选 `pre_build_hook`（固定 `runtime-assets` 类型与项目拥有的 `deploy/linux/runtime-assets.json` 路径）。该配置只声明单输出资产指针（文件或目录中的明确文件）、Web public 目标、大小和 SHA-256；`fetch_runtime_assets.py` 与测试属于 upstream，三个原生构建/发布工作流属于 integration，均受 `policy.json` 哈希管理。`runtime-assets.json` 始终由下游拥有，apply 不创建或覆盖它；下游无需 fork integration 文件。固定可选凭据 `asset-store-key-id`、`asset-store-key-secret`、`asset-store-endpoint` 由调用方显式传递；不使用 `secrets: inherit`。本地/CI/云端验收边界与最小 OSS 只读权限见 `binary-deployment.md` 的构建前资产钩子章节。
+
 `cloud.py update --target ... --version vX.Y.Z` 默认查询项目配置中的仓库；显式 `--repository` 必须一致。`--release` 仍支持离线/CI 精确引用，账本、apply 和 schema 兼容确认保持原契约。项目配置不放任何云或业务密钥。
 
 ## 首次从旧基线接入
