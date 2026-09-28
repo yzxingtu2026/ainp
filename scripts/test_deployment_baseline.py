@@ -168,6 +168,29 @@ class BaselineTest(unittest.TestCase):
         b.recover(self.root)
         self.assertEqual((self.root / b.LOCK).read_bytes(), old_lock)
 
+    def test_upgrade_from_lock_predating_newly_required_file(self):
+        # Regression: a downstream locked at a prior version whose manifest predates a file that a
+        # later tool version added to REQUIRED must still upgrade through plan/apply. read_lock used
+        # to re-validate the historical lock against the grown REQUIRED set and abort with
+        # "missing deployment dependencies", which made the sanctioned upgrade path impossible.
+        self.install()
+        newcomer = "scripts/deployment/fetch_runtime_assets.py"
+        self.assertIn(newcomer, b.REQUIRED)
+        old_manifest = copy.deepcopy(self.manifest)
+        old_manifest["version"] = "v0.9.0"
+        del old_manifest["files"][newcomer]
+        old_lock = {"schema": 1, "manifest": old_manifest, "manifest_sha256": b.manifest_hash(old_manifest)}
+        (self.root / b.LOCK).write_text(json.dumps(old_lock, sort_keys=True, indent=2) + "\n")
+        (self.root / newcomer).unlink()  # the prior version never shipped this file
+        # The historical lock is accepted structurally without enforcing the current REQUIRED closure.
+        self.assertEqual(b.read_lock(self.root)["manifest"]["version"], "v0.9.0")
+        actions = b.plan(self.root, self.manifest)
+        added = [a for a in actions if a["path"] == newcomer]
+        self.assertEqual([a["action"] for a in added], ["add"])
+        b.apply(self.root, self.source, self.manifest)
+        self.assertTrue((self.root / newcomer).is_file())
+        self.assertEqual(b.plan(self.root, self.manifest), [])
+
     def test_changed_published_version_rejected(self):
         self.install()
         new = copy.deepcopy(self.manifest)
