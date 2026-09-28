@@ -65,6 +65,12 @@ def validate_config(c, project):
     require(isinstance(c.get("bootstrap"), dict), "bootstrap configuration required")
     require(set(c["bootstrap"]) == {"tenant_name", "username", "password"}, "invalid bootstrap fields")
     require(all(isinstance(v, str) and v and "REPLACE" not in v for v in c["bootstrap"].values()), "replace bootstrap placeholders")
+    require(type(c.get("web_keep_releases", 5)) is int and 2 <= c.get("web_keep_releases", 5) <= 50, "web_keep_releases must be 2..50")
+    pins = c.get("web_pinned_versions", [])
+    require(isinstance(pins, list) and len(pins) <= 50, "invalid web_pinned_versions")
+    for pin in pins:
+        version(pin)
+    require(len(set(pins)) == len(pins), "duplicate web pinned version")
     oss_config(c["backup_oss"])
     key(c["backup_prefix"])
     return c
@@ -112,7 +118,6 @@ WantedBy=multi-user.target
 
 def nginx(c, root, maintenance=False, manifest_apps=None):
     proxy = f"http://127.0.0.1:{c['api_port']}"
-    # Dedicated proxy headers: never overwrite Ubuntu's global proxy_params.
     headers = "\n".join("        " + line for line in (
         "proxy_set_header Host $host;", "proxy_set_header X-Real-IP $remote_addr;",
         "proxy_set_header X-Forwarded-For $remote_addr;", "proxy_set_header X-Forwarded-Host $host;",
@@ -120,7 +125,8 @@ def nginx(c, root, maintenance=False, manifest_apps=None):
     routes = ""
     for route, streaming in (("= /healthz", False), ("= /.well-known/oauth-protected-resource", False), ("= /.well-known/oauth-authorization-server", False), ("= /oauth/register", False), ("= /oauth/token", False), ("= /oauth/revoke", False), ("= /mcp", True), ("~ ^/api/v1/ai/", True), ("/api/", False)):
         options = "proxy_buffering off; proxy_cache off; proxy_read_timeout 3600s;" if streaming else "proxy_read_timeout 300s;"
-        routes += f"    location {route} {{\n        proxy_pass {proxy};\n        proxy_http_version 1.1;\n        {options}\n{headers}\n    }}\n"
+        upgrade = "        proxy_set_header Upgrade $http_upgrade;\n        proxy_set_header Connection $ainp_websocket_connection;\n" if route in ("~ ^/api/v1/ai/", "/api/") else ""
+        routes += f"    location {route} {{\n        proxy_pass {proxy};\n        proxy_http_version 1.1;\n        {options}\n{headers}\n{upgrade}    }}\n"
     apps = manifest_apps or [{"name": "admin", "mount": "/", "health_path": "/build.json", "output_dir": "web"}]
     if not maintenance:
         for app in sorted(apps, key=lambda item: len(item["mount"]), reverse=True):
@@ -130,9 +136,17 @@ def nginx(c, root, maintenance=False, manifest_apps=None):
             mount_root = mount.rstrip("/")
             routes += f"    location = {mount_root} {{ return 301 {mount}; }}\n"
             routes += f"    location ^~ {mount} {{ try_files $uri $uri/ {mount}index.html; }}\n"
+        routes += f"    location ~ ^/__web/(?<web_version>v[0-9]+[.][0-9]+[.][0-9]+(?:-ci)?)/(?<web_file>.*)$ {{ alias {root}/web-versions/$web_version/$web_file; }}\n"
+        for app in apps:
+            routes += f"    location ^~ {app['mount']}assets/ {{ root {root}/current/web; try_files $uri @legacy_assets; }}\n"
+        routes += f"    location @legacy_assets {{ root {root}/legacy-web; try_files $uri =404; }}\n"
         routes += "    location / { try_files $uri $uri/ /index.html; }\n"
     body = "    return 503;\n" if maintenance else routes
     return f"""# Generated application routes. TLS assets are managed separately, never by app updates.
+map $http_upgrade $ainp_websocket_connection {{
+    default upgrade;
+    '' '';
+}}
 server {{
     listen 80;
     server_name {c['domain']};
@@ -402,6 +416,22 @@ def perform(r, root, home):
             require(command(["systemctl", "show", service, "-p", "NRestarts", "--value"]).strip() == b"0", "service restarted during readiness window")
             pid = int(command(["systemctl", "show", service, "-p", "MainPID", "--value"]).strip())
             require(Path(f"/proc/{pid}/exe").resolve().parent == release / "bin", "service not running target binary")
+        # Stable immutable URLs keep prior Web assets addressable across switches.
+        versions = root / "web-versions"
+        versions.mkdir(exist_ok=True)
+        link = versions / manifest["version"]
+        require(not link.is_symlink() and not link.exists() or link.is_symlink() and link.resolve() == release / "web", "web version collision")
+        if not link.is_symlink():
+            link.symlink_to(release / "web")
+        if previous:
+            legacy = root / "legacy-web"
+            old_version = read_json(Path(previous) / "release.json")["version"]
+            old_link = versions / old_version
+            require(not old_link.is_symlink() and not old_link.exists() or old_link.is_symlink() and old_link.resolve() == Path(previous) / "web", "previous web version collision")
+            if not old_link.is_symlink():
+                if not legacy.is_symlink():
+                    legacy.symlink_to(Path(previous) / "web")
+                old_link.symlink_to(Path(previous) / "web")
         install_nginx(c, root, False, manifest.get("web_apps"))
         health = https_json(c, "/healthz")["data"]
         require(health.get("status") == "ok" and health.get("version") == manifest["version"] and health.get("commit") == manifest["commit"], "HTTPS health check failed")
@@ -413,6 +443,23 @@ def perform(r, root, home):
         command(["systemctl", "enable", *units])
         if str(release) not in history:
             history.append(str(release))
+        # Device operators pin active versions; keep a bounded rollback window.
+        keep = set(history[-c.get("web_keep_releases", 5):])
+        keep.add(str(release))
+        keep.update(p for p in history if read_json(Path(p) / "release.json")["version"] in c.get("web_pinned_versions", []))
+        legacy = root / "legacy-web"
+        if legacy.is_symlink():
+            keep.add(str(legacy.resolve().parent))
+        for path in history[:]:
+            candidate = Path(path)
+            if path in keep or candidate.parent != root / "releases" or not candidate.is_dir() or candidate.is_symlink():
+                continue
+            old_version = read_json(candidate / "release.json")["version"]
+            old_link = versions / old_version
+            if old_link.is_symlink() and old_link.resolve() == candidate / "web":
+                old_link.unlink()
+            shutil.rmtree(candidate)
+            history.remove(path)
         state.update(status="healthy", current=str(release), history=history, web_apps=verified_web_apps)
         atomic_json(statepath, state)
         print(f"Healthy: {project} {manifest['version']} {manifest['commit']}")

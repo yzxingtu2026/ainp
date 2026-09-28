@@ -5,6 +5,8 @@
   "api_port": 18080,
   "database_mode": "external",
   "redis_db": 0,
+  "web_keep_releases": 5,
+  "web_pinned_versions": [],
   "worker_concurrency": 4,
   "ai_concurrency": 1,
   "env": {

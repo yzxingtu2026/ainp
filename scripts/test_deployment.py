@@ -81,6 +81,9 @@ class WebBuildTest(unittest.TestCase):
                     self.assertEqual(json.load(archive.extractfile(health))["commit"], "a" * 40)
             screen_call = next(call for call in run.call_args_list if call.args[0] == ["pnpm", "build:screen"])
             self.assertEqual(screen_call.args[2]["VITE_SCREEN"], "yes")
+            self.assertEqual(screen_call.args[2]["VITE_BASE_URL"], "/__web/v1.2.3/bigscreen/")
+            admin_call = next(call for call in run.call_args_list if call.args[0] == ["pnpm", "build"])
+            self.assertEqual(admin_call.args[2]["VITE_BASE_URL"], "/__web/v1.2.3/")
 
     def test_release_build_uses_declared_admin_composition(self):
         identity = dict(version="v1.2.3", commit="a" * 40, build_time="2026-09-26T00:00:00Z")
@@ -120,6 +123,8 @@ class WebBuildTest(unittest.TestCase):
                                       ("build_time", "VITE_BUILD_TIME")):
                     self.assertEqual(env[variable], identity[key])
                 self.assertEqual(env["PATH"], "/tools")
+                self.assertEqual(env["VITE_BASE_URL"], "/__web/v1.2.3/")
+                self.assertEqual(env["VITE_APP_MOUNT"], "/")
             self.assertEqual(json.loads((root / "stage/web/build.json").read_text()), identity)
             self.assertEqual((root / "stage/web/index.html").read_text(), "built web")
         self.assertEqual(inherited, original)
@@ -141,6 +146,10 @@ class WebBuildTest(unittest.TestCase):
                 ["pnpm", "install", "--frozen-lockfile"], ["pnpm", "build:admin"],
                 ["pnpm", "install", "--frozen-lockfile"], ["pnpm", "build:screen"],
             ])
+            self.assertEqual(run.call_args_list[1].args[2]["VITE_BASE_URL"], "/__web/v1.2.3/")
+            self.assertEqual(run.call_args_list[1].args[2]["VITE_APP_MOUNT"], "/")
+            self.assertEqual(run.call_args_list[3].args[2]["VITE_BASE_URL"], "/__web/v1.2.3/bigscreen/")
+            self.assertEqual(run.call_args_list[3].args[2]["VITE_APP_MOUNT"], "/bigscreen/")
             self.assertEqual((root / "stage/web/index.html").read_text(), "admin")
             self.assertEqual((root / "stage/web/bigscreen/index.html").read_text(), "screen")
             self.assertEqual(json.loads((root / "stage/web/bigscreen/build.json").read_text()), identity)
@@ -352,6 +361,34 @@ class ContractTest(unittest.TestCase):
         self.assertIn("return 503", maintenance)
         self.assertNotIn("proxy_pass", maintenance)
 
+    def test_web_version_retention_configuration_validation(self):
+        for change in ({"web_keep_releases": 1}, {"web_keep_releases": 51},
+                       {"web_keep_releases": True}, {"web_pinned_versions": ["latest"]},
+                       {"web_pinned_versions": ["v1.0.0", "v1.0.0"]}):
+            with self.subTest(change=change), self.assertRaises(common.DeployError):
+                host.validate_config({**self.config(), **change}, "ainp")
+
+    def test_nginx_websocket_upgrade_only_on_api_routes(self):
+        import re
+        result = host.nginx(self.config(), Path("/opt/ainp"))
+        self.assertRegex(result, r"map \$http_upgrade \$ainp_websocket_connection \{\s*default upgrade;\s*'' '';\s*\}")
+        blocks = dict(re.findall(r"    location (.*?) \{\n(.*?)    \}\n", result, re.S))
+        for route in ("~ ^/api/v1/ai/", "/api/"):
+            with self.subTest(route=route):
+                block = blocks[route]
+                self.assertIn("proxy_http_version 1.1;", block)
+                self.assertIn("proxy_set_header Upgrade $http_upgrade;", block)
+                self.assertIn("proxy_set_header Connection $ainp_websocket_connection;", block)
+                self.assertIn("proxy_set_header Host $host;", block)
+                self.assertIn("proxy_set_header X-Forwarded-Proto $scheme;", block)
+        for route in ("= /healthz", "= /mcp", "= /oauth/token"):
+            with self.subTest(route=route):
+                self.assertNotIn("proxy_set_header Upgrade", blocks[route])
+                self.assertNotIn("proxy_set_header Connection", blocks[route])
+        self.assertEqual(result.count("proxy_set_header Upgrade"), 2)
+        maintenance = host.nginx(self.config(), Path("/opt/ainp"), True)
+        self.assertNotIn("proxy_set_header Upgrade", maintenance)
+
     def test_systemd_non_root_and_writable_scope(self):
         result = host.unit("ainp", "ai-worker", Path("/opt/ainp"), Path("/var/lib/ainp"))
         for fragment in ("User=ainp", "ProtectSystem=strict", "ReadWritePaths=/var/lib/ainp", "TimeoutStopSec=90", "NoNewPrivileges=true"):
@@ -510,8 +547,9 @@ class CloudTest(unittest.TestCase):
         import subprocess
         command = cloud.bootstrap(dict(project="ainp", ram_role="role", action="init", operation_id="a" * 36, release=self.reference()))
         files = self.unpack_bootstrap(command)
-        self.assertEqual(files["host.py"], (DEPLOY / "host.py").read_text())
-        self.assertEqual(files["reporting.py"], (DEPLOY / "reporting.py").read_text())
+        # The transport may omit standalone comments, but must preserve the exact program.
+        for filename in ("host.py", "common.py", "storage.py", "reporting.py", "launcher.py"):
+            self.assertEqual(ast.dump(ast.parse(files[filename])), ast.dump(ast.parse((DEPLOY / filename).read_text())))
         for script in (command, files["bootstrap.sh"], files["apt.sh"]):
             subprocess.run(["sh", "-n"], input=script, text=True, capture_output=True, check=True)
         with tempfile.TemporaryDirectory() as d:
@@ -853,6 +891,216 @@ class NativeNginxSyntaxTest(unittest.TestCase):
         self.assertIn("location ^~ /bigscreen/ { try_files $uri $uri/ /bigscreen/index.html; }", conf)
         self.assertIn("location / { try_files $uri $uri/ /index.html; }", conf)
 
+    def test_https_versioned_multi_web_assets_survive_switch_and_rollback(self):
+        import shutil
+        import socket
+        import ssl
+        import subprocess
+        import time
+        import uuid
+
+        if not shutil.which("docker") or not shutil.which("openssl"):
+            self.skipTest("Docker/OpenSSL unavailable for versioned Web test")
+        if subprocess.run(["docker", "info"], capture_output=True).returncode:
+            self.skipTest("Docker daemon unavailable for versioned Web test")
+        with tempfile.TemporaryDirectory() as d:
+            base = Path(d)
+            root = base / "ainp"
+            root.mkdir(mode=0o755)
+            root.chmod(0o755)
+            releases = root / "releases"
+            for version in ("v1.0.0", "v1.1.0"):
+                for app in ("", "bigscreen/"):
+                    web = releases / version / "web" / app
+                    (web / "assets").mkdir(parents=True)
+                    (web / "index.html").write_text(f"{version}-{app} <script src='/__web/{version}/{app}assets/app-{version}.js'></script>")
+                    (web / "assets" / f"app-{version}.js").write_text(f"{version}-{app}-chunk")
+            versions = root / "web-versions"
+            versions.mkdir()
+            for version in ("v1.0.0", "v1.1.0"):
+                (versions / version).symlink_to(f"../releases/{version}/web")
+            (root / "current").symlink_to("releases/v1.0.0")
+            # Pre-versioned clients still use /assets/... until the last one refreshes.
+            (root / "legacy-web").symlink_to("releases/v1.0.0/web")
+            subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-subj", "/CN=admin.example.com", "-keyout", str(base / "privkey.pem"), "-out", str(base / "fullchain.pem")], check=True, capture_output=True)
+            apps = [{"name": "admin", "mount": "/"}, {"name": "screen", "mount": "/bigscreen/"}]
+            (base / "default.conf").write_text(host.nginx(ContractTest().config(), Path("/opt/ainp"), manifest_apps=apps))
+            with socket.socket() as probe:
+                probe.bind(("127.0.0.1", 0))
+                port = probe.getsockname()[1]
+            container = "ainp-web-version-" + uuid.uuid4().hex[:12]
+            result = subprocess.run(["docker", "run", "-d", "--rm", "--name", container,
+                "-p", f"127.0.0.1:{port}:443",
+                "-v", f"{base / 'default.conf'}:/etc/nginx/conf.d/default.conf:ro",
+                "-v", f"{base}:/etc/ainp/tls:ro", "nginx:1.27.5-alpine"], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            subprocess.run(["docker", "cp", str(root), f"{container}:/opt/ainp"], check=True, capture_output=True)
+
+            def fetch(path):
+                # This test exercises routing and immutable assets with a local test certificate.
+                import http.client
+                conn = http.client.HTTPSConnection("127.0.0.1", port, context=ssl._create_unverified_context(), timeout=3)
+                try:
+                    conn.request("GET", path, headers={"Host": "admin.example.com"})
+                    response = conn.getresponse()
+                    return response.status, response.read().decode()
+                finally:
+                    conn.close()
+
+            try:
+                for attempt in range(40):
+                    try:
+                        fetch("/")
+                        break
+                    except OSError:
+                        if attempt == 39:
+                            self.fail("versioned Web Nginx endpoint did not start")
+                        time.sleep(0.2)
+                for current in ("v1.0.0", "v1.1.0", "v1.0.0"):
+                    subprocess.run(["docker", "exec", container, "ln", "-sfn", f"releases/{current}", "/opt/ainp/current"], check=True, capture_output=True)
+                    for app in ("", "bigscreen/"):
+                        self.assertIn(current, fetch("/" + app)[1])
+                        for old in ("v1.0.0", "v1.1.0"):
+                            prefix = f"/__web/{old}/{app}"
+                            self.assertEqual(fetch(prefix + "index.html")[0], 200)
+                            self.assertIn(old, fetch(prefix)[1])
+                            self.assertEqual(fetch(prefix + f"assets/app-{old}.js"), (200, f"{old}-{app}-chunk"))
+                        self.assertEqual(fetch("/" + app + f"assets/app-{current}.js"), (200, f"{current}-{app}-chunk"))
+                self.assertEqual(fetch("/assets/app-v1.0.0.js"), (200, "v1.0.0--chunk"))
+                self.assertEqual(fetch("/assets/app-v1.1.0.js")[0], 404)
+                self.assertEqual(fetch("/bigscreen/assets/app-v1.0.0.js"), (200, "v1.0.0-bigscreen/-chunk"))
+                self.assertEqual(fetch("/__web/v1.2.0/assets/absent.js")[0], 404)
+                self.assertEqual(fetch("/bigscreen/assets/absent.js")[0], 404)
+                # The same release remains addressable when built as a single Web app.
+                (base / "default.conf").write_text(host.nginx(ContractTest().config(), Path("/opt/ainp")))
+                subprocess.run(["docker", "exec", container, "nginx", "-s", "reload"], check=True, capture_output=True)
+                for attempt in range(20):
+                    if fetch("/__web/v1.0.0/assets/app-v1.0.0.js") == (200, "v1.0.0--chunk"):
+                        break
+                    time.sleep(0.1)
+                else:
+                    self.fail("single-Web versioned assets unavailable after reload")
+                self.assertIn("v1.0.0", fetch("/")[1])
+            finally:
+                subprocess.run(["docker", "stop", container], capture_output=True)
+
+    def test_https_websocket_upgrade_echo_reconnect_and_rest(self):
+        import http.server
+        import shutil
+        import socket
+        import ssl
+        import subprocess
+        import threading
+        import time
+        import uuid
+
+        if not shutil.which("docker") or not shutil.which("openssl"):
+            self.skipTest("Docker/OpenSSL unavailable for HTTPS WebSocket test")
+        if subprocess.run(["docker", "info"], capture_output=True).returncode:
+            self.skipTest("Docker daemon unavailable for HTTPS WebSocket test")
+
+        seen = []
+
+        class API(http.server.BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.1"
+
+            def log_message(self, *args):
+                pass
+
+            def do_GET(self):
+                seen.append((self.path, self.headers.get("Upgrade"), self.headers.get("Connection"),
+                             self.headers.get("Host"), self.headers.get("Origin"), self.headers.get("X-Forwarded-Proto")))
+                if self.headers.get("Upgrade", "").lower() != "websocket":
+                    self.send_response(200)
+                    self.send_header("Content-Length", "2")
+                    self.end_headers()
+                    self.wfile.write(b"ok")
+                    return
+                self.send_response(101, "Switching Protocols")
+                self.send_header("Upgrade", "websocket")
+                self.send_header("Connection", "Upgrade")
+                self.end_headers()
+                # Read a masked browser frame, then echo its unmasked text back.
+                head = self.rfile.read(2)
+                length = head[1] & 127
+                mask = self.rfile.read(4)
+                data = self.rfile.read(length)
+                payload = bytes(byte ^ mask[i % 4] for i, byte in enumerate(data))
+                self.wfile.write(bytes([0x81, len(payload)]) + payload)
+                self.wfile.flush()
+                self.close_connection = True
+
+        server = http.server.ThreadingHTTPServer(("0.0.0.0", 0), API)
+        server.daemon_threads = True
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        container = "ainp-ws-test-" + uuid.uuid4().hex[:12]
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                d = Path(d)
+                subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-subj", "/CN=admin.example.com", "-keyout", str(d / "privkey.pem"), "-out", str(d / "fullchain.pem")], check=True, capture_output=True)
+                config = ContractTest().config()
+                upstream = f"http://127.0.0.1:{config['api_port']}"
+                conf = host.nginx(config, Path("/opt/ainp")).replace(upstream, f"http://host.docker.internal:{server.server_port}")
+                (d / "default.conf").write_text(conf)
+                with socket.socket() as probe:
+                    probe.bind(("127.0.0.1", 0))
+                    port = probe.getsockname()[1]
+                result = subprocess.run(["docker", "run", "-d", "--rm", "--name", container,
+                    "--add-host", "host.docker.internal:host-gateway", "-p", f"127.0.0.1:{port}:443",
+                    "-v", f"{d / 'default.conf'}:/etc/nginx/conf.d/default.conf:ro",
+                    "-v", f"{d}:/etc/ainp/tls:ro", "nginx:1.27.5-alpine"], capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                ctx = ssl.create_default_context(cafile=str(d / "fullchain.pem"))
+
+                def connect():
+                    raw = socket.create_connection(("127.0.0.1", port), timeout=3)
+                    try:
+                        return ctx.wrap_socket(raw, server_hostname="admin.example.com")
+                    except BaseException:
+                        raw.close()
+                        raise
+
+                for attempt in range(40):
+                    try:
+                        with connect():
+                            break
+                    except OSError:
+                        if attempt == 39:
+                            self.fail("Nginx TLS endpoint did not start")
+                        time.sleep(0.2)
+
+                def read_headers(sock):
+                    data = b""
+                    while b"\r\n\r\n" not in data:
+                        data += sock.recv(4096)
+                    return data
+
+                for path in ("/api/v1/bigscreen/events", "/api/v1/ai/events", "/api/v1/bigscreen/events"):
+                    with connect() as sock:
+                        sock.sendall((f"GET {path} HTTP/1.1\r\nHost: admin.example.com\r\nOrigin: https://admin.example.com\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n").encode())
+                        self.assertIn(b"101 Switching Protocols", read_headers(sock))
+                        mask = b"abcd"
+                        message = b"hello"
+                        sock.sendall(b"\x81\x85" + mask + bytes(b ^ mask[i % 4] for i, b in enumerate(message)))
+                        echoed = b""
+                        while len(echoed) < 7:
+                            echoed += sock.recv(7 - len(echoed))
+                        self.assertEqual(echoed, b"\x81\x05hello")
+                with connect() as sock:
+                    sock.sendall(b"GET /api/v1/bigscreen/events HTTP/1.1\r\nHost: admin.example.com\r\nConnection: keep-alive\r\n\r\n")
+                    self.assertIn(b"200 OK", read_headers(sock))
+                self.assertEqual(len(seen), 4)
+                for path, upgrade, connection, hostname, origin, proto in seen[:3]:
+                    self.assertEqual((upgrade, connection, hostname, origin, proto),
+                                     ("websocket", "upgrade", "admin.example.com", "https://admin.example.com", "https"))
+                self.assertEqual(seen[3][1:3], (None, None))
+        finally:
+            subprocess.run(["docker", "stop", container], capture_output=True)
+            server.shutdown()
+            server.server_close()
+            thread.join()
+
     def test_generated_live_and_maintenance_config_with_real_nginx(self):
         import shutil
         import subprocess
@@ -975,6 +1223,30 @@ class HostTransactionTest(unittest.TestCase):
         self.assertFalse(any(e[0] == "runuser" for e in self.events))
         self.assertIn(("backup",), self.events)
         self.assertEqual(common.read_json(self.root / "deployment.json")["release"]["version"], "v1.0.0")
+
+    def test_web_version_links_rollbacks_and_bounded_retention(self):
+        self.config["web_keep_releases"] = 2
+        self.config["web_pinned_versions"] = ["v1.0.0"]
+        self.config_source.write_text(json.dumps(self.config))
+        requests = {}
+        for version, action in (("v1.0.0", "init"), ("v1.1.0", "update"),
+                                ("v1.2.0", "update"), ("v1.3.0", "update")):
+            request = requests[version] = self.request(version, action)
+            host.perform(request, self.root, self.home)
+            self.assertEqual((self.root / "web-versions" / version).resolve(),
+                             (self.root / "current/web").resolve())
+        versions = self.root / "web-versions"
+        self.assertTrue((versions / "v1.0.0").is_symlink())
+        self.assertFalse((versions / "v1.1.0").exists())
+        self.assertTrue((versions / "v1.2.0").is_symlink())
+        self.assertTrue((versions / "v1.3.0").is_symlink())
+        state = common.read_json(self.root / "deployment.json")
+        self.assertEqual(len(state["history"]), 3)
+        with self.assertRaises(common.DeployError):
+            host.perform({**requests["v1.1.0"], "action": "rollback", "operation_id": "rollback-old"}, self.root, self.home)
+        host.perform({**requests["v1.0.0"], "action": "rollback", "operation_id": "rollback-pinned"}, self.root, self.home)
+        self.assertEqual(common.read_json(self.root / "deployment.json")["release"]["version"], "v1.0.0")
+        self.assertTrue((versions / "v1.3.0").is_symlink())
 
     def test_fresh_init_uses_same_nonzero_db_in_setup_and_app_config(self):
         self.config["redis_db"] = 3

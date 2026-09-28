@@ -8,8 +8,10 @@ import {
 } from 'vue-router';
 import { createBuiltinVueRoutes } from './routes/builtin';
 import { createRouterGuard } from './guard';
+import { resolveWebEntry } from './web-entry';
 
-const { VITE_ROUTER_HISTORY_MODE = 'history', VITE_BASE_URL } = import.meta.env;
+const { VITE_ROUTER_HISTORY_MODE = 'history', VITE_BASE_URL, VITE_APP_MOUNT = '/' } = import.meta.env;
+const entry = resolveWebEntry(window.location.pathname, VITE_BASE_URL, VITE_APP_MOUNT);
 
 const historyCreatorMap: Record<Env.RouterHistoryMode, (base?: string) => RouterHistory> = {
   hash: createWebHashHistory,
@@ -18,7 +20,7 @@ const historyCreatorMap: Record<Env.RouterHistoryMode, (base?: string) => Router
 };
 
 export const router = createRouter({
-  history: historyCreatorMap[VITE_ROUTER_HISTORY_MODE](VITE_BASE_URL),
+  history: historyCreatorMap[entry.versioned ? 'hash' : VITE_ROUTER_HISTORY_MODE](entry.base),
   routes: createBuiltinVueRoutes()
 });
 

@@ -9,7 +9,9 @@
 - 发布包不可变，验证项目/版本/commit/平台/SHA256，安全解包；私有配置/证书/附件/state 不入包。
 - 多 Web 配置使用 `web_apps`，存在时可省略 `frontend_dir`；预检与打包共用 `project.build_web_apps` 校验，新增字段或默认行为必须同步 fixture、规范、测试与发布基线。
 - 发布 Web 必须使用同源 API（`VITE_SERVICE_BASE_URL=/`，其他服务同源）；原生打包显式覆盖构建机环境，禁止把本地 loopback 地址编译进发布包。
+- 多 Web 灰度静态资源使用 `/__web/<Tag>/<mount>/` 不可变路径；当前入口保持 `current`，设备空闲时自主切版。Host 清理依据固定设备版本和有界回滚窗口，终端生效状态由下游记录；详见 `binary-deployment.md`。
 - 专用非 root systemd 进程，API loopback；精确 Nginx OAuth/MCP/SSE 路由，应用更新不能覆盖 TLS 资产。
+- 原生 Nginx 的 `/api/` 与 `/api/v1/ai/` 仅在 WebSocket 升级请求上设置 Upgrade/Connection；普通 REST/SSE 不发送升级连接头，测试环境须经 HTTPS 同源入口验收业务握手、收发与重连。
 - 首装必须使用 Host setup 初始化与 baseline，重启并确认 installed；仅 healthz 成功不足以判断安装完成。
 - 私有配置顶层 `redis_db` 为可选非负整数，默认 0；预检、API/两个 Worker 配置和首次 setup 必须使用同一 DB，不支持时失败而非回退。独立应用共用 Redis 实例需分配不同逻辑 DB，Cluster 仅 DB 0；更新/回滚不自动切 DB 或迁移队列。
 - 更新/回滚有维护窗口：停应用、持久化 DB 备份、forward-only 迁移、切包、版本及进程校验。失败关闭流量，不自动数据库降级。
