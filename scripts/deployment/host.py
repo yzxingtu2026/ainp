@@ -3,6 +3,7 @@
 import argparse
 import base64
 import json
+import ipaddress
 import os
 from pathlib import Path
 import platform
@@ -19,7 +20,7 @@ from common import DeployError, atomic_json, extract_verified, key, lock, name, 
 from storage import bucket, download, upload_immutable
 from reporting import stage
 
-ENV_KEYS = {"DATABASE_DSN", "JWT_SECRET", "CREDENTIAL_ENCRYPTION_KEY", "REDIS_ADDR", "REDIS_PASSWORD", "REDIS_USERNAME", "MCP_BASE_URL", "MCP_WEB_BASE_URL"}
+ENV_KEYS = {"DATABASE_DSN", "JWT_SECRET", "CREDENTIAL_ENCRYPTION_KEY", "REDIS_ADDR", "REDIS_PASSWORD", "REDIS_USERNAME", "MCP_BASE_URL", "MCP_WEB_BASE_URL", "AGUO_DEPLOYMENT_TENANT_ID", "AGUO_WEBSOCKET_ALLOWED_ORIGINS"}
 
 
 def command(argv, **kwargs):
@@ -42,6 +43,24 @@ def redis_db(c):
     return value
 
 
+def validate_websocket_origins(value):
+    """Accept explicit browser Origins only; never widen an absent allowlist."""
+    message = "invalid AGUO_WEBSOCKET_ALLOWED_ORIGINS"
+    require(value and all(32 <= ord(char) < 127 for char in value), message)
+    label = r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
+    pattern = rf"https?://(?P<host>{label}(?:\.{label})*|\[[0-9A-Fa-f:.]+\])(?::(?P<port>[1-9][0-9]{{0,4}}))?"
+    for item in value.split(","):
+        match = re.fullmatch(pattern, item.strip())
+        require(match is not None, message)
+        hostname, port = match.group("host", "port")
+        require(len(hostname) <= 253 and (port is None or int(port) <= 65535), message)
+        if hostname.startswith("["):
+            try:
+                ipaddress.IPv6Address(hostname[1:-1])
+            except ValueError:
+                raise DeployError(message) from None
+
+
 def validate_config(c, project):
     require(c.get("schema") == 1 and c.get("project") == project, "wrong private configuration")
     redis_db(c)
@@ -50,6 +69,11 @@ def validate_config(c, project):
     for k in ("DATABASE_DSN", "JWT_SECRET", "CREDENTIAL_ENCRYPTION_KEY", "REDIS_ADDR", "REDIS_PASSWORD", "MCP_BASE_URL", "MCP_WEB_BASE_URL"):
         require(isinstance(c["env"].get(k), str) and c["env"][k] and "\x00" not in c["env"][k], f"missing/invalid {k}")
     require(all(isinstance(v, str) and "\x00" not in v for v in c["env"].values()), "invalid environment value")
+    if "AGUO_DEPLOYMENT_TENANT_ID" in c["env"]:
+        require(c["project"] == "aguo-ai-dining" and re.fullmatch(r"[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}", c["env"]["AGUO_DEPLOYMENT_TENANT_ID"]), "invalid AGUO_DEPLOYMENT_TENANT_ID")
+    if "AGUO_WEBSOCKET_ALLOWED_ORIGINS" in c["env"]:
+        require(c["project"] == "aguo-ai-dining", "invalid AGUO_WEBSOCKET_ALLOWED_ORIGINS")
+        validate_websocket_origins(c["env"]["AGUO_WEBSOCKET_ALLOWED_ORIGINS"])
     require(not any("REPLACE" in v for v in c["env"].values()), "replace example secret placeholders")
     require(len(c["env"]["JWT_SECRET"]) >= 32, "production JWT secret too short")
     try:
@@ -74,6 +98,16 @@ def validate_config(c, project):
     oss_config(c["backup_oss"])
     key(c["backup_prefix"])
     return c
+
+
+def require_runtime_only_change(current, replacement):
+    before, after = dict(current), dict(replacement)
+    before_env, after_env = dict(before.pop("env")), dict(after.pop("env"))
+    for field in ("AGUO_DEPLOYMENT_TENANT_ID", "AGUO_WEBSOCKET_ALLOWED_ORIGINS"):
+        before_env.pop(field, None)
+        after_env.pop(field, None)
+    require(before == after and before_env == after_env,
+            "private configuration update may only change AGUO_DEPLOYMENT_TENANT_ID or AGUO_WEBSOCKET_ALLOWED_ORIGINS")
 
 
 def app_config(c, home):
@@ -311,6 +345,15 @@ def perform(r, root, home):
             download(r["config_oss"], r["config_key"], cfgpath, r["config_sha256"], role)
         cfgpath.chmod(0o600)
     c = validate_config(read_json(cfgpath), project)
+    replacement = None
+    if action == "update":
+        require(all(field in r for field in ("config_oss", "config_key", "config_sha256")), "update requires pinned private configuration")
+        with tempfile.TemporaryDirectory(prefix="private-config-", dir=etc) as directory:
+            candidate = Path(directory) / "private.json"
+            with stage("private-config-download"):
+                download(r["config_oss"], r["config_key"], candidate, r["config_sha256"], role)
+            replacement = validate_config(read_json(candidate), project)
+        require_runtime_only_change(c, replacement)
     manifest_ref = r["release"]
     require(manifest_ref["project"] == project, "release belongs to another project")
     version(manifest_ref["version"])
@@ -337,6 +380,10 @@ def perform(r, root, home):
         db_preflight(c, fresh)
     with stage("redis-preflight"):
         redis_preflight(c)
+    if replacement is not None and replacement != c:
+        atomic_json(etc / "private.previous.json", c, 0o600)
+        atomic_json(cfgpath, replacement, 0o600)
+        c = replacement
     if fresh:
         try:
             pwd.getpwnam(project)
@@ -419,6 +466,8 @@ def perform(r, root, home):
         # Stable immutable URLs keep prior Web assets addressable across switches.
         versions = root / "web-versions"
         versions.mkdir(exist_ok=True)
+        # Bootstrap runs under umask 077; Nginx must traverse this directory.
+        versions.chmod(0o755)
         link = versions / manifest["version"]
         require(not link.is_symlink() and not link.exists() or link.is_symlink() and link.resolve() == release / "web", "web version collision")
         if not link.is_symlink():
@@ -439,6 +488,10 @@ def perform(r, root, home):
         for app in web_apps(manifest):
             web = https_json(c, app["health_path"])
             require(web.get("commit") == manifest["commit"] and web.get("version") == manifest["version"], f"Web release mismatch: {app['name']}")
+            # The app mount may work while Nginx cannot traverse web-versions.
+            versioned_path = f"/__web/{manifest['version']}{app['health_path']}"
+            versioned_web = https_json(c, versioned_path)
+            require(versioned_web.get("commit") == manifest["commit"] and versioned_web.get("version") == manifest["version"], f"Versioned Web release mismatch: {app['name']}")
             verified_web_apps.append({"name": app["name"], "mount": app["mount"], "health_path": app["health_path"], "version": web["version"], "commit": web["commit"], "build_time": web.get("build_time")})
         command(["systemctl", "enable", *units])
         if str(release) not in history:

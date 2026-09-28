@@ -6,6 +6,7 @@ import hashlib
 import io
 import json
 import os
+import tempfile
 from pathlib import Path
 import re
 import subprocess
@@ -30,6 +31,64 @@ for filename,body in files.items():
 AINP_PAYLOAD
 sh "$work/bootstrap.sh" "$work"
 '''
+
+# Keep the Cloud Assistant command small. The instance RAM role downloads the
+# immutable, release-scoped object; no access key or signed URL is in the audit log.
+VERSIONED_BOOTSTRAP = r'''set -eu
+umask 077
+work=$(mktemp -d /var/tmp/ainp-deploy.XXXXXXXX)
+trap 'rm -rf "$work"' EXIT
+python3 - "$work" <<'AINP_BOOTSTRAP'
+import base64,bz2,datetime,hashlib,hmac,json,pathlib,re,sys,urllib.parse,urllib.request
+work=pathlib.Path(sys.argv[1])
+endpoint=ENDPOINT
+bucket=BUCKET
+object_key=OBJECT_KEY
+expected=EXPECTED_SHA256
+role=RAM_ROLE
+require=lambda ok,msg: (_ for _ in ()).throw(RuntimeError(msg)) if not ok else None
+opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))
+token_request=urllib.request.Request("http://100.100.100.200/latest/api/token",method="PUT",headers={"X-aliyun-ecs-metadata-token-ttl-seconds":"21600"})
+with opener.open(token_request,timeout=10) as response:
+    metadata_token=response.read().decode()
+credentials_request=urllib.request.Request("http://100.100.100.200/latest/meta-data/ram/security-credentials/"+role,headers={"X-aliyun-ecs-metadata-token":metadata_token})
+with opener.open(credentials_request,timeout=10) as response:
+    credentials=json.load(response)
+require(credentials.get("Code")=="Success","instance RAM credentials unavailable")
+access_key=credentials["AccessKeyId"]
+secret=credentials["AccessKeySecret"]
+sts_token=credentials["SecurityToken"]
+encoded_key=urllib.parse.quote(object_key,safe="/~")
+parsed=urllib.parse.urlsplit(endpoint)
+host=bucket+"."+parsed.netloc
+url=urllib.parse.urlunsplit((parsed.scheme,host,"/"+encoded_key,"",""))
+date=datetime.datetime.now(datetime.timezone.utc).strftime("%a, %d %b %Y %H:%M:%S GMT")
+string_to_sign="GET\n\n\n"+date+"\nx-oss-security-token:"+sts_token+"\n/"+bucket+"/"+object_key
+signature=base64.b64encode(hmac.new(secret.encode(),string_to_sign.encode(),hashlib.sha1).digest()).decode()
+request=urllib.request.Request(url,headers={"Date":date,"Host":host,"x-oss-security-token":sts_token,"Authorization":"OSS "+access_key+":"+signature})
+tmp=work/"bundle"
+with opener.open(request,timeout=120) as response, tmp.open("wb") as output:
+    total=0
+    while True:
+        block=response.read(1024*1024)
+        if not block: break
+        total+=len(block)
+        require(total<=2*1024**3,"bootstrap object exceeds download limit")
+        output.write(block)
+with tmp.open("rb") as source:
+    actual=hashlib.sha256(source.read()).hexdigest()
+require(actual==expected,"bootstrap object checksum mismatch")
+with bz2.open(tmp,"rt",encoding="utf-8") as source:
+    files=json.load(source)
+require(isinstance(files,dict) and set(files),"invalid bootstrap object")
+for filename,body in files.items():
+    require(isinstance(filename,str) and re.fullmatch(r"[A-Za-z0-9_.-]+",filename),"invalid bootstrap filename")
+    require(isinstance(body,str),"invalid bootstrap file")
+    (work/filename).write_text(body)
+AINP_BOOTSTRAP
+sh "$work/bootstrap.sh" "$work"
+'''
+
 
 TEST_ENVIRONMENT = "test"
 CLI_ERROR_JSON_LIMIT = 64 * 1024
@@ -153,9 +212,9 @@ def _host_release(reference, endpoint=None):
     return release
 
 
-def bootstrap(request):
+def _bootstrap_files(request):
     files = {p: Path(__file__).with_name(p).read_text() for p in ("common.py", "storage.py", "host.py", "launcher.py", "reporting.py", "bootstrap.sh", "apt.sh")}
-    # Preserve Python semantics while staying below Cloud Assistant's 16 KiB command limit.
+    # Keep the legacy inline loader available for unit tests and local inspection.
     for filename, body in files.items():
         if filename.endswith(".py"):
             lines = body.splitlines(keepends=True)
@@ -165,10 +224,65 @@ def bootstrap(request):
                 lines[token.start[0] - 1] = ""
             files[filename] = "".join(lines)
     files["request.json"] = json.dumps(request, sort_keys=True, separators=(",", ":"))
-    payload = base64.b85encode(bz2.compress(json.dumps(files, separators=(",", ":")).encode(), compresslevel=9)).decode()
-    command = BOOTSTRAP.replace("PAYLOAD_LITERAL", repr(payload)).rstrip("\n")
-    require(len(command.encode()) <= 16384 and len(base64.b64encode(command.encode())) <= 24576, "bootstrap exceeds conservative 16KiB budget / API encoded limit; use a versioned bootstrap object")
+    return files
+
+
+def bootstrap(request, bootstrap_object=None):
+    if bootstrap_object is None:
+        files = _bootstrap_files(request)
+        payload = base64.b85encode(bz2.compress(json.dumps(files, separators=(",", ":")).encode(), compresslevel=9)).decode()
+        command = BOOTSTRAP.replace("PAYLOAD_LITERAL", repr(payload)).rstrip("\n")
+        require(len(command.encode()) <= 16384 and len(base64.b64encode(command.encode())) <= 24576, "bootstrap exceeds conservative 16KiB budget / API encoded limit; use a versioned bootstrap object")
+        return command
+    fields = ("endpoint", "bucket", "key", "sha256", "ram_role")
+    require(all(isinstance(bootstrap_object.get(field), str) and bootstrap_object[field] for field in fields), "invalid versioned bootstrap object")
+    oss_config({"endpoint": bootstrap_object["endpoint"], "bucket": bootstrap_object["bucket"]})
+    key(bootstrap_object["key"])
+    digest(bootstrap_object["sha256"])
+    require(re.fullmatch(r"[A-Za-z0-9_.-]+", bootstrap_object["ram_role"]), "invalid bootstrap RAM role")
+    replacements = {
+        "ENDPOINT": repr(bootstrap_object["endpoint"]),
+        "BUCKET": repr(bootstrap_object["bucket"]),
+        "OBJECT_KEY": repr(bootstrap_object["key"]),
+        "EXPECTED_SHA256": repr(bootstrap_object["sha256"]),
+        "RAM_ROLE": repr(bootstrap_object["ram_role"]),
+    }
+    command = VERSIONED_BOOTSTRAP
+    for name_, value in replacements.items():
+        command = command.replace(name_, value)
+    command = command.rstrip("\n")
+    require(len(command.encode()) <= 16384 and len(base64.b64encode(command.encode())) <= 24576, "versioned bootstrap loader exceeds Cloud Assistant command limit")
     return command
+
+
+def _upload_bootstrap_object(reference, target, request):
+    files = _bootstrap_files(request)
+    oss_config(reference["oss"])
+    name(reference["project"])
+    version(reference["version"])
+    require(re.fullmatch(r"[0-9a-f]{40}", reference["commit"]), "invalid release commit")
+    with tempfile.TemporaryDirectory(prefix="ainp-bootstrap-") as directory:
+        path = Path(directory) / "bootstrap.bundle.bz2"
+        with bz2.open(path, "wt", encoding="utf-8") as output:
+            json.dump(files, output, separators=(",", ":"))
+        expected = hashlib.sha256(path.read_bytes()).hexdigest()
+        object_key = f"releases/{reference['project']}/{reference['version']}/{reference['commit']}/bootstrap/{request['operation_id']}-{expected}.bundle.bz2"
+        endpoint = reference["oss"]["endpoint"]
+        argv = ["aliyun", "oss", "cp", str(path), f"oss://{reference['oss']['bucket']}/{object_key}", "--profile", target["profile"], "--endpoint", endpoint, "--cli-non-interactive"]
+        try:
+            result = subprocess.run(argv, capture_output=True, text=True, timeout=300)
+        except (OSError, subprocess.TimeoutExpired) as error:
+            raise DeployError("Alibaba OSS bootstrap upload unavailable/timeout; inspect persisted state before retry") from error
+        require(result.returncode == 0, "Alibaba OSS bootstrap upload failed; inspect OSS audit and persisted state")
+        downloaded = Path(directory) / "readback.bundle.bz2"
+        argv = ["aliyun", "oss", "cp", f"oss://{reference['oss']['bucket']}/{object_key}", str(downloaded), "--profile", target["profile"], "--endpoint", endpoint, "--cli-non-interactive"]
+        try:
+            result = subprocess.run(argv, capture_output=True, text=True, timeout=300)
+        except (OSError, subprocess.TimeoutExpired) as error:
+            raise DeployError("Alibaba OSS bootstrap readback unavailable/timeout; inspect persisted state before retry") from error
+        require(result.returncode == 0 and downloaded.exists() and hashlib.sha256(downloaded.read_bytes()).hexdigest() == expected,
+                "Alibaba OSS bootstrap readback checksum mismatch")
+    return {"endpoint": target.get("release_oss_endpoint") or endpoint, "bucket": reference["oss"]["bucket"], "key": object_key, "sha256": expected, "ram_role": request["ram_role"]}
 
 
 def describe_instance(api, instance_id, target):
@@ -273,11 +387,32 @@ def _validate_recovery_state(state, target, reference, action):
         require(saved_config_sha256 == target.get("config_sha256"), "recovery configuration SHA256 differs from the persisted failed init")
 
 
+CONFIG_FIELDS = ("config_key", "config_sha256")
+
+
+def target_binding(target):
+    """Resource identity excludes the two immutable private config selectors."""
+    return {field: value for field, value in target.items() if field not in CONFIG_FIELDS}
+
+
+def validate_target_binding(state, target, fingerprint, action):
+    if not state or state["target_sha256"] == fingerprint:
+        return
+    require(action == "update", "target differs from persisted binding; only update can rotate private configuration")
+    require(state.get("target_binding") == target_binding(target), "target resource binding differs from persisted state")
+    require(state.get("config_key") != target["config_key"] and
+            state.get("config_sha256") != target["config_sha256"],
+            "private configuration rotation requires a new OSS key and SHA256")
+
+
 def execute(target, reference, action, statepath, confirm=False, status_only=False):
     fingerprint = hashlib.sha256(json.dumps(target, sort_keys=True).encode()).hexdigest()
     with lock(str(statepath) + ".lock"):
         state = read_json(statepath) if statepath.exists() else {}
-        require(not state or state["target_sha256"] == fingerprint, "target differs from persisted binding; use reviewed new environment state")
+        validate_target_binding(state, target, fingerprint, action)
+        if state and "target_binding" not in state and state["target_sha256"] == fingerprint:
+            state.update(target_binding=target_binding(target), config_key=target.get("config_key"), config_sha256=target.get("config_sha256"))
+            atomic_json(statepath, state)
         api = Alibaba(target)
         if status_only:
             require(state.get("invoke_id"), "no recorded invocation; inspect creation/dispatch audit, do not create again")
@@ -298,6 +433,9 @@ def execute(target, reference, action, statepath, confirm=False, status_only=Fal
             attempts.append(_attempt_snapshot(state))
         state = {
             "target_sha256": fingerprint,
+            "target_binding": target_binding(target),
+            "config_key": target.get("config_key"),
+            "config_sha256": target.get("config_sha256"),
             "client_token": state.get("client_token") or str(uuid.uuid4()),
             "operation_id": str(uuid.uuid4()),
             "action": action,
@@ -310,15 +448,20 @@ def execute(target, reference, action, statepath, confirm=False, status_only=Fal
         request = dict(project=target["project"], ram_role=target["ram_role"], action=action, operation_id=state["operation_id"], release=_host_release(reference, target.get("release_oss_endpoint")))
         if action == "rollback":
             request["confirm_schema_compatible"] = confirm
-        if action == "init":
+        if action in ("init", "update"):
             for field in ("config_oss", "config_key", "config_sha256"):
                 request[field] = target[field]
             oss_config(request["config_oss"])
             key(request["config_key"])
             digest(request["config_sha256"])
         oss_config(reference["oss"])
-        script = bootstrap(request)
-        progress(f"bootstrap prepared: {len(script.encode())} bytes; persisting deployment state")
+        # Persist the operation ID before uploading, so ambiguous OSS outcomes
+        # remain auditable without dispatching or allocating an ECS.
+        atomic_json(statepath, state)
+        bootstrap_object = _upload_bootstrap_object(reference, target, request)
+        script = bootstrap(request, bootstrap_object)
+        state["bootstrap"] = bootstrap_object
+        progress(f"versioned bootstrap prepared: {len(script.encode())} byte loader; persisting deployment state")
         atomic_json(statepath, state)
         if not instance_id:
             require(action == "init", "only init can create an instance")
@@ -406,7 +549,7 @@ def main():
             digest(reference["sha256"])
             key(reference["key"])
             oss_config(reference["oss"])
-            if args.action == "init":
+            if args.action in ("init", "update"):
                 oss_config(target["config_oss"])
                 key(target["config_key"])
                 digest(target["config_sha256"])
@@ -415,6 +558,10 @@ def main():
         if args.version:
             release_reference.pin_reference(args.state_dir, repository, reference, write=args.apply)
         if args.action != "status" and not args.apply:
+            if statepath.exists():
+                target_state = read_json(statepath)
+                fingerprint = hashlib.sha256(json.dumps(target, sort_keys=True).encode()).hexdigest()
+                validate_target_binding(target_state, target, fingerprint, args.action)
             print(json.dumps({"mode": "PLAN ONLY; read-only GitHub lookup; no Alibaba calls" if args.version else "PLAN ONLY; no cloud calls", "action": args.action, "project": target["project"], "environment": target["environment"], "region": target["region"], "instance": target.get("instance_id", "create POSTPAID using pinned launch template, unless state already has instance"), "release": reference["version"], "commit": reference["commit"], "sha256": reference["sha256"], "state": str(statepath), "maintenance_window": True}, ensure_ascii=False, indent=2))
             return
         execute(target, reference, args.action, statepath, args.confirm_schema_compatible, args.action == "status")

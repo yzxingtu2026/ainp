@@ -306,6 +306,67 @@ class ContractTest(unittest.TestCase):
         self.assertFalse(app["database"]["auto_migrate"])
         self.assertFalse(app["jobs"]["embedded_worker"])
 
+    def test_aguo_websocket_origins_are_optional_and_explicit(self):
+        c = self.config()
+        c["project"] = "aguo-ai-dining"
+        self.assertNotIn("AGUO_WEBSOCKET_ALLOWED_ORIGINS", host.validate_config(c, c["project"])["env"])
+        for origins in ("https://aguo-test.yzxingtu.com", "https://screen.example.com:8443, https://admin.example.com",
+                        "http://localhost:5173, http://127.0.0.1:8080, https://[::1]:8443"):
+            with self.subTest(origins=origins):
+                c["env"]["AGUO_WEBSOCKET_ALLOWED_ORIGINS"] = origins
+                self.assertEqual(host.validate_config(c, c["project"])["env"]["AGUO_WEBSOCKET_ALLOWED_ORIGINS"], origins)
+
+    def test_aguo_websocket_origins_reject_invalid_or_unscoped_config(self):
+        c = self.config()
+        c["project"] = "aguo-ai-dining"
+        for origins in ("", " ", "*", "null", "https://*.example.com", "screen.example.com", "wss://screen.example.com",
+                        "https://screen.example.com/", "https://screen.example.com/bigscreen/", "https://screen.example.com?",
+                        "https://screen.example.com#", "https://user:password@screen.example.com", "https://screen.example.com:",
+                        "https://screen.example.com:0", "https://screen.example.com:65536", "https://screen.example.com:abc",
+                        "https://screen.example.com,", ",https://screen.example.com", "https://screen.example.com,,https://admin.example.com",
+                        "https://screen.example.com\n", "https://screen.example.com\t", "https://bad_host.example.com",
+                        "https://-bad.example.com", "https://[not-ipv6]", "https://[::1", "https://screen.example.com\\evil"):
+            with self.subTest(origins=origins), self.assertRaisesRegex(common.DeployError, "invalid AGUO_WEBSOCKET_ALLOWED_ORIGINS"):
+                c["env"]["AGUO_WEBSOCKET_ALLOWED_ORIGINS"] = origins
+                host.validate_config(c, c["project"])
+        c["project"] = "ainp"
+        c["env"]["AGUO_WEBSOCKET_ALLOWED_ORIGINS"] = "https://screen.example.com"
+        with self.assertRaisesRegex(common.DeployError, "invalid AGUO_WEBSOCKET_ALLOWED_ORIGINS"):
+            host.validate_config(c, "ainp")
+
+    def test_runtime_update_scope_preserves_all_unrelated_configuration(self):
+        baseline = self.config()
+        baseline["project"] = "aguo-ai-dining"
+        changed = json.loads(json.dumps(baseline))
+        changed["env"].update(AGUO_DEPLOYMENT_TENANT_ID="15c44f83-ebfb-44a0-8294-55b35689148d",
+                              AGUO_WEBSOCKET_ALLOWED_ORIGINS="https://aguo-test.yzxingtu.com")
+        host.require_runtime_only_change(baseline, changed)
+        host.require_runtime_only_change(changed, baseline)  # Explicit removal remains fail-closed.
+        for field, value in (("JWT_SECRET", "z" * 32), ("DATABASE_DSN", "host=other-db sslmode=disable"),
+                             ("REDIS_PASSWORD", "different"), ("MCP_BASE_URL", "https://other.example.com")):
+            with self.subTest(env=field), self.assertRaisesRegex(common.DeployError, "may only change"):
+                other = json.loads(json.dumps(changed))
+                other["env"][field] = value
+                host.require_runtime_only_change(baseline, other)
+        for field, value in (("redis_db", 1), ("api_port", 18081), ("domain", "other.example.com"),
+                             ("tls", {"fullchain_pem": "different"}), ("bootstrap", {"password": "different"})):
+            with self.subTest(field=field), self.assertRaisesRegex(common.DeployError, "may only change"):
+                host.require_runtime_only_change(baseline, {**changed, field: value})
+
+    def test_aguo_websocket_example_and_api_launcher_environment(self):
+        c = common.read_json("deploy/baseline/examples/private-aguo-websocket.json")
+        c["env"].update(self.config()["env"])
+        c["env"].update(MCP_BASE_URL="https://aguo-test.yzxingtu.com", MCP_WEB_BASE_URL="https://aguo-test.yzxingtu.com")
+        c["bootstrap"]["password"] = "StrongTestPassword123!"
+        host.validate_config(c, "aguo-ai-dining")
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "runtime.json"
+            path.write_text(json.dumps({"home": "/var/lib/aguo-ai-dining", "env": c["env"]}))
+            with mock.patch.object(sys, "argv", ["launcher", str(path), "api", "/opt/aguo-ai-dining/current"]), \
+                 mock.patch.object(os, "execve") as execute:
+                launcher.main()
+            self.assertEqual(execute.call_args.args[2]["AGUO_WEBSOCKET_ALLOWED_ORIGINS"], "https://aguo-test.yzxingtu.com")
+
     def test_redis_db_defaults_to_zero_and_validates_integer(self):
         c = self.config()
         c.pop("redis_db", None)
@@ -514,15 +575,86 @@ class CloudTest(unittest.TestCase):
 
     def test_bootstrap_with_real_request_fits_and_has_no_credentials(self):
         request = dict(project="ainp", ram_role="ainp-production-runtime", action="init", operation_id="a" * 36, release=self.reference(), config_oss=self.target()["config_oss"], config_key=self.target()["config_key"], config_sha256="a" * 64)
-        command = cloud.bootstrap(request)
-        self.assertLessEqual(len(command.encode()), 16384)
-        self.assertNotIn("PAYLOAD_LITERAL", command)
-        self.assertNotIn("DATABASE_DSN=", command)
-        self.assertLessEqual(len(base64.b64encode(command.encode())), 24576)
-        shell = self.unpack_bootstrap(command)["bootstrap.sh"]
+        files = cloud._bootstrap_files(request)
+        self.assertNotIn("DATABASE_DSN=", files["bootstrap.sh"])
+        shell = files["bootstrap.sh"]
         self.assertIn("chmod 644 /usr/share/postgresql-common/pgdg", shell)
         self.assertIn("mirrors.cloud.aliyuncs.com", shell)
         self.assertIn("/etc/apt/sources.list", shell)
+
+    def test_versioned_bootstrap_loader_is_bounded_and_uses_ram_role(self):
+        import subprocess
+        obj = dict(endpoint="https://oss-cn-hangzhou-internal.aliyuncs.com", bucket="private-release",
+                   key="releases/ainp/v1.2.3/" + "b" * 40 + "/bootstrap/" + "a" * 64 + ".bundle.bz2",
+                   sha256="a" * 64, ram_role="ainp-production-runtime")
+        command = cloud.bootstrap({}, obj)
+        self.assertLessEqual(len(command.encode()), 16384)
+        self.assertLessEqual(len(base64.b64encode(command.encode())), 24576)
+        self.assertIn('"\\n/"+bucket+"/"+object_key', command)
+        self.assertIn('actual==expected', command)
+        self.assertIn('metadata-token', command)
+        self.assertNotIn('AccessKeySecret=', command)
+        subprocess.run(["sh", "-n"], input=command, text=True, check=True)
+        python = command.split("<<'AINP_BOOTSTRAP'\n", 1)[1].split("\nAINP_BOOTSTRAP", 1)[0]
+        compile(python, "versioned-bootstrap", "exec")
+
+    def test_versioned_loader_fetches_signed_oss_object_and_rejects_tampering(self):
+        import hmac
+        import urllib.request
+        obj = dict(endpoint="https://oss-cn-hangzhou-internal.aliyuncs.com", bucket="private-release",
+                   key="releases/ainp/v1.2.3/bootstrap/verified.bundle.bz2", ram_role="runtime")
+        bundle = bz2.compress(json.dumps({"bootstrap.sh": "exit 0", "request.json": "{}"}).encode())
+        obj["sha256"] = hashlib.sha256(bundle).hexdigest()
+        command = cloud.bootstrap({}, obj)
+        loader = command.split("<<'AINP_BOOTSTRAP'\n", 1)[1].split("\nAINP_BOOTSTRAP", 1)[0]
+        class Reply:
+            def __init__(self, body): self.body = io.BytesIO(body)
+            def __enter__(self): return self
+            def __exit__(self, *args): pass
+            def read(self, *args): return self.body.read(*args)
+        class Opener:
+            def __init__(self, body): self.body = body
+            def open(self, request, timeout=None):
+                if request.full_url.endswith("/api/token"):
+                    self_role = request.headers.get("X-aliyun-ecs-metadata-token-ttl-seconds")
+                    self_test.assertEqual(self_role, "21600")
+                    return Reply(b"metadata-token")
+                if request.full_url.endswith("/security-credentials/runtime"):
+                    return Reply(json.dumps(dict(Code="Success", AccessKeyId="access", AccessKeySecret="secret", SecurityToken="sts")).encode())
+                self_test.assertEqual(request.headers["X-oss-security-token"], "sts")
+                signature = base64.b64encode(hmac.new(b"secret", ("GET\n\n\n" + request.headers["Date"] + "\nx-oss-security-token:sts\n/private-release/" + obj["key"]).encode(), hashlib.sha1).digest()).decode()
+                self_test.assertEqual(request.headers["Authorization"], "OSS access:" + signature)
+                return Reply(self.body)
+        self_test = self
+        with tempfile.TemporaryDirectory() as directory:
+            for body, should_pass in ((bundle, True), (bundle + b"tampered", False)):
+                with self.subTest(should_pass=should_pass), mock.patch.object(sys, "argv", ["loader", directory]), mock.patch.object(urllib.request, "build_opener", return_value=Opener(body)):
+                    if should_pass:
+                        exec(compile(loader, "versioned-bootstrap", "exec"), {})
+                        self.assertEqual((Path(directory) / "bootstrap.sh").read_text(), "exit 0")
+                    else:
+                        with self.assertRaisesRegex(RuntimeError, "checksum mismatch"):
+                            exec(compile(loader, "versioned-bootstrap", "exec"), {})
+
+    def test_bootstrap_upload_reads_back_exact_bytes_before_dispatch(self):
+        request = dict(project="ainp", action="update", operation_id="a" * 36, ram_role="role", release=self.reference())
+        target = self.target()
+        def transfer(argv, **kwargs):
+            self.assertEqual(argv[:3], ["aliyun", "oss", "cp"])
+            self.assertIn("--cli-non-interactive", argv)
+            if argv[3].startswith("oss://"):
+                Path(argv[4]).write_bytes(Path(upload_path[0]).read_bytes())
+            else:
+                upload_path.append(argv[3])
+            return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+        import subprocess
+        upload_path = []
+        with mock.patch.object(cloud.subprocess, "run", side_effect=transfer) as run:
+            obj = cloud._upload_bootstrap_object(self.reference(), target, request)
+        self.assertEqual(run.call_count, 2)
+        self.assertIn(request["operation_id"], obj["key"])
+        self.assertEqual(obj["endpoint"], target["release_oss_endpoint"])
+        self.assertEqual(len(obj["sha256"]), 64)
 
     def test_poll_streams_only_complete_progress_records_once(self):
         first = "AINP_PROGRESS 2026-09-26T12:00:00Z postgresql-preflight: started\n"
@@ -545,8 +677,8 @@ class CloudTest(unittest.TestCase):
 
     def test_bootstrap_loader_roundtrip_and_shell_syntax(self):
         import subprocess
-        command = cloud.bootstrap(dict(project="ainp", ram_role="role", action="init", operation_id="a" * 36, release=self.reference()))
-        files = self.unpack_bootstrap(command)
+        files = cloud._bootstrap_files(dict(project="ainp", ram_role="role", action="init", operation_id="a" * 36, release=self.reference()))
+        command = cloud.BOOTSTRAP.replace("PAYLOAD_LITERAL", repr(base64.b85encode(bz2.compress(json.dumps(files).encode())).decode()))
         # The transport may omit standalone comments, but must preserve the exact program.
         for filename in ("host.py", "common.py", "storage.py", "reporting.py", "launcher.py"):
             self.assertEqual(ast.dump(ast.parse(files[filename])), ast.dump(ast.parse((DEPLOY / filename).read_text())))
@@ -586,8 +718,7 @@ class CloudTest(unittest.TestCase):
         self.assertNotIn("CommandContent", text)
 
     def test_bootstrap_retries_only_apt_lock_failures_with_bounded_timeout(self):
-        command = cloud.bootstrap(dict(project="ainp", ram_role="ainp-production-runtime", action="init", operation_id="a" * 36, release=self.reference(), config_oss=self.target()["config_oss"], config_key=self.target()["config_key"], config_sha256="a" * 64))
-        files = self.unpack_bootstrap(command)
+        files = cloud._bootstrap_files(dict(project="ainp", ram_role="ainp-production-runtime", action="init", operation_id="a" * 36, release=self.reference(), config_oss=self.target()["config_oss"], config_key=self.target()["config_key"], config_sha256="a" * 64))
         command = files["apt.sh"]
         self.assertIn("else status=$?", command)
         self.assertIn('return "$status"', command)
@@ -615,11 +746,7 @@ class CloudTest(unittest.TestCase):
             config_key=target["config_key"],
             config_sha256=target["config_sha256"],
         )
-        command = cloud.bootstrap(request)
-        self.assertLess(len(command.encode()), 16384)
-        self.assertLessEqual(len(base64.b64encode(command.encode())), 24576)
-        literal = command.split("base64.b85decode(", 1)[1].splitlines()[0].removesuffix(")))")
-        files = json.loads(bz2.decompress(base64.b85decode(ast.literal_eval(literal))))
+        files = cloud._bootstrap_files(request)
         remote_request = json.loads(files["request.json"])
         self.assertEqual(set(remote_request["release"]), {"project", "version", "commit", "platform", "sha256", "key", "oss"})
         self.assertEqual(remote_request["release"]["oss"]["endpoint"], target["release_oss_endpoint"])
@@ -652,7 +779,7 @@ class CloudTest(unittest.TestCase):
                 "release": reference,
                 "config_sha256": target["config_sha256"],
             })
-            with mock.patch.object(cloud.Alibaba, "call", side_effect=call), mock.patch.object(cloud, "poll"), mock.patch.object(cloud, "bootstrap", return_value="echo safe"), contextlib.redirect_stdout(io.StringIO()):
+            with mock.patch.object(cloud.Alibaba, "call", side_effect=call), mock.patch.object(cloud, "poll"), mock.patch.object(cloud, "bootstrap", return_value="echo safe"), mock.patch.object(cloud, "_upload_bootstrap_object", return_value={"endpoint": "https://oss-cn-hangzhou-internal.aliyuncs.com", "bucket": "private-release", "key": "key", "sha256": "a" * 64, "ram_role": "role"}), contextlib.redirect_stdout(io.StringIO()):
                 cloud.execute(target, reference, "init", statepath)
             state = common.read_json(statepath)
             self.assertEqual(state["instance_id"], "i-existing")
@@ -722,7 +849,7 @@ class CloudTest(unittest.TestCase):
     def test_uncertain_creation_never_creates_second_instance(self):
         with tempfile.TemporaryDirectory() as d:
             path = Path(d) / "state.json"
-            with mock.patch.object(cloud.Alibaba, "call", side_effect=common.DeployError("timeout")) as call:
+            with mock.patch.object(cloud.Alibaba, "call", side_effect=common.DeployError("timeout")) as call, mock.patch.object(cloud, "_upload_bootstrap_object", return_value={"endpoint": "https://oss-cn-hangzhou-internal.aliyuncs.com", "bucket": "private-release", "key": "key", "sha256": "a" * 64, "ram_role": "role"}):
                 with self.assertRaises(common.DeployError):
                     cloud.execute(self.target(), self.reference(), "init", path)
                 self.assertEqual(common.read_json(path)["status"], "creating")
@@ -730,6 +857,24 @@ class CloudTest(unittest.TestCase):
                 with self.assertRaisesRegex(common.DeployError, "outcome unknown"):
                     cloud.execute(self.target(), self.reference(), "init", path)
                 self.assertEqual(call.call_count, 1)
+
+    def test_config_rotation_checks_persisted_resource_identity(self):
+        original = self.target()
+        original_state = {"target_sha256": hashlib.sha256(json.dumps(original, sort_keys=True).encode()).hexdigest(),
+                          "target_binding": cloud.target_binding(original),
+                          "config_key": original["config_key"], "config_sha256": original["config_sha256"]}
+        rotated = {**original, "config_key": "config-v2.json", "config_sha256": "b" * 64}
+        rotated_hash = hashlib.sha256(json.dumps(rotated, sort_keys=True).encode()).hexdigest()
+        cloud.validate_target_binding(original_state, rotated, rotated_hash, "update")
+        for changed in ({**rotated, "region": "cn-shanghai"},
+                        {**rotated, "config_oss": {**rotated["config_oss"], "bucket": "another-private-bucket"}},
+                        {**rotated, "ram_role": "other-role"}):
+            with self.assertRaises(common.DeployError):
+                cloud.validate_target_binding(original_state, changed, "different", "update")
+        with self.assertRaises(common.DeployError):
+            cloud.validate_target_binding({"target_sha256": original_state["target_sha256"]}, rotated, rotated_hash, "update")
+        with self.assertRaises(common.DeployError):
+            cloud.validate_target_binding(original_state, rotated, rotated_hash, "rollback")
 
     def test_existing_instance_dispatch_uses_private_endpoint_and_idempotence(self):
         target = {**self.target(), "instance_id": "i-existing"}
@@ -748,7 +893,7 @@ class CloudTest(unittest.TestCase):
             return {"InvokeId": "t-123"}
         with tempfile.TemporaryDirectory() as d:
             statepath = Path(d) / "state.json"
-            with mock.patch.object(cloud.Alibaba, "call", side_effect=call), mock.patch.object(cloud, "poll"), mock.patch.object(cloud, "bootstrap", return_value="echo safe") as bootstrap, contextlib.redirect_stdout(io.StringIO()):
+            with mock.patch.object(cloud.Alibaba, "call", side_effect=call), mock.patch.object(cloud, "poll"), mock.patch.object(cloud, "bootstrap", return_value="echo safe") as bootstrap, mock.patch.object(cloud, "_upload_bootstrap_object", return_value={"endpoint": "https://oss-cn-hangzhou-internal.aliyuncs.com", "bucket": "private-release", "key": "key", "sha256": "a" * 64, "ram_role": "role"}), contextlib.redirect_stdout(io.StringIO()):
                 cloud.execute(target, reference, "init", statepath)
             request = bootstrap.call_args.args[0]
             self.assertEqual(request["release"]["oss"]["endpoint"], target["release_oss_endpoint"])
@@ -1160,7 +1305,7 @@ class HostTransactionTest(unittest.TestCase):
             if argv[:2] == ["systemctl", "show"]:
                 if "NRestarts" in argv:
                     return b"0\n"
-                pid = {"ainp-api.service": 901, "ainp-worker.service": 902, "ainp-ai-worker.service": 903}[argv[2]]
+                pid = {f"{self.config['project']}-api.service": 901, f"{self.config['project']}-worker.service": 902, f"{self.config['project']}-ai-worker.service": 903}[argv[2]]
                 exe = self.fs / f"proc/{pid}/exe"
                 exe.parent.mkdir(parents=True, exist_ok=True)
                 exe.unlink(missing_ok=True)
@@ -1196,11 +1341,103 @@ class HostTransactionTest(unittest.TestCase):
             p = stage / filename
             p.parent.mkdir(exist_ok=True)
             p.write_text(version)
-        identity = dict(schema=1, project="ainp", version=version, commit="b" * 40, platform="ubuntu-22.04-amd64", build_time="2026-09-24T00:00:00Z")
+        identity = dict(schema=1, project=self.config["project"], version=version, commit="b" * 40, platform="ubuntu-22.04-amd64", build_time="2026-09-24T00:00:00Z")
         archive = self.fs / (version + ".tar.gz")
         package.pack(stage, archive, identity, 1)
         self.archives[version] = archive
-        return dict(project="ainp", ram_role="runtime", action=action, operation_id=action + version, config_oss={}, config_key="config.json", config_sha256=common.sha256(self.config_source), release={**identity, "sha256": common.sha256(archive), "key": version, "oss": {}}, confirm_schema_compatible=True)
+        return dict(project=self.config["project"], ram_role="runtime", action=action, operation_id=action + version, config_oss={}, config_key="config.json", config_sha256=common.sha256(self.config_source), release={**identity, "sha256": common.sha256(archive), "key": version, "oss": {}}, confirm_schema_compatible=True)
+
+    def test_aguo_tenant_change_is_valid_and_other_changes_rejected(self):
+        baseline = ContractTest().config()
+        baseline["project"] = "aguo-ai-dining"
+        host.validate_config(baseline, "aguo-ai-dining")
+        changed = json.loads(json.dumps(baseline))
+        changed["env"]["AGUO_DEPLOYMENT_TENANT_ID"] = "15c44f83-ebfb-44a0-8294-55b35689148d"
+        host.validate_config(changed, "aguo-ai-dining")
+        host.require_runtime_only_change(baseline, changed)
+        changed["redis_db"] = 1
+        with self.assertRaisesRegex(common.DeployError, "may only change"):
+            host.require_runtime_only_change(baseline, changed)
+
+    def test_aguo_tenant_update_persists_and_rollback_reuses_config(self):
+        self.config["project"] = "aguo-ai-dining"
+        self.config_source.write_text(json.dumps(self.config))
+        initial = self.request("v1.0.0", "init")
+        host.perform(initial, self.root, self.home)
+        previous = common.read_json(self.fs / "etc/aguo-ai-dining/private.json")
+        changed = json.loads(json.dumps(self.config))
+        changed["env"]["AGUO_DEPLOYMENT_TENANT_ID"] = "15c44f83-ebfb-44a0-8294-55b35689148d"
+        self.config_source.write_text(json.dumps(changed))
+        update = self.request("v1.1.0", "update")
+        update["config_sha256"] = "0" * 64
+        with self.assertRaisesRegex(common.DeployError, "checksum mismatch"):
+            host.perform(update, self.root, self.home)
+        self.assertEqual(common.read_json(self.fs / "etc/aguo-ai-dining/private.json"), previous)
+        update["config_sha256"] = common.sha256(self.config_source)
+        host.perform(update, self.root, self.home)
+        self.assertEqual(common.read_json(self.fs / "etc/aguo-ai-dining/runtime.json")["env"]["AGUO_DEPLOYMENT_TENANT_ID"], changed["env"]["AGUO_DEPLOYMENT_TENANT_ID"])
+        self.assertEqual(common.read_json(self.fs / "etc/aguo-ai-dining/private.previous.json"), previous)
+        rollback = dict(initial, action="rollback", operation_id="rollback-v1.0.0")
+        host.perform(rollback, self.root, self.home)
+        self.assertEqual(common.read_json(self.fs / "etc/aguo-ai-dining/runtime.json")["env"]["AGUO_DEPLOYMENT_TENANT_ID"], changed["env"]["AGUO_DEPLOYMENT_TENANT_ID"])
+
+    def test_aguo_websocket_update_persists_and_rollback_reuses_config(self):
+        self.config["project"] = "aguo-ai-dining"
+        self.config_source.write_text(json.dumps(self.config))
+        initial = self.request("v1.0.0", "init")
+        host.perform(initial, self.root, self.home)
+        etc = self.fs / "etc/aguo-ai-dining"
+        previous = common.read_json(etc / "private.json")
+        changed = json.loads(json.dumps(self.config))
+        changed["env"]["AGUO_WEBSOCKET_ALLOWED_ORIGINS"] = "https://aguo-test.yzxingtu.com,https://admin.example.com"
+        self.config_source.write_text(json.dumps(changed))
+        update = self.request("v1.1.0", "update")
+        update["config_sha256"] = "0" * 64
+        with self.assertRaisesRegex(common.DeployError, "checksum mismatch"):
+            host.perform(update, self.root, self.home)
+        self.assertEqual(common.read_json(etc / "private.json"), previous)
+        update["config_sha256"] = common.sha256(self.config_source)
+        host.perform(update, self.root, self.home)
+        self.assertEqual(common.read_json(etc / "runtime.json")["env"], changed["env"])
+        self.assertEqual(common.read_json(etc / "private.previous.json"), previous)
+        host.perform(dict(initial, action="rollback", operation_id="rollback-v1.0.0"), self.root, self.home)
+        self.assertEqual(common.read_json(etc / "runtime.json")["env"], changed["env"])
+
+    def test_invalid_websocket_update_fails_before_host_mutation(self):
+        self.config["project"] = "aguo-ai-dining"
+        self.config_source.write_text(json.dumps(self.config))
+        host.perform(self.request("v1.0.0", "init"), self.root, self.home)
+        etc = self.fs / "etc/aguo-ai-dining"
+        before = {filename: (etc / filename).read_bytes() for filename in ("private.json", "runtime.json")}
+        self.events.clear()
+        changed = json.loads(json.dumps(self.config))
+        changed["env"]["AGUO_WEBSOCKET_ALLOWED_ORIGINS"] = "*"
+        self.config_source.write_text(json.dumps(changed))
+        with self.assertRaisesRegex(common.DeployError, "invalid AGUO_WEBSOCKET_ALLOWED_ORIGINS"):
+            host.perform(self.request("v1.1.0", "update"), self.root, self.home)
+        self.assertEqual(self.events, [])
+        self.assertEqual({filename: (etc / filename).read_bytes() for filename in before}, before)
+        self.assertFalse((etc / "private.previous.json").exists())
+
+    def test_update_applies_only_tenant_environment_change(self):
+        initial = self.request("v1.0.0", "init")
+        host.perform(initial, self.root, self.home)
+        old = common.read_json(self.fs / "etc/ainp/private.json")
+        self.config_source = self.fs / "config-v2.json"
+        changed = json.loads(json.dumps(self.config))
+        changed["env"]["AGUO_DEPLOYMENT_TENANT_ID"] = "15c44f83-ebfb-44a0-8294-55b35689148d"
+        self.config_source.write_text(json.dumps(changed))
+        update = self.request("v1.1.0", "update")
+        with self.assertRaisesRegex(common.DeployError, "invalid AGUO_DEPLOYMENT_TENANT_ID"):
+            host.perform(update, self.root, self.home)
+        self.assertEqual(common.read_json(self.fs / "etc/ainp/private.json"), old)
+        changed["env"].pop("AGUO_DEPLOYMENT_TENANT_ID")
+        changed["env"]["JWT_SECRET"] = "changed-" + changed["env"]["JWT_SECRET"]
+        self.config_source.write_text(json.dumps(changed))
+        update["config_sha256"] = common.sha256(self.config_source)
+        with self.assertRaisesRegex(common.DeployError, "may only change"):
+            host.perform(update, self.root, self.home)
+        self.assertEqual(common.read_json(self.fs / "etc/ainp/private.json"), old)
 
     def test_init_update_rollback_order_and_persistent_state(self):
         initial = self.request("v1.0.0", "init")
@@ -1236,6 +1473,7 @@ class HostTransactionTest(unittest.TestCase):
             self.assertEqual((self.root / "web-versions" / version).resolve(),
                              (self.root / "current/web").resolve())
         versions = self.root / "web-versions"
+        self.assertEqual(versions.stat().st_mode & 0o777, 0o755)
         self.assertTrue((versions / "v1.0.0").is_symlink())
         self.assertFalse((versions / "v1.1.0").exists())
         self.assertTrue((versions / "v1.2.0").is_symlink())
@@ -1247,6 +1485,35 @@ class HostTransactionTest(unittest.TestCase):
         host.perform({**requests["v1.0.0"], "action": "rollback", "operation_id": "rollback-pinned"}, self.root, self.home)
         self.assertEqual(common.read_json(self.root / "deployment.json")["release"]["version"], "v1.0.0")
         self.assertTrue((versions / "v1.3.0").is_symlink())
+
+    def test_versioned_web_is_checked_before_deployment_becomes_healthy(self):
+        request = self.request("v1.0.0", "init")
+        with mock.patch.object(host, "https_json", wraps=host.https_json) as probe:
+            host.perform(request, self.root, self.home)
+        self.assertIn("/__web/v1.0.0/build.json", [call.args[1] for call in probe.call_args_list])
+        self.assertEqual(common.read_json(self.root / "deployment.json")["status"], "healthy")
+
+    def test_inaccessible_versioned_web_fails_deployment(self):
+        request = self.request("v1.0.0", "init")
+        original = host.https_json
+        def blocked(c, path):
+            if path.startswith("/__web/"):
+                raise common.DeployError("versioned resource returned 403")
+            return original(c, path)
+        with mock.patch.object(host, "https_json", side_effect=blocked):
+            with self.assertRaises(common.DeployError):
+                host.perform(request, self.root, self.home)
+        self.assertEqual(common.read_json(self.root / "deployment.json")["status"], "failed-maintenance")
+        self.assertIn(("nginx-maintenance",), self.events)
+
+    def test_web_versions_directory_is_publicly_traversable_under_private_umask(self):
+        request = self.request("v1.0.0", "init")
+        old_umask = os.umask(0o077)
+        try:
+            host.perform(request, self.root, self.home)
+        finally:
+            os.umask(old_umask)
+        self.assertEqual((self.root / "web-versions").stat().st_mode & 0o777, 0o755)
 
     def test_fresh_init_uses_same_nonzero_db_in_setup_and_app_config(self):
         self.config["redis_db"] = 3
