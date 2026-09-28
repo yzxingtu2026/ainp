@@ -524,6 +524,80 @@ class CloudTest(unittest.TestCase):
         self.assertIn("mirrors.cloud.aliyuncs.com", shell)
         self.assertIn("/etc/apt/sources.list", shell)
 
+    def test_versioned_bootstrap_loader_is_bounded_and_uses_ram_role(self):
+        import subprocess
+        obj = dict(endpoint="https://oss-cn-hangzhou-internal.aliyuncs.com", bucket="private-release",
+                   key="releases/ainp/v1.2.3/" + "b" * 40 + "/bootstrap/" + "a" * 64 + ".bundle.bz2",
+                   sha256="a" * 64, ram_role="ainp-production-runtime")
+        command = cloud.bootstrap({}, obj)
+        self.assertLessEqual(len(command.encode()), 16384)
+        self.assertLessEqual(len(base64.b64encode(command.encode())), 24576)
+        self.assertIn('"\\n/"+bucket+"/"+object_key', command)
+        self.assertIn('actual==expected', command)
+        self.assertIn('metadata-token', command)
+        self.assertNotIn('AccessKeySecret=', command)
+        subprocess.run(["sh", "-n"], input=command, text=True, check=True)
+        python = command.split("<<'AINP_BOOTSTRAP'\n", 1)[1].split("\nAINP_BOOTSTRAP", 1)[0]
+        compile(python, "versioned-bootstrap", "exec")
+
+    def test_versioned_loader_fetches_signed_oss_object_and_rejects_tampering(self):
+        import hmac
+        import urllib.request
+        obj = dict(endpoint="https://oss-cn-hangzhou-internal.aliyuncs.com", bucket="private-release",
+                   key="releases/ainp/v1.2.3/bootstrap/verified.bundle.bz2", ram_role="runtime")
+        bundle = bz2.compress(json.dumps({"bootstrap.sh": "exit 0", "request.json": "{}"}).encode())
+        obj["sha256"] = hashlib.sha256(bundle).hexdigest()
+        command = cloud.bootstrap({}, obj)
+        loader = command.split("<<'AINP_BOOTSTRAP'\n", 1)[1].split("\nAINP_BOOTSTRAP", 1)[0]
+        class Reply:
+            def __init__(self, body): self.body = io.BytesIO(body)
+            def __enter__(self): return self
+            def __exit__(self, *args): pass
+            def read(self, *args): return self.body.read(*args)
+        class Opener:
+            def __init__(self, body): self.body = body
+            def open(self, request, timeout=None):
+                if request.full_url.endswith("/api/token"):
+                    self_role = request.headers.get("X-aliyun-ecs-metadata-token-ttl-seconds")
+                    self_test.assertEqual(self_role, "21600")
+                    return Reply(b"metadata-token")
+                if request.full_url.endswith("/security-credentials/runtime"):
+                    return Reply(json.dumps(dict(Code="Success", AccessKeyId="access", AccessKeySecret="secret", SecurityToken="sts")).encode())
+                self_test.assertEqual(request.headers["X-oss-security-token"], "sts")
+                signature = base64.b64encode(hmac.new(b"secret", ("GET\n\n\n" + request.headers["Date"] + "\nx-oss-security-token:sts\n/private-release/" + obj["key"]).encode(), hashlib.sha1).digest()).decode()
+                self_test.assertEqual(request.headers["Authorization"], "OSS access:" + signature)
+                return Reply(self.body)
+        self_test = self
+        with tempfile.TemporaryDirectory() as directory:
+            for body, should_pass in ((bundle, True), (bundle + b"tampered", False)):
+                with self.subTest(should_pass=should_pass), mock.patch.object(sys, "argv", ["loader", directory]), mock.patch.object(urllib.request, "build_opener", return_value=Opener(body)):
+                    if should_pass:
+                        exec(compile(loader, "versioned-bootstrap", "exec"), {})
+                        self.assertEqual((Path(directory) / "bootstrap.sh").read_text(), "exit 0")
+                    else:
+                        with self.assertRaisesRegex(RuntimeError, "checksum mismatch"):
+                            exec(compile(loader, "versioned-bootstrap", "exec"), {})
+
+    def test_bootstrap_upload_reads_back_exact_bytes_before_dispatch(self):
+        request = dict(project="ainp", action="update", operation_id="a" * 36, ram_role="role", release=self.reference())
+        target = self.target()
+        def transfer(argv, **kwargs):
+            self.assertEqual(argv[:3], ["aliyun", "oss", "cp"])
+            self.assertIn("--cli-non-interactive", argv)
+            if argv[3].startswith("oss://"):
+                Path(argv[4]).write_bytes(Path(upload_path[0]).read_bytes())
+            else:
+                upload_path.append(argv[3])
+            return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+        import subprocess
+        upload_path = []
+        with mock.patch.object(cloud.subprocess, "run", side_effect=transfer) as run:
+            obj = cloud._upload_bootstrap_object(self.reference(), target, request)
+        self.assertEqual(run.call_count, 2)
+        self.assertIn(request["operation_id"], obj["key"])
+        self.assertEqual(obj["endpoint"], target["release_oss_endpoint"])
+        self.assertEqual(len(obj["sha256"]), 64)
+
     def test_poll_streams_only_complete_progress_records_once(self):
         first = "AINP_PROGRESS 2026-09-26T12:00:00Z postgresql-preflight: started\n"
         last = "AINP_PROGRESS 2026-09-26T12:00:05Z postgresql-preflight: done (5s)\n"
@@ -652,7 +726,7 @@ class CloudTest(unittest.TestCase):
                 "release": reference,
                 "config_sha256": target["config_sha256"],
             })
-            with mock.patch.object(cloud.Alibaba, "call", side_effect=call), mock.patch.object(cloud, "poll"), mock.patch.object(cloud, "bootstrap", return_value="echo safe"), contextlib.redirect_stdout(io.StringIO()):
+            with mock.patch.object(cloud.Alibaba, "call", side_effect=call), mock.patch.object(cloud, "poll"), mock.patch.object(cloud, "bootstrap", return_value="echo safe"), mock.patch.object(cloud, "_upload_bootstrap_object", return_value={"endpoint": "https://oss-cn-hangzhou-internal.aliyuncs.com", "bucket": "private-release", "key": "key", "sha256": "a" * 64, "ram_role": "role"}), contextlib.redirect_stdout(io.StringIO()):
                 cloud.execute(target, reference, "init", statepath)
             state = common.read_json(statepath)
             self.assertEqual(state["instance_id"], "i-existing")
@@ -722,7 +796,7 @@ class CloudTest(unittest.TestCase):
     def test_uncertain_creation_never_creates_second_instance(self):
         with tempfile.TemporaryDirectory() as d:
             path = Path(d) / "state.json"
-            with mock.patch.object(cloud.Alibaba, "call", side_effect=common.DeployError("timeout")) as call:
+            with mock.patch.object(cloud.Alibaba, "call", side_effect=common.DeployError("timeout")) as call, mock.patch.object(cloud, "_upload_bootstrap_object", return_value={"endpoint": "https://oss-cn-hangzhou-internal.aliyuncs.com", "bucket": "private-release", "key": "key", "sha256": "a" * 64, "ram_role": "role"}):
                 with self.assertRaises(common.DeployError):
                     cloud.execute(self.target(), self.reference(), "init", path)
                 self.assertEqual(common.read_json(path)["status"], "creating")
@@ -748,7 +822,7 @@ class CloudTest(unittest.TestCase):
             return {"InvokeId": "t-123"}
         with tempfile.TemporaryDirectory() as d:
             statepath = Path(d) / "state.json"
-            with mock.patch.object(cloud.Alibaba, "call", side_effect=call), mock.patch.object(cloud, "poll"), mock.patch.object(cloud, "bootstrap", return_value="echo safe") as bootstrap, contextlib.redirect_stdout(io.StringIO()):
+            with mock.patch.object(cloud.Alibaba, "call", side_effect=call), mock.patch.object(cloud, "poll"), mock.patch.object(cloud, "bootstrap", return_value="echo safe") as bootstrap, mock.patch.object(cloud, "_upload_bootstrap_object", return_value={"endpoint": "https://oss-cn-hangzhou-internal.aliyuncs.com", "bucket": "private-release", "key": "key", "sha256": "a" * 64, "ram_role": "role"}), contextlib.redirect_stdout(io.StringIO()):
                 cloud.execute(target, reference, "init", statepath)
             request = bootstrap.call_args.args[0]
             self.assertEqual(request["release"]["oss"]["endpoint"], target["release_oss_endpoint"])

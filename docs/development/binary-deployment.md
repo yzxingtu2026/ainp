@@ -202,6 +202,13 @@ python3 scripts/deployment/cloud.py init \
 
 脚本不会创建 DNS 记录；公网 IP 变化时需将域名正确指向新 ECS，或使用已规划的固定入口。完成后保存 `.deploy-state/ainp-production.json`，核对公网首页、installed、API/Web 身份和真实业务功能。主机 HTTPS 检查使用 loopback 地址指定域名，不能单独证明公网 DNS 正确。
 
+
+### Cloud Assistant bootstrap 大小限制
+
+`--apply` 会将部署脚本压缩为版本化 OSS 对象（`releases/<project>/<version>/<commit>/bootstrap/<operation-id>-<sha256>.bundle.bz2`），上传并读回校验 SHA256，然后将约 3 KiB 的加载命令发送给 Cloud Assistant。加载命令使用 ECS 实例 RAM 角色和 IMDSv2 读取私有对象，再校验 SHA256 并执行；不在命令中嵌入访问密钥或预签名链接。此操作要求执行 `cloud.py` 的本地阿里云 CLI profile 对发布桶具有该前缀的上传和读取权限，实例 RAM 角色对相同前缀有读取权限。
+
+默认 plan 仍只读取 GitHub 发布引用，不写 OSS、不调用 ECS。`--apply` 若在 OSS 上传或读回阶段失败，不会发送 Cloud Assistant 命令；检查 OSS 访问和账本后再重试。每次操作使用新的不可预测 operation ID 和独立对象 key，已创建的版本对象留存供审计。
+
 ### 5.2 正式更新
 
 新代码经 PR/CI 合入 `main` 后，用上述流程发布新的稳定版本，等待 Release Published。保留旧引用和主机旧包；审核迁移兼容性，在维护窗口使用同一 target、同一账本：
