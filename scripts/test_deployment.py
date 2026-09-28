@@ -352,6 +352,27 @@ class ContractTest(unittest.TestCase):
         self.assertIn("return 503", maintenance)
         self.assertNotIn("proxy_pass", maintenance)
 
+    def test_nginx_websocket_upgrade_only_on_api_routes(self):
+        import re
+        result = host.nginx(self.config(), Path("/opt/ainp"))
+        self.assertRegex(result, r"map \$http_upgrade \$ainp_websocket_connection \{\s*default upgrade;\s*'' '';\s*\}")
+        blocks = dict(re.findall(r"    location (.*?) \{\n(.*?)    \}\n", result, re.S))
+        for route in ("~ ^/api/v1/ai/", "/api/"):
+            with self.subTest(route=route):
+                block = blocks[route]
+                self.assertIn("proxy_http_version 1.1;", block)
+                self.assertIn("proxy_set_header Upgrade $http_upgrade;", block)
+                self.assertIn("proxy_set_header Connection $ainp_websocket_connection;", block)
+                self.assertIn("proxy_set_header Host $host;", block)
+                self.assertIn("proxy_set_header X-Forwarded-Proto $scheme;", block)
+        for route in ("= /healthz", "= /mcp", "= /oauth/token"):
+            with self.subTest(route=route):
+                self.assertNotIn("proxy_set_header Upgrade", blocks[route])
+                self.assertNotIn("proxy_set_header Connection", blocks[route])
+        self.assertEqual(result.count("proxy_set_header Upgrade"), 2)
+        maintenance = host.nginx(self.config(), Path("/opt/ainp"), True)
+        self.assertNotIn("proxy_set_header Upgrade", maintenance)
+
     def test_systemd_non_root_and_writable_scope(self):
         result = host.unit("ainp", "ai-worker", Path("/opt/ainp"), Path("/var/lib/ainp"))
         for fragment in ("User=ainp", "ProtectSystem=strict", "ReadWritePaths=/var/lib/ainp", "TimeoutStopSec=90", "NoNewPrivileges=true"):
@@ -852,6 +873,123 @@ class NativeNginxSyntaxTest(unittest.TestCase):
         self.assertIn("location = /bigscreen { return 301 /bigscreen/; }", conf)
         self.assertIn("location ^~ /bigscreen/ { try_files $uri $uri/ /bigscreen/index.html; }", conf)
         self.assertIn("location / { try_files $uri $uri/ /index.html; }", conf)
+
+    def test_https_websocket_upgrade_echo_reconnect_and_rest(self):
+        import http.server
+        import shutil
+        import socket
+        import ssl
+        import subprocess
+        import threading
+        import time
+        import uuid
+
+        if not shutil.which("docker") or not shutil.which("openssl"):
+            self.skipTest("Docker/OpenSSL unavailable for HTTPS WebSocket test")
+        if subprocess.run(["docker", "info"], capture_output=True).returncode:
+            self.skipTest("Docker daemon unavailable for HTTPS WebSocket test")
+
+        seen = []
+
+        class API(http.server.BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.1"
+
+            def log_message(self, *args):
+                pass
+
+            def do_GET(self):
+                seen.append((self.path, self.headers.get("Upgrade"), self.headers.get("Connection"),
+                             self.headers.get("Host"), self.headers.get("Origin"), self.headers.get("X-Forwarded-Proto")))
+                if self.headers.get("Upgrade", "").lower() != "websocket":
+                    self.send_response(200)
+                    self.send_header("Content-Length", "2")
+                    self.end_headers()
+                    self.wfile.write(b"ok")
+                    return
+                self.send_response(101, "Switching Protocols")
+                self.send_header("Upgrade", "websocket")
+                self.send_header("Connection", "Upgrade")
+                self.end_headers()
+                # Read a masked browser frame, then echo its unmasked text back.
+                head = self.rfile.read(2)
+                length = head[1] & 127
+                mask = self.rfile.read(4)
+                data = self.rfile.read(length)
+                payload = bytes(byte ^ mask[i % 4] for i, byte in enumerate(data))
+                self.wfile.write(bytes([0x81, len(payload)]) + payload)
+                self.wfile.flush()
+                self.close_connection = True
+
+        server = http.server.ThreadingHTTPServer(("0.0.0.0", 0), API)
+        server.daemon_threads = True
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        container = "ainp-ws-test-" + uuid.uuid4().hex[:12]
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                d = Path(d)
+                subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-subj", "/CN=admin.example.com", "-keyout", str(d / "privkey.pem"), "-out", str(d / "fullchain.pem")], check=True, capture_output=True)
+                config = ContractTest().config()
+                upstream = f"http://127.0.0.1:{config['api_port']}"
+                conf = host.nginx(config, Path("/opt/ainp")).replace(upstream, f"http://host.docker.internal:{server.server_port}")
+                (d / "default.conf").write_text(conf)
+                with socket.socket() as probe:
+                    probe.bind(("127.0.0.1", 0))
+                    port = probe.getsockname()[1]
+                result = subprocess.run(["docker", "run", "-d", "--rm", "--name", container,
+                    "--add-host", "host.docker.internal:host-gateway", "-p", f"127.0.0.1:{port}:443",
+                    "-v", f"{d / 'default.conf'}:/etc/nginx/conf.d/default.conf:ro",
+                    "-v", f"{d}:/etc/ainp/tls:ro", "nginx:1.27.5-alpine"], capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                ctx = ssl.create_default_context(cafile=str(d / "fullchain.pem"))
+
+                def connect():
+                    raw = socket.create_connection(("127.0.0.1", port), timeout=3)
+                    try:
+                        return ctx.wrap_socket(raw, server_hostname="admin.example.com")
+                    except BaseException:
+                        raw.close()
+                        raise
+
+                for attempt in range(40):
+                    try:
+                        with connect():
+                            break
+                    except OSError:
+                        if attempt == 39:
+                            self.fail("Nginx TLS endpoint did not start")
+                        time.sleep(0.2)
+
+                def read_headers(sock):
+                    data = b""
+                    while b"\r\n\r\n" not in data:
+                        data += sock.recv(4096)
+                    return data
+
+                for path in ("/api/v1/bigscreen/events", "/api/v1/ai/events", "/api/v1/bigscreen/events"):
+                    with connect() as sock:
+                        sock.sendall((f"GET {path} HTTP/1.1\r\nHost: admin.example.com\r\nOrigin: https://admin.example.com\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n").encode())
+                        self.assertIn(b"101 Switching Protocols", read_headers(sock))
+                        mask = b"abcd"
+                        message = b"hello"
+                        sock.sendall(b"\x81\x85" + mask + bytes(b ^ mask[i % 4] for i, b in enumerate(message)))
+                        echoed = b""
+                        while len(echoed) < 7:
+                            echoed += sock.recv(7 - len(echoed))
+                        self.assertEqual(echoed, b"\x81\x05hello")
+                with connect() as sock:
+                    sock.sendall(b"GET /api/v1/bigscreen/events HTTP/1.1\r\nHost: admin.example.com\r\nConnection: keep-alive\r\n\r\n")
+                    self.assertIn(b"200 OK", read_headers(sock))
+                self.assertEqual(len(seen), 4)
+                for path, upgrade, connection, hostname, origin, proto in seen[:3]:
+                    self.assertEqual((upgrade, connection, hostname, origin, proto),
+                                     ("websocket", "upgrade", "admin.example.com", "https://admin.example.com", "https"))
+                self.assertEqual(seen[3][1:3], (None, None))
+        finally:
+            subprocess.run(["docker", "stop", container], capture_output=True)
+            server.shutdown()
+            server.server_close()
+            thread.join()
 
     def test_generated_live_and_maintenance_config_with_real_nginx(self):
         import shutil

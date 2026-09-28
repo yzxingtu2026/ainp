@@ -376,4 +376,8 @@ HTTPS 验收在 Nginx reload 后对瞬时错误进行有限重试（最多 5 次
 
 当前公共部署基线实际支持的是**同域名、路径挂载**模式：根应用使用 `/`，其他应用使用以 `/` 开头并以 `/` 结尾的路径，例如 `/bigscreen/`。Nginx 为每个子路径生成独立的 SPA fallback，并为无尾斜杠入口生成重定向；`/api`、AI 流式接口、MCP 和 OAuth 精确路由仍统一反代到 API。多域名字段尚未纳入受管配置，不应通过复制脚本或手工修改 Nginx 实现。
 
+原生 Host 的 `conf.d` 在 HTTP 层用 `$http_upgrade` 映射连接头：仅 `/api/` 与 `/api/v1/ai/` 代理 location 转发 WebSocket `Upgrade`，有升级请求时设置 `Connection: upgrade`，普通 REST/SSE 不发送该连接头。原有 Host、Origin、X-Forwarded-Proto 与 HTTPS 证书边界不变；`/mcp`、OAuth 精确路由仍按原协议处理。升级后的长连接由业务 API 负责校验握手凭据与授权，代理不会代替业务鉴权。
+
+发布含该修复的正式 Tag、下游按部署基线升级并在测试环境部署后，必须从 HTTPS 同源入口实际验证业务 WebSocket：用有效握手 grant 发起 `/api/v1/bigscreen/events`（或实际业务路径），确认 HTTP 101、双向收发、断开后重新申请 grant 并重连；再验证普通 API、AI SSE、Admin 与大屏静态入口以及更新/回滚。配置单测及本地 Nginx HTTPS 代理回显测试不能代替业务授权与测试环境验收。
+
 部署完成后，主机依次校验 API `/healthz` 和每个 `health_path`，并将已生效的 Web 应用版本、commit、build time 写入 `deployment.json`。Web 校验失败会保持维护页和失败状态；应用与静态产物都位于同一个 immutable release 目录，ECS 的原子 `current` 切换、历史保留和回滚模型不变。
