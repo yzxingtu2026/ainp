@@ -419,6 +419,8 @@ def perform(r, root, home):
         # Stable immutable URLs keep prior Web assets addressable across switches.
         versions = root / "web-versions"
         versions.mkdir(exist_ok=True)
+        # Bootstrap runs under umask 077; Nginx must traverse this directory.
+        versions.chmod(0o755)
         link = versions / manifest["version"]
         require(not link.is_symlink() and not link.exists() or link.is_symlink() and link.resolve() == release / "web", "web version collision")
         if not link.is_symlink():
@@ -439,6 +441,10 @@ def perform(r, root, home):
         for app in web_apps(manifest):
             web = https_json(c, app["health_path"])
             require(web.get("commit") == manifest["commit"] and web.get("version") == manifest["version"], f"Web release mismatch: {app['name']}")
+            # The app mount may work while Nginx cannot traverse web-versions.
+            versioned_path = f"/__web/{manifest['version']}{app['health_path']}"
+            versioned_web = https_json(c, versioned_path)
+            require(versioned_web.get("commit") == manifest["commit"] and versioned_web.get("version") == manifest["version"], f"Versioned Web release mismatch: {app['name']}")
             verified_web_apps.append({"name": app["name"], "mount": app["mount"], "health_path": app["health_path"], "version": web["version"], "commit": web["commit"], "build_time": web.get("build_time")})
         command(["systemctl", "enable", *units])
         if str(release) not in history:

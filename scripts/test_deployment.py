@@ -1310,6 +1310,7 @@ class HostTransactionTest(unittest.TestCase):
             self.assertEqual((self.root / "web-versions" / version).resolve(),
                              (self.root / "current/web").resolve())
         versions = self.root / "web-versions"
+        self.assertEqual(versions.stat().st_mode & 0o777, 0o755)
         self.assertTrue((versions / "v1.0.0").is_symlink())
         self.assertFalse((versions / "v1.1.0").exists())
         self.assertTrue((versions / "v1.2.0").is_symlink())
@@ -1321,6 +1322,35 @@ class HostTransactionTest(unittest.TestCase):
         host.perform({**requests["v1.0.0"], "action": "rollback", "operation_id": "rollback-pinned"}, self.root, self.home)
         self.assertEqual(common.read_json(self.root / "deployment.json")["release"]["version"], "v1.0.0")
         self.assertTrue((versions / "v1.3.0").is_symlink())
+
+    def test_versioned_web_is_checked_before_deployment_becomes_healthy(self):
+        request = self.request("v1.0.0", "init")
+        with mock.patch.object(host, "https_json", wraps=host.https_json) as probe:
+            host.perform(request, self.root, self.home)
+        self.assertIn("/__web/v1.0.0/build.json", [call.args[1] for call in probe.call_args_list])
+        self.assertEqual(common.read_json(self.root / "deployment.json")["status"], "healthy")
+
+    def test_inaccessible_versioned_web_fails_deployment(self):
+        request = self.request("v1.0.0", "init")
+        original = host.https_json
+        def blocked(c, path):
+            if path.startswith("/__web/"):
+                raise common.DeployError("versioned resource returned 403")
+            return original(c, path)
+        with mock.patch.object(host, "https_json", side_effect=blocked):
+            with self.assertRaises(common.DeployError):
+                host.perform(request, self.root, self.home)
+        self.assertEqual(common.read_json(self.root / "deployment.json")["status"], "failed-maintenance")
+        self.assertIn(("nginx-maintenance",), self.events)
+
+    def test_web_versions_directory_is_publicly_traversable_under_private_umask(self):
+        request = self.request("v1.0.0", "init")
+        old_umask = os.umask(0o077)
+        try:
+            host.perform(request, self.root, self.home)
+        finally:
+            os.umask(old_umask)
+        self.assertEqual((self.root / "web-versions").stat().st_mode & 0o777, 0o755)
 
     def test_fresh_init_uses_same_nonzero_db_in_setup_and_app_config(self):
         self.config["redis_db"] = 3
