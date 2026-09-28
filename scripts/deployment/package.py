@@ -91,31 +91,7 @@ def main():
     version(args.version)
     require(cfg["schema"] == 1, "unsupported build contract")
     root = Path.cwd()
-    web_apps = cfg.get("web_apps")
-    if web_apps is None:
-        require(isinstance(cfg.get("frontend_dir"), str), "frontend_dir required when web_apps is absent")
-        web_apps = [{"name": "admin", "source_dir": cfg["frontend_dir"], "mount": "/", "build_command": ["pnpm", "build"], "health_path": "/build.json"}]
-    require(isinstance(web_apps, list) and web_apps, "at least one web application required")
-    normalized_apps = []
-    mounts = set(); names = set()
-    for app in web_apps:
-        require(isinstance(app, dict), "invalid web application")
-        app_name, source_dir = app.get("name"), app.get("source_dir")
-        mount = app.get("mount", "/")
-        health_path = app.get("health_path")
-        require(isinstance(app_name, str) and re.fullmatch(r"[a-z][a-z0-9-]{0,63}", app_name) and app_name not in names, "invalid or duplicate web application name")
-        require(isinstance(source_dir, str) and source_dir and not Path(source_dir).is_absolute(), "invalid web application source_dir")
-        require(isinstance(mount, str) and (mount == "/" or re.fullmatch(r"/[A-Za-z0-9._~-]+(?:/[A-Za-z0-9._~-]+)*/", mount)) and mount not in mounts, "invalid or duplicate web application mount")
-        if health_path is None: health_path = "/build.json" if mount == "/" else mount + "build.json"
-        require(isinstance(health_path, str) and re.fullmatch(r"/[A-Za-z0-9._~/-]+", health_path) and not health_path.endswith("/"), "invalid web application health_path")
-        require(health_path == "/build.json" if mount == "/" else health_path.startswith(mount), "web application health_path must be inside its mount")
-        command = app.get("build_command", ["pnpm", "build"])
-        require(isinstance(command, list) and command and all(isinstance(x, str) and x for x in command), "invalid web application build_command")
-        build_env = app.get("build_env", {})
-        require(isinstance(build_env, dict) and all(isinstance(k, str) and isinstance(v, str) for k, v in build_env.items()), "invalid web application build_env")
-        output_dir = "web" if mount == "/" else "web/" + mount.strip("/")
-        normalized_apps.append({"name": app_name, "source_dir": source_dir, "mount": mount, "health_path": health_path, "build_command": command, "build_env": build_env, "output_dir": output_dir})
-        names.add(app_name); mounts.add(mount)
+    normalized_apps = project.build_web_apps(cfg, root)
     commit = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
     epoch = int(subprocess.check_output(["git", "show", "-s", "--format=%ct", "HEAD"], text=True))
     from datetime import datetime, timezone

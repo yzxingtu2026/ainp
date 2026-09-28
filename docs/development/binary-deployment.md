@@ -342,7 +342,7 @@ HTTPS 验收在 Nginx reload 后对瞬时错误进行有限重试（最多 5 次
 
 公共部署工具、统一项目配置、来源 manifest/lock、三方同步和 CI 漂移校验遵循 [下游部署基线同步](deployment-baseline.md)。`cloud.py --version` 默认使用 `deploy/linux/project.json` 的项目仓库，显式 `--repository` 必须与配置一致；AINP 双 Tag 与下游应用单 Tag 使用同一公共入口。
 
-## 多 Web 应用发布（Issue #374）
+## 多 Web 应用发布（Issue #374 / #376）
 
 原生 release 支持在同一包内声明多个独立的静态 Web 应用。现有只配置 `frontend_dir` 的项目继续按 `admin` 根应用构建；新项目可使用 `web_apps`：
 
@@ -354,12 +354,23 @@ HTTPS 验收在 Nginx reload 后对瞬时错误进行有限重试（最多 5 次
   "commands": {"api": "./cmd/ainp", "worker": "./cmd/ainp-worker", "migrate": "./cmd/ainp-migrate"},
   "buildinfo_package": "github.com/yzxingtu2026/ainp/platform/framework/buildinfo",
   "cjk_test_package": "./tests",
+  "node_version": "20.19.0",
+  "pnpm_version": "10.5.0",
+  "admin_application": "./src/composition/application.ts",
+  "admin_modules": ["core", "system", "operations", "ai", "demo"],
+  "go_private": [],
   "web_apps": [
     {"name": "admin", "source_dir": "frontend", "mount": "/", "build_command": ["pnpm", "build"], "health_path": "/build.json"},
     {"name": "screen", "source_dir": "apps/bigscreen", "mount": "/bigscreen/", "build_command": ["pnpm", "build"], "health_path": "/bigscreen/build.json"}
   ]
 }
 ```
+
+`project.build_config()`（Actions 预检与 baseline verify）和打包入口共用同一 Web 校验协议。`web_apps` 存在时必须为非空数组，可以省略 `frontend_dir`；同时提供两者时按 `web_apps` 构建，仍校验 `frontend_dir` 的路径安全。没有 `web_apps` 时必须提供 `frontend_dir`，保持旧 `admin` 根应用、`pnpm build` 和 `/build.json` 默认行为。
+
+每项必须提供唯一的 `name`（小写字母起始，可含数字和连字符）和 `source_dir`（仓库内已存在的目录）。路径拒绝绝对路径、`.`/`..`、空路径段及通过符号链接逃逸仓库。`mount` 默认 `/`，非根挂载必须有首尾 `/`，应用列表必须包含根挂载，禁止重复挂载或 `.`/`..` 路径段。`build_command` 默认 `["pnpm", "build"]`，必须为非空字符串参数数组；`build_env` 默认 `{}`，键必须为合法环境变量名，值必须为字符串；命令参数和环境变量值均拒绝 NUL。`health_path` 默认 `<mount>build.json`，必须在挂载内且无空段或 `.`/`..`；根应用固定 `/build.json`。应用配置拒绝未知字段。
+
+完整下游 fixture 见 `deploy/baseline/examples/build-web-apps.json`；该 fixture、公共校验实现、规范和回归测试随 deployment baseline manifest 一起发布。下游应同步包含修复的已发布版本，再修改自身拥有的 build 配置。
 
 每个应用可额外提供 `build_env` 字符串键值。构建器会为每个应用执行锁文件安装和配置的 build command，并将产物隔离到 `web/` 与 `web/<mount>/`；每个应用的 `build.json` 都包含同一 release 的 version、commit、build time。release manifest 同时记录应用名称、挂载路径、健康检查路径和产物目录，文件校验仍由统一的 release manifest 覆盖。
 

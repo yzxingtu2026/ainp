@@ -7,6 +7,7 @@
 - 正式部署使用 `--version`，经已认证 gh 解析 Published 稳定 Release 引用、校验 Tag commit 并留存防漂移；默认读取项目配置的仓库；显式 `--repository` 必须一致。该入口 plan 只读 GitHub 且不写文件、不调阿里云；`--release` 保留离线引用和 CI 精确选包能力。团队仍须受控共享账本与串行执行。
 - 测试发包仅从 `main` 手动运行固定 `v0.0.0-ci`，必须本地包校验与 OSS 四对象读回；`-ci` 包禁止进入 ECS 生产部署。
 - 发布包不可变，验证项目/版本/commit/平台/SHA256，安全解包；私有配置/证书/附件/state 不入包。
+- 多 Web 配置使用 `web_apps`，存在时可省略 `frontend_dir`；预检与打包共用 `project.build_web_apps` 校验，新增字段或默认行为必须同步 fixture、规范、测试与发布基线。
 - 发布 Web 必须使用同源 API（`VITE_SERVICE_BASE_URL=/`，其他服务同源）；原生打包显式覆盖构建机环境，禁止把本地 loopback 地址编译进发布包。
 - 专用非 root systemd 进程，API loopback；精确 Nginx OAuth/MCP/SSE 路由，应用更新不能覆盖 TLS 资产。
 - 首装必须使用 Host setup 初始化与 baseline，重启并确认 installed；仅 healthz 成功不足以判断安装完成。

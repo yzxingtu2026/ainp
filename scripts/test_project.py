@@ -1,4 +1,5 @@
 """Project identity / release contract tests, including an application-only downstream."""
+import copy
 import json
 import subprocess
 from pathlib import Path
@@ -143,6 +144,93 @@ class ProjectTest(unittest.TestCase):
         with mock.patch.object(release, "PROJECT", cfg), mock.patch.object(release, "preflight", return_value=("abc", "bucket")), mock.patch.object(release, "run") as run, mock.patch.object(sys, "argv", ["release", "v1.2.3", "--yes"]):
             self.assertEqual(release.main(), 0)
         self.assertEqual(run.call_args_list, [mock.call("git", "tag", "--annotate", "v1.2.3", "--message", "Release v1.2.3"), mock.call("git", "push", "--atomic", "origin", "refs/tags/v1.2.3")])
+
+
+class WebBuildConfigTest(unittest.TestCase):
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name)
+        self.cfg = json.loads(Path("deploy/baseline/examples/project.json").read_text())
+        self.build = json.loads(Path("deploy/baseline/examples/build-web-apps.json").read_text())
+        (self.root / "deploy/linux").mkdir(parents=True)
+        for directory in ("backend/cmd/api", "backend/cmd/worker", "backend/cmd/migrate", "admin", "apps/bigscreen"):
+            (self.root / directory).mkdir(parents=True)
+        for filename in ("go.mod", "go.sum"):
+            (self.root / "backend" / filename).write_text("")
+
+    def validate(self, build=None):
+        (self.root / self.cfg["build_config"]).write_text(json.dumps(self.build if build is None else build))
+        return project.build_config(self.cfg, self.root)
+
+    def test_multi_web_fixture_without_frontend_and_with_legacy_field(self):
+        for legacy in (False, True):
+            with self.subTest(legacy=legacy):
+                build = copy.deepcopy(self.build)
+                if legacy:
+                    build["frontend_dir"] = "admin"
+                self.assertEqual(self.validate(build), build)
+                apps = project.build_web_apps(build, self.root)
+                self.assertEqual([app["output_dir"] for app in apps], ["web", "web/bigscreen"])
+                self.assertEqual(apps[1]["build_command"], ["pnpm", "build:screen"])
+                self.assertEqual(apps[1]["build_env"], {"VITE_SCREEN": "yes"})
+
+    def test_legacy_and_optional_app_defaults(self):
+        legacy = json.loads(Path("deploy/baseline/examples/build.json").read_text())
+        self.validate(legacy)
+        expected = dict(name="admin", source_dir="admin", mount="/", health_path="/build.json",
+                        build_command=["pnpm", "build"], build_env={}, output_dir="web")
+        self.assertEqual(project.build_web_apps(legacy, self.root), [expected])
+        self.build["web_apps"] = [{"name": "admin", "source_dir": "admin"}]
+        self.validate()
+        self.assertEqual(project.build_web_apps(self.build, self.root), [expected])
+
+    def test_invalid_apps_fail_during_preflight(self):
+        cases = {
+            "name": [None, "UPPER", "bad/name"],
+            "source_dir": [None, "", "/tmp", "../outside", "admin/../apps", "missing", "backend/go.mod"],
+            "mount": [None, "bigscreen/", "/bigscreen", "/../", "/bigscreen/../", "/bigscreen//"],
+            "health_path": [None, "build.json", "/other/build.json", "/bigscreen/../build.json", "/bigscreen//build.json", "/bigscreen/"],
+            "build_command": [None, "pnpm build", [], [1], [""], ["pnpm", "bad\x00arg"]],
+            "build_env": [None, [], {"BAD=KEY": "value"}, {"": "value"}, {"1BAD": "value"}, {"OK": 1}, {"OK": "bad\x00value"}],
+            "unknown": [True],
+        }
+        for field, values in cases.items():
+            for value in values:
+                with self.subTest(field=field, value=value):
+                    build = copy.deepcopy(self.build)
+                    build["web_apps"][1][field] = value
+                    with self.assertRaises(project.ProjectError):
+                        self.validate(build)
+        for apps in (None, [], {}, [None], [{}], [self.build["web_apps"][0]] * 2):
+            with self.subTest(apps=apps):
+                build = dict(self.build, web_apps=apps)
+                with self.assertRaises(project.ProjectError):
+                    self.validate(build)
+        build = copy.deepcopy(self.build)
+        build["web_apps"] = [build["web_apps"][1]]
+        with self.assertRaises(project.ProjectError):
+            self.validate(build)
+        build = copy.deepcopy(self.build)
+        build["web_apps"][1]["mount"] = "/"
+        build["web_apps"][1]["health_path"] = "/build.json"
+        with self.assertRaises(project.ProjectError):
+            self.validate(build)
+        build = dict(self.build)
+        del build["web_apps"]
+        with self.assertRaises(project.ProjectError):
+            self.validate(build)
+
+    def test_symlink_source_and_legacy_path_cannot_escape_repository(self):
+        with tempfile.TemporaryDirectory() as outside:
+            (self.root / "external").symlink_to(outside, target_is_directory=True)
+            build = copy.deepcopy(self.build)
+            build["web_apps"][1]["source_dir"] = "external"
+            with self.assertRaises(project.ProjectError):
+                self.validate(build)
+            build = dict(self.build, frontend_dir="external")
+            with self.assertRaises(project.ProjectError):
+                self.validate(build)
 
 
 if __name__ == "__main__":

@@ -23,6 +23,7 @@ import host
 import launcher
 import storage
 import reporting
+import project
 import check_oss
 import verify_release
 spec = importlib.util.spec_from_file_location("native_package", DEPLOY / "package.py")
@@ -31,6 +32,56 @@ spec.loader.exec_module(package)
 
 
 class WebBuildTest(unittest.TestCase):
+    def test_package_entrypoint_accepts_multi_web_fixture_and_packages_both_apps(self):
+        root_source = DEPLOY.parents[1]
+        cfg = json.loads((root_source / "deploy/baseline/examples/project.json").read_text())
+        build = json.loads((root_source / "deploy/baseline/examples/build-web-apps.json").read_text())
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "deploy/linux").mkdir(parents=True)
+            (root / cfg["build_config"]).write_text(json.dumps(build))
+            for command in ("api", "worker", "migrate"):
+                (root / "backend/cmd" / command).mkdir(parents=True)
+            for filename in ("go.mod", "go.sum"):
+                (root / "backend" / filename).write_text("")
+            for app in build["web_apps"]:
+                dist = root / app["source_dir"] / "dist"
+                dist.mkdir(parents=True)
+                (dist / "index.html").write_text(app["name"])
+            def fake_run(args, cwd, env):
+                if args[:2] == ["go", "build"]:
+                    Path(args[args.index("-o") + 1]).write_bytes(b"offline binary")
+            def output(args, **kwargs):
+                if args[0] == "ldd":
+                    return "statically linked"
+                return "1700000000" if "show" in args else "a" * 40
+            cjk = "".join(f"--- PASS: {name} (0.01s)\n" for name in (
+                "TestKnowledgeSafeParserHandlesUniGBReceipt", "TestKnowledgeSafeParserDecodesPDFToUnicodeMapping",
+                "TestKnowledgeSafeParserExtractsEnglishPDF"))
+            read_text = Path.read_text
+            def read(path, *args, **kwargs):
+                return 'VERSION_ID="22.04"' if str(path) == "/etc/os-release" else read_text(path, *args, **kwargs)
+            with mock.patch.object(Path, "cwd", return_value=root), mock.patch.object(Path, "read_text", read), \
+                 mock.patch.object(package.platform, "system", return_value="Linux"), \
+                 mock.patch.object(package.platform, "machine", return_value="x86_64"), \
+                 mock.patch.object(project, "load", return_value=cfg), \
+                 mock.patch.object(project, "configured_origin", return_value="https://github.com/example/application.git"), \
+                 mock.patch.dict(os.environ, {"CGO_CFLAGS": "fixture", "CGO_LDFLAGS": "fixture"}, clear=True), \
+                 mock.patch.object(sys, "argv", ["package", "--config", str(root / cfg["build_config"]), "--version", "v1.2.3"]), \
+                 mock.patch.object(package.subprocess, "check_output", side_effect=output), \
+                 mock.patch.object(package.subprocess, "run", return_value=mock.Mock(returncode=0, stdout=cjk)), \
+                 mock.patch.object(package, "run", side_effect=fake_run) as run, contextlib.redirect_stdout(io.StringIO()):
+                package.main()
+            manifest = json.loads((root / "dist-release/release.json").read_text())
+            self.assertEqual([app["mount"] for app in manifest["web_apps"]], ["/", "/bigscreen/"])
+            with tarfile.open(root / "dist-release/release.tar.gz") as archive:
+                self.assertEqual(archive.extractfile("web/index.html").read(), b"admin")
+                self.assertEqual(archive.extractfile("web/bigscreen/index.html").read(), b"screen")
+                for health in ("web/build.json", "web/bigscreen/build.json"):
+                    self.assertEqual(json.load(archive.extractfile(health))["commit"], "a" * 40)
+            screen_call = next(call for call in run.call_args_list if call.args[0] == ["pnpm", "build:screen"])
+            self.assertEqual(screen_call.args[2]["VITE_SCREEN"], "yes")
+
     def test_release_build_uses_declared_admin_composition(self):
         identity = dict(version="v1.2.3", commit="a" * 40, build_time="2026-09-26T00:00:00Z")
         cfg = {"admin_application": "./business/application.ts", "admin_modules": ["core", "system", "ai"]}
