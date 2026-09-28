@@ -33,7 +33,7 @@ class BaselineTest(unittest.TestCase):
         return {p.relative_to(self.root).as_posix(): (p.read_bytes(), p.stat().st_mode) for p in self.root.rglob("*") if p.is_file()}
 
     def test_complete_closure_and_missing_dependencies(self):
-        for dependency in ("scripts/deployment/cloud.py", "docker/build-mupdf-cjk.sh", "scripts/test_deployment.py", ".github/workflows/native-build.yml", "deploy/baseline/examples/build-web-apps.json"):
+        for dependency in ("scripts/deployment/cloud.py", "docker/build-mupdf-cjk.sh", "scripts/test_deployment.py", ".github/workflows/native-build.yml", "deploy/baseline/examples/build-web-apps.json", "deploy/baseline/examples/private-aguo-websocket.json"):
             manifest = copy.deepcopy(self.manifest)
             del manifest["files"][dependency]
             with self.subTest(dependency=dependency):

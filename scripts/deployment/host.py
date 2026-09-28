@@ -3,6 +3,7 @@
 import argparse
 import base64
 import json
+import ipaddress
 import os
 from pathlib import Path
 import platform
@@ -19,7 +20,7 @@ from common import DeployError, atomic_json, extract_verified, key, lock, name, 
 from storage import bucket, download, upload_immutable
 from reporting import stage
 
-ENV_KEYS = {"DATABASE_DSN", "JWT_SECRET", "CREDENTIAL_ENCRYPTION_KEY", "REDIS_ADDR", "REDIS_PASSWORD", "REDIS_USERNAME", "MCP_BASE_URL", "MCP_WEB_BASE_URL", "AGUO_DEPLOYMENT_TENANT_ID"}
+ENV_KEYS = {"DATABASE_DSN", "JWT_SECRET", "CREDENTIAL_ENCRYPTION_KEY", "REDIS_ADDR", "REDIS_PASSWORD", "REDIS_USERNAME", "MCP_BASE_URL", "MCP_WEB_BASE_URL", "AGUO_DEPLOYMENT_TENANT_ID", "AGUO_WEBSOCKET_ALLOWED_ORIGINS"}
 
 
 def command(argv, **kwargs):
@@ -42,6 +43,24 @@ def redis_db(c):
     return value
 
 
+def validate_websocket_origins(value):
+    """Accept explicit browser Origins only; never widen an absent allowlist."""
+    message = "invalid AGUO_WEBSOCKET_ALLOWED_ORIGINS"
+    require(value and all(32 <= ord(char) < 127 for char in value), message)
+    label = r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
+    pattern = rf"https?://(?P<host>{label}(?:\.{label})*|\[[0-9A-Fa-f:.]+\])(?::(?P<port>[1-9][0-9]{{0,4}}))?"
+    for item in value.split(","):
+        match = re.fullmatch(pattern, item.strip())
+        require(match is not None, message)
+        hostname, port = match.group("host", "port")
+        require(len(hostname) <= 253 and (port is None or int(port) <= 65535), message)
+        if hostname.startswith("["):
+            try:
+                ipaddress.IPv6Address(hostname[1:-1])
+            except ValueError:
+                raise DeployError(message) from None
+
+
 def validate_config(c, project):
     require(c.get("schema") == 1 and c.get("project") == project, "wrong private configuration")
     redis_db(c)
@@ -52,6 +71,9 @@ def validate_config(c, project):
     require(all(isinstance(v, str) and "\x00" not in v for v in c["env"].values()), "invalid environment value")
     if "AGUO_DEPLOYMENT_TENANT_ID" in c["env"]:
         require(c["project"] == "aguo-ai-dining" and re.fullmatch(r"[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}", c["env"]["AGUO_DEPLOYMENT_TENANT_ID"]), "invalid AGUO_DEPLOYMENT_TENANT_ID")
+    if "AGUO_WEBSOCKET_ALLOWED_ORIGINS" in c["env"]:
+        require(c["project"] == "aguo-ai-dining", "invalid AGUO_WEBSOCKET_ALLOWED_ORIGINS")
+        validate_websocket_origins(c["env"]["AGUO_WEBSOCKET_ALLOWED_ORIGINS"])
     require(not any("REPLACE" in v for v in c["env"].values()), "replace example secret placeholders")
     require(len(c["env"]["JWT_SECRET"]) >= 32, "production JWT secret too short")
     try:
@@ -78,13 +100,14 @@ def validate_config(c, project):
     return c
 
 
-def require_tenant_only_change(current, replacement):
+def require_runtime_only_change(current, replacement):
     before, after = dict(current), dict(replacement)
     before_env, after_env = dict(before.pop("env")), dict(after.pop("env"))
-    before_env.pop("AGUO_DEPLOYMENT_TENANT_ID", None)
-    after_env.pop("AGUO_DEPLOYMENT_TENANT_ID", None)
+    for field in ("AGUO_DEPLOYMENT_TENANT_ID", "AGUO_WEBSOCKET_ALLOWED_ORIGINS"):
+        before_env.pop(field, None)
+        after_env.pop(field, None)
     require(before == after and before_env == after_env,
-            "private configuration update may only change AGUO_DEPLOYMENT_TENANT_ID")
+            "private configuration update may only change AGUO_DEPLOYMENT_TENANT_ID or AGUO_WEBSOCKET_ALLOWED_ORIGINS")
 
 
 def app_config(c, home):
@@ -330,7 +353,7 @@ def perform(r, root, home):
             with stage("private-config-download"):
                 download(r["config_oss"], r["config_key"], candidate, r["config_sha256"], role)
             replacement = validate_config(read_json(candidate), project)
-        require_tenant_only_change(c, replacement)
+        require_runtime_only_change(c, replacement)
     manifest_ref = r["release"]
     require(manifest_ref["project"] == project, "release belongs to another project")
     version(manifest_ref["version"])

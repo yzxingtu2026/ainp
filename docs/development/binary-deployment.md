@@ -122,7 +122,7 @@ GitHub environment **release** 配置变量：
 - DB 编号是否可用以目标服务为准，不假设所有实例都有 16 个 DB。Redis Cluster 仅支持 DB 0，其他托管规格需确认 SELECT/Lua/Asynq 能力；预检连接指定 DB，服务拒绝该 DB 时明确失败，不回退到 0。
 - 在**首次部署前**选定 `redis_db`，将完整 private JSON 上传私有配置桶并更新 target 的 key/SHA256。回滚继续使用主机现有 private 配置。更新会从 target 指定的 OSS 对象下载并校验私有配置，目前只允许 `AGUO_DEPLOYMENT_TENANT_ID` 改变；不会自动换 DB 或迁移队列。已安装应用改 DB 需独立维护方案：停 API/两个 Worker、审计旧队列及重试/定时任务、协调 app 配置与安装 state 并验证恢复，不能仅修改本地 JSON 后运行 update。
 - `backup_oss` / `backup_prefix` 是迁移前 PG custom-format 逻辑备份目的地。备份上传并校验后才迁移。
-- 私有配置首次写入 `/etc/<project>/private.json`，root-only；服务仅能读取受限 runtime/app 配置。更新按 target 的 OSS key/SHA256 下载校验，仅允许为 aguо 项目设置或修改租户 ID；回滚复用主机配置，不旋转凭证。
+- 私有配置首次写入 `/etc/<project>/private.json`，root-only；服务仅能读取受限 runtime/app 配置。更新按 target 的 OSS key/SHA256 下载校验，仅允许为 aguо 项目设置或修改租户 ID 与 WebSocket Origin 白名单；回滚复用主机配置，不旋转凭证。
 
 生产配置是 JSON **数据**，不 `source`、不拼 shell。生成的 `app.json` 是 YAML 可接受的 JSON 子集；launcher 用 `execve` 注入精确环境，避免密码中 `$`、`%`、换行被 shell/systemd 解释。
 
@@ -164,7 +164,22 @@ python3 scripts/deployment/cloud.py status --target deploy/linux/target.local.js
 
 部署日志：`bootstrap.sh`、`apt.sh`、`reporting.py` 与主机 Python 文件打包上传至不可变 OSS 对象；云助手命令只承载从 RAM Role 获取凭据、校验并下载对象的短引导器，仍受 16 KiB/API 编码上限约束。安装依赖、OSS 下载、PG/Redis 预检、迁移、初始化和健康检查输出 `AINP_PROGRESS` 时间戳记录；长步骤每 15 秒输出心跳，完成/失败立即刷新。Python 使用无缓冲模式，`cloud.py` 每 5 秒读取云助手 `Output`，只增量打印完整、安全的进度记录并去重，控制台显示仍受云助手上报/刷新周期影响。apt 锁重试保持最多 600 秒，bootstrap 子命令原始 stdout/stderr 写入 `/var/log/ainp-bootstrap.log`（0600），主机迁移等原始失败输出仍在 `/var/log/ainp-deployment-errors.log`，不为实时日志暴露 DSN、请求体或密码。
 
-修改本地 `private.*.json` 不会更新 OSS 或现有 ECS：需另行上传新的不可变私有配置对象并更新目标中的 key/SHA256。aguо 项目可在 `env` 添加 `AGUO_DEPLOYMENT_TENANT_ID`（租户 UUID）；用全新 OSS key 上传完整 JSON，计算上传文件原始字节的 SHA256，保持 target 其余字段不变。运行 `cloud.py update --target ... --version ...` 先检查计划，再用相同参数加 `--apply`。主机先校验 OSS 校验和和完整配置，且只接受租户 ID 变化；成功后将旧私有配置保存在主机 root-only 的 `private.previous.json`。旧账本只保存 target 哈希时，必须在修改旧 target 文件前使用当前 target 的 `status --apply` 或一次受控状态迁移记录资源绑定；不要清空账本或放宽资源校验。已落盘 `/etc/<project>/private.json` 的失败 init 必须先核对主机状态后恢复；不要删除本地账本或以修改哈希绕过恢复保护。此流程不能与 apt 阶段（尚未写入私有配置）的安全重试混淆。
+修改本地 `private.*.json` 不会更新 OSS 或现有 ECS：需另行上传新的不可变私有配置对象并更新目标中的 key/SHA256。aguо 项目可在 `env` 添加 `AGUO_DEPLOYMENT_TENANT_ID`（租户 UUID）；用全新 OSS key 上传完整 JSON，计算上传文件原始字节的 SHA256，保持 target 其余字段不变。运行 `cloud.py update --target ... --version ...` 先检查计划，再用相同参数加 `--apply`。主机先校验 OSS 校验和和完整配置，且只接受租户 ID 与 `AGUO_WEBSOCKET_ALLOWED_ORIGINS` 变化；成功后将旧私有配置保存在主机 root-only 的 `private.previous.json`。旧账本只保存 target 哈希时，必须在修改旧 target 文件前使用当前 target 的 `status --apply` 或一次受控状态迁移记录资源绑定；不要清空账本或放宽资源校验。已落盘 `/etc/<project>/private.json` 的失败 init 必须先核对主机状态后恢复；不要删除本地账本或以修改哈希绕过恢复保护。此流程不能与 apt 阶段（尚未写入私有配置）的安全重试混淆。
+
+### 5.0.1 大屏 WebSocket Origin 白名单（aguo-ai-dining）
+
+`env.AGUO_WEBSOCKET_ALLOWED_ORIGINS` 是 aguо 项目专用的显式浏览器 Origin 白名单，逗号分隔。示例见 `deploy/baseline/examples/private-aguo-websocket.json`：
+
+```json
+"AGUO_WEBSOCKET_ALLOWED_ORIGINS": "https://aguo-test.yzxingtu.com"
+```
+
+- 填写页面的完整 Origin：`http://` 或 `https://` + host + 实际非默认端口（如 `https://screen.example.com:8443`），不是 `ws://` / `wss://` 地址。**不带末尾斜杠、路径、query、fragment 或账号密码**；国际化域名使用浏览器序列化后的 ASCII/punycode。浏览器省略默认端口时，配置也应省略。
+- 多个入口示例：`https://aguo-test.yzxingtu.com,https://admin.example.com`；保留所有实际需要的既有 Origin。拒绝 `*`、通配域名、`null`、空列表/空项、控制字符、非法 host/端口。未配置时保持后端现有拒绝浏览器 Origin 的行为，不自动信任部署域名。
+- 主机预检验证后，将值原样写入 `runtime.json.env`；launcher 经 `execve` 传给 API，不依赖部署终端或 systemd 继承环境，不引入 shell 插值。
+- 存量 ECS 必须走上一节的不可变 OSS 配置 key/SHA256 + 已有账本 + `cloud.py update` 的 plan/apply 流程。受控更新仅放行租户 ID 与白名单，不放行数据库、JWT、Redis、TLS、域名等配置变更；回滚保留已生效的白名单。禁止重新 init 或创建新账本绕过绑定。
+- 部署后在主机仅核对该变量的进程实际值（不要输出整个环境或私有 JSON），并核对 Nginx Upgrade 转发。事件路径带正确 Origin、无 grant 应进入业务鉴权而非 Origin 403；错误 Origin 应仍被拒绝且不消耗 grant。大屏有效会话分别申请一次性 grant，事件与语音路径须返回 101 / `ainp.ws.v1`，断开后申请新 grant 复测，再验收 REST、静态入口和音频收发。
+- 离线配置/launcher/事务测试不等于真实授权握手验收；公共工具修复须随正式 AINP Release 的部署 manifest 发布，下游按固定版本 plan/apply/verify 同步，不能手改受管文件或伪造 lock。
 
 阿里云 CLI 调用失败时，控制器只从 JSON 响应中输出经过长度限制和单行化处理的 `error_code`、HTTP 状态、`message`、`RequestId`。命令参数、完整 stdout/stderr、恢复命令和未知字段不会回显；非 JSON、空响应、超大响应、CLI 缺失或超时仍使用通用错误。云助手命令失败时输出状态、退出码、错误码及最多 4000 字符的日志尾部；日志会移除控制序列并脱敏常见 password/secret/token/authorization 和 URL 密码，但仍应仅在受控部署终端查看。任何失败都必须结合已持久化状态与云审计核对后再重试。
 

@@ -1,0 +1,36 @@
+{
+  "schema": 1,
+  "project": "aguo-ai-dining",
+  "domain": "aguo-test.yzxingtu.com",
+  "api_port": 18080,
+  "database_mode": "external",
+  "redis_db": 0,
+  "web_keep_releases": 5,
+  "web_pinned_versions": [],
+  "worker_concurrency": 4,
+  "ai_concurrency": 1,
+  "env": {
+    "DATABASE_DSN": "host=pg.example.internal port=5432 user=ainp dbname=ainp password=REPLACE sslmode=disable",
+    "JWT_SECRET": "REPLACE_WITH_RANDOM_SECRET_AT_LEAST_32_CHARACTERS",
+    "CREDENTIAL_ENCRYPTION_KEY": "REPLACE_WITH_BASE64_ENCODED_32_RANDOM_BYTES",
+    "REDIS_ADDR": "redis.example.internal:6379",
+    "REDIS_PASSWORD": "REPLACE",
+    "MCP_BASE_URL": "https://aguo-test.yzxingtu.com",
+    "MCP_WEB_BASE_URL": "https://aguo-test.yzxingtu.com",
+    "AGUO_WEBSOCKET_ALLOWED_ORIGINS": "https://aguo-test.yzxingtu.com"
+  },
+  "bootstrap": {
+    "tenant_name": "公司名称",
+    "username": "admin",
+    "password": "REPLACE_WITH_STRONG_INITIAL_PASSWORD"
+  },
+  "tls": {
+    "fullchain_pem": "REPLACE_WITH_ISSUED_CERTIFICATE_PEM",
+    "private_key_pem": "REPLACE_WITH_PRIVATE_KEY_PEM"
+  },
+  "backup_oss": {
+    "endpoint": "https://oss-cn-hangzhou-internal.aliyuncs.com",
+    "bucket": "replace-private-backup"
+  },
+  "backup_prefix": "database-backups/production"
+}

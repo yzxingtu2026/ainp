@@ -306,6 +306,67 @@ class ContractTest(unittest.TestCase):
         self.assertFalse(app["database"]["auto_migrate"])
         self.assertFalse(app["jobs"]["embedded_worker"])
 
+    def test_aguo_websocket_origins_are_optional_and_explicit(self):
+        c = self.config()
+        c["project"] = "aguo-ai-dining"
+        self.assertNotIn("AGUO_WEBSOCKET_ALLOWED_ORIGINS", host.validate_config(c, c["project"])["env"])
+        for origins in ("https://aguo-test.yzxingtu.com", "https://screen.example.com:8443, https://admin.example.com",
+                        "http://localhost:5173, http://127.0.0.1:8080, https://[::1]:8443"):
+            with self.subTest(origins=origins):
+                c["env"]["AGUO_WEBSOCKET_ALLOWED_ORIGINS"] = origins
+                self.assertEqual(host.validate_config(c, c["project"])["env"]["AGUO_WEBSOCKET_ALLOWED_ORIGINS"], origins)
+
+    def test_aguo_websocket_origins_reject_invalid_or_unscoped_config(self):
+        c = self.config()
+        c["project"] = "aguo-ai-dining"
+        for origins in ("", " ", "*", "null", "https://*.example.com", "screen.example.com", "wss://screen.example.com",
+                        "https://screen.example.com/", "https://screen.example.com/bigscreen/", "https://screen.example.com?",
+                        "https://screen.example.com#", "https://user:password@screen.example.com", "https://screen.example.com:",
+                        "https://screen.example.com:0", "https://screen.example.com:65536", "https://screen.example.com:abc",
+                        "https://screen.example.com,", ",https://screen.example.com", "https://screen.example.com,,https://admin.example.com",
+                        "https://screen.example.com\n", "https://screen.example.com\t", "https://bad_host.example.com",
+                        "https://-bad.example.com", "https://[not-ipv6]", "https://[::1", "https://screen.example.com\\evil"):
+            with self.subTest(origins=origins), self.assertRaisesRegex(common.DeployError, "invalid AGUO_WEBSOCKET_ALLOWED_ORIGINS"):
+                c["env"]["AGUO_WEBSOCKET_ALLOWED_ORIGINS"] = origins
+                host.validate_config(c, c["project"])
+        c["project"] = "ainp"
+        c["env"]["AGUO_WEBSOCKET_ALLOWED_ORIGINS"] = "https://screen.example.com"
+        with self.assertRaisesRegex(common.DeployError, "invalid AGUO_WEBSOCKET_ALLOWED_ORIGINS"):
+            host.validate_config(c, "ainp")
+
+    def test_runtime_update_scope_preserves_all_unrelated_configuration(self):
+        baseline = self.config()
+        baseline["project"] = "aguo-ai-dining"
+        changed = json.loads(json.dumps(baseline))
+        changed["env"].update(AGUO_DEPLOYMENT_TENANT_ID="15c44f83-ebfb-44a0-8294-55b35689148d",
+                              AGUO_WEBSOCKET_ALLOWED_ORIGINS="https://aguo-test.yzxingtu.com")
+        host.require_runtime_only_change(baseline, changed)
+        host.require_runtime_only_change(changed, baseline)  # Explicit removal remains fail-closed.
+        for field, value in (("JWT_SECRET", "z" * 32), ("DATABASE_DSN", "host=other-db sslmode=disable"),
+                             ("REDIS_PASSWORD", "different"), ("MCP_BASE_URL", "https://other.example.com")):
+            with self.subTest(env=field), self.assertRaisesRegex(common.DeployError, "may only change"):
+                other = json.loads(json.dumps(changed))
+                other["env"][field] = value
+                host.require_runtime_only_change(baseline, other)
+        for field, value in (("redis_db", 1), ("api_port", 18081), ("domain", "other.example.com"),
+                             ("tls", {"fullchain_pem": "different"}), ("bootstrap", {"password": "different"})):
+            with self.subTest(field=field), self.assertRaisesRegex(common.DeployError, "may only change"):
+                host.require_runtime_only_change(baseline, {**changed, field: value})
+
+    def test_aguo_websocket_example_and_api_launcher_environment(self):
+        c = common.read_json("deploy/baseline/examples/private-aguo-websocket.json")
+        c["env"].update(self.config()["env"])
+        c["env"].update(MCP_BASE_URL="https://aguo-test.yzxingtu.com", MCP_WEB_BASE_URL="https://aguo-test.yzxingtu.com")
+        c["bootstrap"]["password"] = "StrongTestPassword123!"
+        host.validate_config(c, "aguo-ai-dining")
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "runtime.json"
+            path.write_text(json.dumps({"home": "/var/lib/aguo-ai-dining", "env": c["env"]}))
+            with mock.patch.object(sys, "argv", ["launcher", str(path), "api", "/opt/aguo-ai-dining/current"]), \
+                 mock.patch.object(os, "execve") as execute:
+                launcher.main()
+            self.assertEqual(execute.call_args.args[2]["AGUO_WEBSOCKET_ALLOWED_ORIGINS"], "https://aguo-test.yzxingtu.com")
+
     def test_redis_db_defaults_to_zero_and_validates_integer(self):
         c = self.config()
         c.pop("redis_db", None)
@@ -1293,10 +1354,10 @@ class HostTransactionTest(unittest.TestCase):
         changed = json.loads(json.dumps(baseline))
         changed["env"]["AGUO_DEPLOYMENT_TENANT_ID"] = "15c44f83-ebfb-44a0-8294-55b35689148d"
         host.validate_config(changed, "aguo-ai-dining")
-        host.require_tenant_only_change(baseline, changed)
+        host.require_runtime_only_change(baseline, changed)
         changed["redis_db"] = 1
         with self.assertRaisesRegex(common.DeployError, "may only change"):
-            host.require_tenant_only_change(baseline, changed)
+            host.require_runtime_only_change(baseline, changed)
 
     def test_aguo_tenant_update_persists_and_rollback_reuses_config(self):
         self.config["project"] = "aguo-ai-dining"
@@ -1319,6 +1380,44 @@ class HostTransactionTest(unittest.TestCase):
         rollback = dict(initial, action="rollback", operation_id="rollback-v1.0.0")
         host.perform(rollback, self.root, self.home)
         self.assertEqual(common.read_json(self.fs / "etc/aguo-ai-dining/runtime.json")["env"]["AGUO_DEPLOYMENT_TENANT_ID"], changed["env"]["AGUO_DEPLOYMENT_TENANT_ID"])
+
+    def test_aguo_websocket_update_persists_and_rollback_reuses_config(self):
+        self.config["project"] = "aguo-ai-dining"
+        self.config_source.write_text(json.dumps(self.config))
+        initial = self.request("v1.0.0", "init")
+        host.perform(initial, self.root, self.home)
+        etc = self.fs / "etc/aguo-ai-dining"
+        previous = common.read_json(etc / "private.json")
+        changed = json.loads(json.dumps(self.config))
+        changed["env"]["AGUO_WEBSOCKET_ALLOWED_ORIGINS"] = "https://aguo-test.yzxingtu.com,https://admin.example.com"
+        self.config_source.write_text(json.dumps(changed))
+        update = self.request("v1.1.0", "update")
+        update["config_sha256"] = "0" * 64
+        with self.assertRaisesRegex(common.DeployError, "checksum mismatch"):
+            host.perform(update, self.root, self.home)
+        self.assertEqual(common.read_json(etc / "private.json"), previous)
+        update["config_sha256"] = common.sha256(self.config_source)
+        host.perform(update, self.root, self.home)
+        self.assertEqual(common.read_json(etc / "runtime.json")["env"], changed["env"])
+        self.assertEqual(common.read_json(etc / "private.previous.json"), previous)
+        host.perform(dict(initial, action="rollback", operation_id="rollback-v1.0.0"), self.root, self.home)
+        self.assertEqual(common.read_json(etc / "runtime.json")["env"], changed["env"])
+
+    def test_invalid_websocket_update_fails_before_host_mutation(self):
+        self.config["project"] = "aguo-ai-dining"
+        self.config_source.write_text(json.dumps(self.config))
+        host.perform(self.request("v1.0.0", "init"), self.root, self.home)
+        etc = self.fs / "etc/aguo-ai-dining"
+        before = {filename: (etc / filename).read_bytes() for filename in ("private.json", "runtime.json")}
+        self.events.clear()
+        changed = json.loads(json.dumps(self.config))
+        changed["env"]["AGUO_WEBSOCKET_ALLOWED_ORIGINS"] = "*"
+        self.config_source.write_text(json.dumps(changed))
+        with self.assertRaisesRegex(common.DeployError, "invalid AGUO_WEBSOCKET_ALLOWED_ORIGINS"):
+            host.perform(self.request("v1.1.0", "update"), self.root, self.home)
+        self.assertEqual(self.events, [])
+        self.assertEqual({filename: (etc / filename).read_bytes() for filename in before}, before)
+        self.assertFalse((etc / "private.previous.json").exists())
 
     def test_update_applies_only_tenant_environment_change(self):
         initial = self.request("v1.0.0", "init")
