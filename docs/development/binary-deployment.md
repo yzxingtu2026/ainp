@@ -31,7 +31,7 @@ PR CI → Linux/CJK 门禁（不在合入 main 后重复运行）
 "pre_build_hook": {"type": "runtime-assets", "config": "deploy/linux/runtime-assets.json"}
 ```
 
-`runtime-assets.json` 属于项目文件，不在公共基线哈希清单中。示例结构如下，所有值均为占位，摘要与字节数需对应真实文件；`pointer` 必须只声明一个 DVC 输出（单文件或目录），`source` 是输出文件或目录下的明确文件；`destination` 必须位于 `web_apps` 某个 `source_dir/public/` 下（单 Web 可使用 `frontend_dir`）。以下目录指针结构对应下游 #412，大小与摘要为占位值：
+`runtime-assets.json` 属于项目文件，不在公共基线哈希清单中。示例结构如下，所有值均为占位，摘要与字节数需对应真实文件；`pointer` 必须只声明一个 DVC 输出（单文件或目录），`source` 是输出文件或目录下的明确文件；`destination` 必须位于 `web_apps` 某个 `source_dir/public/` 下（单 Web 可使用 `frontend_dir`）。以下目录指针结构对应下游 #412，大小与摘要取自该资产验收记录：
 
 ```json
 {
@@ -41,8 +41,8 @@ PR CI → Linux/CJK 门禁（不在合入 main 后重复运行）
     "pointer": "assets/blender-ip/xiezai-3d/v0.1.4/exports.dvc",
     "source": "assets/blender-ip/xiezai-3d/v0.1.4/exports/xiezai-ip-v0.1.4-validation.glb",
     "destination": "apps/bigscreen/public/ip/xiezai-ip-v0.1.4-validation.glb",
-    "size": 12345,
-    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    "size": 55262872,
+    "sha256": "f68cfb32da90de98520e8a8cbf906ee4647314e2fb85ba21a447a4aff65f72419"
   }]
 }
 ```
