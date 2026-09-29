@@ -82,9 +82,15 @@ jobs:
       - name: Build pinned MuPDF with CJK
         if: steps.mupdf.outputs.cache-hit != 'true'
         run: sh docker/build-mupdf-cjk.sh "$GITHUB_WORKSPACE/.cache/mupdf"
+      - uses: actions/setup-python@v6
+        if: steps.project.outputs.pre-build-hook-config != ''
+        with:
+          python-version: "3.10"
       - name: Install DVC OSS support for declared runtime assets
         if: steps.project.outputs.pre-build-hook-config != ''
-        run: python3 -m pip install 'dvc[oss]==3.63.0' 'pathspec<1.0'
+        run: |
+          python3 -m pip install 'dvc[oss]==3.63.0' 'pathspec<1.0'
+          python3 -c 'import ossfs, pathspec'
       - name: Fetch and verify declared runtime assets
         if: steps.project.outputs.pre-build-hook-config != ''
         env:
