@@ -349,7 +349,7 @@ func (s *SetupService) createInitialData(ctx context.Context, db *gorm.DB, tenan
 
 	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var count int64
-		if err := tx.Table("tenants").Count(&count).Error; err != nil {
+		if err := tx.Model(&tenant.Tenant{}).Count(&count).Error; err != nil {
 			return fmt.Errorf("inspect existing setup tenants: %w", err)
 		}
 		if count != 0 {
