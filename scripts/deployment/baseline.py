@@ -77,7 +77,7 @@ def fingerprint(path):
     return {"sha256": sha256(path), "mode": "0755" if path.stat().st_mode & 0o111 else "0644"}
 
 
-def validate_manifest(manifest):
+def validate_manifest(manifest, enforce_closure=True):
     require(isinstance(manifest, dict) and set(manifest) == {"schema", "repository", "version", "commit", "hash_policy", "files"}, "invalid deployment manifest fields")
     require(manifest["schema"] == 1 and manifest["repository"] == UPSTREAM and STABLE.fullmatch(manifest["version"])
             and re.fullmatch(r"[0-9a-f]{40}", manifest["commit"]), "invalid deployment source identity")
@@ -99,7 +99,12 @@ def validate_manifest(manifest):
         else:
             require(entry["owner"] == "upstream", f"public dependency must be upstream managed: {target}")
         sources.add(entry["source"])
-    require(REQUIRED <= sources, "missing deployment dependencies: " + ", ".join(sorted(REQUIRED - sources)))
+    # The REQUIRED closure binds a manifest to the tool version that produced it. Enforce it on
+    # freshly resolved source manifests and on the current lock during verify (via plan), but not
+    # when reading a historical lock as the "before" state of a three-way upgrade: a prior version
+    # legitimately predates newly required files, and rejecting it would make upgrades impossible.
+    if enforce_closure:
+        require(REQUIRED <= sources, "missing deployment dependencies: " + ", ".join(sorted(REQUIRED - sources)))
     return manifest
 
 
@@ -181,7 +186,9 @@ def read_lock(root):
         return None
     value = read_json(path)
     require(set(value) == {"schema", "manifest", "manifest_sha256"} and value["schema"] == 1, "invalid baseline lock")
-    validate_manifest(value["manifest"])
+    # Structural + hash integrity only; the version-specific REQUIRED closure is enforced on the
+    # target manifest (plan/apply/verify), never on the historical lock read for three-way merge.
+    validate_manifest(value["manifest"], enforce_closure=False)
     require(value["manifest_sha256"] == manifest_hash(value["manifest"]), "baseline lock manifest hash mismatch")
     return value
 
