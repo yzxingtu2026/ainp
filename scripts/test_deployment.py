@@ -274,6 +274,17 @@ class ContractTest(unittest.TestCase):
                             host.db_preflight(self.config(), True)
                         driver.connect.assert_not_called()
 
+    def test_database_tenants_reads_all_rows_before_uniqueness_and_status_checks(self):
+        driver = mock.MagicMock()
+        conn = driver.connect.return_value.__enter__.return_value
+        conn.execute.return_value.fetchall.return_value = [
+            ("15c44f83-ebfb-44a0-8294-55b35689148d", "enabled"),
+        ]
+        with mock.patch.dict(sys.modules, {"psycopg": driver}):
+            self.assertEqual(host.database_tenants(self.config()), [("15c44f83-ebfb-44a0-8294-55b35689148d", "enabled")])
+        driver.connect.assert_called_once_with(self.config()["env"]["DATABASE_DSN"], connect_timeout=10)
+        conn.execute.assert_called_once_with("SELECT id, status FROM tenants ORDER BY id")
+
     def test_backup_maps_conninfo_to_environment_without_argv_secrets(self):
         params = {"host": "db.internal", "port": "5432", "dbname": "app", "user": "app", "password": "secret' $value", "sslmode": "verify-full", "sslrootcert": "/etc/ca.pem"}
         conninfo = mock.Mock(conninfo_to_dict=mock.Mock(return_value=params))
@@ -1280,6 +1291,7 @@ class HostTransactionTest(unittest.TestCase):
         self.config["tls"] = {"fullchain_pem": "test-cert", "private_key_pem": "test-key"}
         self.config_source = self.fs / "config.json"
         self.config_source.write_text(json.dumps(self.config))
+        self.deployment_tenant_id = "15c44f83-ebfb-44a0-8294-55b35689148d"
         self.events = []
         self.fail_migration = False
         self.account_exists = False
@@ -1322,14 +1334,14 @@ class HostTransactionTest(unittest.TestCase):
                 return {"installed": False}
             self.events.append(("initialize",))
             self.assertFalse(data["embedded_worker"])
-            common.atomic_json(self.home / "state/state.yaml", {"installed": True})
-            return {"installed": True}
+            common.atomic_json(self.home / "state/state.yaml", {"installed": True, "initial_tenant_id": self.deployment_tenant_id})
+            return {"installed": True, "tenant_id": self.deployment_tenant_id}
         def backup(*args):
             self.events.append(("backup",))
             return {"key": "backup.dump", "sha256": "0" * 64}
         def nginx(*args):
             self.events.append(("nginx-maintenance" if args[-1] else "nginx-live",))
-        patches = [mock.patch.object(host, "Path", side_effect=mapped_path), mock.patch.object(host.pwd, "getpwnam", side_effect=account), mock.patch.object(host.os, "chown"), mock.patch.object(host, "download", side_effect=download), mock.patch.object(host, "command", side_effect=command), mock.patch.object(host, "db_preflight"), mock.patch.object(host, "redis_preflight"), mock.patch.object(host, "backup", side_effect=backup), mock.patch.object(host, "install_nginx", side_effect=nginx), mock.patch.object(host, "get_json", side_effect=json_api), mock.patch.object(host, "wait_api"), mock.patch.object(host.time, "sleep"), mock.patch.object(host.subprocess, "run"), mock.patch.dict(sys.modules, {"yaml": types.SimpleNamespace(safe_load=json.loads)})]
+        patches = [mock.patch.object(host, "Path", side_effect=mapped_path), mock.patch.object(host.pwd, "getpwnam", side_effect=account), mock.patch.object(host.os, "chown"), mock.patch.object(host, "download", side_effect=download), mock.patch.object(host, "command", side_effect=command), mock.patch.object(host, "db_preflight"), mock.patch.object(host, "redis_preflight"), mock.patch.object(host, "database_tenants", return_value=[(self.deployment_tenant_id, "enabled")]), mock.patch.object(host, "backup", side_effect=backup), mock.patch.object(host, "install_nginx", side_effect=nginx), mock.patch.object(host, "get_json", side_effect=json_api), mock.patch.object(host, "wait_api"), mock.patch.object(host.time, "sleep"), mock.patch.object(host.subprocess, "run"), mock.patch.dict(sys.modules, {"yaml": types.SimpleNamespace(safe_load=json.loads)})]
         for patch in patches:
             patch.start()
             self.addCleanup(patch.stop)
@@ -1366,7 +1378,7 @@ class HostTransactionTest(unittest.TestCase):
         host.perform(initial, self.root, self.home)
         previous = common.read_json(self.fs / "etc/aguo-ai-dining/private.json")
         changed = json.loads(json.dumps(self.config))
-        changed["env"]["AGUO_DEPLOYMENT_TENANT_ID"] = "15c44f83-ebfb-44a0-8294-55b35689148d"
+        changed["env"]["AGUO_DEPLOYMENT_TENANT_ID"] = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
         self.config_source.write_text(json.dumps(changed))
         update = self.request("v1.1.0", "update")
         update["config_sha256"] = "0" * 64
@@ -1374,12 +1386,115 @@ class HostTransactionTest(unittest.TestCase):
             host.perform(update, self.root, self.home)
         self.assertEqual(common.read_json(self.fs / "etc/aguo-ai-dining/private.json"), previous)
         update["config_sha256"] = common.sha256(self.config_source)
+        host.database_tenants.return_value = [(changed["env"]["AGUO_DEPLOYMENT_TENANT_ID"], "enabled")]
         host.perform(update, self.root, self.home)
         self.assertEqual(common.read_json(self.fs / "etc/aguo-ai-dining/runtime.json")["env"]["AGUO_DEPLOYMENT_TENANT_ID"], changed["env"]["AGUO_DEPLOYMENT_TENANT_ID"])
         self.assertEqual(common.read_json(self.fs / "etc/aguo-ai-dining/private.previous.json"), previous)
         rollback = dict(initial, action="rollback", operation_id="rollback-v1.0.0")
         host.perform(rollback, self.root, self.home)
         self.assertEqual(common.read_json(self.fs / "etc/aguo-ai-dining/runtime.json")["env"]["AGUO_DEPLOYMENT_TENANT_ID"], changed["env"]["AGUO_DEPLOYMENT_TENANT_ID"])
+
+    def test_aguo_init_binds_database_tenant_before_worker_start(self):
+        self.config["project"] = "aguo-ai-dining"
+        self.config_source.write_text(json.dumps(self.config))
+        host.perform(self.request("v1.0.0", "init"), self.root, self.home)
+        etc = self.fs / "etc/aguo-ai-dining"
+        self.assertEqual(common.read_json(etc / "private.json")["env"]["AGUO_DEPLOYMENT_TENANT_ID"], self.deployment_tenant_id)
+        self.assertEqual(common.read_json(etc / "runtime.json")["env"]["AGUO_DEPLOYMENT_TENANT_ID"], self.deployment_tenant_id)
+        restart_index = next(i for i, event in enumerate(self.events) if event[:2] == ("systemctl", "restart"))
+        worker_start_index = next(i for i, event in enumerate(self.events) if event[:3] == ("systemctl", "start", "aguo-ai-dining-worker.service"))
+        self.assertLess(restart_index, worker_start_index)
+
+    def test_failed_binding_write_recovers_without_reinitializing(self):
+        self.config["project"] = "aguo-ai-dining"
+        self.config_source.write_text(json.dumps(self.config))
+        initial = self.request("v1.0.0", "init")
+        original_atomic_json = host.atomic_json
+        failed = False
+
+        def fail_runtime_after_setup(path, value, mode=0o600):
+            nonlocal failed
+            if not failed and Path(path).name == "runtime.json" and ("initialize",) in self.events:
+                failed = True
+                raise common.DeployError("injected runtime binding write failure")
+            return original_atomic_json(path, value, mode)
+
+        with mock.patch.object(host, "atomic_json", side_effect=fail_runtime_after_setup):
+            with self.assertRaisesRegex(common.DeployError, "deployment failed"):
+                host.perform(initial, self.root, self.home)
+
+        failed_state = common.read_json(self.root / "deployment.json")
+        self.assertEqual(failed_state["status"], "failed-maintenance")
+        self.assertEqual(failed_state["bootstrap_status"], "installed")
+        self.assertEqual(failed_state["current"], failed_state["target"])
+        self.assertEqual(failed_state["history"], [])
+
+        retry = {**initial, "operation_id": "retry-init"}
+        host.perform(retry, self.root, self.home)
+        self.assertEqual(self.events.count(("initialize",)), 1)
+        self.assertEqual(common.read_json(self.root / "deployment.json")["status"], "healthy")
+        etc = self.fs / "etc/aguo-ai-dining"
+        self.assertEqual(common.read_json(etc / "private.json")["env"]["AGUO_DEPLOYMENT_TENANT_ID"], self.deployment_tenant_id)
+        self.assertEqual(common.read_json(etc / "runtime.json")["env"]["AGUO_DEPLOYMENT_TENANT_ID"], self.deployment_tenant_id)
+
+    def test_aguo_update_without_tenant_field_retains_host_binding(self):
+        self.config["project"] = "aguo-ai-dining"
+        self.config_source.write_text(json.dumps(self.config))
+        host.perform(self.request("v1.0.0", "init"), self.root, self.home)
+        self.config_source.write_text(json.dumps(self.config))
+        host.perform(self.request("v1.1.0", "update"), self.root, self.home)
+        etc = self.fs / "etc/aguo-ai-dining"
+        self.assertEqual(common.read_json(etc / "private.json")["env"]["AGUO_DEPLOYMENT_TENANT_ID"], self.deployment_tenant_id)
+        self.assertEqual(common.read_json(etc / "runtime.json")["env"]["AGUO_DEPLOYMENT_TENANT_ID"], self.deployment_tenant_id)
+
+    def test_aguo_explicit_unknown_tenant_is_rejected_before_mutation(self):
+        self.config["project"] = "aguo-ai-dining"
+        self.config_source.write_text(json.dumps(self.config))
+        host.perform(self.request("v1.0.0", "init"), self.root, self.home)
+        etc = self.fs / "etc/aguo-ai-dining"
+        before = {filename: (etc / filename).read_bytes() for filename in ("private.json", "runtime.json")}
+        changed = json.loads(json.dumps(self.config))
+        changed["env"]["AGUO_DEPLOYMENT_TENANT_ID"] = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+        self.config_source.write_text(json.dumps(changed))
+        update = self.request("v1.1.0", "update")
+        with self.assertRaisesRegex(common.DeployError, "does not exist"):
+            host.perform(update, self.root, self.home)
+        self.assertEqual({filename: (etc / filename).read_bytes() for filename in before}, before)
+
+    def test_aguo_tenant_inference_requires_unique_database_result(self):
+        with mock.patch.object(host, "database_tenants", return_value=[(self.deployment_tenant_id, "enabled"), ("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "disabled")]):
+            with self.assertRaisesRegex(common.DeployError, "expected exactly one"):
+                host.resolve_deployment_tenant_id(self.config, None)
+
+    def test_disabled_tenant_is_rejected_even_when_explicitly_configured(self):
+        host.database_tenants.return_value = [(self.deployment_tenant_id, "disabled")]
+        with self.assertRaisesRegex(common.DeployError, "not enabled"):
+            host.resolve_deployment_tenant_id(self.config, self.deployment_tenant_id)
+
+    def test_setup_response_is_authoritative_and_must_match_persisted_state(self):
+        self.config["project"] = "aguo-ai-dining"
+        marker = self.home / "state/state.yaml"
+        common.atomic_json(marker, {"installed": True, "initial_tenant_id": self.deployment_tenant_id})
+        self.assertEqual(host.initial_deployment_tenant(self.config, {"tenant_id": self.deployment_tenant_id}, self.home), self.deployment_tenant_id)
+        with self.assertRaisesRegex(common.DeployError, "response and persisted"):
+            host.initial_deployment_tenant(self.config, {"tenant_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"}, self.home)
+        self.config["env"]["AGUO_DEPLOYMENT_TENANT_ID"] = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+        with self.assertRaisesRegex(common.DeployError, "conflicts with initialized"):
+            host.initial_deployment_tenant(self.config, {"tenant_id": self.deployment_tenant_id}, self.home)
+
+    def test_legacy_setup_without_id_only_infers_unique_enabled_tenant(self):
+        common.atomic_json(self.home / "state/state.yaml", {"installed": True})
+        self.assertEqual(host.initial_deployment_tenant(self.config, {}, self.home), self.deployment_tenant_id)
+        host.database_tenants.return_value.append(("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "disabled"))
+        with self.assertRaisesRegex(common.DeployError, "exactly one"):
+            host.initial_deployment_tenant(self.config, {}, self.home)
+
+    def test_runtime_write_restores_service_group_after_atomic_replace(self):
+        self.config["env"]["AGUO_DEPLOYMENT_TENANT_ID"] = self.deployment_tenant_id
+        etc = self.fs / "runtime-config"
+        host.write_runtime_config(self.config, etc, self.home, 1001)
+        host.os.chown.assert_called_with(etc / "runtime.json", 0, 1001)
+        self.assertEqual((etc / "runtime.json").stat().st_mode & 0o777, 0o640)
 
     def test_aguo_websocket_update_persists_and_rollback_reuses_config(self):
         self.config["project"] = "aguo-ai-dining"
@@ -1398,10 +1513,11 @@ class HostTransactionTest(unittest.TestCase):
         self.assertEqual(common.read_json(etc / "private.json"), previous)
         update["config_sha256"] = common.sha256(self.config_source)
         host.perform(update, self.root, self.home)
-        self.assertEqual(common.read_json(etc / "runtime.json")["env"], changed["env"])
+        expected_env = {**changed["env"], "AGUO_DEPLOYMENT_TENANT_ID": self.deployment_tenant_id}
+        self.assertEqual(common.read_json(etc / "runtime.json")["env"], expected_env)
         self.assertEqual(common.read_json(etc / "private.previous.json"), previous)
         host.perform(dict(initial, action="rollback", operation_id="rollback-v1.0.0"), self.root, self.home)
-        self.assertEqual(common.read_json(etc / "runtime.json")["env"], changed["env"])
+        self.assertEqual(common.read_json(etc / "runtime.json")["env"], expected_env)
 
     def test_invalid_websocket_update_fails_before_host_mutation(self):
         self.config["project"] = "aguo-ai-dining"
@@ -1616,6 +1732,18 @@ class HostTransactionTest(unittest.TestCase):
         host.perform(self.request("v1.0.0", "init"), self.root, self.home)
         with self.assertRaisesRegex(common.DeployError, "not previously deployed"):
             host.perform(self.request("v0.9.0", "rollback"), self.root, self.home)
+
+    def test_failed_update_does_not_enter_successful_rollback_history(self):
+        host.perform(self.request("v1.0.0", "init"), self.root, self.home)
+        update = self.request("v1.1.0", "update")
+        with mock.patch.object(host, "wait_api", side_effect=common.DeployError("injected API failure")):
+            with self.assertRaisesRegex(common.DeployError, "maintenance retained"):
+                host.perform(update, self.root, self.home)
+        state = common.read_json(self.root / "deployment.json")
+        self.assertEqual(state["status"], "failed-maintenance")
+        self.assertNotIn(state["target"], state["history"])
+        with self.assertRaisesRegex(common.DeployError, "not previously deployed"):
+            host.perform({**update, "action": "rollback", "operation_id": "rollback-failed-update"}, self.root, self.home)
 
 
 

@@ -13,11 +13,12 @@ import (
 
 // State 持久化安装状态，写入独立文件以保持主 config.yaml 只读。
 type State struct {
-	Installed   bool      `yaml:"installed"`
-	InstalledAt time.Time `yaml:"installed_at,omitempty"`
-	DSN         string    `yaml:"dsn,omitempty"` // 向导写入的实际 DSN（敏感，生产建议 env 注入）
-	Redis       Redis     `yaml:"redis,omitempty"`
-	Jobs        Jobs      `yaml:"jobs,omitempty"`
+	Installed       bool      `yaml:"installed"`
+	InstalledAt     time.Time `yaml:"installed_at,omitempty"`
+	InitialTenantID string    `yaml:"initial_tenant_id,omitempty"`
+	DSN             string    `yaml:"dsn,omitempty"` // 向导写入的实际 DSN（敏感，生产建议 env 注入）
+	Redis           Redis     `yaml:"redis,omitempty"`
+	Jobs            Jobs      `yaml:"jobs,omitempty"`
 }
 
 type Redis struct {

@@ -25,7 +25,7 @@ func TestSetupStateSaveLoadAndApplyConfig(t *testing.T) {
 	enabled := true
 	path := filepath.Join(t.TempDir(), "state.yaml")
 	want := &setupstate.State{
-		Installed: true, DSN: "setup-dsn",
+		Installed: true, InitialTenantID: "tenant-initial", DSN: "setup-dsn",
 		Redis: setupstate.Redis{Addr: "redis.internal:6379", DB: 4},
 		Jobs:  setupstate.Jobs{Enabled: &enabled, EmbeddedWorker: true},
 	}
@@ -38,6 +38,9 @@ func TestSetupStateSaveLoadAndApplyConfig(t *testing.T) {
 	}
 	cfg := &config.Config{}
 	got.ApplyConfig(cfg)
+	if got.InitialTenantID != want.InitialTenantID {
+		t.Fatalf("initial tenant id was not persisted: %#v", got)
+	}
 	if cfg.Database.DSN != want.DSN || cfg.Redis.Addr != want.Redis.Addr || cfg.Redis.DB != 4 {
 		t.Fatalf("unexpected applied config: %#v", cfg)
 	}

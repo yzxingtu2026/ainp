@@ -21,6 +21,8 @@ from storage import bucket, download, upload_immutable
 from reporting import stage
 
 ENV_KEYS = {"DATABASE_DSN", "JWT_SECRET", "CREDENTIAL_ENCRYPTION_KEY", "REDIS_ADDR", "REDIS_PASSWORD", "REDIS_USERNAME", "MCP_BASE_URL", "MCP_WEB_BASE_URL", "AGUO_DEPLOYMENT_TENANT_ID", "AGUO_WEBSOCKET_ALLOWED_ORIGINS"}
+DEPLOYMENT_TENANT_KEY = "AGUO_DEPLOYMENT_TENANT_ID"
+TENANT_ID_PATTERN = r"[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}"
 
 
 def command(argv, **kwargs):
@@ -69,8 +71,8 @@ def validate_config(c, project):
     for k in ("DATABASE_DSN", "JWT_SECRET", "CREDENTIAL_ENCRYPTION_KEY", "REDIS_ADDR", "REDIS_PASSWORD", "MCP_BASE_URL", "MCP_WEB_BASE_URL"):
         require(isinstance(c["env"].get(k), str) and c["env"][k] and "\x00" not in c["env"][k], f"missing/invalid {k}")
     require(all(isinstance(v, str) and "\x00" not in v for v in c["env"].values()), "invalid environment value")
-    if "AGUO_DEPLOYMENT_TENANT_ID" in c["env"]:
-        require(c["project"] == "aguo-ai-dining" and re.fullmatch(r"[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}", c["env"]["AGUO_DEPLOYMENT_TENANT_ID"]), "invalid AGUO_DEPLOYMENT_TENANT_ID")
+    if DEPLOYMENT_TENANT_KEY in c["env"]:
+        require(c["project"] == "aguo-ai-dining" and re.fullmatch(TENANT_ID_PATTERN, c["env"][DEPLOYMENT_TENANT_KEY]), "invalid AGUO_DEPLOYMENT_TENANT_ID")
     if "AGUO_WEBSOCKET_ALLOWED_ORIGINS" in c["env"]:
         require(c["project"] == "aguo-ai-dining", "invalid AGUO_WEBSOCKET_ALLOWED_ORIGINS")
         validate_websocket_origins(c["env"]["AGUO_WEBSOCKET_ALLOWED_ORIGINS"])
@@ -108,6 +110,14 @@ def require_runtime_only_change(current, replacement):
         after_env.pop(field, None)
     require(before == after and before_env == after_env,
             "private configuration update may only change AGUO_DEPLOYMENT_TENANT_ID or AGUO_WEBSOCKET_ALLOWED_ORIGINS")
+
+
+def preserve_deployment_tenant(current, replacement):
+    """A missing OSS tenant field means retain the host's trusted binding."""
+    current_id = current["env"].get(DEPLOYMENT_TENANT_KEY)
+    if current_id and DEPLOYMENT_TENANT_KEY not in replacement["env"]:
+        replacement["env"][DEPLOYMENT_TENANT_KEY] = current_id
+    return replacement
 
 
 def app_config(c, home):
@@ -256,6 +266,72 @@ def db_preflight(c, fresh):
             require(conn.execute("select count(*) from information_schema.tables where table_schema='public' and table_type='BASE TABLE'").fetchone()[0] == 0, "fresh deployment requires empty DB; existing environments need explicit adoption")
 
 
+def database_tenants(c):
+    """Read tenant identities through the deployment DB, never from client input."""
+    import psycopg
+
+    try:
+        with psycopg.connect(c["env"]["DATABASE_DSN"], connect_timeout=10) as conn:
+            rows = conn.execute(
+                "SELECT id, status FROM tenants ORDER BY id"
+            ).fetchall()
+    except Exception:
+        raise DeployError("tenant lookup failed; inspect protected deployment logs") from None
+    return [(str(row[0]), row[1]) for row in rows]
+
+
+def resolve_deployment_tenant_id(c, configured=None):
+    """Validate an explicit binding or infer exactly one existing tenant."""
+    tenants = database_tenants(c)
+    if configured is None:
+        require(len(tenants) == 1, "cannot infer deployment tenant; expected exactly one tenant")
+        configured = tenants[0][0]
+    require(isinstance(configured, str) and re.fullmatch(TENANT_ID_PATTERN, configured), "invalid deployment tenant id")
+    matches = [row for row in tenants if row[0] == configured]
+    require(len(matches) == 1, "configured AGUO_DEPLOYMENT_TENANT_ID does not exist in the deployment database")
+    require(matches[0][1] == "enabled", "configured deployment tenant is not enabled")
+    return configured
+
+
+def bind_deployment_tenant(c, tenant_id):
+    bound = {**c, "env": {**c["env"], DEPLOYMENT_TENANT_KEY: tenant_id}}
+    return validate_config(bound, c["project"])
+
+
+def installation_state(home):
+    """Read the setup marker used to distinguish safe binding recovery from a partial init."""
+    statepath = Path(home) / "state/state.yaml"
+    if not statepath.exists():
+        return {}
+    try:
+        import yaml
+        state = yaml.safe_load(statepath.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return state if isinstance(state, dict) else {}
+
+
+def initial_deployment_tenant(c, result, home):
+    state = installation_state(home)
+    require(state.get("installed") is True, "setup installation state is not complete")
+    tenant_id = result.get("tenant_id")
+    saved_id = state.get("initial_tenant_id")
+    if tenant_id is not None and saved_id is not None:
+        require(tenant_id == saved_id, "setup response and persisted initial tenant conflict")
+    # Older API releases lack tenant_id: only the unique DB result is inferable.
+    actual_id = resolve_deployment_tenant_id(c, tenant_id if tenant_id is not None else saved_id)
+    configured = c["env"].get(DEPLOYMENT_TENANT_KEY)
+    require(configured is None or configured == actual_id, "configured deployment tenant conflicts with initialized tenant")
+    return actual_id
+
+
+def write_runtime_config(c, etc, home, gid):
+    runtime = {k: c[k] for k in ("env", "worker_concurrency", "ai_concurrency")}
+    runtime["home"] = str(home)
+    atomic_json(etc / "runtime.json", runtime, 0o640)
+    os.chown(etc / "runtime.json", 0, gid)
+
+
 def redis_preflight(c):
     import redis
     addr = c["env"]["REDIS_ADDR"]
@@ -333,18 +409,47 @@ def perform(r, root, home):
     if existing.get("operation_id") == r["operation_id"] and existing.get("status") == "healthy":
         print("Deployment already completed")
         return
-    fresh = action == "init"
+    recovery = action == "init" and existing.get("status") == "failed-maintenance"
+    fresh = action == "init" and not recovery
     require(not fresh or not existing, "initialization already attempted; inspect state, do not reinitialize")
     require(fresh or existing, "no managed installation; use init first")
-    require(fresh or existing.get("status") == "healthy" or action == "rollback", "previous deployment failed; inspect state then explicit rollback/recovery")
+    require(fresh or existing.get("status") == "healthy" or action == "rollback" or recovery,
+            "previous deployment failed; inspect state then explicit rollback/recovery")
     etc.mkdir(mode=0o750, exist_ok=True)
     etc.chmod(0o750)
+    if recovery:
+        if existing.get("action") is None:
+            require(existing.get("current") is None and not existing.get("history"),
+                    "only a failed initial deployment can use init recovery")
+        else:
+            require(existing.get("action") == "init", "only a failed initial deployment can use init recovery")
+        previous_release = existing.get("release") or {}
+        for field in ("project", "version", "commit", "platform", "sha256", "key"):
+            require(previous_release.get(field) == r["release"].get(field),
+                    "init recovery must use the exact failed release")
+        require(cfgpath.exists(), "failed init recovery requires the persisted private configuration")
+        saved_config_sha256 = existing.get("config_sha256")
+        require(saved_config_sha256 is None or saved_config_sha256 == r.get("config_sha256"),
+                "init recovery must use the exact failed private configuration")
+        require(installation_state(home).get("installed") is True,
+                "failed init did not complete setup; inspect the host before recovery")
     if fresh:
         require(not cfgpath.exists(), "private configuration already exists; inspect incomplete bootstrap")
         with stage("private-config-download"):
             download(r["config_oss"], r["config_key"], cfgpath, r["config_sha256"], role)
         cfgpath.chmod(0o600)
     c = validate_config(read_json(cfgpath), project)
+    if recovery:
+        require(all(field in r for field in ("config_oss", "config_key", "config_sha256")),
+                "init recovery requires the original pinned private configuration")
+        with tempfile.TemporaryDirectory(prefix="private-recovery-", dir=etc) as directory:
+            candidate = Path(directory) / "private.json"
+            with stage("private-config-download"):
+                download(r["config_oss"], r["config_key"], candidate, r["config_sha256"], role)
+            recovery_config = validate_config(read_json(candidate), project)
+        expected_recovery = preserve_deployment_tenant(c, recovery_config)
+        require(expected_recovery == c, "init recovery private configuration differs from original except persisted tenant binding")
+    original_config = c
     replacement = None
     if action == "update":
         require(all(field in r for field in ("config_oss", "config_key", "config_sha256")), "update requires pinned private configuration")
@@ -354,6 +459,10 @@ def perform(r, root, home):
                 download(r["config_oss"], r["config_key"], candidate, r["config_sha256"], role)
             replacement = validate_config(read_json(candidate), project)
         require_runtime_only_change(c, replacement)
+        if project == "aguo-ai-dining":
+            replacement = preserve_deployment_tenant(c, replacement)
+            replacement = validate_config(replacement, project)
+    effective_config = replacement or c
     manifest_ref = r["release"]
     require(manifest_ref["project"] == project, "release belongs to another project")
     version(manifest_ref["version"])
@@ -377,13 +486,18 @@ def perform(r, root, home):
         require(r.get("confirm_schema_compatible") is True, "application rollback needs explicit DB compatibility confirmation")
         require(str(release) in existing.get("history", []), "rollback target was not previously deployed on this host")
     with stage("postgresql-preflight"):
-        db_preflight(c, fresh)
+        db_preflight(effective_config, fresh)
     with stage("redis-preflight"):
-        redis_preflight(c)
-    if replacement is not None and replacement != c:
-        atomic_json(etc / "private.previous.json", c, 0o600)
-        atomic_json(cfgpath, replacement, 0o600)
-        c = replacement
+        redis_preflight(effective_config)
+    if project == "aguo-ai-dining" and not fresh:
+        tenant_id = (initial_deployment_tenant(effective_config, {}, home) if recovery else
+                     resolve_deployment_tenant_id(effective_config, effective_config["env"].get(DEPLOYMENT_TENANT_KEY)))
+        effective_config = bind_deployment_tenant(effective_config, tenant_id)
+    if effective_config != original_config:
+        if not fresh:
+            atomic_json(etc / "private.previous.json", original_config, 0o600)
+        atomic_json(cfgpath, effective_config, 0o600)
+    c = effective_config
     if fresh:
         try:
             pwd.getpwnam(project)
@@ -409,9 +523,8 @@ def perform(r, root, home):
         path.chmod(0o750)
     shutil.copyfile(Path(__file__).with_name("launcher.py"), root / "launcher.py")
     os.chmod(root / "launcher.py", 0o644)
-    runtime = {k: c[k] for k in ("env", "worker_concurrency", "ai_concurrency")}
-    runtime["home"] = str(home)
-    for filename, value in (("runtime.json", runtime), ("app.json", app_config(c, home))):
+    write_runtime_config(c, etc, home, user.pw_gid)
+    for filename, value in (("app.json", app_config(c, home)),):
         atomic_json(etc / filename, value, 0o640)
         os.chown(etc / filename, 0, user.pw_gid)
     units = [f"{project}-{p}.service" for p in ("api", "worker", "ai-worker")]
@@ -419,10 +532,21 @@ def perform(r, root, home):
         Path(f"/etc/systemd/system/{project}-{p}.service").write_text(unit(project, p, root, home))
     command(["systemctl", "daemon-reload"])
     previous = str((root / "current").resolve()) if (root / "current").exists() else None
-    history = existing.get("history", [])
+    history = list(existing.get("history", []))
     if existing.get("status") == "healthy" and existing.get("current") not in history:
         history.append(existing["current"])
-    state = {"operation_id": r["operation_id"], "status": "deploying", "target": str(release), "previous": previous, "history": history, "release": manifest_ref, "current": existing.get("current")}
+    state = {
+        "operation_id": r["operation_id"],
+        "action": action,
+        "status": "deploying",
+        "target": str(release),
+        "previous": previous,
+        "history": history,
+        "release": manifest_ref,
+        "current": existing.get("current"),
+        "config_sha256": r.get("config_sha256", existing.get("config_sha256")),
+        "bootstrap_status": existing.get("bootstrap_status") or ("pending" if fresh else "installed"),
+    }
     atomic_json(statepath, state)
     try:
         install_nginx(c, root, True)
@@ -435,10 +559,15 @@ def perform(r, root, home):
             with stage("database-backup"):
                 state["backup"] = backup(c, root, role)
             atomic_json(statepath, state)
-            if action != "rollback":
+            if action != "rollback" and not recovery:
                 with stage("database-migration"):
                     command(["runuser", "-u", project, "--", "/usr/bin/python3", str(root / "launcher.py"), str(etc / "runtime.json"), "migrate", str(release), "up"])
         switch(root, release)
+        if fresh:
+            # Preserve the selected initial release for setup recovery without
+            # admitting it to the successfully deployed rollback history.
+            state["current"] = str(release)
+            atomic_json(statepath, state)
         command(["systemctl", "start", units[0]])
         with stage("api-readiness"):
             wait_api(c, manifest)
@@ -449,6 +578,15 @@ def perform(r, root, home):
             with stage("application-initialize"):
                 result = get_json(f"http://127.0.0.1:{c['api_port']}/api/v1/setup/initialize", payload)
             require(result.get("installed") is True, "setup failed")
+            state["bootstrap_status"] = "installed"
+            atomic_json(statepath, state)
+            if project == "aguo-ai-dining":
+                tenant_id = initial_deployment_tenant(c, result, home)
+                c = bind_deployment_tenant(c, tenant_id)
+                # setup has created the tenant; persist the trusted binding before
+                # the API restart so API and both workers consume the same runtime.
+                atomic_json(cfgpath, c, 0o600)
+                write_runtime_config(c, etc, home, user.pw_gid)
             command(["systemctl", "restart", units[0]])
             with stage("api-readiness"):
                 wait_api(c, manifest)

@@ -2,11 +2,13 @@ package setup
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"os"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -24,6 +26,10 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
+
+// Setup services can share the same database/state even when independently
+// constructed. Database serializability also guards separate setup processes.
+var setupMu sync.Mutex
 
 // SetupService 安装向导核心服务。
 type SetupService struct {
@@ -49,6 +55,8 @@ type setupStatusResp struct {
 }
 
 func (s *SetupService) Status(_ context.Context, _ json.RawMessage) (any, error) {
+	setupMu.Lock()
+	defer setupMu.Unlock()
 	src := "none"
 	if os.Getenv("DATABASE_DSN") != "" {
 		src = "env"
@@ -89,6 +97,8 @@ type checkEnvResp struct {
 }
 
 func (s *SetupService) CheckEnv(ctx context.Context, _ json.RawMessage) (any, error) {
+	setupMu.Lock()
+	defer setupMu.Unlock()
 	src := "none"
 	if os.Getenv("DATABASE_DSN") != "" {
 		src = "env"
@@ -120,6 +130,8 @@ type testDBRequest struct {
 }
 
 func (s *SetupService) TestDB(_ context.Context, input json.RawMessage) (any, error) {
+	setupMu.Lock()
+	defer setupMu.Unlock()
 	var req testDBRequest
 	if err := json.Unmarshal(input, &req); err != nil {
 		return nil, errs.ValidationKey("common.validation_failed", "invalid json")
@@ -196,6 +208,8 @@ type initRequest struct {
 }
 
 func (s *SetupService) Initialize(ctx context.Context, input json.RawMessage) (any, error) {
+	setupMu.Lock()
+	defer setupMu.Unlock()
 	if s.st.Installed {
 		return nil, errs.NewKey(errs.CodeSetupInstalled, "setup.already_installed", "system already installed")
 	}
@@ -241,6 +255,11 @@ func (s *SetupService) Initialize(ctx context.Context, input json.RawMessage) (a
 	if err != nil {
 		return nil, errs.Wrap(errs.CodeInternal, "open database failed", err)
 	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, errs.Wrap(errs.CodeInternal, "get database connection failed", err)
+	}
+	defer sqlDB.Close()
 	if err := database.Ping(db); err != nil {
 		return nil, errs.Wrap(errs.CodeInternal, "ping database failed", err)
 	}
@@ -251,12 +270,13 @@ func (s *SetupService) Initialize(ctx context.Context, input json.RawMessage) (a
 	}
 
 	// 创建初始租户 + 管理员
-	if err := s.createInitialData(ctx, db, req.TenantName, req.Username, req.Password); err != nil {
+	tenantID, err := s.createInitialData(ctx, db, req.TenantName, req.Username, req.Password)
+	if err != nil {
 		return nil, err
 	}
 
 	// 状态文件成功落盘后再替换内存状态，避免失败请求被误判为已安装。
-	now, err := s.persistInstalledState(req)
+	now, err := s.persistInstalledState(req, tenantID)
 	if err != nil {
 		return nil, errs.Wrap(errs.CodeInternal, "save state failed", err)
 	}
@@ -273,6 +293,7 @@ func (s *SetupService) Initialize(ctx context.Context, input json.RawMessage) (a
 
 	return map[string]any{
 		"installed":       true,
+		"tenant_id":       tenantID,
 		"installed_at":    now.Format(time.RFC3339),
 		"jobs_enabled":    req.JobsEnabled,
 		"embedded_worker": req.JobsEnabled && req.EmbeddedWorker,
@@ -292,10 +313,11 @@ func redisCompatibilityError(failure asynqadapter.CompatibilityFailure) error {
 	}
 }
 
-func (s *SetupService) persistInstalledState(req initRequest) (time.Time, error) {
+func (s *SetupService) persistInstalledState(req initRequest, tenantID string) (time.Time, error) {
 	now := time.Now().UTC()
 	next := *s.st
 	next.Installed = true
+	next.InitialTenantID = tenantID
 	next.InstalledAt = now
 	if req.DSN != "" {
 		next.DSN = req.DSN // 仅当用户手动填写时才写入（env 注入的不落盘）
@@ -315,17 +337,24 @@ func (s *SetupService) persistInstalledState(req initRequest) (time.Time, error)
 	return now, nil
 }
 
-func (s *SetupService) createInitialData(ctx context.Context, db *gorm.DB, tenantName, username, password string) error {
+func (s *SetupService) createInitialData(ctx context.Context, db *gorm.DB, tenantName, username, password string) (string, error) {
 	tenantID := uuid.NewString()
 	accountID := uuid.NewString()
 	roleID := uuid.NewString()
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
-		return errs.Wrap(errs.CodeInternal, "hash password failed", err)
+		return "", errs.Wrap(errs.CodeInternal, "hash password failed", err)
 	}
 
-	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var count int64
+		if err := tx.Table("tenants").Count(&count).Error; err != nil {
+			return fmt.Errorf("inspect existing setup tenants: %w", err)
+		}
+		if count != 0 {
+			return errs.NewKey(errs.CodeConflict, "common.conflict", "initial tenant already exists; recover installation state instead of reinitializing")
+		}
 		// 创建租户
 		if err := tx.Create(&tenant.Tenant{
 			ID:     tenantID,
@@ -379,5 +408,9 @@ func (s *SetupService) createInitialData(ctx context.Context, db *gorm.DB, tenan
 			"user_id", accountID,
 		)
 		return nil
-	})
+	}, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	if err != nil {
+		return "", err
+	}
+	return tenantID, nil
 }
