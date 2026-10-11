@@ -66,6 +66,8 @@ class ProjectTest(unittest.TestCase):
             path.write_text(json.dumps(cfg))
             self.assertEqual(project.load(path)["forge"]["type"], "gitea")
         project.validate_repository(cfg, "https://gitea.example.com/example/application.git")
+        cfg["forge"] = {"type": "gitea", "server": "http://gitea.example.com"}
+        project.validate_repository(cfg, "http://gitea.example.com/example/application.git")
 
     def test_build_contract_exposes_downstream_toolchain_and_composition(self):
         cfg = self.config()

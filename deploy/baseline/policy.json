@@ -11,6 +11,7 @@
     "scripts/test_release_reference.py",
     "scripts/test_deployment_baseline.py",
     "scripts/test_project.py",
+    "scripts/test_gitea.py",
     "scripts/test_runtime_assets.py",
     "docker/build-mupdf-cjk.sh",
     ".github/prompts/release-notes.zh-CN.md",
