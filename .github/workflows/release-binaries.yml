@@ -32,14 +32,19 @@ jobs:
               merged_pull_request_head_sha,
               REQUIRED_CHECKS, PROJECT, project, validate_remote,
           )
+          forge = PROJECT.get("forge", {"type": "github"})
           tag = validate_version(os.environ["GITHUB_REF_NAME"])
           sha = os.environ["GITHUB_SHA"]
           validate_remote(project.configured_origin())
           for release_tag in project.tags(PROJECT, tag):
               assert subprocess.check_output(["git", "rev-list", "-n", "1", release_tag], text=True).strip() == sha
           ci_sha = merged_pull_request_head_sha(sha)
-          payload = json.loads(subprocess.check_output(["gh", "api", f"repos/{os.environ['GITHUB_REPOSITORY']}/commits/{ci_sha}/check-runs?per_page=100"]))
-          assert REQUIRED_CHECKS <= successful_checks(payload), "required CI checks did not pass"
+          if forge.get("type") == "gitea":
+              from scripts.deployment.gitea import Client
+              assert REQUIRED_CHECKS <= Client(forge["server"]).successful_checks(os.environ["GITHUB_REPOSITORY"], ci_sha, REQUIRED_CHECKS), "required CI checks did not pass"
+          else:
+              payload = json.loads(subprocess.check_output(["gh", "api", f"repos/{os.environ['GITHUB_REPOSITORY']}/commits/{ci_sha}/check-runs?per_page=100"]))
+              assert REQUIRED_CHECKS <= successful_checks(payload), "required CI checks did not pass"
           PY
           published=false
           if state="$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft 2>/dev/null)" && [ "$state" = false ]; then published=true; fi
@@ -100,6 +105,8 @@ jobs:
       - name: Generate factual Chinese release notes
         env:
           GH_TOKEN: ${{ github.token }}
+          AINP_FORGE_TYPE: github
+          AINP_FORGE_SERVER: https://github.com
           RELEASE_NOTES_API_KEY: ${{ secrets.RELEASE_NOTES_API_KEY }}
           RELEASE_NOTES_BASE_URL: ${{ vars.RELEASE_NOTES_BASE_URL }}
           RELEASE_NOTES_MODEL: ${{ vars.RELEASE_NOTES_MODEL }}

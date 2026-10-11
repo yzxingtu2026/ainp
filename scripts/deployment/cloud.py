@@ -522,7 +522,7 @@ def main():
     source = parser.add_mutually_exclusive_group()
     source.add_argument("--release", type=Path, help="verified reference.json from successful OSS release CI")
     source.add_argument("--version", help="published stable version; resolve reference automatically via gh")
-    parser.add_argument("--repository", help="GitHub OWNER/REPO; must match project configuration")
+    parser.add_argument("--repository", help="Forge OWNER/REPO; must match project configuration")
     parser.add_argument("--project-config", type=Path, default=Path("deploy/linux/project.json"))
     parser.add_argument("--state-dir", type=Path, default=Path(".deploy-state"))
     parser.add_argument("--apply", action="store_true", help="allow billable ECS creation and remote environment modification")
@@ -541,7 +541,8 @@ def main():
             require(cfg["project"] == target["project"], "target/project identity mismatch")
             repository = args.repository or cfg["repository"]
             require(repository == cfg["repository"], "--repository does not match project configuration")
-        reference = (release_reference.resolve(repository, args.version, target["project"]) if args.version
+        reference = (release_reference.resolve(repository, args.version, target["project"], cfg["forge"]) if args.version and cfg.get("forge", {}).get("type") == "gitea"
+                     else release_reference.resolve(repository, args.version, target["project"]) if args.version
                      else read_json(args.release) if args.release else None)
         if args.action != "status":
             require(reference and reference["project"] == target["project"], "matching --release or --version required")

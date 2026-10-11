@@ -13,6 +13,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts.deployment import project
+from scripts.deployment.gitea import Client as GiteaClient
 
 PROJECT = project.load()
 REPOSITORY = PROJECT["repository"]
@@ -62,6 +63,8 @@ def merged_pull_request_head_sha(merge_sha: str) -> str:
     inspect the checks that authorized the merge.
     """
 
+    if PROJECT.get("forge", {}).get("type", "github") == "gitea":
+        return GiteaClient(PROJECT["forge"]["server"]).merged_pr_head_sha(REPOSITORY, merge_sha, DEFAULT_BRANCH)
     payload = json.loads(
         run(
             "gh",
@@ -95,7 +98,9 @@ def preflight(version: str) -> tuple[str, str]:
         raise ReleaseError("working tree, index, or untracked files are not clean")
     remote = run("git", "config", "--get", "remote.origin.url")
     validate_remote(remote)
-    run("gh", "auth", "status", "--hostname", "github.com")
+    gitea = PROJECT.get("forge", {}).get("type", "github") == "gitea"
+    if not gitea:
+        run("gh", "auth", "status", "--hostname", "github.com")
     run("git", "fetch", "origin", DEFAULT_BRANCH, "--tags", "--prune")
     head = run("git", "rev-parse", "HEAD")
     if head != run("git", "rev-parse", f"origin/{DEFAULT_BRANCH}"):
@@ -106,11 +111,14 @@ def preflight(version: str) -> tuple[str, str]:
         if run("git", "ls-remote", "--tags", "origin", f"refs/tags/{tag}"):
             raise ReleaseError(f"remote tag already exists: {tag}")
     ci_head = merged_pull_request_head_sha(head)
-    payload = json.loads(run("gh", "api", f"repos/{REPOSITORY}/commits/{ci_head}/check-runs?per_page=100"))
-    missing = REQUIRED_CHECKS - successful_checks(payload)
+    if gitea:
+        missing = REQUIRED_CHECKS - GiteaClient(PROJECT["forge"]["server"]).successful_checks(REPOSITORY, ci_head, REQUIRED_CHECKS)
+    else:
+        payload = json.loads(run("gh", "api", f"repos/{REPOSITORY}/commits/{ci_head}/check-runs?per_page=100"))
+        missing = REQUIRED_CHECKS - successful_checks(payload)
     if missing:
         raise ReleaseError(f"PR CI is not successful for {ci_head}: missing {', '.join(sorted(missing))}")
-    oss_bucket = run("gh", "variable", "get", "OSS_BUCKET", "--env", "release", check=False)
+    oss_bucket = os.environ.get("OSS_BUCKET", "") if gitea else run("gh", "variable", "get", "OSS_BUCKET", "--env", "release", check=False)
     if not oss_bucket:
         raise ReleaseError("release environment variable OSS_BUCKET is not configured")
     return head, oss_bucket
@@ -130,8 +138,10 @@ def main() -> int:
         for tag in release_tags:
             run("git", "tag", "--annotate", tag, "--message", f"Release {args.version}")
         run("git", "push", "--atomic", "origin", *(f"refs/tags/{tag}" for tag in release_tags))
-        print(f"Actions: https://github.com/{REPOSITORY}/actions/workflows/release-binaries.yml")
-        print(f"Release: https://github.com/{REPOSITORY}/releases/tag/{args.version}")
+        forge = PROJECT.get("forge", {"type": "github"})
+        server = forge.get("server", "https://github.com").rstrip("/")
+        print(f"Actions: {server}/{REPOSITORY}/actions/workflows/release-binaries.yml")
+        print(f"Release: {server}/{REPOSITORY}/releases/tag/{args.version}")
         print("Production deployment is a separate explicit operation.")
         return 0
     except (ReleaseError, json.JSONDecodeError) as error:

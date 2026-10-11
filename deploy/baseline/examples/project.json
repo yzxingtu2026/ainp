@@ -2,6 +2,7 @@
   "schema": 1,
   "project": "example-app",
   "repository": "example/application",
+  "forge": {"type": "github"},
   "default_branch": "main",
   "required_checks": [
     "backend",

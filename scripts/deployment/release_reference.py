@@ -6,6 +6,7 @@ import re
 import subprocess
 
 from common import DeployError, atomic_json, digest, key, lock, oss_config, read_json, require, version
+from gitea import Client as GiteaClient
 
 REFERENCE_LIMIT = 64 * 1024
 
@@ -32,25 +33,28 @@ def json_object(raw):
     return value
 
 
-def resolve(repository, requested_version, project):
+def resolve(repository, requested_version, project, forge=None):
+    forge = forge or {"type": "github"}
     require(isinstance(repository, str) and re.fullmatch(r"[A-Za-z0-9_-]+/[A-Za-z0-9_.-]+", repository)
-            and repository.split("/")[1] not in (".", ".."), "repository must be OWNER/REPO on github.com")
+            and repository.split("/")[1] not in (".", ".."), "invalid repository")
     version(requested_version)
     require(not requested_version.endswith("-ci"), "--version requires a stable version; CI packages need --release to select an exact commit")
+    gitea = forge.get("type") == "gitea"
+    client = GiteaClient(forge["server"]) if gitea else None
     prefix = f"repos/{repository}"
-    release = json_object(github(f"{prefix}/releases/tags/{requested_version}"))
+    release = client.release(repository, requested_version) if client else json_object(github(f"{prefix}/releases/tags/{requested_version}"))
     require(release.get("tag_name") == requested_version and release.get("draft") is False
             and release.get("prerelease") is False and release.get("published_at"),
-            "version must have a published, non-draft, stable GitHub Release")
+            "version must have a published, non-draft, stable Release")
     assets = release.get("assets")
     require(isinstance(assets, list) and all(isinstance(a, dict) for a in assets), "invalid release assets")
     references = [a for a in assets if a.get("name") == "reference.json"]
     require(len(references) == 1, "published reference.json missing or ambiguous; legacy releases need a native release package")
     asset = references[0]
-    require(type(asset.get("id")) is int and asset["id"] > 0 and asset.get("state") == "uploaded"
+    require(type(asset.get("id")) is int and asset["id"] > 0 and (gitea or asset.get("state") == "uploaded")
             and type(asset.get("size")) is int and 0 < asset["size"] <= REFERENCE_LIMIT,
             "invalid reference.json asset")
-    raw = github(f"{prefix}/releases/assets/{asset['id']}", accept="application/octet-stream")
+    raw = client.asset(repository, int(release["id"]), asset["id"]) if client else github(f"{prefix}/releases/assets/{asset['id']}", accept="application/octet-stream")
     require(len(raw) == asset["size"], "reference.json asset size mismatch")
     if asset.get("digest"):
         require(asset["digest"] == "sha256:" + hashlib.sha256(raw).hexdigest(), "reference.json asset digest mismatch")
@@ -69,7 +73,7 @@ def resolve(repository, requested_version, project):
     require(reference["key"].endswith(f"/{project}/{requested_version}/{commit}/release.tar.gz"),
             "published OSS key does not match project/version/commit")
     # refs/tags prevents a same-named branch from being resolved instead of the tag.
-    tag_commit = github(f"{prefix}/commits/refs/tags/{requested_version}", query=".sha").decode().strip()
+    tag_commit = client.tag_commit(repository, requested_version) if client else github(f"{prefix}/commits/refs/tags/{requested_version}", query=".sha").decode().strip()
     require(tag_commit == commit, "release reference does not match the Git tag commit")
     return reference
 

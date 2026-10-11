@@ -57,6 +57,16 @@ class ProjectTest(unittest.TestCase):
                 with self.assertRaises(project.ProjectError):
                     project.load(path)
 
+    def test_gitea_forge_is_validated_and_defaults_remain_github(self):
+        cfg = self.config()
+        self.assertEqual(project.load(Path("deploy/baseline/examples/project.json"))["forge"]["type"], "github")
+        cfg["forge"] = {"type": "gitea", "server": "https://gitea.example.com"}
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "project.json"
+            path.write_text(json.dumps(cfg))
+            self.assertEqual(project.load(path)["forge"]["type"], "gitea")
+        project.validate_repository(cfg, "https://gitea.example.com/example/application.git")
+
     def test_build_contract_exposes_downstream_toolchain_and_composition(self):
         cfg = self.config()
         with tempfile.TemporaryDirectory() as temp:

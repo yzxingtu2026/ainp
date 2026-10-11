@@ -11,6 +11,7 @@ import subprocess
 import time
 import urllib.error
 import urllib.request
+import urllib.parse
 from pathlib import Path
 from typing import Any
 
@@ -35,9 +36,9 @@ def previous_tag(current: str) -> str:
     return max(tags, default=((0, 0, 0), ""))[1]
 
 
-def github_json(path: str, token: str) -> dict[str, Any]:
+def forge_json(path: str, token: str, server: str = "https://api.github.com") -> dict[str, Any]:
     request = urllib.request.Request(
-        f"https://api.github.com{path}",
+        f"{server.rstrip('/')}{path}",
         headers={"Accept": "application/vnd.github+json", "Authorization": f"Bearer {token}", "X-GitHub-Api-Version": "2022-11-28"},
     )
     with urllib.request.urlopen(request, timeout=15) as response:
@@ -58,11 +59,15 @@ def collect_facts(repository: str, tag: str) -> tuple[dict[str, Any], str]:
         commits.append(commit)
         pr_numbers.update(int(value) for value in re.findall(r"\(#(\d+)\)", parts[1]))
     token = os.getenv("GITHUB_TOKEN", "")
+    forge_type = os.getenv("AINP_FORGE_TYPE", "github")
+    forge_server = os.getenv("AINP_FORGE_SERVER", "https://api.github.com")
+    if forge_type == "gitea":
+        forge_server = forge_server.rstrip("/") + "/api/v1"
     pull_requests = []
     if token:
         for number in sorted(pr_numbers)[:MAX_COMMITS]:
             try:
-                item = github_json(f"/repos/{repository}/pulls/{number}", token)
+                item = forge_json(f"/repos/{repository}/pulls/{number}", token, forge_server)
             except (OSError, urllib.error.HTTPError, json.JSONDecodeError):
                 continue
             pull_requests.append({
@@ -141,7 +146,8 @@ def fallback_notes(facts: dict[str, Any]) -> dict[str, Any]:
 
 
 def render(notes: dict[str, Any], tag: str, commit: str, build_time: str, repository: str, previous: str, digests: list[str]) -> str:
-    compare = f"https://github.com/{repository}/compare/{previous}...{tag}" if previous else f"https://github.com/{repository}/commit/{commit}"
+    server = os.getenv("AINP_FORGE_SERVER", "https://github.com").rstrip("/")
+    compare = f"{server}/{repository}/compare/{previous}...{tag}" if previous else f"{server}/{repository}/commit/{commit}"
     sections = [("功能", "features"), ("改进", "improvements"), ("修复", "fixes"), ("破坏性变化", "breaking_changes"), ("升级说明", "upgrade_notes")]
     lines = [f"# {tag}", "", "## 版本概览", "", notes["summary"] or "无额外摘要。"]
     for title, field in sections:
