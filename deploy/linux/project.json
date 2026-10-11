@@ -2,6 +2,7 @@
   "schema": 1,
   "project": "ainp",
   "repository": "yzxingtu2026/ainp",
+  "forge": {"type": "github"},
   "default_branch": "main",
   "required_checks": [
     "backend",

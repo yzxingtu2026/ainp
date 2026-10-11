@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+from urllib.parse import urlsplit
 
 DEFAULT_CONFIG = Path(__file__).resolve().parents[2] / "deploy/linux/project.json"
 
@@ -27,7 +28,16 @@ def relative_path(value):
 
 def load(path=DEFAULT_CONFIG):
     cfg = json.loads(Path(path).read_text())
-    require(set(cfg) == {"schema", "project", "repository", "default_branch", "required_checks", "tag_strategy", "build_config", "platform_version", "retired_workflows", "admin_baseline"}, "invalid project configuration fields")
+    required_fields = {"schema", "project", "repository", "default_branch", "required_checks", "tag_strategy", "build_config", "platform_version", "retired_workflows", "admin_baseline"}
+    require(required_fields <= set(cfg) <= required_fields | {"forge"}, "invalid project configuration fields")
+    forge = cfg.setdefault("forge", {"type": "github"})
+    require(isinstance(forge, dict) and set(forge) <= {"type", "server"} and forge.get("type") in ("github", "gitea"), "invalid forge configuration")
+    if forge["type"] == "github":
+        require(set(forge) == {"type"} or forge.get("server") == "https://github.com", "GitHub forge server must be omitted or https://github.com")
+    else:
+        server = forge.get("server", "")
+        parsed = urlsplit(server)
+        require(parsed.scheme in ("http", "https") and parsed.netloc and not parsed.query and not parsed.fragment and server.rstrip("/") == server, "Gitea forge requires an absolute server URL")
     require(cfg["schema"] == 1, "unsupported project configuration")
     require(isinstance(cfg["project"], str) and re.fullmatch(r"[a-z][a-z0-9-]{1,30}", cfg["project"]), "invalid project name")
     require(isinstance(cfg["repository"], str) and re.fullmatch(r"[A-Za-z0-9_-]+/[A-Za-z0-9_.-]+", cfg["repository"]) and cfg["repository"].split("/")[1] not in (".", ".."), "invalid project repository")
@@ -58,8 +68,10 @@ def configured_origin(root=None):
 
 def validate_repository(cfg, remote=None, workflow_repository=None):
     repo = cfg["repository"]
+    forge = cfg.get("forge", {"type": "github"})
+    host = "github.com" if forge["type"] == "github" else urlsplit(forge["server"]).netloc
     if remote is not None:
-        require(remote in {f"https://github.com/{repo}", f"https://github.com/{repo}.git", f"git@github.com:{repo}.git", f"ssh://git@github.com/{repo}.git"}, "origin does not match project repository")
+        require(remote in {f"https://{host}/{repo}", f"https://{host}/{repo}.git", f"git@{host}:{repo}.git", f"ssh://git@{host}/{repo}.git"}, "origin does not match project repository")
     if workflow_repository is not None:
         require(workflow_repository == repo, "workflow repository does not match project repository")
 
