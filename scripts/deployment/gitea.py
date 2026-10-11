@@ -8,6 +8,7 @@ import subprocess
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 
 try:
     from .common import DeployError, require
@@ -23,7 +24,7 @@ def _credential(server: str) -> tuple[str, str] | None:
         return "token", token
     try:
         result = subprocess.run(
-            ["git", "credential", "fill"], input=f"protocol=https\nhost={urllib.parse.urlsplit(server).netloc}\n\n",
+            ["git", "credential", "fill"], input=f"protocol={urllib.parse.urlsplit(server).scheme}\nhost={urllib.parse.urlsplit(server).netloc}\n\n",
             text=True, capture_output=True, timeout=10, check=False,
         )
     except (OSError, subprocess.TimeoutExpired):
@@ -91,3 +92,27 @@ class Client:
     def successful_checks(self, repository: str, commit: str, required: set[str]) -> set[str]:
         payload = self.json(self.repo_path(repository, f"/commits/{urllib.parse.quote(commit, safe='')}/status"))
         return {item.get("context", "") for item in payload.get("statuses", []) if item.get("state") == "success" and item.get("context") in required}
+
+    def ensure_draft_release(self, repository: str, tag: str, title: str, notes: str) -> dict:
+        path = self.repo_path(repository, "/releases/tags/" + urllib.parse.quote(tag, safe=""))
+        try:
+            release = self.json(path)
+        except DeployError:
+            payload = json.dumps({"tag_name": tag, "name": title, "body": notes, "draft": True, "prerelease": False}).encode()
+            release = json.loads(self._request("POST", self.repo_path(repository, "/releases"), body=payload, content_type="application/json"))
+        require(type(release.get("id")) is int and release["id"] > 0, "invalid Gitea release identity")
+        if release.get("draft") is not True:
+            raise DeployError("Gitea release already published; refusing to overwrite immutable metadata")
+        payload = json.dumps({"name": title, "body": notes, "draft": True}).encode()
+        return json.loads(self._request("PATCH", self.repo_path(repository, f"/releases/{release['id']}"), body=payload, content_type="application/json"))
+
+    def upload_release_asset(self, repository: str, release_id: int, path: str, content: bytes) -> dict:
+        boundary = "ainp-" + uuid.uuid4().hex
+        filename = urllib.parse.quote(path.rsplit("/", 1)[-1], safe="")
+        body = (f"--{boundary}\r\nContent-Disposition: form-data; name=\"attachment\"; filename=\"{filename}\"\r\n"
+                "Content-Type: application/octet-stream\r\n\r\n").encode() + content + f"\r\n--{boundary}--\r\n".encode()
+        return json.loads(self._request("POST", self.repo_path(repository, f"/releases/{release_id}/assets?name={filename}"), body=body, content_type=f"multipart/form-data; boundary={boundary}"))
+
+    def publish_release(self, repository: str, release_id: int) -> dict:
+        payload = json.dumps({"draft": False}).encode()
+        return json.loads(self._request("PATCH", self.repo_path(repository, f"/releases/{release_id}"), body=payload, content_type="application/json"))

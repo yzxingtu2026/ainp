@@ -69,9 +69,11 @@ def configured_origin(root=None):
 def validate_repository(cfg, remote=None, workflow_repository=None):
     repo = cfg["repository"]
     forge = cfg.get("forge", {"type": "github"})
-    host = "github.com" if forge["type"] == "github" else urlsplit(forge["server"]).netloc
+    forge_url = urlsplit(forge.get("server", "https://github.com"))
+    host = "github.com" if forge["type"] == "github" else forge_url.netloc
+    scheme = "https" if forge["type"] == "github" else forge_url.scheme
     if remote is not None:
-        require(remote in {f"https://{host}/{repo}", f"https://{host}/{repo}.git", f"git@{host}:{repo}.git", f"ssh://git@{host}/{repo}.git"}, "origin does not match project repository")
+        require(remote in {f"{scheme}://{host}/{repo}", f"{scheme}://{host}/{repo}.git", f"git@{host}:{repo}.git", f"ssh://git@{host}/{repo}.git"}, "origin does not match project repository")
     if workflow_repository is not None:
         require(workflow_repository == repo, "workflow repository does not match project repository")
 

@@ -20,6 +20,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - id: forge
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          from scripts.deployment import project
+          forge = project.load().get("forge", {"type": "github"})
+          print("type=" + forge["type"])
+          print("server=" + forge.get("server", "https://github.com"))
+          PY
       - id: validate
         env:
           GH_TOKEN: ${{ github.token }}
@@ -47,7 +55,20 @@ jobs:
               assert REQUIRED_CHECKS <= successful_checks(payload), "required CI checks did not pass"
           PY
           published=false
-          if state="$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft 2>/dev/null)" && [ "$state" = false ]; then published=true; fi
+          if [ "${{ steps.forge.outputs.type }}" = gitea ]; then
+            published="$(python3 - <<'PY'
+          import os
+          from scripts.deployment import project
+          from scripts.deployment.gitea import Client
+          cfg = project.load()
+          try:
+              release = Client(cfg["forge"]["server"]).release(os.environ["GITHUB_REPOSITORY"], os.environ["GITHUB_REF_NAME"])
+              print("true" if release.get("draft") is False else "false")
+          except Exception:
+              print("false")
+          PY
+            )"
+          elif state="$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft 2>/dev/null)" && [ "$state" = false ]; then published=true; fi
           echo "published=$published" >> "$GITHUB_OUTPUT"
   build:
     needs: validate
@@ -73,6 +94,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - id: forge
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          from scripts.deployment import project
+          forge = project.load().get("forge", {"type": "github"})
+          print("type=" + forge["type"])
+          print("server=" + forge.get("server", "https://github.com"))
+          PY
       - uses: actions/download-artifact@v4
         with:
           name: native-release
@@ -105,8 +134,9 @@ jobs:
       - name: Generate factual Chinese release notes
         env:
           GH_TOKEN: ${{ github.token }}
-          AINP_FORGE_TYPE: github
-          AINP_FORGE_SERVER: https://github.com
+          GITHUB_TOKEN: ${{ github.token }}
+          AINP_FORGE_TYPE: ${{ steps.forge.outputs.type }}
+          AINP_FORGE_SERVER: ${{ steps.forge.outputs.server }}
           RELEASE_NOTES_API_KEY: ${{ secrets.RELEASE_NOTES_API_KEY }}
           RELEASE_NOTES_BASE_URL: ${{ vars.RELEASE_NOTES_BASE_URL }}
           RELEASE_NOTES_MODEL: ${{ vars.RELEASE_NOTES_MODEL }}
@@ -123,15 +153,34 @@ jobs:
       - name: Publish release metadata (never deploy production)
         env:
           GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
-          if state="$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft 2>/dev/null)"; then
-            test "$state" = true
-            gh release edit "$GITHUB_REF_NAME" --draft --notes-file release-notes.md
+          if [ "${{ steps.forge.outputs.type }}" = gitea ]; then
+            python3 - <<'PY'
+          import os
+          from pathlib import Path
+          from scripts.deployment import project
+          from scripts.deployment.gitea import Client
+          cfg = project.load()
+          client = Client(cfg["forge"]["server"])
+          repository, tag = os.environ["GITHUB_REPOSITORY"], os.environ["GITHUB_REF_NAME"]
+          release = client.ensure_draft_release(repository, tag, tag, Path("release-notes.md").read_text())
+          for name in ("reference.json", "release.json", "SHA256SUMS", "deployment-baseline.json"):
+              path = Path("dist-release") / name
+              if path.is_file():
+                  client.upload_release_asset(repository, release["id"], name, path.read_bytes())
+          client.publish_release(repository, release["id"])
+          PY
           else
-            gh release create "$GITHUB_REF_NAME" --verify-tag --draft --title "$GITHUB_REF_NAME" --notes-file release-notes.md
+            if state="$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft 2>/dev/null)"; then
+              test "$state" = true
+              gh release edit "$GITHUB_REF_NAME" --draft --notes-file release-notes.md
+            else
+              gh release create "$GITHUB_REF_NAME" --verify-tag --draft --title "$GITHUB_REF_NAME" --notes-file release-notes.md
+            fi
+            gh release upload "$GITHUB_REF_NAME" dist-release/reference.json dist-release/release.json dist-release/SHA256SUMS --clobber
+            if [ -f dist-release/deployment-baseline.json ]; then
+              gh release upload "$GITHUB_REF_NAME" dist-release/deployment-baseline.json --clobber
+            fi
+            gh release edit "$GITHUB_REF_NAME" --draft=false --latest=false
           fi
-          gh release upload "$GITHUB_REF_NAME" dist-release/reference.json dist-release/release.json dist-release/SHA256SUMS --clobber
-          if [ -f dist-release/deployment-baseline.json ]; then
-            gh release upload "$GITHUB_REF_NAME" dist-release/deployment-baseline.json --clobber
-          fi
-          gh release edit "$GITHUB_REF_NAME" --draft=false --latest=false
