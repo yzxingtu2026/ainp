@@ -58,6 +58,7 @@ type AuthSession struct {
 	ExpiresAt                time.Time  `gorm:"not null;index"`
 	LastSeenAt               time.Time  `gorm:"not null"`
 	RevokedAt                *time.Time `gorm:"index"`
+	RevokedReason            string     `gorm:"size:64;not null;default:''"`
 	CreatedAt                time.Time  `gorm:"autoCreateTime"`
 	UpdatedAt                time.Time  `gorm:"autoUpdateTime"`
 }

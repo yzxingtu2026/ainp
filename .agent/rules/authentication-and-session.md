@@ -13,6 +13,8 @@
 - access token 必须含 `session_id` 和 `auth_version`，不得携带/信任 roles/permissions；请求仍经过 `AuthorizationProvider`。
 - refresh token 使用高熵 opaque 值，数据库只存摘要；事务轮换，旧 token 重放撤销对应会话族。
 - 会话事实使用 tenant + Principal Ref + Client Surface + audience；仅 `ainp.account` 可兼容关联 `account_id`，业务主体禁止复用。
+- Client Surface 会话策略必须保持零值兼容：`AbsoluteTTL` 仅覆盖新会话的 refresh/absolute lifetime，`IdleTTL` 在 refresh 与受保护请求路径共同执行，`MaxActiveSessions=0` 表示无限制，设置上限但省略 `OverflowPolicy` 时按 `reject`。
+- 并发会话上限必须在同一事务和主体+Surface 粒度数据库锁内检查与创建；`revoke_oldest` 按创建时间稳定排序。空闲、绝对到期和溢出撤销必须原子写入稳定 reason 与审计，不得改变 access token TTL。
 - refresh 固定 Session 原 Kind/Surface/Audience 并在行锁内轮换；重放撤销 token family，Provider 停用/版本变化后禁止刷新。
 - 会话列表/撤销限定当前 tenant、Principal Ref 和 Surface；认证 body 的 client 必须匹配请求路径解析出的 Surface。
 - Outbox/Job 持久化并恢复 Principal Kind、Surface 和 audience；异步恢复不得丢失主体事实或默认切换主体类型。

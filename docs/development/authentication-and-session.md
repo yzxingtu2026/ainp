@@ -7,6 +7,9 @@ Agent 只读要点：`.agent/rules/authentication-and-session.md`。
 - 主体使用 `auth.PrincipalRef{Kind, ID}`；JWT `sub` 始终等于 `PrincipalRef.ID`，`principal_kind` 必须已注册。
 - AINP 内置 `ainp.account` 与 `ainp.tenant-console`。产品主体使用 owner 命名空间，并通过 `App.RegisterPrincipalProvider` 注册。
 - Client Surface 是服务端安全事实，包含稳定 ID、唯一 audience、HTTP path prefix、允许 Kind 和认证方法；通过 `App.RegisterClientSurface` 注册。
+- Client Surface 可选配置会话策略：`AbsoluteTTL` 覆盖该访问面新会话的全局 `auth.refresh_ttl`，`IdleTTL` 在刷新和受保护请求时校验空闲时间，`MaxActiveSessions` 限制同一租户、主体和访问面的活动会话数，`OverflowPolicy` 可取 `reject` 或 `revoke_oldest`。
+- 会话策略零值保持兼容：两个 TTL 为 `0` 时不增加对应限制，`MaxActiveSessions=0` 表示不限制；设置并发上限但省略 `OverflowPolicy` 时按 `reject` 处理。策略不改变 `auth.jwt.ttl`，只影响新建会话及服务端会话校验。
+- 空闲、绝对到期和溢出撤销分别返回稳定错误 key，并记录 `system.auth_session_policy_revoke` 审计。升级迁移会增加 `auth_sessions.revoked_reason` 和活动会话查询索引。
 - Host 在模块完成 `Prepare/Register` 后校验并封存注册表。未知 Kind、Provider、认证方法、Action 引用以及重复 audience/prefix 都阻止启动。
 - HTTP 按最长 path prefix 解析 Surface，再按目标 audience 验签。未知路径、跨 audience、Token surface 与路径不一致、Kind/Surface 不兼容均 fail-closed。
 - 独立 Bearer 协议入口只能通过显式精确路径跳过 Web Session Auth，并由目标 Handler 校验自己的 audience、授权事实和实时权限；不得使用前缀放行，未知路径仍须 fail-closed。当前仅 `/mcp` 使用该机制。

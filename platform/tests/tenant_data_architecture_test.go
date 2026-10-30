@@ -132,6 +132,7 @@ var tenantArchitectureExceptions = map[string]tenantArchitectureException{
 	"modules/ai/model_facade.go:AutoMigrate:Exec":                             {Reason: "schema migration upgrades credential storage", Risk: "startup migration only"},
 	"modules/system/access/preauth_store.go:loadAuthorization:Raw":            {Reason: "authentication bootstrap query runs before full AuthContext exists", Risk: "private fixed SQL and explicit tenant parameter"},
 	"modules/system/access/preauth_store.go:createSession:Create":             {Reason: "authentication bootstrap creates the session before request AuthContext exists", Risk: "private pre-auth store; tenant comes from verified identity"},
+	"modules/system/access/preauth_store.go:createSessionWithPolicy:Exec":     {Reason: "session admission uses a fixed parameterized PostgreSQL advisory lock scoped by tenant, principal, and Client Surface", Risk: "private pre-auth store; lock key must retain all verified identity dimensions"},
 	"modules/system/access/preauth_store.go:findDefaultTenant:First":          {Reason: "login bootstrap resolves the only enabled tenant before identity verification", Risk: "private pre-auth store only"},
 	"modules/system/access/preauth_store.go:findIdentity:First":               {Reason: "login bootstrap resolves a verified identity before request AuthContext exists", Risk: "private pre-auth store only"},
 	"modules/system/access/preauth_store.go:findTenant:First":                 {Reason: "login bootstrap validates the tenant before identity verification", Risk: "private pre-auth store only"},
@@ -148,16 +149,17 @@ var tenantArchitectureExceptions = map[string]tenantArchitectureException{
 }
 
 var manualTenantPredicateExceptions = map[string]tenantArchitectureException{
-	"framework/mcpserver/governance.go:DecideConfirmation:Where":         {Reason: "MCP confirmation decision uses SystemDB only after recovery token and current web identity resolve ownership", Risk: "must bind tenant, user, pending status, and opaque recovery hash"},
-	"framework/mcpserver/governance.go:ConfirmationForResume:Where":      {Reason: "MCP confirmation resume resolves a tenant-owned confirmation through OAuth protocol tables", Risk: "must bind confirmation ID to current tenant, user, grant, client, and sensitive scope"},
-	"framework/mcpserver/governance.go:ownedConfirmation:Where":          {Reason: "MCP confirmation lookup crosses OAuth protocol tables after authenticated web login", Risk: "must bind opaque recovery hash to current tenant and user"},
-	"framework/mcpserver/governance.go:ListGrants:Where":                 {Reason: "MCP Grant management projects global Client metadata for the current owner", Risk: "must bind current tenant and user and cap results"},
-	"framework/mcpserver/governance.go:RevokeOwnedGrants:Where":          {Reason: "MCP Grant revocation atomically revokes tenant Grant, global token family, and confirmations", Risk: "must resolve IDs from current tenant and user before cross-table updates"},
-	"framework/job/runstore.go:CreateIdempotent:Where":                   {Reason: "trusted enqueue path verifies tenant from AuthContext before persisting JobRun", Risk: "must remain private to the Job runtime"},
-	"modules/system/access/preauth_store.go:findIdentity:Where":          {Reason: "identity lookup occurs before authenticated user context exists", Risk: "private pre-auth store only"},
-	"modules/system/access/preauth_store.go:findAccountByID:Where":       {Reason: "session bootstrap validates the account before full AuthContext exists", Risk: "private pre-auth store only"},
-	"modules/system/access/preauth_store.go:findAccountByUsername:Where": {Reason: "password authentication starts before full AuthContext exists", Risk: "private pre-auth store only"},
-	"modules/system/access/preauth_store.go:loadAuthorization:Where":     {Reason: "authorization bootstrap validates the session before request AuthContext is established", Risk: "private pre-auth store only"},
+	"framework/mcpserver/governance.go:DecideConfirmation:Where":           {Reason: "MCP confirmation decision uses SystemDB only after recovery token and current web identity resolve ownership", Risk: "must bind tenant, user, pending status, and opaque recovery hash"},
+	"framework/mcpserver/governance.go:ConfirmationForResume:Where":        {Reason: "MCP confirmation resume resolves a tenant-owned confirmation through OAuth protocol tables", Risk: "must bind confirmation ID to current tenant, user, grant, client, and sensitive scope"},
+	"framework/mcpserver/governance.go:ownedConfirmation:Where":            {Reason: "MCP confirmation lookup crosses OAuth protocol tables after authenticated web login", Risk: "must bind opaque recovery hash to current tenant and user"},
+	"framework/mcpserver/governance.go:ListGrants:Where":                   {Reason: "MCP Grant management projects global Client metadata for the current owner", Risk: "must bind current tenant and user and cap results"},
+	"framework/mcpserver/governance.go:RevokeOwnedGrants:Where":            {Reason: "MCP Grant revocation atomically revokes tenant Grant, global token family, and confirmations", Risk: "must resolve IDs from current tenant and user before cross-table updates"},
+	"framework/job/runstore.go:CreateIdempotent:Where":                     {Reason: "trusted enqueue path verifies tenant from AuthContext before persisting JobRun", Risk: "must remain private to the Job runtime"},
+	"modules/system/access/preauth_store.go:findIdentity:Where":            {Reason: "identity lookup occurs before authenticated user context exists", Risk: "private pre-auth store only"},
+	"modules/system/access/preauth_store.go:findAccountByID:Where":         {Reason: "session bootstrap validates the account before full AuthContext exists", Risk: "private pre-auth store only"},
+	"modules/system/access/preauth_store.go:findAccountByUsername:Where":   {Reason: "password authentication starts before full AuthContext exists", Risk: "private pre-auth store only"},
+	"modules/system/access/preauth_store.go:loadAuthorization:Where":       {Reason: "authorization bootstrap validates the session before request AuthContext is established", Risk: "private pre-auth store only"},
+	"modules/system/access/preauth_store.go:createSessionWithPolicy:Where": {Reason: "session admission checks the active-session limit using explicit tenant, principal, and Client Surface predicates", Risk: "private pre-auth store; predicates must remain aligned with the advisory lock key"},
 }
 
 func TestTenantDataAccessArchitecture(t *testing.T) {
