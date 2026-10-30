@@ -211,9 +211,9 @@ class BaselineTest(unittest.TestCase):
         (self.root / "admin").mkdir()
         (self.root / "admin/admin-baseline.json").write_text(json.dumps({"commit": "a" * 40}))
         (self.root / ".gitignore").write_text((ROOT / "deploy/baseline/templates/gitignore.txt").read_text())
-        (self.root / ".agent/rules/main.md").write_text("binary-deployment\n")
-        (self.root / ".agent/adapters").mkdir()
-        (self.root / ".agent/adapters/rules.json").write_text(json.dumps({"rules": [{"source": ".agent/rules/binary-deployment.md"}]}))
+        (self.root / ".agents/rules/main.md").write_text("binary-deployment\n")
+        (self.root / ".agents/adapters").mkdir()
+        (self.root / ".agents/adapters/rules.json").write_text(json.dumps({"rules": [{"source": ".agents/rules/binary-deployment.md"}]}))
 
     def test_verify_multi_web_build_from_published_baseline(self):
         self.configured_install()
@@ -240,8 +240,8 @@ class BaselineTest(unittest.TestCase):
                 ("scripts/deployment/cloud.py", "local drift"),
                 (".github/workflows/deployment-baseline.yml", "disabled"),
                 (".gitignore", ""),
-                (".agent/rules/main.md", ""),
-                (".agent/adapters/rules.json", '{"rules":[]}'),
+                (".agents/rules/main.md", ""),
+                (".agents/adapters/rules.json", '{"rules":[]}'),
             ):
                 path = self.root / name
                 original = path.read_bytes()

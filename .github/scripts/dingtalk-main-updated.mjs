@@ -4,7 +4,7 @@ import process from "node:process";
 import { postDingTalkMarkdown, resolveDingTalkWebhookUrl } from "./dingtalk-webhook.mjs";
 
 const rootDir = process.cwd();
-const membersPath = ".agent/team/members.yml";
+const membersPath = ".agents/team/members.yml";
 
 function compact(value, fallback = "") {
   if (value === null || value === undefined) {

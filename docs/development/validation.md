@@ -1,6 +1,6 @@
 # 请求验证规范
 
-Agent 只读要点：`.agent/rules/validation.md`。本文定义 JSON Action 的强类型请求生命周期与验证边界。
+Agent 只读要点：`.agents/rules/validation.md`。本文定义 JSON Action 的强类型请求生命周期与验证边界。
 
 ## 固定生命周期
 

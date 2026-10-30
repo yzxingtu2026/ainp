@@ -5,7 +5,7 @@ import { postDingTalkMarkdown, resolveDingTalkWebhookUrl } from "./dingtalk-webh
 
 const rootDir = process.cwd();
 const configPath = path.join(rootDir, ".github", "dingtalk-notify.yml");
-const defaultMembersPath = ".agent/team/members.yml";
+const defaultMembersPath = ".agents/team/members.yml";
 
 function usage() {
   return [

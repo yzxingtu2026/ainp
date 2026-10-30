@@ -1,6 +1,6 @@
 # 审计日志规范（最小集）
 
-Agent 只读要点：`.agent/rules/audit.md`。本文档定义审计与运行日志的边界，以及 Phase 1 字段最小集。
+Agent 只读要点：`.agents/rules/audit.md`。本文档定义审计与运行日志的边界，以及 Phase 1 字段最小集。
 
 ## 目标
 
@@ -90,4 +90,4 @@ Agent 代表认证主体执行 Action 时，`actor_id` 保留责任与授权归�
 
 ## 变更
 
-调整字段或写入时机时，同步更新本文档与 `.agent/rules/audit.md`，并 `agent-rules sync`。
+调整字段或写入时机时，同步更新本文档与 `.agents/rules/audit.md`，并 `agent-rules sync`。

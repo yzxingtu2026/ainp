@@ -1,6 +1,6 @@
 # API 响应与错误规范
 
-Agent 只读要点：`.agent/rules/api-response.md`。本文档定义 HTTP 信封、错误码分段与 Action 错误映射。
+Agent 只读要点：`.agents/rules/api-response.md`。本文档定义 HTTP 信封、错误码分段与 Action 错误映射。
 
 ## 目标
 
@@ -216,4 +216,4 @@ AppError { Code, MessageKey, Message, Fields, Cause }
 
 ## 变更
 
-调整信封字段、HTTP 分工或码段时，同步更新本文档与 `.agent/rules/api-response.md`，并 `agent-rules sync`。
+调整信封字段、HTTP 分工或码段时，同步更新本文档与 `.agents/rules/api-response.md`，并 `agent-rules sync`。

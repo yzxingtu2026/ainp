@@ -1,6 +1,6 @@
 # 后端目录与模块边界
 
-Agent 只读要点：`.agent/rules/backend-layout.md`。本文档为已拍板的 Go 骨架布局。
+Agent 只读要点：`.agents/rules/backend-layout.md`。本文档为已拍板的 Go 骨架布局。
 
 ## 已拍板结论
 
@@ -26,7 +26,7 @@ ainp/
 │   └── migrations/           # 迁移文件（随库表演进）
 ├── frontend/                 # Soybean（后续）
 ├── docs/
-└── .agent/
+└── .agents/
 ```
 
 ## Phase 1 目录
@@ -226,7 +226,7 @@ go run ./cmd/ainp-archcheck \
 
 ## 变更
 
-调整目录或依赖规则时，同步更新本文档、`.agent/rules/backend-layout.md` 与 `README.md` 规划目录，并 `agent-rules sync`。
+调整目录或依赖规则时，同步更新本文档、`.agents/rules/backend-layout.md` 与 `README.md` 规划目录，并 `agent-rules sync`。
 
 ### 发布给下游的构建契约测试
 

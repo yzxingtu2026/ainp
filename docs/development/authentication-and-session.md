@@ -1,6 +1,6 @@
 # 统一认证与会话
 
-Agent 只读要点：`.agent/rules/authentication-and-session.md`。
+Agent 只读要点：`.agents/rules/authentication-and-session.md`。
 
 ## Principal Kind 与 Client Surface
 

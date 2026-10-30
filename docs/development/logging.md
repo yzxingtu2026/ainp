@@ -1,6 +1,6 @@
 # 后端统一日志规范
 
-Agent 只读要点：`.agent/rules/logging.md`。本文档为运行日志与审计边界的详规。
+Agent 只读要点：`.agents/rules/logging.md`。本文档为运行日志与审计边界的详规。
 
 ## 目标
 
@@ -160,4 +160,4 @@ logging.Error(ctx, "purchase create failed", err, "purchase_id", id)
 
 ## 变更
 
-调整门面、字段表或级别语义时，同步更新本文档与 `.agent/rules/logging.md`，并 `agent-rules sync`。
+调整门面、字段表或级别语义时，同步更新本文档与 `.agents/rules/logging.md`，并 `agent-rules sync`。

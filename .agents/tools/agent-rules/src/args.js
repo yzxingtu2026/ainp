@@ -52,7 +52,7 @@ function printHelp() {
   agent-rules sync [--target=qoder,cursor|all]
   agent-rules doctor [--target=qoder,cursor|all]
 
-本地开发可用：node .agent/tools/agent-rules/cli.js <命令>`);
+本地开发可用：node .agents/tools/agent-rules/cli.js <命令>`);
 }
 
 function toCamelCase(value) {

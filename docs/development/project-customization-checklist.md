@@ -3,18 +3,18 @@
 - [ ] 替换 `README.md` 中的项目名称、用途和启动说明。
 - [ ] 运行 `npx -y @yz-xingtu/agent-rules@latest init`，填写当前使用者姓名、GitHub 用户名和提交邮箱。
 - [ ] 运行 `npx -y @yz-xingtu/agent-rules@latest sync` 生成规则和技能文件。
-- [ ] 更新 `.agent/rules/main.md` 的开发硬约束，再运行 `sync`。
-- [ ] 确认前端栈约束：`.agent/rules/frontend-stack.md` 与 `docs/development/frontend-stack.md`（Soybean Admin + Naive UI），再运行 `sync`。
-- [ ] 确认图标约束：`.agent/rules/icon-library.md` 与 `docs/development/icon-library.md`（Iconify + `mdi`），再运行 `sync`。
-- [ ] 确认日志约束：`.agent/rules/logging.md` 与 `docs/development/logging.md`（slog 门面，运行日志与审计分离），再运行 `sync`。
-- [ ] 确认 API 响应约束：`.agent/rules/api-response.md` 与 `docs/development/api-response.md`，再运行 `sync`。
-- [ ] 确认 Action/菜单约束：`.agent/rules/action-metadata.md` 与 `docs/development/action-metadata.md`，再运行 `sync`。
-- [ ] 确认鉴权/租户约束：`.agent/rules/auth-context.md` 与 `docs/development/auth-context.md`，再运行 `sync`。
-- [ ] 确认审计约束：`.agent/rules/audit.md` 与 `docs/development/audit.md`，再运行 `sync`。
-- [ ] 确认后端布局：`.agent/rules/backend-layout.md` 与 `docs/development/backend-layout.md`，再运行 `sync`。
-- [ ] 更新 `.agent/rules/team-escalation.md` 中的沟通渠道和负责人，再运行 `sync`。
-- [ ] 更新 `.agent/team/members.yml` 中的团队成员、GitHub 邮箱和钉钉 ID。
-- [ ] 更新 `.agent/team/roles.yml` 中的团队角色说明和通用角色约束。
+- [ ] 更新 `.agents/rules/main.md` 的开发硬约束，再运行 `sync`。
+- [ ] 确认前端栈约束：`.agents/rules/frontend-stack.md` 与 `docs/development/frontend-stack.md`（Soybean Admin + Naive UI），再运行 `sync`。
+- [ ] 确认图标约束：`.agents/rules/icon-library.md` 与 `docs/development/icon-library.md`（Iconify + `mdi`），再运行 `sync`。
+- [ ] 确认日志约束：`.agents/rules/logging.md` 与 `docs/development/logging.md`（slog 门面，运行日志与审计分离），再运行 `sync`。
+- [ ] 确认 API 响应约束：`.agents/rules/api-response.md` 与 `docs/development/api-response.md`，再运行 `sync`。
+- [ ] 确认 Action/菜单约束：`.agents/rules/action-metadata.md` 与 `docs/development/action-metadata.md`，再运行 `sync`。
+- [ ] 确认鉴权/租户约束：`.agents/rules/auth-context.md` 与 `docs/development/auth-context.md`，再运行 `sync`。
+- [ ] 确认审计约束：`.agents/rules/audit.md` 与 `docs/development/audit.md`，再运行 `sync`。
+- [ ] 确认后端布局：`.agents/rules/backend-layout.md` 与 `docs/development/backend-layout.md`，再运行 `sync`。
+- [ ] 更新 `.agents/rules/team-escalation.md` 中的沟通渠道和负责人，再运行 `sync`。
+- [ ] 更新 `.agents/team/members.yml` 中的团队成员、GitHub 邮箱和钉钉 ID。
+- [ ] 更新 `.agents/team/roles.yml` 中的团队角色说明和通用角色约束。
 - [ ] 如需 GitHub Issue/PR 钉钉实时通知，配置 `DINGTALK_COLLAB_WEBHOOK` / `DINGTALK_COLLAB_SIGN_SECRET`，再启用 `.github/dingtalk-notify.yml`。
 - [ ] 明确哪些目录属于运行时代码，影响 `needs-testing` 判断。
 - [ ] 配置 Issue 模板、PR 模板、标签和分支保护。

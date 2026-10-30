@@ -14,7 +14,7 @@
 - 正式消费固定 `platform/vX.Y.Z`；根 Tag 与模块 Tag 必须同版本、同 Commit。
 - 下游模块根包只保留薄 `Module` 生命周期、稳定 Facade/contracts/constants；Action、Service、Repository、Model、HTTP 与领域流程进入 owner 明确的能力子包，测试集中到模块树外的 `tests`。
 - 下游 CI 必须在 `go vet/go test` 前显式运行依赖版本提供的 `cmd/ainp-archcheck --profile downstream`；不接受架构基线、通配豁免或本地白名单。
-- 发布物中的精简规则来源是 `platform/rules/downstream-module-architecture.md`。下游升级后仍须复制或同步同版本规则、登记自身 `.agent/rules/main.md` 与 `.agent/adapters/rules.json`，再运行 `agent-rules sync/doctor`；保存文档快照或只升级 Go 依赖不会自动启用规则。
+- 发布物中的精简规则来源是 `platform/rules/downstream-module-architecture.md`。下游升级后仍须复制或同步同版本规则、登记自身 `.agents/rules/main.md` 与 `.agents/adapters/rules.json`，再运行 `agent-rules sync/doctor`；保存文档快照或只升级 Go 依赖不会自动启用规则。
 - 下游平台资源只允许使用 `framework/platformresource` 与 `app.App.PlatformResources`；禁止导入 `platform/internal/*`、`platform/modules/*/model`、能力实现包或自行复制 system 查询。
 - 资源 Port 必须从可信 AuthContext 重新执行 tenant scope、AccessPolicy、状态和并发校验；缺少依赖、跨租户、无权和对象异常 fail-closed。
 - Account Identity Binding 只经 `PlatformResources.AccountIdentities` 管理当前 `ainp.account`，Bind 的 Provider/Subject 必须来自服务端已验证身份，禁止客户端直接声明；请求不得携带 tenant/account/role/permission，禁止直查 `auth_identities`、导入 system model、复制登录解析或自签 Session/JWT。
