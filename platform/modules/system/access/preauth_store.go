@@ -2,6 +2,7 @@ package access
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"time"
 
@@ -73,7 +74,7 @@ func (s *preAuthStore) createSession(ctx context.Context, row *model.AuthSession
 
 func (s *preAuthStore) createSessionWithPolicy(ctx context.Context, row *model.AuthSession, surface auth.ClientSurface, auditRevoke func(*gorm.DB, *model.AuthSession, time.Time) error) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		lockKey := row.TenantID + "\x00" + row.PrincipalKind + "\x00" + row.PrincipalID + "\x00" + row.ClientSurface
+		lockKey := fmt.Sprintf("%d:%s%d:%s%d:%s%d:%s", len(row.TenantID), row.TenantID, len(row.PrincipalKind), row.PrincipalKind, len(row.PrincipalID), row.PrincipalID, len(row.ClientSurface), row.ClientSurface)
 		if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", lockKey).Error; err != nil {
 			return err
 		}
