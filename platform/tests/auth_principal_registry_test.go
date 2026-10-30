@@ -3,6 +3,7 @@ package tests
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 )
@@ -12,6 +13,34 @@ type testPrincipalProvider struct{ kind auth.PrincipalKind }
 func (p testPrincipalProvider) Kind() auth.PrincipalKind { return p.kind }
 func (p testPrincipalProvider) LoadAuthorization(_ context.Context, req auth.AuthorizationRequest) (*auth.AuthorizationSnapshot, error) {
 	return &auth.AuthorizationSnapshot{TenantID: req.TenantID, Principal: req.PrincipalRef(), PrincipalID: req.PrincipalRef().ID, SessionID: req.SessionID, AuthVersion: req.AuthVersion, Audience: req.Audience, ClientSurface: req.ClientSurface}, nil
+}
+
+func TestClientSurfaceRegistryValidatesSessionPolicy(t *testing.T) {
+	base := auth.ClientSurface{ID: "example.client", Audience: "example:client", PathPrefix: "/api/", PrincipalKinds: []auth.PrincipalKind{"example.customer"}, Methods: []string{"example-sso"}}
+	for name, mutate := range map[string]func(*auth.ClientSurface){
+		"negative absolute ttl": func(surface *auth.ClientSurface) { surface.AbsoluteTTL = -time.Second },
+		"negative idle ttl":     func(surface *auth.ClientSurface) { surface.IdleTTL = -time.Second },
+		"negative max sessions": func(surface *auth.ClientSurface) { surface.MaxActiveSessions = -1 },
+		"unknown overflow":      func(surface *auth.ClientSurface) { surface.OverflowPolicy = "drop_random" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			surface := base
+			mutate(&surface)
+			if err := auth.NewClientSurfaceRegistry().Register(surface); err == nil {
+				t.Fatal("invalid session policy must be rejected")
+			}
+		})
+	}
+
+	base.MaxActiveSessions = 2
+	registry := auth.NewClientSurfaceRegistry()
+	if err := registry.Register(base); err != nil {
+		t.Fatal(err)
+	}
+	got, ok := registry.Get(base.ID)
+	if !ok || got.OverflowPolicy != auth.SessionOverflowReject {
+		t.Fatalf("default overflow policy = %q, want reject", got.OverflowPolicy)
+	}
 }
 
 func TestPrincipalRegistryFailsClosedAndSeals(t *testing.T) {

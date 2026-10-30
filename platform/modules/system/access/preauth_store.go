@@ -2,11 +2,13 @@ package access
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"time"
 
 	"github.com/yzxingtu2026/ainp/platform/framework/action"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
+	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 	"github.com/yzxingtu2026/ainp/platform/framework/status"
 	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"github.com/yzxingtu2026/ainp/platform/modules/system/access/model"
@@ -68,6 +70,40 @@ func (s *preAuthStore) upsertIdentity(ctx context.Context, row *model.AuthIdenti
 
 func (s *preAuthStore) createSession(ctx context.Context, row *model.AuthSession) error {
 	return s.db.WithContext(ctx).Create(row).Error
+}
+
+func (s *preAuthStore) createSessionWithPolicy(ctx context.Context, row *model.AuthSession, surface auth.ClientSurface, auditRevoke func(*gorm.DB, *model.AuthSession, time.Time) error) error {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		lockKey := fmt.Sprintf("%d:%s%d:%s%d:%s%d:%s", len(row.TenantID), row.TenantID, len(row.PrincipalKind), row.PrincipalKind, len(row.PrincipalID), row.PrincipalID, len(row.ClientSurface), row.ClientSurface)
+		if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", lockKey).Error; err != nil {
+			return err
+		}
+		var active []model.AuthSession
+		now := time.Now().UTC()
+		query := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("tenant_id = ? AND principal_kind = ? AND principal_id = ? AND client_surface = ? AND revoked_at IS NULL AND expires_at > ?", row.TenantID, row.PrincipalKind, row.PrincipalID, row.ClientSurface, now)
+		if surface.IdleTTL > 0 {
+			query = query.Where("last_seen_at > ?", now.Add(-surface.IdleTTL))
+		}
+		if err := query.Order("created_at ASC, id ASC").Find(&active).Error; err != nil {
+			return err
+		}
+		if len(active) >= surface.MaxActiveSessions {
+			if surface.OverflowPolicy != auth.SessionOverflowRevokeOldest {
+				return errs.NewKey(errs.CodeConflict, "auth.session_limit_reached", "active session limit reached")
+			}
+			revokeCount := len(active) - surface.MaxActiveSessions + 1
+			for i := 0; i < revokeCount; i++ {
+				if err := tx.Model(&model.AuthSession{}).Where("id = ? AND revoked_at IS NULL", active[i].ID).Updates(map[string]any{"revoked_at": now, "revoked_reason": sessionRevokeOverflow, "updated_at": now}).Error; err != nil {
+					return err
+				}
+				if err := auditRevoke(tx, &active[i], now); err != nil {
+					return err
+				}
+			}
+		}
+		return tx.Create(row).Error
+	})
 }
 
 func (s *preAuthStore) rotateSession(ctx context.Context, sessionID string, fn func(*gorm.DB, *model.AuthSession) error) error {

@@ -211,6 +211,11 @@ func Auth(opts AuthOptions) gin.HandlerFunc {
 			})
 			if err != nil || snapshot == nil ||
 				snapshot.TenantID != claims.TenantID || snapshot.PrincipalID != claims.PrincipalID || snapshot.SessionID != claims.SessionID || snapshot.AuthVersion != claims.AuthVersion {
+				if sessionPolicyError, ok := publicSessionPolicyError(err); ok {
+					response.Fail(c, sessionPolicyError)
+					c.Abort()
+					return
+				}
 				// 会话 JWT 已验签但授权版本失效/不匹配：直接 401，避免匿名继续打到受保护 Action。
 				response.Fail(c, errs.NewKey(errs.CodeUnauthorized, "common.unauthorized", "unauthorized"))
 				c.Abort()
@@ -279,5 +284,18 @@ func Auth(opts AuthOptions) gin.HandlerFunc {
 		ctx := auth.WithContext(c.Request.Context(), ac)
 		c.Request = c.Request.WithContext(ctx)
 		c.Next()
+	}
+}
+
+func publicSessionPolicyError(err error) (*errs.AppError, bool) {
+	ae, ok := errs.AsAppError(err)
+	if !ok || ae.Code != errs.CodeUnauthorized {
+		return nil, false
+	}
+	switch ae.Key() {
+	case "auth.session_idle_expired", "auth.session_absolute_expired", "auth.session_overflow_revoked":
+		return ae, true
+	default:
+		return nil, false
 	}
 }

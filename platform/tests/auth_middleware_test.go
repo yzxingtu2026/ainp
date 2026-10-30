@@ -2,6 +2,7 @@ package tests
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -10,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/yzxingtu2026/ainp/platform/framework/attachment"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
+	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 	"github.com/yzxingtu2026/ainp/platform/framework/middleware"
 )
 
@@ -17,6 +19,46 @@ type fakeAuthorizationProvider struct {
 	snapshot *auth.AuthorizationSnapshot
 	err      error
 	request  auth.AuthorizationRequest
+}
+
+func TestAuthMiddlewareOnlyExposesSessionPolicyErrors(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	tokens, _ := auth.NewTokenService("test-secret", "ainp-test", time.Hour)
+	token, _, _ := tokens.Issue("tenant-1", "user-1", "session-1", 1)
+
+	for _, test := range []struct {
+		name string
+		err  error
+		key  string
+	}{
+		{name: "idle", err: errs.NewKey(errs.CodeUnauthorized, "auth.session_idle_expired", "idle"), key: "auth.session_idle_expired"},
+		{name: "absolute", err: errs.NewKey(errs.CodeUnauthorized, "auth.session_absolute_expired", "absolute"), key: "auth.session_absolute_expired"},
+		{name: "overflow", err: errs.NewKey(errs.CodeUnauthorized, "auth.session_overflow_revoked", "overflow"), key: "auth.session_overflow_revoked"},
+		{name: "private provider error", err: errs.NewKey(errs.CodeUnauthorized, "auth.provider_private", "private"), key: "common.unauthorized"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			provider := &fakeAuthorizationProvider{err: test.err}
+			router := gin.New()
+			router.Use(middleware.RequestID(), middleware.Auth(middleware.AuthOptions{Tokens: tokens, Authorization: provider}))
+			router.GET("/protected", func(c *gin.Context) { c.Status(http.StatusNoContent) })
+			req := httptest.NewRequest(http.MethodGet, "/protected", nil)
+			req.Header.Set("Authorization", "Bearer "+token)
+			resp := httptest.NewRecorder()
+			router.ServeHTTP(resp, req)
+			if resp.Code != http.StatusUnauthorized {
+				t.Fatalf("status=%d body=%s", resp.Code, resp.Body.String())
+			}
+			var body struct {
+				MessageKey string `json:"message_key"`
+			}
+			if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			if body.MessageKey != test.key {
+				t.Fatalf("message_key=%q want=%q", body.MessageKey, test.key)
+			}
+		})
+	}
 }
 
 func (f *fakeAuthorizationProvider) LoadAuthorization(_ context.Context, req auth.AuthorizationRequest) (*auth.AuthorizationSnapshot, error) {

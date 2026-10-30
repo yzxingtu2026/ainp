@@ -6,18 +6,30 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 )
 
 const TenantConsoleSurface = "ainp.tenant-console"
 
+type SessionOverflowPolicy string
+
+const (
+	SessionOverflowReject       SessionOverflowPolicy = "reject"
+	SessionOverflowRevokeOldest SessionOverflowPolicy = "revoke_oldest"
+)
+
 var surfaceIDPattern = regexp.MustCompile(`^[a-z][a-z0-9]*(?:[.-][a-z][a-z0-9-]*)+$`)
 
 type ClientSurface struct {
-	ID             string
-	Audience       string
-	PathPrefix     string
-	PrincipalKinds []PrincipalKind
-	Methods        []string
+	ID                string
+	Audience          string
+	PathPrefix        string
+	PrincipalKinds    []PrincipalKind
+	Methods           []string
+	AbsoluteTTL       time.Duration
+	IdleTTL           time.Duration
+	MaxActiveSessions int
+	OverflowPolicy    SessionOverflowPolicy
 }
 
 func BuiltinTenantConsoleSurface() ClientSurface {
@@ -58,6 +70,15 @@ func (r *ClientSurfaceRegistry) Register(surface ClientSurface) error {
 	surface.PathPrefix = strings.TrimSpace(surface.PathPrefix)
 	if !surfaceIDPattern.MatchString(surface.ID) || surface.Audience == "" || !strings.HasPrefix(surface.PathPrefix, "/") || len(surface.PrincipalKinds) == 0 || len(surface.Methods) == 0 {
 		return fmt.Errorf("auth: invalid client surface %q", surface.ID)
+	}
+	if surface.AbsoluteTTL < 0 || surface.IdleTTL < 0 || surface.MaxActiveSessions < 0 {
+		return fmt.Errorf("auth: surface %s has invalid session policy", surface.ID)
+	}
+	if surface.OverflowPolicy != "" && surface.OverflowPolicy != SessionOverflowReject && surface.OverflowPolicy != SessionOverflowRevokeOldest {
+		return fmt.Errorf("auth: surface %s has invalid overflow policy %q", surface.ID, surface.OverflowPolicy)
+	}
+	if surface.MaxActiveSessions > 0 && surface.OverflowPolicy == "" {
+		surface.OverflowPolicy = SessionOverflowReject
 	}
 	for _, kind := range surface.PrincipalKinds {
 		if !kind.Valid() {

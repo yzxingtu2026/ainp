@@ -23,6 +23,18 @@ func TestPrincipalSessionMigrationContract(t *testing.T) {
 	}
 }
 
+func TestSessionPolicyMigrationContract(t *testing.T) {
+	body, err := os.ReadFile("../migrations/0069_auth_session_policy.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{"revoked_reason", "idle_expired", "absolute_expired", "overflow", "idx_auth_sessions_active_surface", "WHERE revoked_at IS NULL"} {
+		if !strings.Contains(string(body), expected) {
+			t.Fatalf("session policy migration is missing %q", expected)
+		}
+	}
+}
+
 func TestAsyncPrincipalContextMigrationContract(t *testing.T) {
 	body, err := os.ReadFile("../migrations/0059_async_principal_context.sql")
 	if err != nil {
