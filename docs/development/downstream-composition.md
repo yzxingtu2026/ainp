@@ -115,7 +115,7 @@ go run github.com/yzxingtu2026/ainp/platform/cmd/ainp-archcheck \
 正式 `platform/vX.Y.Z` 发布物包含 `rules/downstream-module-architecture.md`。下游升级必须显式完成：
 
 1. 将 `go.mod` 升级到正式 `platform/vX.Y.Z` 并验证依赖。
-2. 从该版本发布物复制或同步精简规则到下游 `.agent/rules/`，在 `.agent/rules/main.md` 引用，并在 `.agent/adapters/rules.json` 增加 `source` 及 Qoder/Cursor 目标登记；随后运行下游自己的 `agent-rules sync` 和 `doctor`。
+2. 从该版本发布物复制或同步精简规则到下游 `.agents/rules/`，在 `.agents/rules/main.md` 引用，并在 `.agents/adapters/rules.json` 增加 `source` 及 Qoder/Cursor 目标登记；随后运行下游自己的 `agent-rules sync` 和 `doctor`。
 3. 在下游 backend quality job 中显式加入上述 `ainp-archcheck` 命令。
 
 规则文件、检查器和 Go API 必须来自同一 platform 版本。`docs/upstream` 只读快照不会被 Agent 自动加载，升级 Go 依赖也不会自动改写下游目录、Agent adapter 或 CI。

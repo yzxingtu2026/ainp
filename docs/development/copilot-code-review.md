@@ -9,8 +9,8 @@ Copilot 不是合并门禁。它固定提交 `Comment` 类型的 review，不会
 ## 仓库配置
 
 - `.github/copilot-instructions.md`：仓库级审查目标、中文输出和问题格式。
-- `.github/instructions/*.instructions.md`：根据变更路径路由到相关 `.agent/rules/`。
-- `.agent/rules/`：团队硬约束的唯一规则源。
+- `.github/instructions/*.instructions.md`：根据变更路径路由到相关 `.agents/rules/`。
+- `.agents/rules/`：团队硬约束的唯一规则源。
 - `docs/development/`：规则引用的详细设计与实施说明。
 
 Copilot 使用 PR 基础分支中的自定义指令。因此，修改审查规则的 PR 合入 `main` 后，后续 PR 才会稳定使用新规则。

@@ -14,7 +14,7 @@
 | project | deploy/linux/project.json、build.json 由下游拥有；工具不创建、不覆盖、不删除 |
 | integration | 独立命名的原生/发布/预检/部署基线工作流逐文件接入；既有文件需明确确认归属，接入后受三方比较保护 |
 
-不会覆盖整个 `.github/workflows`、`.gitignore`、`.agent/rules/main.md`、adapters 或业务目录。gitignore 与 Agent 登记按 `deploy/baseline/templates` 手工合并；verify 检查必需集成。现有 integration 文件如有业务步骤，先将业务步骤抽到独立工作流，再审查是否采用上游文件；不能用强制覆盖绕过差异。
+不会覆盖整个 `.github/workflows`、`.gitignore`、`.agents/rules/main.md`、adapters 或业务目录。gitignore 与 Agent 登记按 `deploy/baseline/templates` 手工合并；verify 检查必需集成。现有 integration 文件如有业务步骤，先将业务步骤抽到独立工作流，再审查是否采用上游文件；不能用强制覆盖绕过差异。
 
 路径必须是仓库内规范相对路径，拒绝 `..`、绝对路径、重复分隔符、符号链接和私有/账本目标。哈希不做 LF 转换；Windows 应确保这些公共文件检出为 LF，否则漂移检查会失败。模式比较按可执行位判断，不依赖宿主 umask。
 

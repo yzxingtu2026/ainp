@@ -1,6 +1,6 @@
 # 多租户与鉴权上下文规范
 
-Agent 只读要点：`.agent/rules/auth-context.md`。本文档定义租户隔离、身份注入与权限模型（含已拍板约定）。
+Agent 只读要点：`.agents/rules/auth-context.md`。本文档定义租户隔离、身份注入与权限模型（含已拍板约定）。
 
 ## 目标
 
@@ -180,4 +180,4 @@ tenant realm 日志查询只允许使用声明支持可信租户过滤的 Provid
 
 ## 变更
 
-调整隔离或权限模型时，同步更新本文档与 `.agent/rules/auth-context.md`，并 `agent-rules sync`。
+调整隔离或权限模型时，同步更新本文档与 `.agents/rules/auth-context.md`，并 `agent-rules sync`。

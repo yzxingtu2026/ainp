@@ -2,7 +2,7 @@
   "rules": [
     {
       "id": "main",
-      "source": ".agent/rules/main.md",
+      "source": ".agents/rules/main.md",
       "qoder": {
         "path": ".qoder/rules/main.md",
         "frontmatter": {
@@ -19,7 +19,7 @@
     },
     {
       "id": "branching-strategy",
-      "source": ".agent/rules/branching-strategy.md",
+      "source": ".agents/rules/branching-strategy.md",
       "qoder": {
         "path": ".qoder/rules/branching-strategy.md",
         "frontmatter": {
@@ -37,7 +37,7 @@
     },
     {
       "id": "github-issues-workflow",
-      "source": ".agent/rules/github-issues-workflow.md",
+      "source": ".agents/rules/github-issues-workflow.md",
       "qoder": {
         "path": ".qoder/rules/github-issues-workflow.md",
         "frontmatter": {
@@ -55,7 +55,7 @@
     },
     {
       "id": "project-context-and-docs",
-      "source": ".agent/rules/project-context-and-docs.md",
+      "source": ".agents/rules/project-context-and-docs.md",
       "qoder": {
         "path": ".qoder/rules/project-context-and-docs.md",
         "frontmatter": {
@@ -73,7 +73,7 @@
     },
     {
       "id": "team-escalation",
-      "source": ".agent/rules/team-escalation.md",
+      "source": ".agents/rules/team-escalation.md",
       "qoder": {
         "path": ".qoder/rules/team-escalation.md",
         "frontmatter": {
@@ -91,7 +91,7 @@
     },
     {
       "id": "copilot-code-review",
-      "source": ".agent/rules/copilot-code-review.md",
+      "source": ".agents/rules/copilot-code-review.md",
       "qoder": {
         "path": ".qoder/rules/copilot-code-review.md",
         "frontmatter": {
@@ -109,7 +109,7 @@
     },
     {
       "id": "frontend-stack",
-      "source": ".agent/rules/frontend-stack.md",
+      "source": ".agents/rules/frontend-stack.md",
       "qoder": {
         "path": ".qoder/rules/frontend-stack.md",
         "frontmatter": {
@@ -126,7 +126,7 @@
     },
     {
       "id": "frontend-downstream-composition",
-      "source": ".agent/rules/frontend-downstream-composition.md",
+      "source": ".agents/rules/frontend-downstream-composition.md",
       "qoder": {
         "path": ".qoder/rules/frontend-downstream-composition.md",
         "frontmatter": {
@@ -143,7 +143,7 @@
     },
     {
       "id": "icon-library",
-      "source": ".agent/rules/icon-library.md",
+      "source": ".agents/rules/icon-library.md",
       "qoder": {
         "path": ".qoder/rules/icon-library.md",
         "frontmatter": {
@@ -160,7 +160,7 @@
     },
     {
       "id": "logging",
-      "source": ".agent/rules/logging.md",
+      "source": ".agents/rules/logging.md",
       "qoder": {
         "path": ".qoder/rules/logging.md",
         "frontmatter": {
@@ -177,7 +177,7 @@
     },
     {
       "id": "api-response",
-      "source": ".agent/rules/api-response.md",
+      "source": ".agents/rules/api-response.md",
       "qoder": {
         "path": ".qoder/rules/api-response.md",
         "frontmatter": {
@@ -194,7 +194,7 @@
     },
     {
       "id": "action-metadata",
-      "source": ".agent/rules/action-metadata.md",
+      "source": ".agents/rules/action-metadata.md",
       "qoder": {
         "path": ".qoder/rules/action-metadata.md",
         "frontmatter": {
@@ -211,7 +211,7 @@
     },
     {
       "id": "validation",
-      "source": ".agent/rules/validation.md",
+      "source": ".agents/rules/validation.md",
       "qoder": {
         "path": ".qoder/rules/validation.md",
         "frontmatter": {
@@ -228,7 +228,7 @@
     },
     {
       "id": "list-query",
-      "source": ".agent/rules/list-query.md",
+      "source": ".agents/rules/list-query.md",
       "qoder": {
         "path": ".qoder/rules/list-query.md",
         "frontmatter": {
@@ -245,7 +245,7 @@
     },
     {
       "id": "auth-context",
-      "source": ".agent/rules/auth-context.md",
+      "source": ".agents/rules/auth-context.md",
       "qoder": {
         "path": ".qoder/rules/auth-context.md",
         "frontmatter": {
@@ -262,7 +262,7 @@
     },
     {
       "id": "identity-contract",
-      "source": ".agent/rules/identity-contract.md",
+      "source": ".agents/rules/identity-contract.md",
       "qoder": {
         "path": ".qoder/rules/identity-contract.md",
         "frontmatter": {
@@ -279,7 +279,7 @@
     },
     {
       "id": "tenant-data-access",
-      "source": ".agent/rules/tenant-data-access.md",
+      "source": ".agents/rules/tenant-data-access.md",
       "qoder": {
         "path": ".qoder/rules/tenant-data-access.md",
         "frontmatter": {
@@ -296,7 +296,7 @@
     },
     {
       "id": "authentication-and-session",
-      "source": ".agent/rules/authentication-and-session.md",
+      "source": ".agents/rules/authentication-and-session.md",
       "qoder": {
         "path": ".qoder/rules/authentication-and-session.md",
         "frontmatter": {
@@ -313,7 +313,7 @@
     },
     {
       "id": "audit",
-      "source": ".agent/rules/audit.md",
+      "source": ".agents/rules/audit.md",
       "qoder": {
         "path": ".qoder/rules/audit.md",
         "frontmatter": {
@@ -330,7 +330,7 @@
     },
     {
       "id": "backend-layout",
-      "source": ".agent/rules/backend-layout.md",
+      "source": ".agents/rules/backend-layout.md",
       "qoder": {
         "path": ".qoder/rules/backend-layout.md",
         "frontmatter": {
@@ -347,7 +347,7 @@
     },
     {
       "id": "ai-capability-packages",
-      "source": ".agent/rules/ai-capability-packages.md",
+      "source": ".agents/rules/ai-capability-packages.md",
       "qoder": {
         "path": ".qoder/rules/ai-capability-packages.md",
         "frontmatter": {
@@ -364,7 +364,7 @@
     },
     {
       "id": "code-sets-and-status",
-      "source": ".agent/rules/code-sets-and-status.md",
+      "source": ".agents/rules/code-sets-and-status.md",
       "qoder": {
         "path": ".qoder/rules/code-sets-and-status.md",
         "frontmatter": {
@@ -381,7 +381,7 @@
     },
     {
       "id": "role-management",
-      "source": ".agent/rules/role-management.md",
+      "source": ".agents/rules/role-management.md",
       "qoder": {
         "path": ".qoder/rules/role-management.md",
         "frontmatter": {
@@ -398,7 +398,7 @@
     },
     {
       "id": "datetime-display",
-      "source": ".agent/rules/datetime-display.md",
+      "source": ".agents/rules/datetime-display.md",
       "qoder": {
         "path": ".qoder/rules/datetime-display.md",
         "frontmatter": {
@@ -415,7 +415,7 @@
     },
     {
       "id": "settings-system",
-      "source": ".agent/rules/settings-system.md",
+      "source": ".agents/rules/settings-system.md",
       "qoder": {
         "path": ".qoder/rules/settings-system.md",
         "frontmatter": {
@@ -432,7 +432,7 @@
     },
     {
       "id": "object-storage",
-      "source": ".agent/rules/object-storage.md",
+      "source": ".agents/rules/object-storage.md",
       "qoder": {
         "path": ".qoder/rules/object-storage.md",
         "frontmatter": {
@@ -449,7 +449,7 @@
     },
     {
       "id": "attachments",
-      "source": ".agent/rules/attachments.md",
+      "source": ".agents/rules/attachments.md",
       "qoder": {
         "path": ".qoder/rules/attachments.md",
         "frontmatter": {
@@ -466,7 +466,7 @@
     },
     {
       "id": "frontend-attachments",
-      "source": ".agent/rules/frontend-attachments.md",
+      "source": ".agents/rules/frontend-attachments.md",
       "qoder": {
         "path": ".qoder/rules/frontend-attachments.md",
         "frontmatter": {
@@ -483,7 +483,7 @@
     },
     {
       "id": "transactional-outbox",
-      "source": ".agent/rules/transactional-outbox.md",
+      "source": ".agents/rules/transactional-outbox.md",
       "qoder": {
         "path": ".qoder/rules/transactional-outbox.md",
         "frontmatter": {
@@ -500,7 +500,7 @@
     },
     {
       "id": "background-jobs",
-      "source": ".agent/rules/background-jobs.md",
+      "source": ".agents/rules/background-jobs.md",
       "qoder": {
         "path": ".qoder/rules/background-jobs.md",
         "frontmatter": {
@@ -517,7 +517,7 @@
     },
     {
       "id": "ai-model-providers",
-      "source": ".agent/rules/ai-model-providers.md",
+      "source": ".agents/rules/ai-model-providers.md",
       "qoder": {
         "path": ".qoder/rules/ai-model-providers.md",
         "frontmatter": {
@@ -534,7 +534,7 @@
     },
     {
       "id": "ai-model-runtime",
-      "source": ".agent/rules/ai-model-runtime.md",
+      "source": ".agents/rules/ai-model-runtime.md",
       "qoder": {
         "path": ".qoder/rules/ai-model-runtime.md",
         "frontmatter": {
@@ -551,7 +551,7 @@
     },
     {
       "id": "ai-embedding-runtime",
-      "source": ".agent/rules/ai-embedding-runtime.md",
+      "source": ".agents/rules/ai-embedding-runtime.md",
       "qoder": {
         "path": ".qoder/rules/ai-embedding-runtime.md",
         "frontmatter": {
@@ -568,7 +568,7 @@
     },
     {
       "id": "ai-multimodal",
-      "source": ".agent/rules/ai-multimodal.md",
+      "source": ".agents/rules/ai-multimodal.md",
       "qoder": {
         "path": ".qoder/rules/ai-multimodal.md",
         "frontmatter": { "trigger": "always_on" }
@@ -583,97 +583,97 @@
     },
     {
       "id": "tool-runtime",
-      "source": ".agent/rules/tool-runtime.md",
+      "source": ".agents/rules/tool-runtime.md",
       "qoder": {"path": ".qoder/rules/tool-runtime.md", "frontmatter": {"trigger": "always_on"}},
       "cursor": {"path": ".cursor/rules/tool-runtime.mdc", "frontmatter": {"description": "渐进式工具发现、动态 Schema、Handle、确认与执行边界", "alwaysApply": true}}
     },
     {
       "id": "agent-management",
-      "source": ".agent/rules/agent-management.md",
+      "source": ".agents/rules/agent-management.md",
       "qoder": {"path": ".qoder/rules/agent-management.md", "frontmatter": {"trigger": "always_on"}},
       "cursor": {"path": ".cursor/rules/agent-management.mdc", "frontmatter": {"description": "智能体 Contract、不可变 Version、ownership 与资源绑定边界", "alwaysApply": true}}
     },
     {
       "id": "agent-slots",
-      "source": ".agent/rules/agent-slots.md",
+      "source": ".agents/rules/agent-slots.md",
       "qoder": {"path": ".qoder/rules/agent-slots.md", "frontmatter": {"trigger": "always_on"}},
       "cursor": {"path": ".cursor/rules/agent-slots.mdc", "frontmatter": {"description": "AI 业务功能默认智能体 Slot、分层覆盖、fail-closed 解析与固定 Version 边界", "alwaysApply": true}}
     },
     {
       "id": "ai-conversations",
-      "source": ".agent/rules/ai-conversations.md",
+      "source": ".agents/rules/ai-conversations.md",
       "qoder": {"path": ".qoder/rules/ai-conversations.md", "frontmatter": {"trigger": "always_on"}},
       "cursor": {"path": ".cursor/rules/ai-conversations.mdc", "frontmatter": {"description": "AI 会话事实、固定 Agent Version、追加消息、幂等与上下文装配边界", "alwaysApply": true}}
     },
     {
       "id": "ai-knowledge-runtime",
-      "source": ".agent/rules/ai-knowledge-runtime.md",
+      "source": ".agents/rules/ai-knowledge-runtime.md",
       "qoder": {"path": ".qoder/rules/ai-knowledge-runtime.md", "frontmatter": {"trigger": "always_on"}},
       "cursor": {"path": ".cursor/rules/ai-knowledge-runtime.mdc", "frontmatter": {"description": "知识库附件来源、租户权限、索引元数据、Agent 绑定与检索重鉴权边界", "alwaysApply": true}}
     },
     {
       "id": "ai-context-compaction",
-      "source": ".agent/rules/ai-context-compaction.md",
+      "source": ".agents/rules/ai-context-compaction.md",
       "qoder": {"path": ".qoder/rules/ai-context-compaction.md", "frontmatter": {"trigger": "always_on"}},
       "cursor": {"path": ".cursor/rules/ai-context-compaction.mdc", "frontmatter": {"description": "模型预算、确定性缩减、结构化摘要与版本化 ContextSnapshot 边界", "alwaysApply": true}}
     },
     {
       "id": "ai-agent-runtime",
-      "source": ".agent/rules/ai-agent-runtime.md",
+      "source": ".agents/rules/ai-agent-runtime.md",
       "qoder": {"path": ".qoder/rules/ai-agent-runtime.md", "frontmatter": {"trigger": "always_on"}},
       "cursor": {"path": ".cursor/rules/ai-agent-runtime.mdc", "frontmatter": {"description": "Agent Run/Step 状态机、lease、Outbox Job、工具确认与可靠恢复", "alwaysApply": true}}
     },
     {
       "id": "runtime-context",
-      "source": ".agent/rules/runtime-context.md",
+      "source": ".agents/rules/runtime-context.md",
       "qoder": {"path": ".qoder/rules/runtime-context.md", "frontmatter": {"trigger": "always_on"}},
       "cursor": {"path": ".cursor/rules/runtime-context.mdc", "frontmatter": {"description": "服务端可信身份、Run 时间快照、Prompt 临时注入与消费边界", "alwaysApply": true}}
     },
     {
       "id": "page-context",
-      "source": ".agent/rules/page-context.md",
+      "source": ".agents/rules/page-context.md",
       "qoder": {"path": ".qoder/rules/page-context.md", "frontmatter": {"trigger": "always_on"}},
       "cursor": {"path": ".cursor/rules/page-context.mdc", "frontmatter": {"description": "页面 Provider、服务端 Resolver、Run 不可变快照与工具推荐不扩权", "alwaysApply": true}}
     },
     {
       "id": "global-ai-assistant",
-      "source": ".agent/rules/global-ai-assistant.md",
+      "source": ".agents/rules/global-ai-assistant.md",
       "qoder": {"path": ".qoder/rules/global-ai-assistant.md", "frontmatter": {"trigger": "always_on"}},
       "cursor": {"path": ".cursor/rules/global-ai-assistant.mdc", "frontmatter": {"description": "应用壳全局 AI 入口、单例会话 controller、共享 Surface 与身份清理", "alwaysApply": true}}
     },
     {
       "id": "navigation-search",
-      "source": ".agent/rules/navigation-search.md",
+      "source": ".agents/rules/navigation-search.md",
       "qoder": {"path": ".qoder/rules/navigation-search.md", "frontmatter": {"trigger": "always_on"}},
       "cursor": {"path": ".cursor/rules/navigation-search.mdc", "frontmatter": {"description": "Menu Registry 派生导航目录、实时授权词法检索与可信路径", "alwaysApply": true}}
     },
     {
       "id": "mcp-oauth",
-      "source": ".agent/rules/mcp-oauth.md",
+      "source": ".agents/rules/mcp-oauth.md",
       "qoder": {"path": ".qoder/rules/mcp-oauth.md", "frontmatter": {"trigger": "always_on"}},
       "cursor": {"path": ".cursor/rules/mcp-oauth.mdc", "frontmatter": {"description": "MCP Streamable HTTP、独立 OAuth audience、PKCE、Grant 与实时授权边界", "alwaysApply": true}}
     },
     {
       "id": "runtime-assets",
-      "source": ".agent/rules/runtime-assets.md",
+      "source": ".agents/rules/runtime-assets.md",
       "qoder": {"path": ".qoder/rules/runtime-assets.md", "frontmatter": {"trigger": "always_on"}},
       "cursor": {"path": ".cursor/rules/runtime-assets.mdc", "frontmatter": {"description": "Prompt/i18n 内嵌、owner 命名空间、冲突门禁与显式开发 reload", "alwaysApply": true}}
     },
     {
       "id": "binary-deployment",
-      "source": ".agent/rules/binary-deployment.md",
+      "source": ".agents/rules/binary-deployment.md",
       "qoder": {"path": ".qoder/rules/binary-deployment.md", "frontmatter": {"trigger": "model_decision", "description": "OSS 二进制发布、ECS systemd 部署更新回滚及生产验收"}},
       "cursor": {"path": ".cursor/rules/binary-deployment.mdc", "frontmatter": {"description": "二进制发布与 ECS 部署安全边界、下游统一 SOP", "alwaysApply": false}}
     },
     {
       "id": "release-versioning",
-      "source": ".agent/rules/release-versioning.md",
+      "source": ".agents/rules/release-versioning.md",
       "qoder": {"path": ".qoder/rules/release-versioning.md", "frontmatter": {"trigger": "always_on"}},
       "cursor": {"path": ".cursor/rules/release-versioning.mdc", "frontmatter": {"description": "Git Tag 唯一版本源、统一 BuildInfo、CI 与部署版本校验", "alwaysApply": true}}
     },
     {
       "id": "downstream-composition",
-      "source": ".agent/rules/downstream-composition.md",
+      "source": ".agents/rules/downstream-composition.md",
       "qoder": {"path": ".qoder/rules/downstream-composition.md", "frontmatter": {"trigger": "always_on"}},
       "cursor": {"path": ".cursor/rules/downstream-composition.mdc", "frontmatter": {"description": "公开 Host、下游模块阶段、命名空间迁移与 Go 子模块版本边界", "alwaysApply": true}}
     }

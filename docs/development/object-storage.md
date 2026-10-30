@@ -1,6 +1,6 @@
 # 统一对象存储（ObjectStore）
 
-本文档约定与业务无关的二进制对象存储基础设施。Agent 要点：`.agent/rules/object-storage.md`。
+本文档约定与业务无关的二进制对象存储基础设施。Agent 要点：`.agents/rules/object-storage.md`。
 
 ## 边界
 

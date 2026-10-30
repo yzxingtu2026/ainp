@@ -1,6 +1,6 @@
 # @yz-xingtu/agent-rules
 
-从项目仓库的 `.agent/` 元结构生成各 AI 编程工具可识别的规则、技能和本地入口文件，避免长期手工维护多套重复目录。
+从项目仓库的 `.agents/` 元结构生成各 AI 编程工具可识别的规则、技能和本地入口文件，避免长期手工维护多套重复目录。
 
 ## 使用方式
 
@@ -33,7 +33,7 @@ npx -y @yz-xingtu/agent-rules@latest init --agents=codex,claude,cursor,qoder
 
 ### sync
 
-从 `.agent/` 源结构刷新生成物：
+从 `.agents/` 源结构刷新生成物：
 
 ```bash
 npx -y @yz-xingtu/agent-rules@latest sync
@@ -47,7 +47,7 @@ npx -y @yz-xingtu/agent-rules@latest sync --target=qoder,cursor
 
 ### doctor
 
-检查当前生成物是否与 `.agent/` 源结构一致：
+检查当前生成物是否与 `.agents/` 源结构一致：
 
 ```bash
 npx -y @yz-xingtu/agent-rules@latest doctor
@@ -55,14 +55,14 @@ npx -y @yz-xingtu/agent-rules@latest doctor
 
 ## 源结构
 
-项目需要在仓库根目录维护 `.agent/`：
+项目需要在仓库根目录维护 `.agents/`：
 
 ```text
-.agent/rules/       团队规则源
-.agent/skills/      通用技能源
-.agent/team/        团队成员和角色信息
-.agent/adapters/    厂商输出适配配置
-.agent/templates/   AGENTS.md / CLAUDE.md 模板
+.agents/rules/       团队规则源
+.agents/skills/      通用技能源
+.agents/team/        团队成员和角色信息
+.agents/adapters/    厂商输出适配配置
+.agents/templates/   AGENTS.md / CLAUDE.md 模板
 ```
 
 `AGENTS.md`、`CLAUDE.md`、`.cursor/`、`.qoder/` 等通常是本地生成物，建议加入项目 `.gitignore`。

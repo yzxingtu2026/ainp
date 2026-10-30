@@ -1,6 +1,6 @@
 # 时间展示与本地化
 
-本文档约定 AINP 用户可见时间的展示边界。Agent 要点：`.agent/rules/datetime-display.md`。
+本文档约定 AINP 用户可见时间的展示边界。Agent 要点：`.agents/rules/datetime-display.md`。
 
 ## 原则
 
@@ -32,4 +32,4 @@
 - [ ] 新增用户可见时间列复用 `formatDateTime` / `DateTimeText`
 - [ ] 未直接展示 RFC3339 原串
 - [ ] API 未新增展示用时间字段
-- [ ] 变更已同步本文档与 `.agent/rules/datetime-display.md`，并 `agent-rules sync`
+- [ ] 变更已同步本文档与 `.agents/rules/datetime-display.md`，并 `agent-rules sync`

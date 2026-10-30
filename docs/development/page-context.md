@@ -46,4 +46,4 @@ Tool Runtime 先执行原有 Registry 投影、Agent Scope、当前 permission�
 2. 在所属后端模块注册 Resolver，并声明权限、Tenant 查询、安全摘要和 server-owned hints。
 3. 页面用 `usePageContextProvider()` 返回受限 Envelope；编辑/创建不得包含表单值。
 4. 增加预算、权限、跨租户、revision、生命周期和无敏感字段测试。
-5. 同步本文档与 `.agent/rules/page-context.md`。
+5. 同步本文档与 `.agents/rules/page-context.md`。

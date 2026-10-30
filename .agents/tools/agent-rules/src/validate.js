@@ -6,7 +6,7 @@ function validateSources(repo) {
 }
 
 function validateTeamMembers(repo) {
-  const membersPath = ".agent/team/members.yml";
+  const membersPath = ".agents/team/members.yml";
   const members = readTeamMembers(repo);
   const entries = Object.entries(members);
   if (!entries.length) throw new Error(`${membersPath} 至少需要定义一名团队成员`);
@@ -21,7 +21,7 @@ function validateTeamMembers(repo) {
 }
 
 function validateTeamRoles(repo) {
-  const rolesPath = ".agent/team/roles.yml";
+  const rolesPath = ".agents/team/roles.yml";
   const roles = readTeamRoles(repo).roles || {};
   if (!Object.keys(roles).length) throw new Error(`${rolesPath} 至少需要定义一个团队角色`);
   for (const [key, role] of Object.entries(roles)) {

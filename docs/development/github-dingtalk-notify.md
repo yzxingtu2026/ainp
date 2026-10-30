@@ -1,13 +1,13 @@
 # GitHub Issue/PR 钉钉通知
 
-模板内置一套可选的 GitHub Actions 钉钉协作通知能力，用于把 Issue/PR 分配、评论、审核和 main 分支更新事件推送到项目钉钉群，并按 `.agent/team/members.yml` 自动 @ 对应成员。
+模板内置一套可选的 GitHub Actions 钉钉协作通知能力，用于把 Issue/PR 分配、评论、审核和 main 分支更新事件推送到项目钉钉群，并按 `.agents/team/members.yml` 自动 @ 对应成员。
 
 ## 启用方式
 
 `.github/dingtalk-notify.yml` 默认 `enabled: false`。新项目确认要启用后：
 
 1. 在 GitHub Actions Secrets 中配置钉钉机器人信息。
-2. 确认 `.agent/team/members.yml` 已维护成员 GitHub 用户名和钉钉 userId。
+2. 确认 `.agents/team/members.yml` 已维护成员 GitHub 用户名和钉钉 userId。
 3. 将 `.github/dingtalk-notify.yml` 的 `enabled` 改为 `true`。
 
 ## 配置 Secret
@@ -25,7 +25,7 @@ Webhook URL、access token、加签 secret、手机号等敏感信息不得提�
 
 ## 维护成员映射
 
-成员映射统一维护在 `.agent/team/members.yml`：
+成员映射统一维护在 `.agents/team/members.yml`：
 
 ```yaml
 members:
@@ -51,7 +51,7 @@ members:
 
 批量分配 Issue/PR 或批量请求审核时启用短窗口防抖：同一仓库、同一事件类型、同一目标人的运行只保留最后一次，等待 `debounce_wait_seconds` 后查询最近 `debounce_window_seconds` 内的相关项并合并为一条摘要通知。评论、审核、行评论保持即时通知。
 
-main 分支更新由 `.github/workflows/dingtalk-notify-main-updated.yml` 单独通知，会 @ `.agent/team/members.yml` 中所有配置了 `dingtalk.user_id` 的成员，提醒大家拉取最新代码。
+main 分支更新由 `.github/workflows/dingtalk-notify-main-updated.yml` 单独通知，会 @ `.agents/team/members.yml` 中所有配置了 `dingtalk.user_id` 的成员，提醒大家拉取最新代码。
 
 ## 本地 dry-run
 

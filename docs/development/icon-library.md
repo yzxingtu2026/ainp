@@ -1,6 +1,6 @@
 # 图标库规范（Iconify + mdi）
 
-菜单由图标字符串驱动：后端 Metadata / 代码定义 `icon`，前端 Soybean Admin 按 Iconify 渲染。Agent 只读要点：`.agent/rules/icon-library.md`。
+菜单由图标字符串驱动：后端 Metadata / 代码定义 `icon`，前端 Soybean Admin 按 Iconify 渲染。Agent 只读要点：`.agents/rules/icon-library.md`。
 
 ## 为什么先定图标库
 
@@ -101,7 +101,7 @@ https://.../a.svg    # URL
 
 更换默认集合或字段含义时，同步更新：
 
-1. `.agent/rules/icon-library.md`
+1. `.agents/rules/icon-library.md`
 2. 本文档
 3. 已注册菜单元数据
 4. `agent-rules sync`

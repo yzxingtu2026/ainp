@@ -1,6 +1,6 @@
 # Transactional Outbox
 
-Agent 只读要点：`.agent/rules/transactional-outbox.md`。本文档为 PostgreSQL Transactional Outbox 详规（Issue #20）。
+Agent 只读要点：`.agents/rules/transactional-outbox.md`。本文档为 PostgreSQL Transactional Outbox 详规（Issue #20）。
 
 ## 目标
 
