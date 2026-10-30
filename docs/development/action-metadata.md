@@ -1,6 +1,6 @@
 # Action / Capability / Metadata / 菜单注册规范
 
-Agent 只读要点：`.agent/rules/action-metadata.md`。本文档为 Phase 1 字段设计与注册约定。
+Agent 只读要点：`.agents/rules/action-metadata.md`。本文档为 Phase 1 字段设计与注册约定。
 
 ## 主体与访问面约束
 
@@ -339,4 +339,4 @@ RegisterAction(Action{
 
 ## 变更
 
-调整字段或命名规则时，同步更新本文档与 `.agent/rules/action-metadata.md`，并 `agent-rules sync`。
+调整字段或命名规则时，同步更新本文档与 `.agents/rules/action-metadata.md`，并 `agent-rules sync`。

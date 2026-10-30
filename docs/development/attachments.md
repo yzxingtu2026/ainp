@@ -1,6 +1,6 @@
 # 租户隔离附件系统
 
-本文档约定 ObjectStore 之上的附件元数据、短时传输协议、业务绑定与访问策略。Agent 要点：`.agent/rules/attachments.md`。
+本文档约定 ObjectStore 之上的附件元数据、短时传输协议、业务绑定与访问策略。Agent 要点：`.agents/rules/attachments.md`。
 
 ## 边界
 

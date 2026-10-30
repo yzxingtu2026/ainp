@@ -252,7 +252,7 @@ User（一用户一租户）
 - ECharts
 - **Iconify**（菜单/UI 图标协议；默认集合 `mdi`，格式 `collection:name`）
 
-约束与裁剪说明见 `docs/development/frontend-stack.md`、`docs/development/icon-library.md`；Agent 硬约束见 `.agent/rules/frontend-stack.md`、`.agent/rules/icon-library.md`。
+约束与裁剪说明见 `docs/development/frontend-stack.md`、`docs/development/icon-library.md`；Agent 硬约束见 `.agents/rules/frontend-stack.md`、`.agents/rules/icon-library.md`。
 
 ## AI 数据模型
 
@@ -304,7 +304,7 @@ ainp/
 │   ├── apps/
 │   └── packages/
 ├── docs/
-└── .agent/
+└── .agents/
 ```
 
 Phase 1 目录与依赖边界见 `docs/development/backend-layout.md`。完整能力包（workflow、ai、plugin 等）与业务 module（purchase 等）随阶段展开，不在骨架一次性建空目录。

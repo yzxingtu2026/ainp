@@ -1,6 +1,6 @@
 # 列表查询、分页与筛选规范
 
-Agent 只读要点：`.agent/rules/list-query.md`。
+Agent 只读要点：`.agents/rules/list-query.md`。
 
 ## 固定协议
 

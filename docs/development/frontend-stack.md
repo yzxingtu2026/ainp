@@ -1,6 +1,6 @@
 # 前端技术栈（Soybean Admin + Naive UI）
 
-本文档是 AINP 管理端与 AI Workspace 的前端选型详规。Agent 只读要点：`.agent/rules/frontend-stack.md`。
+本文档是 AINP 管理端与 AI Workspace 的前端选型详规。Agent 只读要点：`.agents/rules/frontend-stack.md`。
 
 管理后台下游装配、页面注册、模块裁剪与升级见 [frontend-downstream-composition.md](frontend-downstream-composition.md)。该契约只适用于 Vue 管理后台，不适用于 Taro、React Native 或其他客户端。
 
@@ -102,13 +102,13 @@ if (result.error) {
 - [ ] 统一请求失败只有一个展示方，接管时已显式声明 `errorMode`，未展示 Axios 原始文案
 - [ ] 复杂表格优先 TanStack Table
 - [ ] 用户可见时间使用 `formatDateTime` / `DateTimeText`，见 [时间展示规范](./datetime-display.md)
-- [ ] 新增公共 UI 约定已写入本文档或 `.agent/rules/frontend-stack.md`
+- [ ] 新增公共 UI 约定已写入本文档或 `.agents/rules/frontend-stack.md`
 
 ## 变更流程
 
 更换脚手架或主 UI 库前，须同步更新：
 
-1. `.agent/rules/frontend-stack.md`
+1. `.agents/rules/frontend-stack.md`
 2. 本文档
 3. `README.md` 技术选型
 4. 运行 `agent-rules sync` 刷新本地 Agent 规则

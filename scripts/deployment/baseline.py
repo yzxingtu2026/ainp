@@ -41,7 +41,7 @@ REQUIRED = {
     "deploy/linux/project.json", "deploy/linux/build.json", "deploy/linux/target.example.json",
     "deploy/linux/private.example.json", POLICY, "deploy/baseline/manifest.schema.json",
     "docs/development/deployment-baseline.md", "docs/development/binary-deployment.md",
-    ".agent/rules/binary-deployment.md",
+    ".agents/rules/binary-deployment.md",
     ".github/workflows/deployment-baseline.yml",
     "deploy/baseline/examples/project.json", "deploy/baseline/examples/build.json",
     "deploy/baseline/examples/build-web-apps.json",
@@ -67,7 +67,7 @@ def allowed(path):
     return (path.startswith("scripts/deployment/") and path.endswith((".py", ".sh"))
             or path.startswith("deploy/baseline/examples/") and path.endswith(".json")
             or path.startswith("deploy/baseline/templates/") and path.endswith(".txt")
-            or path in REQUIRED or path in {"docs/development/release-versioning.md", ".agent/rules/release-versioning.md"})
+            or path in REQUIRED or path in {"docs/development/release-versioning.md", ".agents/rules/release-versioning.md"})
 
 
 def fingerprint(path):
@@ -348,10 +348,10 @@ def verify(root):
     ignore = safe_path(root, ".gitignore").read_text()
     for item in ("/.deploy-state/", "/dist-release/", "/deploy/linux/*.local.json", "/.deployment-baseline"):
         require(item in ignore, f"gitignore integration missing: {item}")
-    rules = safe_path(root, ".agent/rules/main.md")
+    rules = safe_path(root, ".agents/rules/main.md")
     require("binary-deployment" in rules.read_text(), "Agent deployment rule registration missing")
-    adapters = read_json(safe_path(root, ".agent/adapters/rules.json"))
-    require(any(rule.get("source") == ".agent/rules/binary-deployment.md" for rule in adapters["rules"]), "Agent adapter registration missing")
+    adapters = read_json(safe_path(root, ".agents/adapters/rules.json"))
+    require(any(rule.get("source") == ".agents/rules/binary-deployment.md" for rule in adapters["rules"]), "Agent adapter registration missing")
 
 
 def main():

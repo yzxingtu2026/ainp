@@ -1,6 +1,6 @@
 # 后台任务（Redis + Asynq）
 
-Agent 只读要点：`.agent/rules/background-jobs.md`。本文档为 Job 基础设施详规（Issue #21）。
+Agent 只读要点：`.agents/rules/background-jobs.md`。本文档为 Job 基础设施详规（Issue #21）。
 
 ## 概念边界
 

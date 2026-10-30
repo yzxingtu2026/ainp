@@ -1,6 +1,6 @@
 # 前端统一附件组件
 
-本文档约定对接 #18 / #36 附件协议的前端 Client、上传队列与可复用组件。Agent 要点：`.agent/rules/frontend-attachments.md`。
+本文档约定对接 #18 / #36 附件协议的前端 Client、上传队列与可复用组件。Agent 要点：`.agents/rules/frontend-attachments.md`。
 
 ## 边界
 

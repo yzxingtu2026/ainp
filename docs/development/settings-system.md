@@ -1,6 +1,6 @@
 # 统一设置系统
 
-本文档约定代码定义、租户隔离及当前用户自助维护的运行时业务设置。Agent 要点：`.agent/rules/settings-system.md`。
+本文档约定代码定义、租户隔离及当前用户自助维护的运行时业务设置。Agent 要点：`.agents/rules/settings-system.md`。
 
 ## 边界
 
@@ -114,4 +114,4 @@ Navigation 语义检索 Alias 注册为 `ai.navigation_search.embedding_model_al
 - [ ] `visible_when` 仅声明式 `eq`/`in`，无表达式 DSL
 - [ ] 写操作审计含 setting key / revision，无敏感明文
 - [ ] Secret Definition 使用专用非 AI Action，数据库/API/日志/审计/Hook/前端存储均无明文或密文泄漏
-- [ ] 变更同步本文档与 `.agent/rules/settings-system.md`，并 `agent-rules sync`
+- [ ] 变更同步本文档与 `.agents/rules/settings-system.md`，并 `agent-rules sync`

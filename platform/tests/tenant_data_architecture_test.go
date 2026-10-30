@@ -247,7 +247,7 @@ func TestTenantDataAccessDocumentationContract(t *testing.T) {
 	workspaceRoot := filepath.Clean(filepath.Join(filepath.Dir(current), "..", ".."))
 	required := []string{
 		"docs/development/tenant-data-access.md",
-		".agent/rules/tenant-data-access.md",
+		".agents/rules/tenant-data-access.md",
 	}
 	for _, relative := range required {
 		body, err := os.ReadFile(filepath.Join(workspaceRoot, relative))
@@ -258,7 +258,7 @@ func TestTenantDataAccessDocumentationContract(t *testing.T) {
 			t.Fatalf("%s does not describe TenantDB/SystemDB", relative)
 		}
 	}
-	mainRule, err := os.ReadFile(filepath.Join(workspaceRoot, ".agent/rules/main.md"))
+	mainRule, err := os.ReadFile(filepath.Join(workspaceRoot, ".agents/rules/main.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -266,7 +266,7 @@ func TestTenantDataAccessDocumentationContract(t *testing.T) {
 		t.Fatal("main Agent rule does not index tenant-data-access")
 	}
 
-	for _, root := range []string{"docs/development", ".agent/rules", ".agent/templates"} {
+	for _, root := range []string{"docs/development", ".agents/rules", ".agents/templates"} {
 		err = filepath.Walk(filepath.Join(workspaceRoot, root), func(path string, info os.FileInfo, walkErr error) error {
 			if walkErr != nil {
 				return walkErr

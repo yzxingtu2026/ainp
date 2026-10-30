@@ -9,7 +9,7 @@
 - [MCP OAuth 与远程传输](./mcp-oauth.md)：Streamable HTTP、PKCE、独立 audience、Grant 与实时授权边界。
 - [AI 工具开发指南](./ai-tool-development.md)：新增 Action Tool、Builtin/Plugin/MCP/HTTP Provider 与 Executor 的操作手册。
 
-本目录用于沉淀面向开发者的公共规范详规。`.agent/rules/` 仅保留 Agent 硬约束要点并引用本文档，避免双份堆砌。
+本目录用于沉淀面向开发者的公共规范详规。`.agents/rules/` 仅保留 Agent 硬约束要点并引用本文档，避免双份堆砌。
 
 - 通用封装、统一组件、公共工具的适用范围和调用方式。
 - 跨模块约定、目录边界、命名规范。
@@ -43,4 +43,4 @@
 - [发布版本与构建身份](./release-versioning.md)
 - [容器部署基线](../deployment/containers.md)
 
-新增或调整公共能力时，请同步更新本目录或 `.agent/rules/`、`.agent/skills/`、`.agent/team/`，运行 `agent-rules sync`，并在 Issue/PR 中说明规范位置。
+新增或调整公共能力时，请同步更新本目录或 `.agents/rules/`、`.agents/skills/`、`.agents/team/`，运行 `agent-rules sync`，并在 Issue/PR 中说明规范位置。
