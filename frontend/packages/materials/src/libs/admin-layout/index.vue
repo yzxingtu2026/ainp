@@ -254,6 +254,7 @@ function handleClickMask() {
       <!-- Main Content -->
       <main
         :id="isContentScroll ? scrollElId : undefined"
+        data-ainp-main-content="true"
         class="flex flex-col flex-grow"
         :class="[commonClass, contentClass, leftGapClass, rightGapClass, { 'overflow-y-auto': isContentScroll }]"
       >

@@ -526,6 +526,9 @@ const local: App.I18n.Schema = {
       reconnectFallback: '连接中断，正在恢复',
       diagnosticContextWindow: '当前模型未配置上下文窗口，请先在 AI 中心的模型目录中填写供应商提供的实际值。',
       diagnosticContextBudgetInvalid: '当前模型的上下文窗口与最大输出配置无效，请联系管理员在 AI 中心修正模型限制。',
+      diagnosticPageCaptureVisionRequired:
+        '当前模型未开启视觉理解能力（vision），内置页面捕获工具将不投影，其余助手功能正常可用。',
+      diagnosticToolSurfaceNotProjected: '当前客户端访问面不支持该条件工具，已自动隐藏而不影响对话。',
       runFailure: '运行失败：{category}（{reason}）',
       runFailureSimple: '运行失败：{category}',
       runBudgetFailure: '本次运行预算不足，无法生成可靠的最终答复',
@@ -1141,6 +1144,7 @@ const local: App.I18n.Schema = {
     thinkingToolSearch: '正在检索可用工具',
     thinkingToolLoad: '正在加载工具定义',
     thinkingToolExecute: '正在调用',
+    thinkingPageCapture: 'AI 正在查看当前页面',
     thinkingFinalize: '正在组织最终回复',
     thinkingSlow: '耗时比预期稍久，请稍候…',
     imageAttachment: '图片附件',
@@ -1166,7 +1170,8 @@ const local: App.I18n.Schema = {
     navigationUnavailable: '该页面当前不可用或权限已变更',
     navigationSearchError: '无法加载功能搜索结果，请稍后重试',
     navigationOffline: '当前处于离线状态，联网后可搜索系统功能',
-    navigationDegraded: '搜索服务已降级，当前展示词法匹配结果'
+    navigationDegraded: '搜索服务已降级，当前展示词法匹配结果',
+    pageCapturing: 'AI 正在查看当前页面'
   },
   toolConfirmation: {
     title: '敏感工具执行确认',

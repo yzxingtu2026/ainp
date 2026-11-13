@@ -9,9 +9,11 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/yzxingtu2026/ainp/platform/framework/action"
 	"github.com/yzxingtu2026/ainp/platform/framework/aiagent"
 	"github.com/yzxingtu2026/ainp/platform/framework/aimemory"
 	"github.com/yzxingtu2026/ainp/platform/framework/aimodel"
+	"github.com/yzxingtu2026/ainp/platform/framework/aimodelruntime"
 	"github.com/yzxingtu2026/ainp/platform/framework/aitool"
 	"github.com/yzxingtu2026/ainp/platform/framework/attachment"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
@@ -147,8 +149,9 @@ type AgentDiagnosticIssue struct {
 	Message  string `json:"message"`
 }
 type AgentDiagnostics struct {
-	Healthy bool                   `json:"healthy"`
-	Issues  []AgentDiagnosticIssue `json:"issues"`
+	Healthy  bool                   `json:"healthy"`
+	Issues   []AgentDiagnosticIssue `json:"issues"`
+	Warnings []AgentDiagnosticIssue `json:"warnings,omitempty"`
 }
 type AgentToolSearchRequest struct {
 	Query      string        `json:"query" validate:"omitempty,max=512"`
@@ -950,6 +953,8 @@ func (s *AgentService) Diagnostics(ctx context.Context, r IDRequest) (any, error
 
 func (s *AgentService) agentDiagnostics(ctx context.Context, row *Agent) AgentDiagnostics {
 	issues := []AgentDiagnosticIssue{}
+	warnings := []AgentDiagnosticIssue{}
+	var currentModelAlias string
 	if row.ContractKey != "" {
 		contract, ok := s.contracts.Get(row.ContractKey, row.ContractVersion)
 		if !ok || strings.TrimSpace(contract.BaseInstructions) == "" {
@@ -977,6 +982,7 @@ func (s *AgentService) agentDiagnostics(ctx context.Context, row *Agent) AgentDi
 		} else if issue := runtimeModelLimitsIssue(resolved); issue != nil {
 			issues = append(issues, *issue)
 		} else {
+			currentModelAlias = v.ModelAlias
 			var policy aimemory.Policy
 			if len(v.MemoryPolicy) > 0 && string(v.MemoryPolicy) != "{}" {
 				if err = json.Unmarshal(v.MemoryPolicy, &policy); err != nil || policy.Validate() != nil {
@@ -996,12 +1002,51 @@ func (s *AgentService) agentDiagnostics(ctx context.Context, row *Agent) AgentDi
 			}
 		}
 	}
+	ac := action.NormalizeActor(auth.MustFromContext(ctx))
+	projectCtx := ctx
+	if currentModelAlias != "" {
+		projectCtx = aimodelruntime.WithModelAlias(ctx, currentModelAlias)
+	}
+	scope := aitool.RuntimeScope{
+		TenantID:      ac.TenantID,
+		PrincipalID:   ac.PrincipalID,
+		PrincipalKind: string(ac.Principal.Kind),
+		ClientSurface: ac.ClientSurface,
+		Audience:      ac.Audience,
+		Realm:         string(auth.NormalizeRealm(ac.Realm)),
+		SessionID:     ac.SessionID,
+		AuthVersion:   ac.AuthVersion,
+	}
 	for _, id := range s.requiredTools(row) {
-		if t, ok := s.tools.Get(id); !ok || t.Status != "enabled" {
+		t, ok := s.tools.Get(id)
+		if !ok || t.Status != "enabled" {
 			issues = append(issues, AgentDiagnosticIssue{Code: "tool.unavailable", Resource: id, Message: "required tool is unavailable"})
+			continue
+		}
+		if ac.Authenticated && ac.TenantID != "" && ac.PrincipalID != "" && currentModelAlias != "" {
+			if !t.VisibleToActor(ac) {
+				warnings = append(warnings, AgentDiagnosticIssue{
+					Code:     "tool.surface_not_projected",
+					Resource: id,
+					Message:  "required conditional tool is not projected on the current client surface",
+				})
+				continue
+			}
+			if _, projected, projErr := s.tools.Project(projectCtx, scope, t); projErr == nil && !projected {
+				code, msg := "tool.condition_not_met", "required conditional tool is not projected under the current runtime capabilities"
+				if id == "builtin:page.capture" {
+					code = "tool.vision_required"
+					msg = "builtin:page.capture is not projected because the current model does not support vision or the client surface is not web console"
+				}
+				warnings = append(warnings, AgentDiagnosticIssue{
+					Code:     code,
+					Resource: id,
+					Message:  msg,
+				})
+			}
 		}
 	}
-	return AgentDiagnostics{Healthy: len(issues) == 0, Issues: issues}
+	return AgentDiagnostics{Healthy: len(issues) == 0, Issues: issues, Warnings: warnings}
 }
 
 func runtimeModelLimitsIssue(resolved *aimodel.ResolvedModel) *AgentDiagnosticIssue {

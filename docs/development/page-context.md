@@ -1,6 +1,8 @@
 # Page Context 协议
 
-Page Context 描述用户发送消息时所在页面的受限语义。它是服务端重新解析的上下文与工具推荐信号，不是权限事实，不进入 canonical Conversation Message，也不替代 Action、ToolScope、AccessPolicy 或执行重鉴权。
+Page Context 描述用户发送消息时所在页面的受限语义。它是服务端重新解析的**可选增强**上下文与工具推荐信号，不是权限事实，不进入 canonical Conversation Message，也不替代 Action、ToolScope、AccessPolicy 或执行重鉴权。
+
+通用页面视觉感知基线由系统强制自带的 `builtin:page.capture` 工具兜底（Agent 按需截取 AdminLayout 业务主内容区画面，覆盖未注册 Provider 的下游页面、打开弹窗、可见校验错误与向导步骤）；Page Context 保留用于提供服务端重查的可信 `trusted_refs`/revision 与确定性 `tool_hints`，不要求业务逐页全量注册。
 
 ## 数据流
 

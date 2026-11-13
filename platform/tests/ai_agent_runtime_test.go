@@ -404,8 +404,8 @@ func TestAgentRunBudgetCompletionMigrationAndRuntimeContract(t *testing.T) {
 	if strings.Count(source, "s.enterCompletionOnly(ctx, run, reserve, plan.Reason)") != 1 {
 		t.Fatal("completion-only mode must be persisted only before the completion model request")
 	}
-	if !strings.Contains(source, "toolResultsPending := resumedConfirmation || queuedToolResultsPending") {
-		t.Fatal("confirmation tool results must remain pending for model consumption")
+	if !strings.Contains(source, "toolResultsPending := resumedConfirmation || resumedPageCapture || queuedToolResultsPending") {
+		t.Fatal("confirmation and page capture tool results must remain pending for model consumption")
 	}
 	if !strings.Contains(source, "return toolResultsPending, toolResultsPending") {
 		t.Fatal("pending tool results at the step limit must get a completion turn")

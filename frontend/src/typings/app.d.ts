@@ -675,6 +675,8 @@ declare namespace App {
           reconnectFallback: string;
           diagnosticContextWindow: string;
           diagnosticContextBudgetInvalid: string;
+          diagnosticPageCaptureVisionRequired: string;
+          diagnosticToolSurfaceNotProjected: string;
           runFailure: string;
           runFailureSimple: string;
           runBudgetFailure: string;
@@ -1283,6 +1285,7 @@ declare namespace App {
         thinkingToolSearch: string;
         thinkingToolLoad: string;
         thinkingToolExecute: string;
+        thinkingPageCapture: string;
         thinkingFinalize: string;
         thinkingSlow: string;
         imageAttachment: string;
@@ -1309,6 +1312,7 @@ declare namespace App {
         navigationSearchError: string;
         navigationOffline: string;
         navigationDegraded: string;
+        pageCapturing: string;
       };
       toolConfirmation: {
         title: string;

@@ -143,11 +143,13 @@ const modelOptions = computed(() => {
     ];
   });
 });
-const memoryAliasOptions = computed(() => modelOptions.value.filter(option => {
-  const alias = aliases.value.find(item => item.code === option.value);
-  const deployment = deployments.value.find(item => item.id === alias?.deployment_id);
-  return deployment?.status === 'enabled' && deployment.capabilities_json.features?.includes('structured_output');
-}));
+const memoryAliasOptions = computed(() =>
+  modelOptions.value.filter(option => {
+    const alias = aliases.value.find(item => item.code === option.value);
+    const deployment = deployments.value.find(item => item.id === alias?.deployment_id);
+    return deployment?.status === 'enabled' && deployment.capabilities_json.features?.includes('structured_output');
+  })
+);
 
 const {
   status: previewStatus,
@@ -433,7 +435,21 @@ function generationConfig() {
 }
 function memoryPolicy(): Api.AI.MemoryPolicy | undefined {
   if (draft.memory_inherit) return undefined;
-  return { enabled: draft.memory_enabled, extraction_model_alias: draft.memory_extraction_alias, consolidation_model_alias: draft.memory_consolidation_alias, auto_save_low_sensitive: draft.memory_auto_save, write_approval_mode: draft.memory_approval_mode, agent_specific_scope: draft.memory_agent_scope, max_candidates_per_turn: 8, max_consolidation_items: 50, max_recall_items: 10, max_recall_tokens: 2000, policy_version: '1', prompt_version: '1', schema_version: '1' };
+  return {
+    enabled: draft.memory_enabled,
+    extraction_model_alias: draft.memory_extraction_alias,
+    consolidation_model_alias: draft.memory_consolidation_alias,
+    auto_save_low_sensitive: draft.memory_auto_save,
+    write_approval_mode: draft.memory_approval_mode,
+    agent_specific_scope: draft.memory_agent_scope,
+    max_candidates_per_turn: 8,
+    max_consolidation_items: 50,
+    max_recall_items: 10,
+    max_recall_tokens: 2000,
+    policy_version: '1',
+    prompt_version: '1',
+    schema_version: '1'
+  };
 }
 
 function isMetaDirty() {
@@ -827,10 +843,27 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
             </NCollapse>
             <div class="flex shrink-0 items-start justify-between gap-8px">
               <div>
-                <div class="font-600">{{ hasContractBase ? $t('page.agentBuilder.supplementTitle') : $t('page.agentBuilder.customInstructionsTitle') }}</div>
-                <div class="text-xs text-gray-500">{{ hasContractBase ? $t('page.agentBuilder.supplementHint') : $t('page.agentBuilder.customInstructionsHint') }}</div>
+                <div class="font-600">
+                  {{
+                    hasContractBase
+                      ? $t('page.agentBuilder.supplementTitle')
+                      : $t('page.agentBuilder.customInstructionsTitle')
+                  }}
+                </div>
+                <div class="text-xs text-gray-500">
+                  {{
+                    hasContractBase
+                      ? $t('page.agentBuilder.supplementHint')
+                      : $t('page.agentBuilder.customInstructionsHint')
+                  }}
+                </div>
               </div>
-              <NButton v-if="agent?.source === 'builtin' && hasContractBase" size="small" :disabled="!canRestoreBuiltinDefault" @click="restoreBuiltinDefault">
+              <NButton
+                v-if="agent?.source === 'builtin' && hasContractBase"
+                size="small"
+                :disabled="!canRestoreBuiltinDefault"
+                @click="restoreBuiltinDefault"
+              >
                 {{ $t('page.agentBuilder.restoreBuiltin') }}
               </NButton>
             </div>
@@ -839,7 +872,11 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
               <MarkdownPromptEditor
                 v-model="draft.tenant_instructions"
                 :maxlength="instructionLimit"
-                :placeholder="hasContractBase ? $t('page.agentBuilder.supplementPlaceholder') : $t('page.agentBuilder.tenantPlaceholder')"
+                :placeholder="
+                  hasContractBase
+                    ? $t('page.agentBuilder.supplementPlaceholder')
+                    : $t('page.agentBuilder.tenantPlaceholder')
+                "
               />
             </div>
           </div>
@@ -922,17 +959,53 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
                 </NCollapseItem>
 
                 <NCollapseItem :title="$t('page.agentBuilder.memoryPolicy')" name="memory">
-                  <NFormItem :label="$t('page.agentBuilder.memoryInherit')"><NSwitch v-model:value="draft.memory_inherit" /></NFormItem>
-                  <NAlert v-if="draft.memory_inherit" type="info" class="mb-12px">{{ $t('page.agentBuilder.memoryInheritedHint') }}</NAlert>
+                  <NFormItem :label="$t('page.agentBuilder.memoryInherit')">
+                    <NSwitch v-model:value="draft.memory_inherit" />
+                  </NFormItem>
+                  <NAlert v-if="draft.memory_inherit" type="info" class="mb-12px">
+                    {{ $t('page.agentBuilder.memoryInheritedHint') }}
+                  </NAlert>
                   <template v-else>
-                    <NFormItem :label="$t('page.agentBuilder.memoryEnabled')"><NSwitch v-model:value="draft.memory_enabled" /></NFormItem>
-                    <NFormItem :label="$t('page.agentBuilder.memoryModel')"><AppSelect v-model:value="draft.memory_extraction_alias" filterable clearable :disabled="!draft.memory_enabled" :options="memoryAliasOptions" /></NFormItem>
-                    <NFormItem :label="$t('page.agentBuilder.memoryConsolidationModel')"><AppSelect v-model:value="draft.memory_consolidation_alias" filterable clearable :disabled="!draft.memory_enabled" :options="memoryAliasOptions" :placeholder="$t('page.agentBuilder.memoryConsolidationFallback')" /></NFormItem>
+                    <NFormItem :label="$t('page.agentBuilder.memoryEnabled')">
+                      <NSwitch v-model:value="draft.memory_enabled" />
+                    </NFormItem>
+                    <NFormItem :label="$t('page.agentBuilder.memoryModel')">
+                      <AppSelect
+                        v-model:value="draft.memory_extraction_alias"
+                        filterable
+                        clearable
+                        :disabled="!draft.memory_enabled"
+                        :options="memoryAliasOptions"
+                      />
+                    </NFormItem>
+                    <NFormItem :label="$t('page.agentBuilder.memoryConsolidationModel')">
+                      <AppSelect
+                        v-model:value="draft.memory_consolidation_alias"
+                        filterable
+                        clearable
+                        :disabled="!draft.memory_enabled"
+                        :options="memoryAliasOptions"
+                        :placeholder="$t('page.agentBuilder.memoryConsolidationFallback')"
+                      />
+                    </NFormItem>
                     <div class="grid grid-cols-2 gap-12px">
-                      <NFormItem :label="$t('page.agentBuilder.memoryAutoSave')"><NSwitch v-model:value="draft.memory_auto_save" /></NFormItem>
-                      <NFormItem :label="$t('page.agentBuilder.memoryAgentScope')"><NSwitch v-model:value="draft.memory_agent_scope" /></NFormItem>
+                      <NFormItem :label="$t('page.agentBuilder.memoryAutoSave')">
+                        <NSwitch v-model:value="draft.memory_auto_save" />
+                      </NFormItem>
+                      <NFormItem :label="$t('page.agentBuilder.memoryAgentScope')">
+                        <NSwitch v-model:value="draft.memory_agent_scope" />
+                      </NFormItem>
                     </div>
-                    <NFormItem :label="$t('page.agentBuilder.memoryApproval')"><AppSelect v-model:value="draft.memory_approval_mode" :options="[{ label: $t('page.agentBuilder.memoryApprovalAlways'), value: 'always' }, { label: $t('page.agentBuilder.memoryApprovalSensitive'), value: 'sensitive_only' }, { label: $t('page.agentBuilder.memoryApprovalNever'), value: 'never' }]" /></NFormItem>
+                    <NFormItem :label="$t('page.agentBuilder.memoryApproval')">
+                      <AppSelect
+                        v-model:value="draft.memory_approval_mode"
+                        :options="[
+                          { label: $t('page.agentBuilder.memoryApprovalAlways'), value: 'always' },
+                          { label: $t('page.agentBuilder.memoryApprovalSensitive'), value: 'sensitive_only' },
+                          { label: $t('page.agentBuilder.memoryApprovalNever'), value: 'never' }
+                        ]"
+                      />
+                    </NFormItem>
                   </template>
                 </NCollapseItem>
 
@@ -1048,6 +1121,17 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
                   >
                     <div v-for="issue in diagnostics.issues" :key="`${issue.code}-${issue.resource || ''}`">
                       {{ issue.code }}：{{ issue.message }}
+                    </div>
+                    <div
+                      v-for="warning in diagnostics.warnings"
+                      :key="`warn-${warning.code}-${warning.resource || ''}`"
+                      class="text-12px text-gray-500"
+                    >
+                      {{
+                        warning.code === 'tool.vision_required'
+                          ? $t('page.aiWorkspace.diagnosticPageCaptureVisionRequired')
+                          : `${warning.code}：${warning.message}`
+                      }}
                     </div>
                   </NAlert>
                   <NAlert v-else-if="isCreate" type="info">{{ $t('page.agentBuilder.diagnosticsAfterCreate') }}</NAlert>
@@ -1170,10 +1254,27 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
               </NCollapse>
               <div class="flex items-start justify-between gap-8px">
                 <div>
-                  <div class="font-600">{{ hasContractBase ? $t('page.agentBuilder.supplementTitle') : $t('page.agentBuilder.customInstructionsTitle') }}</div>
-                  <div class="text-xs text-gray-500">{{ hasContractBase ? $t('page.agentBuilder.supplementHint') : $t('page.agentBuilder.customInstructionsHint') }}</div>
+                  <div class="font-600">
+                    {{
+                      hasContractBase
+                        ? $t('page.agentBuilder.supplementTitle')
+                        : $t('page.agentBuilder.customInstructionsTitle')
+                    }}
+                  </div>
+                  <div class="text-xs text-gray-500">
+                    {{
+                      hasContractBase
+                        ? $t('page.agentBuilder.supplementHint')
+                        : $t('page.agentBuilder.customInstructionsHint')
+                    }}
+                  </div>
                 </div>
-                <NButton v-if="agent?.source === 'builtin' && hasContractBase" size="small" :disabled="!canRestoreBuiltinDefault" @click="restoreBuiltinDefault">
+                <NButton
+                  v-if="agent?.source === 'builtin' && hasContractBase"
+                  size="small"
+                  :disabled="!canRestoreBuiltinDefault"
+                  @click="restoreBuiltinDefault"
+                >
                   {{ $t('page.agentBuilder.restoreBuiltin') }}
                 </NButton>
               </div>
@@ -1182,7 +1283,11 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
                 <MarkdownPromptEditor
                   v-model="draft.tenant_instructions"
                   :maxlength="instructionLimit"
-                  :placeholder="hasContractBase ? $t('page.agentBuilder.supplementPlaceholder') : $t('page.agentBuilder.tenantPlaceholder')"
+                  :placeholder="
+                    hasContractBase
+                      ? $t('page.agentBuilder.supplementPlaceholder')
+                      : $t('page.agentBuilder.tenantPlaceholder')
+                  "
                 />
               </div>
             </div>
@@ -1211,11 +1316,31 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
                   </NFormItem>
                 </NCollapseItem>
                 <NCollapseItem :title="$t('page.agentBuilder.memoryPolicy')" name="memory">
-                  <NFormItem :label="$t('page.agentBuilder.memoryInherit')"><NSwitch v-model:value="draft.memory_inherit" /></NFormItem>
+                  <NFormItem :label="$t('page.agentBuilder.memoryInherit')">
+                    <NSwitch v-model:value="draft.memory_inherit" />
+                  </NFormItem>
                   <template v-if="!draft.memory_inherit">
-                    <NFormItem :label="$t('page.agentBuilder.memoryEnabled')"><NSwitch v-model:value="draft.memory_enabled" /></NFormItem>
-                    <NFormItem :label="$t('page.agentBuilder.memoryModel')"><AppSelect v-model:value="draft.memory_extraction_alias" filterable :disabled="!draft.memory_enabled" :options="memoryAliasOptions" /></NFormItem>
-                    <NFormItem :label="$t('page.agentBuilder.memoryApproval')"><AppSelect v-model:value="draft.memory_approval_mode" :options="[{ label: $t('page.agentBuilder.memoryApprovalAlways'), value: 'always' }, { label: $t('page.agentBuilder.memoryApprovalSensitive'), value: 'sensitive_only' }, { label: $t('page.agentBuilder.memoryApprovalNever'), value: 'never' }]" /></NFormItem>
+                    <NFormItem :label="$t('page.agentBuilder.memoryEnabled')">
+                      <NSwitch v-model:value="draft.memory_enabled" />
+                    </NFormItem>
+                    <NFormItem :label="$t('page.agentBuilder.memoryModel')">
+                      <AppSelect
+                        v-model:value="draft.memory_extraction_alias"
+                        filterable
+                        :disabled="!draft.memory_enabled"
+                        :options="memoryAliasOptions"
+                      />
+                    </NFormItem>
+                    <NFormItem :label="$t('page.agentBuilder.memoryApproval')">
+                      <AppSelect
+                        v-model:value="draft.memory_approval_mode"
+                        :options="[
+                          { label: $t('page.agentBuilder.memoryApprovalAlways'), value: 'always' },
+                          { label: $t('page.agentBuilder.memoryApprovalSensitive'), value: 'sensitive_only' },
+                          { label: $t('page.agentBuilder.memoryApprovalNever'), value: 'never' }
+                        ]"
+                      />
+                    </NFormItem>
                   </template>
                 </NCollapseItem>
                 <NCollapseItem :title="$t('page.agentBuilder.diagnostics')" name="diagnostics">
@@ -1303,7 +1428,11 @@ function startResize(side: 'left' | 'right', event: MouseEvent) {
               :description="`${$t('page.agentBuilder.modelAlias')}: ${version.model_alias}`"
             >
               <div class="mt-4px text-12px text-gray-500">
-                {{ $t('page.agentBuilder.memoryPolicy') }}：{{ version.memory_policy?.enabled ? $t('page.agentBuilder.memoryEnabled') : $t('page.agentBuilder.memoryDisabled') }}
+                {{ $t('page.agentBuilder.memoryPolicy') }}：{{
+                  version.memory_policy?.enabled
+                    ? $t('page.agentBuilder.memoryEnabled')
+                    : $t('page.agentBuilder.memoryDisabled')
+                }}
                 · {{ version.memory_policy_source }}
                 <span v-if="version.memory_policy?.enabled">· {{ version.memory_policy.extraction_model_alias }}</span>
               </div>

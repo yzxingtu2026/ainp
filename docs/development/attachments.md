@@ -104,6 +104,7 @@ Local Provider 返回本服务流式 URL；未来 S3/OSS 可换预签名 URL，�
 - 下载 prepare 仅允许 `ready`：无链接时仅上传者，有链接时任一链接策略通过即可。pending/failed 只保留上传与清理流程所需的上传者访问语义，不得签发 download token。变体下载与原图在 prepare 共用同一套访问判定。
 - Demo 注册 `demo.task` 策略（同租户已认证即可），便于联调；真实业务须注册自己的策略。
 - 当前账号头像注册 `system.account_profile` / `avatar` 策略：`resource_id` 必须等于 AuthContext 当前主体 ID，绑定附件必须由当前主体上传且为 ready 图片。`tenant_accounts.avatar_attachment_id` 只保存附件 ID；头像读取仍逐次执行 prepare/download 鉴权，不保存对象地址或短时 token。
+- AI 页面捕获注册 `ai.page_capture` / `capture` 策略：`resource_id` 绑定当前租户与当前主体本人名下的 `PageCaptureRequest`，仅 owner 可绑定与读取，跨租户或非本人访问一律 fail-closed。
 
 ## 策略与设置
 

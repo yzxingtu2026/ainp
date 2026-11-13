@@ -2,6 +2,7 @@
 export const ATTACHMENT_RESOURCE_TYPES = {
   demoTask: 'demo.task',
   agentAvatar: 'ai.agent',
+  pageCapture: 'ai.page_capture',
   accountProfile: 'system.account_profile'
 } as const;
 

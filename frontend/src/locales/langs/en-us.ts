@@ -535,6 +535,10 @@ const local: App.I18n.Schema = {
         'The current model has no context window configured. Enter the provider value in AI Center > Model Catalog.',
       diagnosticContextBudgetInvalid:
         'The current model has invalid context-window and maximum-output limits. Ask an administrator to correct the model catalog.',
+      diagnosticPageCaptureVisionRequired:
+        'The current model does not support vision; the builtin page capture tool is not projected while other assistant features remain available.',
+      diagnosticToolSurfaceNotProjected:
+        'This conditional tool is not projected on the current client surface and is safely hidden.',
       runFailure: 'Run failed: {category} ({reason})',
       runFailureSimple: 'Run failed: {category}',
       runBudgetFailure: 'The run budget was insufficient to produce a reliable final response',
@@ -1161,6 +1165,7 @@ const local: App.I18n.Schema = {
     thinkingToolSearch: 'Searching available tools',
     thinkingToolLoad: 'Loading tool definitions',
     thinkingToolExecute: 'Calling',
+    thinkingPageCapture: 'AI is viewing the current page',
     thinkingFinalize: 'Composing final response',
     thinkingSlow: 'Taking a bit longer than expected, please wait…',
     imageAttachment: 'Image attachment',
@@ -1186,7 +1191,8 @@ const local: App.I18n.Schema = {
     navigationUnavailable: 'This page is unavailable or your access has changed',
     navigationSearchError: 'Could not load feature search results. Try again later.',
     navigationOffline: 'You are offline. Reconnect to search application features.',
-    navigationDegraded: 'Search is degraded; showing lexical matches'
+    navigationDegraded: 'Search is degraded; showing lexical matches',
+    pageCapturing: 'AI is viewing the current page'
   },
   toolConfirmation: {
     title: 'Sensitive Tool Confirmation',

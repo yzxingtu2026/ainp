@@ -2,7 +2,8 @@
 
 - Header 在所有 layout mode 提供 authenticated 全局 AI 入口；默认 Slot 解析、本人 Conversation/Message/Run、工具确认及对话所需“我的附件”链路不得要求额外角色权限。Sider 入口只进入完整 Workspace，禁止混用行为。
 - authenticated 只适用于对话基础设施；Agent/Slot/模型/知识库管理仍需角色权限，业务工具必须按当前用户实时 Action 权限过滤和执行，禁止借 AI 越权。
-- Conversation/Message/SSE/Run/确认/附件/幂等/Page Context 只由应用级单例 controller 管理；Workspace 与 Sidebar 必须复用同一 Conversation Surface，不得复制协议或合并逻辑。
+- Conversation/Message/SSE/Run/确认/附件/幂等/Page Context 与 `run.capture_requested.v1` 页面捕获履行只由应用级单例 controller 管理；Workspace 与 Sidebar 必须复用同一 Conversation Surface，不得复制协议或合并逻辑。
+- 页面捕获只截取 `AdminLayout` 业务主内容容器，必须排除 AI 助手面板自身，降采样压缩后走现有附件上传队列与 `ai.page_capture_submit`；捕获期间共享 Surface 显示“AI 正在查看当前页面”流式状态并在完成/失败/超时后收口，无开关、无确认弹窗。
 - `deferred_for_confirmation` Tool Result 是“已延后/未执行”终态；等待事件、重连、刷新与历史回放不得显示为执行中或永久等待。
 - 前端只在原操作确为 deferred、retry lineage 唯一且 Tool/参数一致时把 retry 状态折叠回原卡片；pending 沿用等待卡片，成功显示“延后后完成”，失败显示最终失败，业务操作数不得因 canonical retry 事实增加。
 - Composer 统一支持 JPG/PNG/GIF/WebP/PDF/XLSX/DOCX/TXT/MD，严格匹配 MIME+扩展名，单项 10 MiB、合计 4 个；选择/上传、发送与历史展示由 Workspace/Sidebar 共用实现。图片粘贴行为保持，Office 文件不做剪贴板特殊处理。

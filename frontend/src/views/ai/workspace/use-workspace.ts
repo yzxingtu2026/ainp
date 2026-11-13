@@ -5,6 +5,7 @@ import {
   createAIConversationForSlot,
   createAIMessage,
   fetchAIAgentRun,
+  fetchAIAgentRunEvents,
   fetchAIAgentRuns,
   fetchAIAgentSlot,
   fetchAIConversations,
@@ -12,6 +13,7 @@ import {
   fetchAIToolConfirmations,
   restoreAIConversation,
   startAIAgentRun,
+  submitAIPageCapture,
   updateAIConversation
 } from '@/service/api';
 import { agentRunEventDelta, subscribeAgentRun } from '@/service/ai-run-stream';
@@ -22,6 +24,13 @@ import { runFailurePresentation } from '@/components/ai/run-failure-message';
 import { runTerminalNotice } from '@/components/ai/run-terminal-notice';
 import { createLatestRequestGate, loadAllCursorPages } from './modules/message-sync';
 import { isWorkspaceDocument } from './modules/document-attachment';
+import {
+  PAGE_CAPTURE_EVENT_REQUESTED,
+  PAGE_CAPTURE_EVENT_SETTLED,
+  parsePageCaptureRequestEvent,
+  renderBusinessMainContentFile,
+  uploadCapturedPageImage
+} from './modules/page-capture';
 
 export type WorkspaceStatus =
   | 'idle'
@@ -55,6 +64,8 @@ function isRunTerminal(status: Api.AI.AgentRunStatus) {
 function diagnosticMessage(issue: Api.AI.AgentDiagnosticIssue) {
   if (issue.code === 'model.context_window_missing') return $t('page.aiWorkspace.diagnosticContextWindow');
   if (issue.code === 'model.context_budget_invalid') return $t('page.aiWorkspace.diagnosticContextBudgetInvalid');
+  if (issue.code === 'tool.vision_required') return $t('page.aiWorkspace.diagnosticPageCaptureVisionRequired');
+  if (issue.code === 'tool.surface_not_projected') return $t('page.aiWorkspace.diagnosticToolSurfaceNotProjected');
   return issue.message;
 }
 
@@ -83,6 +94,7 @@ function createAiConversationController() {
   const input = ref('');
   const attachments = ref<Api.Attachment.Item[]>([]);
   const busy = ref(false);
+  const capturingPage = ref(false);
   const messageListEl = ref<HTMLElement | null>(null);
 
   let abort: AbortController | null = null;
@@ -90,6 +102,8 @@ function createAiConversationController() {
   let pollTimer: number | null = null;
   let initialized = false;
   let initializePromise: Promise<void> | null = null;
+  const handledCaptureRequestIds = new Set<string>();
+  const activeCaptureRequestIds = new Set<string>();
   const messageRefreshGate = createLatestRequestGate();
 
   const canSend = computed(() =>
@@ -98,7 +112,7 @@ function createAiConversationController() {
 
   const mascotState = computed<'idle' | 'thinking' | 'working' | 'error'>(() => {
     if (status.value === 'failed' || (slot.value && !slot.value.healthy)) return 'error';
-    if (status.value === 'running' || status.value === 'reconnecting') return 'working';
+    if (capturingPage.value || status.value === 'running' || status.value === 'reconnecting') return 'working';
     if (status.value === 'waiting_confirmation') return 'thinking';
     return 'idle';
   });
@@ -134,12 +148,15 @@ function createAiConversationController() {
   /** 当前正在运行的 run ID（未运行时为空串），供消息列表标记活跃 run 分组 */
   const activeRunId = computed(() => {
     const current = status.value;
-    if (current !== 'running' && current !== 'reconnecting') return '';
+    if (current !== 'running' && current !== 'reconnecting' && !capturingPage.value) return '';
     return runDetail.value?.run.id || '';
   });
 
   /** 步骤感知的思考占位提示：根据当前运行中的 step 动态映射图标与文案 */
   const thinkingHint = computed<{ icon: string; text: string; toolName?: string }>(() => {
+    if (capturingPage.value) {
+      return { icon: 'mdi:monitor-screenshot', text: $t('chat.thinkingPageCapture') };
+    }
     const steps = runDetail.value?.steps || [];
     const running = [...steps].reverse().find(step => step.status === 'running' || step.status === 'waiting');
     if (!running) return { icon: 'mdi:brain-outline', text: $t('chat.thinkingThinking') };
@@ -148,6 +165,9 @@ function createAiConversationController() {
     if (running.type === 'tool_load') return { icon: 'mdi:package-variant-outline', text: $t('chat.thinkingToolLoad') };
     if (running.type === 'tool_execute') {
       const toolName = typeof running.input_summary?.tool_name === 'string' ? running.input_summary.tool_name : '';
+      if (toolName === 'builtin__page_capture') {
+        return { icon: 'mdi:monitor-screenshot', text: $t('chat.thinkingPageCapture') };
+      }
       return { icon: 'mdi:api', text: $t('chat.thinkingToolExecute'), toolName };
     }
     if (running.type === 'finalize')
@@ -196,11 +216,101 @@ function createAiConversationController() {
   }
 
   function applyRunStatus(run: Api.AI.AgentRun) {
-    if (run.status === 'waiting_confirmation' || run.status === 'paused') status.value = 'waiting_confirmation';
+    if (run.status === 'paused' && capturingPage.value) status.value = 'running';
+    else if (run.status === 'waiting_confirmation' || run.status === 'paused') status.value = 'waiting_confirmation';
     else if (run.status === 'completed') status.value = 'completed';
     else if (run.status === 'failed') status.value = 'failed';
     else if (run.status === 'cancelled') status.value = 'cancelled';
     else status.value = 'running';
+  }
+
+  async function fulfillPageCapture(runId: string, captureRequestId: string) {
+    if (
+      !captureRequestId ||
+      handledCaptureRequestIds.has(captureRequestId) ||
+      activeCaptureRequestIds.has(captureRequestId)
+    ) {
+      return;
+    }
+    activeCaptureRequestIds.add(captureRequestId);
+    capturingPage.value = true;
+    status.value = 'running';
+    try {
+      let file: File;
+      try {
+        file = await renderBusinessMainContentFile(captureRequestId);
+      } catch {
+        await submitAIPageCapture(
+          {
+            capture_request_id: captureRequestId,
+            status: 'failed',
+            failure_reason: 'render_failed'
+          },
+          { errorMode: 'silent' }
+        );
+        return;
+      }
+      let uploaded: Api.Attachment.Item;
+      try {
+        uploaded = await uploadCapturedPageImage(file);
+      } catch {
+        await submitAIPageCapture(
+          {
+            capture_request_id: captureRequestId,
+            status: 'failed',
+            failure_reason: 'upload_failed'
+          },
+          { errorMode: 'silent' }
+        );
+        return;
+      }
+      await submitAIPageCapture(
+        {
+          capture_request_id: captureRequestId,
+          status: 'completed',
+          attachment_id: uploaded.id,
+          attachment_revision: uploaded.sha256
+        },
+        { errorMode: 'silent' }
+      );
+    } finally {
+      handledCaptureRequestIds.add(captureRequestId);
+      activeCaptureRequestIds.delete(captureRequestId);
+      capturingPage.value = activeCaptureRequestIds.size > 0;
+      const activeRun = runDetail.value?.run;
+      if (activeRun && activeRun.id === runId && activeRun.status !== 'cancelled') {
+        void watchRun(runId, eventCursor);
+      }
+    }
+  }
+
+  async function inspectPendingCaptureEvents(runId: string) {
+    const { data } = await fetchAIAgentRunEvents(runId, 0, 200);
+    if (!data?.items?.length) return false;
+    const settledIds = new Set<string>();
+    const requested: string[] = [];
+    for (const item of data.items) {
+      eventCursor = Math.max(eventCursor, item.sequence || 0);
+      if (item.type === PAGE_CAPTURE_EVENT_SETTLED && typeof item.payload?.capture_request_id === 'string') {
+        settledIds.add(item.payload.capture_request_id);
+      }
+      const parsed = parsePageCaptureRequestEvent(item);
+      if (parsed) {
+        if (
+          parsed.expiresAt &&
+          Number.isFinite(Date.parse(parsed.expiresAt)) &&
+          Date.parse(parsed.expiresAt) <= Date.now()
+        ) {
+          settledIds.add(parsed.captureRequestId);
+        } else {
+          requested.push(parsed.captureRequestId);
+        }
+      }
+    }
+    const pendingId = [...requested].reverse().find(id => !settledIds.has(id) && !handledCaptureRequestIds.has(id));
+    if (!pendingId) return false;
+    void fulfillPageCapture(runId, pendingId);
+    return true;
   }
 
   async function refreshRun(runId: string, refreshContent = false) {
@@ -208,9 +318,15 @@ function createAiConversationController() {
     if (!data) return null;
     runDetail.value = data;
     applyRunStatus(data.run);
+    if (isRunTerminal(data.run.status)) {
+      activeCaptureRequestIds.clear();
+      capturingPage.value = false;
+    }
     if (data.run.status === 'failed' || data.run.status === 'cancelled') error.value = runFailureMessage(data);
     else if (isRunTerminal(data.run.status)) error.value = '';
-    if (data.run.status === 'waiting_confirmation' || data.run.status === 'paused') await refreshConfirmations();
+    if (data.run.status === 'waiting_confirmation' || (data.run.status === 'paused' && !capturingPage.value)) {
+      await refreshConfirmations();
+    }
     if (refreshContent || isRunTerminal(data.run.status)) {
       const refreshed = await refreshMessages();
       if (isRunTerminal(data.run.status) && refreshed) streamingText.value = '';
@@ -238,11 +354,35 @@ function createAiConversationController() {
       void scrollToBottom();
       return;
     }
+    if (event.type === PAGE_CAPTURE_EVENT_REQUESTED) {
+      const parsed = parsePageCaptureRequestEvent(event);
+      if (parsed) {
+        void fulfillPageCapture(runId, parsed.captureRequestId);
+      }
+      void refreshRun(runId);
+      void refreshMessages();
+      return;
+    }
+    if (event.type === PAGE_CAPTURE_EVENT_SETTLED) {
+      if (typeof event.payload?.capture_request_id === 'string') {
+        handledCaptureRequestIds.add(event.payload.capture_request_id);
+        activeCaptureRequestIds.delete(event.payload.capture_request_id);
+        capturingPage.value = activeCaptureRequestIds.size > 0;
+      }
+      void refreshRun(runId, true);
+      return;
+    }
     if (event.type === 'run.waiting_confirmation' || event.type === 'run.paused') {
+      if (event.type === 'run.paused' && event.payload?.reason === 'waiting_page_capture') {
+        const requestId = typeof event.payload?.capture_request_id === 'string' ? event.payload.capture_request_id : '';
+        if (requestId) void fulfillPageCapture(runId, requestId);
+      }
       void refreshRun(runId, true);
       return;
     }
     if (event.type === 'run.completed' || event.type === 'run.failed' || event.type === 'run.cancelled') {
+      activeCaptureRequestIds.clear();
+      capturingPage.value = false;
       void refreshRun(runId, true);
       return;
     }
@@ -300,7 +440,9 @@ function createAiConversationController() {
     const latest = data?.items?.[0];
     if (latest) {
       await refreshRun(latest.id);
-      if (!isRunTerminal(latest.status) && latest.status !== 'waiting_confirmation' && latest.status !== 'paused') {
+      if (latest.status === 'paused') {
+        await inspectPendingCaptureEvents(latest.id);
+      } else if (!isRunTerminal(latest.status) && latest.status !== 'waiting_confirmation') {
         void watchRun(latest.id);
       }
     } else {
@@ -312,6 +454,8 @@ function createAiConversationController() {
     abort?.abort();
     stopPolling();
     messageRefreshGate.invalidate();
+    activeCaptureRequestIds.clear();
+    capturingPage.value = false;
     conversation.value = null;
     storeConversationId();
     messages.value = [];
@@ -399,6 +543,8 @@ function createAiConversationController() {
   async function stop() {
     abort?.abort();
     stopPolling();
+    activeCaptureRequestIds.clear();
+    capturingPage.value = false;
     const run = runDetail.value?.run;
     if (run && !isRunTerminal(run.status)) {
       const { data } = await cancelAIAgentRun(run.id, run.revision);
@@ -468,11 +614,14 @@ function createAiConversationController() {
     abort?.abort();
     abort = null;
     stopPolling();
+    activeCaptureRequestIds.clear();
+    capturingPage.value = false;
     messageRefreshGate.invalidate();
   }
 
   function reset() {
     dispose();
+    handledCaptureRequestIds.clear();
     initialized = false;
     initializePromise = null;
     eventCursor = 0;
@@ -506,6 +655,7 @@ function createAiConversationController() {
     displayStreamingText,
     activeRunId,
     thinkingHint,
+    capturingPage,
     input,
     attachments,
     busy,

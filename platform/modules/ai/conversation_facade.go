@@ -8,6 +8,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/aimodelruntime"
 	"github.com/yzxingtu2026/ainp/platform/framework/aitool"
 	"github.com/yzxingtu2026/ainp/platform/framework/app"
+	"github.com/yzxingtu2026/ainp/platform/framework/attachment"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/job"
 	"github.com/yzxingtu2026/ainp/platform/framework/outbox"
@@ -26,6 +27,7 @@ type (
 	AgentRun                         = conversation.AgentRun
 	AgentStep                        = conversation.AgentStep
 	AgentRunEvent                    = conversation.AgentRunEvent
+	PageCaptureRequest               = conversation.PageCaptureRequest
 	ConversationService              = conversation.ConversationService
 	ContextCompactionService         = conversation.ContextCompactionService
 	AgentRuntimeService              = conversation.AgentRuntimeService
@@ -45,6 +47,8 @@ type (
 	AgentRunIDRequest                = conversation.AgentRunIDRequest
 	AgentRunListRequest              = conversation.AgentRunListRequest
 	AgentRunEventsRequest            = conversation.AgentRunEventsRequest
+	PageCaptureSubmitRequest         = conversation.PageCaptureSubmitRequest
+	PageCaptureSubmitResponse        = conversation.PageCaptureSubmitResponse
 )
 
 const (
@@ -54,6 +58,9 @@ const (
 	CodeSetAgentStepStatus            = conversation.CodeSetAgentStepStatus
 	StateMachineAgentRun              = conversation.StateMachineAgentRun
 	AgentRunJobType                   = conversation.AgentRunJobType
+	PageCaptureAttachmentResourceType = conversation.PageCaptureAttachmentResourceType
+	PageCaptureAttachmentField        = conversation.PageCaptureAttachmentField
+	PageCaptureFulfillmentKind        = conversation.PageCaptureFulfillmentKind
 )
 
 const agentRunTerminalEvent = conversation.AgentRunTerminalEvent
@@ -76,6 +83,10 @@ func ResolveModelContextBudget(limits aimodel.Limits) (ModelContextBudget, error
 func AgentRunJobDefinition() job.Definition { return conversation.AgentRunJobDefinition() }
 func RegisterAgentRuntime(a *app.App, service *AgentRuntimeService) error {
 	return conversation.RegisterAgentRuntime(a, service)
+}
+
+func NewPageCaptureAttachmentPolicy(db *gorm.DB) attachment.AccessPolicy {
+	return conversation.NewPageCaptureAttachmentPolicy(db)
 }
 
 func memoryRecallAdapter(service *MemoryRetrievalService) conversation.MemoryRecallFunc {

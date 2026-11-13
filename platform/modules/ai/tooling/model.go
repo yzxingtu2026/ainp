@@ -110,6 +110,16 @@ const (
 	ToolInvocationFailed              = "failed"
 )
 
+type ToolClientFulfillmentPending struct {
+	InvocationID   string         `json:"invocation_id"`
+	ScopeID        string         `json:"scope_id"`
+	ToolID         string         `json:"tool_id"`
+	ToolCallID     string         `json:"tool_call_id"`
+	Kind           string         `json:"kind"`
+	Parameters     map[string]any `json:"parameters,omitempty"`
+	TimeoutSeconds int            `json:"timeout_seconds"`
+}
+
 type ToolConfirmation struct {
 	ID                   string                           `gorm:"primaryKey;size:64" json:"id"`
 	TenantID             string                           `gorm:"size:64;not null;index" json:"-"`

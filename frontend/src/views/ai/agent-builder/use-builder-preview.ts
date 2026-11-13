@@ -9,10 +9,17 @@ import {
   fetchAIMessages,
   fetchAIToolConfirmations,
   materializeAIAgentPreview,
-  startAIAgentRun
+  startAIAgentRun,
+  submitAIPageCapture
 } from '@/service/api';
 import { agentRunEventDelta, subscribeAgentRun } from '@/service/ai-run-stream';
 import { getStandaloneErrorMessage, isRequestError } from '@/service/request';
+import {
+  PAGE_CAPTURE_EVENT_REQUESTED,
+  parsePageCaptureRequestEvent,
+  renderBusinessMainContentFile,
+  uploadCapturedPageImage
+} from '../workspace/modules/page-capture';
 
 export type BuilderPreviewStatus =
   | 'idle'
@@ -78,6 +85,36 @@ export function useBuilderPreview(options: {
   let abort: AbortController | null = null;
   let eventCursor = 0;
   let snapshotTimer: number | null = null;
+  const handledCaptureRequestIds = new Set<string>();
+
+  async function fulfillPreviewPageCapture(runId: string, captureRequestId: string) {
+    if (!captureRequestId || handledCaptureRequestIds.has(captureRequestId)) return;
+    handledCaptureRequestIds.add(captureRequestId);
+    currentStepType.value = $t('chat.thinkingPageCapture');
+    try {
+      const file = await renderBusinessMainContentFile(captureRequestId);
+      const uploaded = await uploadCapturedPageImage(file);
+      await submitAIPageCapture(
+        {
+          capture_request_id: captureRequestId,
+          status: 'completed',
+          attachment_id: uploaded.id,
+          attachment_revision: uploaded.sha256
+        },
+        { errorMode: 'silent' }
+      );
+    } catch {
+      await submitAIPageCapture(
+        {
+          capture_request_id: captureRequestId,
+          status: 'failed',
+          failure_reason: 'render_failed'
+        },
+        { errorMode: 'silent' }
+      );
+    }
+    void watchRun(runId);
+  }
 
   const canSend = computed(() => {
     if (!options.agent.value) return false;
@@ -288,8 +325,19 @@ export function useBuilderPreview(options: {
       case 'run.delta':
         appendStreamDelta(agentRunEventDelta(event));
         break;
+      case PAGE_CAPTURE_EVENT_REQUESTED: {
+        const parsed = parsePageCaptureRequestEvent(event);
+        if (parsed) void fulfillPreviewPageCapture(runId, parsed.captureRequestId);
+        break;
+      }
       case 'run.waiting_confirmation':
       case 'run.paused':
+        if (event.type === 'run.paused' && event.payload?.reason === 'waiting_page_capture') {
+          const requestId =
+            typeof event.payload?.capture_request_id === 'string' ? event.payload.capture_request_id : '';
+          if (requestId) void fulfillPreviewPageCapture(runId, requestId);
+          break;
+        }
         status.value = 'waiting_confirmation';
         void applyRunSnapshot(runId, { refreshMsgs: true });
         break;
@@ -372,7 +420,7 @@ export function useBuilderPreview(options: {
       images.value = [];
       await refreshMessages();
       const { data: started, error: runError } = await startAIAgentRun(
-		{ conversation_id: conv.id, trigger_message_id: userMsg.id },
+        { conversation_id: conv.id, trigger_message_id: userMsg.id },
         newIdempotencyKey('builder-run')
       );
       if (runError || !started) throw runError || new Error($t('page.agentBuilder.previewRunFailed'));

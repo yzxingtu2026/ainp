@@ -122,6 +122,8 @@ export const retryAIAgentRun = (id: string, revision: number) =>
   post<Api.AI.AgentRunDetail>('agent-runs/retry', { id, revision });
 export const fetchAIAgentRunEvents = (id: string, afterSequence = 0, limit = 200) =>
   post<Api.AI.AgentRunEventPage>('agent-runs/events', { id, after_sequence: afterSequence, limit });
+export const submitAIPageCapture = (data: Api.AI.PageCaptureSubmitPayload, options?: RequestErrorOptions) =>
+  post<Api.AI.PageCaptureSubmitResponse>('page-captures/submit', data as unknown as Record<string, unknown>, options);
 export const fetchKnowledgeBases = (params: Record<string, unknown>, options?: RequestErrorOptions) =>
   post<Api.AI.Page<Api.AI.KnowledgeBase>>('knowledge-bases/list', params, options);
 export const fetchKnowledgeBase = (id: string) => post<Api.AI.KnowledgeBase>('knowledge-bases/get', { id });

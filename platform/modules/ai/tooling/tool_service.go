@@ -700,6 +700,42 @@ func (s *ToolService) execute(ctx context.Context, ac *auth.Context, scope *Tool
 			return nil, execErr
 		}
 	}
+	if execErr == nil && result != nil && result.Status == aitool.ResultStatusClientFulfillmentRequired {
+		metadata, isSlot := s.registry.SlotMetadata(d.ID)
+		fulfillment, validFulfillment := result.Data.(aitool.ClientFulfillmentRequest)
+		if !isSlot || !metadata.ClientFulfillment || approved != nil || scope.AgentRunID == nil || strings.TrimSpace(fulfillment.Kind) == "" {
+			failed := &aitool.Result{CallID: callID, Status: aitool.ResultStatusFailed, Summary: "tool execution failed", ErrorCategory: "execution_failed"}
+			if err := s.finishExecution(ctx, &inv, approved, failed, "failed", failed.ErrorCategory); err != nil {
+				return nil, err
+			}
+			return failed, nil
+		}
+		if !validFulfillment {
+			failed := &aitool.Result{CallID: callID, Status: aitool.ResultStatusFailed, Summary: "tool execution failed", ErrorCategory: "execution_failed"}
+			if err := s.finishExecution(ctx, &inv, approved, failed, "failed", failed.ErrorCategory); err != nil {
+				return nil, err
+			}
+			return failed, nil
+		}
+		timeoutSeconds := metadata.FulfillmentTimeoutSecond
+		if timeoutSeconds <= 0 {
+			timeoutSeconds = 30
+		}
+		return &aitool.Result{
+			CallID:  callID,
+			Status:  aitool.ResultStatusClientFulfillmentRequired,
+			Summary: result.Summary,
+			Data: ToolClientFulfillmentPending{
+				InvocationID:   inv.ID,
+				ScopeID:        scope.ID,
+				ToolID:         d.ID,
+				ToolCallID:     callID,
+				Kind:           fulfillment.Kind,
+				Parameters:     fulfillment.Parameters,
+				TimeoutSeconds: timeoutSeconds,
+			},
+		}, nil
+	}
 	result.CallID = callID
 	if execErr == nil && result.Status != aitool.ResultStatusFailed {
 		if err := s.recordReferenceEvidence(executionCtx, scope, d, inv.ID); err != nil {
@@ -899,6 +935,80 @@ func (s *ToolService) finishExecution(ctx context.Context, inv *ToolInvocation, 
 
 func (s *ToolService) finishApprovedExecution(ctx context.Context, inv *ToolInvocation, approved *ToolConfirmation, result *aitool.Result, status, category string) error {
 	return s.finishConfirmedInvocation(ctx, inv, approved, result, status, category, ToolConfirmationConsumed, time.Now().UTC())
+}
+
+func (s *ToolService) CompleteClientFulfillment(ctx context.Context, tx *gorm.DB, invocationID string, result *aitool.Result) error {
+	if tx == nil || result == nil {
+		return fmt.Errorf("transaction and result are required")
+	}
+	var inv ToolInvocation
+	if err := tx.WithContext(ctx).Where("id=?", invocationID).First(&inv).Error; err != nil {
+		return err
+	}
+	result.CallID = inv.ToolCallID
+	aitool.SanitizeResult(result, 64<<10)
+	status, category := ToolInvocationCompleted, ""
+	if result.Status == aitool.ResultStatusFailed {
+		status, category = ToolInvocationFailed, result.ErrorCategory
+		if metadata, isSlot := s.registry.SlotMetadata(inv.ToolID); isSlot && !slices.Contains(metadata.FailureCategories, category) {
+			category = "execution_failed"
+			result.ErrorCategory = category
+		}
+	}
+	now := time.Now().UTC()
+	duration := now.Sub(inv.StartedAt).Milliseconds()
+	persistedResult := aitool.Result{
+		CallID:        result.CallID,
+		Status:        result.Status,
+		Summary:       result.Summary,
+		Data:          result.Data,
+		ResourceRefs:  append([]string(nil), result.ResourceRefs...),
+		Truncated:     result.Truncated,
+		ErrorCategory: result.ErrorCategory,
+		ErrorDetails:  result.ErrorDetails,
+	}
+	updates := map[string]any{
+		"status":         status,
+		"finished_at":    now,
+		"duration_ms":    duration,
+		"error_category": category,
+		"result_json":    jsonBytes(persistedResult),
+	}
+	payload := map[string]any{
+		"invocation_id":  inv.ID,
+		"tool_id":        inv.ToolID,
+		"source":         inv.Source,
+		"status":         status,
+		"duration_ms":    duration,
+		"error_category": category,
+	}
+	if metadata, ok := s.registry.SlotMetadata(inv.ToolID); ok {
+		payload["invocation_class"] = metadata.InvocationClass
+		payload["budget_category"] = metadata.BudgetCategory
+	}
+	res := tx.WithContext(ctx).Model(&ToolInvocation{}).Where("id=? AND status=?", inv.ID, ToolInvocationRunning).Updates(updates)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return nil
+	}
+	if status == ToolInvocationCompleted {
+		if err := recordWorkingSetUse(tx.WithContext(ctx), &inv, now); err != nil {
+			return err
+		}
+	}
+	if s.writer != nil {
+		_, err := s.writer.Append(ctx, tx.WithContext(ctx), outbox.AppendInput{
+			EventType:        toolInvocationFinishedEvent,
+			AggregateType:    "ai_tool_invocation",
+			AggregateID:      inv.ID,
+			AggregateVersion: 1,
+			Payload:          payload,
+		})
+		return err
+	}
+	return nil
 }
 
 func (s *ToolService) finishInvocation(ctx context.Context, inv *ToolInvocation, result *aitool.Result, status, category string, cause error) error {

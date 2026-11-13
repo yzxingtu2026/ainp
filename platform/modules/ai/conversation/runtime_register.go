@@ -38,6 +38,7 @@ func RegisterAgentRuntime(a *app.App, runtime *AgentRuntimeService) error {
 		{ID: ActionAgentRunRetry, Handler: action.JSON(runtime.Retry), Meta: runActionMeta(ActionAgentRunRetry, "重试 Agent Run", "/api/v1/ai/agent-runs/retry", &auditOn)},
 		{ID: ActionAgentRunEvents, Handler: action.JSON(runtime.Events), Meta: runActionMeta(ActionAgentRunEvents, "Agent Run 事件", "/api/v1/ai/agent-runs/events", &auditOn)},
 		{ID: ActionAgentRunSubscribe, Handler: action.JSON(runtime.Subscribe), Meta: runActionMeta(ActionAgentRunSubscribe, "订阅 Agent Run", "/api/v1/ai/agent-runs/subscribe", &auditOn)},
+		{ID: ActionPageCaptureSubmit, Handler: action.JSON(runtime.SubmitPageCapture), Meta: runActionMeta(ActionPageCaptureSubmit, "提交页面捕获结果", "/api/v1/ai/page-captures/submit", &auditOn)},
 	}
 	for _, item := range actions {
 		if err := a.RegisterAction(item); err != nil {
@@ -65,12 +66,18 @@ func RegisterAgentRuntime(a *app.App, runtime *AgentRuntimeService) error {
 		return err
 	}
 	if a.Outbox != nil {
-		for _, def := range []outbox.Definition{{EventType: agentRunRequestedEvent, SchemaVersion: 1, Description: "Agent Run requested"}, {EventType: agentRunResumeEvent, SchemaVersion: 1, Description: "Agent Run resume requested"}, {EventType: agentRunTerminalEvent, SchemaVersion: 1, Description: "Agent Run terminal"}, {EventType: agentRunConfirmationTimeoutEvent, SchemaVersion: 1, Description: "Agent Run confirmation timeout"}} {
+		for _, def := range []outbox.Definition{
+			{EventType: agentRunRequestedEvent, SchemaVersion: 1, Description: "Agent Run requested"},
+			{EventType: agentRunResumeEvent, SchemaVersion: 1, Description: "Agent Run resume requested"},
+			{EventType: agentRunTerminalEvent, SchemaVersion: 1, Description: "Agent Run terminal"},
+			{EventType: agentRunConfirmationTimeoutEvent, SchemaVersion: 1, Description: "Agent Run confirmation timeout"},
+			{EventType: agentRunPageCaptureTimeoutEvent, SchemaVersion: 1, Description: "Agent Run page capture timeout"},
+		} {
 			if err := a.Outbox.RegisterDefinition(def); err != nil {
 				return err
 			}
 		}
-		if err := a.Outbox.RegisterHandler(outbox.HandlerFunc{HandlerName: "ai.enqueue_agent_run", Types: []string{agentRunRequestedEvent, agentRunResumeEvent, agentRunConfirmationTimeoutEvent}, Fn: func(ctx context.Context, env outbox.Envelope) error {
+		if err := a.Outbox.RegisterHandler(outbox.HandlerFunc{HandlerName: "ai.enqueue_agent_run", Types: []string{agentRunRequestedEvent, agentRunResumeEvent, agentRunConfirmationTimeoutEvent, agentRunPageCaptureTimeoutEvent}, Fn: func(ctx context.Context, env outbox.Envelope) error {
 			if a.Jobs == nil || !a.Jobs.Enabled {
 				logging.Warn(ctx, "jobs disabled; Agent Run remains queued", "run_id", env.AggregateID)
 				return nil
@@ -89,8 +96,11 @@ func RegisterAgentRuntime(a *app.App, runtime *AgentRuntimeService) error {
 			})
 			mode := ""
 			delay := time.Duration(0)
-			if env.EventType == agentRunConfirmationTimeoutEvent {
+			if env.EventType == agentRunConfirmationTimeoutEvent || env.EventType == agentRunPageCaptureTimeoutEvent {
 				mode = "confirmation_timeout"
+				if env.EventType == agentRunPageCaptureTimeoutEvent {
+					mode = "page_capture_timeout"
+				}
 				var p struct {
 					ExpiresAt time.Time `json:"expires_at"`
 				}
@@ -114,6 +124,12 @@ func RegisterAgentRuntime(a *app.App, runtime *AgentRuntimeService) error {
 			}
 			if p.Mode == "confirmation_timeout" {
 				woke, err := runtime.WakeExpiredConfirmation(ctx, p.RunID)
+				if err != nil || !woke {
+					return err
+				}
+			}
+			if p.Mode == "page_capture_timeout" {
+				woke, err := runtime.WakeExpiredPageCapture(ctx, p.RunID)
 				if err != nil || !woke {
 					return err
 				}

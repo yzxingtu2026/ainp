@@ -4,8 +4,9 @@
 
 ## 所有权
 
-- `useAiConversationController()` 是应用生命周期单例，唯一负责 Conversation、Message、SSE、Run cursor、轮询、确认、附件、幂等和 Page Context 发送时捕获。
-- `AiConversationSurface` 统一渲染消息、流式/thinking、工具活动/确认、错误、空状态和 Composer，只提供 workspace/sidebar 密度变体。
+- `useAiConversationController()` 是应用生命周期单例，唯一负责 Conversation、Message、SSE、Run cursor、轮询、确认、附件、幂等、Page Context 发送时捕获以及 `run.capture_requested.v1` 页面捕获请求履行。
+- 收到页面捕获请求时，controller 只以 `AdminLayout` 业务主内容容器（`[data-ainp-main-content="true"]`）及与其重叠的可见业务浮层为渲染边界，显式过滤排除 AI 助手面板自身（`[data-ainp-ai-assistant="true"]`）并遮罩 password 输入值，降采样压缩后经统一附件上传队列上传并调用 `ai.page_capture_submit`；html2canvas/foreignObject 类 DOM 渲染对跨域图片或特殊 CSS 的保真损失属已知约束，渲染或上传异常统一上报安全失败并收口，不阻塞对话。
+- `AiConversationSurface` 统一渲染消息、流式/thinking、工具活动/确认、错误、空状态和 Composer，只提供 workspace/sidebar 密度变体；页面捕获执行期间，Workspace 与 Sidebar 共享思考占位和工具活动区实时显示“AI 正在查看当前页面”流式状态，完成、失败、取消或超时后自动收口，不设开关、不弹逐次确认框。
 - `deferred_for_confirmation` Tool Result 必须显示为“已延后/未执行”的确定终态，不得归类为执行中或等待结果；等待事件、SSE 重连、刷新和历史回放必须从 canonical Call/Result 配对得到一致状态。
 - Conversation API 保留 canonical `retry_of_tool_call_id`。Surface 仅在原操作有 deferred Result、lineage 唯一且原/retry Tool 与参数一致时，将 retry 的 pending/success/failure 更新到原卡片并排除 retry 卡片：pending 沿用等待状态，成功显示“延后后完成”，失败显示最终失败。孤立、非 deferred、重复或不一致 lineage 保持原样；业务操作数始终按原 Call 计算。
 - 共享 Composer 支持图片和 PDF/XLSX/DOCX/TXT/MD 文档：从“我的附件”选择或在 Picker 中直接上传，MIME 与扩展名必须严格匹配，单项最多 10 MiB，图片与文档合计最多 4 个。图片粘贴仍只在检测到 PNG/JPEG/GIF/WebP 时阻止默认粘贴并走统一上传队列；不增加 Office 剪贴板特殊逻辑。上传中禁止发送，切换会话取消未完成队列，普通文本粘贴保持浏览器默认行为；Workspace 与 Sidebar 不得分别实现。

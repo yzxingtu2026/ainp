@@ -19,6 +19,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/aimodel"
 	"github.com/yzxingtu2026/ainp/platform/framework/aimodelruntime"
 	"github.com/yzxingtu2026/ainp/platform/framework/aitool"
+	"github.com/yzxingtu2026/ainp/platform/framework/attachment"
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 	"github.com/yzxingtu2026/ainp/platform/framework/logging"
@@ -46,19 +47,21 @@ const (
 )
 
 type AgentRuntimeService struct {
-	db              tenantdata.GuardedDatabase
-	conversations   *ConversationService
-	invocations     *modelruntime.InvocationService
-	tools           *tooling.ToolService
-	compactor       aiconversation.ContextCompactor
-	writer          outbox.Writer
-	authorization   auth.AuthorizationProvider
-	runtimeContext  runtimecontext.Provider
-	pageContexts    *pagecontext.Registry
-	memoryRetriever MemoryRecallFunc
-	contracts       *aiagent.Registry
-	budgetProvider  *modelruntime.RuntimeBudgetProvider
-	contextBudget   interface {
+	db               tenantdata.GuardedDatabase
+	conversations    *ConversationService
+	invocations      *modelruntime.InvocationService
+	tools            *tooling.ToolService
+	compactor        aiconversation.ContextCompactor
+	writer           outbox.Writer
+	authorization    auth.AuthorizationProvider
+	runtimeContext   runtimecontext.Provider
+	pageContexts     *pagecontext.Registry
+	memoryRetriever  MemoryRecallFunc
+	contracts        *aiagent.Registry
+	budgetProvider   *modelruntime.RuntimeBudgetProvider
+	captureAssets    aimodelruntime.AssetResolver
+	attachmentLinker attachment.ResourceLinker
+	contextBudget    interface {
 		ContextTokenLimit(context.Context, string) (int, error)
 		ModelTurnBudget(context.Context, string) (ModelContextBudget, error)
 		EstimateRequestTokens(context.Context, aimodelruntime.GenerateRequest) (int, error)
@@ -95,6 +98,14 @@ func NewAgentRuntimeService(db *gorm.DB, c *ConversationService, i *modelruntime
 func (s *AgentRuntimeService) SetBudgetProvider(provider *modelruntime.RuntimeBudgetProvider) {
 	s.budgetProvider = provider
 }
+
+type toolWaitMode int
+
+const (
+	toolWaitNone toolWaitMode = iota
+	toolWaitConfirmation
+	toolWaitPageCapture
+)
 
 type AgentRunStartRequest struct {
 	ConversationID   string                `json:"conversation_id" validate:"required"`
@@ -369,6 +380,39 @@ func (s *AgentRuntimeService) Cancel(ctx context.Context, r AgentRunIDRequest) (
 			}
 			if updated.RowsAffected == 1 {
 				if e := s.appendEvent(ctx, tx, run, "step.cancelled", &step.ID, map[string]any{"type": step.Type, "status": "cancelled", "error_category": category}); e != nil {
+					return e
+				}
+			}
+		}
+		var pendingCaptures []PageCaptureRequest
+		if e := tx.Where("run_id=? AND status=?", run.ID, PageCapturePending).Find(&pendingCaptures).Error; e != nil {
+			return e
+		}
+		for index := range pendingCaptures {
+			capture := &pendingCaptures[index]
+			cancelledResult := &aitool.Result{
+				CallID:        capture.ToolCallID,
+				Status:        aitool.ResultStatusFailed,
+				Summary:       "page capture was cancelled",
+				ErrorCategory: "capture_cancelled",
+			}
+			resCapture := tx.Model(&PageCaptureRequest{}).Where("id=? AND status=?", capture.ID, PageCapturePending).Updates(map[string]any{
+				"status":         PageCaptureCancelled,
+				"error_category": "capture_cancelled",
+				"updated_at":     now,
+			})
+			if resCapture.Error != nil {
+				return resCapture.Error
+			}
+			if resCapture.RowsAffected == 1 {
+				if e := s.tools.CompleteClientFulfillment(ctx, tx, capture.InvocationID, cancelledResult); e != nil {
+					return e
+				}
+				if e := s.appendEvent(ctx, tx, run, aiagentruntime.RunEventCaptureSettled, &capture.StepID, map[string]any{
+					"capture_request_id": capture.ID,
+					"status":             PageCaptureCancelled,
+					"error_category":     "capture_cancelled",
+				}); e != nil {
 					return e
 				}
 			}
@@ -759,7 +803,14 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 	if run.Status != "running" {
 		return nil
 	}
-	stepLimit := stepLimitAfterConfirmation(budget.MaxSteps, run.CurrentStep, resumedConfirmation)
+	resumedPageCapture, err := s.resumePageCapture(ctx, run)
+	if err != nil {
+		return err
+	}
+	if run.Status != "running" {
+		return nil
+	}
+	stepLimit := stepLimitAfterConfirmation(budget.MaxSteps, run.CurrentStep, resumedConfirmation || resumedPageCapture)
 	waiting, queuedToolResultsPending, queueErr := s.continueDeferredConfirmationQueue(ctx, run, scopeID, budget.MaxToolCalls, stepLimit)
 	if queueErr != nil {
 		return s.fail(ctx, run, "deferred_confirmation_queue_failed")
@@ -767,7 +818,7 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 	if waiting {
 		return nil
 	}
-	toolResultsPending := resumedConfirmation || queuedToolResultsPending
+	toolResultsPending := resumedConfirmation || resumedPageCapture || queuedToolResultsPending
 	for {
 		allowed, stepCompletionOnly := reactTurnMode(run.CurrentStep, stepLimit, toolResultsPending)
 		if !allowed || !s.now().Before(deadline) {
@@ -963,7 +1014,7 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 			if run.ToolCalls >= budget.MaxToolCalls {
 				return s.fail(ctx, run, "tool_budget_exhausted")
 			}
-			waiting, err := s.executeToolCall(ctx, run, scopeID, call)
+			waitMode, err := s.executeToolCall(ctx, run, scopeID, call)
 			if err != nil {
 				return s.finalizeSafeFailure(ctx, run, "tool_failed", version.ModelAlias, budget, startedAt)
 			}
@@ -971,11 +1022,17 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 			if err := s.persistCounters(ctx, run); err != nil {
 				return err
 			}
-			if waiting {
+			if waitMode != toolWaitNone {
 				for _, deferredCall := range toolCalls[callIndex+1:] {
 					if err := s.appendSyntheticToolFailure(ctx, run, deferredCall, "deferred_for_confirmation", "tool call was not executed because another call requires confirmation; retry after confirmation if still needed"); err != nil {
 						return s.fail(ctx, run, "tool_result_persist_failed")
 					}
+				}
+				if waitMode == toolWaitPageCapture {
+					if err := s.finalizePageCaptureWait(ctx, run); err != nil {
+						return s.fail(ctx, run, "capture_wait_persist_failed")
+					}
+					return nil
 				}
 				if err := s.finalizeConfirmationWait(ctx, run); err != nil {
 					return s.fail(ctx, run, "confirmation_wait_persist_failed")
@@ -1549,6 +1606,10 @@ func (s *AgentRuntimeService) runtimeMessages(ctx context.Context, run *AgentRun
 			if err != nil {
 				return nil, nil, err
 			}
+			messages, err = s.conversations.expandPageCaptureMessages(ctx, messages)
+			if err != nil {
+				return nil, nil, err
+			}
 			messages = injectAttachmentReferenceManifest(messages, assembly.AttachmentManifest)
 			return injectPageContext(injectTrustedRuntimeContext(messages, trusted), pageSnapshot), &id, nil
 		}
@@ -1903,7 +1964,7 @@ func (s *AgentRuntimeService) ensureToolScope(ctx context.Context, run *AgentRun
 	return scope.ID, nil
 }
 
-func (s *AgentRuntimeService) executeToolCall(ctx context.Context, run *AgentRun, scopeID string, call aimodelruntime.OutputItem) (bool, error) {
+func (s *AgentRuntimeService) executeToolCall(ctx context.Context, run *AgentRun, scopeID string, call aimodelruntime.OutputItem) (toolWaitMode, error) {
 	stepType := aiagentruntime.StepToolExecute
 	toolID := s.registryToolID(call.ToolName)
 	if toolID == "meta:tool.search" {
@@ -1917,90 +1978,117 @@ func (s *AgentRuntimeService) executeToolCall(ctx context.Context, run *AgentRun
 	}
 	step, stepErr := s.newStep(ctx, run, stepType, map[string]any{"tool_name": call.ToolName, "tool_call_id": call.ToolCallID})
 	if stepErr != nil {
-		return false, stepErr
+		return toolWaitNone, stepErr
 	}
 	if toolID != "" && call.ToolName == toolID {
-		return s.appendToolResult(ctx, run, step, call, nil, &toolRuntimeError{category: "tool_name_invalid", summary: fmt.Sprintf("tool name uses a registry ID; load it first and call the projected model tool name %s", tooling.ModelToolName(toolID)), recoverable: true})
+		_, err := s.appendToolResult(ctx, run, step, call, nil, &toolRuntimeError{category: "tool_name_invalid", summary: fmt.Sprintf("tool name uses a registry ID; load it first and call the projected model tool name %s", tooling.ModelToolName(toolID)), recoverable: true})
+		return toolWaitNone, err
 	}
 	if toolID == "meta:tool.search" {
 		var input aitool.MetaSearchInput
 		if json.Unmarshal(call.Arguments, &input) != nil {
-			return s.appendToolResult(ctx, run, step, call, nil, errs.Validation("invalid tool arguments"))
+			_, err := s.appendToolResult(ctx, run, step, call, nil, errs.Validation("invalid tool arguments"))
+			return toolWaitNone, err
 		}
 		value, err := s.tools.Search(ctx, tooling.ToolSearchRequest{ScopeID: scopeID, Query: input.Query, Capability: input.Capability, Source: input.Source, Limit: input.Limit})
-		return s.appendToolResult(ctx, run, step, call, value, err)
+		_, appendErr := s.appendToolResult(ctx, run, step, call, value, err)
+		return toolWaitNone, appendErr
 	}
 	if toolID == "meta:tool.load" {
 		var input aitool.MetaLoadInput
 		if json.Unmarshal(call.Arguments, &input) != nil {
-			return s.appendToolResult(ctx, run, step, call, nil, errs.Validation("invalid tool arguments"))
+			_, err := s.appendToolResult(ctx, run, step, call, nil, errs.Validation("invalid tool arguments"))
+			return toolWaitNone, err
 		}
 		value, err := s.tools.Load(ctx, tooling.ToolLoadRequest{ScopeID: scopeID, ToolIDs: input.ToolIDs})
 		if err != nil {
-			return s.appendToolResult(ctx, run, step, call, nil, err)
+			_, appendErr := s.appendToolResult(ctx, run, step, call, nil, err)
+			return toolWaitNone, appendErr
 		}
 		loaded := value.(tooling.ToolLoadResponse)
-		return s.appendToolResult(ctx, run, step, call, agentToolLoadResult(loaded), nil)
+		_, appendErr := s.appendToolResult(ctx, run, step, call, agentToolLoadResult(loaded), nil)
+		return toolWaitNone, appendErr
 	}
 	if toolID == "" {
-		return s.appendToolResult(ctx, run, step, call, nil, &toolRuntimeError{category: "tool_unavailable", summary: "tool is unavailable; call meta__tool_search and meta__tool_load before retrying", recoverable: true})
+		_, err := s.appendToolResult(ctx, run, step, call, nil, &toolRuntimeError{category: "tool_unavailable", summary: "tool is unavailable; call meta__tool_search and meta__tool_load before retrying", recoverable: true})
+		return toolWaitNone, err
 	}
 	projectedInScope, err := s.tools.IsProjected(ctx, scopeID, toolID)
 	if err != nil {
-		return s.appendToolResult(ctx, run, step, call, nil, err)
+		_, appendErr := s.appendToolResult(ctx, run, step, call, nil, err)
+		return toolWaitNone, appendErr
 	}
 	if !projectedInScope {
 		workingSet, workingSetErr := s.tools.WorkingSetEntry(ctx, run.ConversationID, toolID)
 		if errors.Is(workingSetErr, gorm.ErrRecordNotFound) {
-			return s.appendToolResult(ctx, run, step, call, nil, &toolRuntimeError{category: "tool_not_loaded", summary: "tool is not loaded; call meta__tool_load first", recoverable: true})
+			_, appendErr := s.appendToolResult(ctx, run, step, call, nil, &toolRuntimeError{category: "tool_not_loaded", summary: "tool is not loaded; call meta__tool_load first", recoverable: true})
+			return toolWaitNone, appendErr
 		}
 		if workingSetErr != nil {
-			return s.appendToolResult(ctx, run, step, call, nil, workingSetErr)
+			_, appendErr := s.appendToolResult(ctx, run, step, call, nil, workingSetErr)
+			return toolWaitNone, appendErr
 		}
 		allowed, allowanceErr := s.allowToolRehydrate(ctx, run.ID, toolID)
 		if allowanceErr != nil {
-			return s.appendToolResult(ctx, run, step, call, nil, allowanceErr)
+			_, appendErr := s.appendToolResult(ctx, run, step, call, nil, allowanceErr)
+			return toolWaitNone, appendErr
 		}
 		if !allowed {
-			return s.appendToolResult(ctx, run, step, call, nil, &toolRuntimeError{category: "tool_rehydrate_limit", summary: "tool restore limit reached; use tool.search and tool.load before retrying", recoverable: false})
+			_, appendErr := s.appendToolResult(ctx, run, step, call, nil, &toolRuntimeError{category: "tool_rehydrate_limit", summary: "tool restore limit reached; use tool.search and tool.load before retrying", recoverable: false})
+			return toolWaitNone, appendErr
 		}
 		activation, activateErr := s.tools.ActivateIntoScope(ctx, scopeID, toolID)
 		if activateErr != nil {
-			return s.appendToolResult(ctx, run, step, call, nil, activateErr)
+			_, appendErr := s.appendToolResult(ctx, run, step, call, nil, activateErr)
+			return toolWaitNone, appendErr
 		}
 		if workingSet.SchemaHash != activation.Definition.SchemaHash {
-			return s.appendRehydratedToolResult(ctx, run, step, call, toolID)
+			_, appendErr := s.appendRehydratedToolResult(ctx, run, step, call, toolID)
+			return toolWaitNone, appendErr
 		}
 	}
 	loadedValue, err := s.tools.Load(ctx, tooling.ToolLoadRequest{ScopeID: scopeID, ToolIDs: []string{toolID}})
 	if err != nil {
-		return s.appendToolResult(ctx, run, step, call, nil, err)
+		_, appendErr := s.appendToolResult(ctx, run, step, call, nil, err)
+		return toolWaitNone, appendErr
 	}
 	loaded := loadedValue.(tooling.ToolLoadResponse).Tools[0]
 	value, err := s.tools.Execute(ctx, tooling.ToolExecuteRequest{Handle: loaded.Handle, ToolCallID: call.ToolCallID, Arguments: call.Arguments, IdempotencyKey: fmt.Sprintf("run:%s:tool:%s", run.ID, call.ToolCallID)})
 	if err != nil {
-		return s.appendToolResult(ctx, run, step, call, nil, err)
+		_, appendErr := s.appendToolResult(ctx, run, step, call, nil, err)
+		return toolWaitNone, appendErr
 	}
 	result := value.(*aitool.Result)
+	if result.Status == aitool.ResultStatusClientFulfillmentRequired {
+		pending, ok := result.Data.(tooling.ToolClientFulfillmentPending)
+		if !ok {
+			return toolWaitNone, fmt.Errorf("invalid client fulfillment request")
+		}
+		if err := s.beginClientFulfillment(ctx, run, step, pending); err != nil {
+			return toolWaitNone, err
+		}
+		return toolWaitPageCapture, nil
+	}
 	if result.Status == "confirmation_required" {
 		confirmation, ok := result.Data.(tooling.ToolConfirmation)
 		if !ok {
-			return false, fmt.Errorf("invalid confirmation")
+			return toolWaitNone, fmt.Errorf("invalid confirmation")
 		}
 		step.ConfirmationID = &confirmation.ID
 		step.ToolInvocationID = &confirmation.InvocationID
 		_ = s.db.WithContext(ctx).Model(&AgentStep{}).Where("id=?", step.ID).Updates(map[string]any{"status": "waiting", "confirmation_id": confirmation.ID, "tool_invocation_id": confirmation.InvocationID}).Error
 		confirmationStep, stepErr := s.newStep(ctx, run, aiagentruntime.StepConfirmation, map[string]any{"confirmation_id": confirmation.ID, "risk": confirmation.Risk, "side_effect": confirmation.SideEffect})
 		if stepErr != nil {
-			return false, stepErr
+			return toolWaitNone, stepErr
 		}
 		confirmationStep.ParentStepID = &step.ID
 		confirmationStep.ConfirmationID = &confirmation.ID
 		confirmationStep.ToolInvocationID = &confirmation.InvocationID
 		_ = s.db.WithContext(ctx).Model(&AgentStep{}).Where("id=?", confirmationStep.ID).Updates(map[string]any{"status": "waiting", "parent_step_id": step.ID, "confirmation_id": confirmation.ID, "tool_invocation_id": confirmation.InvocationID}).Error
-		return true, nil
+		return toolWaitConfirmation, nil
 	}
-	return s.appendToolResult(ctx, run, step, call, result, nil)
+	_, appendErr := s.appendToolResult(ctx, run, step, call, result, nil)
+	return toolWaitNone, appendErr
 }
 
 func (s *AgentRuntimeService) finalizeConfirmationWait(ctx context.Context, run *AgentRun) error {
@@ -2455,7 +2543,7 @@ func (s *AgentRuntimeService) continueDeferredConfirmationQueue(ctx context.Cont
 			}
 		}
 		call := aimodelruntime.OutputItem{Type: aimodelruntime.PartToolCall, ToolCallID: item.RetryCallID, ToolName: item.ToolName, Arguments: item.Arguments}
-		waiting, executeErr := s.executeToolCall(ctx, run, scopeID, call)
+		waitMode, executeErr := s.executeToolCall(ctx, run, scopeID, call)
 		if executeErr != nil {
 			return false, toolResultsPending, executeErr
 		}
@@ -2463,7 +2551,10 @@ func (s *AgentRuntimeService) continueDeferredConfirmationQueue(ctx context.Cont
 		if err = s.persistCounters(ctx, run); err != nil {
 			return false, toolResultsPending, err
 		}
-		if waiting {
+		if waitMode == toolWaitPageCapture {
+			return true, toolResultsPending, s.finalizePageCaptureWait(ctx, run)
+		}
+		if waitMode == toolWaitConfirmation {
 			return true, toolResultsPending, s.finalizeConfirmationWait(ctx, run)
 		}
 		toolResultsPending = true
