@@ -161,6 +161,8 @@ describe('ChatMessageList multimodal history, streaming caret, and turn actions'
     mounted.push(wrapper);
     await flushPromises();
 
+    const userBubble = wrapper.get('.message__user-bubble');
+    expect(userBubble.classes()).not.toContain('message__content');
     const thumbImg = wrapper.get('.user-image-card img');
     expect(thumbImg.attributes('src')).toBe('blob:controlled-thumb-url');
     expect(wrapper.text()).toContain('contract.pdf');

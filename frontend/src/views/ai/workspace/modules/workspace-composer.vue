@@ -454,7 +454,7 @@ function selectAttachments(items: Api.Attachment.Item[]) {
   right: 5px;
   transform: translateY(-50%);
   background: rgba(127, 127, 127, 0.16);
-  color: rgba(var(--base-text-color), 0.78);
+  color: rgb(var(--base-text-color) / 0.78);
 }
 
 .workspace-composer__attachment--doc .workspace-composer__remove:hover {

@@ -132,7 +132,7 @@ const visible = computed(() => {
   border: 0;
   border-radius: 6px;
   background: transparent;
-  color: rgba(var(--base-text-color), 0.78);
+  color: rgb(var(--base-text-color) / 0.78);
   font-size: 12.5px;
   cursor: pointer;
   transition:
@@ -160,7 +160,7 @@ const visible = computed(() => {
 }
 
 .conversation-panel__tabs button.active .conversation-panel__count {
-  background: rgba(var(--primary-color), 0.14);
+  background: rgb(var(--primary-color) / 0.14);
   color: rgb(var(--primary-color));
 }
 
@@ -198,8 +198,8 @@ const visible = computed(() => {
 }
 
 .conversation-item--active {
-  border-color: rgba(var(--primary-color), 0.28);
-  background: linear-gradient(90deg, rgba(var(--primary-color), 0.12) 0%, rgba(var(--primary-color), 0.05) 100%);
+  border-color: rgb(var(--primary-color) / 0.28);
+  background: linear-gradient(90deg, rgb(var(--primary-color) / 0.12) 0%, rgb(var(--primary-color) / 0.05) 100%);
   color: rgb(var(--primary-color));
 }
 
@@ -215,7 +215,7 @@ const visible = computed(() => {
 }
 
 .conversation-item--active .conversation-item__icon {
-  background: rgba(var(--primary-color), 0.15);
+  background: rgb(var(--primary-color) / 0.15);
 }
 
 .conversation-item__body {

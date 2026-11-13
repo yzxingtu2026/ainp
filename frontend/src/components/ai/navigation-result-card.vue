@@ -122,10 +122,10 @@ async function open(item: Api.Route.NavigationSearchResult) {
   gap: 7px;
   max-width: 100%;
   height: 34px;
-  border: 1px solid rgba(var(--primary-color), 0.22);
+  border: 1px solid rgb(var(--primary-color) / 0.22);
   border-radius: 10px;
   padding: 0 10px 0 7px;
-  background: linear-gradient(135deg, rgba(var(--primary-color), 0.06), rgba(8, 145, 178, 0.04));
+  background: linear-gradient(135deg, rgb(var(--primary-color) / 0.06), rgba(8, 145, 178, 0.04));
   color: inherit;
   font: inherit;
   cursor: pointer;
@@ -138,11 +138,11 @@ async function open(item: Api.Route.NavigationSearchResult) {
 
 .navigation-result:hover:not(:disabled),
 .navigation-result:focus-visible {
-  border-color: rgba(var(--primary-color), 0.5);
+  border-color: rgb(var(--primary-color) / 0.5);
   outline: none;
-  background: linear-gradient(135deg, rgba(var(--primary-color), 0.12), rgba(8, 145, 178, 0.08));
+  background: linear-gradient(135deg, rgb(var(--primary-color) / 0.12), rgba(8, 145, 178, 0.08));
   color: rgb(var(--primary-color));
-  box-shadow: 0 3px 10px rgba(var(--primary-color), 0.12);
+  box-shadow: 0 3px 10px rgb(var(--primary-color) / 0.12);
 }
 
 .navigation-result:disabled {
@@ -159,7 +159,7 @@ async function open(item: Api.Route.NavigationSearchResult) {
   display: grid;
   place-items: center;
   border-radius: 6px;
-  background: rgba(var(--primary-color), 0.12);
+  background: rgb(var(--primary-color) / 0.12);
 }
 
 .navigation-result__icon {
@@ -170,7 +170,7 @@ async function open(item: Api.Route.NavigationSearchResult) {
 .navigation-result__arrow {
   flex: none;
   font-size: 15px;
-  color: rgba(var(--primary-color), 0.82);
+  color: rgb(var(--primary-color) / 0.82);
   transition: transform 0.18s ease;
 }
 

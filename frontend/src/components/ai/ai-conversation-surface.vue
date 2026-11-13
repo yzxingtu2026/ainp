@@ -320,7 +320,7 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  border: 1px solid rgba(var(--primary-color), 0.28);
+  border: 1px solid rgb(var(--primary-color) / 0.28);
   border-radius: 999px;
   background: rgb(var(--container-bg-color) / 92%);
   backdrop-filter: blur(8px);
@@ -339,14 +339,14 @@ onBeforeUnmount(() => {
 
 .ai-conversation-surface__scroll-bottom:hover,
 .ai-conversation-surface__scroll-bottom:focus-visible {
-  border-color: rgba(var(--primary-color), 0.58);
+  border-color: rgb(var(--primary-color) / 0.58);
   color: rgb(var(--primary-color));
-  box-shadow: 0 8px 22px rgba(var(--primary-color), 0.18);
+  box-shadow: 0 8px 22px rgb(var(--primary-color) / 0.18);
   outline: none;
 }
 
 .ai-conversation-surface__scroll-bottom--live {
-  border-color: rgba(var(--primary-color), 0.45);
+  border-color: rgb(var(--primary-color) / 0.45);
 }
 
 .ai-conversation-surface__scroll-dot {
@@ -468,9 +468,9 @@ onBeforeUnmount(() => {
 
 .ai-suggestion-card:hover,
 .ai-suggestion-card:focus-visible {
-  border-color: rgba(var(--primary-color), 0.48);
-  background: linear-gradient(135deg, rgba(var(--primary-color), 0.055) 0%, rgba(8, 145, 178, 0.03) 100%);
-  box-shadow: 0 6px 18px rgba(var(--primary-color), 0.09);
+  border-color: rgb(var(--primary-color) / 0.48);
+  background: linear-gradient(135deg, rgb(var(--primary-color) / 0.055) 0%, rgba(8, 145, 178, 0.03) 100%);
+  box-shadow: 0 6px 18px rgb(var(--primary-color) / 0.09);
   outline: none;
 }
 
@@ -482,7 +482,7 @@ onBeforeUnmount(() => {
   display: grid;
   place-items: center;
   border-radius: 8px;
-  background: rgba(var(--primary-color), 0.1);
+  background: rgb(var(--primary-color) / 0.1);
   color: rgb(var(--primary-color));
   font-size: 15px;
 }
@@ -505,8 +505,8 @@ onBeforeUnmount(() => {
 
 .ai-suggestion-card__prompt {
   min-width: 0;
-  overflow-wrap: anywhere;
-  color: rgba(var(--base-text-color), 0.86);
+  overflow-wrap: break-word;
+  color: rgb(var(--base-text-color) / 0.86);
   font-size: 12.5px;
   line-height: 1.48;
 }

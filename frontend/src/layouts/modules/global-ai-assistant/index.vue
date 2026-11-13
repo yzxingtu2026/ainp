@@ -364,13 +364,13 @@ function expandWorkspace() {
 .global-ai-assistant__tool:focus-visible {
   border-color: rgba(127, 127, 127, 0.18);
   background: rgba(127, 127, 127, 0.08);
-  outline: 2px solid rgba(var(--primary-color), 0.4);
+  outline: 2px solid rgb(var(--primary-color) / 0.4);
   outline-offset: 1px;
 }
 
 .global-ai-assistant__tool--active {
-  border-color: rgba(var(--primary-color), 0.34);
-  background: rgba(var(--primary-color), 0.1);
+  border-color: rgb(var(--primary-color) / 0.34);
+  background: rgb(var(--primary-color) / 0.1);
   color: rgb(var(--primary-color));
 }
 

@@ -131,7 +131,7 @@ const displayName = computed(() => props.presentation?.title || props.toolName |
 
 .tool-call--running .tool-call__node {
   background: rgb(var(--primary-color));
-  box-shadow: 0 0 0 3px rgba(var(--primary-color), 0.22);
+  box-shadow: 0 0 0 3px rgb(var(--primary-color) / 0.22);
 }
 
 .tool-call--success .tool-call__node {
@@ -162,8 +162,8 @@ const displayName = computed(() => props.presentation?.title || props.toolName |
 }
 
 .tool-call--running .tool-call__surface {
-  border-color: rgba(var(--primary-color), 0.42);
-  box-shadow: 0 0 0 1px rgba(var(--primary-color), 0.1);
+  border-color: rgb(var(--primary-color) / 0.42);
+  box-shadow: 0 0 0 1px rgb(var(--primary-color) / 0.1);
   animation: tool-call-pulse 2s ease-in-out infinite;
 }
 
@@ -174,12 +174,12 @@ const displayName = computed(() => props.presentation?.title || props.toolName |
 @keyframes tool-call-pulse {
   0%,
   100% {
-    border-color: rgba(var(--primary-color), 0.45);
-    box-shadow: 0 0 0 1px rgba(var(--primary-color), 0.12);
+    border-color: rgb(var(--primary-color) / 0.45);
+    box-shadow: 0 0 0 1px rgb(var(--primary-color) / 0.12);
   }
   50% {
     border-color: rgba(8, 145, 178, 0.42);
-    box-shadow: 0 0 12px rgba(var(--primary-color), 0.14);
+    box-shadow: 0 0 12px rgb(var(--primary-color) / 0.14);
   }
 }
 
@@ -210,7 +210,7 @@ const displayName = computed(() => props.presentation?.title || props.toolName |
   display: grid;
   place-items: center;
   border-radius: 6px;
-  background: rgba(var(--primary-color), 0.1);
+  background: rgb(var(--primary-color) / 0.1);
 }
 
 .tool-call__icon {
@@ -241,7 +241,7 @@ const displayName = computed(() => props.presentation?.title || props.toolName |
 }
 
 .tool-call--running .tool-call__status {
-  background: rgba(var(--primary-color), 0.11);
+  background: rgb(var(--primary-color) / 0.11);
   color: rgb(var(--primary-color));
 }
 
@@ -307,7 +307,7 @@ const displayName = computed(() => props.presentation?.title || props.toolName |
 
 .tool-call__summary {
   margin: 0 0 8px;
-  color: rgba(var(--base-text-color), 0.88);
+  color: rgb(var(--base-text-color) / 0.88);
   font-size: 12px;
   line-height: 1.55;
 }

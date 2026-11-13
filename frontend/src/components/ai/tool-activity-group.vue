@@ -212,7 +212,7 @@ watch(
   border-radius: 999px;
   background: rgba(127, 127, 127, 0.06);
   padding: 5px 11px;
-  color: rgba(var(--base-text-color), 0.78);
+  color: rgb(var(--base-text-color) / 0.78);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   cursor: pointer;
@@ -224,8 +224,8 @@ watch(
 
 .tool-activity__summary:hover,
 .tool-activity__summary:focus-visible {
-  border-color: rgba(var(--primary-color), 0.42);
-  background: rgba(var(--primary-color), 0.08);
+  border-color: rgb(var(--primary-color) / 0.42);
+  background: rgb(var(--primary-color) / 0.08);
   color: rgb(var(--primary-color));
   outline: none;
 }
@@ -233,7 +233,7 @@ watch(
 .tool-activity__summary-icon {
   flex: none;
   font-size: 14px;
-  color: rgba(var(--primary-color), 0.88);
+  color: rgb(var(--primary-color) / 0.88);
 }
 
 .tool-activity__summary-label {
@@ -307,11 +307,11 @@ watch(
   align-items: center;
   gap: 6px;
   margin-bottom: 6px;
-  border: 1px solid rgba(var(--primary-color), 0.2);
+  border: 1px solid rgb(var(--primary-color) / 0.2);
   border-radius: 999px;
-  background: rgba(var(--primary-color), 0.07);
+  background: rgb(var(--primary-color) / 0.07);
   padding: 4px 10px;
-  color: rgba(var(--base-text-color), 0.86);
+  color: rgb(var(--base-text-color) / 0.86);
   font-size: 12px;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
@@ -328,7 +328,7 @@ watch(
   flex: none;
   border-radius: 50%;
   background: rgb(var(--primary-color));
-  box-shadow: 0 0 6px rgba(var(--primary-color), 0.6);
+  box-shadow: 0 0 6px rgb(var(--primary-color) / 0.6);
   animation: tool-rail-pulse 1.5s ease-in-out infinite;
 }
 
@@ -364,7 +364,7 @@ watch(
   border-radius: 999px;
   background: linear-gradient(
     180deg,
-    rgba(var(--primary-color), 0.5) 0%,
+    rgb(var(--primary-color) / 0.5) 0%,
     rgba(8, 145, 178, 0.35) 55%,
     rgba(127, 127, 127, 0.16) 100%
   );

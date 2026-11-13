@@ -194,7 +194,7 @@ async function onContainerClick(event: MouseEvent) {
 }
 
 .markdown-renderer :deep(li::marker) {
-  color: rgba(var(--primary-color), 0.82);
+  color: rgb(var(--primary-color) / 0.82);
   font-weight: 600;
 }
 
@@ -203,9 +203,9 @@ async function onContainerClick(event: MouseEvent) {
   border-left: 3px solid transparent;
   border-image: linear-gradient(180deg, rgb(var(--primary-color)), #0891b2) 1;
   border-radius: 0 8px 8px 0;
-  background: linear-gradient(90deg, rgba(var(--primary-color), 0.07), rgba(127, 127, 127, 0.03));
+  background: linear-gradient(90deg, rgb(var(--primary-color) / 0.07), rgba(127, 127, 127, 0.03));
   padding: 0.5em 0.85em;
-  color: rgba(var(--base-text-color), 0.88);
+  color: rgb(var(--base-text-color) / 0.88);
 }
 
 .markdown-renderer :deep(hr) {
@@ -215,9 +215,9 @@ async function onContainerClick(event: MouseEvent) {
 }
 
 .markdown-renderer :deep(code) {
-  border: 1px solid rgba(var(--primary-color), 0.18);
+  border: 1px solid rgb(var(--primary-color) / 0.18);
   border-radius: 5px;
-  background: rgba(var(--primary-color), 0.08);
+  background: rgb(var(--primary-color) / 0.08);
   padding: 0.12em 0.4em;
   font-size: 0.875em;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
@@ -272,7 +272,7 @@ async function onContainerClick(event: MouseEvent) {
 }
 
 .markdown-renderer :deep(.md-code-block__dots i:first-child) {
-  background: rgba(var(--primary-color), 0.55);
+  background: rgb(var(--primary-color) / 0.55);
 }
 
 .markdown-renderer :deep(.md-code-block__dots i:nth-child(2)) {
@@ -297,7 +297,7 @@ async function onContainerClick(event: MouseEvent) {
   border-radius: 5px;
   background: rgb(var(--container-bg-color) / 80%);
   padding: 0 8px;
-  color: rgba(var(--base-text-color), 0.8);
+  color: rgb(var(--base-text-color) / 0.8);
   font-size: 11px;
   font-weight: 500;
   line-height: 1;
@@ -310,8 +310,8 @@ async function onContainerClick(event: MouseEvent) {
 
 .markdown-renderer :deep(.md-code-block__copy:hover),
 .markdown-renderer :deep(.md-code-block__copy:focus-visible) {
-  border-color: rgba(var(--primary-color), 0.5);
-  background: rgba(var(--primary-color), 0.1);
+  border-color: rgb(var(--primary-color) / 0.5);
+  background: rgb(var(--primary-color) / 0.1);
   color: rgb(var(--primary-color));
   outline: none;
 }
@@ -385,7 +385,7 @@ async function onContainerClick(event: MouseEvent) {
 }
 
 .markdown-renderer :deep(tbody tr:hover td) {
-  background: rgba(var(--primary-color), 0.04);
+  background: rgb(var(--primary-color) / 0.04);
 }
 
 .markdown-renderer :deep(a) {

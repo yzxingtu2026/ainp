@@ -461,7 +461,7 @@ function onConfirmationResolved(status: 'approved' | 'rejected', result?: Api.AI
     <template v-for="item in renderedItems" :key="item.key">
       <article v-if="item.kind === 'user'" class="message message--user">
         <div class="message__user-stack">
-          <div class="message__content message__user-bubble">
+          <div class="message__user-bubble">
             <MarkdownRenderer v-if="item.text" :content="item.text" />
 
             <div v-if="item.images.length > 0" class="user-attachments user-attachments--images">
@@ -773,7 +773,7 @@ function onConfirmationResolved(status: 'approved' | 'rejected', result?: Api.AI
 
 .message__user-stack {
   min-width: 0;
-  max-width: min(700px, 85%);
+  max-width: min(700px, calc(100% - 46px));
   display: flex;
   flex-direction: column;
   align-items: flex-end;
@@ -783,27 +783,27 @@ function onConfirmationResolved(status: 'approved' | 'rejected', result?: Api.AI
 .message__content {
   min-width: 0;
   max-width: min(760px, calc(100% - 46px));
-  overflow-wrap: anywhere;
-}
-
-.message__user-stack .message__content {
-  max-width: 100%;
+  overflow-wrap: break-word;
 }
 
 /* Asymmetric precision user capsule bubble */
 .message__user-bubble {
-  border: 1px solid rgba(var(--primary-color), 0.24);
+  width: fit-content;
+  max-width: 100%;
+  word-break: normal;
+  overflow-wrap: break-word;
+  border: 1px solid rgb(var(--primary-color) / 0.24);
   border-radius: 18px 18px 4px 18px;
-  background: linear-gradient(135deg, rgba(var(--primary-color), 0.13) 0%, rgba(8, 145, 178, 0.08) 100%);
+  background: linear-gradient(135deg, rgb(var(--primary-color) / 0.12) 0%, rgba(8, 145, 178, 0.07) 100%);
   box-shadow:
-    0 4px 14px rgba(var(--primary-color), 0.06),
-    inset 0 1px 0 rgba(255, 255, 255, 0.52);
-  padding: 10px 14px;
+    0 4px 14px rgb(var(--primary-color) / 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  padding: 10px 15px;
 }
 
 :where(.dark) .message__user-bubble {
-  border-color: rgba(var(--primary-color), 0.36);
-  background: linear-gradient(135deg, rgba(var(--primary-color), 0.24) 0%, rgba(34, 211, 238, 0.12) 100%);
+  border-color: rgb(var(--primary-color) / 0.36);
+  background: linear-gradient(135deg, rgb(var(--primary-color) / 0.24) 0%, rgba(34, 211, 238, 0.12) 100%);
   box-shadow:
     0 6px 18px rgba(0, 0, 0, 0.22),
     inset 0 1px 0 rgba(255, 255, 255, 0.08);
@@ -854,8 +854,8 @@ function onConfirmationResolved(status: 'approved' | 'rejected', result?: Api.AI
 
 .user-image-card:hover,
 .user-image-card:focus-visible {
-  border-color: rgba(var(--primary-color), 0.55);
-  box-shadow: 0 4px 12px rgba(var(--primary-color), 0.16);
+  border-color: rgb(var(--primary-color) / 0.55);
+  box-shadow: 0 4px 12px rgb(var(--primary-color) / 0.16);
   transform: translateY(-1px);
   outline: none;
 }
@@ -963,8 +963,8 @@ function onConfirmationResolved(status: 'approved' | 'rejected', result?: Api.AI
 
 .user-doc-chip--interactive:hover,
 .user-doc-chip--interactive:focus-visible {
-  border-color: rgba(var(--primary-color), 0.52);
-  box-shadow: 0 3px 10px rgba(var(--primary-color), 0.12);
+  border-color: rgb(var(--primary-color) / 0.52);
+  box-shadow: 0 3px 10px rgb(var(--primary-color) / 0.12);
   outline: none;
 }
 
@@ -975,7 +975,7 @@ function onConfirmationResolved(status: 'approved' | 'rejected', result?: Api.AI
   display: grid;
   place-items: center;
   border-radius: 7px;
-  background: rgba(var(--primary-color), 0.1);
+  background: rgb(var(--primary-color) / 0.1);
   color: rgb(var(--primary-color));
   font-size: 17px;
 }
@@ -1013,7 +1013,7 @@ function onConfirmationResolved(status: 'approved' | 'rejected', result?: Api.AI
 
 .user-doc-chip__preview {
   flex: none;
-  color: rgba(var(--primary-color), 0.85);
+  color: rgb(var(--primary-color) / 0.85);
   font-size: 15px;
 }
 
@@ -1039,8 +1039,8 @@ function onConfirmationResolved(status: 'approved' | 'rejected', result?: Api.AI
 }
 
 .message__assistant-avatar--live {
-  border-color: rgba(var(--primary-color), 0.38);
-  box-shadow: 0 0 12px rgba(var(--primary-color), 0.14);
+  border-color: rgb(var(--primary-color) / 0.38);
+  box-shadow: 0 0 12px rgb(var(--primary-color) / 0.14);
 }
 
 .assistant-panel {
@@ -1064,8 +1064,8 @@ function onConfirmationResolved(status: 'approved' | 'rejected', result?: Api.AI
 }
 
 .assistant-panel--live {
-  border-color: rgba(var(--primary-color), 0.32);
-  box-shadow: 0 4px 20px rgba(var(--primary-color), 0.06);
+  border-color: rgb(var(--primary-color) / 0.32);
+  box-shadow: 0 4px 20px rgb(var(--primary-color) / 0.06);
 }
 
 .assistant-panel__header {
@@ -1081,7 +1081,7 @@ function onConfirmationResolved(status: 'approved' | 'rejected', result?: Api.AI
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: rgba(var(--base-text-color), 0.72);
+  color: rgb(var(--base-text-color) / 0.72);
   font-size: 11.5px;
   font-weight: 620;
   letter-spacing: 0.01em;
@@ -1093,7 +1093,7 @@ function onConfirmationResolved(status: 'approved' | 'rejected', result?: Api.AI
   align-items: center;
   gap: 5px;
   border-radius: 999px;
-  background: rgba(var(--primary-color), 0.1);
+  background: rgb(var(--primary-color) / 0.1);
   padding: 2px 8px;
   color: rgb(var(--primary-color));
   font-size: 10.5px;
@@ -1181,14 +1181,14 @@ function onConfirmationResolved(status: 'approved' | 'rejected', result?: Api.AI
 }
 
 .turn-action-btn--primary {
-  border-color: rgba(var(--primary-color), 0.28);
-  background: rgba(var(--primary-color), 0.08);
+  border-color: rgb(var(--primary-color) / 0.28);
+  background: rgb(var(--primary-color) / 0.08);
   color: rgb(var(--primary-color));
 }
 
 .turn-action-btn--primary:hover:not(:disabled) {
-  border-color: rgba(var(--primary-color), 0.5);
-  background: rgba(var(--primary-color), 0.14);
+  border-color: rgb(var(--primary-color) / 0.5);
+  background: rgb(var(--primary-color) / 0.14);
   color: rgb(var(--primary-color));
 }
 
@@ -1212,7 +1212,7 @@ function onConfirmationResolved(status: 'approved' | 'rejected', result?: Api.AI
   display: grid;
   place-items: center;
   overflow: hidden;
-  border: 1px solid rgba(var(--primary-color), 0.2);
+  border: 1px solid rgb(var(--primary-color) / 0.2);
   border-radius: 50%;
   background: rgba(127, 127, 127, 0.14);
   color: rgba(127, 127, 127, 0.95);
@@ -1248,9 +1248,9 @@ function onConfirmationResolved(status: 'approved' | 'rejected', result?: Api.AI
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  border: 1px solid rgba(var(--primary-color), 0.22);
+  border: 1px solid rgb(var(--primary-color) / 0.22);
   border-radius: 999px;
-  background: rgba(var(--primary-color), 0.06);
+  background: rgb(var(--primary-color) / 0.06);
   padding: 6px 13px;
   overflow: hidden;
 }
@@ -1259,7 +1259,7 @@ function onConfirmationResolved(status: 'approved' | 'rejected', result?: Api.AI
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(100deg, transparent 25%, rgba(var(--primary-color), 0.1) 50%, transparent 75%);
+  background: linear-gradient(100deg, transparent 25%, rgb(var(--primary-color) / 0.1) 50%, transparent 75%);
   background-size: 220% 100%;
   animation: thinking-shimmer 2.4s linear infinite;
   pointer-events: none;
@@ -1277,7 +1277,7 @@ function onConfirmationResolved(status: 'approved' | 'rejected', result?: Api.AI
 .thinking-status__icon {
   display: inline-flex;
   flex: none;
-  color: rgba(var(--primary-color), 0.95);
+  color: rgb(var(--primary-color) / 0.95);
   font-size: 14px;
   animation: thinking-pulse 1.6s ease-in-out infinite;
 }
@@ -1301,7 +1301,7 @@ function onConfirmationResolved(status: 'approved' | 'rejected', result?: Api.AI
   gap: 6px;
   font-size: 12.5px;
   font-weight: 500;
-  color: rgba(var(--base-text-color), 0.86);
+  color: rgb(var(--base-text-color) / 0.86);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1313,8 +1313,8 @@ function onConfirmationResolved(status: 'approved' | 'rejected', result?: Api.AI
   line-height: 1;
   padding: 2px 6px;
   border-radius: 5px;
-  background: rgba(var(--primary-color), 0.12);
-  color: rgba(var(--primary-color), 1);
+  background: rgb(var(--primary-color) / 0.12);
+  color: rgb(var(--primary-color));
   max-width: 180px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1332,7 +1332,7 @@ function onConfirmationResolved(status: 'approved' | 'rejected', result?: Api.AI
   width: 5px;
   height: 5px;
   border-radius: 50%;
-  background: rgba(var(--primary-color), 0.78);
+  background: rgb(var(--primary-color) / 0.78);
   animation: thinking-bounce 1.2s ease-in-out infinite;
 }
 
