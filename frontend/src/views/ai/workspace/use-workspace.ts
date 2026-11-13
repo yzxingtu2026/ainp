@@ -27,10 +27,9 @@ import { isWorkspaceDocument } from './modules/document-attachment';
 import {
   PAGE_CAPTURE_EVENT_REQUESTED,
   PAGE_CAPTURE_EVENT_SETTLED,
-  parsePageCaptureRequestEvent,
-  renderBusinessMainContentFile,
-  uploadCapturedPageImage
+  parsePageCaptureRequestEvent
 } from './modules/page-capture';
+import { renderBusinessMainContentFile, uploadCapturedPageImage } from './modules/page-capture-render';
 
 export type WorkspaceStatus =
   | 'idle'

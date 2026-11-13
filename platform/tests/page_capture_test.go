@@ -26,11 +26,13 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/database"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
 	"github.com/yzxingtu2026/ainp/platform/framework/logging"
+	"github.com/yzxingtu2026/ainp/platform/framework/menu"
 	"github.com/yzxingtu2026/ainp/platform/framework/prompt"
 	"github.com/yzxingtu2026/ainp/platform/framework/runtimecontext"
 	"github.com/yzxingtu2026/ainp/platform/framework/storage"
 	tenantdata "github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"github.com/yzxingtu2026/ainp/platform/modules/ai"
+	"github.com/yzxingtu2026/ainp/platform/modules/ai/experience/navigation"
 	"github.com/yzxingtu2026/ainp/platform/modules/ai/experience/pagecapture"
 	"github.com/yzxingtu2026/ainp/platform/modules/ai/tooling"
 	"github.com/yzxingtu2026/ainp/platform/modules/system"
@@ -290,6 +292,19 @@ func TestPageCaptureFulfillmentLoopIdempotencyTimeoutIsolationBudgetAndRedaction
 	if err := db.Exec(string(migrationSQL)).Error; err != nil {
 		t.Fatalf("0070 migration idempotency failed: %v", err)
 	}
+	// 0071 repairs the AutoMigrate-built single-column tenant index. On this
+	// AutoMigrate schema the index is already (tenant_id, id), so it must be a
+	// safe no-op and remain idempotent.
+	fixSQL, err := os.ReadFile("../migrations/0071_fix_page_capture_requests_tenant_unique_index.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(string(fixSQL)).Error; err != nil {
+		t.Fatalf("0071 migration failed: %v", err)
+	}
+	if err := db.Exec(string(fixSQL)).Error; err != nil {
+		t.Fatalf("0071 migration idempotency failed: %v", err)
+	}
 
 	var logBuf bytes.Buffer
 	prevLogger := slog.Default()
@@ -356,7 +371,11 @@ func TestPageCaptureFulfillmentLoopIdempotencyTimeoutIsolationBudgetAndRedaction
 	runtimeSvc.SetAgentContracts(contracts)
 	runtimeSvc.SetPageCaptureDependencies(attSvc, attSvc)
 
-	if err := tooling.RegisterBuiltins(toolRegistry, pagecapture.New(resolver, runtimeSvc.LookupRunModelAlias)); err != nil {
+	if err := tooling.RegisterBuiltins(toolRegistry,
+		navigation.New(menu.NewRegistry()),
+		navigation.NewHelp(menu.NewRegistry(), menu.NewHelpRegistry()),
+		pagecapture.New(resolver, runtimeSvc.LookupRunModelAlias),
+	); err != nil {
 		t.Fatal(err)
 	}
 	metaDefs := []aitool.Definition{
@@ -377,7 +396,7 @@ func TestPageCaptureFulfillmentLoopIdempotencyTimeoutIsolationBudgetAndRedaction
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := fixtureDB.Exec(`INSERT INTO tenants (id, code, name, status, created_at, updated_at) VALUES ('tenant-a', 'ta', 'Tenant A', 'enabled', now(), now()), ('tenant-b', 'tb', 'Tenant B', 'enabled', now(), now())`).Error; err != nil {
+	if err := fixtureDB.Exec(`INSERT INTO tenants (id, name, status, created_at, updated_at) VALUES ('tenant-a', 'Tenant A', 'enabled', now(), now()), ('tenant-b', 'Tenant B', 'enabled', now(), now())`).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := agentSvc.ReconcileBuiltinForTenant(context.Background(), db, "tenant-a", "user-a"); err != nil {
@@ -622,7 +641,7 @@ func TestPageCaptureFulfillmentLoopIdempotencyTimeoutIsolationBudgetAndRedaction
 				t.Fatalf("canonical message leaked forbidden field %q: %s", forbidden, raw)
 			}
 		}
-		if item.Role == "tool" && strings.Contains(raw, completedAtt.ID) && strings.Contains(raw, `"capture_status":"ready"`) {
+		if item.Role == "tool" && strings.Contains(raw, completedAtt.ID) && toolResultHasReadyCaptureStatus(item.Content) {
 			foundToolResult = true
 		}
 	}
@@ -763,4 +782,98 @@ func TestPageCaptureFulfillmentLoopIdempotencyTimeoutIsolationBudgetAndRedaction
 	}) {
 		t.Fatalf("assembled manifest missing captured image reference: %#v", assembled.AttachmentManifest)
 	}
+}
+
+// TestPageCaptureRequestTenantUniqueIndexRepairPostgres reproduces the buggy
+// AutoMigrate output (a single-column UNIQUE(tenant_id) index) that made every
+// second same-tenant capture request fail with 23505, then verifies migration
+// 0071 restores the (tenant_id, id) definition and stays idempotent.
+func TestPageCaptureRequestTenantUniqueIndexRepairPostgres(t *testing.T) {
+	dsn := os.Getenv("AINP_TEST_DATABASE_DSN")
+	if dsn == "" {
+		t.Skip("AINP_TEST_DATABASE_DSN is not set")
+	}
+	admin, err := database.Open(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	schema := "ainp_page_capture_idx_" + strings.ReplaceAll(uuid.NewString()[:8], "-", "")
+	if err := admin.Exec(fmt.Sprintf(`CREATE SCHEMA %q`, schema)).Error; err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = admin.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE`, schema)).Error })
+	db, err := database.Open(dsn + " search_path=" + schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := system.AutoMigrate(db); err != nil {
+		t.Fatal(err)
+	}
+	if err := ai.AutoMigrate(db); err != nil {
+		t.Fatal(err)
+	}
+
+	insertCapture := func(id, invocationID string) error {
+		return db.Exec(`INSERT INTO ai_page_capture_requests
+(id, tenant_id, principal_id, auth_version, run_id, step_id, scope_id, invocation_id, tool_call_id, tool_id, status, expires_at, created_at, updated_at)
+VALUES (?, 'tenant-a', 'principal-a', 1, 'run-a', 'step-a', 'scope-a', ?, 'call-a', 'builtin__page_capture', 'pending', now() + interval '1 minute', now(), now())`, id, invocationID).Error
+	}
+
+	// Reproduce the pre-fix AutoMigrate index: single-column UNIQUE(tenant_id).
+	if err := db.Exec(`DROP INDEX IF EXISTS ux_ai_page_capture_requests_tenant_id`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`CREATE UNIQUE INDEX ux_ai_page_capture_requests_tenant_id ON ai_page_capture_requests (tenant_id)`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := insertCapture("cap-1", "inv-1"); err != nil {
+		t.Fatalf("first insert under the bad index should succeed: %v", err)
+	}
+	if err := insertCapture("cap-2", "inv-2"); err == nil {
+		t.Fatal("second same-tenant insert must fail under the bad single-column unique index")
+	}
+
+	applyTestMigration(t, db, "0071_fix_page_capture_requests_tenant_unique_index.sql")
+	if err := insertCapture("cap-2", "inv-2"); err != nil {
+		t.Fatalf("second same-tenant insert must succeed after 0071 repair: %v", err)
+	}
+
+	// Idempotent rerun must keep the repaired definition without error.
+	applyTestMigration(t, db, "0071_fix_page_capture_requests_tenant_unique_index.sql")
+
+	var indexDef string
+	if err := db.Raw(`SELECT indexdef FROM pg_indexes WHERE schemaname = current_schema() AND indexname = 'ux_ai_page_capture_requests_tenant_id'`).Scan(&indexDef).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(indexDef, "tenant_id, id") {
+		t.Fatalf("repaired index must be (tenant_id, id), got: %s", indexDef)
+	}
+}
+
+// toolResultHasReadyCaptureStatus parses canonical message content parts and reports
+// whether any tool_result carries data.capture_status == "ready". It decodes the JSON
+// structurally because the content is stored in a jsonb column, which PostgreSQL
+// re-renders with its own whitespace on read-back; compact string matching is unreliable.
+func toolResultHasReadyCaptureStatus(content json.RawMessage) bool {
+	var parts []aimodelruntime.ContentPart
+	if err := json.Unmarshal(content, &parts); err != nil {
+		return false
+	}
+	for _, part := range parts {
+		if part.Type != aimodelruntime.PartToolResult || len(part.Result) == 0 {
+			continue
+		}
+		var result struct {
+			Data struct {
+				CaptureStatus string `json:"capture_status"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(part.Result, &result); err != nil {
+			continue
+		}
+		if result.Data.CaptureStatus == "ready" {
+			return true
+		}
+	}
+	return false
 }

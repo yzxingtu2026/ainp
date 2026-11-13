@@ -6,8 +6,8 @@ import (
 )
 
 type AgentRun struct {
-	ID                             string          `gorm:"primaryKey;size:64" json:"id"`
-	TenantID                       string          `gorm:"size:64;not null;uniqueIndex:ux_ai_run_idem,priority:1;index:idx_ai_run_list,priority:1" json:"-"`
+	ID                             string          `gorm:"primaryKey;size:64;uniqueIndex:ux_ai_agent_runs_tenant_id,priority:2" json:"id"`
+	TenantID                       string          `gorm:"size:64;not null;uniqueIndex:ux_ai_agent_runs_tenant_id,priority:1;uniqueIndex:ux_ai_run_idem,priority:1;index:idx_ai_run_list,priority:1" json:"-"`
 	UserID                         string          `gorm:"size:64;not null;uniqueIndex:ux_ai_run_idem,priority:2;index:idx_ai_run_list,priority:2" json:"user_id"`
 	PrincipalKind                  string          `gorm:"size:128;not null;default:'ainp.account';uniqueIndex:ux_ai_run_idem,priority:4" json:"-"`
 	ClientSurface                  string          `gorm:"size:128;not null;default:''" json:"-"`
@@ -68,8 +68,8 @@ type AgentRun struct {
 func (AgentRun) TableName() string { return "ai_agent_runs" }
 
 type AgentStep struct {
-	ID                string          `gorm:"primaryKey;size:64" json:"id"`
-	TenantID          string          `gorm:"size:64;not null;uniqueIndex:ux_ai_step_index,priority:1" json:"-"`
+	ID                string          `gorm:"primaryKey;size:64;uniqueIndex:ux_ai_agent_steps_tenant_id,priority:2" json:"id"`
+	TenantID          string          `gorm:"size:64;not null;uniqueIndex:ux_ai_agent_steps_tenant_id,priority:1;uniqueIndex:ux_ai_step_index,priority:1" json:"-"`
 	RunID             string          `gorm:"size:64;not null;uniqueIndex:ux_ai_step_index,priority:2;index" json:"run_id"`
 	StepIndex         int             `gorm:"not null;uniqueIndex:ux_ai_step_index,priority:3" json:"step_index"`
 	Type              string          `gorm:"size:32;not null" json:"type"`
@@ -112,7 +112,7 @@ const (
 )
 
 type PageCaptureRequest struct {
-	ID                 string          `gorm:"primaryKey;size:64" json:"id"`
+	ID                 string          `gorm:"primaryKey;size:64;uniqueIndex:ux_ai_page_capture_requests_tenant_id,priority:2" json:"id"`
 	TenantID           string          `gorm:"size:64;not null;uniqueIndex:ux_ai_page_capture_requests_tenant_id,priority:1;uniqueIndex:ux_ai_page_capture_requests_invocation,priority:1;index:idx_ai_page_capture_requests_run_status,priority:1" json:"-"`
 	PrincipalID        string          `gorm:"size:64;not null;index" json:"-"`
 	PrincipalKind      string          `gorm:"size:128;not null;default:'ainp.account'" json:"-"`

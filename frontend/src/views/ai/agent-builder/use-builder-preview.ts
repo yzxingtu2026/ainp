@@ -14,12 +14,8 @@ import {
 } from '@/service/api';
 import { agentRunEventDelta, subscribeAgentRun } from '@/service/ai-run-stream';
 import { getStandaloneErrorMessage, isRequestError } from '@/service/request';
-import {
-  PAGE_CAPTURE_EVENT_REQUESTED,
-  parsePageCaptureRequestEvent,
-  renderBusinessMainContentFile,
-  uploadCapturedPageImage
-} from '../workspace/modules/page-capture';
+import { PAGE_CAPTURE_EVENT_REQUESTED, parsePageCaptureRequestEvent } from '../workspace/modules/page-capture';
+import { renderBusinessMainContentFile, uploadCapturedPageImage } from '../workspace/modules/page-capture-render';
 
 export type BuilderPreviewStatus =
   | 'idle'

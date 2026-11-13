@@ -57,8 +57,8 @@ type ToolSearchDocument struct {
 func (ToolSearchDocument) TableName() string { return "ai_tool_search_documents" }
 
 type ToolScope struct {
-	ID                      string          `gorm:"primaryKey;size:64" json:"id"`
-	TenantID                string          `gorm:"size:64;not null;index" json:"-"`
+	ID                      string          `gorm:"primaryKey;size:64;uniqueIndex:ux_ai_tool_scopes_tenant_id,priority:2" json:"id"`
+	TenantID                string          `gorm:"size:64;not null;index;uniqueIndex:ux_ai_tool_scopes_tenant_id,priority:1" json:"-"`
 	PrincipalID             string          `gorm:"size:64;not null;index" json:"-"`
 	PrincipalKind           string          `gorm:"size:128;not null;default:'ainp.account'" json:"-"`
 	ClientSurface           string          `gorm:"size:128;not null;default:''" json:"-"`
@@ -160,8 +160,8 @@ func (c *ToolConfirmation) AfterFind(*gorm.DB) error {
 }
 
 type ToolInvocation struct {
-	ID             string          `gorm:"primaryKey;size:64" json:"id"`
-	TenantID       string          `gorm:"size:64;not null;index" json:"-"`
+	ID             string          `gorm:"primaryKey;size:64;uniqueIndex:ux_ai_tool_invocations_tenant_id,priority:2" json:"id"`
+	TenantID       string          `gorm:"size:64;not null;index;uniqueIndex:ux_ai_tool_invocations_tenant_id,priority:1" json:"-"`
 	PrincipalID    string          `gorm:"size:64;not null;index" json:"-"`
 	ScopeID        string          `gorm:"size:64;not null;index" json:"scope_id"`
 	AgentRunID     *string         `gorm:"size:64" json:"agent_run_id,omitempty"`
