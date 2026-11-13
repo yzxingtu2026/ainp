@@ -90,6 +90,7 @@ declare namespace Api.AI {
   interface AgentDiagnostics {
     healthy: boolean;
     issues: AgentDiagnosticIssue[];
+    warnings?: AgentDiagnosticIssue[];
   }
   interface AgentSlot {
     key: string;
@@ -112,6 +113,7 @@ declare namespace Api.AI {
     source: 'user' | 'tenant' | 'builtin';
     healthy: boolean;
     diagnostics: AgentDiagnosticIssue[];
+    warnings?: AgentDiagnosticIssue[];
     binding_revision?: number;
     preference_revision?: number;
   }
@@ -283,6 +285,18 @@ declare namespace Api.AI {
     items: AgentRunEvent[];
     next_sequence: number;
     has_more: boolean;
+  }
+  interface PageCaptureSubmitPayload {
+    capture_request_id: string;
+    status?: 'completed' | 'failed';
+    attachment_id?: string;
+    attachment_revision?: string;
+    failure_reason?: 'render_failed' | 'upload_failed' | 'unavailable' | 'cancelled';
+  }
+  interface PageCaptureSubmitResponse {
+    capture_request_id: string;
+    run_id: string;
+    status: string;
   }
   type Status = 'enabled' | 'disabled';
   interface Provider {

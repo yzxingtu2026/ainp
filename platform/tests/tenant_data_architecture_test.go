@@ -36,6 +36,7 @@ var tenantModelClassifications = map[string]tenantModelClassification{
 	"modules/ai/conversation/runtime_model.go:AgentRun":                                {Registered: true},
 	"modules/ai/conversation/runtime_model.go:AgentRunEvent":                           {Registered: true},
 	"modules/ai/conversation/runtime_model.go:AgentStep":                               {Registered: true},
+	"modules/ai/conversation/runtime_model.go:PageCaptureRequest":                      {Registered: true},
 	"modules/ai/agent/slot_model.go:AgentSlotBinding":                                  {Registered: true},
 	"modules/ai/agent/slot_model.go:AgentSlotPreference":                               {Registered: true},
 	"modules/ai/conversation/model.go:AssistantStream":                                 {Registered: true},

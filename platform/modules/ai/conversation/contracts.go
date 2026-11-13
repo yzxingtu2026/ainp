@@ -17,6 +17,11 @@ const (
 	ActionAgentRunRetry     = "ai.agent_run_retry"
 	ActionAgentRunEvents    = "ai.agent_run_events"
 	ActionAgentRunSubscribe = "ai.agent_run_subscribe"
+	ActionPageCaptureSubmit = "ai.page_capture_submit"
+
+	PageCaptureAttachmentResourceType = "ai.page_capture"
+	PageCaptureAttachmentField        = "capture"
+	PageCaptureFulfillmentKind        = "page.capture"
 
 	AgentRunTerminalEvent = aiagentruntime.EventRunTerminal
 )

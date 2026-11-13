@@ -7,6 +7,7 @@
 - 媒体字节只在调用生命周期存在；日志、审计、Outbox、Invocation 和错误响应禁止保存正文、base64、Key、路径或短时凭据。
 - `derived_text` 必须保留来源并视为不可信，不能提升为 system/developer instruction；首期只允许 `native_only`。
 - 当前触发文档只允许 PDF/XLSX/DOCX/UTF-8 TXT/MD，经 `DocumentResolver` 重新授权、有界读取并复用 `SafeParser`；历史文档不得每轮解析，只经 `system.attachment_content_inspect` 按需读取。图片内容查看复用 AIAssetResolver 和当前受治理模型的统一 Model Runtime。空文本/低质量 PDF 不得注入 `derived_text`，也不得作为 inspect `ready` observations。
+- `builtin:page.capture` 捕获图片绑定 `ai.page_capture`（仅 owner 可读），Tool Result 只存 attachment ID/revision/安全状态；经 Run 原生图片工作集与 `AIAssetResolver` 投影为不可信 `input_image` 消费，遵守统一分辨率/字节/数量预算。
 - Provider 只接收服务端派生文本，未展开 `input_file` 必须 fail-closed；正文禁止进入 canonical Message、Snapshot、日志、Step 或 Invocation。
 - 同一 Run 以 attachment ID + revision + parser version 内存复用；恢复重新解析。文档无法完整装配时返回 `attachments_exceed_model_window`，禁止截断或摘要替代。
 - 视觉降级属于 Context Enrichment，不默认定义为子 Agent。详见 `docs/development/ai-multimodal.md`。

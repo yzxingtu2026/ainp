@@ -1,15 +1,15 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from "vue";
-import { useRouter } from "vue-router";
-import { useAppStore } from "@/store/modules/app";
-import { useAiAssistantStore } from "@/store/modules/ai-assistant";
-import { useRouteStore } from "@/store/modules/route";
-import { useThemeStore } from "@/store/modules/theme";
-import { useAiConversationController } from "@/views/ai/workspace/use-workspace";
-import ConversationPanel from "@/views/ai/workspace/modules/conversation-panel.vue";
-import { $t } from "@/locales";
+import { computed, nextTick, ref, watch } from 'vue';
+import { useRouter } from 'vue-router';
+import { useAppStore } from '@/store/modules/app';
+import { useAiAssistantStore } from '@/store/modules/ai-assistant';
+import { useRouteStore } from '@/store/modules/route';
+import { useThemeStore } from '@/store/modules/theme';
+import { useAiConversationController } from '@/views/ai/workspace/use-workspace';
+import ConversationPanel from '@/views/ai/workspace/modules/conversation-panel.vue';
+import { $t } from '@/locales';
 
-defineOptions({ name: "GlobalAiAssistant" });
+defineOptions({ name: 'GlobalAiAssistant' });
 
 const appStore = useAppStore();
 const store = useAiAssistantStore();
@@ -19,36 +19,34 @@ const router = useRouter();
 const controller = useAiConversationController();
 const panel = ref<HTMLElement | null>(null);
 const renameVisible = ref(false);
-const renameTitle = ref("");
+const renameTitle = ref('');
 const renameTarget = ref<Api.AI.Conversation | null>(null);
 const docked = computed(() => !appStore.isMobile);
-const agentName = computed(
-  () => controller.slot.value?.agent?.name || $t("page.aiWorkspace.assistant"),
-);
+const agentName = computed(() => controller.slot.value?.agent?.name || $t('page.aiWorkspace.assistant'));
 const healthy = computed(() => Boolean(controller.slot.value?.healthy));
 
 watch(
   () => store.visible,
-  (visible) => {
+  visible => {
     if (visible) void nextTick(() => panel.value?.focus());
-  },
+  }
 );
 
 watch(
   () => routeStore.globalAiLauncherRoute,
-  (route) => {
+  route => {
     if (!route) store.resetStore();
-  },
+  }
 );
 
 function chooseConversation(item: Api.AI.Conversation) {
   void controller.selectConversation(item);
-  store.show("conversation");
+  store.show('conversation');
 }
 
 function newConversation() {
   controller.newConversation();
-  store.show("conversation");
+  store.show('conversation');
 }
 
 function openRename(item: Api.AI.Conversation) {
@@ -59,15 +57,12 @@ function openRename(item: Api.AI.Conversation) {
 
 async function confirmRename() {
   if (!renameTarget.value || !renameTitle.value.trim()) return;
-  await controller.renameConversation(
-    renameTarget.value,
-    renameTitle.value.trim(),
-  );
+  await controller.renameConversation(renameTarget.value, renameTitle.value.trim());
   renameVisible.value = false;
 }
 
 function expandWorkspace() {
-  const target = routeStore.globalAiLauncherRoute?.path || "/ai/workspace";
+  const target = routeStore.globalAiLauncherRoute?.path || '/ai/workspace';
   store.close();
   void router.push(target);
 }
@@ -79,6 +74,7 @@ function expandWorkspace() {
       <aside
         v-if="store.visible"
         ref="panel"
+        data-ainp-ai-assistant="true"
         class="global-ai-assistant"
         :class="{ 'global-ai-assistant--docked': docked }"
         tabindex="-1"
@@ -92,15 +88,8 @@ function expandWorkspace() {
           <div class="min-w-0 flex-1">
             <div class="truncate text-14px font-650">{{ agentName }}</div>
             <div class="flex-y-center gap-5px text-11px text-gray-500">
-              <span
-                class="global-ai-assistant__health"
-                :class="{ 'global-ai-assistant__health--ok': healthy }"
-              ></span>
-              {{
-                healthy
-                  ? $t("page.aiWorkspace.readyShort")
-                  : $t("page.aiWorkspace.unavailable")
-              }}
+              <span class="global-ai-assistant__health" :class="{ 'global-ai-assistant__health--ok': healthy }"></span>
+              {{ healthy ? $t('page.aiWorkspace.readyShort') : $t('page.aiWorkspace.unavailable') }}
             </div>
           </div>
           <NTooltip>
@@ -114,7 +103,7 @@ function expandWorkspace() {
                 <SvgIcon icon="mdi:plus" />
               </button>
             </template>
-            {{ $t("page.aiWorkspace.newConversation") }}
+            {{ $t('page.aiWorkspace.newConversation') }}
           </NTooltip>
           <NTooltip>
             <template #trigger>
@@ -127,7 +116,7 @@ function expandWorkspace() {
                 <SvgIcon icon="mdi:history" />
               </button>
             </template>
-            {{ $t("page.aiWorkspace.openConversations") }}
+            {{ $t('page.aiWorkspace.openConversations') }}
           </NTooltip>
           <NTooltip>
             <template #trigger>
@@ -140,7 +129,7 @@ function expandWorkspace() {
                 <SvgIcon icon="mdi:timeline-clock-outline" />
               </button>
             </template>
-            {{ $t("page.aiWorkspace.runDetails") }}
+            {{ $t('page.aiWorkspace.runDetails') }}
           </NTooltip>
           <NTooltip>
             <template #trigger>
@@ -153,7 +142,7 @@ function expandWorkspace() {
                 <SvgIcon icon="mdi:arrow-expand" />
               </button>
             </template>
-            {{ $t("page.aiWorkspace.expandWorkspace") }}
+            {{ $t('page.aiWorkspace.expandWorkspace') }}
           </NTooltip>
           <NTooltip>
             <template #trigger>
@@ -166,21 +155,15 @@ function expandWorkspace() {
                 <SvgIcon icon="mdi:close" />
               </button>
             </template>
-            {{ $t("common.close") }}
+            {{ $t('common.close') }}
           </NTooltip>
         </header>
 
-        <div
-          v-if="store.view === 'conversation'"
-          class="global-ai-assistant__body"
-        >
+        <div v-if="store.view === 'conversation'" class="global-ai-assistant__body">
           <AiConversationSurface density="sidebar" />
         </div>
 
-        <div
-          v-else-if="store.view === 'history'"
-          class="global-ai-assistant__secondary"
-        >
+        <div v-else-if="store.view === 'history'" class="global-ai-assistant__secondary">
           <div class="global-ai-assistant__secondary-title">
             <button
               class="global-ai-assistant__tool"
@@ -190,7 +173,7 @@ function expandWorkspace() {
             >
               <SvgIcon icon="mdi:arrow-left" />
             </button>
-            <strong>{{ $t("page.aiWorkspace.openConversations") }}</strong>
+            <strong>{{ $t('page.aiWorkspace.openConversations') }}</strong>
           </div>
           <ConversationPanel
             :active="controller.activeConversations.value"
@@ -214,39 +197,30 @@ function expandWorkspace() {
             >
               <SvgIcon icon="mdi:arrow-left" />
             </button>
-            <strong>{{ $t("page.aiWorkspace.runDetails") }}</strong>
+            <strong>{{ $t('page.aiWorkspace.runDetails') }}</strong>
           </div>
           <div class="global-ai-assistant__run">
-            <NEmpty
-              v-if="!controller.runDetail.value"
-              :description="$t('page.aiWorkspace.noRun')"
-            />
+            <NEmpty v-if="!controller.runDetail.value" :description="$t('page.aiWorkspace.noRun')" />
             <template v-else>
               <NDescriptions :column="1" bordered size="small">
                 <NDescriptionsItem :label="$t('page.aiWorkspace.status')">
                   <AgentRunStatus :run="controller.runDetail.value.run" />
                 </NDescriptionsItem>
-                <NDescriptionsItem :label="$t('page.aiWorkspace.steps')">{{
-                  controller.runDetail.value.run.current_step
-                }}</NDescriptionsItem>
-                <NDescriptionsItem :label="$t('page.aiWorkspace.modelCalls')">{{
-                  controller.runDetail.value.run.model_calls
-                }}</NDescriptionsItem>
-                <NDescriptionsItem :label="$t('page.aiWorkspace.toolCalls')">{{
-                  controller.runDetail.value.run.tool_calls
-                }}</NDescriptionsItem>
+                <NDescriptionsItem :label="$t('page.aiWorkspace.steps')">
+                  {{ controller.runDetail.value.run.current_step }}
+                </NDescriptionsItem>
+                <NDescriptionsItem :label="$t('page.aiWorkspace.modelCalls')">
+                  {{ controller.runDetail.value.run.model_calls }}
+                </NDescriptionsItem>
+                <NDescriptionsItem :label="$t('page.aiWorkspace.toolCalls')">
+                  {{ controller.runDetail.value.run.tool_calls }}
+                </NDescriptionsItem>
               </NDescriptions>
               <NTimeline class="mt-18px">
                 <NTimelineItem
                   v-for="step in controller.runDetail.value.steps"
                   :key="step.id"
-                  :type="
-                    step.status === 'failed'
-                      ? 'error'
-                      : step.status === 'completed'
-                        ? 'success'
-                        : 'info'
-                  "
+                  :type="step.status === 'failed' ? 'error' : step.status === 'completed' ? 'success' : 'info'"
                   :title="step.type"
                   :content="step.status"
                   :time="step.started_at || step.created_at"
@@ -264,11 +238,7 @@ function expandWorkspace() {
           :negative-text="$t('common.cancel')"
           @positive-click="confirmRename"
         >
-          <NInput
-            v-model:value="renameTitle"
-            maxlength="256"
-            @keyup.enter="confirmRename"
-          />
+          <NInput v-model:value="renameTitle" maxlength="256" @keyup.enter="confirmRename" />
         </NModal>
       </aside>
     </Transition>

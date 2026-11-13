@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/yzxingtu2026/ainp/platform/framework/database"
 	"github.com/yzxingtu2026/ainp/platform/migrations"
+	"github.com/yzxingtu2026/ainp/platform/modules/ai"
 	"github.com/yzxingtu2026/ainp/platform/modules/system"
 )
 
@@ -49,8 +50,14 @@ func TestWebSocketHandshakeMigrationThenAutoMigratePostgres(t *testing.T) {
 	}
 
 	// Build the pre-0067 installed schema, then exercise the published SQL
-	// migration path before running the startup AutoMigrate path.
+	// migration path before running the startup AutoMigrate path. A real v66
+	// install already carries the AI runtime tables (migrations 0016/0021), which
+	// later migrations such as 0070 reference via composite foreign keys, so the
+	// simulated schema must include them too.
 	if err = system.AutoMigrate(db); err != nil {
+		t.Fatal(err)
+	}
+	if err = ai.AutoMigrate(db); err != nil {
 		t.Fatal(err)
 	}
 	if err = db.Migrator().DropTable("auth_websocket_handshake_grants"); err != nil {

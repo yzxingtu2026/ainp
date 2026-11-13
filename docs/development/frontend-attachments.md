@@ -15,7 +15,7 @@
 - Action：`src/service/api/attachment.ts`
 - 二进制传输：`src/service/attachment/transfer.ts`（PUT/GET + 短时 token；支持上传进度与 AbortSignal）
 - 类型：`src/typings/api/attachment.d.ts`（含 `thumb_status`、`DownloadVariant`）
-- 资源常量：`src/constants/attachment.ts` 的 `ATTACHMENT_RESOURCE_TYPES`（禁止任意字符串）
+- 资源常量：`src/constants/attachment.ts` 的 `ATTACHMENT_RESOURCE_TYPES`（含 `demo.task`、`ai.agent`、`ai.page_capture`、`system.account_profile`，禁止任意字符串）
 
 流程：`upload_prepare` → raw `putAttachmentTransfer` 或小程序 multipart Adapter；`download_prepare({ variant })` → `getAttachmentTransferBlob`。Web/Vue 缺省 `transport=raw`，保持现有 PUT 行为；小程序必须显式请求 `transport=multipart`，并使用响应中的 `method=POST` 与 `field_name=file`。重试必须重新 prepare，禁止重放一次性 upload token。
 

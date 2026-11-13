@@ -6,8 +6,8 @@ import (
 )
 
 type AgentRun struct {
-	ID                             string          `gorm:"primaryKey;size:64" json:"id"`
-	TenantID                       string          `gorm:"size:64;not null;uniqueIndex:ux_ai_run_idem,priority:1;index:idx_ai_run_list,priority:1" json:"-"`
+	ID                             string          `gorm:"primaryKey;size:64;uniqueIndex:ux_ai_agent_runs_tenant_id,priority:2" json:"id"`
+	TenantID                       string          `gorm:"size:64;not null;uniqueIndex:ux_ai_agent_runs_tenant_id,priority:1;uniqueIndex:ux_ai_run_idem,priority:1;index:idx_ai_run_list,priority:1" json:"-"`
 	UserID                         string          `gorm:"size:64;not null;uniqueIndex:ux_ai_run_idem,priority:2;index:idx_ai_run_list,priority:2" json:"user_id"`
 	PrincipalKind                  string          `gorm:"size:128;not null;default:'ainp.account';uniqueIndex:ux_ai_run_idem,priority:4" json:"-"`
 	ClientSurface                  string          `gorm:"size:128;not null;default:''" json:"-"`
@@ -68,8 +68,8 @@ type AgentRun struct {
 func (AgentRun) TableName() string { return "ai_agent_runs" }
 
 type AgentStep struct {
-	ID                string          `gorm:"primaryKey;size:64" json:"id"`
-	TenantID          string          `gorm:"size:64;not null;uniqueIndex:ux_ai_step_index,priority:1" json:"-"`
+	ID                string          `gorm:"primaryKey;size:64;uniqueIndex:ux_ai_agent_steps_tenant_id,priority:2" json:"id"`
+	TenantID          string          `gorm:"size:64;not null;uniqueIndex:ux_ai_agent_steps_tenant_id,priority:1;uniqueIndex:ux_ai_step_index,priority:1" json:"-"`
 	RunID             string          `gorm:"size:64;not null;uniqueIndex:ux_ai_step_index,priority:2;index" json:"run_id"`
 	StepIndex         int             `gorm:"not null;uniqueIndex:ux_ai_step_index,priority:3" json:"step_index"`
 	Type              string          `gorm:"size:32;not null" json:"type"`
@@ -101,3 +101,41 @@ type AgentRunEvent struct {
 }
 
 func (AgentRunEvent) TableName() string { return "ai_agent_run_events" }
+
+const (
+	PageCapturePending   = "pending"
+	PageCaptureSubmitted = "submitted"
+	PageCaptureConsumed  = "consumed"
+	PageCaptureFailed    = "failed"
+	PageCaptureExpired   = "expired"
+	PageCaptureCancelled = "cancelled"
+)
+
+type PageCaptureRequest struct {
+	ID                 string          `gorm:"primaryKey;size:64;uniqueIndex:ux_ai_page_capture_requests_tenant_id,priority:2" json:"id"`
+	TenantID           string          `gorm:"size:64;not null;uniqueIndex:ux_ai_page_capture_requests_tenant_id,priority:1;uniqueIndex:ux_ai_page_capture_requests_invocation,priority:1;index:idx_ai_page_capture_requests_run_status,priority:1" json:"-"`
+	PrincipalID        string          `gorm:"size:64;not null;index" json:"-"`
+	PrincipalKind      string          `gorm:"size:128;not null;default:'ainp.account'" json:"-"`
+	ClientSurface      string          `gorm:"size:128;not null;default:''" json:"-"`
+	Audience           string          `gorm:"size:255;not null;default:''" json:"-"`
+	SessionID          string          `gorm:"size:64;not null;default:''" json:"-"`
+	AuthVersion        uint64          `gorm:"not null" json:"-"`
+	RunID              string          `gorm:"size:64;not null;index:idx_ai_page_capture_requests_run_status,priority:2" json:"run_id"`
+	StepID             string          `gorm:"size:64;not null" json:"step_id"`
+	ScopeID            string          `gorm:"size:64;not null" json:"scope_id"`
+	InvocationID       string          `gorm:"size:64;not null;uniqueIndex:ux_ai_page_capture_requests_invocation,priority:2" json:"invocation_id"`
+	ToolCallID         string          `gorm:"size:128;not null" json:"tool_call_id"`
+	ToolID             string          `gorm:"size:255;not null" json:"tool_id"`
+	ParametersJSON     json.RawMessage `gorm:"type:jsonb;not null;default:'{}'" json:"parameters,omitempty"`
+	Status             string          `gorm:"size:24;not null;index:idx_ai_page_capture_requests_run_status,priority:3;check:ck_ai_page_capture_requests_status,status IN ('pending','submitted','consumed','failed','expired','cancelled')" json:"status"`
+	AttachmentID       *string         `gorm:"size:64" json:"attachment_id,omitempty"`
+	AttachmentRevision string          `gorm:"size:128;not null;default:''" json:"attachment_revision,omitempty"`
+	ErrorCategory      string          `gorm:"size:64;not null;default:''" json:"error_category,omitempty"`
+	ExpiresAt          time.Time       `gorm:"not null" json:"expires_at"`
+	SubmittedAt        *time.Time      `json:"submitted_at,omitempty"`
+	ConsumedAt         *time.Time      `json:"consumed_at,omitempty"`
+	CreatedAt          time.Time       `gorm:"index:idx_ai_page_capture_requests_run_status,priority:4" json:"created_at"`
+	UpdatedAt          time.Time       `json:"updated_at"`
+}
+
+func (PageCaptureRequest) TableName() string { return "ai_page_capture_requests" }

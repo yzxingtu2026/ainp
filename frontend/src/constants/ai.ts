@@ -47,7 +47,8 @@ export const AI_ACTIONS = {
   knowledgeCitationResolve: 'ai.knowledge_citation_resolve',
   agentKnowledgeList: 'ai.agent_knowledge_list',
   agentKnowledgeBind: 'ai.agent_knowledge_bind',
-  agentKnowledgeUnbind: 'ai.agent_knowledge_unbind'
+  agentKnowledgeUnbind: 'ai.agent_knowledge_unbind',
+  pageCaptureSubmit: 'ai.page_capture_submit'
 } as const;
 export const MODEL_TYPES = ['chat', 'embedding', 'rerank', 'image', 'speech', 'transcription'] as const;
 export const MODEL_MODALITIES = ['text', 'image', 'audio', 'file'] as const;

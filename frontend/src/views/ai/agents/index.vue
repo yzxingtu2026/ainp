@@ -252,7 +252,9 @@ onMounted(load);
       :title="$t('page.aiAgents.loadFailed')"
       :description="$t('page.aiAgents.loadFailedHint')"
     >
-      <template #footer><NButton type="primary" @click="load">{{ $t('common.refresh') }}</NButton></template>
+      <template #footer>
+        <NButton type="primary" @click="load">{{ $t('common.refresh') }}</NButton>
+      </template>
     </NResult>
 
     <NEmpty
@@ -273,8 +275,7 @@ onMounted(load);
         v-for="agent in rows"
         :key="agent.id"
         size="small"
-        class="agent-card"
-        :class="{ 'agent-card--clickable': true }"
+        class="agent-card agent-card--clickable"
         role="button"
         tabindex="0"
         :aria-label="$t('page.aiAgents.openAgent', { name: agent.name })"
@@ -316,18 +317,15 @@ onMounted(load);
         <div class="agent-card__meta">
           <span>
             {{ $t('page.aiAgents.colVersion') }}:
-            <strong>{{ agent.current_version > 0 ? `v${agent.current_version}` : $t('page.aiAgents.unpublished') }}</strong>
+            <strong>
+              {{ agent.current_version > 0 ? `v${agent.current_version}` : $t('page.aiAgents.unpublished') }}
+            </strong>
           </span>
           <span>{{ $t('page.aiAgents.updatedAt') }}: {{ formatDateTime(agent.updated_at) }}</span>
         </div>
 
         <div class="agent-card__actions" @click.stop @keydown.stop>
-          <NButton
-            type="primary"
-            size="small"
-            :loading="operatingIds.has(agent.id)"
-            @click="primaryAction(agent)"
-          >
+          <NButton type="primary" size="small" :loading="operatingIds.has(agent.id)" @click="primaryAction(agent)">
             {{
               agent.current_version <= 0 && can(AI_ACTIONS.agentVersionPublish)
                 ? $t('page.aiAgents.publishFirstVersion')
@@ -359,7 +357,12 @@ onMounted(load);
       @update:page="changePage"
     />
 
-    <NModal v-model:show="duplicateVisible" preset="card" :title="$t('page.aiAgents.duplicate')" class="w-520px max-w-94vw">
+    <NModal
+      v-model:show="duplicateVisible"
+      preset="card"
+      :title="$t('page.aiAgents.duplicate')"
+      class="w-520px max-w-94vw"
+    >
       <NForm label-placement="left" label-width="90">
         <NFormItem :label="$t('page.aiAgents.colName')"><NInput v-model:value="duplicateForm.name" /></NFormItem>
         <NFormItem :label="$t('page.aiAgents.colCode')"><NInput v-model:value="duplicateForm.code" /></NFormItem>
@@ -378,10 +381,25 @@ onMounted(load);
       <NDrawerContent :title="detail?.name" closable>
         <NAlert
           :type="diagnostics?.healthy ? 'success' : 'warning'"
-          :title="diagnostics?.healthy ? $t('page.agentBuilder.diagnosticsHealthy') : $t('page.agentBuilder.diagnosticsUnhealthy')"
+          :title="
+            diagnostics?.healthy
+              ? $t('page.agentBuilder.diagnosticsHealthy')
+              : $t('page.agentBuilder.diagnosticsUnhealthy')
+          "
         >
           <div v-for="issue in diagnostics?.issues" :key="`${issue.code}-${issue.resource || ''}`">
             {{ issue.code }}: {{ issue.message }}
+          </div>
+          <div
+            v-for="warning in diagnostics?.warnings"
+            :key="`warn-${warning.code}-${warning.resource || ''}`"
+            class="text-12px text-gray-500"
+          >
+            {{
+              warning.code === 'tool.vision_required'
+                ? $t('page.aiWorkspace.diagnosticPageCaptureVisionRequired')
+                : `${warning.code}: ${warning.message}`
+            }}
           </div>
         </NAlert>
         <NButton
@@ -428,9 +446,16 @@ onMounted(load);
   margin-bottom: 16px;
 }
 
-.agent-page__header > div { gap: 10px; }
-.agent-page__header h2 { margin: 0; font-size: 20px; }
-.agent-page__count { color: var(--n-text-color-3); }
+.agent-page__header > div {
+  gap: 10px;
+}
+.agent-page__header h2 {
+  margin: 0;
+  font-size: 20px;
+}
+.agent-page__count {
+  color: var(--n-text-color-3);
+}
 
 .agent-filters {
   flex-wrap: wrap;
@@ -438,8 +463,12 @@ onMounted(load);
   margin-bottom: 18px;
 }
 
-.agent-filters__keyword { width: min(320px, 100%); }
-.agent-filters__select { width: 150px; }
+.agent-filters__keyword {
+  width: min(320px, 100%);
+}
+.agent-filters__select {
+  width: 150px;
+}
 
 .agent-grid {
   display: grid;
@@ -458,15 +487,44 @@ onMounted(load);
   padding: 16px;
 }
 
-.agent-card--clickable { cursor: pointer; }
-.agent-card--clickable:focus-visible { outline: 2px solid rgb(var(--primary-color)); outline-offset: 2px; }
-.agent-card--skeleton { height: 258px; }
+.agent-card--clickable {
+  cursor: pointer;
+}
+.agent-card--clickable:focus-visible {
+  outline: 2px solid rgb(var(--primary-color));
+  outline-offset: 2px;
+}
+.agent-card--skeleton {
+  height: 258px;
+}
 
-.agent-card__top { align-items: flex-start; justify-content: space-between; gap: 16px; }
-.agent-card__identity { min-width: 0; }
-.agent-card__title-row { align-items: flex-start; gap: 8px; }
-.agent-card h3 { overflow: hidden; margin: 0; font-size: 16px; text-overflow: ellipsis; white-space: nowrap; }
-.agent-card code { display: block; overflow: hidden; margin-top: 5px; color: var(--n-text-color-3); text-overflow: ellipsis; white-space: nowrap; }
+.agent-card__top {
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.agent-card__identity {
+  min-width: 0;
+}
+.agent-card__title-row {
+  align-items: flex-start;
+  gap: 8px;
+}
+.agent-card h3 {
+  overflow: hidden;
+  margin: 0;
+  font-size: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agent-card code {
+  display: block;
+  overflow: hidden;
+  margin-top: 5px;
+  color: var(--n-text-color-3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .agent-card__description {
   display: -webkit-box;
@@ -504,18 +562,40 @@ onMounted(load);
   text-overflow: ellipsis;
 }
 
-.agent-card__actions { justify-content: space-between; margin-top: auto; padding-top: 10px; }
-.agent-page__empty { padding: 80px 0; }
-.agent-page__pagination { justify-content: flex-end; margin-top: 20px; }
+.agent-card__actions {
+  justify-content: space-between;
+  margin-top: auto;
+  padding-top: 10px;
+}
+.agent-page__empty {
+  padding: 80px 0;
+}
+.agent-page__pagination {
+  justify-content: flex-end;
+  margin-top: 20px;
+}
 
 @media (max-width: 1100px) {
-  .agent-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .agent-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 640px) {
-  .agent-page__header { align-items: flex-start; flex-direction: column; }
-  .agent-filters__keyword, .agent-filters__select { width: 100%; }
-  .agent-grid { grid-template-columns: minmax(0, 1fr); }
-  .agent-card, .agent-card--skeleton { height: 270px; }
+  .agent-page__header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .agent-filters__keyword,
+  .agent-filters__select {
+    width: 100%;
+  }
+  .agent-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .agent-card,
+  .agent-card--skeleton {
+    height: 270px;
+  }
 }
 </style>

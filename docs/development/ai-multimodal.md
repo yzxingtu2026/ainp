@@ -43,6 +43,8 @@ ModelResolver 能力校验
 
 `system.attachment_content_inspect` 是 `Capability=system`、`Risk=low`、`SideEffect=read` 的普通渐进发现 Action。每次调用重新校验 authenticated tenant actor、Client Surface、tenant、上传者或资源 AccessPolicy、ready、revision、MIME、大小与运行时预算。文档分支复用 `DocumentResolver + SafeParser` 并按 question/location 返回有界片段；图片分支复用 `AIAssetResolver`，使用当前 Agent 的受治理 Model Alias 经统一 Model Runtime 做 Vision 观察，不支持 Vision 时返回 `capability_not_supported`。结果只包含安全文件名、MIME、revision、位置/观察、`status`（`ready` / `empty` / `low_quality` / `partial_failure`）、可选按页 `page_statuses`、`truncated`、`untrusted=true`。工具执行完成不等于文本可用；空文本或乱码不得作为普通 ready observations。附件正文只存在于当次 Tool Result/模型输入。
 
+内置页面捕获工具 `builtin:page.capture` 产生的截图走同一附件与多模态安全管线：前端对业务主内容区降采样压缩后经标准 prepare/raw PUT 上传，提交时绑定 `resource_type=ai.page_capture`（AccessPolicy 限定仅当前租户 owner 本人可读写）。canonical Tool Result 只保存 `attachment_id`、`attachment_revision`、`resource_type` 与安全状态，不含字节、base64、Object Key、URL 或短时凭据；ContextAssembler 按同一 Run 级原生图片工作集上限（`MaxNativeImagesPerRequest`）与 Manifest 规则将就绪捕获结果投影为 `input_image`，经 `AIAssetResolver` 重鉴权和有界读取后交由具备 `vision` 能力的模型消费，画面内容视为不可信 UI 视觉参考。
+
 ## Provider 映射与生命周期
 
 OpenAI Adapter 映射到 Responses `input_image`，Anthropic Adapter 映射到 Messages `image` source。文档在 Adapter 前展开为 user 侧 `derived_text`，正文前置安全文件名、MIME 和页/工作表位置，明确标记为不可信参考；Provider 收不到 `input_file`、attachment ID/revision、object key 或下载 URL。任何 Adapter 收到未展开 `input_file` 都必须 fail-closed。

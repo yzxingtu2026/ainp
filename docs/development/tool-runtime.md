@@ -32,6 +32,10 @@ Reconcile 按 Tool ID 比较完整安全定义：新增和变更写入 Catalog�
 
 核心 `builtin:knowledge.search` 是首个直接投影 Slot，但只在当前 Agent 至少存在一个绑定、当前 actor 可读、enabled 且索引 ready 的知识库时可用。动态描述只能列出这些候选的名称、用途和稳定 ID，不得暴露 tenant、对象存储字段或无权资源。
 
+核心 `builtin:page.capture`（owner 包 `modules/ai/experience/pagecapture`）是默认助手 Contract `system.operations@1.0.0` 必选不可移除的直接投影 Slot（`Source=builtin`、`Risk=low`、`SideEffect=read`、`BindingMode=forbidden`、`LoadingMode=direct`、`DiscoveryMode=direct`），无用户/租户开关且不触发确认弹窗。动态投影仅在当前 `ClientSurface` 为 Web 管理面（`ainp.tenant-console`）且当前 Agent 模型具备 `vision` 能力时生效；小程序等非 Web 访问面与纯文本模型不投影（fail-closed，并在 Agent diagnostics 返回明确的 `tool.vision_required` / `tool.surface_not_projected` 诊断提示，不静默降级）。每 Run 调用上限由 `RuntimeMetadata.MaxCallsPerRun=3` 约束。
+
+`builtin:page.capture` 采用客户端履行回路（`RuntimeMetadata.ClientFulfillment=true`，默认超时 30 秒）：模型调用工具后，Tool Runtime 创建 running Invocation 并经 Agent Run 事件通道下发版本化 `run.capture_requested.v1`（仅含稳定 `capture_request_id` 与安全参数），同时将 Step 置为 `waiting`、Run 置为 `paused` 释放 Worker lease 并入队超时唤醒任务。前端截取业务主区并经现有附件协议上传后，调用 authenticated 自助 Action `ai.page_capture_submit` 提交 `capture_request_id + attachment_id + attachment_revision`；服务端校验请求归属（tenant/principal/surface/auth_version）、附件 ready 与图像有效性，在同事务绑定 `ai.page_capture` 附件资源、写完配对安全 Tool Result 并重新排队恢复 Run。重复提交同一结果幂等 no-op；超时、取消或前端渲染/上传失败均以安全失败分类（`capture_timeout` / `capture_failed` / `capture_cancelled`）完成配对 Tool Result，不阻塞后续对话。
+
 ## Search、Scope 与 Handle
 
 Dynamic Reference 随 `tool.search` 候选 prerequisite 和 `tool.load` Definition 投影，但候选集合永不进入稳定 Input Schema。Discovery Action 成功后，Scope 仅记录 Resolver ID、Discovery Tool ID、候选版本摘要、读取时间和 Invocation ID；证据天然绑定 Scope 的 tenant、actor、session、auth version 与 Agent Run，禁止跨 Scope 复用或复制完整目录。

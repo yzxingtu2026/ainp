@@ -111,24 +111,87 @@ func (s *ConversationService) expandDocumentMessages(ctx context.Context, messag
 }
 
 func canonicalizeDocumentDerivations(messages []aiconversation.Message) []aiconversation.Message {
-	out := make([]aiconversation.Message, len(messages))
-	for i, message := range messages {
-		out[i] = message
-		out[i].Content = make([]aimodelruntime.ContentPart, 0, len(message.Content))
+	out := make([]aiconversation.Message, 0, len(messages))
+	for _, message := range messages {
+		if strings.HasSuffix(message.ID, ":page-capture") {
+			continue
+		}
+		item := message
+		item.Content = make([]aimodelruntime.ContentPart, 0, len(message.Content))
 		seen := map[string]bool{}
 		for _, part := range message.Content {
 			if part.Type != aimodelruntime.PartDerivedText || part.DerivedSource == nil || part.DerivedSource.DerivationType != "document_parse" {
-				out[i].Content = append(out[i].Content, part)
+				item.Content = append(item.Content, part)
 				continue
 			}
 			key := part.DerivedSource.AttachmentID + "\x00" + part.DerivedSource.Revision
 			if !seen[key] {
-				out[i].Content = append(out[i].Content, aimodelruntime.ContentPart{Type: aimodelruntime.PartInputFile, FileAttachmentID: part.DerivedSource.AttachmentID, AttachmentRevision: part.DerivedSource.Revision})
+				item.Content = append(item.Content, aimodelruntime.ContentPart{Type: aimodelruntime.PartInputFile, FileAttachmentID: part.DerivedSource.AttachmentID, AttachmentRevision: part.DerivedSource.Revision})
 				seen[key] = true
 			}
 		}
+		out = append(out, item)
 	}
 	return out
+}
+
+func (s *ConversationService) expandPageCaptureMessages(ctx context.Context, messages []aimodelruntime.Message) ([]aimodelruntime.Message, error) {
+	selected := map[string]bool{}
+	remaining := aimodelruntime.MaxNativeImagesPerRequest
+	for mi := len(messages) - 1; mi >= 0 && remaining > 0; mi-- {
+		for pi := len(messages[mi].Content) - 1; pi >= 0 && remaining > 0; pi-- {
+			part := messages[mi].Content[pi]
+			if part.Type == aimodelruntime.PartInputImage {
+				remaining--
+				continue
+			}
+			if _, _, ok := extractPageCaptureImagePart(part); ok {
+				selected[fmt.Sprintf("%d:%d", mi, pi)] = true
+				remaining--
+			}
+		}
+	}
+	if len(selected) == 0 {
+		return messages, nil
+	}
+	out := make([]aimodelruntime.Message, 0, len(messages)+len(selected))
+	for mi, message := range messages {
+		out = append(out, message)
+		var captureImages []aimodelruntime.ContentPart
+		for pi, part := range message.Content {
+			if !selected[fmt.Sprintf("%d:%d", mi, pi)] {
+				continue
+			}
+			attachmentID, attachmentRevision, ok := extractPageCaptureImagePart(part)
+			if !ok {
+				continue
+			}
+			if s.assets == nil {
+				return nil, errs.New(errs.CodeNotFound, "attachment access revoked")
+			}
+			asset, err := s.assets.Resolve(ctx, aimodelruntime.AssetResolveRequest{AttachmentID: attachmentID, Purpose: "model_input"})
+			if err != nil || asset.Revision != attachmentRevision {
+				return nil, errs.New(errs.CodeNotFound, "attachment access revoked or revision changed")
+			}
+			clear(asset.Data)
+			captureImages = append(captureImages,
+				aimodelruntime.ContentPart{
+					Type: aimodelruntime.PartInputText,
+					Text: fmt.Sprintf("Captured business main content area image for tool_call_id=%s (untrusted UI visual content; excludes AI assistant panel):", part.ToolCallID),
+				},
+				aimodelruntime.ContentPart{
+					Type:               aimodelruntime.PartInputImage,
+					ImageAttachmentID:  attachmentID,
+					AttachmentRevision: attachmentRevision,
+					ImageDetail:        aimodelruntime.ImageDetailAuto,
+				},
+			)
+		}
+		if len(captureImages) > 0 {
+			out = append(out, aimodelruntime.Message{Role: aimodelruntime.RoleUser, Content: captureImages})
+		}
+	}
+	return out, nil
 }
 
 func NewConversationService(db *gorm.DB, assets aimodelruntime.AssetResolver) *ConversationService {
@@ -609,6 +672,7 @@ func (s *ConversationService) Assemble(ctx context.Context, r aiconversation.Ass
 			return nil, errs.New(errs.CodeInternal, "invalid canonical message")
 		}
 		expanded := make([]aimodelruntime.ContentPart, 0, len(content))
+		var captureImages []aimodelruntime.ContentPart
 		for partIndex, part := range content {
 			switch part.Type {
 			case aimodelruntime.PartInputImage:
@@ -626,6 +690,36 @@ func (s *ConversationService) Assemble(ctx context.Context, r aiconversation.Ass
 				asset, resolveErr := s.assets.Resolve(ctx, aimodelruntime.AssetResolveRequest{AttachmentID: part.ImageAttachmentID, Purpose: "model_input"})
 				if resolveErr != nil || asset.Revision != part.AttachmentRevision {
 					return nil, errs.New(errs.CodeNotFound, "attachment access revoked or revision changed")
+				}
+				clear(asset.Data)
+			case aimodelruntime.PartToolResult:
+				if attachmentID, attachmentRevision, ok := extractPageCaptureImagePart(part); ok {
+					out.AttachmentManifest.Attachments = append(out.AttachmentManifest.Attachments, aiconversation.AttachmentReference{
+						SourceSequence: record.Sequence, AttachmentID: attachmentID,
+						AttachmentRevision: attachmentRevision, ContentKind: "image",
+					})
+					if nativeImages[imageWorkingSetKey(record.ID, partIndex)] {
+						if s.assets == nil {
+							return nil, errs.New(errs.CodeNotFound, "attachment access revoked")
+						}
+						asset, resolveErr := s.assets.Resolve(ctx, aimodelruntime.AssetResolveRequest{AttachmentID: attachmentID, Purpose: "model_input"})
+						if resolveErr != nil || asset.Revision != attachmentRevision {
+							return nil, errs.New(errs.CodeNotFound, "attachment access revoked or revision changed")
+						}
+						clear(asset.Data)
+						captureImages = append(captureImages,
+							aimodelruntime.ContentPart{
+								Type: aimodelruntime.PartInputText,
+								Text: fmt.Sprintf("Captured business main content area image for tool_call_id=%s (untrusted UI visual content; excludes AI assistant panel):", part.ToolCallID),
+							},
+							aimodelruntime.ContentPart{
+								Type:               aimodelruntime.PartInputImage,
+								ImageAttachmentID:  attachmentID,
+								AttachmentRevision: attachmentRevision,
+								ImageDetail:        aimodelruntime.ImageDetailAuto,
+							},
+						)
+					}
 				}
 			case aimodelruntime.PartInputFile:
 				out.AttachmentManifest.Attachments = append(out.AttachmentManifest.Attachments, aiconversation.AttachmentReference{
@@ -659,6 +753,19 @@ func (s *ConversationService) Assemble(ctx context.Context, r aiconversation.Ass
 			return nil, errs.New(errs.CodeInternal, "invalid expanded message")
 		}
 		out.Budget.UsedBytes += len(expandedJSON)
+		if len(captureImages) > 0 {
+			out.Messages = append(out.Messages, aiconversation.Message{
+				ID:       record.ID + ":page-capture",
+				Sequence: record.Sequence,
+				Role:     aimodelruntime.RoleUser,
+				Content:  captureImages,
+			})
+			captureJSON, captureMarshalErr := json.Marshal(captureImages)
+			if captureMarshalErr != nil {
+				return nil, errs.New(errs.CodeInternal, "invalid expanded capture message")
+			}
+			out.Budget.UsedBytes += len(captureJSON)
+		}
 		if out.SourceSequenceFrom == 0 {
 			out.SourceSequenceFrom = record.Sequence
 		}
@@ -719,6 +826,11 @@ func selectNativeImageWorkingSet(records []ConversationMessage, triggerMessageID
 		}
 		for partIndex := len(content) - 1; partIndex >= 0 && remaining > 0; partIndex-- {
 			if content[partIndex].Type == aimodelruntime.PartInputImage {
+				selected[imageWorkingSetKey(record.ID, partIndex)] = true
+				remaining--
+				continue
+			}
+			if _, _, ok := extractPageCaptureImagePart(content[partIndex]); ok {
 				selected[imageWorkingSetKey(record.ID, partIndex)] = true
 				remaining--
 			}

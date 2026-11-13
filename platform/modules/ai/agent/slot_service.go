@@ -84,6 +84,7 @@ type AgentSlotResolution struct {
 	Source             string                 `json:"source"`
 	Healthy            bool                   `json:"healthy"`
 	Diagnostics        []AgentDiagnosticIssue `json:"diagnostics"`
+	Warnings           []AgentDiagnosticIssue `json:"warnings,omitempty"`
 	BindingRevision    uint64                 `json:"binding_revision,omitempty"`
 	PreferenceRevision uint64                 `json:"preference_revision,omitempty"`
 }
@@ -136,7 +137,7 @@ func (s *AgentSlotService) resolveAgent(ctx context.Context, slot agentslot.Slot
 		return slotUnavailable("version.unavailable", "configured agent current version is unavailable", slot, source), nil
 	}
 	diagnostics := s.agents.agentDiagnostics(ctx, &agent)
-	return &AgentSlotResolution{Slot: slot, Agent: &agent, AgentVersion: &version, Source: source, Healthy: diagnostics.Healthy, Diagnostics: diagnostics.Issues}, nil
+	return &AgentSlotResolution{Slot: slot, Agent: &agent, AgentVersion: &version, Source: source, Healthy: diagnostics.Healthy, Diagnostics: diagnostics.Issues, Warnings: diagnostics.Warnings}, nil
 }
 
 func (s *AgentSlotService) Resolve(ctx context.Context, r AgentSlotGetRequest) (*AgentSlotResolution, error) {

@@ -13,7 +13,7 @@ var agentRuntimeModelRegistration struct {
 
 func registerAgentRuntimeTenantModels() error {
 	agentRuntimeModelRegistration.Do(func() {
-		for _, model := range []any{AgentRun{}, AgentStep{}, AgentRunEvent{}} {
+		for _, model := range []any{AgentRun{}, AgentStep{}, AgentRunEvent{}, PageCaptureRequest{}} {
 			if err := tenantdata.DefaultRegistry.Register(model, tenantdata.ModelOptions{Kind: tenantdata.TenantOwned, InjectOnCreate: true, SystemAccess: true}); err != nil {
 				agentRuntimeModelRegistration.err = err
 				return

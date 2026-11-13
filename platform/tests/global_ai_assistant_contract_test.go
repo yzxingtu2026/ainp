@@ -59,7 +59,10 @@ func TestGlobalAiAssistantShellLifecycleAndLaunchers(t *testing.T) {
 	if !strings.Contains(base, "<GlobalAiAssistant />") {
 		t.Fatal("global AI assistant must be mounted at the application shell")
 	}
-	for _, expected := range []string{`<Teleport to="body">`, "z-index: 1100", "isolation: isolate", "background: rgb(var(--container-bg-color))"} {
+	if !strings.Contains(panel, `<Teleport to="body"`) {
+		t.Fatal("global AI assistant must keep mobile body teleport support")
+	}
+	for _, expected := range []string{"z-index: 1100", "isolation: isolate", "background: rgb(var(--container-bg-color))"} {
 		if !strings.Contains(panel, expected) {
 			t.Fatalf("global AI assistant must stay above shell content but below application overlays: missing %q", expected)
 		}

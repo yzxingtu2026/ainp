@@ -23,6 +23,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/prompt"
 	"github.com/yzxingtu2026/ainp/platform/framework/setting"
 	navigation "github.com/yzxingtu2026/ainp/platform/modules/ai/experience/navigation"
+	"github.com/yzxingtu2026/ainp/platform/modules/ai/experience/pagecapture"
 	aihelp "github.com/yzxingtu2026/ainp/platform/modules/ai/help"
 	knowledgepkg "github.com/yzxingtu2026/ainp/platform/modules/ai/knowledge"
 	memorypkg "github.com/yzxingtu2026/ainp/platform/modules/ai/memory"
@@ -103,6 +104,7 @@ const (
 	ActionAgentRunRetry                = "ai.agent_run_retry"
 	ActionAgentRunEvents               = "ai.agent_run_events"
 	ActionAgentRunSubscribe            = "ai.agent_run_subscribe"
+	ActionPageCaptureSubmit            = "ai.page_capture_submit"
 )
 
 func isAuthenticatedAssistantAction(id string) bool {
@@ -238,6 +240,9 @@ func Register(a *app.App) error {
 	if err := a.AttachmentPolicies.Register(newAgentAvatarAttachmentPolicy(agents)); err != nil {
 		return err
 	}
+	if err := a.AttachmentPolicies.Register(NewPageCaptureAttachmentPolicy(a.DB)); err != nil {
+		return err
+	}
 	slotRegistry := agentslot.NewRegistry(contracts)
 	if err := slotRegistry.Register(agentslot.Slot{Key: WorkspaceDefaultSlot, Version: "1.0.0", Module: "workspace", Title: "默认 AI 工作台", Description: "AI 工作台新会话使用的默认智能体", DefaultContractKey: "system.operations", DefaultContractVersion: "1.0.0", RequiredCapabilities: []string{"chat", "tools"}, TenantOverride: true, UserOverride: true, FallbackPolicy: agentslot.FallbackFailClosed, UpgradePolicy: agentslot.UpgradeCompatible}); err != nil {
 		return err
@@ -290,6 +295,7 @@ func Register(a *app.App) error {
 	agentRuntime.SetBudgetProvider(NewRuntimeBudgetProvider(a.SettingValues))
 	agentRuntime.SetAgentContracts(contracts)
 	agentRuntime.SetMemoryRetriever(memoryRecallAdapter(memoryRetriever))
+	agentRuntime.SetPageCaptureDependencies(a.AIAssetResolver, a.AttachmentResourceLinker)
 	tools.SetConfirmationHooks(agentRuntime.OnConfirmationPending, agentRuntime.OnConfirmationDecided)
 	tools.SetConfirmationApproveHook(agentRuntime.OnConfirmationApprove)
 	if err := RegisterAgentRuntime(a, agentRuntime); err != nil {
@@ -462,7 +468,7 @@ func Register(a *app.App) error {
 	if err := toolRegistry.RegisterProvider(&aitool.ActionProvider{Actions: a.Actions}, &aitool.ActionExecutor{Actions: a.Actions}); err != nil {
 		return err
 	}
-	if err := tooling.RegisterBuiltins(toolRegistry, knowledgepkg.New(knowledgeTool.Project, knowledgeTool), memorypkg.New(memoryRuntimeTool.Project, memoryRuntimeTool), navigation.New(a.Menus), navigation.NewHelp(a.Menus, a.PageHelp)); err != nil {
+	if err := tooling.RegisterBuiltins(toolRegistry, knowledgepkg.New(knowledgeTool.Project, knowledgeTool), memorypkg.New(memoryRuntimeTool.Project, memoryRuntimeTool), navigation.New(a.Menus), navigation.NewHelp(a.Menus, a.PageHelp), pagecapture.New(svc, agentRuntime.LookupRunModelAlias)); err != nil {
 		return err
 	}
 	meta := []aitool.Definition{{ID: "meta:tool.search", Source: aitool.SourceMeta, Name: "tool.search", TitleForHuman: "工具搜索", DescriptionForLLM: "Search visible tools by intent and return compact candidates", DescriptionForHuman: "按意图搜索当前智能体可用的工具", Capability: "ai", InputSchema: action.SchemaFor[aitool.MetaSearchInput](), Risk: aitool.RiskLow, SideEffect: aitool.SideEffectRead, BindingMode: aitool.BindingOptional, LoadingMode: aitool.LoadingDirect, BindingGroup: "tool_discovery", RuntimeRef: "tool.search", SchemaVersion: 1, Status: "enabled"}, {ID: "meta:tool.load", Source: aitool.SourceMeta, Name: "tool.load", TitleForHuman: "工具加载", DescriptionForLLM: "Load a small number of candidate tools into the current scope", DescriptionForHuman: "将少量候选工具加载到当前运行范围", Capability: "ai", InputSchema: action.SchemaFor[aitool.MetaLoadInput](), Risk: aitool.RiskLow, SideEffect: aitool.SideEffectRead, BindingMode: aitool.BindingOptional, LoadingMode: aitool.LoadingDirect, BindingGroup: "tool_discovery", RuntimeRef: "tool.load", SchemaVersion: 1, Status: "enabled"}}
@@ -531,7 +537,7 @@ func NewBuiltinAgentContractRegistry() (*aiagent.Registry, error) {
 		return nil, fmt.Errorf("agent contract system.operations@1.0.0 requires prompt %s@2.2.0", promptKey)
 	}
 	contracts := aiagent.NewRegistry()
-	contract := aiagent.Contract{Key: "system.operations", Version: "1.0.0", Name: "系统运营助手", Description: "通过当前用户权限安全操作后台系统", BaseInstructions: prompt.MustGet(promptKey), BaseInstructionsVersion: metadata.Version, RequiredModelCapabilities: []string{"chat", "tools"}, RequiredToolSelectors: []string{"meta:tool.search", "meta:tool.load", navigation.ToolID, navigation.HelpToolID}, AllowedToolSources: []string{"action"}, AllowedToolCapabilities: []string{"system", "operations", "ai"}, ConfigSchema: json.RawMessage(`{"type":"object","additionalProperties":false}`), SingletonScope: aiagent.SingletonTenant, ManagedFields: []string{"code", "source", "contract_key", "contract_version", "base_instructions", "visibility"}, UpgradePolicy: "managed-fields"}
+	contract := aiagent.Contract{Key: "system.operations", Version: "1.0.0", Name: "系统运营助手", Description: "通过当前用户权限安全操作后台系统", BaseInstructions: prompt.MustGet(promptKey), BaseInstructionsVersion: metadata.Version, RequiredModelCapabilities: []string{"chat", "tools"}, RequiredToolSelectors: []string{"meta:tool.search", "meta:tool.load", navigation.ToolID, navigation.HelpToolID, pagecapture.ToolID}, AllowedToolSources: []string{"action"}, AllowedToolCapabilities: []string{"system", "operations", "ai"}, ConfigSchema: json.RawMessage(`{"type":"object","additionalProperties":false}`), SingletonScope: aiagent.SingletonTenant, ManagedFields: []string{"code", "source", "contract_key", "contract_version", "base_instructions", "visibility"}, UpgradePolicy: "managed-fields"}
 	if err := contracts.Register(contract); err != nil {
 		return nil, err
 	}

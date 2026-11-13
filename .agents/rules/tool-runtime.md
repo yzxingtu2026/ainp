@@ -34,5 +34,6 @@
 - 确认文案只能由 Tool Runtime 默认生成器或已注册的可信 Presenter 生成；领域 Presenter 必须租户隔离、权限受控、只读且失败安全降级，Runtime/SSE 禁止按具体 Tool ID 写业务分支或临时查询拼文案。
 - 批量 Presenter 使用通用摘要预算（默认最多 10 项）裁剪展示副本并明确 omitted 数；展示截断不得改变 Arguments Hash 或实际 items，atomic Result 必须按请求顺序返回 `created_count + items`。
 - `knowledge.search` 必须经 Registry/Scope/Executor，且仅在存在当前可读、enabled、ready 的 Agent 绑定库时投影；知识正文不得进入 Invocation/Step/事件事实摘要。
+- `builtin:page.capture` 归属 `experience/pagecapture` 并作为 `system.operations@1.0.0` 必选不可移除 Slot，仅在 `ainp.tenant-console` 且模型支持 `vision` 时动态投影（纯文本模型/小程序面 fail-closed 并输出诊断，`MaxCallsPerRun=3`）；经 `run.capture_requested.v1` 下发有界客户端履行请求（默认 30s 超时释放 lease），由 authenticated `ai.page_capture_submit` 校验归属并绑定 `ai.page_capture` 附件后幂等收口配对 Tool Result，无开关、无确认弹窗。
 - 测试统一放在 `platform/tests`。详见 `docs/development/tool-runtime.md`。
 - 新增 Action Tool 或 Provider/Executor 时同时遵循 `docs/development/ai-tool-development.md`。

@@ -14,7 +14,12 @@ const authStore = useAuthStore();
 const controller = useAiConversationController();
 const online = useOnline();
 const personalization = useAssistantPersonalization();
-const runActive = computed(() => controller.status.value === 'running' || controller.status.value === 'reconnecting');
+const runActive = computed(
+  () =>
+    controller.status.value === 'running' ||
+    controller.status.value === 'reconnecting' ||
+    controller.capturingPage.value
+);
 const thinking = computed(() => runActive.value && !controller.displayStreamingText.value);
 const agentName = computed(() => controller.slot.value?.agent?.name || $t('page.aiWorkspace.assistant'));
 const greetingName = computed(() => authStore.userInfo.userName || $t('page.aiWorkspace.assistant'));

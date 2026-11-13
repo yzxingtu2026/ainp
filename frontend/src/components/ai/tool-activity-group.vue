@@ -45,6 +45,9 @@ const navigationVisible = computed(() => props.active || navigationHasResults.va
 const allSettled = computed(
   () => regularOperations.value.length > 0 && regularOperations.value.every(op => op.hasResult)
 );
+const pageCaptureRunning = computed(
+  () => props.active && regularOperations.value.some(op => op.toolName === 'builtin__page_capture' && !op.hasResult)
+);
 
 // 运行结束后自动收起为汇总行
 watch(
@@ -104,9 +107,15 @@ watch(
 
     <template v-else>
       <div v-if="regularOperations.length > 0" class="tool-activity__live">
-        <SvgIcon icon="mdi:lightning-bolt-outline" />
+        <SvgIcon :icon="pageCaptureRunning ? 'mdi:monitor-screenshot' : 'mdi:lightning-bolt-outline'" />
         <span>
-          {{ allSettled ? $t('chat.toolProcessed', { count: regularOperations.length }) : $t('chat.toolCall') }}
+          {{
+            pageCaptureRunning
+              ? $t('chat.pageCapturing')
+              : allSettled
+                ? $t('chat.toolProcessed', { count: regularOperations.length })
+                : $t('chat.toolCall')
+          }}
         </span>
       </div>
     </template>

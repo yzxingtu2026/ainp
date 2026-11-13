@@ -20,32 +20,33 @@ type BindingMode string
 type LoadingMode string
 
 const (
-	SettingKeySearch                             = "ai.tool_search"
-	SettingFieldModelAlias                       = "embedding_model_alias"
-	SourceMeta                       Source      = "meta"
-	SourceAction                     Source      = "action"
-	SourceBuiltin                    Source      = "builtin"
-	SourcePlugin                     Source      = "plugin"
-	SourceHTTP                       Source      = "http"
-	SourceMCP                        Source      = "mcp"
-	RiskLow                          Risk        = "low"
-	RiskMedium                       Risk        = "medium"
-	RiskHigh                         Risk        = "high"
-	RiskCritical                     Risk        = "critical"
-	SideEffectNone                   SideEffect  = "none"
-	SideEffectRead                   SideEffect  = "read"
-	SideEffectWrite                  SideEffect  = "write"
-	SideEffectExternal               SideEffect  = "external"
-	SideEffectPaid                   SideEffect  = "paid"
-	SideEffectDestructive            SideEffect  = "destructive"
-	BindingForbidden                 BindingMode = "forbidden"
-	BindingOptional                  BindingMode = "optional"
-	LoadingDirect                    LoadingMode = "direct"
-	LoadingConditional               LoadingMode = "conditional"
-	LoadingProgressive               LoadingMode = "progressive"
-	ResultStatusCompleted                        = "completed"
-	ResultStatusFailed                           = "failed"
-	ResultStatusConfirmationRequired             = "confirmation_required"
+	SettingKeySearch                                  = "ai.tool_search"
+	SettingFieldModelAlias                            = "embedding_model_alias"
+	SourceMeta                            Source      = "meta"
+	SourceAction                          Source      = "action"
+	SourceBuiltin                         Source      = "builtin"
+	SourcePlugin                          Source      = "plugin"
+	SourceHTTP                            Source      = "http"
+	SourceMCP                             Source      = "mcp"
+	RiskLow                               Risk        = "low"
+	RiskMedium                            Risk        = "medium"
+	RiskHigh                              Risk        = "high"
+	RiskCritical                          Risk        = "critical"
+	SideEffectNone                        SideEffect  = "none"
+	SideEffectRead                        SideEffect  = "read"
+	SideEffectWrite                       SideEffect  = "write"
+	SideEffectExternal                    SideEffect  = "external"
+	SideEffectPaid                        SideEffect  = "paid"
+	SideEffectDestructive                 SideEffect  = "destructive"
+	BindingForbidden                      BindingMode = "forbidden"
+	BindingOptional                       BindingMode = "optional"
+	LoadingDirect                         LoadingMode = "direct"
+	LoadingConditional                    LoadingMode = "conditional"
+	LoadingProgressive                    LoadingMode = "progressive"
+	ResultStatusCompleted                             = "completed"
+	ResultStatusFailed                                = "failed"
+	ResultStatusConfirmationRequired                  = "confirmation_required"
+	ResultStatusClientFulfillmentRequired             = "client_fulfillment_required"
 )
 
 var toolIDPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]*:[a-z][a-z0-9_.-]*$`)
@@ -244,12 +245,19 @@ type RuntimeScope struct {
 }
 
 type RuntimeMetadata struct {
-	StepType          string
-	InvocationClass   string
-	BudgetCategory    string
-	MaxCallsPerRun    int
-	Observations      []RuntimeObservation
-	FailureCategories []string
+	StepType                 string
+	InvocationClass          string
+	BudgetCategory           string
+	MaxCallsPerRun           int
+	ClientFulfillment        bool
+	FulfillmentTimeoutSecond int
+	Observations             []RuntimeObservation
+	FailureCategories        []string
+}
+
+type ClientFulfillmentRequest struct {
+	Kind       string         `json:"kind"`
+	Parameters map[string]any `json:"parameters,omitempty"`
 }
 
 type RuntimeObservation struct {
@@ -260,6 +268,9 @@ type RuntimeObservation struct {
 func (m RuntimeMetadata) Validate() error {
 	if !slices.Contains([]string{"tool_search", "tool_load", "tool_execute"}, m.StepType) || strings.TrimSpace(m.InvocationClass) == "" || m.MaxCallsPerRun < 0 {
 		return fmt.Errorf("invalid runtime metadata")
+	}
+	if m.FulfillmentTimeoutSecond < 0 || (!m.ClientFulfillment && m.FulfillmentTimeoutSecond > 0) {
+		return fmt.Errorf("invalid client fulfillment metadata")
 	}
 	if m.MaxCallsPerRun > 0 && strings.TrimSpace(m.BudgetCategory) == "" {
 		return fmt.Errorf("budget category is required")
