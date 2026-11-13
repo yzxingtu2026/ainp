@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from "vue";
 import { useRouter } from "vue-router";
+import { useAppStore } from "@/store/modules/app";
 import { useAiAssistantStore } from "@/store/modules/ai-assistant";
 import { useRouteStore } from "@/store/modules/route";
 import { useThemeStore } from "@/store/modules/theme";
@@ -10,6 +11,7 @@ import { $t } from "@/locales";
 
 defineOptions({ name: "GlobalAiAssistant" });
 
+const appStore = useAppStore();
 const store = useAiAssistantStore();
 const routeStore = useRouteStore();
 const themeStore = useThemeStore();
@@ -19,6 +21,7 @@ const panel = ref<HTMLElement | null>(null);
 const renameVisible = ref(false);
 const renameTitle = ref("");
 const renameTarget = ref<Api.AI.Conversation | null>(null);
+const docked = computed(() => !appStore.isMobile);
 const agentName = computed(
   () => controller.slot.value?.agent?.name || $t("page.aiWorkspace.assistant"),
 );
@@ -71,12 +74,13 @@ function expandWorkspace() {
 </script>
 
 <template>
-  <Teleport to="body">
+  <Teleport to="body" :disabled="docked">
     <Transition name="ai-assistant-panel">
       <aside
         v-if="store.visible"
         ref="panel"
         class="global-ai-assistant"
+        :class="{ 'global-ai-assistant--docked': docked }"
         tabindex="-1"
         role="complementary"
         :aria-label="$t('page.aiWorkspace.assistant')"
@@ -290,6 +294,16 @@ function expandWorkspace() {
   outline: none;
   pointer-events: auto;
 }
+.global-ai-assistant--docked {
+  position: relative;
+  top: auto;
+  right: auto;
+  bottom: auto;
+  z-index: auto;
+  width: 100%;
+  height: 100%;
+  box-shadow: none;
+}
 .global-ai-assistant__header {
   min-height: 58px;
   flex: none;
@@ -362,7 +376,7 @@ function expandWorkspace() {
   opacity: 0;
 }
 @media (max-width: 840px) {
-  .global-ai-assistant {
+  .global-ai-assistant:not(.global-ai-assistant--docked) {
     top: 0;
     width: 100vw;
     max-width: none;

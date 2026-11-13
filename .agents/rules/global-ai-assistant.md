@@ -9,9 +9,10 @@
 - 共享 Composer 使用 VueUse `useTextareaAutosize` 按内容、程序化草稿和宽度变化重算；默认两行，Sidebar 上限约 8 行且不超过 `32dvh`，Workspace 上限约 10 行且不超过 `38dvh`，达到上限后才允许内部滚动。必须提供可访问名称；Enter/Shift+Enter/IME、附件和发送/停止行为保持不变。
 - 用户消息优先展示认证态当前用户头像 attachment ID，经统一附件下载协议加载；无头像或失败时降级账户图标，禁止保存对象 URL 或在容器层重复实现。
 - 面板挂载于应用壳，关闭/跨路由不清 controller；展开 Workspace 保留 Conversation、草稿和 Run。刷新只持久化 Conversation ID 并从服务端恢复事实。
+- 桌面面板是 `AdminLayout` 布局右列（`rightPanel` 插槽）双视图，不是悬浮浮层：主区域收缩、header 保持整行，宽度在 400px–`min(640px, 48vw)` 区间响应式变化；左导航展开态打开时自动折叠、关闭后还原，打开期间手动切换导航被尊重不再强制还原，移动端/fullContent 跳过联动；窄屏仍为全屏分层页。
 - 登出、认证失效、身份/realm 变化或入口撤权必须 abort 流并清空草稿、附件、Conversation、Run 和恢复引用。
 - Sidebar 仅含顶部栏、消息/空状态、Composer 与 history/run 二级视图；禁止 Page Context 条、内部 resource/capability/tag/Tool ID 和嵌套 Drawer。
-- Sidebar 层级只高于普通应用壳，必须低于统一 Modal/Drawer/Dialog 浮层；附件选择器等模态交互应覆盖整个侧栏，禁止按业务弹窗堆叠更高 z-index。
+- Sidebar 层级由布局内核 `maxZIndex` 约束，只高于普通应用壳，必须低于统一 Modal/Drawer/Dialog 浮层；附件选择器等模态交互应覆盖整个侧栏，禁止按业务弹窗堆叠更高 z-index。
 - 首页只提供欢迎、开始工作、继续工作与授权功能模块，不放置 Prompt 输入框或第二套会话 controller；开始工作统一进入 Workspace。
 - 首页“继续工作”只能投影真实的待确认 AI 工具调用与当前仍有权限的已打开页面；框架期无通用待办模型时必须展示空状态，禁止伪造待办或项目数据。
 - 首页机器人动作必须表达明确交互状态（欢迎、静坐、思考、冥想、跳动），保持固定画布避免漂移，并为 `prefers-reduced-motion` 提供静态图。
@@ -20,7 +21,7 @@
 - 个性化输入只允许预算化 Runtime Context、Agent Slot Version、Memory Current Profile、近期 Run 摘要及最近 Workspace 会话结尾最多 4 条纯文本；会话片段必须标记 untrusted，禁止完整历史、工具参数、原始记忆与页面正文。
 - 时段问候必须由服务端在每次读取时按用户时区动态计算；模型快照只保存稳定 greeting body，禁止固化“早上好/下午好/晚上好”。
 - greeting body 可复用旧快照，但时段前缀必须使用本次读取的 Trusted Runtime Context；首页加载态只用中性文案，不得读取浏览器时钟。
-- 桌面宽度、移动全屏、长内容 overflow、焦点返回、Escape、ARIA、Tooltip 与 reduced-motion 必须验证。
+- 桌面宽度、移动全屏、开关折叠联动与手动切换覆盖、长内容 overflow、焦点返回、Escape、ARIA、Tooltip 与 reduced-motion 必须验证。
 
 - Composer 极光效果只在共享 `WorkspaceComposer` 内实现，按 density 调整强度；离线/失败仅投影视觉状态，禁止新增协议逻辑；reduced-motion 必须关闭持续光效和上传旋转并保留键盘焦点。
 

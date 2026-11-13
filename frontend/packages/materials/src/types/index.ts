@@ -76,6 +76,30 @@ interface AdminLayoutSiderConfig {
   siderCollapsedWidth?: number;
 }
 
+/** Right panel config */
+export interface AdminLayoutRightPanelConfig {
+  /**
+   * Whether right panel is visible
+   *
+   * Only works on desktop; on mobile the slot is rendered as-is
+   *
+   * @default false
+   */
+  rightPanelVisible?: boolean;
+  /**
+   * Right panel width
+   *
+   * @default 0
+   */
+  rightPanelWidth?: number;
+  /**
+   * Right panel class
+   *
+   * @default ''
+   */
+  rightPanelClass?: string;
+}
+
 /** Content config */
 export interface AdminLayoutContentConfig {
   /**
@@ -150,6 +174,7 @@ export interface AdminLayoutProps
     AdminLayoutHeaderConfig,
     AdminLayoutTabConfig,
     AdminLayoutSiderConfig,
+    AdminLayoutRightPanelConfig,
     AdminLayoutContentConfig,
     AdminLayoutFooterConfig {
   /**
@@ -219,12 +244,13 @@ type Prefix = '--soy-';
 
 export type LayoutCssVarsProps = Pick<
   AdminLayoutProps,
-  'headerHeight' | 'tabHeight' | 'siderWidth' | 'siderCollapsedWidth' | 'footerHeight'
+  'headerHeight' | 'tabHeight' | 'siderWidth' | 'siderCollapsedWidth' | 'rightPanelWidth' | 'footerHeight'
 > & {
   headerZIndex?: number;
   tabZIndex?: number;
   siderZIndex?: number;
   mobileSiderZIndex?: number;
+  rightPanelZIndex?: number;
   footerZIndex?: number;
 };
 

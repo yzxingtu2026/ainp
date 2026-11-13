@@ -21,6 +21,8 @@ function createLayoutCssVarsByCssVarsProps(props: LayoutCssVarsProps) {
     '--soy-sider-collapsed-width': `${props.siderCollapsedWidth}px`,
     '--soy-sider-z-index': props.siderZIndex,
     '--soy-mobile-sider-z-index': props.mobileSiderZIndex,
+    '--soy-right-panel-width': `${props.rightPanelWidth}px`,
+    '--soy-right-panel-z-index': props.rightPanelZIndex,
     '--soy-footer-height': `${props.footerHeight}px`,
     '--soy-footer-z-index': props.footerZIndex
   };
@@ -42,6 +44,7 @@ export function createLayoutCssVars(props: AdminLayoutProps) {
     tabHeight,
     siderWidth,
     siderCollapsedWidth,
+    rightPanelWidth,
     footerHeight
   } = props;
 
@@ -49,6 +52,8 @@ export function createLayoutCssVars(props: AdminLayoutProps) {
   const tabZIndex = maxZIndex - 5;
   const siderZIndex = mode === 'vertical' || isMobile ? maxZIndex - 1 : maxZIndex - 4;
   const mobileSiderZIndex = isMobile ? maxZIndex - 2 : 0;
+  // the right panel spans the full height like the sider, so it must paint above the footer background
+  const rightPanelZIndex = maxZIndex - 2;
   const footerZIndex = maxZIndex - 5;
 
   const cssProps: LayoutCssVarsProps = {
@@ -60,6 +65,8 @@ export function createLayoutCssVars(props: AdminLayoutProps) {
     siderZIndex,
     mobileSiderZIndex,
     siderCollapsedWidth,
+    rightPanelWidth,
+    rightPanelZIndex,
     footerHeight,
     footerZIndex
   };
