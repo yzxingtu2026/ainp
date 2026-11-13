@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent } from 'vue';
 import { useRoute } from 'vue-router';
+import { useWindowSize } from '@vueuse/core';
 import { AdminLayout, LAYOUT_SCROLL_EL_ID } from '@sa/materials';
 import type { LayoutMode } from '@sa/materials';
 import { useAppStore } from '@/store/modules/app';
+import { useAiAssistantStore } from '@/store/modules/ai-assistant';
 import { useThemeStore } from '@/store/modules/theme';
 import GlobalHeader from '../modules/global-header/index.vue';
 import GlobalSider from '../modules/global-sider/index.vue';
@@ -20,11 +22,21 @@ defineOptions({
 
 const appStore = useAppStore();
 const themeStore = useThemeStore();
+const aiAssistantStore = useAiAssistantStore();
 const route = useRoute();
 const { secondLevelMenus, childLevelMenus, isActiveFirstLevelMenuHasChildren } = provideMixMenuContext();
 
 const GlobalMenu = defineAsyncComponent(() => import('../modules/global-menu/index.vue'));
 const immersive = computed(() => Boolean(route.meta.immersive));
+
+const aiPanelVisible = computed(() => aiAssistantStore.visible && !appStore.isMobile && !appStore.fullContent);
+
+const { width: viewportWidth } = useWindowSize();
+
+const aiPanelWidth = computed(() => {
+  const vw = viewportWidth.value;
+  return Math.max(400, Math.min(vw * 0.36, Math.min(640, vw * 0.48)));
+});
 
 const layoutMode = computed(() => {
   const vertical: LayoutMode = 'vertical';
@@ -136,6 +148,8 @@ function getSiderAndCollapsedWidth(isCollapsed: boolean) {
     :sider-visible="siderVisible"
     :sider-width="siderWidth"
     :sider-collapsed-width="siderCollapsedWidth"
+    :right-panel-visible="aiPanelVisible"
+    :right-panel-width="aiPanelWidth"
     :footer-visible="themeStore.footer.visible && !immersive"
     :footer-height="themeStore.footer.height"
     :fixed-footer="themeStore.footer.fixed"
@@ -150,9 +164,11 @@ function getSiderAndCollapsedWidth(isCollapsed: boolean) {
     <template #sider>
       <GlobalSider />
     </template>
+    <template #rightPanel>
+      <GlobalAiAssistant />
+    </template>
     <GlobalMenu />
     <GlobalContent :show-padding="!immersive" />
-    <GlobalAiAssistant />
     <ThemeDrawer />
     <template #footer>
       <GlobalFooter />

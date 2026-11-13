@@ -28,9 +28,9 @@ Header launcher 在所有 layout mode 中显示，并以动态路由中的 `shel
 
 已登录可用只免除对话基础设施自身的角色 permission，不改变任何资源边界：会话、消息、Run、附件仍强制当前 tenant/user/owner；Agent 管理、Slot 管理、模型、知识库管理仍需角色权限；Agent 实际调用的业务 Action 必须在 Tool Search/Load/Execute 和执行前按当前用户实时权限过滤，禁止借 AI 助手越权。
 
-桌面面板宽度限制为 400px 至 `min(640px, 48vw)`，固定在应用壳右侧；窄屏为全屏分层页。面板没有 Page Context 区域，不展示 resource/capability/tag/Tool ID。Escape、关闭和展开后恢复触发入口焦点，reduced-motion 禁用转场。
+桌面面板是 `AdminLayout` 的布局右列（`rightPanel` 插槽），不是悬浮浮层：激活后主区域收缩，与面板左右并排形成双视图，互不重叠；header 保持整行，面板从 header 下方开始。布局内核通过 `rightPanelVisible / rightPanelWidth / rightPanelClass` 与 `--soy-right-panel-width` CSS 变量驱动右列，tab/main/footer 按模式追加右间距；移动端不预留空间、裸渲染插槽，由组件自身 Teleport 成全屏分层页。面板宽度在 400px 至 `min(640px, 48vw)` 区间响应式变化，拖拽调宽列入二期。左导航处于展开态时打开面板自动折叠，关闭后还原原展开态；面板打开期间用户手动切换导航则尊重手动操作，不再强制还原；移动端与 fullContent 跳过联动。面板没有 Page Context 区域，不展示 resource/capability/tag/Tool ID。Escape、关闭和展开后恢复触发入口焦点，reduced-motion 禁用转场。
 
-侧边栏必须高于应用壳普通内容，但低于 Naive UI 的 Modal、Drawer、Dialog 等统一浮层；从 Composer 打开的附件选择器及侧边栏内其他模态交互必须完整覆盖侧边栏和遮罩整个页面。禁止通过给单个业务弹窗持续叠加更高 z-index 修补层级。
+侧边栏层级由布局内核 `maxZIndex` 约束，高于应用壳普通内容，但低于 Naive UI 的 Modal、Drawer、Dialog 等统一浮层；从 Composer 打开的附件选择器及侧边栏内其他模态交互必须完整覆盖侧边栏和遮罩整个页面。禁止通过给单个业务弹窗持续叠加更高 z-index 修补层级。
 
 首页只提供进入 Workspace 的明确命令，不承载 Prompt 输入、Conversation 或待发送消息。点击“开始工作”只执行可信路由跳转；首页不得创建第二个 controller，不得通过 URL、Hash 或浏览器历史传递对话内容。
 
@@ -68,4 +68,4 @@ History 复用 `ConversationPanel`，支持新建、选择、重命名、归档�
 
 - 架构门禁验证单 controller/Surface、入口行为、身份清理、禁止 Context 暴露和仅持久化 Conversation ID。
 - typecheck/build 验证所有布局共享组件编译。
-- 手工联调覆盖所有 layout mode、业务表单/滚动保持、桌面/移动、Page Context 发送、SSE/停止/重连、历史/Run、刷新恢复、权限撤销与登出。
+- 手工联调覆盖所有 layout mode、开关面板的左导航折叠/还原与手动切换覆盖、业务表单/滚动保持、桌面/移动、Page Context 发送、SSE/停止/重连、历史/Run、刷新恢复、权限撤销与登出。

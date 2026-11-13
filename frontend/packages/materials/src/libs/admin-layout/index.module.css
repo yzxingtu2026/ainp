@@ -37,6 +37,11 @@
   z-index: var(--soy-sider-z-index);
 }
 
+.layout-right-panel {
+  width: var(--soy-right-panel-width);
+  z-index: var(--soy-right-panel-z-index);
+}
+
 .layout-footer,
 .layout-footer-placement {
   height: var(--soy-footer-height);
@@ -54,10 +59,22 @@
   padding-left: var(--soy-sider-collapsed-width);
 }
 
+.right-gap {
+  padding-right: var(--soy-right-panel-width);
+}
+
 .sider-padding-top {
   padding-top: var(--soy-header-height);
 }
 
 .sider-padding-bottom {
+  padding-bottom: var(--soy-footer-height);
+}
+
+.right-panel-padding-top {
+  padding-top: var(--soy-header-height);
+}
+
+.right-panel-padding-bottom {
   padding-bottom: var(--soy-footer-height);
 }

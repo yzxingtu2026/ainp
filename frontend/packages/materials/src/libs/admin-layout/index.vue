@@ -23,6 +23,9 @@ const props = withDefaults(defineProps<AdminLayoutProps>(), {
   siderCollapse: false,
   siderWidth: 220,
   siderCollapsedWidth: 64,
+  rightPanelVisible: false,
+  rightPanelWidth: 0,
+  rightPanelClass: '',
   footerVisible: true,
   footerHeight: 48,
   rightFooter: false
@@ -46,6 +49,8 @@ type Slots = {
   tab?: SlotFn;
   /** Sider */
   sider?: SlotFn;
+  /** Right panel */
+  rightPanel?: SlotFn;
   /** Footer */
   footer?: SlotFn;
 };
@@ -59,6 +64,7 @@ const showHeader = computed(() => Boolean(slots.header) && props.headerVisible);
 const showTab = computed(() => Boolean(slots.tab) && props.tabVisible);
 const showSider = computed(() => !props.isMobile && Boolean(slots.sider) && props.siderVisible);
 const showMobileSider = computed(() => props.isMobile && Boolean(slots.sider) && props.siderVisible);
+const showRightPanel = computed(() => !props.isMobile && Boolean(slots.rightPanel) && props.rightPanelVisible);
 const showFooter = computed(() => Boolean(slots.footer) && props.footerVisible);
 
 // scroll mode
@@ -107,6 +113,40 @@ const siderPaddingClass = computed(() => {
   return cls;
 });
 
+const rightGapClass = computed(() => {
+  if (!props.fullContent && showRightPanel.value) {
+    return style['right-gap'];
+  }
+
+  return '';
+});
+
+const footerRightGapClass = computed(() => {
+  const condition1 = isVertical.value;
+  const condition2 = isHorizontal.value && isWrapperScroll.value && !props.fixedFooter;
+  const condition3 = Boolean(isHorizontal.value && props.rightFooter);
+
+  if (condition1 || condition2 || condition3) {
+    return rightGapClass.value;
+  }
+
+  return '';
+});
+
+const rightPanelPaddingClass = computed(() => {
+  let cls = '';
+
+  // the header always spans the full row, so the panel starts below it
+  if (showHeader.value) {
+    cls += style['right-panel-padding-top'];
+  }
+  if (showFooter.value && !footerRightGapClass.value) {
+    cls += ` ${style['right-panel-padding-bottom']}`;
+  }
+
+  return cls;
+});
+
 function handleClickMask() {
   emit('update:siderCollapse', true);
 }
@@ -150,6 +190,7 @@ function handleClickMask() {
             tabClass,
             { 'top-0!': fullContent || !showHeader },
             leftGapClass,
+            rightGapClass,
             { 'absolute left-0 w-full': fixedHeaderAndTab }
           ]"
         >
@@ -199,11 +240,22 @@ function handleClickMask() {
         ></div>
       </template>
 
+      <!-- Right Panel: on mobile the slot is rendered as-is so the panel component can teleport itself fullscreen -->
+      <slot v-if="isMobile" name="rightPanel"></slot>
+      <aside
+        v-else-if="showRightPanel"
+        v-show="!fullContent"
+        class="absolute right-0 top-0 h-full"
+        :class="[commonClass, rightPanelClass, rightPanelPaddingClass, style['layout-right-panel']]"
+      >
+        <slot name="rightPanel"></slot>
+      </aside>
+
       <!-- Main Content -->
       <main
         :id="isContentScroll ? scrollElId : undefined"
         class="flex flex-col flex-grow"
-        :class="[commonClass, contentClass, leftGapClass, { 'overflow-y-auto': isContentScroll }]"
+        :class="[commonClass, contentClass, leftGapClass, rightGapClass, { 'overflow-y-auto': isContentScroll }]"
       >
         <slot></slot>
       </main>
@@ -218,6 +270,7 @@ function handleClickMask() {
             commonClass,
             footerClass,
             footerLeftGapClass,
+            footerRightGapClass,
             { 'absolute left-0 bottom-0 w-full': fixedFooter }
           ]"
         >
