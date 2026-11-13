@@ -536,7 +536,12 @@ const local: App.I18n.Schema = {
       runCancelled: '本次运行已取消',
       runProviderUnavailable: '模型服务暂时不可用，请稍后重试',
       runStreamProtocolError: '模型流响应异常，请稍后重试或联系管理员',
-      completedToolsPreserved: '本次运行中已完成的工具操作不会回滚。'
+      completedToolsPreserved: '本次运行中已完成的工具操作不会回滚。',
+      scrollToBottom: '回到底部',
+      scrollToBottomStreaming: '回到最新输出',
+      shortcutHint: 'Enter 发送 · Shift + Enter 换行',
+      imageUnavailable: '图片附件不可用或已发生变化',
+      previewAttachment: '预览附件'
     },
     agentBuilder: {
       back: '返回列表',
@@ -1171,10 +1176,28 @@ const local: App.I18n.Schema = {
     navigationSearchError: '无法加载功能搜索结果，请稍后重试',
     navigationOffline: '当前处于离线状态，联网后可搜索系统功能',
     navigationDegraded: '搜索服务已降级，当前展示词法匹配结果',
-    pageCapturing: 'AI 正在查看当前页面'
+    pageCapturing: 'AI 正在查看当前页面',
+    copy: '复制',
+    copied: '已复制',
+    copyMessage: '复制提问',
+    copyResponse: '复制回答',
+    copyCode: '复制代码',
+    codeLanguage: 'text',
+    viewRunDetails: '运行轨迹',
+    retryRun: '重试运行',
+    streamingLive: '生成中',
+    stepModel: '模型推理',
+    stepToolSearch: '工具检索',
+    stepToolLoad: '加载定义',
+    stepToolExecute: '工具执行',
+    stepContextAssemble: '上下文装配',
+    stepFinalize: '生成总结'
   },
   toolConfirmation: {
     title: '敏感工具执行确认',
+    securityGate: '安全执行确认',
+    singleUseNotice: '批准仅对本次调用单次生效，不会持久放行',
+    sensitiveField: '敏感',
     tool: '工具',
     arguments: '参数摘要',
     callId: '调用标识',

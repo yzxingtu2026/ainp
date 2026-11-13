@@ -685,6 +685,11 @@ declare namespace App {
           runProviderUnavailable: string;
           runStreamProtocolError: string;
           completedToolsPreserved: string;
+          scrollToBottom: string;
+          scrollToBottomStreaming: string;
+          shortcutHint: string;
+          imageUnavailable: string;
+          previewAttachment: string;
         };
         agentBuilder: {
           back: string;
@@ -1313,9 +1318,27 @@ declare namespace App {
         navigationOffline: string;
         navigationDegraded: string;
         pageCapturing: string;
+        copy: string;
+        copied: string;
+        copyMessage: string;
+        copyResponse: string;
+        copyCode: string;
+        codeLanguage: string;
+        viewRunDetails: string;
+        retryRun: string;
+        streamingLive: string;
+        stepModel: string;
+        stepToolSearch: string;
+        stepToolLoad: string;
+        stepToolExecute: string;
+        stepContextAssemble: string;
+        stepFinalize: string;
       };
       toolConfirmation: {
         title: string;
+        securityGate: string;
+        singleUseNotice: string;
+        sensitiveField: string;
         tool: string;
         arguments: string;
         callId: string;

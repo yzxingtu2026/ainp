@@ -12,6 +12,8 @@ import {
   fetchAIMessages,
   fetchAIToolConfirmations,
   restoreAIConversation,
+  resumeAIAgentRun,
+  retryAIAgentRun,
   startAIAgentRun,
   submitAIPageCapture,
   updateAIConversation
@@ -93,6 +95,7 @@ function createAiConversationController() {
   const input = ref('');
   const attachments = ref<Api.Attachment.Item[]>([]);
   const busy = ref(false);
+  const retrying = ref(false);
   const capturingPage = ref(false);
   const messageListEl = ref<HTMLElement | null>(null);
 
@@ -151,6 +154,16 @@ function createAiConversationController() {
     return runDetail.value?.run.id || '';
   });
 
+  const failedRunId = computed(() => {
+    const run = runDetail.value?.run;
+    return run?.status === 'failed' ? run.id : '';
+  });
+
+  const canRetryFailedRun = computed(() => {
+    const run = runDetail.value?.run;
+    return Boolean(run && run.status === 'failed' && (run.retryable ?? true) && !busy.value && !retrying.value);
+  });
+
   /** 步骤感知的思考占位提示：根据当前运行中的 step 动态映射图标与文案 */
   const thinkingHint = computed<{ icon: string; text: string; toolName?: string }>(() => {
     if (capturingPage.value) {
@@ -174,9 +187,14 @@ function createAiConversationController() {
     return { icon: 'mdi:brain-outline', text: $t('chat.thinkingThinking') };
   });
 
-  async function scrollToBottom() {
+  async function scrollToBottom(force = false) {
+    const before = messageListEl.value;
+    const nearBottom = !before || before.scrollHeight - before.scrollTop - before.clientHeight <= 120;
     await nextTick();
-    if (messageListEl.value) messageListEl.value.scrollTop = messageListEl.value.scrollHeight;
+    const current = messageListEl.value;
+    if (current && (force || nearBottom)) {
+      current.scrollTop = current.scrollHeight;
+    }
   }
 
   async function loadConversations() {
@@ -431,6 +449,7 @@ function createAiConversationController() {
     error.value = '';
     status.value = 'loading';
     await refreshMessages();
+    await scrollToBottom(true);
     const { data } = await fetchAIAgentRuns({
       page: 1,
       page_size: 1,
@@ -516,7 +535,7 @@ function createAiConversationController() {
       input.value = '';
       attachments.value = [];
       messages.value.push(userMessage);
-      await scrollToBottom();
+      await scrollToBottom(true);
       status.value = 'running';
       const { data: started, error: runError } = await startAIAgentRun(
         {
@@ -583,6 +602,46 @@ function createAiConversationController() {
     if (run) void watchRun(run.id, eventCursor);
   }
 
+  async function inspectRun(runId?: string) {
+    if (!runId || runDetail.value?.run.id === runId) return runDetail.value;
+    if (activeRunId.value && activeRunId.value !== runId) return runDetail.value;
+    const { data } = await fetchAIAgentRun(runId);
+    if (data) runDetail.value = data;
+    return data || null;
+  }
+
+  async function retryRun(targetRunId?: string) {
+    if (retrying.value || busy.value) return;
+    let target = runDetail.value;
+    if (targetRunId && target?.run.id !== targetRunId) {
+      const { data } = await fetchAIAgentRun(targetRunId);
+      if (data) target = data;
+    }
+    if (!target || target.run.status !== 'failed' || !(target.run.retryable ?? true)) return;
+    retrying.value = true;
+    error.value = '';
+    try {
+      const { data, error: retryError } = await retryAIAgentRun(target.run.id, target.run.revision);
+      if (retryError || !data) return;
+      runDetail.value = data;
+      streamingText.value = '';
+      eventCursor = 0;
+      await scrollToBottom(true);
+      void watchRun(data.run.id, 0);
+    } finally {
+      retrying.value = false;
+    }
+  }
+
+  async function resumeRun() {
+    const run = runDetail.value?.run;
+    if (!run || (run.status !== 'waiting_confirmation' && run.status !== 'paused')) return;
+    const { data, error: resumeError } = await resumeAIAgentRun(run.id, run.revision);
+    if (resumeError || !data) return;
+    runDetail.value = data;
+    void watchRun(data.run.id, eventCursor);
+  }
+
   async function initialize() {
     if (initialized) return;
     if (initializePromise) return initializePromise;
@@ -637,6 +696,7 @@ function createAiConversationController() {
     input.value = '';
     attachments.value = [];
     busy.value = false;
+    retrying.value = false;
     messageListEl.value = null;
     storeConversationId();
   }
@@ -653,6 +713,9 @@ function createAiConversationController() {
     runDetail,
     displayStreamingText,
     activeRunId,
+    failedRunId,
+    canRetryFailedRun,
+    retrying,
     thinkingHint,
     capturingPage,
     input,
@@ -666,6 +729,9 @@ function createAiConversationController() {
     newConversation,
     send,
     stop,
+    inspectRun,
+    retryRun,
+    resumeRun,
     renameConversation,
     archiveConversation,
     restoreConversation,
