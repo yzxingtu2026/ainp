@@ -104,6 +104,23 @@ func websocketHandler(c *gin.Context) {
 
 消费以数据库条件更新原子完成；过期、篡改、重放、并发第二次消费、跨目标路径、跨 Surface 或 audience 均 fail-closed。消费成功后仍调用 `AuthorizationProvider`，因此已撤销 Session、AuthVersion 变化和主体停用不会恢复 AuthContext。`Sec-WebSocket-Protocol`、grant 和 access token 均属于敏感凭据，日志与审计不得记录原值。
 
+## 浏览器 Cookie Refresh Transport
+
+浏览器 Surface 可显式设置 `RefreshTransport: auth.RefreshTransportCookie`，并必须提供精确的 HTTP(S) `TrustedOrigins` allowlist。例如：
+
+```go
+auth.ClientSurface{
+    ID:               "orders.waiter",
+    PathPrefix:       "/api/waiter/",
+    RefreshTransport: auth.RefreshTransportCookie,
+    TrustedOrigins:   []string{"https://waiter.example.com"},
+}
+```
+
+登录响应设置名称由 Surface ID 稳定派生的 refresh Cookie；Cookie 使用 HttpOnly、Secure、SameSite=Lax，Path 等于 Surface 前缀且不设置 Domain。响应体返回 `csrf_token`，但不返回 `refresh_token`。refresh 与 logout 必须携带可信 Origin（仅在没有 Origin 时允许 Referer 回退）和 `X-CSRF-Token` 请求头；每次 refresh 同步轮换 CSRF Token。
+
+浏览器请求必须设置 `credentials: "include"`。CORS 仅精确回显配置中的 Origin，返回 `Access-Control-Allow-Credentials: true`，绝不使用 `*`。同站部署是默认支持范围；任意跨站 Cookie 场景仍受 SameSite=Lax 限制，必须另行完成域名与 Cookie 安全评审。
+
 ## API
 
 | API | Access | 说明 |

@@ -5,6 +5,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -12,6 +14,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/auth"
 	"github.com/yzxingtu2026/ainp/platform/framework/authentication"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
+	"github.com/yzxingtu2026/ainp/platform/framework/httptransport"
 	"github.com/yzxingtu2026/ainp/platform/framework/status"
 	"github.com/yzxingtu2026/ainp/platform/framework/tenant"
 	"github.com/yzxingtu2026/ainp/platform/modules/system/access/model"
@@ -33,7 +36,7 @@ type ChallengeRequest struct {
 }
 
 type RefreshRequest struct {
-	RefreshToken string `json:"refresh_token" validate:"required"`
+	RefreshToken string `json:"refresh_token"`
 }
 
 type LegacyLoginRequest struct {
@@ -65,6 +68,48 @@ func (s *UnifiedAuthService) allow(ctx context.Context, key string) error {
 		return errs.NewKey(errs.CodeTooManyRequests, "common.too_many_requests", "too many requests")
 	}
 	return nil
+}
+
+func cookieExchange(ctx context.Context, surface auth.ClientSurface) (*httptransport.Exchange, error) {
+	exchange, ok := httptransport.FromContext(ctx)
+	if !ok || exchange.Request == nil {
+		return nil, errs.NewKey(errs.CodeForbidden, "auth.cookie_transport_required", "cookie authentication requires HTTP transport")
+	}
+	origin := strings.TrimSpace(exchange.Request.Header.Get("Origin"))
+	if origin == "" {
+		referer := strings.TrimSpace(exchange.Request.Header.Get("Referer"))
+		parsed, err := url.Parse(referer)
+		if err == nil && parsed.Scheme != "" && parsed.Host != "" {
+			origin = parsed.Scheme + "://" + parsed.Host
+		}
+	}
+	if origin == "" || !surface.AllowsOrigin(origin) {
+		return nil, errs.NewKey(errs.CodeForbidden, "auth.cookie_origin_invalid", "untrusted request origin")
+	}
+	return exchange, nil
+}
+
+func setRefreshCookie(exchange *httptransport.Exchange, surface auth.ClientSurface, token string, expiresAt time.Time) {
+	maxAge := int(time.Until(expiresAt).Seconds())
+	if maxAge < 1 {
+		maxAge = 1
+	}
+	exchange.SetCookie(&http.Cookie{Name: auth.RefreshCookieName(surface.ID), Value: token, Path: auth.RefreshCookiePath(surface), Expires: expiresAt, MaxAge: maxAge, HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode})
+}
+
+func clearRefreshCookie(exchange *httptransport.Exchange, surface auth.ClientSurface) {
+	exchange.SetCookie(&http.Cookie{Name: auth.RefreshCookieName(surface.ID), Path: auth.RefreshCookiePath(surface), Expires: time.Unix(1, 0), MaxAge: -1, HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode})
+}
+
+func sessionTokenResponse(tokens *SessionTokens, includeRefresh bool) map[string]any {
+	response := map[string]any{"access_token": tokens.AccessToken, "token_type": tokens.TokenType, "expires_in": tokens.ExpiresIn, "expires_at": tokens.ExpiresAt.UTC().Format(time.RFC3339), "session_id": tokens.SessionID}
+	if includeRefresh {
+		response["refresh_token"] = tokens.RefreshToken
+	}
+	if tokens.CSRFToken != "" {
+		response["csrf_token"] = tokens.CSRFToken
+	}
+	return response
 }
 
 func authenticationRateKey(method, client string, payload json.RawMessage) string {
@@ -137,6 +182,13 @@ func (s *UnifiedAuthService) Authenticate(ctx context.Context, req AuthenticateR
 	if err != nil {
 		return nil, err
 	}
+	var exchange *httptransport.Exchange
+	if surface.RefreshTransport == auth.RefreshTransportCookie {
+		exchange, err = cookieExchange(ctx, surface)
+		if err != nil {
+			return nil, err
+		}
+	}
 	verified, err := provider.Complete(ctx, authentication.CompleteRequest{ChallengeID: req.ChallengeID, Client: req.Client, Payload: req.Credentials})
 	if err != nil {
 		return nil, err
@@ -154,11 +206,12 @@ func (s *UnifiedAuthService) Authenticate(ctx context.Context, req AuthenticateR
 		ac.Principal, ac.AuthVersion, ac.Audience, ac.ClientSurface = snapshot.Principal, snapshot.AuthVersion, surface.Audience, surface.ID
 		ac.Roles, ac.Permissions = append([]string(nil), snapshot.Roles...), append([]string(nil), snapshot.Permissions...)
 	}
-	return map[string]any{
-		"access_token": tokens.AccessToken, "refresh_token": tokens.RefreshToken, "token_type": tokens.TokenType,
-		"expires_in": tokens.ExpiresIn, "expires_at": tokens.ExpiresAt.UTC().Format(time.RFC3339), "session_id": tokens.SessionID,
-		"principal": snapshot.Principal, "client_surface": surface.ID, "user": profile,
-	}, nil
+	response := sessionTokenResponse(tokens, surface.RefreshTransport != auth.RefreshTransportCookie)
+	response["principal"], response["client_surface"], response["user"] = snapshot.Principal, surface.ID, profile
+	if exchange != nil {
+		setRefreshCookie(exchange, surface, tokens.RefreshToken, tokens.RefreshExpiresAt)
+	}
+	return response, nil
 }
 
 func (s *UnifiedAuthService) resolveSurfaceForContext(ctx context.Context, client string) (auth.ClientSurface, error) {
@@ -249,10 +302,43 @@ func (s *UnifiedAuthService) resolveIdentity(ctx context.Context, identity *auth
 }
 
 func (s *UnifiedAuthService) Refresh(ctx context.Context, req RefreshRequest) (any, error) {
-	if err := s.allow(ctx, "refresh:"+refreshSessionID(req.RefreshToken)); err != nil {
+	surfaceID := auth.MustFromContext(ctx).ClientSurface
+	if s.surfaces == nil {
+		return nil, auth.ErrAuthorizationInvalid
+	}
+	surface, ok := s.surfaces.Get(surfaceID)
+	if !ok {
+		return nil, auth.ErrAuthorizationInvalid
+	}
+	refreshToken := strings.TrimSpace(req.RefreshToken)
+	csrfToken := ""
+	var exchange *httptransport.Exchange
+	var err error
+	if surface.RefreshTransport == auth.RefreshTransportCookie {
+		exchange, err = cookieExchange(ctx, surface)
+		if err != nil {
+			return nil, err
+		}
+		cookie, cookieErr := exchange.Request.Cookie(auth.RefreshCookieName(surface.ID))
+		if cookieErr != nil || strings.TrimSpace(cookie.Value) == "" {
+			return nil, errs.NewKey(errs.CodeUnauthorized, "auth.session_invalid", "invalid session")
+		}
+		refreshToken = strings.TrimSpace(cookie.Value)
+		csrfToken = strings.TrimSpace(exchange.Request.Header.Get(auth.CSRFHeader))
+	} else if refreshToken == "" {
+		return nil, errs.NewKey(errs.CodeValidation, "common.validation_failed", "refresh_token is required")
+	}
+	if err := s.allow(ctx, "refresh:"+refreshSessionID(refreshToken)); err != nil {
 		return nil, err
 	}
-	return s.sessions.Refresh(ctx, strings.TrimSpace(req.RefreshToken))
+	tokens, err := s.sessions.RefreshWithCSRF(ctx, refreshToken, csrfToken)
+	if err != nil {
+		return nil, err
+	}
+	if exchange != nil {
+		setRefreshCookie(exchange, surface, tokens.RefreshToken, tokens.RefreshExpiresAt)
+	}
+	return sessionTokenResponse(tokens, exchange == nil), nil
 }
 
 type SessionView struct {
@@ -325,6 +411,34 @@ func (s *UnifiedAuthService) RevokeCurrent(ctx context.Context) (any, error) {
 		return nil, errs.NewKey(errs.CodeUnauthorized, "common.unauthorized", "unauthorized")
 	}
 	return s.RevokeSession(ctx, ac.SessionID)
+}
+
+func (s *UnifiedAuthService) Logout(ctx context.Context) (any, error) {
+	ac := auth.MustFromContext(ctx)
+	if s.surfaces == nil {
+		return nil, auth.ErrAuthorizationInvalid
+	}
+	surface, ok := s.surfaces.Get(ac.ClientSurface)
+	if !ok {
+		return nil, auth.ErrAuthorizationInvalid
+	}
+	if surface.RefreshTransport != auth.RefreshTransportCookie {
+		return s.RevokeCurrent(ctx)
+	}
+	exchange, err := cookieExchange(ctx, surface)
+	if err != nil {
+		return nil, err
+	}
+	cookie, err := exchange.Request.Cookie(auth.RefreshCookieName(surface.ID))
+	if err != nil || strings.TrimSpace(cookie.Value) == "" {
+		return nil, errs.NewKey(errs.CodeUnauthorized, "auth.session_invalid", "invalid session")
+	}
+	csrfToken := strings.TrimSpace(exchange.Request.Header.Get(auth.CSRFHeader))
+	if err = s.sessions.RevokeWithCSRF(ctx, strings.TrimSpace(cookie.Value), csrfToken); err != nil {
+		return nil, err
+	}
+	clearRefreshCookie(exchange, surface)
+	return map[string]any{"revoked": true}, nil
 }
 
 func (s *UnifiedAuthService) RevokeAll(ctx context.Context) (any, error) {

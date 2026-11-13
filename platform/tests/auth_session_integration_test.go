@@ -89,7 +89,8 @@ func TestClientSurfaceSessionPolicies(t *testing.T) {
 	rejectSurface := auth.ClientSurface{ID: "example.reject", Audience: "example:reject", PathPrefix: "/reject/", PrincipalKinds: []auth.PrincipalKind{"example.customer"}, Methods: []string{"example-sso"}, MaxActiveSessions: 1, OverflowPolicy: auth.SessionOverflowReject}
 	revokeSurface := auth.ClientSurface{ID: "example.revoke", Audience: "example:revoke", PathPrefix: "/revoke/", PrincipalKinds: []auth.PrincipalKind{"example.customer"}, Methods: []string{"example-sso"}, MaxActiveSessions: 1, OverflowPolicy: auth.SessionOverflowRevokeOldest}
 	concurrentSurface := auth.ClientSurface{ID: "example.concurrent", Audience: "example:concurrent", PathPrefix: "/concurrent/", PrincipalKinds: []auth.PrincipalKind{"example.customer"}, Methods: []string{"example-sso"}, MaxActiveSessions: 2, OverflowPolicy: auth.SessionOverflowReject}
-	for _, surface := range []auth.ClientSurface{defaultSurface, absoluteSurface, idleSurface, rejectSurface, revokeSurface, concurrentSurface} {
+	cookieSurface := auth.ClientSurface{ID: "example.cookie", Audience: "example:cookie", PathPrefix: "/cookie/", PrincipalKinds: []auth.PrincipalKind{"example.customer"}, Methods: []string{"example-sso"}, RefreshTransport: auth.RefreshTransportCookie, TrustedOrigins: []string{"https://app.example.com"}}
+	for _, surface := range []auth.ClientSurface{defaultSurface, absoluteSurface, idleSurface, rejectSurface, revokeSurface, concurrentSurface, cookieSurface} {
 		if err = surfaces.Register(surface); err != nil {
 			t.Fatal(err)
 		}
@@ -113,6 +114,31 @@ func TestClientSurfaceSessionPolicies(t *testing.T) {
 	}
 	if err = db.First(&absoluteRow, "id = ?", createdAbsolute.SessionID).Error; err != nil {
 		t.Fatal(err)
+	}
+	cookieTokens, err := sessions.CreatePrincipal(context.Background(), snapshot, cookieSurface, "web", "cookie")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cookieRow model.AuthSession
+	if err = db.First(&cookieRow, "id = ?", cookieTokens.SessionID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if cookieTokens.CSRFToken == "" || cookieRow.CSRFTokenHash == "" || cookieRow.CSRFTokenHash == cookieTokens.CSRFToken {
+		t.Fatalf("cookie CSRF token must be returned once and stored only as a hash: token=%q hash=%q", cookieTokens.CSRFToken, cookieRow.CSRFTokenHash)
+	}
+	cookieContext := auth.WithContext(context.Background(), &auth.Context{ClientSurface: cookieSurface.ID})
+	if _, err = sessions.RefreshWithCSRF(cookieContext, cookieTokens.RefreshToken, "wrong"); appErrorKey(err) != "auth.csrf_invalid" {
+		t.Fatalf("invalid cookie CSRF error=%v key=%q", err, appErrorKey(err))
+	}
+	rotatedCookie, err := sessions.RefreshWithCSRF(cookieContext, cookieTokens.RefreshToken, cookieTokens.CSRFToken)
+	if err != nil || rotatedCookie.CSRFToken == "" || rotatedCookie.CSRFToken == cookieTokens.CSRFToken {
+		t.Fatalf("cookie refresh did not rotate token and CSRF: tokens=%#v err=%v", rotatedCookie, err)
+	}
+	if _, err = sessions.RefreshWithCSRF(cookieContext, cookieTokens.RefreshToken, cookieTokens.CSRFToken); appErrorKey(err) != "auth.session_invalid" {
+		t.Fatalf("cookie replay error=%v key=%q", err, appErrorKey(err))
+	}
+	if _, err = sessions.RefreshWithCSRF(cookieContext, rotatedCookie.RefreshToken, rotatedCookie.CSRFToken); appErrorKey(err) != "auth.session_invalid" {
+		t.Fatalf("cookie token family survived replay: %v", err)
 	}
 	if remaining := time.Until(defaultRow.ExpiresAt); remaining < 23*time.Hour || remaining > 24*time.Hour+time.Minute {
 		t.Fatalf("default lifetime=%s, want configured global TTL", remaining)

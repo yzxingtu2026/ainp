@@ -66,6 +66,42 @@ func RequestLog() gin.HandlerFunc {
 	}
 }
 
+func CORS(surfaces *auth.ClientSurfaceRegistry) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if surfaces == nil {
+			c.Next()
+			return
+		}
+		surface, ok := surfaces.ResolvePath(c.Request.URL.Path)
+		if !ok || surface.RefreshTransport != auth.RefreshTransportCookie {
+			c.Next()
+			return
+		}
+		origin := strings.TrimSpace(c.GetHeader("Origin"))
+		if origin == "" {
+			c.Next()
+			return
+		}
+		if !surface.AllowsOrigin(origin) {
+			response.Fail(c, errs.NewKey(errs.CodeForbidden, "auth.cookie_origin_invalid", "untrusted request origin"))
+			c.Abort()
+			return
+		}
+		header := c.Writer.Header()
+		header.Set("Access-Control-Allow-Origin", origin)
+		header.Set("Access-Control-Allow-Credentials", "true")
+		header.Add("Vary", "Origin")
+		if c.Request.Method == http.MethodOptions {
+			header.Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+			header.Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Accept-Language, Idempotency-Key, X-CSRF-Token, X-Request-ID")
+			header.Set("Access-Control-Max-Age", "600")
+			c.AbortWithStatus(http.StatusNoContent)
+			return
+		}
+		c.Next()
+	}
+}
+
 // AcceptLanguage 解析 Accept-Language 请求头，将协商后的语言写入 AuthContext.Language。
 // 支持值：zh-CN、zh、en；其他值回退到 i18n.DefaultLang()。
 func AcceptLanguage() gin.HandlerFunc {

@@ -2,6 +2,7 @@ package auth
 
 import (
 	"fmt"
+	"net/url"
 	"regexp"
 	"sort"
 	"strings"
@@ -12,10 +13,13 @@ import (
 const TenantConsoleSurface = "ainp.tenant-console"
 
 type SessionOverflowPolicy string
+type RefreshTransport string
 
 const (
 	SessionOverflowReject       SessionOverflowPolicy = "reject"
 	SessionOverflowRevokeOldest SessionOverflowPolicy = "revoke_oldest"
+	RefreshTransportBody        RefreshTransport      = "body"
+	RefreshTransportCookie      RefreshTransport      = "cookie"
 )
 
 var surfaceIDPattern = regexp.MustCompile(`^[a-z][a-z0-9]*(?:[.-][a-z][a-z0-9-]*)+$`)
@@ -30,6 +34,8 @@ type ClientSurface struct {
 	IdleTTL           time.Duration
 	MaxActiveSessions int
 	OverflowPolicy    SessionOverflowPolicy
+	RefreshTransport  RefreshTransport
+	TrustedOrigins    []string
 }
 
 func BuiltinTenantConsoleSurface() ClientSurface {
@@ -79,6 +85,27 @@ func (r *ClientSurfaceRegistry) Register(surface ClientSurface) error {
 	}
 	if surface.MaxActiveSessions > 0 && surface.OverflowPolicy == "" {
 		surface.OverflowPolicy = SessionOverflowReject
+	}
+	if surface.RefreshTransport == "" {
+		surface.RefreshTransport = RefreshTransportBody
+	}
+	if surface.RefreshTransport != RefreshTransportBody && surface.RefreshTransport != RefreshTransportCookie {
+		return fmt.Errorf("auth: surface %s has invalid refresh transport %q", surface.ID, surface.RefreshTransport)
+	}
+	if surface.RefreshTransport == RefreshTransportCookie && len(surface.TrustedOrigins) == 0 {
+		return fmt.Errorf("auth: cookie surface %s requires trusted origins", surface.ID)
+	}
+	seenOrigins := make(map[string]struct{}, len(surface.TrustedOrigins))
+	for index, origin := range surface.TrustedOrigins {
+		normalized, err := normalizeTrustedOrigin(origin)
+		if err != nil {
+			return fmt.Errorf("auth: surface %s has invalid trusted origin %q: %w", surface.ID, origin, err)
+		}
+		if _, exists := seenOrigins[normalized]; exists {
+			return fmt.Errorf("auth: surface %s has duplicate trusted origin %q", surface.ID, normalized)
+		}
+		seenOrigins[normalized] = struct{}{}
+		surface.TrustedOrigins[index] = normalized
 	}
 	for _, kind := range surface.PrincipalKinds {
 		if !kind.Valid() {
@@ -147,3 +174,29 @@ func (r *ClientSurfaceRegistry) Validate(principals *PrincipalRegistry) error {
 }
 
 func (r *ClientSurfaceRegistry) Seal() { r.mu.Lock(); r.sealed = true; r.mu.Unlock() }
+
+func normalizeTrustedOrigin(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || raw == "*" {
+		return "", fmt.Errorf("origin must be explicit")
+	}
+	parsed, err := url.Parse(raw)
+	scheme := strings.ToLower(parsed.Scheme)
+	if err != nil || (scheme != "https" && scheme != "http") || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || (parsed.Path != "" && parsed.Path != "/") {
+		return "", fmt.Errorf("origin must contain only http(s) scheme and authority")
+	}
+	return scheme + "://" + strings.ToLower(parsed.Host), nil
+}
+
+func (s ClientSurface) AllowsOrigin(origin string) bool {
+	normalized, err := normalizeTrustedOrigin(origin)
+	if err != nil {
+		return false
+	}
+	for _, allowed := range s.TrustedOrigins {
+		if normalized == allowed {
+			return true
+		}
+	}
+	return false
+}

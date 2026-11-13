@@ -43,6 +43,67 @@ func TestClientSurfaceRegistryValidatesSessionPolicy(t *testing.T) {
 	}
 }
 
+func TestClientSurfaceRegistryValidatesCookieRefreshTransport(t *testing.T) {
+	base := auth.ClientSurface{ID: "example.client", Audience: "example:client", PathPrefix: "/api/customer", PrincipalKinds: []auth.PrincipalKind{"example.customer"}, Methods: []string{"example-sso"}}
+	registry := auth.NewClientSurfaceRegistry()
+	if err := registry.Register(base); err != nil {
+		t.Fatal(err)
+	}
+	registered, ok := registry.Get(base.ID)
+	if !ok || registered.RefreshTransport != auth.RefreshTransportBody {
+		t.Fatalf("default refresh transport = %q, want body", registered.RefreshTransport)
+	}
+
+	for name, origins := range map[string][]string{
+		"missing":   nil,
+		"wildcard":  {"*"},
+		"path":      {"https://app.example.com/login"},
+		"query":     {"https://app.example.com?tenant=1"},
+		"userinfo":  {"https://user@app.example.com"},
+		"non-http":  {"file://app.example.com"},
+		"duplicate": {"https://app.example.com", "https://APP.example.com/"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			surface := base
+			surface.ID = "example.cookie-" + name
+			surface.Audience = "example:cookie-" + name
+			surface.PathPrefix = "/cookie/" + name + "/"
+			surface.RefreshTransport = auth.RefreshTransportCookie
+			surface.TrustedOrigins = origins
+			if err := auth.NewClientSurfaceRegistry().Register(surface); err == nil {
+				t.Fatal("invalid cookie surface must be rejected")
+			}
+		})
+	}
+
+	cookieSurface := base
+	cookieSurface.ID = "example.cookie"
+	cookieSurface.Audience = "example:cookie"
+	cookieSurface.PathPrefix = "/api/customer"
+	cookieSurface.RefreshTransport = auth.RefreshTransportCookie
+	cookieSurface.TrustedOrigins = []string{" HTTPS://APP.EXAMPLE.COM:443/ "}
+	cookieRegistry := auth.NewClientSurfaceRegistry()
+	if err := cookieRegistry.Register(cookieSurface); err != nil {
+		t.Fatal(err)
+	}
+	registered, ok = cookieRegistry.Get(cookieSurface.ID)
+	if !ok || len(registered.TrustedOrigins) != 1 || registered.TrustedOrigins[0] != "https://app.example.com:443" {
+		t.Fatalf("trusted origins were not normalized: %#v", registered.TrustedOrigins)
+	}
+	if !registered.AllowsOrigin("https://APP.example.com:443/") || registered.AllowsOrigin("https://evil.example.com") {
+		t.Fatal("origin allowlist matching is not exact")
+	}
+	if got := auth.RefreshCookieName(registered.ID); got != "ainp_refresh_example_2ecookie" {
+		t.Fatalf("cookie name=%q", got)
+	}
+	if auth.RefreshCookieName("example.cookie") == auth.RefreshCookieName("example-cookie") {
+		t.Fatal("distinct valid surface IDs must not share a refresh cookie name")
+	}
+	if got := auth.RefreshCookiePath(registered); got != "/api/customer/" {
+		t.Fatalf("cookie path=%q", got)
+	}
+}
+
 func TestPrincipalRegistryFailsClosedAndSeals(t *testing.T) {
 	r := auth.NewPrincipalRegistry()
 	if err := r.Register(testPrincipalProvider{kind: "example.customer"}); err != nil {

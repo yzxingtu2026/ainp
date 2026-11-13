@@ -12,6 +12,11 @@
 - Authenticator 只产出凭据身份/主体候选；Principal Provider 实时复核主体、状态与版本，Session Service 复核后才可签 Token。
 - access token 必须含 `session_id` 和 `auth_version`，不得携带/信任 roles/permissions；请求仍经过 `AuthorizationProvider`。
 - refresh token 使用高熵 opaque 值，数据库只存摘要；事务轮换，旧 token 重放撤销对应会话族。
+- Client Surface 的 refresh transport 零值保持 body 模式兼容；Cookie 模式必须显式配置精确 HTTP(S) `TrustedOrigins`，禁止通配符与带路径、查询、片段或 userinfo 的 Origin。
+- refresh Cookie 必须使用 HttpOnly、Secure、SameSite=Lax、Surface 前缀 Path 且不设置 Domain；Cookie 模式响应体不得返回 refresh token。
+- Cookie 登录、refresh 与 logout 写请求必须校验可信 Origin（仅在缺少 Origin 时允许可信 Referer 回退）以及会话绑定 CSRF；CSRF 仅存摘要并随 refresh token 轮换。
+- Cookie Surface 的 CORS 必须精确回显 allowlist Origin 并启用 credentials，禁止 `Access-Control-Allow-Origin: *`；跨站 Cookie 部署需单独安全评审。
+- logout 在 body 模式依赖已认证 Session；Cookie 模式凭 refresh Cookie、可信 Origin 与 CSRF 撤销会话，并以相同属性和 Path 清除 Cookie。
 - 会话事实使用 tenant + Principal Ref + Client Surface + audience；仅 `ainp.account` 可兼容关联 `account_id`，业务主体禁止复用。
 - Client Surface 会话策略必须保持零值兼容：`AbsoluteTTL` 仅覆盖新会话的 refresh/absolute lifetime，`IdleTTL` 在 refresh 与受保护请求路径共同执行，`MaxActiveSessions=0` 表示无限制，设置上限但省略 `OverflowPolicy` 时按 `reject`。
 - 并发会话上限必须在同一事务和主体+Surface 粒度数据库锁内检查与创建；`revoke_oldest` 按创建时间稳定排序。空闲、绝对到期和溢出撤销必须原子写入稳定 reason 与审计，不得改变 access token TTL。

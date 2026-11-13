@@ -54,6 +54,7 @@ type AuthSession struct {
 	DeviceSummary            string     `gorm:"size:255"`
 	RefreshTokenHash         string     `gorm:"size:64;not null;uniqueIndex"`
 	PreviousRefreshTokenHash string     `gorm:"size:64;index"`
+	CSRFTokenHash            string     `gorm:"size:64;not null;default:''"`
 	AuthVersion              uint64     `gorm:"not null"`
 	ExpiresAt                time.Time  `gorm:"not null;index"`
 	LastSeenAt               time.Time  `gorm:"not null"`

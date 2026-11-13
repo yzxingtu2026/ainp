@@ -119,8 +119,16 @@ func TestDownstreamHostLoadsEmbeddedRuntimeAssetsFromArbitraryWorkingDirectory(t
 	}
 	engine := httpserver.New(httpserver.Options{Mode: "test", Installed: &platform.App.Installed, Tokens: platform.App.Tokens, Authorization: platform.App.Authorization, ClientSurfaces: platform.App.ClientSurfaces, Actions: platform.App.Actions, Menus: platform.App.Menus, CodeSets: platform.App.CodeSets, DB: platform.DB, OnHTTP: platform.App.OnHTTP})
 	authBody := []byte(`{"method":"example-sso","client":"example.customer-client","credentials":{}}`)
+	missingOrigin := httptest.NewRequest(http.MethodPost, "/api/v1/customer/auth/authenticate", bytes.NewReader(authBody))
+	missingOrigin.Header.Set("Content-Type", "application/json")
+	missingOriginResponse := httptest.NewRecorder()
+	engine.ServeHTTP(missingOriginResponse, missingOrigin)
+	if missingOriginResponse.Code != http.StatusForbidden {
+		t.Fatalf("cookie authentication without origin status=%d body=%s", missingOriginResponse.Code, missingOriginResponse.Body.String())
+	}
 	authRequest := httptest.NewRequest(http.MethodPost, "/api/v1/customer/auth/authenticate", bytes.NewReader(authBody))
 	authRequest.Header.Set("Content-Type", "application/json")
+	authRequest.Header.Set("Origin", "https://customer.example.com")
 	authResponse := httptest.NewRecorder()
 	engine.ServeHTTP(authResponse, authRequest)
 	if authResponse.Code != http.StatusOK {
@@ -130,10 +138,22 @@ func TestDownstreamHostLoadsEmbeddedRuntimeAssetsFromArbitraryWorkingDirectory(t
 		Code int `json:"code"`
 		Data struct {
 			RefreshToken string `json:"refresh_token"`
+			CSRFToken    string `json:"csrf_token"`
 		} `json:"data"`
 	}
-	if err := json.Unmarshal(authResponse.Body.Bytes(), &authEnvelope); err != nil || authEnvelope.Code != 0 || authEnvelope.Data.RefreshToken == "" {
+	if err := json.Unmarshal(authResponse.Body.Bytes(), &authEnvelope); err != nil || authEnvelope.Code != 0 || authEnvelope.Data.RefreshToken != "" || authEnvelope.Data.CSRFToken == "" {
 		t.Fatalf("invalid custom authentication response: %s", authResponse.Body.String())
+	}
+	cookies := authResponse.Result().Cookies()
+	if len(cookies) != 1 {
+		t.Fatalf("authentication cookies=%#v", cookies)
+	}
+	refreshCookie := cookies[0]
+	if refreshCookie.Name != auth.RefreshCookieName("example.customer-client") || refreshCookie.Value == "" || !refreshCookie.HttpOnly || !refreshCookie.Secure || refreshCookie.SameSite != http.SameSiteLaxMode || refreshCookie.Path != "/api/v1/customer/" || refreshCookie.Domain != "" {
+		t.Fatalf("invalid refresh cookie: %#v", refreshCookie)
+	}
+	if strings.Contains(strings.ToLower(authResponse.Header().Get("Set-Cookie")), "domain=") {
+		t.Fatalf("refresh cookie must not set Domain: %s", authResponse.Header().Get("Set-Cookie"))
 	}
 	wrongRequest := httptest.NewRequest(http.MethodPost, "/api/v1/system/auth/authenticate", bytes.NewReader(authBody))
 	wrongRequest.Header.Set("Content-Type", "application/json")
@@ -145,7 +165,7 @@ func TestDownstreamHostLoadsEmbeddedRuntimeAssetsFromArbitraryWorkingDirectory(t
 	if err := json.Unmarshal(wrongResponse.Body.Bytes(), &wrongEnvelope); err != nil || wrongEnvelope.Code == 0 {
 		t.Fatalf("mismatched authentication path surface accepted: %s", wrongResponse.Body.String())
 	}
-	refreshBody := []byte(fmt.Sprintf(`{"refresh_token":%q}`, authEnvelope.Data.RefreshToken))
+	refreshBody := []byte(`{}`)
 	wrongRefresh := httptest.NewRequest(http.MethodPost, "/api/v1/system/auth/refresh", bytes.NewReader(refreshBody))
 	wrongRefresh.Header.Set("Content-Type", "application/json")
 	wrongRefreshResponse := httptest.NewRecorder()
@@ -153,12 +173,50 @@ func TestDownstreamHostLoadsEmbeddedRuntimeAssetsFromArbitraryWorkingDirectory(t
 	if err := json.Unmarshal(wrongRefreshResponse.Body.Bytes(), &wrongEnvelope); err != nil || wrongEnvelope.Code == 0 {
 		t.Fatalf("cross-surface refresh accepted: %s", wrongRefreshResponse.Body.String())
 	}
+	invalidCSRF := httptest.NewRequest(http.MethodPost, "/api/v1/customer/auth/refresh", bytes.NewReader(refreshBody))
+	invalidCSRF.Header.Set("Content-Type", "application/json")
+	invalidCSRF.Header.Set("Origin", "https://customer.example.com")
+	invalidCSRF.Header.Set(auth.CSRFHeader, "invalid")
+	invalidCSRF.AddCookie(refreshCookie)
+	invalidCSRFResponse := httptest.NewRecorder()
+	engine.ServeHTTP(invalidCSRFResponse, invalidCSRF)
+	if invalidCSRFResponse.Code != http.StatusForbidden {
+		t.Fatalf("invalid csrf status=%d body=%s", invalidCSRFResponse.Code, invalidCSRFResponse.Body.String())
+	}
 	validRefresh := httptest.NewRequest(http.MethodPost, "/api/v1/customer/auth/refresh", bytes.NewReader(refreshBody))
 	validRefresh.Header.Set("Content-Type", "application/json")
+	validRefresh.Header.Set("Origin", "https://customer.example.com")
+	validRefresh.Header.Set(auth.CSRFHeader, authEnvelope.Data.CSRFToken)
+	validRefresh.AddCookie(refreshCookie)
 	validRefreshResponse := httptest.NewRecorder()
 	engine.ServeHTTP(validRefreshResponse, validRefresh)
-	if err := json.Unmarshal(validRefreshResponse.Body.Bytes(), &wrongEnvelope); err != nil || wrongEnvelope.Code != 0 {
+	var refreshEnvelope struct {
+		Code int `json:"code"`
+		Data struct {
+			RefreshToken string `json:"refresh_token"`
+			CSRFToken    string `json:"csrf_token"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(validRefreshResponse.Body.Bytes(), &refreshEnvelope); err != nil || refreshEnvelope.Code != 0 || refreshEnvelope.Data.RefreshToken != "" || refreshEnvelope.Data.CSRFToken == "" || refreshEnvelope.Data.CSRFToken == authEnvelope.Data.CSRFToken {
 		t.Fatalf("custom surface refresh failed: %s", validRefreshResponse.Body.String())
+	}
+	rotatedCookies := validRefreshResponse.Result().Cookies()
+	if len(rotatedCookies) != 1 || rotatedCookies[0].Value == refreshCookie.Value {
+		t.Fatalf("refresh cookie did not rotate: %#v", rotatedCookies)
+	}
+	logout := httptest.NewRequest(http.MethodPost, "/api/v1/customer/auth/logout", bytes.NewReader([]byte(`{}`)))
+	logout.Header.Set("Content-Type", "application/json")
+	logout.Header.Set("Origin", "https://customer.example.com")
+	logout.Header.Set(auth.CSRFHeader, refreshEnvelope.Data.CSRFToken)
+	logout.AddCookie(rotatedCookies[0])
+	logoutResponse := httptest.NewRecorder()
+	engine.ServeHTTP(logoutResponse, logout)
+	if logoutResponse.Code != http.StatusOK {
+		t.Fatalf("cookie logout status=%d body=%s", logoutResponse.Code, logoutResponse.Body.String())
+	}
+	cleared := logoutResponse.Result().Cookies()
+	if len(cleared) != 1 || cleared[0].Name != refreshCookie.Name || cleared[0].Path != refreshCookie.Path || cleared[0].MaxAge >= 0 {
+		t.Fatalf("logout did not clear refresh cookie: %#v", cleared)
 	}
 
 	if prompt.Get("agent/system-operations") == "" || prompt.Get(orders.AgentPromptKey) == "" || prompt.Get("example.orders/order-summary") == "" {
