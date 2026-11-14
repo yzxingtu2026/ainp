@@ -101,6 +101,9 @@ codeset.operations.job_run_status.cancelled: "已取消"
 
 # ── 系统域 Action ──
 action.system.ping.name: "Ping"
+auth.cookie_origin_invalid: "请求来源不是该客户端表面的可信来源"
+auth.cookie_transport_required: "Cookie 认证需要标准 HTTP 传输"
+auth.csrf_invalid: "CSRF 令牌校验失败"
 action.system.auth_login.name: "登录"
 action.system.auth_login.description: "校验账号密码并签发 JWT"
 action.system.auth_methods.name: "认证方式"

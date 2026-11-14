@@ -28,6 +28,7 @@ func Prepare(application *app.App) error {
 	if err := application.RegisterClientSurface(auth.ClientSurface{
 		ID: CustomerSurface, Audience: CustomerAudience, PathPrefix: "/api/v1/customer/",
 		PrincipalKinds: []auth.PrincipalKind{CustomerKind}, Methods: []string{"example-sso"},
+		RefreshTransport: auth.RefreshTransportCookie, TrustedOrigins: []string{"https://customer.example.com"},
 	}); err != nil {
 		return err
 	}

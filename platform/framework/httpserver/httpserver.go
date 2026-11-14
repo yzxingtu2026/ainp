@@ -15,6 +15,7 @@ import (
 	"github.com/yzxingtu2026/ainp/platform/framework/buildinfo"
 	"github.com/yzxingtu2026/ainp/platform/framework/codeset"
 	"github.com/yzxingtu2026/ainp/platform/framework/errs"
+	"github.com/yzxingtu2026/ainp/platform/framework/httptransport"
 	"github.com/yzxingtu2026/ainp/platform/framework/i18n"
 	"github.com/yzxingtu2026/ainp/platform/framework/logging"
 	"github.com/yzxingtu2026/ainp/platform/framework/menu"
@@ -46,6 +47,7 @@ func New(opts Options) *gin.Engine {
 		middleware.Recover(),
 		middleware.RequestID(),
 		middleware.RequestLog(),
+		middleware.CORS(opts.ClientSurfaces),
 		middleware.SetupGate(opts.Installed),
 		middleware.AcceptLanguage(),
 		middleware.Auth(middleware.AuthOptions{
@@ -226,17 +228,21 @@ func actionHTTPHandler(actions *action.Registry, actionID string) gin.HandlerFun
 		}
 		ac := auth.MustFromContext(c.Request.Context())
 		ctx := i18n.WithLang(c.Request.Context(), ac.Language)
+		ctx, exchange := httptransport.WithRequest(ctx, c.Request)
 		c.Request = c.Request.WithContext(ctx)
 
 		data, err := actions.Invoke(c.Request.Context(), actionID, json.RawMessage(body))
 		if err != nil {
+			exchange.Apply(c.Writer.Header())
 			response.Fail(c, err)
 			return
 		}
 		if stream, ok := data.(action.StreamResult); ok {
+			exchange.Apply(c.Writer.Header())
 			writeActionStream(c, stream)
 			return
 		}
+		exchange.Apply(c.Writer.Header())
 		response.OK(c, data)
 	}
 }

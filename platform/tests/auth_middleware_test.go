@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -257,5 +258,46 @@ func TestAuthMiddlewareBindsPathSurfaceAudienceAndKind(t *testing.T) {
 	router.ServeHTTP(nestedResp, nested)
 	if nestedResp.Code != http.StatusUnauthorized {
 		t.Fatalf("dedicated bearer path must match exactly: status=%d", nestedResp.Code)
+	}
+}
+
+func TestCookieSurfaceCORSUsesExplicitCredentialedAllowlist(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	surfaces := auth.NewClientSurfaceRegistry()
+	if err := surfaces.Register(auth.ClientSurface{
+		ID: "example.browser", Audience: "example:browser", PathPrefix: "/browser/",
+		PrincipalKinds: []auth.PrincipalKind{"example.customer"}, Methods: []string{"example-sso"},
+		RefreshTransport: auth.RefreshTransportCookie, TrustedOrigins: []string{"https://app.example.com"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	router := gin.New()
+	router.Use(middleware.RequestID(), middleware.CORS(surfaces))
+	router.POST("/browser/auth/refresh", func(c *gin.Context) { c.Status(http.StatusNoContent) })
+
+	preflight := httptest.NewRequest(http.MethodOptions, "/browser/auth/refresh", nil)
+	preflight.Header.Set("Origin", "https://app.example.com")
+	preflight.Header.Set("Access-Control-Request-Method", http.MethodPost)
+	preflightResponse := httptest.NewRecorder()
+	router.ServeHTTP(preflightResponse, preflight)
+	if preflightResponse.Code != http.StatusNoContent {
+		t.Fatalf("preflight status=%d body=%s", preflightResponse.Code, preflightResponse.Body.String())
+	}
+	if got := preflightResponse.Header().Get("Access-Control-Allow-Origin"); got != "https://app.example.com" || got == "*" {
+		t.Fatalf("allow origin=%q", got)
+	}
+	if got := preflightResponse.Header().Get("Access-Control-Allow-Credentials"); got != "true" {
+		t.Fatalf("allow credentials=%q", got)
+	}
+	if got := preflightResponse.Header().Get("Access-Control-Allow-Headers"); !strings.Contains(got, auth.CSRFHeader) {
+		t.Fatalf("allow headers=%q", got)
+	}
+
+	untrusted := httptest.NewRequest(http.MethodPost, "/browser/auth/refresh", nil)
+	untrusted.Header.Set("Origin", "https://evil.example.com")
+	untrustedResponse := httptest.NewRecorder()
+	router.ServeHTTP(untrustedResponse, untrusted)
+	if untrustedResponse.Code != http.StatusForbidden || untrustedResponse.Header().Get("Access-Control-Allow-Origin") != "" {
+		t.Fatalf("untrusted origin status=%d headers=%v body=%s", untrustedResponse.Code, untrustedResponse.Header(), untrustedResponse.Body.String())
 	}
 }

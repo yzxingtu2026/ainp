@@ -28,6 +28,7 @@
 - `0065_agent_run_terminal_finalization.sql` 为 Agent Run 增加版本化安全终态、模型/模板收尾、重试语义、terminal Message 引用与持久化 Tool 操作计数字段。
 - `0069_auth_session_policy.sql` 为会话增加稳定撤销原因，并补充按租户、主体和 Client Surface 查询活动会话的部分索引。
 - `0070_page_capture_requests.sql` 创建租户与主体绑定的 Agent Run 页面捕获请求表，用于有界等待、幂等提交与超时收口，不保存图片字节、对象路径或短时凭据。
+- `0072_auth_session_cookie_csrf.sql` 为 Cookie refresh transport 会话增加绑定当前 refresh 轮换状态的 CSRF Token 摘要；body transport 会话保持空值。
 - `0066_account_identity_binding.sql` 为公开 Account Identity Binding 契约增加租户、账号、Provider 唯一约束；历史重复绑定会 fail-closed，需先审查数据再重试迁移。
 - `0068_fix_websocket_handshake_grant_unique_index.sql` 将 `0067` 的自动命名 `secret_hash` UNIQUE 约束收敛为与 GORM 模型一致的显式唯一索引，保证版本化迁移后启动 AutoMigrate 幂等。
 - `0005_attachments.sql` 创建 `attachments` / `attachment_links` 与状态 CHECK；附件策略与 AccessPolicy 由代码注册。

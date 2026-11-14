@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -98,12 +99,14 @@ func NewSessionService(db *gorm.DB, tokens *auth.TokenService, authService *Auth
 }
 
 type SessionTokens struct {
-	AccessToken  string    `json:"access_token"`
-	RefreshToken string    `json:"refresh_token"`
-	TokenType    string    `json:"token_type"`
-	ExpiresIn    int       `json:"expires_in"`
-	ExpiresAt    time.Time `json:"expires_at"`
-	SessionID    string    `json:"session_id"`
+	AccessToken      string    `json:"access_token"`
+	RefreshToken     string    `json:"refresh_token"`
+	CSRFToken        string    `json:"csrf_token,omitempty"`
+	TokenType        string    `json:"token_type"`
+	ExpiresIn        int       `json:"expires_in"`
+	ExpiresAt        time.Time `json:"expires_at"`
+	RefreshExpiresAt time.Time `json:"-"`
+	SessionID        string    `json:"session_id"`
 }
 
 func newRefreshToken(sessionID string) (string, string, error) {
@@ -118,6 +121,20 @@ func newRefreshToken(sessionID string) (string, string, error) {
 func hashRefreshToken(token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(sum[:])
+}
+
+func tokenHashMatches(token, expectedHash string) bool {
+	actual := hashRefreshToken(token)
+	return len(actual) == len(expectedHash) && subtle.ConstantTimeCompare([]byte(actual), []byte(expectedHash)) == 1
+}
+
+func newCSRFToken() (string, string, error) {
+	secret := make([]byte, 32)
+	if _, err := rand.Read(secret); err != nil {
+		return "", "", err
+	}
+	token := base64.RawURLEncoding.EncodeToString(secret)
+	return token, hashRefreshToken(token), nil
 }
 
 func refreshSessionID(token string) string {
@@ -159,6 +176,13 @@ func (s *SessionService) CreatePrincipal(ctx context.Context, snapshot *auth.Aut
 	if err != nil {
 		return nil, err
 	}
+	csrfToken, csrfHash := "", ""
+	if surface.RefreshTransport == auth.RefreshTransportCookie {
+		csrfToken, csrfHash, err = newCSRFToken()
+		if err != nil {
+			return nil, err
+		}
+	}
 	var accountID *string
 	if snapshot.Principal.Kind == auth.PrincipalKindAccount {
 		value := snapshot.Principal.ID
@@ -171,7 +195,7 @@ func (s *SessionService) CreatePrincipal(ctx context.Context, snapshot *auth.Aut
 	row := model.AuthSession{
 		ID: sessionID, TenantID: snapshot.TenantID, PrincipalKind: string(snapshot.Principal.Kind), PrincipalID: snapshot.Principal.ID, AccountID: accountID, Realm: string(auth.RealmTenant),
 		Client: normalizeClient(client), ClientSurface: surface.ID, Audience: surface.Audience, TokenFamilyID: sessionID,
-		DeviceSummary: strings.TrimSpace(device), RefreshTokenHash: refreshHash,
+		DeviceSummary: strings.TrimSpace(device), RefreshTokenHash: refreshHash, CSRFTokenHash: csrfHash,
 		AuthVersion: snapshot.AuthVersion, ExpiresAt: now.Add(ttl), LastSeenAt: now,
 	}
 	if err := s.createSession(ctx, &row, surface); err != nil {
@@ -181,7 +205,7 @@ func (s *SessionService) CreatePrincipal(ctx context.Context, snapshot *auth.Aut
 	if err != nil {
 		return nil, err
 	}
-	return &SessionTokens{AccessToken: access, RefreshToken: refresh, TokenType: "Bearer", ExpiresIn: int(time.Until(exp).Seconds()), ExpiresAt: exp, SessionID: sessionID}, nil
+	return &SessionTokens{AccessToken: access, RefreshToken: refresh, CSRFToken: csrfToken, TokenType: "Bearer", ExpiresIn: int(time.Until(exp).Seconds()), ExpiresAt: exp, RefreshExpiresAt: row.ExpiresAt, SessionID: sessionID}, nil
 }
 
 func (s *SessionService) createSession(ctx context.Context, row *model.AuthSession, surface auth.ClientSurface) error {
@@ -304,6 +328,10 @@ func (s *SessionService) LoadAuthorization(ctx context.Context, req auth.Authori
 }
 
 func (s *SessionService) Refresh(ctx context.Context, token string) (*SessionTokens, error) {
+	return s.RefreshWithCSRF(ctx, token, "")
+}
+
+func (s *SessionService) RefreshWithCSRF(ctx context.Context, token, csrfToken string) (*SessionTokens, error) {
 	sessionID := refreshSessionID(token)
 	if sessionID == "" {
 		return nil, errs.NewKey(errs.CodeUnauthorized, "auth.session_invalid", "invalid session")
@@ -360,6 +388,9 @@ func (s *SessionService) Refresh(ctx context.Context, token string) (*SessionTok
 		if session.RefreshTokenHash != providedHash {
 			return auth.ErrAuthorizationInvalid
 		}
+		if surface.RefreshTransport == auth.RefreshTransportCookie && (csrfToken == "" || session.CSRFTokenHash == "" || !tokenHashMatches(csrfToken, session.CSRFTokenHash)) {
+			return errs.NewKey(errs.CodeForbidden, "auth.csrf_invalid", "invalid csrf token")
+		}
 		if err := tx.Create(&model.AuthRefreshTokenUse{TokenHash: providedHash, SessionID: session.ID, TokenFamilyID: session.TokenFamilyID, UsedAt: now}).Error; err != nil {
 			return err
 		}
@@ -371,12 +402,19 @@ func (s *SessionService) Refresh(ctx context.Context, token string) (*SessionTok
 		if err != nil {
 			return err
 		}
+		csrfNext, csrfHash := "", ""
+		if surface.RefreshTransport == auth.RefreshTransportCookie {
+			csrfNext, csrfHash, err = newCSRFToken()
+			if err != nil {
+				return err
+			}
+		}
 		access, exp, err := s.tokens.IssueFor(session.TenantID, principal, session.ClientSurface, session.Audience, session.ID, session.AuthVersion)
 		if err != nil {
 			return err
 		}
 		result := tx.Model(session).Where("refresh_token_hash = ? AND revoked_at IS NULL", providedHash).Updates(map[string]any{
-			"previous_refresh_token_hash": providedHash, "refresh_token_hash": refreshHash, "last_seen_at": now,
+			"previous_refresh_token_hash": providedHash, "refresh_token_hash": refreshHash, "csrf_token_hash": csrfHash, "last_seen_at": now,
 		})
 		if result.Error != nil {
 			return result.Error
@@ -384,7 +422,7 @@ func (s *SessionService) Refresh(ctx context.Context, token string) (*SessionTok
 		if result.RowsAffected != 1 {
 			return auth.ErrAuthorizationInvalid
 		}
-		output = &SessionTokens{AccessToken: access, RefreshToken: refresh, TokenType: "Bearer", ExpiresIn: int(time.Until(exp).Seconds()), ExpiresAt: exp, SessionID: session.ID}
+		output = &SessionTokens{AccessToken: access, RefreshToken: refresh, CSRFToken: csrfNext, TokenType: "Bearer", ExpiresIn: int(time.Until(exp).Seconds()), ExpiresAt: exp, RefreshExpiresAt: session.ExpiresAt, SessionID: session.ID}
 		return nil
 	})
 	if err != nil {
@@ -400,4 +438,33 @@ func (s *SessionService) Refresh(ctx context.Context, token string) (*SessionTok
 		return nil, errs.NewKey(errs.CodeUnauthorized, "auth.session_invalid", "invalid session")
 	}
 	return output, nil
+}
+
+func (s *SessionService) RevokeWithCSRF(ctx context.Context, token, csrfToken string) error {
+	sessionID := refreshSessionID(token)
+	if sessionID == "" {
+		return errs.NewKey(errs.CodeUnauthorized, "auth.session_invalid", "invalid session")
+	}
+	providedHash := hashRefreshToken(token)
+	err := s.preAuth.rotateSession(ctx, sessionID, func(tx *gorm.DB, session *model.AuthSession) error {
+		if session.RevokedAt != nil || session.RefreshTokenHash != providedHash || s.surfaces == nil {
+			return auth.ErrAuthorizationInvalid
+		}
+		surface, ok := s.surfaces.Get(session.ClientSurface)
+		if !ok || surface.RefreshTransport != auth.RefreshTransportCookie {
+			return auth.ErrAuthorizationInvalid
+		}
+		if expected := auth.MustFromContext(ctx).ClientSurface; expected == "" || expected != session.ClientSurface {
+			return auth.ErrAuthorizationInvalid
+		}
+		if csrfToken == "" || session.CSRFTokenHash == "" || !tokenHashMatches(csrfToken, session.CSRFTokenHash) {
+			return errs.NewKey(errs.CodeForbidden, "auth.csrf_invalid", "invalid csrf token")
+		}
+		now := time.Now().UTC()
+		return tx.Model(session).Updates(map[string]any{"revoked_at": now, "updated_at": now}).Error
+	})
+	if errors.Is(err, gorm.ErrRecordNotFound) || errors.Is(err, auth.ErrAuthorizationInvalid) {
+		return errs.NewKey(errs.CodeUnauthorized, "auth.session_invalid", "invalid session")
+	}
+	return err
 }
