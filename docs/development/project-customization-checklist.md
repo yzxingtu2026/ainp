@@ -13,9 +13,8 @@
 - [ ] 确认审计约束：`.agents/rules/audit.md` 与 `docs/development/audit.md`，再运行 `sync`。
 - [ ] 确认后端布局：`.agents/rules/backend-layout.md` 与 `docs/development/backend-layout.md`，再运行 `sync`。
 - [ ] 更新 `.agents/rules/team-escalation.md` 中的沟通渠道和负责人，再运行 `sync`。
-- [ ] 更新 `.agents/team/members.yml` 中的团队成员、GitHub 邮箱和钉钉 ID。
+- [ ] 更新 `.agents/team/members.yml` 中的团队成员和 GitHub 邮箱。
 - [ ] 更新 `.agents/team/roles.yml` 中的团队角色说明和通用角色约束。
-- [ ] 如需 GitHub Issue/PR 钉钉实时通知，配置 `DINGTALK_COLLAB_WEBHOOK` / `DINGTALK_COLLAB_SIGN_SECRET`，再启用 `.github/dingtalk-notify.yml`。
 - [ ] 明确哪些目录属于运行时代码，影响 `needs-testing` 判断。
 - [ ] 配置 Issue 模板、PR 模板、标签和分支保护。
 - [ ] 若使用 `tested-pass` 自动合并，配置对应 GitHub Actions。
