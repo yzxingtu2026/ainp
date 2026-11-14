@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { APP_BRAND_NAME } from '@/constants/brand';
+import { useBrandStore } from '@/store/modules/brand';
 
 defineOptions({
   name: 'GlobalLogo'
 });
+
+const brandStore = useBrandStore();
 
 interface Props {
   /** Whether to show the title */
@@ -19,7 +21,7 @@ withDefaults(defineProps<Props>(), {
   <RouterLink to="/" class="w-full flex-center nowrap-hidden">
     <SystemLogo class="size-32px" />
     <h2 v-show="showTitle" class="pl-8px text-16px text-primary font-bold transition duration-300 ease-in-out">
-      {{ APP_BRAND_NAME }}
+      {{ brandStore.name }}
     </h2>
   </RouterLink>
 </template>

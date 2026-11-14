@@ -10,9 +10,11 @@ import { setDayjsLocale } from '@/locales/dayjs';
 import { useRouteStore } from '../route';
 import { useTabStore } from '../tab';
 import { useThemeStore } from '../theme';
+import { useBrandStore } from '../brand';
 
 export const useAppStore = defineStore(SetupStoreId.App, () => {
   const themeStore = useThemeStore();
+  const brandStore = useBrandStore();
   const routeStore = useRouteStore();
   const tabStore = useTabStore();
   const scope = effectScope();
@@ -74,7 +76,7 @@ export const useAppStore = defineStore(SetupStoreId.App, () => {
 
     const documentTitle = i18nKey ? $t(i18nKey) : title;
 
-    useTitle(documentTitle);
+    useTitle(documentTitle ? `${documentTitle} - ${brandStore.name}` : brandStore.name);
   }
 
   function init() {
