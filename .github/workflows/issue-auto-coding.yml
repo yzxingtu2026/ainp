@@ -1,0 +1,116 @@
+name: Issue auto coding
+
+on:
+  issues:
+    types: [assigned, labeled]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: auto-coding-issue-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  implement:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      GH_TOKEN: ${{ secrets.AUTO_CODING_GITHUB_TOKEN }}
+      ISSUE_NUMBER: ${{ github.event.issue.number }}
+      REPOSITORY: ${{ github.repository }}
+      AUTO_CODING_ASSIGNEE: ${{ vars.AUTO_CODING_ASSIGNEE }}
+      OPENAI_API_BASE: ${{ vars.OPENAI_API_BASE }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}
+    steps:
+      - name: Recheck eligibility and existing PR
+        id: eligibility
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${GH_TOKEN:?Configure AUTO_CODING_GITHUB_TOKEN}"
+          : "${AUTO_CODING_ASSIGNEE:?Configure AUTO_CODING_ASSIGNEE}"
+          gh auth status
+          issue=$(gh api "repos/$REPOSITORY/issues/$ISSUE_NUMBER")
+          if ! jq -e --arg login "$AUTO_CODING_ASSIGNEE" '
+            .state == "open" and any(.assignees[]; .login | ascii_downcase == ($login | ascii_downcase))
+            and any(.labels[]; .name == "auto-coding")' <<<"$issue" >/dev/null; then
+            echo 'Issue is not eligible; skipping.'
+            exit 0
+          fi
+          branch="feat/issue-${ISSUE_NUMBER}-auto-coding"
+          prs=$(gh api --paginate "repos/$REPOSITORY/pulls?state=all&head=${REPOSITORY%%/*}:$branch&per_page=100" --jq '.[].number')
+          if [[ -n "$prs" ]]; then
+            echo "A PR already exists for $branch; skipping. PR number(s): $prs"
+            exit 0
+          fi
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+          echo 'eligible=true' >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        if: steps.eligibility.outputs.eligible == 'true'
+        with:
+          path: ainp
+          token: ${{ secrets.AUTO_CODING_GITHUB_TOKEN }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        if: steps.eligibility.outputs.eligible == 'true'
+        with:
+          node-version: '22'
+
+      - name: Install and configure Codex
+        if: steps.eligibility.outputs.eligible == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${OPENAI_API_BASE:?Configure OPENAI_API_BASE}"
+          : "${OPENAI_API_KEY:?Configure OPENAI_API_KEY}"
+          : "${OPENAI_MODEL:?Configure OPENAI_MODEL}"
+          npm install --global @openai/codex@latest
+          codex --version
+          git --version
+          gh --version
+          gh auth setup-git
+          export CODEX_HOME="$RUNNER_TEMP/codex-home"
+          mkdir -p "$CODEX_HOME"
+          chmod 700 "$CODEX_HOME"
+          python3 - <<'PY'
+          import json, os, pathlib, urllib.parse
+          base = os.environ['OPENAI_API_BASE']
+          parsed = urllib.parse.urlsplit(base)
+          if parsed.scheme != 'https' or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
+              raise SystemExit('OPENAI_API_BASE must be an HTTPS URL without credentials, query or fragment')
+          config = ('model_provider = "team_gateway"\nmodel = ' + json.dumps(os.environ['OPENAI_MODEL']) +
+                    '\n[model_providers.team_gateway]\nname = "Team gateway"\nbase_url = ' + json.dumps(base) +
+                    '\nenv_key = "OPENAI_API_KEY"\nwire_api = "responses"\n')
+          path = pathlib.Path(os.environ['CODEX_HOME']) / 'config.toml'
+          path.write_text(config)
+          path.chmod(0o600)
+          PY
+          echo "CODEX_HOME=$CODEX_HOME" >> "$GITHUB_ENV"
+
+      - name: Run Codex
+        if: steps.eligibility.outputs.eligible == 'true'
+        env:
+          BRANCH: ${{ steps.eligibility.outputs.branch }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          codex exec --cd "$GITHUB_WORKSPACE/ainp" --dangerously-bypass-approvals-and-sandbox \
+            "阅读 Issue #${ISSUE_NUMBER} 的完整内容、相关评论和仓库协作规则，然后开始实施；使用分支 ${BRANCH}，完成后自行提交、推送并创建 PR，按 Issue 要求指定评审人；无需在本地启动数据库或打开浏览器测试；如遇到阻碍，停止实施并在 Issue 评论区说明情况、提及相关人员。"
+
+      - name: Verify PR exists
+        if: steps.eligibility.outputs.eligible == 'true'
+        env:
+          BRANCH: ${{ steps.eligibility.outputs.branch }}
+        run: |
+          set -euo pipefail
+          prs=$(gh api --paginate "repos/$REPOSITORY/pulls?state=all&head=${REPOSITORY%%/*}:$BRANCH&per_page=100" --jq '.[].number')
+          if [[ -z "$prs" ]]; then
+            echo '::error::Codex finished without creating a PR; inspect its output and Issue comments.'
+            exit 1
+          fi
+          echo "PR created: $prs"
