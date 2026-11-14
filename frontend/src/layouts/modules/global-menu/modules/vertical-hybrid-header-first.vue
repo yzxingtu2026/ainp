@@ -6,6 +6,7 @@ import { SimpleScrollbar } from '@sa/materials';
 import { useBoolean } from '@sa/hooks';
 import { GLOBAL_HEADER_MENU_ID, GLOBAL_SIDER_MENU_ID } from '@/constants/app';
 import { useAppStore } from '@/store/modules/app';
+import { useBrandStore } from '@/store/modules/brand';
 import { useThemeStore } from '@/store/modules/theme';
 import { useRouteStore } from '@/store/modules/route';
 import { useRouterPush } from '@/hooks/common/router';
@@ -19,6 +20,7 @@ defineOptions({
 
 const route = useRoute();
 const appStore = useAppStore();
+const brandStore = useBrandStore();
 const themeStore = useThemeStore();
 const routeStore = useRouteStore();
 const { routerPushByKeyWithMetaQuery } = useRouterPush();
@@ -145,7 +147,7 @@ watch(
           :style="{ width: showDrawer ? themeStore.sider.mixChildMenuWidth + 'px' : '0px' }"
         >
           <header class="flex-y-center justify-between px-12px" :style="{ height: themeStore.header.height + 'px' }">
-            <h2 class="text-16px text-primary font-bold">{{ $t('system.title') }}</h2>
+            <h2 class="text-16px text-primary font-bold">{{ brandStore.name }}</h2>
             <PinToggler
               :pin="appStore.mixSiderFixed"
               :class="{ 'text-white:88 !hover:text-white': inverted }"

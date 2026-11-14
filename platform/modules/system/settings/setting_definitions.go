@@ -57,13 +57,13 @@ const (
 )
 
 func registerBrandSetting(a *app.App) error {
-	minName, maxName, maxAttachmentID := 1, 64, 64
+	maxName, maxAttachmentID := 64, 64
 	if err := a.RegisterSettingDefinition(setting.Definition{
 		Key: SettingKeyBrand, CategoryKey: "general",
 		Title: "产品品牌", Description: "覆盖当前租户管理后台的产品名称与 Logo；留空 Logo 时使用构建内默认品牌",
 		Scope: setting.ScopeTenant, Surface: auth.RealmTenant, Permission: ActionSettingList, Order: 5, SchemaVersion: 1,
 		Fields: []setting.Field{
-			{Key: SettingFieldBrandName, Type: setting.FieldText, Label: "品牌名称", Default: "", MinLength: &minName, MaxLength: &maxName},
+			{Key: SettingFieldBrandName, Type: setting.FieldText, Label: "品牌名称", Default: "", MaxLength: &maxName},
 			{Key: SettingFieldBrandLogoID, Type: setting.FieldText, Label: "Logo 附件 ID", Default: "", MaxLength: &maxAttachmentID},
 		},
 	}); err != nil {
@@ -226,8 +226,6 @@ func registerAttachmentUploadPolicySetting(a *app.App) error {
 func intPtr(v int) *int { return &v }
 
 func registerPreferencesSetting(a *app.App) error {
-	minLen := 1
-	maxLen := 64
 	minPage := 5.0
 	maxPage := 100.0
 	step := 5.0
@@ -238,11 +236,6 @@ func registerPreferencesSetting(a *app.App) error {
 		Scope: setting.ScopeTenant, Surface: auth.RealmTenant,
 		Permission: ActionSettingList, Order: 10, SchemaVersion: 1,
 		Fields: []setting.Field{
-			{
-				Key: "display_name", Type: setting.FieldText,
-				Label: "显示名称", LabelKey: "setting.field.general.preferences.display_name.label",
-				Required: true, Default: "AINP", MinLength: &minLen, MaxLength: &maxLen,
-			},
 			{
 				Key: "page_size", Type: setting.FieldNumber,
 				Label: "默认分页大小", LabelKey: "setting.field.general.preferences.page_size.label",
