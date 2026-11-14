@@ -40,6 +40,7 @@
 - [幂等与并发控制](./idempotency-concurrency.md)
 - [后台 Job](./background-jobs.md)
 - [Copilot PR 语义审查](./copilot-code-review.md)
+- [Issue 自动编码工作流](./issue-auto-coding.md)
 - [发布版本与构建身份](./release-versioning.md)
 - [容器部署基线](../deployment/containers.md)
 

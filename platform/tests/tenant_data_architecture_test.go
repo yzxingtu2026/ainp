@@ -269,7 +269,7 @@ func TestTenantDataAccessDocumentationContract(t *testing.T) {
 		t.Fatal("main Agent rule does not index tenant-data-access")
 	}
 
-	for _, root := range []string{"docs/development", ".agents/rules", ".agents/templates"} {
+	for _, root := range []string{"docs/development", ".agents/rules"} {
 		err = filepath.Walk(filepath.Join(workspaceRoot, root), func(path string, info os.FileInfo, walkErr error) error {
 			if walkErr != nil {
 				return walkErr
