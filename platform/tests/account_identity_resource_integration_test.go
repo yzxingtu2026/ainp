@@ -57,6 +57,7 @@ func TestAccountIdentityResourceBindingLifecycleAndIsolation(t *testing.T) {
 		{ID: "account-a", TenantID: "tenant-a", Username: "account-a", PasswordHash: "x", Status: status.ActivationEnabled},
 		{ID: "account-a2", TenantID: "tenant-a", Username: "account-a2", PasswordHash: "x", Status: status.ActivationEnabled},
 		{ID: "account-b", TenantID: "tenant-b", Username: "account-b", PasswordHash: "x", Status: status.ActivationEnabled},
+		{ID: "account-disabled", TenantID: "tenant-a", Username: "account-disabled", PasswordHash: "x", Status: status.ActivationDisabled},
 	} {
 		if err := db.Create(&row).Error; err != nil {
 			t.Fatal(err)
@@ -105,6 +106,46 @@ func TestAccountIdentityResourceBindingLifecycleAndIsolation(t *testing.T) {
 	}
 	if _, err := service.Bind(ctxB, platformresource.AccountIdentityBindRequest{Provider: "wecom-oauth", Subject: "corp-a:user-a", NormalizedIdentifier: "user-a@example.com"}); err != nil {
 		t.Fatalf("cross-tenant identity should remain isolated: %v", err)
+	}
+
+	adminCtx := platformResourceContext("tenant-a", "account-a", system.ActionAccountIdentityManage)
+	if _, err := service.ListForAccount(ctxA, platformresource.AccountIdentityAdminListRequest{AccountID: "account-a2"}); !errors.Is(err, platformresource.ErrForbidden) {
+		t.Fatalf("unprivileged admin list error = %v", err)
+	}
+	if _, err := service.ListForAccount(adminCtx, platformresource.AccountIdentityAdminListRequest{AccountID: "account-b"}); !errors.Is(err, platformresource.ErrNotFound) {
+		t.Fatalf("cross-tenant admin list error = %v", err)
+	}
+	if _, err := service.ListForAccount(adminCtx, platformresource.AccountIdentityAdminListRequest{AccountID: "account-disabled"}); !errors.Is(err, platformresource.ErrDisabled) {
+		t.Fatalf("disabled target admin list error = %v", err)
+	}
+	managed, err := service.BindForAccount(adminCtx, platformresource.AccountIdentityAdminBindRequest{
+		AccountID: "account-a2", Provider: "phone", Subject: "13800138000", NormalizedIdentifier: "13800138000",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if managed.MaskedSubject != "138****8000" || managed.MaskedNormalizedIdentifier != "138****8000" {
+		t.Fatalf("managed identity was not masked: %#v", managed)
+	}
+	if strings.Contains(fmt.Sprintf("%#v", managed), "13800138000") {
+		t.Fatalf("managed projection leaks raw phone: %#v", managed)
+	}
+	if _, err := service.BindForAccount(adminCtx, platformresource.AccountIdentityAdminBindRequest{AccountID: "account-a2", Provider: "phone", Subject: "13900139000", NormalizedIdentifier: "13900139000"}); !errors.Is(err, platformresource.ErrConflict) {
+		t.Fatalf("same-account provider conflict error = %v", err)
+	}
+	if _, err := service.BindForAccount(adminCtx, platformresource.AccountIdentityAdminBindRequest{AccountID: "account-a", Provider: "phone", Subject: "13800138000", NormalizedIdentifier: "13800138000"}); !errors.Is(err, platformresource.ErrConflict) {
+		t.Fatalf("tenant identity ownership conflict error = %v", err)
+	}
+	managedList, err := service.ListForAccount(adminCtx, platformresource.AccountIdentityAdminListRequest{AccountID: "account-a2"})
+	if err != nil || len(managedList) != 2 {
+		t.Fatalf("managed list=%#v err=%v", managedList, err)
+	}
+	if err := service.UnbindForAccount(adminCtx, platformresource.AccountIdentityAdminUnbindRequest{AccountID: "account-a2", IdentityID: managed.ID}); err != nil {
+		t.Fatal(err)
+	}
+	var managedCount int64
+	if err := db.Table("auth_identities").Where("tenant_id = ? AND account_id = ? AND id = ?", "tenant-a", "account-a2", managed.ID).Count(&managedCount).Error; err != nil || managedCount != 0 {
+		t.Fatalf("managed identity remains after unbind: count=%d err=%v", managedCount, err)
 	}
 
 	results := make(chan error, 2)
@@ -181,7 +222,7 @@ func TestAccountIdentityResourceBindingLifecycleAndIsolation(t *testing.T) {
 	}
 	for _, record := range records {
 		serialized := strings.Join([]string{record.ActionID, record.Summary}, " ")
-		for _, secret := range []string{"corp-a:user-a", "user-a@example.com", "wecom-oauth", "oauth-code", "oauth-token"} {
+		for _, secret := range []string{"corp-a:user-a", "user-a@example.com", "13800138000", "wecom-oauth", "oauth-code", "oauth-token"} {
 			if strings.Contains(serialized, secret) {
 				t.Fatalf("audit record leaks identity or OAuth material: %#v", record)
 			}

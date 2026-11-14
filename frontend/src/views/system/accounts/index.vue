@@ -10,12 +10,15 @@ import { formatDateTime } from '@/utils/datetime';
 import { usePageContextProvider } from '@/composables/page-context';
 import {
   createAccount,
+  bindAccountIdentity,
+  fetchAccountIdentities,
   fetchRoleList,
   fetchAccountList,
   resetAccountPassword,
   updateAccount,
   updateAccountRoles,
-  updateAccountStatus
+  updateAccountStatus,
+  unbindAccountIdentity
 } from '@/service/api';
 import { useAuthStore } from '@/store/modules/auth';
 
@@ -32,10 +35,14 @@ const query = reactive<Api.Account.ListParams>({ page: 1, page_size: 20, keyword
 const editorVisible = ref(false);
 const rolesVisible = ref(false);
 const passwordVisible = ref(false);
+const identitiesVisible = ref(false);
+const identitiesLoading = ref(false);
+const identities = ref<Api.Account.ManagedIdentity[]>([]);
 const editing = ref<Api.Account.Record | null>(null);
 const formRef = ref<FormInst | null>(null);
 const rolesFormRef = ref<FormInst | null>(null);
 const passwordFormRef = ref<FormInst | null>(null);
+const identityFormRef = ref<FormInst | null>(null);
 
 const form = reactive({
   username: '',
@@ -47,6 +54,8 @@ const form = reactive({
 });
 const rolesForm = reactive({ role_ids: [] as string[] });
 const passwordForm = reactive({ password: '', confirm_password: '' });
+const identityForm = reactive({ provider: '', subject: '', normalized_identifier: '' });
+const identityProviderPattern = /^[a-z][a-z0-9._-]{0,63}$/;
 
 usePageContextProvider(() => {
   const editorMode = editorVisible.value ? (editing.value ? 'edit' : 'create') : null;
@@ -115,7 +124,7 @@ const columns = computed<DataTableColumns<Api.Account.Record>>(() => [
   {
     title: $t('common.action'),
     key: 'actions',
-    width: 360,
+    width: 460,
     fixed: 'right',
     render: row =>
       h(NSpace, null, {
@@ -136,6 +145,13 @@ const columns = computed<DataTableColumns<Api.Account.Record>>(() => [
                   NButton,
                   { size: 'small', onClick: () => openPassword(row) },
                   { default: () => $t('page.account.resetPassword') }
+                )
+              : null,
+            can(SYSTEM_ACTIONS.accountIdentityManage)
+              ? h(
+                  NButton,
+                  { size: 'small', onClick: () => openIdentities(row) },
+                  { default: () => $t('page.account.externalIdentities') }
                 )
               : null,
             can(SYSTEM_ACTIONS.accountStatusUpdate)
@@ -231,6 +247,88 @@ function openPassword(account: Api.Account.Record) {
   passwordForm.password = '';
   passwordForm.confirm_password = '';
   passwordVisible.value = true;
+}
+
+const identityColumns = computed<DataTableColumns<Api.Account.ManagedIdentity>>(() => [
+  { title: $t('page.account.identityProvider'), key: 'provider', minWidth: 130 },
+  {
+    title: $t('page.account.maskedIdentifier'),
+    key: 'masked_normalized_identifier',
+    minWidth: 220,
+    render: row => row.masked_normalized_identifier || row.masked_subject
+  },
+  {
+    title: $t('page.account.verifiedAt'),
+    key: 'verified_at',
+    width: 170,
+    render: row => formatDateTime(row.verified_at)
+  },
+  {
+    title: $t('common.action'),
+    key: 'actions',
+    width: 100,
+    render: row =>
+      h(
+        NPopconfirm,
+        { onPositiveClick: () => removeIdentity(row) },
+        {
+          trigger: () =>
+            h(
+              NButton,
+              { size: 'small', type: 'error', ghost: true },
+              { default: () => $t('page.account.unbindIdentity') }
+            ),
+          default: () => $t('page.account.confirmUnbindIdentity')
+        }
+      )
+  }
+]);
+
+async function loadIdentities() {
+  if (!editing.value) return;
+  identitiesLoading.value = true;
+  try {
+    const { data, error } = await fetchAccountIdentities(editing.value.id);
+    if (!error && data) identities.value = data;
+  } finally {
+    identitiesLoading.value = false;
+  }
+}
+
+async function openIdentities(account: Api.Account.Record) {
+  editing.value = account;
+  identityForm.provider = '';
+  identityForm.subject = '';
+  identityForm.normalized_identifier = '';
+  identitiesVisible.value = true;
+  await loadIdentities();
+}
+
+async function saveIdentity() {
+  if (!editing.value) return;
+  await identityFormRef.value?.validate();
+  saving.value = true;
+  try {
+    const { error } = await bindAccountIdentity({ account_id: editing.value.id, ...identityForm });
+    if (!error) {
+      window.$message?.success($t('page.account.identityBindSuccess'));
+      identityForm.provider = '';
+      identityForm.subject = '';
+      identityForm.normalized_identifier = '';
+      await loadIdentities();
+    }
+  } finally {
+    saving.value = false;
+  }
+}
+
+async function removeIdentity(identity: Api.Account.ManagedIdentity) {
+  if (!editing.value) return;
+  const { error } = await unbindAccountIdentity(editing.value.id, identity.id);
+  if (!error) {
+    window.$message?.success($t('page.account.identityUnbindSuccess'));
+    await loadIdentities();
+  }
 }
 
 async function saveAccount() {
@@ -461,6 +559,60 @@ onMounted(async () => {
         <NSpace justify="end">
           <NButton @click="passwordVisible = false">{{ $t('common.cancel') }}</NButton>
           <NButton type="primary" :loading="saving" @click="savePassword">{{ $t('common.confirm') }}</NButton>
+        </NSpace>
+      </template>
+    </NModal>
+
+    <NModal
+      v-model:show="identitiesVisible"
+      preset="card"
+      class="w-820px max-w-95vw"
+      :title="$t('page.account.identitiesTitle', { name: editing?.display_name || editing?.username || '' })"
+    >
+      <NDataTable
+        :columns="identityColumns"
+        :data="identities"
+        :loading="identitiesLoading"
+        :row-key="row => row.id"
+        :scroll-x="650"
+      />
+      <NEmpty
+        v-if="!identitiesLoading && identities.length === 0"
+        class="my-16px"
+        :description="$t('page.account.noIdentities')"
+      />
+      <NDivider>{{ $t('page.account.bindIdentity') }}</NDivider>
+      <NForm ref="identityFormRef" :model="identityForm" label-placement="left" label-width="150">
+        <NFormItem
+          :label="$t('page.account.identityProvider')"
+          path="provider"
+          :rule="[
+            { required: true },
+            {
+              validator: (_rule, value: string) => identityProviderPattern.test(value) && value !== 'password',
+              message: $t('page.account.identityProviderInvalid')
+            }
+          ]"
+        >
+          <NInput v-model:value="identityForm.provider" :placeholder="$t('page.account.identityProviderPlaceholder')" />
+        </NFormItem>
+        <NFormItem :label="$t('page.account.identitySubject')" path="subject" :rule="{ required: true }">
+          <NInput v-model:value="identityForm.subject" />
+        </NFormItem>
+        <NFormItem
+          :label="$t('page.account.normalizedIdentifier')"
+          path="normalized_identifier"
+          :rule="{ required: true }"
+        >
+          <NInput v-model:value="identityForm.normalized_identifier" />
+        </NFormItem>
+      </NForm>
+      <template #footer>
+        <NSpace justify="end">
+          <NButton @click="identitiesVisible = false">{{ $t('common.close') }}</NButton>
+          <NButton type="primary" :loading="saving" @click="saveIdentity">
+            {{ $t('page.account.bindIdentity') }}
+          </NButton>
         </NSpace>
       </template>
     </NModal>

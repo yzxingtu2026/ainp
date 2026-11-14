@@ -269,7 +269,7 @@ func TestExternalModuleContributesAtomicAICreateToDefaultContract(t *testing.T) 
 		t.Fatal(err)
 	}
 	application.Jobs = &job.Runtime{Registry: job.NewRegistry()}
-	application.PlatformResources = platformresource.Services{Attachments: fakeAttachmentResources{}, Principals: fakePrincipalResources{}, AccountIdentities: fakeAccountIdentityResources{}}
+	application.PlatformResources = platformresource.Services{Attachments: fakeAttachmentResources{}, Principals: fakePrincipalResources{}, AccountIdentities: fakeAccountIdentityResources{}, AccountIdentityAdministration: fakeAccountIdentityAdministrationResources{}}
 	if err := (orders.Module{}).Register(application); err != nil {
 		t.Fatal(err)
 	}
@@ -348,5 +348,17 @@ func (fakeAccountIdentityResources) Bind(_ context.Context, req platformresource
 	return &platformresource.AccountIdentity{ID: "identity-1", Provider: req.Provider, Subject: req.Subject, NormalizedIdentifier: req.NormalizedIdentifier}, nil
 }
 func (fakeAccountIdentityResources) Unbind(context.Context, platformresource.AccountIdentityUnbindRequest) error {
+	return nil
+}
+
+type fakeAccountIdentityAdministrationResources struct{}
+
+func (fakeAccountIdentityAdministrationResources) ListForAccount(context.Context, platformresource.AccountIdentityAdminListRequest) ([]platformresource.ManagedAccountIdentity, error) {
+	return nil, nil
+}
+func (fakeAccountIdentityAdministrationResources) BindForAccount(_ context.Context, req platformresource.AccountIdentityAdminBindRequest) (*platformresource.ManagedAccountIdentity, error) {
+	return &platformresource.ManagedAccountIdentity{ID: "identity-1", Provider: req.Provider, MaskedSubject: "u***", MaskedNormalizedIdentifier: "u***@example.com"}, nil
+}
+func (fakeAccountIdentityAdministrationResources) UnbindForAccount(context.Context, platformresource.AccountIdentityAdminUnbindRequest) error {
 	return nil
 }

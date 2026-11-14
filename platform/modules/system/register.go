@@ -108,6 +108,10 @@ func Register(a *app.App) error {
 	if err := registerAccountActions(a, accountSvc); err != nil {
 		return err
 	}
+	identityResourceSvc := NewAccountIdentityResourceService(a.DB, a.Auditor)
+	if err := registerAccountIdentityAdminActions(a, access.NewAccountIdentityAdminActionService(identityResourceSvc)); err != nil {
+		return err
+	}
 	if a.ToolRegistry == nil {
 		return fmt.Errorf("tool registry is required")
 	}
@@ -167,7 +171,8 @@ func Register(a *app.App) error {
 	attachSvc.SetModelRuntimeProvider(func() aimodelruntime.GenerationRuntime { return a.AIModelRuntime })
 	a.PlatformResources.Attachments = attachSvc.ResourceReader()
 	a.PlatformResources.Principals = access.NewPrincipalResourceService(a.DB, a.Auditor)
-	a.PlatformResources.AccountIdentities = access.NewAccountIdentityResourceService(a.DB, a.Auditor)
+	a.PlatformResources.AccountIdentities = identityResourceSvc
+	a.PlatformResources.AccountIdentityAdministration = identityResourceSvc
 	if err := a.PlatformResources.Validate(); err != nil {
 		return fmt.Errorf("system: platform resource contracts: %w", err)
 	}

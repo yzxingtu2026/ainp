@@ -13,6 +13,7 @@ export const SYSTEM_ACTIONS = {
   accountStatusUpdate: 'system.account_status_update',
   accountRolesUpdate: 'system.account_roles_update',
   accountPasswordReset: 'system.account_password_reset',
+  accountIdentityManage: 'system.account_identity.manage',
   settingList: 'system.setting_list',
   settingGet: 'system.setting_get',
   settingUpdate: 'system.setting_update',

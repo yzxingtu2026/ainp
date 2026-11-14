@@ -31,6 +31,7 @@ func TestUserManagementActionsAndMenuAreRegistered(t *testing.T) {
 	for _, actionID := range []string{
 		system.ActionAccountList, system.ActionAccountGet, system.ActionAccountCreate, system.ActionAccountUpdate,
 		system.ActionAccountStatusUpdate, system.ActionAccountRolesUpdate, system.ActionAccountPasswordReset,
+		system.ActionAccountIdentityList, system.ActionAccountIdentityBind, system.ActionAccountIdentityUnbind,
 	} {
 		registered, ok := application.Actions.Get(actionID)
 		if !ok {
@@ -39,15 +40,21 @@ func TestUserManagementActionsAndMenuAreRegistered(t *testing.T) {
 		if registered.Meta.PermissionGroup != "system.account_management" {
 			t.Fatalf("user action permission group = %q", registered.Meta.PermissionGroup)
 		}
-		shouldExpose := actionID != system.ActionAccountCreate && actionID != system.ActionAccountPasswordReset
+		shouldExpose := actionID != system.ActionAccountCreate && actionID != system.ActionAccountPasswordReset && actionID != system.ActionAccountIdentityBind
 		if shouldExpose && (registered.Meta.AI == nil || !registered.Meta.AI.ExposeTool) {
 			t.Fatalf("user action %s must expose a complete AI contract", actionID)
 		}
 		if !shouldExpose && registered.Meta.AI != nil && registered.Meta.AI.ExposeTool {
 			t.Fatalf("user action %s must remain unavailable to AI", actionID)
 		}
-		if shouldExpose && actionID != system.ActionAccountList && actionID != system.ActionAccountGet && !registered.Meta.AI.RequiresConfirmation {
+		if shouldExpose && actionID != system.ActionAccountList && actionID != system.ActionAccountGet && actionID != system.ActionAccountIdentityList && !registered.Meta.AI.RequiresConfirmation {
 			t.Fatalf("user mutation %s must require confirmation", actionID)
+		}
+	}
+	for _, actionID := range []string{system.ActionAccountIdentityList, system.ActionAccountIdentityBind, system.ActionAccountIdentityUnbind} {
+		registered, _ := application.Actions.Get(actionID)
+		if registered.Meta.PermissionCode(actionID) != system.ActionAccountIdentityManage {
+			t.Fatalf("identity action %s permission = %q", actionID, registered.Meta.PermissionCode(actionID))
 		}
 	}
 	foundMenu := false
@@ -62,6 +69,7 @@ func TestUserManagementActionsAndMenuAreRegistered(t *testing.T) {
 	for _, permission := range []string{
 		system.ActionAccountList, system.ActionAccountGet, system.ActionAccountCreate, system.ActionAccountUpdate,
 		system.ActionAccountStatusUpdate, system.ActionAccountRolesUpdate, system.ActionAccountPasswordReset,
+		system.ActionAccountIdentityManage,
 	} {
 		found := false
 		for _, minimum := range system.AdminMinimumPermissions() {

@@ -22,6 +22,7 @@ func TestSystemManagementAndPersonalActionsExposeSafeAIContracts(t *testing.T) {
 
 	readActions := []string{
 		system.ActionAccountList, system.ActionAccountGet,
+		system.ActionAccountIdentityList,
 		system.ActionRoleList, system.ActionRoleGet, system.ActionPermissionCatalog,
 		system.ActionSettingList, system.ActionSettingGet,
 		system.ActionProfileGet, system.ActionUserPreferencesGet,
@@ -32,6 +33,7 @@ func TestSystemManagementAndPersonalActionsExposeSafeAIContracts(t *testing.T) {
 	}
 	writeActions := []string{
 		system.ActionAccountUpdate, system.ActionAccountStatusUpdate, system.ActionAccountRolesUpdate,
+		system.ActionAccountIdentityUnbind,
 		system.ActionRoleCreate, system.ActionRoleUpdate, system.ActionRoleDelete, system.ActionRolePermissionsUpdate,
 		system.ActionSettingUpdate, system.ActionSettingReset,
 		system.ActionProfileUpdate, system.ActionUserPreferencesUpdate,
@@ -49,7 +51,7 @@ func TestSystemManagementAndPersonalActionsExposeSafeAIContracts(t *testing.T) {
 		assertSystemAIContract(t, application, actionID, true)
 	}
 
-	for _, actionID := range []string{system.ActionAccountCreate, system.ActionAccountPasswordReset, system.ActionSettingSecretUpdate, system.ActionAttachmentUploadPrepare, system.ActionAttachmentDownloadPrepare} {
+	for _, actionID := range []string{system.ActionAccountCreate, system.ActionAccountPasswordReset, system.ActionAccountIdentityBind, system.ActionSettingSecretUpdate, system.ActionAttachmentUploadPrepare, system.ActionAttachmentDownloadPrepare} {
 		credentialAction, ok := application.Actions.Get(actionID)
 		if !ok || credentialAction.Meta.AI == nil || credentialAction.Meta.AI.ExposeTool || credentialAction.Meta.AI.ExclusionReason != action.AIExcludeSensitiveCredential {
 			t.Fatalf("credential Action %s must remain behind the sensitive credential boundary: %#v", actionID, credentialAction.Meta.AI)
@@ -78,7 +80,7 @@ func TestSystemManagementAndPersonalActionsExposeSafeAIContracts(t *testing.T) {
 			t.Fatalf("second-batch action was not projected from Action Registry: %s", actionID)
 		}
 	}
-	if projectedIDs[system.ActionAccountCreate] || projectedIDs[system.ActionAccountPasswordReset] || projectedIDs[system.ActionSettingSecretUpdate] {
+	if projectedIDs[system.ActionAccountCreate] || projectedIDs[system.ActionAccountPasswordReset] || projectedIDs[system.ActionAccountIdentityBind] || projectedIDs[system.ActionSettingSecretUpdate] {
 		t.Fatal("credential-bearing user Actions must not be projected as Action Tools")
 	}
 	for actionID, want := range map[string]string{

@@ -16,13 +16,17 @@ const (
 	ActionRolePermissionsUpdate = access.ActionRolePermissionsUpdate
 	ActionPermissionCatalog     = access.ActionPermissionCatalog
 
-	ActionAccountList          = access.ActionAccountList
-	ActionAccountGet           = access.ActionAccountGet
-	ActionAccountCreate        = access.ActionAccountCreate
-	ActionAccountUpdate        = access.ActionAccountUpdate
-	ActionAccountStatusUpdate  = access.ActionAccountStatusUpdate
-	ActionAccountRolesUpdate   = access.ActionAccountRolesUpdate
-	ActionAccountPasswordReset = access.ActionAccountPasswordReset
+	ActionAccountList           = access.ActionAccountList
+	ActionAccountGet            = access.ActionAccountGet
+	ActionAccountCreate         = access.ActionAccountCreate
+	ActionAccountUpdate         = access.ActionAccountUpdate
+	ActionAccountStatusUpdate   = access.ActionAccountStatusUpdate
+	ActionAccountRolesUpdate    = access.ActionAccountRolesUpdate
+	ActionAccountPasswordReset  = access.ActionAccountPasswordReset
+	ActionAccountIdentityManage = access.ActionAccountIdentityManage
+	ActionAccountIdentityList   = access.ActionAccountIdentityList
+	ActionAccountIdentityBind   = access.ActionAccountIdentityBind
+	ActionAccountIdentityUnbind = access.ActionAccountIdentityUnbind
 
 	ActionSettingList         = settings.ActionSettingList
 	ActionSettingGet          = settings.ActionSettingGet
@@ -88,6 +92,7 @@ var adminMinimumPermissions = []string{
 	ActionAccountStatusUpdate,
 	ActionAccountRolesUpdate,
 	ActionAccountPasswordReset,
+	ActionAccountIdentityManage,
 	ActionSettingList,
 	ActionSettingGet,
 	ActionSettingUpdate,

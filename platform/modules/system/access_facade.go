@@ -82,7 +82,7 @@ func NewPrincipalResourceService(db *gorm.DB, auditor audit.Recorder) platformre
 	return access.NewPrincipalResourceService(db, auditor)
 }
 
-func NewAccountIdentityResourceService(db *gorm.DB, auditor audit.Recorder) platformresource.AccountIdentityService {
+func NewAccountIdentityResourceService(db *gorm.DB, auditor audit.Recorder) *AccountIdentityResourceService {
 	return access.NewAccountIdentityResourceService(db, auditor)
 }
 
@@ -107,4 +107,7 @@ func registerRoleActions(a *app.App, service *RoleService) error {
 }
 func registerAccountActions(a *app.App, service *AccountService) error {
 	return access.RegisterAccountActions(a, service)
+}
+func registerAccountIdentityAdminActions(a *app.App, service *access.AccountIdentityAdminActionService) error {
+	return access.RegisterAccountIdentityAdminActions(a, service)
 }
