@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { AINP_LOGO_PATH, APP_BRAND_NAME } from '@/constants/brand';
+import { useBrandStore } from '@/store/modules/brand';
 
 defineOptions({
   name: 'SystemLogo'
 });
+
+const brandStore = useBrandStore();
 </script>
 
 <template>
-  <img :src="AINP_LOGO_PATH" :alt="APP_BRAND_NAME" class="app-logo" />
+  <img :src="brandStore.logo" :alt="brandStore.name" class="app-logo" @error="brandStore.fallbackLogo" />
 </template>
 
 <style scoped>

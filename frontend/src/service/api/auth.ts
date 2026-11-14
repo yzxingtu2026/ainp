@@ -49,6 +49,7 @@ export function fetchGetUserInfo() {
       realm: profile.realm,
       userId: profile.userId || profile.id,
       userName: profile.userName || profile.display_name || profile.username,
+      tenantId: profile.tenantId || profile.tenant_id,
       avatarAttachmentId: profile.avatarAttachmentId || profile.avatar_attachment_id || null,
       roles: profile.roles || [],
       buttons: permissionButtons

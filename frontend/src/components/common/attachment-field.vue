@@ -24,6 +24,7 @@ const props = withDefaults(
     multiple: true
   }
 );
+const emit = defineEmits<{ change: [items: Api.Attachment.Item[]] }>();
 
 const { hasAuth } = useAuth();
 const items = ref<Api.Attachment.Item[]>([]);
@@ -44,6 +45,7 @@ const canDelete = computed(() => hasAuth(ATTACHMENT_ACTIONS.delete));
 async function refresh() {
   if (!props.resourceId) {
     items.value = [...pending.value];
+    emit('change', items.value);
     return;
   }
   loading.value = true;
@@ -57,6 +59,7 @@ async function refresh() {
       return;
     }
     items.value = data?.items || [];
+    emit('change', items.value);
   } finally {
     loading.value = false;
   }
