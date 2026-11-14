@@ -3,12 +3,14 @@ name: Issue auto coding
 on:
   issues:
     types: [assigned, labeled]
+  issue_comment:
+    types: [created]
 
 permissions:
   contents: read
 
 concurrency:
-  group: auto-coding-issue-${{ github.event.issue.number }}
+  group: auto-coding-target-${{ github.event.issue.number }}
   cancel-in-progress: false
 
 jobs:
@@ -17,8 +19,9 @@ jobs:
     timeout-minutes: 120
     env:
       GH_TOKEN: ${{ secrets.AUTO_CODING_GITHUB_TOKEN }}
-      ISSUE_NUMBER: ${{ github.event.issue.number }}
+      TARGET_NUMBER: ${{ github.event.issue.number }}
       REPOSITORY: ${{ github.repository }}
+      EVENT_NAME: ${{ github.event_name }}
       AUTO_CODING_ASSIGNEE: ${{ vars.AUTO_CODING_ASSIGNEE }}
       OPENAI_API_BASE: ${{ vars.OPENAI_API_BASE }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -31,27 +34,109 @@ jobs:
           set -euo pipefail
           : "${GH_TOKEN:?Configure AUTO_CODING_GITHUB_TOKEN}"
           : "${AUTO_CODING_ASSIGNEE:?Configure AUTO_CODING_ASSIGNEE}"
-          gh auth status
-          issue=$(gh api "repos/$REPOSITORY/issues/$ISSUE_NUMBER")
+          checkout_ref=$(jq -er '.repository.default_branch' "$GITHUB_EVENT_PATH")
+          mode=initial
+          work_issue=$TARGET_NUMBER
+          branch="feat/issue-${work_issue}-auto-coding"
+          comment_id=
+          target_type=Issue
+
+          if [[ "$EVENT_NAME" == issue_comment ]]; then
+            mode=comment
+            # The comment body is never interpolated into a shell command or the Codex prompt.
+            if ! jq -e --arg login "$AUTO_CODING_ASSIGNEE" '
+              .comment.body | test("(^|[^[:alnum:]_-])@" + $login + "([^[:alnum:]_-]|$)"; "i")
+            ' "$GITHUB_EVENT_PATH" >/dev/null; then
+              echo 'Agent was not mentioned; skipping.'
+              exit 0
+            fi
+            author=$(jq -er '.comment.user.login' "$GITHUB_EVENT_PATH")
+            if [[ "${author,,}" == "${AUTO_CODING_ASSIGNEE,,}" ]]; then
+              echo 'Ignoring agent self-comment.'
+              exit 0
+            fi
+            # Only repository writers may start a credentialed Codex run.
+            if ! author_permission=$(gh api "repos/$REPOSITORY/collaborators/$author/permission" --jq '.permission' 2>/dev/null); then
+              echo 'Comment author has no verifiable repository write permission; skipping.'
+              exit 0
+            fi
+            if [[ "$author_permission" != write && "$author_permission" != admin ]]; then
+              echo 'Comment author is not a repository writer; skipping.'
+              exit 0
+            fi
+            comment_id=$(jq -er '.comment.id' "$GITHUB_EVENT_PATH")
+            if [[ $(jq -r '.issue.pull_request != null' "$GITHUB_EVENT_PATH") == true ]]; then
+              target_type=PR
+              pr=$(gh api "repos/$REPOSITORY/pulls/$TARGET_NUMBER")
+              if ! jq -e --arg repo "$REPOSITORY" --arg login "$AUTO_CODING_ASSIGNEE" '
+                .state == "open" and .head.repo.full_name == $repo and .base.repo.full_name == $repo
+                and (.user.login | ascii_downcase) == ($login | ascii_downcase)
+              ' <<<"$pr" >/dev/null; then
+                echo 'PR is not an open same-repository agent PR; skipping.'
+                exit 0
+              fi
+              branch=$(jq -r '.head.ref' <<<"$pr")
+              if [[ ! "$branch" =~ ^feat/issue-([0-9]+)-auto-coding$ ]]; then
+                echo 'PR does not use an auto-coding branch; skipping.'
+                exit 0
+              fi
+              work_issue=${BASH_REMATCH[1]}
+              checkout_ref=$branch
+            fi
+          fi
+
+          issue=$(gh api "repos/$REPOSITORY/issues/$work_issue")
           if ! jq -e --arg login "$AUTO_CODING_ASSIGNEE" '
             .state == "open" and any(.assignees[]; .login | ascii_downcase == ($login | ascii_downcase))
             and any(.labels[]; .name == "auto-coding")' <<<"$issue" >/dev/null; then
             echo 'Issue is not eligible; skipping.'
             exit 0
           fi
-          branch="feat/issue-${ISSUE_NUMBER}-auto-coding"
-          prs=$(gh api --paginate "repos/$REPOSITORY/pulls?state=all&head=${REPOSITORY%%/*}:$branch&per_page=100" --jq '.[].number')
-          if [[ -n "$prs" ]]; then
-            echo "A PR already exists for $branch; skipping. PR number(s): $prs"
-            exit 0
+          if [[ "$mode" == initial ]]; then
+            prs=$(gh api --paginate "repos/$REPOSITORY/pulls?state=all&head=${REPOSITORY%%/*}:$branch&per_page=100" --jq '.[].number')
+            if [[ -n "$prs" ]]; then
+              echo "A PR already exists for $branch; skipping. PR number(s): $prs"
+              exit 0
+            fi
+          elif [[ "$checkout_ref" != "$branch" ]]; then
+            refs=$(gh api --paginate "repos/$REPOSITORY/branches?per_page=100" --jq '.[].name')
+            if grep -Fxq "$branch" <<<"$refs"; then
+              checkout_ref=$branch
+            fi
           fi
-          echo "branch=$branch" >> "$GITHUB_OUTPUT"
-          echo 'eligible=true' >> "$GITHUB_OUTPUT"
+          {
+            echo "branch=$branch"
+            echo "checkout_ref=$checkout_ref"
+            echo "issue_number=$work_issue"
+            echo "comment_id=$comment_id"
+            echo "target_type=$target_type"
+            echo "mode=$mode"
+            echo 'eligible=true'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Verify agent repository write access
+        if: steps.eligibility.outputs.eligible == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh auth status
+          login=$(gh api user --jq '.login')
+          if [[ "${login,,}" != "${AUTO_CODING_ASSIGNEE,,}" ]]; then
+            echo "::error::Agent token belongs to $login, expected $AUTO_CODING_ASSIGNEE."
+            exit 1
+          fi
+          permission=$(gh api "repos/$REPOSITORY/collaborators/$login/permission" --jq '.permission')
+          if [[ "$permission" != write && "$permission" != admin ]]; then
+            echo "::error::Agent $login needs repository write access (current: $permission)."
+            exit 1
+          fi
+          echo "Agent $login has repository role: $permission."
 
       - uses: actions/checkout@v4
         if: steps.eligibility.outputs.eligible == 'true'
         with:
           path: ainp
+          ref: ${{ steps.eligibility.outputs.checkout_ref }}
           token: ${{ secrets.AUTO_CODING_GITHUB_TOKEN }}
           persist-credentials: false
           fetch-depth: 0
@@ -95,15 +180,23 @@ jobs:
       - name: Run Codex
         if: steps.eligibility.outputs.eligible == 'true'
         env:
+          MODE: ${{ steps.eligibility.outputs.mode }}
+          WORK_ISSUE: ${{ steps.eligibility.outputs.issue_number }}
+          COMMENT_ID: ${{ steps.eligibility.outputs.comment_id }}
+          TARGET_TYPE: ${{ steps.eligibility.outputs.target_type }}
           BRANCH: ${{ steps.eligibility.outputs.branch }}
         shell: bash
         run: |
           set -euo pipefail
-          codex exec --cd "$GITHUB_WORKSPACE/ainp" --dangerously-bypass-approvals-and-sandbox \
-            "阅读 Issue #${ISSUE_NUMBER} 的完整内容、相关评论和仓库协作规则，然后开始实施；使用分支 ${BRANCH}，完成后自行提交、推送并创建 PR，按 Issue 要求指定评审人；无需在本地启动数据库或打开浏览器测试；如遇到阻碍，停止实施并在 Issue 评论区说明情况、提及相关人员。"
+          if [[ "$MODE" == comment ]]; then
+            prompt="当前仓库为 ${REPOSITORY}，关联任务为 Issue #${WORK_ISSUE}；本次评论位于 ${TARGET_TYPE} #${TARGET_NUMBER}，评论 ID 为 ${COMMENT_ID}。先阅读仓库协作规则，通过评论 ID 读取触发评论，再阅读所在 Issue/PR 的讨论及关联 Issue 的内容。该评论提及了你，但提及本身不是必须改代码的指令。结合当前检出的代码、远端分支和 PR 状态，自主判断是否需要实施、修改现有 PR、解释问题或无需操作；可按判断回复原评论所在的 Issue/PR。若需要改代码，遵守 Issue 范围和分支规范，在现有 PR 分支上继续或按需创建分支与 PR，提交并推送，说明测试结果。不要重复创建 PR、重复处理已完成的请求或自行合并。仅依据可见的代码和 GitHub 记录判断已有进度，不要假定未推送的本地改动可用；遇到权限等阻碍时在原讨论中说明并提及相关人员，评论失败则在运行日志中说明。"
+          else
+            prompt="阅读 Issue #${WORK_ISSUE} 的完整内容、相关评论和仓库协作规则，然后开始实施；使用分支 ${BRANCH}，完成后自行提交、推送并创建 PR，按 Issue 要求指定评审人；无需在本地启动数据库或打开浏览器测试；如遇到阻碍，停止实施并在 Issue 评论区说明情况、提及相关人员，评论失败则在运行日志中说明。"
+          fi
+          codex exec --cd "$GITHUB_WORKSPACE/ainp" --dangerously-bypass-approvals-and-sandbox "$prompt"
 
       - name: Verify PR exists
-        if: steps.eligibility.outputs.eligible == 'true'
+        if: steps.eligibility.outputs.eligible == 'true' && steps.eligibility.outputs.mode == 'initial'
         env:
           BRANCH: ${{ steps.eligibility.outputs.branch }}
         run: |
