@@ -60,7 +60,7 @@ async function open(item: Api.Route.NavigationSearchResult) {
 <template>
   <div class="navigation-results">
     <div v-if="pending && items.length === 0" class="navigation-results__pending">
-      <NSpin :size="16" />
+      <NSpin :size="15" />
       <span>{{ $t('chat.navigationSearching') }}</span>
     </div>
     <NEmpty v-else-if="items.length === 0" size="small" :description="$t('chat.navigationEmpty')" />
@@ -74,16 +74,18 @@ async function open(item: Api.Route.NavigationSearchResult) {
             :aria-label="`${$t('chat.navigationOpen')}：${item.title}`"
             @click="open(item)"
           >
-            <SvgIcon
-              class="navigation-result__icon"
-              :icon="item.icon || 'mdi:map-marker-path'"
-              :local-icon="item.local_icon"
-            />
+            <span class="navigation-result__icon-badge" aria-hidden="true">
+              <SvgIcon
+                class="navigation-result__icon"
+                :icon="item.icon || 'mdi:map-marker-path'"
+                :local-icon="item.local_icon"
+              />
+            </span>
             <strong class="navigation-result__title">{{ item.title }}</strong>
             <span v-if="item.breadcrumb.length > 1" class="navigation-result__breadcrumb">
               {{ item.breadcrumb.slice(0, -1).join(' / ') }}
             </span>
-            <SvgIcon class="navigation-result__arrow" icon="mdi:arrow-right" aria-hidden="true" />
+            <SvgIcon class="navigation-result__arrow" icon="mdi:arrow-up-right" aria-hidden="true" />
           </button>
         </span>
       </template>
@@ -97,7 +99,7 @@ async function open(item: Api.Route.NavigationSearchResult) {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   margin-top: 8px;
 }
 
@@ -106,7 +108,7 @@ async function open(item: Api.Route.NavigationSearchResult) {
   align-items: center;
   gap: 8px;
   color: rgba(127, 127, 127, 0.95);
-  font-size: 13px;
+  font-size: 12.5px;
 }
 
 .navigation-result-trigger {
@@ -117,40 +119,64 @@ async function open(item: Api.Route.NavigationSearchResult) {
 .navigation-result {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   max-width: 100%;
-  height: 32px;
-  border: 1px solid rgba(127, 127, 127, 0.18);
-  border-radius: 999px;
-  padding: 0 10px;
-  background: rgba(127, 127, 127, 0.06);
+  height: 34px;
+  border: 1px solid rgb(var(--primary-color) / 0.22);
+  border-radius: 10px;
+  padding: 0 10px 0 7px;
+  background: linear-gradient(135deg, rgb(var(--primary-color) / 0.06), rgba(8, 145, 178, 0.04));
   color: inherit;
   font: inherit;
   cursor: pointer;
   transition:
     border-color 0.2s ease,
     background 0.2s ease,
-    color 0.2s ease;
+    color 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .navigation-result:hover:not(:disabled),
 .navigation-result:focus-visible {
-  border-color: rgba(var(--primary-color), 0.4);
+  border-color: rgb(var(--primary-color) / 0.5);
   outline: none;
-  background: rgba(var(--primary-color), 0.1);
+  background: linear-gradient(135deg, rgb(var(--primary-color) / 0.12), rgba(8, 145, 178, 0.08));
   color: rgb(var(--primary-color));
+  box-shadow: 0 3px 10px rgb(var(--primary-color) / 0.12);
 }
 
 .navigation-result:disabled {
   cursor: not-allowed;
-  opacity: 0.5;
+  opacity: 0.48;
+  border-color: rgba(127, 127, 127, 0.2);
+  background: rgba(127, 127, 127, 0.05);
 }
 
-.navigation-result__icon,
+.navigation-result__icon-badge {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  background: rgb(var(--primary-color) / 0.12);
+}
+
+.navigation-result__icon {
+  font-size: 14px;
+  color: rgb(var(--primary-color));
+}
+
 .navigation-result__arrow {
   flex: none;
-  font-size: 16px;
-  color: rgb(var(--primary-color));
+  font-size: 15px;
+  color: rgb(var(--primary-color) / 0.82);
+  transition: transform 0.18s ease;
+}
+
+.navigation-result:hover:not(:disabled) .navigation-result__arrow,
+.navigation-result:focus-visible .navigation-result__arrow {
+  transform: translate(2px, -2px);
 }
 
 .navigation-result__title,
@@ -159,22 +185,36 @@ async function open(item: Api.Route.NavigationSearchResult) {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
 .navigation-result__title {
-  max-width: 160px;
-  font-size: 13px;
-  font-weight: 600;
+  max-width: 168px;
+  font-size: 12.5px;
+  font-weight: 620;
 }
+
 .navigation-result__breadcrumb {
-  max-width: 120px;
-  padding-left: 6px;
+  max-width: 128px;
+  padding-left: 7px;
   border-left: 1px solid rgba(127, 127, 127, 0.22);
-  color: rgba(127, 127, 127, 0.95);
+  color: rgba(127, 127, 127, 0.92);
   font-size: 11px;
 }
 
 @media (max-width: 640px) {
   .navigation-result__breadcrumb {
     display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .navigation-result,
+  .navigation-result__arrow {
+    transition: none;
+  }
+
+  .navigation-result:hover:not(:disabled) .navigation-result__arrow,
+  .navigation-result:focus-visible .navigation-result__arrow {
+    transform: none;
   }
 }
 </style>

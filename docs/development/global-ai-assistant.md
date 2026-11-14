@@ -47,7 +47,9 @@ Header launcher 在所有 layout mode 中显示，并以动态路由中的 `shel
 
 登出、认证失效或 AI launcher 权限撤销调用 `resetStore()`：abort SSE、停止轮询并清空 Conversation、草稿、附件、Run 和 session Conversation ID，禁止跨身份泄漏。
 
-草稿与历史消息中，图片显示受控缩略图，文档显示类型图标和当前授权读取的安全文件名。附件详情或 revision 校验失败时降级为通用不可用状态，不显示 attachment ID、路径、object key 或下载 URL。
+草稿与历史消息中，图片经 `useAttachmentGridThumbs`（仅 `thumb_status=ready` 时请求 `variant=thumb`）展示受控缩略图，文档显示类型图标、扩展名与当前授权读取的安全文件名；点击 ready 的图片或 PDF 统一唤起 `AttachmentPreview`。附件详情或 revision 校验失败时降级为通用不可用状态，不显示 attachment ID、路径、object key 或下载 URL。
+
+AI 回复在流式增量阶段显示内联能量光标，收口后展示轻量回合操作栏（复制正文、查看本次 Run 轨迹、可重试失败快捷重试）；代码块采用事件委托复制并保持 `DOMPurify` 安全过滤，消息视口提供渐隐衔接与“回到底部”悬浮导航。
 
 ## 个性化启动快照
 

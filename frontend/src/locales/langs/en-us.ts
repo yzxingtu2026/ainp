@@ -546,7 +546,12 @@ const local: App.I18n.Schema = {
       runCancelled: 'The run was cancelled',
       runProviderUnavailable: 'The model service is temporarily unavailable. Try again later',
       runStreamProtocolError: 'The model stream response was invalid. Try again later or contact an administrator',
-      completedToolsPreserved: 'Completed tool operations from this run were not rolled back.'
+      completedToolsPreserved: 'Completed tool operations from this run were not rolled back.',
+      scrollToBottom: 'Scroll to bottom',
+      scrollToBottomStreaming: 'Jump to live output',
+      shortcutHint: 'Enter to send · Shift + Enter for new line',
+      imageUnavailable: 'The image attachment is unavailable or has changed',
+      previewAttachment: 'Preview attachment'
     },
     agentBuilder: {
       back: 'Back to list',
@@ -1192,10 +1197,28 @@ const local: App.I18n.Schema = {
     navigationSearchError: 'Could not load feature search results. Try again later.',
     navigationOffline: 'You are offline. Reconnect to search application features.',
     navigationDegraded: 'Search is degraded; showing lexical matches',
-    pageCapturing: 'AI is viewing the current page'
+    pageCapturing: 'AI is viewing the current page',
+    copy: 'Copy',
+    copied: 'Copied',
+    copyMessage: 'Copy prompt',
+    copyResponse: 'Copy response',
+    copyCode: 'Copy code',
+    codeLanguage: 'text',
+    viewRunDetails: 'Run trace',
+    retryRun: 'Retry run',
+    streamingLive: 'Generating',
+    stepModel: 'Model reasoning',
+    stepToolSearch: 'Tool search',
+    stepToolLoad: 'Load schema',
+    stepToolExecute: 'Tool execution',
+    stepContextAssemble: 'Context assembly',
+    stepFinalize: 'Finalization'
   },
   toolConfirmation: {
     title: 'Sensitive Tool Confirmation',
+    securityGate: 'Security Execution Gate',
+    singleUseNotice: 'Approval applies once to this call only',
+    sensitiveField: 'Sensitive',
     tool: 'Tool',
     arguments: 'Argument Summary',
     callId: 'Call identifier',

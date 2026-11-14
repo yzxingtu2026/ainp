@@ -12,8 +12,14 @@ vi.mock('@/locales', () => ({
 
 vi.mock('@/hooks/business/attachment', () => ({
   attachmentTypeIcon: () => 'mdi:file-outline',
+  canPreviewAttachment: (item: Pick<Api.Attachment.Item, 'content_type' | 'status'>) =>
+    item.status === 'ready' &&
+    (item.content_type.startsWith('image/') ||
+      item.content_type === 'application/pdf' ||
+      item.content_type.startsWith('video/')),
+  formatFileSize: (size: number) => `${size} B`,
   isImageContentType: (contentType: string) => contentType.startsWith('image/'),
-  useAttachmentGridThumbs: () => ({ urls: {} })
+  useAttachmentGridThumbs: () => ({ urls: { 'img-1': 'blob:thumb-1' } })
 }));
 
 const queueItems = ref<AttachmentQueueItem[]>([]);
@@ -41,6 +47,14 @@ vi.mock('@/hooks/business/attachment-thumb-poll', () => ({
 
 vi.mock('@/components/common/attachment-picker.vue', () => ({
   default: { name: 'AttachmentPicker', template: '<div />' }
+}));
+
+vi.mock('@/components/common/attachment-preview.vue', () => ({
+  default: {
+    name: 'AttachmentPreview',
+    props: ['show', 'attachment'],
+    template: '<div data-test="attachment-preview" :data-id="attachment?.id" />'
+  }
 }));
 
 const mounted: Array<ReturnType<typeof mount>> = [];
@@ -134,8 +148,10 @@ describe('WorkspaceComposer aurora states and controls', () => {
     expect(wrapper.classes()).toContain(`workspace-composer--${density}`);
     expect(wrapper.classes()).not.toContain('workspace-composer--has-content');
     expect(wrapper.get('.workspace-composer__primary').attributes('disabled')).toBeDefined();
+    expect(wrapper.get('.workspace-composer__primary').classes()).not.toContain('workspace-composer__primary--ready');
     await wrapper.setProps({ modelValue: '草稿', canSend: true });
     expect(wrapper.classes()).toContain('workspace-composer--has-content');
+    expect(wrapper.get('.workspace-composer__primary').classes()).toContain('workspace-composer__primary--ready');
     await wrapper.get('.workspace-composer__primary').trigger('click');
     expect(wrapper.emitted('send')).toHaveLength(1);
     await wrapper.setProps({ modelValue: '  ' });
@@ -156,6 +172,51 @@ describe('WorkspaceComposer aurora states and controls', () => {
     });
     expect(wrapper.classes()).toContain('workspace-composer--has-content');
     expect(wrapper.findAll('.workspace-composer__attachment')).toHaveLength(1);
+    expect(wrapper.text()).toContain('TXT · 5 B');
+  });
+
+  it('opens AttachmentPreview for previewable image/PDF chips and keeps non-previewable docs static', async () => {
+    const wrapper = mountComposer({
+      attachments: [
+        {
+          id: 'img-1',
+          content_type: 'image/png',
+          original_name: 'screen.png',
+          size: 120,
+          status: 'ready',
+          thumb_status: 'ready',
+          uploader_id: 'user-1',
+          created_at: '',
+          updated_at: ''
+        },
+        {
+          id: 'doc-pdf',
+          content_type: 'application/pdf',
+          original_name: 'report.pdf',
+          size: 240,
+          status: 'ready',
+          uploader_id: 'user-1',
+          created_at: '',
+          updated_at: ''
+        },
+        {
+          id: 'doc-xlsx',
+          content_type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          original_name: 'sheet.xlsx',
+          size: 512,
+          status: 'ready',
+          uploader_id: 'user-1',
+          created_at: '',
+          updated_at: ''
+        }
+      ]
+    });
+
+    const previewTriggers = wrapper.findAll('.workspace-composer__attachment-preview');
+    expect(previewTriggers).toHaveLength(2);
+    await previewTriggers[1].trigger('click');
+    await nextTick();
+    expect(wrapper.get('[data-test="attachment-preview"]').attributes('data-id')).toBe('doc-pdf');
   });
 
   it('keeps the stop control available during a run, including while offline', async () => {

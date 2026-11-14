@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
+import CodeTag from '@/components/common/code-tag.vue';
+import DateTimeText from '@/components/common/datetime-text.vue';
+import { CODESET_KEYS } from '@/constants/codeset';
 import { useAppStore } from '@/store/modules/app';
 import { useAiAssistantStore } from '@/store/modules/ai-assistant';
 import { useRouteStore } from '@/store/modules/route';
@@ -24,6 +27,16 @@ const renameTarget = ref<Api.AI.Conversation | null>(null);
 const docked = computed(() => !appStore.isMobile);
 const agentName = computed(() => controller.slot.value?.agent?.name || $t('page.aiWorkspace.assistant'));
 const healthy = computed(() => Boolean(controller.slot.value?.healthy));
+
+function stepTitle(type: string) {
+  if (type === 'model') return $t('chat.stepModel');
+  if (type === 'tool_search') return $t('chat.stepToolSearch');
+  if (type === 'tool_load') return $t('chat.stepToolLoad');
+  if (type === 'tool_execute') return $t('chat.stepToolExecute');
+  if (type === 'context_assemble') return $t('chat.stepContextAssemble');
+  if (type === 'finalize') return $t('chat.stepFinalize');
+  return type;
+}
 
 watch(
   () => store.visible,
@@ -84,9 +97,11 @@ function expandWorkspace() {
         @keydown.esc.stop="store.close"
       >
         <header class="global-ai-assistant__header">
-          <AiMascot :state="controller.mascotState.value" :size="42" />
+          <span class="global-ai-assistant__avatar">
+            <AiMascot :state="controller.mascotState.value" :size="36" />
+          </span>
           <div class="min-w-0 flex-1">
-            <div class="truncate text-14px font-650">{{ agentName }}</div>
+            <div class="truncate text-13.5px font-650">{{ agentName }}</div>
             <div class="flex-y-center gap-5px text-11px text-gray-500">
               <span class="global-ai-assistant__health" :class="{ 'global-ai-assistant__health--ok': healthy }"></span>
               {{ healthy ? $t('page.aiWorkspace.readyShort') : $t('page.aiWorkspace.unavailable') }}
@@ -109,9 +124,10 @@ function expandWorkspace() {
             <template #trigger>
               <button
                 class="global-ai-assistant__tool"
+                :class="{ 'global-ai-assistant__tool--active': store.view === 'history' }"
                 type="button"
                 :aria-label="$t('page.aiWorkspace.openConversations')"
-                @click="store.show('history')"
+                @click="store.show(store.view === 'history' ? 'conversation' : 'history')"
               >
                 <SvgIcon icon="mdi:history" />
               </button>
@@ -122,9 +138,10 @@ function expandWorkspace() {
             <template #trigger>
               <button
                 class="global-ai-assistant__tool"
+                :class="{ 'global-ai-assistant__tool--active': store.view === 'run' }"
                 type="button"
                 :aria-label="$t('page.aiWorkspace.runDetails')"
-                @click="store.show('run')"
+                @click="store.show(store.view === 'run' ? 'conversation' : 'run')"
               >
                 <SvgIcon icon="mdi:timeline-clock-outline" />
               </button>
@@ -160,7 +177,7 @@ function expandWorkspace() {
         </header>
 
         <div v-if="store.view === 'conversation'" class="global-ai-assistant__body">
-          <AiConversationSurface density="sidebar" />
+          <AiConversationSurface density="sidebar" @open-run="store.show('run')" />
         </div>
 
         <div v-else-if="store.view === 'history'" class="global-ai-assistant__secondary">
@@ -202,29 +219,44 @@ function expandWorkspace() {
           <div class="global-ai-assistant__run">
             <NEmpty v-if="!controller.runDetail.value" :description="$t('page.aiWorkspace.noRun')" />
             <template v-else>
-              <NDescriptions :column="1" bordered size="small">
-                <NDescriptionsItem :label="$t('page.aiWorkspace.status')">
-                  <AgentRunStatus :run="controller.runDetail.value.run" />
-                </NDescriptionsItem>
-                <NDescriptionsItem :label="$t('page.aiWorkspace.steps')">
-                  {{ controller.runDetail.value.run.current_step }}
-                </NDescriptionsItem>
-                <NDescriptionsItem :label="$t('page.aiWorkspace.modelCalls')">
-                  {{ controller.runDetail.value.run.model_calls }}
-                </NDescriptionsItem>
-                <NDescriptionsItem :label="$t('page.aiWorkspace.toolCalls')">
-                  {{ controller.runDetail.value.run.tool_calls }}
-                </NDescriptionsItem>
-              </NDescriptions>
-              <NTimeline class="mt-18px">
+              <div class="run-status-card">
+                <AgentRunStatus
+                  :run="controller.runDetail.value.run"
+                  @cancel="controller.stop"
+                  @resume="controller.resumeRun"
+                  @retry="controller.retryRun(controller.runDetail.value.run.id)"
+                />
+              </div>
+              <div class="run-metrics-grid">
+                <div class="run-metric-item">
+                  <span>{{ $t('page.aiWorkspace.steps') }}</span>
+                  <strong>{{ controller.runDetail.value.run.current_step }}</strong>
+                </div>
+                <div class="run-metric-item">
+                  <span>{{ $t('page.aiWorkspace.modelCalls') }}</span>
+                  <strong>{{ controller.runDetail.value.run.model_calls }}</strong>
+                </div>
+                <div class="run-metric-item">
+                  <span>{{ $t('page.aiWorkspace.toolCalls') }}</span>
+                  <strong>{{ controller.runDetail.value.run.tool_calls }}</strong>
+                </div>
+              </div>
+              <NTimeline class="mt-16px">
                 <NTimelineItem
                   v-for="step in controller.runDetail.value.steps"
                   :key="step.id"
                   :type="step.status === 'failed' ? 'error' : step.status === 'completed' ? 'success' : 'info'"
-                  :title="step.type"
-                  :content="step.status"
-                  :time="step.started_at || step.created_at"
-                />
+                >
+                  <template #header>
+                    <div class="run-step-header">
+                      <span class="run-step-title">{{ stepTitle(step.type) }}</span>
+                      <CodeTag :code-set="CODESET_KEYS.agentStepStatus" :value="step.status" />
+                    </div>
+                  </template>
+                  <template #footer>
+                    <DateTimeText :value="step.started_at || step.created_at" class="text-11px text-gray-500" />
+                  </template>
+                </NTimelineItem>
               </NTimeline>
             </template>
           </div>
@@ -264,6 +296,7 @@ function expandWorkspace() {
   outline: none;
   pointer-events: auto;
 }
+
 .global-ai-assistant--docked {
   position: relative;
   top: auto;
@@ -274,15 +307,29 @@ function expandWorkspace() {
   height: 100%;
   box-shadow: none;
 }
+
 .global-ai-assistant__header {
-  min-height: 58px;
+  min-height: 56px;
   flex: none;
   display: flex;
   align-items: center;
   gap: 6px;
-  border-bottom: 1px solid rgba(127, 127, 127, 0.15);
-  padding: 7px 10px;
+  border-bottom: 1px solid rgba(127, 127, 127, 0.14);
+  background: linear-gradient(180deg, rgba(100, 108, 255, 0.035) 0%, transparent 100%);
+  padding: 6px 10px;
 }
+
+.global-ai-assistant__avatar {
+  width: 38px;
+  height: 38px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(127, 127, 127, 0.16);
+  border-radius: 11px;
+  background: rgb(var(--container-bg-color));
+}
+
 .global-ai-assistant__health {
   width: 7px;
   height: 7px;
@@ -290,26 +337,43 @@ function expandWorkspace() {
   border-radius: 50%;
   background: #ef4444;
 }
+
 .global-ai-assistant__health--ok {
   background: #22a06b;
+  box-shadow: 0 0 6px rgba(34, 160, 107, 0.45);
 }
+
 .global-ai-assistant__tool {
-  width: 34px;
-  height: 34px;
+  width: 32px;
+  height: 32px;
   flex: none;
   display: grid;
   place-items: center;
-  border: 0;
-  border-radius: 6px;
+  border: 1px solid transparent;
+  border-radius: 8px;
   background: transparent;
   color: inherit;
   cursor: pointer;
+  transition:
+    border-color 0.16s ease,
+    background 0.16s ease,
+    color 0.16s ease;
 }
+
 .global-ai-assistant__tool:hover,
 .global-ai-assistant__tool:focus-visible {
-  background: rgba(127, 127, 127, 0.1);
-  outline: 2px solid rgba(var(--primary-color), 0.4);
+  border-color: rgba(127, 127, 127, 0.18);
+  background: rgba(127, 127, 127, 0.08);
+  outline: 2px solid rgb(var(--primary-color) / 0.4);
+  outline-offset: 1px;
 }
+
+.global-ai-assistant__tool--active {
+  border-color: rgb(var(--primary-color) / 0.34);
+  background: rgb(var(--primary-color) / 0.1);
+  color: rgb(var(--primary-color));
+}
+
 .global-ai-assistant__body,
 .global-ai-assistant__secondary {
   min-height: 0;
@@ -318,33 +382,87 @@ function expandWorkspace() {
   flex-direction: column;
   overflow: hidden;
 }
+
 .global-ai-assistant__secondary-title {
-  min-height: 48px;
+  min-height: 46px;
   flex: none;
   display: flex;
   align-items: center;
   gap: 8px;
   border-bottom: 1px solid rgba(127, 127, 127, 0.13);
   padding: 6px 12px;
+  font-size: 13.5px;
 }
+
 .global-ai-assistant__run {
   min-height: 0;
   flex: 1;
   overflow-x: hidden;
   overflow-y: auto;
-  padding: 16px;
+  padding: 14px;
 }
+
+.run-status-card {
+  border: 1px solid rgba(127, 127, 127, 0.16);
+  border-radius: 10px;
+  background: rgba(127, 127, 127, 0.04);
+  padding: 10px 12px;
+}
+
+.run-metrics-grid {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.run-metric-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: 1px solid rgba(127, 127, 127, 0.15);
+  border-radius: 9px;
+  background: rgba(127, 127, 127, 0.035);
+  padding: 8px 10px;
+}
+
+.run-metric-item span {
+  color: rgba(127, 127, 127, 0.9);
+  font-size: 11px;
+}
+
+.run-metric-item strong {
+  font-size: 16px;
+  font-weight: 660;
+  font-variant-numeric: tabular-nums;
+}
+
+.run-step-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.run-step-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
 .ai-assistant-panel-enter-active,
 .ai-assistant-panel-leave-active {
   transition:
     transform 180ms ease,
     opacity 180ms ease;
 }
+
 .ai-assistant-panel-enter-from,
 .ai-assistant-panel-leave-to {
   transform: translateX(24px);
   opacity: 0;
 }
+
 @media (max-width: 840px) {
   .global-ai-assistant:not(.global-ai-assistant--docked) {
     top: 0;
@@ -352,7 +470,9 @@ function expandWorkspace() {
     max-width: none;
   }
 }
+
 @media (prefers-reduced-motion: reduce) {
+  .global-ai-assistant__tool,
   .ai-assistant-panel-enter-active,
   .ai-assistant-panel-leave-active {
     transition: none;
