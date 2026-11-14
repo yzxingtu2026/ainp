@@ -18,6 +18,10 @@ func TestPlatformResourceDTOsDoNotExposePersistenceOrSecrets(t *testing.T) {
 		reflect.TypeOf(platformresource.AccountIdentity{}),
 		reflect.TypeOf(platformresource.AccountIdentityBindRequest{}),
 		reflect.TypeOf(platformresource.AccountIdentityUnbindRequest{}),
+		reflect.TypeOf(platformresource.ManagedAccountIdentity{}),
+		reflect.TypeOf(platformresource.AccountIdentityAdminListRequest{}),
+		reflect.TypeOf(platformresource.AccountIdentityAdminBindRequest{}),
+		reflect.TypeOf(platformresource.AccountIdentityAdminUnbindRequest{}),
 	} {
 		for i := 0; i < typ.NumField(); i++ {
 			field := typ.Field(i)
@@ -25,6 +29,35 @@ func TestPlatformResourceDTOsDoNotExposePersistenceOrSecrets(t *testing.T) {
 			if strings.Contains(name, "key") || strings.Contains(name, "token") || strings.Contains(name, "gorm") || field.Type.String() == "*gorm.DB" {
 				t.Fatalf("public platform resource DTO %s exposes forbidden field %s", typ.Name(), field.Name)
 			}
+		}
+	}
+}
+
+func TestAccountIdentityAdministrationContractRejectsUnsafeInputs(t *testing.T) {
+	valid := platformresource.AccountIdentityAdminBindRequest{AccountID: "account-1", Provider: "phone", Subject: "13800138000", NormalizedIdentifier: "13800138000"}
+	if err := valid.Validate(); err != nil {
+		t.Fatalf("valid admin binding request rejected: %v", err)
+	}
+	for _, request := range []platformresource.AccountIdentityAdminBindRequest{
+		{Provider: "phone", Subject: "13800138000", NormalizedIdentifier: "13800138000"},
+		{AccountID: "account-1", Provider: "password", Subject: "subject", NormalizedIdentifier: "identifier"},
+		{AccountID: "account-1", Provider: "Phone", Subject: "subject", NormalizedIdentifier: "identifier"},
+	} {
+		if err := request.Validate(); !errors.Is(err, platformresource.ErrInvalid) {
+			t.Fatalf("unsafe admin bind request accepted: %#v err=%v", request, err)
+		}
+	}
+	for _, request := range []platformresource.AccountIdentityAdminUnbindRequest{
+		{}, {AccountID: "account-1"}, {AccountID: " account-1", IdentityID: "identity-1"},
+	} {
+		if err := request.Validate(); !errors.Is(err, platformresource.ErrInvalid) {
+			t.Fatalf("unsafe admin unbind request accepted: %#v err=%v", request, err)
+		}
+	}
+	managedType := reflect.TypeOf(platformresource.ManagedAccountIdentity{})
+	for _, forbidden := range []string{"TenantID", "AccountID", "Subject", "NormalizedIdentifier", "Secret", "Token"} {
+		if _, ok := managedType.FieldByName(forbidden); ok {
+			t.Fatalf("managed identity projection exposes %s", forbidden)
 		}
 	}
 }

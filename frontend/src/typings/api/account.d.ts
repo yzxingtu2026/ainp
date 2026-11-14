@@ -54,5 +54,20 @@ declare namespace Api {
       org_id?: string;
       dept_id?: string;
     }
+
+    interface ManagedIdentity {
+      id: string;
+      provider: string;
+      masked_subject: string;
+      masked_normalized_identifier: string;
+      verified_at: string;
+    }
+
+    interface BindIdentityParams {
+      account_id: string;
+      provider: string;
+      subject: string;
+      normalized_identifier: string;
+    }
   }
 }

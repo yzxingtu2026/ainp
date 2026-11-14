@@ -7,7 +7,10 @@ const ACCOUNT_API = {
   update: '/api/v1/system/accounts/update',
   statusUpdate: '/api/v1/system/accounts/status/update',
   rolesUpdate: '/api/v1/system/accounts/roles/update',
-  passwordReset: '/api/v1/system/accounts/password/reset'
+  passwordReset: '/api/v1/system/accounts/password/reset',
+  identityList: '/api/v1/system/accounts/identities/list',
+  identityBind: '/api/v1/system/accounts/identities/bind',
+  identityUnbind: '/api/v1/system/accounts/identities/unbind'
 } as const;
 
 export function fetchAccountList(params: Api.Account.ListParams) {
@@ -47,5 +50,25 @@ export function resetAccountPassword(id: string, password: string) {
     url: ACCOUNT_API.passwordReset,
     method: 'post',
     data: { id, password }
+  });
+}
+
+export function fetchAccountIdentities(accountId: string) {
+  return request<Api.Account.ManagedIdentity[]>({
+    url: ACCOUNT_API.identityList,
+    method: 'post',
+    data: { account_id: accountId }
+  });
+}
+
+export function bindAccountIdentity(data: Api.Account.BindIdentityParams) {
+  return request<Api.Account.ManagedIdentity>({ url: ACCOUNT_API.identityBind, method: 'post', data });
+}
+
+export function unbindAccountIdentity(accountId: string, identityId: string) {
+  return request<{ account_id: string; identity_id: string }>({
+    url: ACCOUNT_API.identityUnbind,
+    method: 'post',
+    data: { account_id: accountId, identity_id: identityId }
   });
 }

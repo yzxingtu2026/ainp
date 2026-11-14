@@ -18,6 +18,8 @@ var (
 	ErrForbidden   = errors.New("platform resource forbidden")
 	ErrConflict    = errors.New("platform resource revision conflict")
 	ErrInvalid     = errors.New("platform resource input invalid")
+	ErrNotFound    = errors.New("platform resource not found")
+	ErrDisabled    = errors.New("platform resource disabled")
 )
 
 var accountIdentityProviderPattern = regexp.MustCompile(`^[a-z][a-z0-9._-]{0,63}$`)
@@ -149,16 +151,76 @@ type AccountIdentityService interface {
 	Unbind(context.Context, AccountIdentityUnbindRequest) error
 }
 
+// ManagedAccountIdentity is the redacted projection exposed to authorized
+// account administrators. Raw subjects and normalized identifiers are never
+// returned from the management surface.
+type ManagedAccountIdentity struct {
+	ID                         string    `json:"id"`
+	Provider                   string    `json:"provider"`
+	MaskedSubject              string    `json:"masked_subject"`
+	MaskedNormalizedIdentifier string    `json:"masked_normalized_identifier"`
+	VerifiedAt                 time.Time `json:"verified_at"`
+}
+
+type AccountIdentityAdminListRequest struct {
+	AccountID string `json:"account_id" validate:"required"`
+}
+
+func (r AccountIdentityAdminListRequest) Validate() error {
+	if !validAccountIdentityValue(r.AccountID, 64) {
+		return ErrInvalid
+	}
+	return nil
+}
+
+type AccountIdentityAdminBindRequest struct {
+	AccountID            string `json:"account_id" validate:"required"`
+	Provider             string `json:"provider" validate:"required"`
+	Subject              string `json:"subject" validate:"required"`
+	NormalizedIdentifier string `json:"normalized_identifier" validate:"required"`
+}
+
+func (r AccountIdentityAdminBindRequest) Validate() error {
+	if err := (AccountIdentityAdminListRequest{AccountID: r.AccountID}).Validate(); err != nil {
+		return err
+	}
+	return (AccountIdentityBindRequest{
+		Provider: r.Provider, Subject: r.Subject, NormalizedIdentifier: r.NormalizedIdentifier,
+	}).Validate()
+}
+
+type AccountIdentityAdminUnbindRequest struct {
+	AccountID  string `json:"account_id" validate:"required"`
+	IdentityID string `json:"identity_id" validate:"required"`
+}
+
+func (r AccountIdentityAdminUnbindRequest) Validate() error {
+	if err := (AccountIdentityAdminListRequest{AccountID: r.AccountID}).Validate(); err != nil {
+		return err
+	}
+	return (AccountIdentityUnbindRequest{IdentityID: r.IdentityID}).Validate()
+}
+
+// AccountIdentityAdministrationService is an additive management contract.
+// It is separate from AccountIdentityService so existing self-service
+// integrations keep their current source-level contract.
+type AccountIdentityAdministrationService interface {
+	ListForAccount(context.Context, AccountIdentityAdminListRequest) ([]ManagedAccountIdentity, error)
+	BindForAccount(context.Context, AccountIdentityAdminBindRequest) (*ManagedAccountIdentity, error)
+	UnbindForAccount(context.Context, AccountIdentityAdminUnbindRequest) error
+}
+
 // Services is the immutable platform-resource surface injected into API and
 // Worker module registration through app.App.
 type Services struct {
-	Attachments       AttachmentReader
-	Principals        PrincipalService
-	AccountIdentities AccountIdentityService
+	Attachments                   AttachmentReader
+	Principals                    PrincipalService
+	AccountIdentities             AccountIdentityService
+	AccountIdentityAdministration AccountIdentityAdministrationService
 }
 
 func (s Services) Validate() error {
-	if s.Attachments == nil || s.Principals == nil || s.AccountIdentities == nil {
+	if s.Attachments == nil || s.Principals == nil || s.AccountIdentities == nil || s.AccountIdentityAdministration == nil {
 		return ErrUnavailable
 	}
 	return nil
