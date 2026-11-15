@@ -75,7 +75,7 @@ func TestSettingServiceTenantIsolationAndRevision(t *testing.T) {
 	svc.SetChangeRegistry(changes)
 	validators := setting.NewValidatorRegistry()
 	if err := validators.Register("general.preferences", func(_ context.Context, validation setting.Validation) error {
-		if validation.Values["display_name"] == "Rejected" {
+		if validation.Values["notes"] == "Rejected" {
 			return fmt.Errorf("configured alias is unavailable")
 		}
 		return nil
@@ -120,33 +120,33 @@ func TestSettingServiceTenantIsolationAndRevision(t *testing.T) {
 	if def.Key == "" {
 		t.Fatalf("preferences definition missing: %#v", listed)
 	}
-	if def.Source != "default" || def.Revision != 0 || def.Values["display_name"] != "AINP" {
+	if def.Source != "default" || def.Revision != 0 || def.Values["page_size"] != 20.0 {
 		t.Fatalf("default effective values = %#v", def)
 	}
 
-	updated, err := svc.Update(ctxA, json.RawMessage(`{"key":"general.preferences","revision":0,"values":{"display_name":"Tenant A","page_size":30,"dark_mode":true,"language":"en-US","tags":["biz"],"brand_color":"#112233","notes":"hello"}}`))
+	updated, err := svc.Update(ctxA, json.RawMessage(`{"key":"general.preferences","revision":0,"values":{"page_size":30,"dark_mode":true,"language":"en-US","tags":["biz"],"brand_color":"#112233","notes":"hello"}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	viewA := updated.(system.SettingDefinitionView)
-	if viewA.Revision != 1 || viewA.Source != "tenant" || viewA.Values["display_name"] != "Tenant A" {
+	if viewA.Revision != 1 || viewA.Source != "tenant" || viewA.Values["page_size"] != 30.0 {
 		t.Fatalf("updated view = %#v", viewA)
 	}
 	if received.TenantID != "tenant-a" || received.ActorID != "user-a" || received.Key != "general.preferences" || received.Operation != setting.ChangeUpdated {
 		t.Fatalf("unexpected post-commit setting change: %#v", received)
 	}
-	if _, err := svc.Update(ctxA, json.RawMessage(`{"key":"general.preferences","revision":0,"values":{"display_name":"stale","page_size":30,"dark_mode":true,"language":"en-US","tags":["biz"],"brand_color":"#112233","notes":""}}`)); appErrorCode(err) != errs.CodeConflict {
+	if _, err := svc.Update(ctxA, json.RawMessage(`{"key":"general.preferences","revision":0,"values":{"page_size":30,"dark_mode":true,"language":"en-US","tags":["biz"],"brand_color":"#112233","notes":""}}`)); appErrorCode(err) != errs.CodeConflict {
 		t.Fatalf("stale revision error = %v", err)
 	}
-	if _, err := svc.Update(ctxA, json.RawMessage(`{"key":"general.preferences","revision":1,"values":{"display_name":"Rejected","page_size":30,"dark_mode":true,"language":"en-US","tags":["biz"],"brand_color":"#112233","notes":""}}`)); appErrorCode(err) != errs.CodeValidation {
+	if _, err := svc.Update(ctxA, json.RawMessage(`{"key":"general.preferences","revision":1,"values":{"page_size":30,"dark_mode":true,"language":"en-US","tags":["biz"],"brand_color":"#112233","notes":"Rejected"}}`)); appErrorCode(err) != errs.CodeValidation {
 		t.Fatalf("setting validator must reject before persistence: %v", err)
 	}
 	stored, err := svc.Get(ctxA, json.RawMessage(`{"key":"general.preferences"}`))
-	if err != nil || stored.(system.SettingDefinitionView).Values["display_name"] != "Tenant A" {
+	if err != nil || stored.(system.SettingDefinitionView).Values["page_size"] != 30.0 {
 		t.Fatalf("rejected setting update was persisted: %#v err=%v", stored, err)
 	}
 
-	_, err = svc.Update(ctxB, json.RawMessage(`{"key":"general.preferences","revision":0,"values":{"display_name":"Tenant B","page_size":10,"dark_mode":false,"language":"zh-CN","tags":["ops"],"brand_color":"#18A058","notes":""}}`))
+	_, err = svc.Update(ctxB, json.RawMessage(`{"key":"general.preferences","revision":0,"values":{"page_size":10,"dark_mode":false,"language":"zh-CN","tags":["ops"],"brand_color":"#18A058","notes":""}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,14 +158,14 @@ func TestSettingServiceTenantIsolationAndRevision(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if gotA.(system.SettingDefinitionView).Values["display_name"] == gotB.(system.SettingDefinitionView).Values["display_name"] {
+	if gotA.(system.SettingDefinitionView).Values["page_size"] == gotB.(system.SettingDefinitionView).Values["page_size"] {
 		t.Fatal("tenant settings leaked across tenants")
 	}
 
-	if _, err := svc.Update(ctxA, json.RawMessage(`{"key":"general.preferences","revision":1,"values":{"display_name":"Tenant A","page_size":200,"dark_mode":true,"language":"en-US","tags":["biz"],"brand_color":"#112233","notes":""}}`)); appErrorCode(err) != errs.CodeValidation {
+	if _, err := svc.Update(ctxA, json.RawMessage(`{"key":"general.preferences","revision":1,"values":{"page_size":200,"dark_mode":true,"language":"en-US","tags":["biz"],"brand_color":"#112233","notes":""}}`)); appErrorCode(err) != errs.CodeValidation {
 		t.Fatalf("out of range number error = %v", err)
 	}
-	if _, err := svc.Update(ctxA, json.RawMessage(`{"key":"general.preferences","revision":1,"values":{"display_name":"Tenant A","page_size":30,"dark_mode":true,"language":"fr-FR","tags":["biz"],"brand_color":"#112233","notes":""}}`)); appErrorCode(err) != errs.CodeValidation {
+	if _, err := svc.Update(ctxA, json.RawMessage(`{"key":"general.preferences","revision":1,"values":{"page_size":30,"dark_mode":true,"language":"fr-FR","tags":["biz"],"brand_color":"#112233","notes":""}}`)); appErrorCode(err) != errs.CodeValidation {
 		t.Fatalf("invalid select option error = %v", err)
 	}
 
@@ -173,7 +173,7 @@ func TestSettingServiceTenantIsolationAndRevision(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if prefs.DisplayName != "Tenant A" || prefs.PageSize != 30 {
+	if prefs.PageSize != 30 {
 		t.Fatalf("typed preferences = %#v", prefs)
 	}
 
@@ -182,7 +182,7 @@ func TestSettingServiceTenantIsolationAndRevision(t *testing.T) {
 		t.Fatal(err)
 	}
 	resetView := reset.(system.SettingDefinitionView)
-	if resetView.Source != "default" || resetView.Revision != 0 || resetView.Values["display_name"] != "AINP" {
+	if resetView.Source != "default" || resetView.Revision != 0 || resetView.Values["page_size"] != 20.0 {
 		t.Fatalf("reset view = %#v", resetView)
 	}
 	platformCtx := auth.WithContext(context.Background(), &auth.Context{Authenticated: true, Realm: auth.RealmPlatform, IsSystemOperator: true})

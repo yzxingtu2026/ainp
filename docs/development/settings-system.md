@@ -96,6 +96,10 @@ Navigation 语义检索 Alias 注册为 `ai.navigation_search.embedding_model_al
 - 底层：`platform/framework/setting.Provider.Get(ctx, tenantID, settingKey)`（默认值合并 + 可选缓存）
 - tenant Provider 会拒绝 user-scope Definition；用户偏好只能通过 self-only `UserSettingService` 读取。
 - 推荐：模块内类型化封装，例如 `SettingService.Preferences(ctx)`
+
+### 租户品牌
+
+`general.brand` 保存租户品牌名称与 Logo 附件 ID。名称空值表示回退编译期 Composition Brand；纯空白名称在服务端拒绝。Logo 不保存图片数据、Object Key 或 URL，资源绑定固定使用 `system.tenant_brand`、当前 tenant ID 与 `logo` 字段。设置 revision 仍由统一 SettingService 管理；前端先绑定新附件、提交设置，成功后再解绑旧附件，提交失败则回滚新绑定。
 - **禁止**：业务散落 `Get("xxx")` + 手工抠 JSON；**禁止**业务自行实现 Save（写操作一律走管理 Action）
 
 ### 前端

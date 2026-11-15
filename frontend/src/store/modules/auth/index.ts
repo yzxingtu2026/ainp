@@ -10,6 +10,7 @@ import { $t } from '@/locales';
 import { useRouteStore } from '../route';
 import { useTabStore } from '../tab';
 import { useAiAssistantStore } from '../ai-assistant';
+import { useBrandStore } from '../brand';
 import { clearAuthStorage, getToken } from './shared';
 
 export const useAuthStore = defineStore(SetupStoreId.Auth, () => {
@@ -18,6 +19,7 @@ export const useAuthStore = defineStore(SetupStoreId.Auth, () => {
   const routeStore = useRouteStore();
   const tabStore = useTabStore();
   const aiAssistantStore = useAiAssistantStore();
+  const brandStore = useBrandStore();
   const { toLogin, redirectFromLogin } = useRouterPush(false);
   const { loading: loginLoading, startLoading, endLoading } = useLoading();
 
@@ -27,6 +29,7 @@ export const useAuthStore = defineStore(SetupStoreId.Auth, () => {
     realm: 'tenant',
     userId: '',
     userName: '',
+    tenantId: '',
     avatarAttachmentId: null,
     roles: [],
     buttons: []
@@ -49,6 +52,7 @@ export const useAuthStore = defineStore(SetupStoreId.Auth, () => {
     clearAuthStorage();
 
     aiAssistantStore.resetStore();
+    brandStore.resetStore();
 
     authStore.$reset();
 
@@ -177,6 +181,7 @@ export const useAuthStore = defineStore(SetupStoreId.Auth, () => {
     if (!error) {
       // update store
       Object.assign(userInfo, info);
+      await brandStore.load();
 
       return true;
     }

@@ -1,6 +1,10 @@
 package settings
 
 import (
+	"context"
+	"fmt"
+	"strings"
+
 	"github.com/yzxingtu2026/ainp/platform/framework/aiagentruntime"
 	"github.com/yzxingtu2026/ainp/platform/framework/aimemory"
 	"github.com/yzxingtu2026/ainp/platform/framework/aitool"
@@ -22,6 +26,9 @@ func RegisterExampleSettings(a *app.App) error {
 	if err := registerPreferencesSetting(a); err != nil {
 		return err
 	}
+	if err := registerBrandSetting(a); err != nil {
+		return err
+	}
 	if err := registerVisibilityDemoSetting(a); err != nil {
 		return err
 	}
@@ -41,6 +48,34 @@ func RegisterExampleSettings(a *app.App) error {
 		return err
 	}
 	return registerAssistantPersonalizationSetting(a)
+}
+
+const (
+	SettingKeyBrand         = "general.brand"
+	SettingFieldBrandName   = "name"
+	SettingFieldBrandLogoID = "logo_attachment_id"
+)
+
+func registerBrandSetting(a *app.App) error {
+	maxName, maxAttachmentID := 64, 64
+	if err := a.RegisterSettingDefinition(setting.Definition{
+		Key: SettingKeyBrand, CategoryKey: "general",
+		Title: "产品品牌", Description: "覆盖当前租户管理后台的产品名称与 Logo；留空 Logo 时使用构建内默认品牌",
+		Scope: setting.ScopeTenant, Surface: auth.RealmTenant, Permission: ActionSettingList, Order: 5, SchemaVersion: 1,
+		Fields: []setting.Field{
+			{Key: SettingFieldBrandName, Type: setting.FieldText, Label: "品牌名称", Default: "", MaxLength: &maxName},
+			{Key: SettingFieldBrandLogoID, Type: setting.FieldText, Label: "Logo 附件 ID", Default: "", MaxLength: &maxAttachmentID},
+		},
+	}); err != nil {
+		return err
+	}
+	return a.SettingValidators.Register(SettingKeyBrand, func(_ context.Context, validation setting.Validation) error {
+		name, _ := validation.Values[SettingFieldBrandName].(string)
+		if strings.TrimSpace(name) == "" {
+			return fmt.Errorf("brand name must not be blank")
+		}
+		return nil
+	})
 }
 
 func registerAgentRuntimeBudgetSetting(a *app.App) error {
@@ -191,8 +226,6 @@ func registerAttachmentUploadPolicySetting(a *app.App) error {
 func intPtr(v int) *int { return &v }
 
 func registerPreferencesSetting(a *app.App) error {
-	minLen := 1
-	maxLen := 64
 	minPage := 5.0
 	maxPage := 100.0
 	step := 5.0
@@ -203,11 +236,6 @@ func registerPreferencesSetting(a *app.App) error {
 		Scope: setting.ScopeTenant, Surface: auth.RealmTenant,
 		Permission: ActionSettingList, Order: 10, SchemaVersion: 1,
 		Fields: []setting.Field{
-			{
-				Key: "display_name", Type: setting.FieldText,
-				Label: "显示名称", LabelKey: "setting.field.general.preferences.display_name.label",
-				Required: true, Default: "AINP", MinLength: &minLen, MaxLength: &maxLen,
-			},
 			{
 				Key: "page_size", Type: setting.FieldNumber,
 				Label: "默认分页大小", LabelKey: "setting.field.general.preferences.page_size.label",

@@ -1,8 +1,10 @@
 <script setup lang="tsx">
 import { computed, h, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import { adminApplication } from '@admin-application';
 import type { FormInst, FormRules, MenuOption } from 'naive-ui';
 import { $t } from '@/locales';
 import { SYSTEM_ACTIONS } from '@/constants/system';
+import { ATTACHMENT_RESOURCE_TYPES } from '@/constants/attachment';
 import SvgIcon from '@/components/custom/svg-icon.vue';
 import RemoteSelect from '@/components/common/remote-select.vue';
 import {
@@ -13,14 +15,18 @@ import {
   rebuildToolIndex,
   resetSetting,
   updateSetting,
-  updateSettingSecret
+  updateSettingSecret,
+  bindAttachment,
+  unbindAttachment
 } from '@/service/api';
 import { useAuthStore } from '@/store/modules/auth';
+import { useBrandStore, BRAND_SETTING_KEY } from '@/store/modules/brand';
 import { buildSettingUpdatePayload } from './secret-state';
 
 defineOptions({ name: 'SystemSettings' });
 
 const authStore = useAuthStore();
+const brandStore = useBrandStore();
 const loading = ref(false);
 const saving = ref(false);
 const categories = ref<Api.Setting.Category[]>([]);
@@ -37,10 +43,14 @@ const indexStatusLoading = ref(false);
 const rebuildingIndex = ref(false);
 let indexPollTimer: ReturnType<typeof setTimeout> | undefined;
 let indexRequestSequence = 0;
+const brandPickerShow = ref(false);
+const selectedBrandLogo = ref<Api.Attachment.Item | null>(null);
+const originalBrandLogoId = ref('');
 
 const isNavigationSearchSetting = computed(() => current.value?.key === 'ai.navigation_search');
 const isToolSearchSetting = computed(() => current.value?.key === 'ai.tool_search');
 const isSemanticSearchSetting = computed(() => isNavigationSearchSetting.value || isToolSearchSetting.value);
+const isBrandSetting = computed(() => current.value?.key === BRAND_SETTING_KEY);
 const indexTranslationKey = computed(() =>
   isToolSearchSetting.value ? 'page.setting.toolIndex' : 'page.setting.navigationIndex'
 );
@@ -207,8 +217,25 @@ function applyDefinition(definition: Api.Setting.Definition | null) {
     return;
   }
   const values = snapshotValues(definition);
+  if (definition.key === BRAND_SETTING_KEY && !String(values.name || '').trim())
+    values.name = adminApplication.brand.name;
   baseline.value = cloneValues(values);
   Object.assign(formModel, cloneValues(values));
+  if (definition.key === BRAND_SETTING_KEY) {
+    originalBrandLogoId.value = String(values.logo_attachment_id || '');
+    selectedBrandLogo.value = null;
+  }
+}
+
+function handleBrandLogoPicked(items: Api.Attachment.Item[]) {
+  selectedBrandLogo.value = items[0] || null;
+  formModel.logo_attachment_id = selectedBrandLogo.value?.id || '';
+  brandPickerShow.value = false;
+}
+
+function clearBrandLogo() {
+  selectedBrandLogo.value = null;
+  formModel.logo_attachment_id = '';
 }
 
 async function loadSettings() {
@@ -263,7 +290,19 @@ async function handleSave() {
   if (!current.value || !can(SYSTEM_ACTIONS.settingUpdate)) return;
   await formRef.value?.validate();
   saving.value = true;
+  const nextLogoId = isBrandSetting.value ? String(formModel.logo_attachment_id || '') : '';
+  let boundNewLogo = false;
   try {
+    if (isBrandSetting.value && nextLogoId && nextLogoId !== originalBrandLogoId.value) {
+      const { error } = await bindAttachment({
+        attachment_id: nextLogoId,
+        resource_type: ATTACHMENT_RESOURCE_TYPES.tenantBrand,
+        resource_id: authStore.userInfo.tenantId,
+        field: 'logo'
+      });
+      if (error) return;
+      boundNewLogo = true;
+    }
     const payload = buildSettingUpdatePayload(current.value, formModel, secretInputs, clearedSecretFields);
     const request = payload.hasSecretFields
       ? updateSettingSecret(
@@ -276,9 +315,27 @@ async function handleSave() {
       : updateSetting(current.value.key, current.value.revision, payload.values);
     const { data, error } = await request;
     if (!error && data) {
+      if (isBrandSetting.value) {
+        if (originalBrandLogoId.value && originalBrandLogoId.value !== nextLogoId) {
+          await unbindAttachment({
+            attachment_id: originalBrandLogoId.value,
+            resource_type: ATTACHMENT_RESOURCE_TYPES.tenantBrand,
+            resource_id: authStore.userInfo.tenantId,
+            field: 'logo'
+          });
+        }
+        await brandStore.apply(data.values);
+      }
       window.$message?.success($t('common.updateSuccess'));
       activeDefinitionKey.value = data.key;
       await loadSettings();
+    } else if (boundNewLogo) {
+      await unbindAttachment({
+        attachment_id: nextLogoId,
+        resource_type: ATTACHMENT_RESOURCE_TYPES.tenantBrand,
+        resource_id: authStore.userInfo.tenantId,
+        field: 'logo'
+      });
     }
   } finally {
     saving.value = false;
@@ -300,6 +357,17 @@ async function handleReset() {
   try {
     const { data, error } = await resetSetting(current.value.key, current.value.revision);
     if (!error && data) {
+      if (isBrandSetting.value) {
+        if (originalBrandLogoId.value) {
+          await unbindAttachment({
+            attachment_id: originalBrandLogoId.value,
+            resource_type: ATTACHMENT_RESOURCE_TYPES.tenantBrand,
+            resource_id: authStore.userInfo.tenantId,
+            field: 'logo'
+          });
+        }
+        await brandStore.apply(data.values);
+      }
       window.$message?.success($t('page.setting.resetSuccess'));
       activeDefinitionKey.value = data.key;
       await loadSettings();
@@ -388,10 +456,25 @@ onBeforeUnmount(clearIndexPoll);
               >
                 <div class="w-full">
                   <NInput
-                    v-if="field.type === 'text'"
+                    v-if="field.type === 'text' && !(isBrandSetting && field.key === 'logo_attachment_id')"
                     v-model:value="(formModel[field.key] as string)"
                     :maxlength="field.max_length"
                   />
+                  <div
+                    v-else-if="isBrandSetting && field.key === 'logo_attachment_id'"
+                    class="flex-col-stretch gap-8px"
+                  >
+                    <div class="flex items-center gap-12px">
+                      <SystemLogo class="size-48px rounded border border-gray-200 p-4px" />
+                      <span class="text-12px text-gray-500">
+                        {{ selectedBrandLogo?.original_name || formModel[field.key] || '使用构建内默认 Logo' }}
+                      </span>
+                    </div>
+                    <NSpace v-if="can(SYSTEM_ACTIONS.settingUpdate)">
+                      <NButton @click="brandPickerShow = true">选择或上传 Logo</NButton>
+                      <NButton v-if="formModel[field.key]" @click="clearBrandLogo">恢复默认 Logo</NButton>
+                    </NSpace>
+                  </div>
                   <NInput
                     v-else-if="field.type === 'textarea'"
                     v-model:value="(formModel[field.key] as string)"
@@ -475,5 +558,15 @@ onBeforeUnmount(clearIndexPoll);
         </div>
       </div>
     </NCard>
+    <AttachmentPicker
+      v-model:show="brandPickerShow"
+      :multiple="false"
+      :max-count="1"
+      :selected-ids="formModel.logo_attachment_id ? [String(formModel.logo_attachment_id)] : []"
+      :allowed-ext="['.png', '.jpg', '.jpeg', '.webp', '.gif']"
+      :allowed-mime="['image/png', 'image/jpeg', 'image/webp', 'image/gif']"
+      :max-size-bytes="5 * 1024 * 1024"
+      @confirm="handleBrandLogoPicked"
+    />
   </div>
 </template>

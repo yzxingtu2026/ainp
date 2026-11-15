@@ -415,12 +415,11 @@ func (s *SettingService) Reset(ctx context.Context, input json.RawMessage) (any,
 
 // Preferences is the typed view of general.preferences.
 type Preferences struct {
-	DisplayName string   `json:"display_name"`
-	PageSize    float64  `json:"page_size"`
-	DarkMode    bool     `json:"dark_mode"`
-	Language    string   `json:"language"`
-	Tags        []string `json:"tags"`
-	BrandColor  string   `json:"brand_color"`
+	PageSize   float64  `json:"page_size"`
+	DarkMode   bool     `json:"dark_mode"`
+	Language   string   `json:"language"`
+	Tags       []string `json:"tags"`
+	BrandColor string   `json:"brand_color"`
 }
 
 func (s *SettingService) Preferences(ctx context.Context) (*Preferences, error) {

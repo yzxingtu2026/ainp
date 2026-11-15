@@ -166,6 +166,9 @@ func Register(a *app.App) error {
 			return err
 		}
 	}
+	if err := a.AttachmentPolicies.Register(attachments.NewTenantBrandAttachmentPolicy()); err != nil {
+		return err
+	}
 	policyProvider := NewSettingUploadPolicyProvider(settingSvc.Provider())
 	attachSvc := NewAttachmentService(a.DB, a.Storage, a.TransferTokens, a.AttachmentPolicies, policyProvider)
 	attachSvc.SetModelRuntimeProvider(func() aimodelruntime.GenerationRuntime { return a.AIModelRuntime })
