@@ -14,7 +14,7 @@
 | project | deploy/linux/project.json、build.json 由下游拥有；工具不创建、不覆盖、不删除 |
 | integration | 独立命名的原生/发布/预检/部署基线工作流逐文件接入；既有文件需明确确认归属，接入后受三方比较保护 |
 
-不会覆盖整个 `.github/workflows`、`.gitignore`、`.agents/rules/main.md`、adapters 或业务目录。gitignore 与 Agent 登记按 `deploy/baseline/templates` 手工合并；verify 检查必需集成。现有 integration 文件如有业务步骤，先将业务步骤抽到独立工作流，再审查是否采用上游文件；不能用强制覆盖绕过差异。
+不会覆盖整个 `.github/workflows`、`.gitignore`、`.agents/rules/main.md` 或业务目录。`.agents/rules/binary-deployment.md` 与 `.agents/rules/release-versioning.md` 由 manifest 锁定；gitignore 与 `.agents/rules/main.md` 登记按 `deploy/baseline/templates` 手工合并，verify 检查必需集成。已废弃的 `.agents/adapters/rules.json` 不属于部署基线契约。现有 integration 文件如有业务步骤，先将业务步骤抽到独立工作流，再审查是否采用上游文件；不能用强制覆盖绕过差异。
 
 路径必须是仓库内规范相对路径，拒绝 `..`、绝对路径、重复分隔符、符号链接和私有/账本目标。哈希不做 LF 转换；Windows 应确保这些公共文件检出为 LF，否则漂移检查会失败。模式比较按可执行位判断，不依赖宿主 umask。
 
@@ -63,6 +63,10 @@ plan 默认模式，只读取来源与目标；不修改下游文件、锁定记
 
 升级同时更新期望 platform 版本、Go/Admin 与部署文件，重新对固定新 Tag/commit plan/apply/verify。工具以旧 lock 为祖先进行三方比较：新增文件不接管未托管路径；修改文件要求本地匹配旧版；删除仅限旧版托管且本地未改动文件；项目拥有文件始终保留。旧 lock 中同版本来源发生变化时拒绝执行。依赖闭包（`REQUIRED`）绑定生成它的工具版本，只在解析出的来源 manifest 与 verify 收敛的目标 manifest 上强制，不用当前版本的闭包回卡历史 lock；因此后续版本新增的必需文件不会阻断从旧 lock 升级，升级会把它们作为新增文件写入。
 
+从仍锁定 `.agent/rules/binary-deployment.md` 与 `.agent/rules/release-versioning.md` 的历史版本升级时，先确保工作树与旧 lock 的字节和模式完全一致，再使用包含 `.agents` 契约的正式 Published Release 执行 plan。计划必须明确删除两个旧的 manifest-managed 路径并新增对应的 `.agents/rules/` 路径；apply 后的新 lock 只记录 `.agents` 目标。不得伪造 lock、修改旧文件或用强制覆盖绕过 local drift。
+
+`.agent/rules/main.md`、旧 adapter 和其它未出现在旧 manifest 中的文件属于下游自身，apply 不会越权删除。下游应在同一个正式基线升级 Issue 中审查并显式删除这些自有旧文件，合并 `.agents/rules/main.md` 登记，然后运行 verify，最终仓库无需保留 `.agent/` 兼容目录。发生异常时保留 transaction，按下述 recover 流程恢复旧规则与旧 lock，修复原因后重新升级。
+
 中途异常保留 `.deployment-baseline-transaction.json`，其中含旧文件与模式、旧 lock 和期望写入状态。工具拒绝继续同步；先检查错误，再运行：
 
 ```sh
@@ -75,7 +79,7 @@ recover 先检查全部文件仍处于旧/期望新状态，再恢复旧文件�
 
 ## CI 与验证边界
 
-部署基线工作流执行 `python3 scripts/deployment/baseline.py verify`：检查实际运行文件的原始字节与可执行位、部署依赖、项目仓库/配置、期望 platform 与 Go/Admin 来源、工作流和 Agent/gitignore 集成。将 `deployment-baseline` 加入下游 required checks；保留自身 Go/Admin/业务测试与 Ubuntu 22.04 native-build 门禁。
+部署基线工作流执行 `python3 scripts/deployment/baseline.py verify`：检查实际运行文件的原始字节与可执行位、部署依赖、项目仓库/配置、期望 platform 与 Go/Admin 来源、工作流和 Agent/gitignore 集成。Agent 集成要求 `.agents/rules/main.md` 引用 `binary-deployment`，并由 lock 校验两个受管规则；不存在 `.agents/adapters/` 时仍应通过。将 `deployment-baseline` 加入下游 required checks；保留自身 Go/Admin/业务测试与 Ubuntu 22.04 native-build 门禁。
 
 上游 Python 测试覆盖两个版本新增/修改/删除、幂等、未托管冲突、字节/模式漂移、来源失败、恶意路径、私有配置保护和失败恢复。独立 Linux fixture 使用 backend/admin、自己的仓库标识、应用单 Tag 和三个业务 composition 入口，执行真实 PDF/CJK 与 API/Worker/migrate/Web 构建。PR fixture 可以显式连接当前源码以验证尚未发布的新能力；这不是正式来源接入，正式 plan/apply 仍只接受已发布版本。
 
