@@ -33,7 +33,7 @@ class BaselineTest(unittest.TestCase):
         return {p.relative_to(self.root).as_posix(): (p.read_bytes(), p.stat().st_mode) for p in self.root.rglob("*") if p.is_file()}
 
     def test_complete_closure_and_missing_dependencies(self):
-        for dependency in ("scripts/deployment/cloud.py", "docker/build-mupdf-cjk.sh", "scripts/test_deployment.py", ".github/workflows/native-build.yml", "deploy/baseline/examples/build-web-apps.json", "deploy/baseline/examples/private-aguo-websocket.json"):
+        for dependency in ("scripts/deployment/cloud.py", "docker/build-mupdf-cjk.sh", "scripts/test_deployment.py", ".github/workflows/native-build.yml", "deploy/baseline/examples/build-web-apps.json", "deploy/baseline/examples/private-aguo-websocket.json", ".agents/rules/binary-deployment.md", ".agents/rules/release-versioning.md"):
             manifest = copy.deepcopy(self.manifest)
             del manifest["files"][dependency]
             with self.subTest(dependency=dependency):
@@ -191,6 +191,52 @@ class BaselineTest(unittest.TestCase):
         self.assertTrue((self.root / newcomer).is_file())
         self.assertEqual(b.plan(self.root, self.manifest), [])
 
+    def legacy_agent_install(self):
+        self.install()
+        old = copy.deepcopy(self.manifest)
+        old.update(version="v0.5.4", commit="0" * 40)
+        for name in ("binary-deployment.md", "release-versioning.md"):
+            current = f".agents/rules/{name}"
+            legacy = f".agent/rules/{name}"
+            entry = old["files"].pop(current)
+            entry["source"] = legacy
+            old["files"][legacy] = entry
+            target = self.root / legacy
+            target.parent.mkdir(parents=True, exist_ok=True)
+            (self.root / current).replace(target)
+        lock = {"schema": 1, "manifest": old, "manifest_sha256": b.manifest_hash(old)}
+        (self.root / b.LOCK).write_text(json.dumps(lock, sort_keys=True, indent=2) + "\n")
+        return old
+
+    def test_upgrade_legacy_agent_rules_to_agents_plan_apply_and_verify(self):
+        self.legacy_agent_install()
+        actions = {(action["action"], action["path"]) for action in b.plan(self.root, self.manifest)}
+        for name in ("binary-deployment.md", "release-versioning.md"):
+            self.assertIn(("delete", f".agent/rules/{name}"), actions)
+            self.assertIn(("add", f".agents/rules/{name}"), actions)
+        b.apply(self.root, self.source, self.manifest)
+        self.assertFalse((self.root / ".agent/rules/binary-deployment.md").exists())
+        self.assertFalse((self.root / ".agent/rules/release-versioning.md").exists())
+        self.assertNotIn(".agent/rules/binary-deployment.md", b.read_lock(self.root)["manifest"]["files"])
+        self.configure_downstream()
+        with mock.patch.object(b.subprocess, "check_output", return_value="https://github.com/example/application.git"), mock.patch.dict(b.os.environ, {}, clear=True):
+            b.verify(self.root)
+
+    def test_failed_legacy_agent_upgrade_recovers_rules_and_lock(self):
+        old = self.legacy_agent_install()
+        original = b.write_bytes
+        def fail_new_rule(path, content, mode):
+            if path == self.root / ".agents/rules/release-versioning.md":
+                raise OSError("simulated rule write failure")
+            original(path, content, mode)
+        with mock.patch.object(b, "write_bytes", side_effect=fail_new_rule), self.assertRaises(OSError):
+            b.apply(self.root, self.source, self.manifest)
+        b.recover(self.root)
+        self.assertEqual(b.read_lock(self.root)["manifest"], old)
+        self.assertTrue((self.root / ".agent/rules/binary-deployment.md").is_file())
+        self.assertTrue((self.root / ".agent/rules/release-versioning.md").is_file())
+        self.assertFalse((self.root / ".agents/rules/binary-deployment.md").exists())
+
     def test_changed_published_version_rejected(self):
         self.install()
         new = copy.deepcopy(self.manifest)
@@ -198,8 +244,7 @@ class BaselineTest(unittest.TestCase):
         with self.assertRaisesRegex(DeployError, "changed"):
             b.plan(self.root, new)
 
-    def configured_install(self):
-        self.install()
+    def configure_downstream(self):
         config = json.loads((ROOT / "deploy/baseline/examples/project.json").read_text())
         config["platform_version"] = "v1.0.0"
         (self.root / "deploy/linux/project.json").write_text(json.dumps(config))
@@ -212,8 +257,10 @@ class BaselineTest(unittest.TestCase):
         (self.root / "admin/admin-baseline.json").write_text(json.dumps({"commit": "a" * 40}))
         (self.root / ".gitignore").write_text((ROOT / "deploy/baseline/templates/gitignore.txt").read_text())
         (self.root / ".agents/rules/main.md").write_text("binary-deployment\n")
-        (self.root / ".agents/adapters").mkdir()
-        (self.root / ".agents/adapters/rules.json").write_text(json.dumps({"rules": [{"source": ".agents/rules/binary-deployment.md"}]}))
+
+    def configured_install(self):
+        self.install()
+        self.configure_downstream()
 
     def test_verify_multi_web_build_from_published_baseline(self):
         self.configured_install()
@@ -241,7 +288,8 @@ class BaselineTest(unittest.TestCase):
                 (".github/workflows/deployment-baseline.yml", "disabled"),
                 (".gitignore", ""),
                 (".agents/rules/main.md", ""),
-                (".agents/adapters/rules.json", '{"rules":[]}'),
+                (".agents/rules/binary-deployment.md", "local drift"),
+                (".agents/rules/release-versioning.md", "local drift"),
             ):
                 path = self.root / name
                 original = path.read_bytes()
@@ -251,6 +299,23 @@ class BaselineTest(unittest.TestCase):
                     b.verify(self.root)
                 self.assertEqual(changed, self.snapshot())
                 path.write_bytes(original)
+
+            main = self.root / ".agents/rules/main.md"
+            main.unlink()
+            with self.assertRaisesRegex(DeployError, "rule index missing"):
+                b.verify(self.root)
+
+    def test_verify_detects_missing_managed_agent_rules_without_adapters(self):
+        self.configured_install()
+        self.assertFalse((self.root / ".agents/adapters").exists())
+        with mock.patch.object(b.subprocess, "check_output", return_value="https://github.com/example/application.git"), mock.patch.dict(b.os.environ, {}, clear=True):
+            for name in ("binary-deployment.md", "release-versioning.md"):
+                path = self.root / ".agents/rules" / name
+                body = path.read_bytes()
+                path.unlink()
+                with self.subTest(name=name), self.assertRaisesRegex(DeployError, "local drift"):
+                    b.verify(self.root)
+                path.write_bytes(body)
 
     def test_existing_admin_metadata_format_is_configurable(self):
         self.configured_install()
