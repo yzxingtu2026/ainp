@@ -19,6 +19,10 @@ docker build -f docker/web.Dockerfile --build-arg VERSION=dev --build-arg COMMIT
 
 基础镜像可通过 `GO_IMAGE`、`RUNTIME_IMAGE`、`NODE_IMAGE`、`NGINX_IMAGE` 构建参数覆盖，便于受限网络使用可信镜像代理；例如本地可传入 `docker.1ms.run/library/golang:1.25.6-alpine`。发布工作流默认使用官方镜像名，代理可用性与镜像摘要必须由部署方自行校验。
 
+## 手动发布 GHCR 镜像
+
+镜像发布已退出正式主路径（正式产物为 OSS 二进制包），但保留手动补发入口：在 Actions 中手动触发 `Publish GHCR Images`（`.github/workflows/publish-ghcr-images.yml`），输入已存在的正式版本 Tag（如 `v0.6.0`）。工作流检出该 Tag 对应 Commit，用工作流内置 `GITHUB_TOKEN`（`packages: write`）构建并推送 `ainp-backend` / `ainp-web` 两个镜像，Tag 为版本号与 `sha-<12位>`，BuildInfo 从 Tag Commit 注入。该入口不做 CI 门禁与不可变发布校验，仅用于存量容器部署兼容；重复触发会覆盖同名镜像 Tag，正式环境仍应以 OSS 发布为准。
+
 ## 演示 Compose
 
 复制 `deploy/demo/.env.example` 为 `deploy/demo/.env`，替换其中全部示例密钥，并将 `AINP_IMAGE_TAG` 固定为完整 SemVer Tag。`AINP_IMAGE_REGISTRY` 默认使用 `ghcr.io`；受限网络可改为可信的 GHCR 镜像代理（例如 `ghcr.nju.edu.cn`），Compose 拉取与部署 digest 记录会统一使用该地址。代理必须完整同步 `yzxingtu2026/ainp-backend`、`yzxingtu2026/ainp-web` 的不可变 Tag，且其可用性与内容一致性由部署方验证。然后运行：

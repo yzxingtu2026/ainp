@@ -1,0 +1,70 @@
+name: Publish GHCR Images
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "要构建的正式版本 Tag（如 v0.6.0）"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: ghcr-images-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [backend, web]
+    steps:
+      - name: Validate version format
+        env:
+          VERSION: ${{ inputs.version }}
+        run: echo "$VERSION" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.version }}
+
+      - id: identity
+        name: Resolve build identity from tag commit
+        run: |
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "short_sha=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
+          echo "build_time=$(git show -s --format=%cI HEAD | xargs -I{} date -u -d {} +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/${{ matrix.image }}.Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/ainp-${{ matrix.image }}:${{ inputs.version }}
+            ghcr.io/${{ github.repository_owner }}/ainp-${{ matrix.image }}:sha-${{ steps.identity.outputs.short_sha }}
+          labels: |
+            org.opencontainers.image.version=${{ inputs.version }}
+            org.opencontainers.image.revision=${{ steps.identity.outputs.commit }}
+            org.opencontainers.image.created=${{ steps.identity.outputs.build_time }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          build-args: |
+            VERSION=${{ inputs.version }}
+            COMMIT=${{ steps.identity.outputs.commit }}
+            BUILD_TIME=${{ steps.identity.outputs.build_time }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
