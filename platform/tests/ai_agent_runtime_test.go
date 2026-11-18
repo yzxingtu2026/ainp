@@ -396,7 +396,7 @@ func TestAgentRunBudgetCompletionMigrationAndRuntimeContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	source := string(runtimeBody)
-	for _, expected := range []string{"completionOnlyRequest", `ToolChoice{Mode: "none"}`, "syncModelUsage", "budget_limit", "run_budget_pressure", "commitFinalAnswer"} {
+	for _, expected := range []string{"completionOnlyRequest", `ToolChoice{Mode: "none"}`, "syncModelUsage", "budget_limit", "run_budget_pressure", "commitFinalAnswer", "request.TimeoutMS = timeoutMS"} {
 		if !strings.Contains(source, expected) {
 			t.Fatalf("budget completion runtime contract missing %q", expected)
 		}
@@ -426,6 +426,28 @@ func TestAgentRunBudgetCompletionMigrationAndRuntimeContract(t *testing.T) {
 	}
 	if !strings.Contains(string(anthropicBody), `r.ToolChoice.Mode != "none"`) {
 		t.Fatal("anthropic completion-only request must omit unsupported none tool choice")
+	}
+}
+
+func TestAgentModelTimeoutUsesRemainingRunBudget(t *testing.T) {
+	now := time.Date(2026, 11, 18, 0, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name     string
+		deadline time.Time
+		wantMS   int64
+		wantOK   bool
+	}{
+		{name: "caps at protocol maximum", deadline: now.Add(10 * time.Minute), wantMS: 300000, wantOK: true},
+		{name: "uses remaining run duration", deadline: now.Add(87*time.Second + 250*time.Millisecond), wantMS: 87250, wantOK: true},
+		{name: "rejects subsecond remainder", deadline: now.Add(999 * time.Millisecond), wantOK: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotMS, gotOK := aiagentruntime.ModelTimeoutMS(now, tt.deadline)
+			if gotMS != tt.wantMS || gotOK != tt.wantOK {
+				t.Fatalf("timeout=(%d,%v), want (%d,%v)", gotMS, gotOK, tt.wantMS, tt.wantOK)
+			}
+		})
 	}
 }
 

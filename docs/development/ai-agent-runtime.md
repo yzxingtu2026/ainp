@@ -73,6 +73,7 @@ Builder 预览约束：
 - 每次 Job 从 AuthorizationProvider 重新加载 actor 当前权限和 auth version，不使用平台管理员身份或长期 service token。
 - 授权恢复后必须沿用 Run 固定的 origin request/trace，并设置 `client=agent`、可信 `agent_run_id`；Job/Outbox 的关联 ID 与 client 只用于投递，不得覆盖最终 Action 执行主体。
 - 模型调用只经统一 Model Runtime；Agent 执行使用 `Stream`，Provider 的 `output_text.delta` 到达后立即追加为 `run.delta`，禁止等待完整 `Generate` 响应后再人为切片伪造流式输出。调用前由 ContextCompactor 按目标模型判断预算并固定 Snapshot。
+- Agent 每次流式模型请求必须显式使用 Run 当前剩余时长作为 `timeout_ms`，并受 Model Runtime 300 秒协议上限约束；不得回退到通用 60 秒默认值而提前截断长输出。剩余时长不足 1 秒时不再发起 Provider 调用，直接按 Run timeout 收口。
 - Agent consumer 同时消费结构化事件与独立 terminal result，并直接使用 stream 携带的 Invocation ID。Invocation 已经确定的 `timeout`、`cancelled`、Provider 分类或 `stream_protocol_error` 必须原样写入 model Step、Run 和终态 Event；不得在 channel close 后重新猜测分类。`cancelled` 将 Run/活动 Step 收口为 cancelled，其余模型错误收口为 failed。
 - 已发送的文本 delta 保持追加式，不因 Run 失败删除；Tool Arguments 只有在完整 tool call terminal 到达且整个模型 stream 成功时才可进入执行循环。超时或取消发生在 arguments 中途时，禁止解析、补全、执行或伪造 Tool Result。
 - Provider context overflow 只允许受预算限制的压缩重试；step/model/tool/compaction/Token/时长均有硬上限。

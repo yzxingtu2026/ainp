@@ -3,6 +3,7 @@ package aiagentruntime
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 )
 
 type RunStatus string
@@ -59,6 +60,22 @@ func ValidStepType(v StepType) bool {
 func RunTerminal(v RunStatus) bool { return v == RunCompleted || v == RunCancelled }
 
 const BudgetSchemaVersion = 1
+
+const (
+	modelTimeoutMax = 300 * time.Second
+	modelTimeoutMin = time.Second
+)
+
+func ModelTimeoutMS(now, deadline time.Time) (int64, bool) {
+	remaining := deadline.Sub(now)
+	if remaining < modelTimeoutMin {
+		return 0, false
+	}
+	if remaining > modelTimeoutMax {
+		remaining = modelTimeoutMax
+	}
+	return remaining.Milliseconds(), true
+}
 
 type Budget struct {
 	SchemaVersion      int   `json:"schema_version"`
