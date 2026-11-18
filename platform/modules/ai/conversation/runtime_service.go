@@ -926,6 +926,11 @@ func (s *AgentRuntimeService) Execute(ctx context.Context, runID, worker string)
 		if err != nil {
 			return err
 		}
+		timeoutMS, timeoutOK := aiagentruntime.ModelTimeoutMS(s.now(), deadline)
+		if !timeoutOK {
+			return s.fail(ctx, run, "timeout")
+		}
+		request.TimeoutMS = timeoutMS
 		response, callErr := s.streamModel(ctx, run, request)
 		run.ModelCalls++
 		terminalCtx, cancelTerminal := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
